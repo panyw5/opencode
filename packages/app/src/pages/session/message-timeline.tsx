@@ -270,31 +270,18 @@ export function MessageTimeline(props: {
   createEffect(
     on(sessionID, (newID, prevID) => {
       if (prevID !== undefined && newID !== prevID) {
-<<<<<<< HEAD
-        const seq = ++debugSeq
-        console.debug(`[${seq}][sessionSwitch] detected: prev=${prevID} new=${newID} - disabling windowing temporarily`)
         setSessionSwitching(true)
         // Re-enable windowing after a delay to allow messages to render and collect height data
         makeTimer(
           () => {
-            const seq2 = ++debugSeq
-            console.debug(`[${seq2}][sessionSwitch] re-enabling windowing`)
             setSessionSwitching(false)
           },
           500,
           setTimeout,
         )
-=======
-        setSessionSwitching(true)
-        // Re-enable windowing after a delay to allow messages to render and collect height data
-        makeTimer(() => {
-          setSessionSwitching(false)
-        }, 500, setTimeout)
->>>>>>> 6c11e925c (fix(app): keep skill dialog state scoped per directory)
       }
     }),
   )
-
 
   const canWindow = createMemo(() => !isWorking() && !sessionSwitching())
 
@@ -447,7 +434,9 @@ export function MessageTimeline(props: {
     if (index === undefined) {
       index = props.renderedUserMessages.findIndex((m) => m.id === id)
       if (index === -1) {
-        console.warn(`[syncWindow] Anchor not found: id=${id} renderedLength=${ids.length} propsLength=${props.renderedUserMessages.length}`)
+        console.warn(
+          `[syncWindow] Anchor not found: id=${id} renderedLength=${ids.length} propsLength=${props.renderedUserMessages.length}`,
+        )
         return next
       }
     }
@@ -498,7 +487,9 @@ export function MessageTimeline(props: {
       const key = typeof CSS === "undefined" ? scrollAnchor.id : CSS.escape(scrollAnchor.id)
       const node = root.querySelector<HTMLElement>(`[data-message-id="${key}"]`)
       if (!node) {
-        console.warn(`[applyWindow] anchor node not found in DOM: id=${scrollAnchor.id} windowStart=${windowed.start} windowEnd=${windowed.end}`)
+        console.warn(
+          `[applyWindow] anchor node not found in DOM: id=${scrollAnchor.id} windowStart=${windowed.start} windowEnd=${windowed.end}`,
+        )
         return
       }
       const box = root.getBoundingClientRect()
