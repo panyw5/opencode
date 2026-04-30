@@ -136,6 +136,7 @@ export namespace ProviderTransform {
 
     if (typeof model.capabilities.interleaved === "object" && model.capabilities.interleaved.field) {
       const field = model.capabilities.interleaved.field
+      const sdk = sdkKey(model.api.npm) ?? "openaiCompatible"
       return msgs.map((msg) => {
         if (msg.role === "assistant" && Array.isArray(msg.content)) {
           const reasoningParts = msg.content.filter((part: any) => part.type === "reasoning")
@@ -144,27 +145,57 @@ export namespace ProviderTransform {
           // Filter out reasoning parts from content
           const filteredContent = msg.content.filter((part: any) => part.type !== "reasoning")
 
-          // Include reasoning_content | reasoning_details directly on the message for all assistant messages
-          if (reasoningText) {
-            return {
-              ...msg,
-              content: filteredContent,
-              providerOptions: {
-                ...msg.providerOptions,
-                openaiCompatible: {
-                  ...(msg.providerOptions as any)?.openaiCompatible,
-                  [field]: reasoningText,
-                },
-              },
-            }
-          }
+          // Preserve reasoning fields across repeated transform passes. Some providers require
+          // even empty reasoning_content to be echoed back in later tool-call requests.
+          const existingField = (msg.providerOptions as any)?.[sdk]?.[field]
+          const resolvedText = reasoningText || existingField || ""
 
           return {
             ...msg,
             content: filteredContent,
+            providerOptions: {
+              ...msg.providerOptions,
+              [sdk]: {
+                ...(msg.providerOptions as any)?.[sdk],
+                [field]: resolvedText,
+              },
+            },
           }
         }
 
+        return msg
+      })
+    }
+
+    if (model.capabilities.reasoning) {
+      const sdk = sdkKey(model.api.npm) ?? "openaiCompatible"
+      return msgs.map((msg) => {
+        if (msg.role !== "assistant") return msg
+        if (Array.isArray(msg.content)) {
+          return {
+            ...msg,
+            providerOptions: {
+              ...msg.providerOptions,
+              [sdk]: {
+                ...(msg.providerOptions as any)?.[sdk],
+                reasoning_content: "",
+              },
+            },
+          }
+        }
+        if (typeof msg.content === "string") {
+          return {
+            ...msg,
+            content: [{ type: "text" as const, text: msg.content }, { type: "reasoning" as const, text: "" }],
+            providerOptions: {
+              ...msg.providerOptions,
+              [sdk]: {
+                ...(msg.providerOptions as any)?.[sdk],
+                reasoning_content: "",
+              },
+            },
+          }
+        }
         return msg
       })
     }
