@@ -1132,24 +1132,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
 
   // Auto-scroll active @ mention item into view when navigating with keyboard
-  // NOTE: Cannot use scrollIntoView here — the popover has CSS transform: translateY(-100%)
-  // which causes scrollIntoView to miscalculate scroll offsets in Chromium.
   createEffect(() => {
     const activeKey = atActive()
     if (!activeKey || !atPopoverRef) return
 
     requestAnimationFrame(() => {
-      const element = atPopoverRef.querySelector(`[data-at-key="${activeKey}"]`) as HTMLElement | null
-      if (!element) return
-
-      const containerRect = atPopoverRef.getBoundingClientRect()
-      const elementRect = element.getBoundingClientRect()
-
-      if (elementRect.bottom > containerRect.bottom) {
-        atPopoverRef.scrollTop += elementRect.bottom - containerRect.bottom
-      } else if (elementRect.top < containerRect.top) {
-        atPopoverRef.scrollTop -= containerRect.top - elementRect.top
-      }
+      const element = atPopoverRef.querySelector(`[data-at-key="${activeKey}"]`)
+      element?.scrollIntoView({ block: "nearest", behavior: "smooth" })
     })
   })
 
