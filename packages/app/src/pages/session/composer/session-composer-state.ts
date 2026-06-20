@@ -11,7 +11,7 @@ import { useSync } from "@/context/sync"
 import { composerDriver, composerEnabled, composerEvent } from "@/testing/session-composer"
 import { sessionPermissionRequest, sessionQuestionRequest, sessionQuestionRequests } from "./session-request-tree"
 import { working as sessionWorking } from "../session-working"
-import { permissionRequestNotFound, questionInvalidation } from "./session-question-dock-helpers"
+import { permissionRequestNotFound, questionInvalidation, questionRequestNotFound } from "./session-question-dock-helpers"
 import { todoState } from "./session-composer-state-helpers"
 
 export { todoState }
@@ -52,8 +52,21 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   })
 
   const clearSkippedQuestions = () => {
+    const skipped = skippedQuestionRequests()
+
+    // Backend cleanup: reject each superseded question durably
+    for (const request of skipped) {
+      sdk.client.question
+        .reject({ requestID: request.id })
+        .catch((err: unknown) => {
+          if (questionRequestNotFound(err, request.id)) return
+          console.warn(`[composer] failed to reject skipped question ${request.id}`, err)
+        })
+    }
+
+    // Optimistic local removal
     const bySession = new Map<string, Set<string>>()
-    for (const request of skippedQuestionRequests()) {
+    for (const request of skipped) {
       const ids = bySession.get(request.sessionID)
       if (ids) {
         ids.add(request.id)

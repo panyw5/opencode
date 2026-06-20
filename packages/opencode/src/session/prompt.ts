@@ -60,6 +60,7 @@ import { SessionTable } from "./session.sql"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
+import { Question } from "@/question"
 import { LLMEvent } from "@opencode-ai/llm"
 
 // @ts-ignore
@@ -123,6 +124,7 @@ export const layer = Layer.effect(
     const references = yield* Reference.Service
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
+    const question = yield* Question.Service
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -1222,6 +1224,15 @@ export const layer = Layer.effect(
         yield* sessions.finalizeOrphanedAssistant(input.sessionID, {
           staleAfterMs: Session.ORPHANED_ASSISTANT_STALE_AFTER_MS,
         })
+        yield* question.expireSuperseded({ sessionID: input.sessionID })
+      } else {
+        // If there are superseded questions, cancel the stale run so ensureRunning
+        // can start a new provider run for the incoming prompt.
+        const expired = yield* question.expireSuperseded({ sessionID: input.sessionID })
+        if (expired > 0) {
+          yield* state.cancel(input.sessionID)
+          yield* sessions.finalizeOrphanedAssistant(input.sessionID, {})
+        }
       }
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
@@ -1667,6 +1678,7 @@ export const defaultLayer = Layer.suspend(() =>
         SystemPrompt.defaultLayer,
         LLM.defaultLayer,
         Reference.defaultLayer,
+        Question.defaultLayer,
         Bus.layer,
         CrossSpawnSpawner.defaultLayer,
         RuntimeFlags.defaultLayer,

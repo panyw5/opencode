@@ -224,6 +224,9 @@ export interface Interface {
   }) => Effect.Effect<void, NotFoundError>
   readonly reject: (requestID: QuestionID) => Effect.Effect<void, NotFoundError>
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
+  readonly expireSuperseded: (input: {
+    sessionID: SessionID
+  }) => Effect.Effect<number>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Question") {}
@@ -507,6 +510,135 @@ export const layer = Layer.effect(
       })
     })
 
+    const isSuperseded = Effect.fn("Question.isSuperseded")(function* (request: Request) {
+      if (!request.tool) return false
+      const session = EffectOption.getOrUndefined(yield* Effect.serviceOption(Session.Service))
+      if (!session) return false
+      const messages = yield* session
+        .messages({ sessionID: request.sessionID })
+        .pipe(Effect.catchCause(() => Effect.succeed([])))
+      const index = messages.findIndex((m) => m.info.id === request.tool!.messageID)
+      if (index === -1) return false
+      return index < messages.length - 1
+    })
+
+    const findPersistedQuestionPart = Effect.fn("Question.findPersistedQuestionPart")(function* (
+      request: Request,
+    ) {
+      const session = EffectOption.getOrUndefined(yield* Effect.serviceOption(Session.Service))
+      if (!session || !request.tool) return
+      const messages = yield* session
+        .messages({ sessionID: request.sessionID })
+        .pipe(Effect.catchCause(() => Effect.succeed([])))
+      for (const message of messages) {
+        if (message.info.id !== request.tool.messageID) continue
+        for (const part of message.parts) {
+          if (part.type !== "tool") continue
+          if (part.messageID !== request.tool.messageID || part.callID !== request.tool.callID) continue
+          const metadata =
+            part.state.status === "running" || part.state.status === "completed" || part.state.status === "error"
+              ? (part.state.metadata ?? {})
+              : {}
+          if (!isRequest(metadata[QUESTION_REQUEST_METADATA])) continue
+          return part
+        }
+      }
+      return undefined
+    })
+
+    const clearQuestionMetadata = Effect.fn("Question.clearQuestionMetadata")(function* (part: MessageV2.ToolPart) {
+      const session = EffectOption.getOrUndefined(yield* Effect.serviceOption(Session.Service))
+      if (!session) return
+      const metadata =
+        part.state.status === "running" || part.state.status === "completed" || part.state.status === "error"
+          ? (part.state.metadata ?? {})
+          : {}
+      if (!metadata[QUESTION_REQUEST_METADATA]) return
+      yield* session.updatePart({
+        ...part,
+        state: {
+          ...part.state,
+          metadata: withoutQuestionRequest(metadata),
+        },
+      })
+    })
+
+    const finalizeQuestionAssistant = Effect.fn("Question.finalizeQuestionAssistant")(function* (
+      request: Request,
+    ) {
+      const session = EffectOption.getOrUndefined(yield* Effect.serviceOption(Session.Service))
+      if (!session) return
+      const status = EffectOption.getOrUndefined(yield* Effect.serviceOption(SessionStatus.Service))
+      const match = yield* session
+        .findMessage(request.sessionID, (m) => m.info.id === request.tool!.messageID)
+        .pipe(Effect.catchTag("NotFoundError", () => Effect.succeed(EffectOption.none<MessageV2.WithParts>())))
+      const message = EffectOption.getOrUndefined(match)
+      if (!message || message.info.role !== "assistant") return
+      if (typeof message.info.time.completed === "number") return
+      const now = Date.now()
+      yield* session.updateMessage({
+        ...message.info,
+        error:
+          message.info.error ??
+          MessageV2.fromError(new DOMException("Question superseded by a later message", "AbortError"), {
+            providerID: message.info.providerID,
+            aborted: true,
+          }),
+        time: { ...message.info.time, completed: now },
+      })
+      if (status) yield* status.set(request.sessionID, { type: "idle" })
+    })
+
+    const expireSuperseded = Effect.fn("Question.expireSuperseded")(function* (input: { sessionID: SessionID }) {
+      const pending = (yield* InstanceState.get(state)).pending
+      let count = 0
+
+      // Phase 1: In-memory pending requests for this session
+      const expiredIDs: QuestionID[] = []
+      for (const [id, entry] of pending) {
+        if (entry.info.sessionID !== input.sessionID) continue
+        if (!(yield* isSuperseded(entry.info))) continue
+        expiredIDs.push(id)
+      }
+
+      for (const id of expiredIDs) {
+        const entry = pending.get(id)
+        if (!entry) continue
+        pending.delete(id)
+        yield* clearPersistedRequest(entry.info)
+        yield* Deferred.fail(entry.deferred, new RejectedError())
+        count++
+      }
+
+      // Phase 2: Persisted requests — scan all tool parts with questionRequest metadata
+      const allPersisted = yield* persisted()
+      for (const item of allPersisted) {
+        if (item.request.sessionID !== input.sessionID) continue
+        if (!(yield* isSuperseded(item.request))) continue
+
+        // Clear metadata (handles any tool part status)
+        const part = yield* findPersistedQuestionPart(item.request)
+        if (part) yield* clearQuestionMetadata(part)
+
+        // If still running, transition to terminal error state
+        if (item.part.state.status === "running" || item.part.state.status === "pending") {
+          yield* rejectPersisted(item)
+        }
+
+        // Finalize owning assistant if incomplete
+        yield* finalizeQuestionAssistant(item.request)
+
+        yield* bus.publish(Event.Rejected, {
+          sessionID: item.request.sessionID,
+          requestID: item.request.id,
+        })
+        count++
+      }
+
+      log.info("expired superseded questions", { sessionID: input.sessionID, count })
+      return count
+    })
+
     const ask = Effect.fn("Question.ask")(function* (input: {
       sessionID: SessionID
       questions: ReadonlyArray<Info>
@@ -583,6 +715,7 @@ export const layer = Layer.effect(
           return yield* new NotFoundError({ requestID })
         }
         yield* rejectPersisted(recovered)
+        yield* finalizeRecoveredAssistant(recovered)
         log.info("rejected recovered question", { requestID })
         yield* bus.publish(Event.Rejected, {
           sessionID: recovered.request.sessionID,
@@ -612,7 +745,7 @@ export const layer = Layer.effect(
       return result
     })
 
-    return Service.of({ ask, reply, reject, list })
+    return Service.of({ ask, reply, reject, list, expireSuperseded })
   }),
 )
 

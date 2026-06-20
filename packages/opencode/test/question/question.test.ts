@@ -747,3 +747,240 @@ persistentIt.instance(
     }),
   { git: true },
 )
+
+// expireSuperseded tests
+
+persistentIt.instance(
+  "expireSuperseded - removes superseded persisted question from list",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const session = yield* Session.Service
+
+      // Create a question with a persisted tool part (assistant message with question tool)
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_superseded_1"),
+        questions: [
+          {
+            question: "Will be superseded?",
+            header: "Superseded",
+            options: [{ label: "Yes", description: "Yes" }],
+          },
+        ],
+      })
+
+      // Verify it shows up in list
+      const before = yield* question.list()
+      expect(before.map((r) => r.id)).toContain(tool.request.id)
+
+      // Add a newer user message (superseding the question's assistant)
+      yield* session.updateMessage({
+        id: MessageID.ascending(),
+        sessionID: tool.sessionID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "test",
+        model: { providerID: ProviderID.make("test-provider"), modelID: ModelID.make("test-model") },
+        tools: {},
+      } satisfies MessageV2.User)
+
+      // Expire superseded questions
+      const expired = yield* question.expireSuperseded({ sessionID: tool.sessionID })
+      expect(expired).toBe(1)
+
+      // Question should no longer appear in list
+      const after = yield* question.list()
+      expect(after.map((r) => r.id)).not.toContain(tool.request.id)
+
+      // Tool part metadata should be cleared
+      const part = yield* session.getPart({
+        sessionID: tool.sessionID,
+        messageID: tool.messageID,
+        partID: tool.partID,
+      })
+      expect(part?.type).toBe("tool")
+      if (part?.type === "tool") {
+        expect(part.state.metadata?.questionRequest).toBeUndefined()
+      }
+
+      // Owning assistant should be finalized
+      const messages = yield* session.messages({ sessionID: tool.sessionID })
+      const assistant = messages.find((m) => m.info.id === tool.messageID)
+      expect(assistant?.info.role).toBe("assistant")
+      if (assistant?.info.role === "assistant") {
+        expect(typeof assistant.info.time.completed).toBe("number")
+      }
+    }),
+  { git: true },
+)
+
+persistentIt.instance(
+  "expireSuperseded - rejects in-memory deferred for superseded question",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const session = yield* Session.Service
+
+      // Create session with user + assistant messages and a question tool part
+      const info = yield* session.create({})
+      const userMsgID = MessageID.ascending()
+      const assistantMsgID = MessageID.ascending()
+      const partID = PartID.ascending()
+      const callID = "test-superseded-inmem"
+
+      yield* session.updateMessage({
+        id: userMsgID,
+        sessionID: info.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "test",
+        model: { providerID: ProviderID.make("test-provider"), modelID: ModelID.make("test-model") },
+        tools: {},
+      } satisfies MessageV2.User)
+
+      yield* session.updateMessage({
+        id: assistantMsgID,
+        sessionID: info.id,
+        role: "assistant",
+        time: { created: Date.now() },
+        parentID: userMsgID,
+        modelID: ModelID.make("test-model"),
+        providerID: ProviderID.make("test-provider"),
+        mode: "agentic",
+        agent: "test",
+        path: { cwd: "/", root: "/" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      } satisfies MessageV2.Assistant)
+
+      yield* session.updatePart({
+        id: partID,
+        sessionID: info.id,
+        messageID: assistantMsgID,
+        type: "tool",
+        tool: "question",
+        callID,
+        state: {
+          status: "running",
+          input: { questions: [] },
+          time: { start: Date.now() },
+        },
+      } satisfies MessageV2.ToolPart)
+
+      // Start a question ask (in-memory pending)
+      const fiber = yield* question
+        .ask({
+          sessionID: info.id,
+          questions: [{ question: "Superseded?", header: "Test", options: [] }],
+          tool: { messageID: assistantMsgID, callID },
+        })
+        .pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+
+      // Add a newer user message to supersede the question
+      yield* session.updateMessage({
+        id: MessageID.ascending(),
+        sessionID: info.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "test",
+        model: { providerID: ProviderID.make("test-provider"), modelID: ModelID.make("test-model") },
+        tools: {},
+      } satisfies MessageV2.User)
+
+      // Expire superseded
+      const expired = yield* question.expireSuperseded({ sessionID: info.id })
+      expect(expired).toBe(1)
+
+      // The deferred should have been rejected
+      const exit = yield* Fiber.await(fiber)
+      expect(exit._tag).toBe("Failure")
+      if (exit._tag === "Failure") expect(exit.cause.toString()).toContain("QuestionRejectedError")
+
+      // List should be empty
+      const after = yield* question.list()
+      expect(after).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+persistentIt.instance(
+  "expireSuperseded - no-op when no questions are superseded",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+
+      // Create a question that is NOT superseded (no later message)
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_not_superseded"),
+        questions: [
+          {
+            question: "Still active?",
+            header: "Active",
+            options: [{ label: "Yes", description: "Yes" }],
+          },
+        ],
+      })
+
+      const before = yield* question.list()
+      expect(before.map((r) => r.id)).toContain(tool.request.id)
+
+      // Expire superseded — should not affect this question
+      const expired = yield* question.expireSuperseded({ sessionID: tool.sessionID })
+      expect(expired).toBe(0)
+
+      // Question should still be in list
+      const after = yield* question.list()
+      expect(after.map((r) => r.id)).toContain(tool.request.id)
+
+      // Clean up
+      yield* question.reject(tool.request.id)
+    }),
+  { git: true },
+)
+
+persistentIt.instance(
+  "reject - recovered question finalizes assistant",
+  () =>
+    Effect.gen(function* () {
+      const question = yield* Question.Service
+      const session = yield* Session.Service
+
+      const tool = yield* createAssistantQuestionToolPart({
+        requestID: QuestionID.make("que_reject_finalize"),
+        questions: [
+          {
+            question: "Reject and finalize?",
+            header: "Reject",
+            options: [{ label: "Yes", description: "Yes" }],
+          },
+        ],
+      })
+
+      // Reject the recovered question
+      yield* question.reject(tool.request.id)
+
+      // Verify assistant was finalized
+      const messages = yield* session.messages({ sessionID: tool.sessionID })
+      const assistant = messages.find((m) => m.info.id === tool.messageID)
+      expect(assistant?.info.role).toBe("assistant")
+      if (assistant?.info.role === "assistant") {
+        expect(typeof assistant.info.time.completed).toBe("number")
+        expect(assistant.info.error?.name).toBe("MessageAbortedError")
+      }
+
+      // Tool part should be in error state without questionRequest metadata
+      const part = yield* session.getPart({
+        sessionID: tool.sessionID,
+        messageID: tool.messageID,
+        partID: tool.partID,
+      })
+      expect(part?.type).toBe("tool")
+      if (part?.type === "tool") {
+        expect(part.state.status).toBe("error")
+        expect(part.state.metadata?.questionRequest).toBeUndefined()
+      }
+    }),
+  { git: true },
+)
