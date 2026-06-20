@@ -1,4 +1,4 @@
-import { Component, For, Match, Show, Switch } from "solid-js"
+import { Component, For, Match, Show, Switch, createEffect } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { usePlatform } from "@/context/platform"
@@ -39,11 +39,41 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
   const platform = usePlatform()
   const desktop = () => platform.platform === "desktop"
   const windows = () => desktop() && platform.os === "windows"
+  let popoverRef: HTMLDivElement | undefined
+
+  // Auto-scroll active item into view (matches dialog-prompt-editor.tsx pattern)
+  const reveal = () => {
+    if (!popoverRef) return
+    if (props.popover === "at") {
+      const key = props.atActive
+      if (!key) return
+      const node = popoverRef.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)
+      node?.scrollIntoView({ block: "nearest" })
+    } else if (props.popover === "slash") {
+      const id = props.slashActive
+      if (!id) return
+      const node = popoverRef.querySelector<HTMLElement>(`[data-slash-id="${CSS.escape(id)}"]`)
+      node?.scrollIntoView({ block: "nearest" })
+    }
+  }
+
+  createEffect(() => {
+    if (props.popover !== "at") return
+    props.atActive
+    requestAnimationFrame(reveal)
+  })
+
+  createEffect(() => {
+    if (props.popover !== "slash") return
+    props.slashActive
+    requestAnimationFrame(reveal)
+  })
 
   return (
     <Show when={props.popover}>
       <div
         ref={(el) => {
+          popoverRef = el
           if (props.popover === "slash") props.setSlashPopoverRef(el)
         }}
         class="absolute inset-x-0 -top-2 -translate-y-full origin-bottom-left max-h-80 min-h-10
@@ -62,13 +92,14 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
               when={props.atFlat.length > 0}
               fallback={<div class="text-text-weak px-2 py-1">{props.t("prompt.popover.emptyResults")}</div>}
             >
-              <For each={props.atFlat.slice(0, 10)}>
+              <For each={props.atFlat}>
                 {(item) => {
                   const key = props.atKey(item)
 
                   if (item.type === "agent") {
                     return (
                       <button
+                        data-key={key}
                         class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
                         classList={{ "bg-surface-raised-base-active": props.atActive === key }}
                         onClick={() => props.onAtSelect(item)}
@@ -87,6 +118,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
 
                   return (
                     <button
+                      data-key={key}
                       class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
                       classList={{ "bg-surface-raised-base-active": props.atActive === key }}
                       onClick={() => props.onAtSelect(item)}
