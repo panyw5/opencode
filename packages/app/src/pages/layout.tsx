@@ -203,6 +203,17 @@ export default function Layout(props: ParentProps) {
   const onConfigRoute = createMemo(() => /\/config(?:\/|$)/.test(location.pathname))
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
   const tasksPanelActive = createMemo(() => store.sidebarPanel === "tasks")
+  createEffect(
+    on(
+      () => [pageReady(), location.pathname] as const,
+      ([isReady, pathname]) => {
+        if (!isReady) return
+        if (!/\/(?:config|session)(?:\/|$)/.test(pathname)) return
+        if (untrack(() => store.sidebarPanel) !== "tasks") return
+        setStore("sidebarPanel", "project")
+      },
+    ),
+  )
   const canConfigureExtraAgents = createMemo(
     () =>
       platform.platform === "desktop" &&
@@ -3109,7 +3120,7 @@ export default function Layout(props: ParentProps) {
       helpLabel={() => language.t("sidebar.help")}
       onOpenHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}
       renderPanel={() =>
-        tasksPanelActive() ? (
+        tasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <TrellisTasksPanel
             directory={() => sidebarProject()?.root ?? routeDir()}
             width={panel}
