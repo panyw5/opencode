@@ -1418,6 +1418,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     handleInput()
     closePopover()
+
+    // Reset IME context after programmatic DOM manipulation.
+    // Chromium loses IME tracking when contenteditable DOM is modified
+    // with non-editable elements (pills) via Range API.
+    // Blur/refocus forces the browser to reinitialize IME handling.
+    if (part.type === "file" || part.type === "agent") {
+      const cursorPos = getCursorPosition(editorRef)
+      requestAnimationFrame(() => {
+        editorRef.blur()
+        editorRef.focus()
+        setCursorPosition(editorRef, cursorPos)
+      })
+    }
+
     return true
   }
 
