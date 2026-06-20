@@ -301,6 +301,12 @@ export type Platform = {
   /** List Trellis tasks for a project directory (desktop only) */
   listTrellisTasks?(directory: string): Promise<TrellisTaskList>
 
+  /** Mark a Trellis task as the current task (desktop only) */
+  setTrellisCurrentTask?(path: string): Promise<void>
+
+  /** Move a Trellis task into the Trellis archive folder (desktop only) */
+  archiveTrellisTask?(path: string): Promise<void>
+
   /** Read config file text (desktop only) */
   readConfigFile?(path: string): Promise<string | null>
 

@@ -111,6 +111,7 @@ type DesktopTrellisTask = {
 type DesktopTrellisTaskList = {
   root: string
   current?: string
+  skipped?: number
   tasks: DesktopTrellisTask[]
 }
 type DesktopPlatform = Platform & {
@@ -123,6 +124,8 @@ type DesktopPlatform = Platform & {
   testGenericagentConfig: (config: GenericagentConfig) => Promise<GenericagentTest>
   abortGenericagentTest: () => Promise<boolean>
   listTrellisTasks: (directory: string) => Promise<DesktopTrellisTaskList>
+  setTrellisCurrentTask: (path: string) => Promise<void>
+  archiveTrellisTask: (path: string) => Promise<void>
   listLocalDirectory: (path: string) => Promise<Array<{ path: string; kind: "file" | "directory" }>>
 }
 
@@ -434,6 +437,7 @@ const createPlatform = (): DesktopPlatform => {
       return {
         root: data.root,
         current: data.current ?? undefined,
+        skipped: data.skipped,
         tasks: data.tasks.map((task) => ({
           id: task.id,
           name: task.name,
@@ -452,6 +456,14 @@ const createPlatform = (): DesktopPlatform => {
           current: task.current,
         })),
       }
+    },
+
+    async setTrellisCurrentTask(path: string) {
+      await commands.setTrellisCurrentTask(path)
+    },
+
+    async archiveTrellisTask(path: string) {
+      await commands.archiveTrellisTask(path)
     },
 
     async listConfigDirectory(path: string) {

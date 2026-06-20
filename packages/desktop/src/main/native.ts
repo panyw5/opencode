@@ -7,7 +7,9 @@ import {
   mkdir,
   readFile,
   readdir,
+  rename,
   stat,
+  unlink,
   writeFile,
 } from "node:fs/promises"
 import { homedir } from "node:os"
@@ -289,6 +291,22 @@ export async function listTrellisTasks(directory: string): Promise<TrellisTaskLi
   return { root, current, skipped, tasks }
 }
 
+export async function setTrellisCurrentTask(path: string): Promise<void> {
+  const taskPath = assertTrellisTaskPath(path)
+  const trellisRoot = dirname(dirname(taskPath))
+  await writeFile(join(trellisRoot, ".current-task"), trellisTaskRef(taskPath), "utf8")
+}
+
+export async function archiveTrellisTask(path: string): Promise<void> {
+  const taskPath = assertTrellisTaskPath(path)
+  const taskName = basename(taskPath)
+  const tasksRoot = dirname(taskPath)
+  const archiveRoot = join(tasksRoot, "archive")
+  await mkdir(archiveRoot, { recursive: true })
+  await clearCurrentTrellisTaskIfMatches(taskPath)
+  await rename(taskPath, await uniqueArchivePath(archiveRoot, taskName))
+}
+
 async function listGitWorktrees(root: string) {
   const result = await execFileAsync("git", ["-C", root, "worktree", "list", "--porcelain"], {
     timeout: 3000,
@@ -302,6 +320,46 @@ async function listGitWorktrees(root: string) {
     if (worktreeRoot) roots.push(worktreeRoot)
   }
   return Array.from(new Set(roots))
+}
+
+function assertTrellisTaskPath(path: string): string {
+  const target = assertAllowedLocalPath(path)
+  if (basename(dirname(target)) !== "tasks") throw new Error(`Path is not a Trellis task: ${target}`)
+  if (basename(target) === "archive") throw new Error("Cannot operate on the Trellis archive folder")
+  return target
+}
+
+function trellisTaskRef(taskPath: string): string {
+  return `.trellis/tasks/${basename(taskPath)}`
+}
+
+async function uniqueArchivePath(archiveRoot: string, taskName: string): Promise<string> {
+  const first = join(archiveRoot, taskName)
+  if (!(await exists(first))) return first
+  for (let index = 1; index < 1000; index++) {
+    const candidate = join(archiveRoot, `${taskName}-${index}`)
+    if (!(await exists(candidate))) return candidate
+  }
+  throw new Error(`Unable to find available archive path for ${taskName}`)
+}
+
+async function clearCurrentTrellisTaskIfMatches(taskPath: string): Promise<void> {
+  const taskName = basename(taskPath)
+  const currentPath = join(dirname(dirname(taskPath)), ".current-task")
+  const current = await readFile(currentPath, "utf8")
+    .then((value) => value.trim())
+    .catch(() => undefined)
+  if (!current) return
+  if (
+    current === taskPath ||
+    current === taskName ||
+    current === trellisTaskRef(taskPath) ||
+    current === `tasks/${taskName}` ||
+    current.endsWith(`/${taskName}`) ||
+    current.endsWith(`\\${taskName}`)
+  ) {
+    await unlink(currentPath).catch(() => undefined)
+  }
 }
 
 async function listTrellisTasksInWorktree(worktreeRoot: string): Promise<{

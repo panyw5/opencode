@@ -33,6 +33,21 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   throw new Error(t("error.dev.rootNotFound"))
 }
 
+function trellisTaskCurrentFile(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "")
+  const taskName = normalized.split("/").filter(Boolean).at(-1)
+  const tasksRoot = normalized.slice(0, normalized.lastIndexOf("/"))
+  if (!taskName || !tasksRoot.endsWith("/tasks")) throw new Error(`Invalid Trellis task path: ${path}`)
+  return `${tasksRoot.slice(0, tasksRoot.length - "/tasks".length)}/.current-task`
+}
+
+function trellisTaskRef(path: string): string {
+  const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "")
+  const taskName = normalized.split("/").filter(Boolean).at(-1)
+  if (!taskName) throw new Error(`Invalid Trellis task path: ${path}`)
+  return `.trellis/tasks/${taskName}`
+}
+
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
     dsn: import.meta.env.VITE_SENTRY_DSN,
@@ -373,6 +388,21 @@ const createPlatform = (refreshExtraAgents?: () => void): Platform => {
     listLocalDirectory: (path: string) => desktopApi.listLocalDirectory(path),
 
     listTrellisTasks: (directory: string) => desktopApi.listTrellisTasks(directory),
+
+    setTrellisCurrentTask: async (path: string) => {
+      if (desktopApi.setTrellisCurrentTask) {
+        await desktopApi.setTrellisCurrentTask(path)
+        return
+      }
+      await desktopApi.writeConfigFile(trellisTaskCurrentFile(path), trellisTaskRef(path))
+    },
+
+    archiveTrellisTask: async (path: string) => {
+      if (!desktopApi.archiveTrellisTask) {
+        throw new Error("Archive task requires restarting the desktop app to load the updated native API.")
+      }
+      await desktopApi.archiveTrellisTask(path)
+    },
 
     getOpenclawConfig: () => desktopApi.getOpenclawConfig(),
 

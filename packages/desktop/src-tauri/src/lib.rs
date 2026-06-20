@@ -670,6 +670,111 @@ fn list_trellis_tasks(directory: String) -> Result<TrellisTaskList, String> {
     })
 }
 
+fn assert_trellis_task_path(path: String) -> Result<PathBuf, String> {
+    let task = PathBuf::from(path);
+    let name = task
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Trellis task path must include a task folder name".to_string())?;
+    if name == "archive" {
+        return Err("Cannot operate on the Trellis archive folder".to_string());
+    }
+    let parent = task
+        .parent()
+        .and_then(|value| value.file_name())
+        .and_then(|value| value.to_str());
+    if parent != Some("tasks") {
+        return Err(format!(
+            "Path is not a Trellis task: {}",
+            task.to_string_lossy()
+        ));
+    }
+    if !task.is_dir() {
+        return Err(format!(
+            "Trellis task does not exist: {}",
+            task.to_string_lossy()
+        ));
+    }
+    Ok(task)
+}
+
+fn unique_trellis_archive_path(archive: &PathBuf, name: &str) -> Result<PathBuf, String> {
+    let first = archive.join(name);
+    if !first.exists() {
+        return Ok(first);
+    }
+    for index in 1..1000 {
+        let candidate = archive.join(format!("{name}-{index}"));
+        if !candidate.exists() {
+            return Ok(candidate);
+        }
+    }
+    Err(format!("Unable to find available archive path for {name}"))
+}
+
+fn trellis_task_ref(task: &PathBuf) -> Option<String> {
+    task.file_name()
+        .and_then(|value| value.to_str())
+        .map(|name| format!(".trellis/tasks/{name}"))
+}
+
+fn clear_current_trellis_task_if_matches(task: &PathBuf) {
+    let Some(task_name) = task.file_name().and_then(|value| value.to_str()) else {
+        return;
+    };
+    let Some(trellis) = task.parent().and_then(|tasks| tasks.parent()) else {
+        return;
+    };
+    let current_file = trellis.join(".current-task");
+    let Ok(current) = fs::read_to_string(&current_file).map(|value| value.trim().to_string())
+    else {
+        return;
+    };
+    if current == task.to_string_lossy()
+        || current == task_name
+        || trellis_task_ref(task).is_some_and(|value| current == value)
+        || current == format!("tasks/{task_name}")
+        || current.ends_with(&format!("/{task_name}"))
+        || current.ends_with(&format!("\\{task_name}"))
+    {
+        let _ = fs::remove_file(current_file);
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+fn set_trellis_current_task(path: String) -> Result<(), String> {
+    let task = assert_trellis_task_path(path)?;
+    let task_ref = trellis_task_ref(&task)
+        .ok_or_else(|| "Trellis task path must include a task folder name".to_string())?;
+    let trellis = task
+        .parent()
+        .and_then(|tasks| tasks.parent())
+        .ok_or_else(|| "Trellis task path is missing .trellis root".to_string())?;
+    fs::write(trellis.join(".current-task"), task_ref)
+        .map_err(|err| format!("Failed to set current task: {err}"))
+}
+
+#[tauri::command]
+#[specta::specta]
+fn archive_trellis_task(path: String) -> Result<(), String> {
+    let task = assert_trellis_task_path(path)?;
+    let name = task
+        .file_name()
+        .and_then(|value| value.to_str())
+        .ok_or_else(|| "Trellis task path must include a task folder name".to_string())?
+        .to_string();
+    let tasks = task
+        .parent()
+        .ok_or_else(|| "Trellis task path is missing tasks root".to_string())?;
+    let archive = tasks.join("archive");
+    fs::create_dir_all(&archive)
+        .map_err(|err| format!("Failed to create Trellis archive: {err}"))?;
+    clear_current_trellis_task_if_matches(&task);
+    let target = unique_trellis_archive_path(&archive, &name)?;
+    fs::rename(&task, target).map_err(|err| format!("Failed to archive Trellis task: {err}"))
+}
+
 #[tauri::command]
 #[specta::specta]
 fn read_config_file(path: String) -> Result<Option<String>, String> {
@@ -2376,6 +2481,8 @@ fn make_specta_builder() -> tauri_specta::Builder<tauri::Wry> {
             set_default_editor,
             list_config_files,
             list_trellis_tasks,
+            set_trellis_current_task,
+            archive_trellis_task,
             get_config_workspace,
             list_config_directory,
             read_config_file,

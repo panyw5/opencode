@@ -69,6 +69,8 @@ export const dict = {
   "trellis.tasks.skipped": "{count} 个任务因缺少或格式错误的 task.json 被跳过",
   "trellis.tasks.noPrd": "此任务文件夹下未找到 prd.md 文件。",
   "trellis.tasks.openFolder": "打开文件夹",
+  "trellis.tasks.setCurrent": "设为当前任务",
+  "trellis.tasks.archive": "归档任务",
 
   "command.palette": "命令面板",
 

@@ -61,6 +61,8 @@ export const dict = {
   "trellis.tasks.skipped": "Skipped {count} task(s) with missing or invalid task.json",
   "trellis.tasks.noPrd": "No prd.md file found in this task folder.",
   "trellis.tasks.openFolder": "Open folder",
+  "trellis.tasks.setCurrent": "Set current task",
+  "trellis.tasks.archive": "Archive task",
 
   "command.palette": "Command palette",
 
