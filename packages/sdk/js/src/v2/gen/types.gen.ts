@@ -6099,6 +6099,7 @@ export type SessionListData = {
     start?: number
     search?: string
     limit?: number
+    archived?: boolean | "true" | "false"
   }
   url: "/session"
 }
@@ -6263,7 +6264,7 @@ export type SessionUpdateData = {
     title?: string
     permission?: PermissionRuleset
     time?: {
-      archived?: number
+      archived?: number | null
     }
   }
   path: {

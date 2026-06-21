@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { markCurrentNotifications, type Notification } from "./notification-state"
+import { markCurrentNotifications, shouldNotifyTurnComplete, type Notification } from "./notification-state"
 
 describe("notification", () => {
   test("marks only matching session notifications in the active directory as viewed", () => {
@@ -24,5 +24,14 @@ describe("notification", () => {
 
     expect(markCurrentNotifications(list, "b", "/x")).toBe(list)
     expect(markCurrentNotifications(list, "a", "/y")).toBe(list)
+  })
+
+  test("skips turn-complete notifications for archived sessions", () => {
+    expect(shouldNotifyTurnComplete({ time: { created: 1, updated: 2 } })).toBe(true)
+    expect(shouldNotifyTurnComplete({ time: { created: 1, updated: 2, archived: 3 } })).toBe(false)
+  })
+
+  test("skips turn-complete notifications for child sessions", () => {
+    expect(shouldNotifyTurnComplete({ parentID: "ses_parent", time: { created: 1, updated: 2 } })).toBe(false)
   })
 })

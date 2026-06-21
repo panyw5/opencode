@@ -13,6 +13,7 @@ import {
   effectiveWorkspaceOrder,
   errorMessage,
   hasProjectPermissions,
+  isInitialSessionLoad,
   latestProjectSession,
   latestRootSession,
   projectOwner,
@@ -248,6 +249,38 @@ describe("layout workspace helpers", () => {
     )
 
     expect(result.map((item) => item.id)).toEqual(["workspace", "root"])
+  })
+
+  test("treats loading sessions as initial load only before visible root sessions exist", () => {
+    expect(
+      isInitialSessionLoad([
+        {
+          path: { directory: "/root" },
+          sessions: "loading",
+          session: [],
+        },
+      ]),
+    ).toBe(true)
+
+    expect(
+      isInitialSessionLoad([
+        {
+          path: { directory: "/root" },
+          sessions: "loading",
+          session: [session({ id: "root", directory: "/root" })],
+        },
+      ]),
+    ).toBe(false)
+
+    expect(
+      isInitialSessionLoad([
+        {
+          path: { directory: "/root" },
+          sessions: "loading",
+          session: [session({ id: "child", directory: "/root", parentID: "root" })],
+        },
+      ]),
+    ).toBe(true)
   })
 
   test("sorts recently updated sessions by timestamp before id", () => {

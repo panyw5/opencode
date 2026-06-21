@@ -405,8 +405,6 @@ function createGlobalSync() {
       if (rev(directory) !== mark || managerOf(directory).children[directory] !== child) return input[0]
       return raw(...input)
     }) as typeof child[1]
-    setStore("sessions", "loading")
-    setStore("session_error", undefined)
     if (!opts?.force && sessionLoaded.has(directory)) {
       setStore("sessions", "ready")
       setStore("session_error", undefined)
@@ -414,6 +412,13 @@ function createGlobalSync() {
       return
     }
     if (opts?.force) sessionLoaded.delete(directory)
+
+    const startedAt = Date.now()
+    console.debug(
+      `[global-sync] load sessions start directory=${directory} force=${opts?.force ? 1 : 0} silent=${opts?.silent ? 1 : 0}`,
+    )
+    setStore("sessions", "loading")
+    setStore("session_error", undefined)
 
     const promise = loadRootSessions({
       directory,
@@ -436,10 +441,14 @@ function createGlobalSync() {
         setStore("sessions", "ready")
         setStore("session_error", undefined)
         setLoaded("dir", directory, true)
+        console.debug(
+          `[global-sync] load sessions success directory=${directory} roots=${total} sessions=${sessions.length} elapsed=${Date.now() - startedAt}ms`,
+        )
       })
       .catch((err) => {
+        const message = err instanceof Error ? err.message : String(err)
         console.error(
-          `[global-sync] failed to load sessions directory=${directory} err=${err instanceof Error ? err.message : String(err)}`,
+          `[global-sync] failed to load sessions directory=${directory} elapsed=${Date.now() - startedAt}ms err=${message}`,
         )
         setStore("sessions", "idle")
         const note = permissionNotice(err, language.t, "session")
@@ -459,6 +468,7 @@ function createGlobalSync() {
 
     sessionLoads.set(directory, promise)
     promise.finally(() => {
+      console.debug(`[global-sync] load sessions done directory=${directory} elapsed=${Date.now() - startedAt}ms`)
       sessionLoads.delete(directory)
       children.unpin(directory)
     })

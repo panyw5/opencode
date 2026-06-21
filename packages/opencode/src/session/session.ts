@@ -307,6 +307,7 @@ export type ListInput = {
   start?: number
   search?: string
   limit?: number
+  archived?: boolean
 }
 
 const CreatedEventSchema = Schema.Struct({
@@ -848,7 +849,7 @@ export const layer: Layer.Layer<
     })
 
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number | null }) {
-      yield* patch(input.sessionID, { time: { archived: input.time } })
+      yield* patch(input.sessionID, { time: { archived: input.time, updated: Date.now() } })
     })
 
     const setPermission = Effect.fn("Session.setPermission")(function* (input: {
@@ -1155,6 +1156,9 @@ function* listByProject(
   }
   if (input.search) {
     conditions.push(like(SessionTable.title, `%${input.search}%`))
+  }
+  if (!input.archived) {
+    conditions.push(isNull(SessionTable.time_archived))
   }
 
   const limit = input.limit ?? 100

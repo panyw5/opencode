@@ -69,6 +69,8 @@ globalThis.AI_SDK_LOG_WARNINGS = false
 const decodeMessageInfo = Schema.decodeUnknownExit(MessageV2.Info)
 const decodeMessagePart = Schema.decodeUnknownExit(MessageV2.Part)
 
+const MAX_COMPACTION_RETRIES = 3
+
 const STRUCTURED_OUTPUT_DESCRIPTION = `Use this tool to return your final response in the requested structured format.
 
 IMPORTANT:
@@ -1219,6 +1221,12 @@ export const layer = Layer.effect(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      if (session.time.archived) {
+        yield* elog.warn("prompt called on archived session — returning last assistant", {
+          sessionID: input.sessionID,
+        })
+        return yield* lastAssistant(input.sessionID)
+      }
       const currentStatus = yield* status.get(input.sessionID)
       if (currentStatus.type === "idle") {
         yield* sessions.finalizeOrphanedAssistant(input.sessionID, {
@@ -1265,9 +1273,17 @@ export const layer = Layer.effect(
         const slog = elog.with({ sessionID })
         let structured: unknown
         let step = 0
-        const session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        let compactRetries = 0
+        let session = yield* sessions.get(sessionID).pipe(Effect.orDie)
 
         while (true) {
+          // Re-fetch session to check latest archived status
+          session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+          if (session.time.archived) {
+            yield* slog.info("exiting loop — session archived", { archived: session.time.archived })
+            break
+          }
+
           yield* status.set(sessionID, { type: "busy" })
           yield* slog.info("loop", { step })
 
@@ -1326,6 +1342,11 @@ export const layer = Layer.effect(
           }
 
           if (task?.type === "compaction") {
+            if (compactRetries >= MAX_COMPACTION_RETRIES) {
+              yield* slog.warn("exiting loop — max compaction retries exceeded", { compactRetries })
+              break
+            }
+            compactRetries++
             const result = yield* compaction.process({
               messages: msgs,
               parentID: lastUser.id,
@@ -1342,6 +1363,11 @@ export const layer = Layer.effect(
             lastFinished.summary !== true &&
             (yield* compaction.isOverflow({ tokens: lastFinished.tokens, model }))
           ) {
+            if (compactRetries >= MAX_COMPACTION_RETRIES) {
+              yield* slog.warn("exiting loop — max compaction retries exceeded (overflow)", { compactRetries })
+              break
+            }
+            compactRetries++
             yield* compaction.create({ sessionID, agent: lastUser.agent, model: lastUser.model, auto: true })
             continue
           }
@@ -1487,6 +1513,11 @@ export const layer = Layer.effect(
 
             if (result === "stop") return "break" as const
             if (result === "compact") {
+              if (compactRetries >= MAX_COMPACTION_RETRIES) {
+                yield* slog.warn("exiting loop — max compaction retries exceeded (process)", { compactRetries })
+                return "break" as const
+              }
+              compactRetries++
               yield* compaction.create({
                 sessionID,
                 agent: lastUser.agent,
@@ -1494,6 +1525,8 @@ export const layer = Layer.effect(
                 auto: true,
                 overflow: !handle.message.finish,
               })
+            } else {
+              compactRetries = 0
             }
             return "continue" as const
           }).pipe(

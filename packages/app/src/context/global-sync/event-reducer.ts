@@ -156,6 +156,7 @@ export function applyDirectoryEvent(input: {
       // Keep all known sessions in cache; sidebar components decide how many
       // sorted rows to display.
       input.setStore("session", reconcile(next, { key: "id" }))
+      if (!info.parentID) input.setStore("sessionTotal", (value) => value + 1)
       break
     }
     case "session.deleted": {

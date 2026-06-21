@@ -15,7 +15,7 @@ import { EventSessionError } from "@opencode-ai/sdk/v2"
 import { Persist, persisted } from "@/utils/persist"
 import { playSoundById } from "@/utils/sound"
 import { formatServerError } from "@/utils/server-errors"
-import { markCurrentNotifications, type Notification } from "./notification-state"
+import { markCurrentNotifications, shouldNotifyTurnComplete, type Notification } from "./notification-state"
 import { useServer } from "./server"
 import { domainFromDirectory, mainDomain, type DomainId } from "@/pages/layout/extra-agents"
 
@@ -358,8 +358,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       const sessionID = event.properties.sessionID
       void lookup(directory, sessionID).then((session) => {
         if (meta.disposed) return
-        if (!session) return
-        if (session.parentID) return
+        if (!shouldNotifyTurnComplete(session)) return
         if (isQuickAssistantSession(directory, session)) return
 
         if (settings.sounds.agentEnabled()) {

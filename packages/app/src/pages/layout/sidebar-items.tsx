@@ -17,7 +17,7 @@ import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { working } from "../session/session-working"
-import { hasProjectPermissions, workspaceKey } from "./helpers"
+import { hasProjectPermissions, isInitialSessionLoad, workspaceKey } from "./helpers"
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
@@ -27,13 +27,9 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   const notification = useNotification()
   const permission = usePermission()
   const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
+  const stores = createMemo(() => dirs().map((directory) => globalSync.child(directory, { bootstrap: false })[0]))
   const loaded = createMemo(() => dirs().some((directory) => globalSync.loaded(directory)))
-  const loadingSessions = createMemo(() =>
-    dirs().some((directory) => {
-      const [store] = globalSync.child(directory, { bootstrap: false })
-      return store.sessions === "loading"
-    }),
-  )
+  const loadingSessions = createMemo(() => isInitialSessionLoad(stores()))
   const count = createMemo(() =>
     dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )

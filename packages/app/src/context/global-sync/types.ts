@@ -120,6 +120,7 @@ export type DisposeCheck = {
 export type RootLoadArgs = {
   directory: string
   list: (query: { directory: string; roots: true }) => Promise<{ data?: Session[] }>
+  timeoutMs?: number
 }
 
 export const MAX_DIR_STORES = 30
