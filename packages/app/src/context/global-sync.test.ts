@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { canDisposeDirectory, pickDirectoriesToEvict } from "./global-sync/eviction"
-import { loadRootSessions } from "./global-sync/session-load"
+import { loadRootSessions, RootSessionLoadTimeoutError } from "./global-sync/session-load"
 
 describe("pickDirectoriesToEvict", () => {
   test("keeps pinned stores and evicts idle stores", () => {
@@ -37,6 +37,16 @@ describe("loadRootSessions", () => {
 
     expect(result.data).toEqual([])
     expect(calls).toEqual([{ directory: "dir", roots: true }])
+  })
+
+  test("times out when the roots query never settles", async () => {
+    const result = loadRootSessions({
+      directory: "dir",
+      timeoutMs: 1,
+      list: () => new Promise(() => {}),
+    })
+
+    await expect(result).rejects.toBeInstanceOf(RootSessionLoadTimeoutError)
   })
 })
 

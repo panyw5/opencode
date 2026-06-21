@@ -81,6 +81,7 @@ import {
   displayName,
   effectiveWorkspaceOrder,
   errorMessage,
+  isInitialSessionLoad,
   latestProjectSession,
   latestRootSession,
   projectOwner,
@@ -745,6 +746,15 @@ export default function Layout(props: ParentProps) {
       result.push(...dirSessions)
     }
     return result
+  })
+
+  const projectContentLoading = createMemo(() => {
+    const pending = switching()
+    if (!pending) return false
+    const project = currentProject()
+    if (!project || workspaceKey(project.root) !== workspaceKey(pending)) return false
+    const stores = currentProjectDirs().map((directory) => globalSync.child(directory, { bootstrap: false })[0])
+    return isInitialSessionLoad(stores)
   })
 
   const startup = createMemo(() => {
@@ -3289,7 +3299,25 @@ export default function Layout(props: ParentProps) {
                 }}
               >
                 <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
-                  {props.children}
+                  <Show
+                    when={!projectContentLoading()}
+                    fallback={
+                      <div
+                        data-component="project-content-loading"
+                        class="size-full flex items-center justify-center text-14-regular text-text-weak"
+                      >
+                        <div class="flex items-center gap-2 rounded-lg border border-border-weak-base bg-surface-raised-base/40 px-3 py-2">
+                          <Spinner class="size-4" />
+                          <span>
+                            {language.t("common.loading")}
+                            {language.t("common.loading.ellipsis")}
+                          </span>
+                        </div>
+                      </div>
+                    }
+                  >
+                    {props.children}
+                  </Show>
                 </Show>
               </main>
             </div>

@@ -9,7 +9,9 @@ const sidecarConfig = getCurrentSidecar(RUST_TARGET)
 const rustTarget = RUST_TARGET ?? sidecarConfig.rustTarget
 
 async function build(baseline: boolean) {
-  const cmd = baseline ? $`bun run build --single --baseline` : $`bun run build --single`
+  const cmd = baseline
+    ? $`bun run build --single --baseline --skip-install --skip-embed-web-ui`
+    : $`bun run build --single --skip-install --skip-embed-web-ui`
   return cmd.cwd("../opencode").nothrow()
 }
 

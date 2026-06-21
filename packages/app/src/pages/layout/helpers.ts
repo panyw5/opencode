@@ -3,6 +3,7 @@ import { type PermissionRequest, type Session } from "@opencode-ai/sdk/v2/client
 
 type SessionStore = {
   session?: Session[]
+  sessions?: "idle" | "loading" | "ready"
   path: { directory: string }
 }
 
@@ -97,6 +98,11 @@ const isRootVisibleSession = (session: Session, directory: string) =>
 
 const roots = (store: SessionStore) =>
   (store.session ?? []).filter((session) => isRootVisibleSession(session, store.path.directory))
+
+export const hasVisibleRootSessions = (store: SessionStore) => roots(store).length > 0
+
+export const isInitialSessionLoad = (stores: SessionStore[]) =>
+  stores.some((store) => store.sessions === "loading") && !stores.some(hasVisibleRootSessions)
 
 export const sortedRootSessions = (store: SessionStore, now: number) => roots(store).sort(sortSessions(now))
 

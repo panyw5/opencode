@@ -18,7 +18,14 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { extraAgentByDirectory } from "./extra-agents"
 import { NewSessionItem, SessionItem, SessionGroupHeader, SessionSearchBar } from "./sidebar-items"
-import { sessionGroupBoundaries, sortedProjectSessions, sortedRootSessions, type SessionGroupKey, workspaceKey } from "./helpers"
+import {
+  isInitialSessionLoad,
+  sessionGroupBoundaries,
+  sortedProjectSessions,
+  sortedRootSessions,
+  type SessionGroupKey,
+  workspaceKey,
+} from "./helpers"
 
 type InlineEditorComponent = (props: {
   id: string
@@ -535,7 +542,7 @@ export const LocalWorkspace = (props: {
     if (!query) return allSessions().slice(0, visibleLimit())
     return allSessions().filter((s) => s.title?.toLowerCase().includes(query))
   })
-  const loading = createMemo(() => stores().some((item) => item[0].sessions === "loading") && allSessions().length === 0)
+  const loading = createMemo(() => isInitialSessionLoad(stores().map((item) => item[0])))
   const hasMore = createMemo(
     () => !searchQuery() && stores().reduce((sum, item) => sum + item[0].sessionTotal, 0) > visibleLimit(),
   )
