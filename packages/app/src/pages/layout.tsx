@@ -2099,7 +2099,7 @@ export default function Layout(props: ParentProps) {
       const rows = await Promise.all(
         dirs.map((directory) =>
           globalSDK.client.session
-            .list({ directory, roots: true })
+            .list({ directory, roots: true, archived: true })
             .then((x) => x.data ?? [])
             .catch(() => []),
         ),
@@ -2136,7 +2136,7 @@ export default function Layout(props: ParentProps) {
           .update({
             directory: session.directory,
             sessionID: session.id,
-            time: { archived: undefined },
+            time: { archived: null },
           })
           .then((x) => x.data)
         if (!restored) throw new Error(language.t("common.requestFailed"))
@@ -2151,6 +2151,7 @@ export default function Layout(props: ParentProps) {
             draft.session.splice(match.index, 0, restored)
           }),
         )
+        if (!restored.parentID) setChild("sessionTotal", (value) => value + 1)
         await globalSync.project.loadSessions(session.directory, { silent: true, force: true })
         remove(session.id)
       } catch (err) {

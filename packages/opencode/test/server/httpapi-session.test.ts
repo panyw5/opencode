@@ -56,6 +56,13 @@ function createSession(input?: Session.CreateInput) {
   return Session.use.create(input)
 }
 
+const setSessionUpdated = (sessionID: SessionIDType, time: number) =>
+  Effect.sync(() =>
+    Database.use((db) =>
+      db.update(SessionTable).set({ time_updated: time }).where(eq(SessionTable.id, sessionID)).run(),
+    ),
+  )
+
 function createTextMessage(sessionID: SessionIDType, text: string) {
   return Effect.gen(function* () {
     const svc = yield* Session.Service
@@ -596,6 +603,13 @@ describe("session HttpApi", () => {
         })
         expect(updated).toMatchObject({ id: created.id, title: "updated", time: { archived: 1 } })
 
+        const restored = yield* requestJson<Session.Info>(pathFor(SessionPaths.update, { sessionID: created.id }), {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ time: { archived: null } }),
+        })
+        expect(restored.time.archived).toBeUndefined()
+
         const forked = yield* requestJson<Session.Info>(pathFor(SessionPaths.fork, { sessionID: created.id }), {
           method: "POST",
           headers,
@@ -615,6 +629,79 @@ describe("session HttpApi", () => {
             headers,
           }),
         ).toBe(true)
+      }),
+    { git: true, config: { formatter: false, lsp: false, share: "disabled" } },
+  )
+
+  it.instance(
+    "excludes archived sessions from project list unless requested",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+
+        const active = yield* requestJson<Session.Info>(SessionPaths.create, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ title: "active" }),
+        })
+        const archived = yield* requestJson<Session.Info>(SessionPaths.create, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ title: "archived" }),
+        })
+        yield* requestJson<Session.Info>(pathFor(SessionPaths.update, { sessionID: archived.id }), {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ time: { archived: 1 } }),
+        })
+
+        const defaultList = yield* requestJson<Session.Info[]>(`${SessionPaths.list}?roots=true`, { headers })
+        expect(defaultList.map((session) => session.id)).toContain(active.id)
+        expect(defaultList.map((session) => session.id)).not.toContain(archived.id)
+
+        const archivedList = yield* requestJson<Session.Info[]>(`${SessionPaths.list}?roots=true&archived=true`, { headers })
+        expect(archivedList.map((session) => session.id)).toContain(archived.id)
+      }),
+    { git: true, config: { formatter: false, lsp: false, share: "disabled" } },
+  )
+
+  it.instance(
+    "bumps restored sessions into the active list page",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+
+        const archived = yield* requestJson<Session.Info>(SessionPaths.create, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ title: "old archived" }),
+        })
+        yield* requestJson<Session.Info>(pathFor(SessionPaths.update, { sessionID: archived.id }), {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ time: { archived: 1 } }),
+        })
+        yield* setSessionUpdated(archived.id, 1)
+
+        const active = yield* requestJson<Session.Info>(SessionPaths.create, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ title: "newer active" }),
+        })
+        yield* setSessionUpdated(active.id, 2)
+
+        const restored = yield* requestJson<Session.Info>(pathFor(SessionPaths.update, { sessionID: archived.id }), {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ time: { archived: null } }),
+        })
+        expect(restored.time.archived).toBeUndefined()
+        expect(restored.time.updated).toBeGreaterThan(2)
+
+        const firstPage = yield* requestJson<Session.Info[]>(`${SessionPaths.list}?roots=true&limit=1`, { headers })
+        expect(firstPage.map((session) => session.id)).toEqual([archived.id])
       }),
     { git: true, config: { formatter: false, lsp: false, share: "disabled" } },
   )
