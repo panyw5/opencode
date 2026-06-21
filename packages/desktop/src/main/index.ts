@@ -15,6 +15,7 @@ import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } fr
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import { reloadExtraAgents } from "./extra-agents"
+import { forwardInitializationFailure } from "./initialization"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
 import { parseMarkdown } from "./markdown"
@@ -28,6 +29,9 @@ import {
   spawnLocalServer,
   type SidecarListener,
 } from "./server"
+import { createWslServersController, type WslServersController } from "./wsl/servers"
+import { spawnWslSidecar } from "./wsl/sidecar"
+import { registerWslIpcHandlers } from "./wsl/ipc"
 import {
   createLoadingWindow,
   createMainWindow,
@@ -37,7 +41,7 @@ import {
   setDockIcon,
 } from "./windows"
 import { migrate } from "./migrate"
-import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater } from "./updater"
+import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater, getUpdaterController } from "./updater"
 import { Deferred, Effect, Fiber } from "effect"
 
 const APP_NAMES: Record<string, string> = {
@@ -235,7 +239,7 @@ const main = Effect.gen(function* () {
     })
   }
 
-  const serverReady = Deferred.makeUnsafe<ServerReadyData>()
+  const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
   const loadingComplete = Deferred.makeUnsafe<void>()
   let reloadBackend: () => Promise<void> = async () => {
     throw new Error("Backend reload is not ready")
@@ -276,10 +280,26 @@ const main = Effect.gen(function* () {
     runUpdater: async (alertOnFail) => checkForUpdates(alertOnFail, killBackends),
     checkUpdate: async () => checkUpdate(),
     installUpdate: async () => installUpdate(killBackends),
+    getUpdaterState: async () => {
+      const ctrl = getUpdaterController()
+      return ctrl ? ctrl.getState() : { status: "disabled" }
+    },
+    onUpdaterStateChanged: (listener) => {
+      const ctrl = getUpdaterController()
+      return ctrl ? ctrl.subscribe(listener) : () => {}
+    },
     setBackgroundColor: (color) => setBackgroundColor(color),
     exportDebugLogs: () => exportDebugLogs(),
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
   })
+
+  const wslController: WslServersController = createWslServersController(app.getVersion(), (distro) =>
+    spawnWslSidecar(distro, {
+      onLine: (line) => writeLog("wsl", line.stream, { text: line.text }),
+    }),
+  )
+  registerWslIpcHandlers(wslController)
+  app.on("before-quit", () => wslController.stopAll())
 
   yield* Effect.promise(() => app.whenReady())
 
@@ -287,7 +307,7 @@ const main = Effect.gen(function* () {
   app.setAsDefaultProtocolClient("opencode")
   registerRendererProtocol()
   setDockIcon()
-  setupAutoUpdater()
+  setupAutoUpdater(killBackends).start()
   yield* Effect.promise(() => startNetLog()).pipe(
     Effect.catch((error) =>
       Effect.sync(() => {
@@ -380,12 +400,14 @@ const main = Effect.gen(function* () {
   }
 
   const queueBackendReload = (reason: string) => {
-    const restart = reloading.catch(() => {}).then(async () => {
-      logger.warn("restarting sidecar", { reason })
-      setInitStep({ phase: "server_waiting" })
-      await startSidecar("reload", false)
-      setInitStep({ phase: "done" })
-    })
+    const restart = reloading
+      .catch(() => {})
+      .then(async () => {
+        logger.warn("restarting sidecar", { reason })
+        setInitStep({ phase: "server_waiting" })
+        await startSidecar("reload", false)
+        setInitStep({ phase: "done" })
+      })
     reloading = restart.catch(() => {})
     return restart
   }
@@ -404,7 +426,7 @@ const main = Effect.gen(function* () {
         }),
       ),
     )
-  }).pipe(Effect.forkChild)
+  }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
 
   if (needsMigration) {
     const show = yield* loadingTask.pipe(
@@ -421,6 +443,7 @@ const main = Effect.gen(function* () {
 
   yield* Fiber.await(loadingTask)
   setInitStep({ phase: "done" })
+  wslController.initialize()
 
   if (overlay) yield* Deferred.await(loadingComplete)
 

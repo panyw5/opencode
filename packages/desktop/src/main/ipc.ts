@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process"
+import { stat } from "node:fs/promises"
+import { basename } from "node:path"
 import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
@@ -9,10 +11,12 @@ import type {
   ServerReadyData,
   SqliteMigrationProgress,
   TitlebarTheme,
+  UpdaterState,
   WindowConfig,
   WslConfig,
 } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
+import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import {
   abortExtraAgentTest,
   listExtraAgentServers,
@@ -21,6 +25,8 @@ import {
   testOpenclawBridge,
 } from "./extra-agents"
 import { getStore } from "./store"
+import type { UpdaterController } from "./updater-controller"
+import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import {
   createConfigFile,
@@ -55,6 +61,8 @@ const pickerFilters = (ext?: string[]) => {
   return [{ name: "Files", extensions: ext }]
 }
 
+const pickedFiles = createPickedFileAuthorizations()
+
 type Deps = {
   killSidecar: () => Promise<void> | void
   reloadBackend: () => Promise<void> | void
@@ -75,6 +83,8 @@ type Deps = {
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
   installUpdate: () => Promise<void> | void
+  getUpdaterState: () => Promise<UpdaterState>
+  onUpdaterStateChanged: (listener: (state: UpdaterState) => void) => () => void
   setBackgroundColor: (color: string) => void
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void> | void
@@ -110,6 +120,23 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("run-updater", (_event: IpcMainInvokeEvent, alertOnFail: boolean) => deps.runUpdater(alertOnFail))
   ipcMain.handle("check-update", () => deps.checkUpdate())
   ipcMain.handle("install-update", () => deps.installUpdate())
+  ipcMain.handle("get-updater-state", () => deps.getUpdaterState())
+
+  const updaterSubs = createUpdaterSubscriptions()
+  ipcMain.on("subscribe-updater-state", (event: IpcMainEvent, id: string) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) return
+    updaterSubs.set(
+      win.id,
+      deps.onUpdaterStateChanged((state) => {
+        if (!win.isDestroyed()) win.webContents.send("updater-state-changed", id, state)
+      }),
+    )
+  })
+  ipcMain.on("unsubscribe-updater-state", (_event: IpcMainEvent, _id: string) => {
+    const win = BrowserWindow.fromWebContents(_event.sender)
+    if (win) updaterSubs.delete(win.id)
+  })
   ipcMain.handle("set-background-color", (_event: IpcMainInvokeEvent, color: string) => deps.setBackgroundColor(color))
   ipcMain.handle("export-debug-logs", () => deps.exportDebugLogs())
   ipcMain.handle("record-fatal-renderer-error", (_event: IpcMainInvokeEvent, error: FatalRendererError) =>
@@ -159,7 +186,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle(
     "open-file-picker",
     async (
-      _event: IpcMainInvokeEvent,
+      event: IpcMainInvokeEvent,
       opts?: { multiple?: boolean; title?: string; defaultPath?: string; accept?: string[]; extensions?: string[] },
     ) => {
       const result = await dialog.showOpenDialog({
@@ -169,9 +196,26 @@ export function registerIpcHandlers(deps: Deps) {
         filters: pickerFilters(opts?.extensions),
       })
       if (result.canceled) return null
-      return opts?.multiple ? result.filePaths : result.filePaths[0]
+      const files = await Promise.all(
+        result.filePaths.map(async (filePath) => ({
+          path: filePath,
+          name: basename(filePath),
+          size: (await stat(filePath)).size,
+        })),
+      )
+      assertAttachmentBudget(files)
+      const token = pickedFiles.add(event.sender.id, result.filePaths)
+      return { token, files }
     },
   )
+
+  ipcMain.handle("read-picked-file", async (event: IpcMainInvokeEvent, token: string, filePath: string) => {
+    return pickedFiles.read(event.sender.id, token, filePath)
+  })
+
+  ipcMain.handle("release-picked-files", (event: IpcMainInvokeEvent, token: string) => {
+    pickedFiles.release(event.sender.id, token)
+  })
 
   ipcMain.handle(
     "save-file-picker",

@@ -12,10 +12,36 @@ export type SqliteMigrationProgress = { type: "InProgress"; value: number } | { 
 
 export type WslConfig = { enabled: boolean }
 
+export type {
+  WslDistroProbe,
+  WslInstalledDistro,
+  WslJob,
+  WslOnlineDistro,
+  WslOpencodeCheck,
+  WslRuntimeCheck,
+  WslServerConfig,
+  WslServerItem,
+  WslServerRuntime,
+  WslServersEvent,
+  WslServersState,
+} from "@opencode-ai/app/wsl/types"
+import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
+export type WslServersAPI = WslServersPlatform
+
 export type LinuxDisplayBackend = "wayland" | "auto"
 export type TitlebarTheme = {
   mode: "light" | "dark"
 }
+export type UpdaterState =
+  | { status: "disabled" }
+  | { status: "idle" }
+  | { status: "checking" }
+  | { status: "downloading"; version: string; percent?: number }
+  | { status: "ready"; version: string }
+  | { status: "up-to-date" }
+  | { status: "installing"; version: string }
+  | { status: "error"; message: string }
+
 export type WindowConfig = {
   updaterEnabled: boolean
 }
@@ -144,6 +170,7 @@ export type ElectronAPI = {
   setDefaultServerUrl: (url: string | null) => Promise<void>
   getWslConfig: () => Promise<WslConfig>
   setWslConfig: (config: WslConfig) => Promise<void>
+  wslServers: WslServersAPI
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>
   setDisplayBackend: (backend: LinuxDisplayBackend | null) => Promise<void>
   parseMarkdownCommand: (markdown: string) => Promise<string>
@@ -173,7 +200,9 @@ export type ElectronAPI = {
     defaultPath?: string
     accept?: string[]
     extensions?: string[]
-  }) => Promise<string | string[] | null>
+  }) => Promise<{ token: string; files: { path: string; name: string; size: number }[] } | null>
+  readPickedFile: (token: string, path: string) => Promise<ArrayBuffer>
+  releasePickedFiles: (token: string) => Promise<void>
   saveFilePicker: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>
   openLink: (url: string) => void
   openPath: (path: string, app?: string) => Promise<void>
@@ -226,6 +255,8 @@ export type ElectronAPI = {
   runUpdater: (alertOnFail: boolean) => Promise<void>
   checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
   installUpdate: () => Promise<void>
+  getUpdaterState: () => Promise<UpdaterState>
+  onUpdaterStateChanged: (cb: (state: UpdaterState) => void) => () => void
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>

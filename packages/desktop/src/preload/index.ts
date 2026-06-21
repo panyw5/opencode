@@ -18,6 +18,29 @@ const api: ElectronAPI = {
   setDefaultServerUrl: (url) => ipcRenderer.invoke("set-default-server-url", url),
   getWslConfig: () => ipcRenderer.invoke("get-wsl-config"),
   setWslConfig: (config) => ipcRenderer.invoke("set-wsl-config", config),
+  wslServers: {
+    getState: () => ipcRenderer.invoke("wsl-servers-get-state"),
+    subscribe: (cb) => {
+      const handler = (_: unknown, event: unknown) => cb(event as any)
+      ipcRenderer.on("wsl-servers-event", handler)
+      ipcRenderer.invoke("wsl-servers-subscribe")
+      return () => {
+        ipcRenderer.removeListener("wsl-servers-event", handler)
+        ipcRenderer.invoke("wsl-servers-unsubscribe")
+      }
+    },
+    probeRuntime: () => ipcRenderer.invoke("wsl-servers-probe-runtime"),
+    refreshDistros: () => ipcRenderer.invoke("wsl-servers-refresh-distros"),
+    installWsl: () => ipcRenderer.invoke("wsl-servers-install-wsl"),
+    installDistro: (name) => ipcRenderer.invoke("wsl-servers-install-distro", name),
+    probeDistro: (name) => ipcRenderer.invoke("wsl-servers-probe-distro", name),
+    probeOpencode: (name) => ipcRenderer.invoke("wsl-servers-probe-opencode", name),
+    installOpencode: (name) => ipcRenderer.invoke("wsl-servers-install-opencode", name),
+    openTerminal: (name) => ipcRenderer.invoke("wsl-servers-open-terminal", name),
+    addServer: (distro) => ipcRenderer.invoke("wsl-servers-add", distro),
+    removeServer: (id) => ipcRenderer.invoke("wsl-servers-remove", id),
+    startServer: (id) => ipcRenderer.invoke("wsl-servers-start", id),
+  },
   getDisplayBackend: () => ipcRenderer.invoke("get-display-backend"),
   setDisplayBackend: (backend) => ipcRenderer.invoke("set-display-backend", backend),
   parseMarkdownCommand: (markdown) => ipcRenderer.invoke("parse-markdown", markdown),
@@ -50,6 +73,8 @@ const api: ElectronAPI = {
 
   openDirectoryPicker: (opts) => ipcRenderer.invoke("open-directory-picker", opts),
   openFilePicker: (opts) => ipcRenderer.invoke("open-file-picker", opts),
+  readPickedFile: (token, path) => ipcRenderer.invoke("read-picked-file", token, path),
+  releasePickedFiles: (token) => ipcRenderer.invoke("release-picked-files", token),
   saveFilePicker: (opts) => ipcRenderer.invoke("save-file-picker", opts),
   openLink: (url) => ipcRenderer.send("open-link", url),
   openPath: (path, app) => ipcRenderer.invoke("open-path", path, app),
@@ -110,6 +135,19 @@ const api: ElectronAPI = {
   runUpdater: (alertOnFail) => ipcRenderer.invoke("run-updater", alertOnFail),
   checkUpdate: () => ipcRenderer.invoke("check-update"),
   installUpdate: () => ipcRenderer.invoke("install-update"),
+  getUpdaterState: () => ipcRenderer.invoke("get-updater-state"),
+  onUpdaterStateChanged: (cb) => {
+    const id = crypto.randomUUID()
+    const handler = (_: unknown, subscriptionId: string, state: unknown) => {
+      if (subscriptionId === id) cb(state as any)
+    }
+    ipcRenderer.on("updater-state-changed", handler)
+    ipcRenderer.send("subscribe-updater-state", id)
+    return () => {
+      ipcRenderer.removeListener("updater-state-changed", handler)
+      ipcRenderer.send("unsubscribe-updater-state", id)
+    }
+  },
   setBackgroundColor: (color: string) => ipcRenderer.invoke("set-background-color", color),
   exportDebugLogs: () => ipcRenderer.invoke("export-debug-logs"),
   recordFatalRendererError: (error) => ipcRenderer.invoke("record-fatal-renderer-error", error),
