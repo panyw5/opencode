@@ -397,7 +397,7 @@ function createGlobalSync() {
     }
 
     children.pin(directory)
-    const child = children.child(directory, { bootstrap: false })
+    const child = children.peek(directory, { bootstrap: false })
     const mark = rev(directory)
     const raw = child[1] as (...args: unknown[]) => unknown
     const store = child[0]

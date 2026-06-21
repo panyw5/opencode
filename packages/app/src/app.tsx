@@ -5,6 +5,7 @@ import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { File } from "@opencode-ai/ui/file"
 import { Font } from "@opencode-ai/ui/font"
+import type { IconName } from "@opencode-ai/ui/icon"
 import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
@@ -37,7 +38,7 @@ import { GlobalSDKProvider } from "@/context/global-sdk"
 import { GlobalSyncProvider } from "@/context/global-sync"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
-import { LayoutProvider } from "@/context/layout"
+import { LayoutProvider, useLayout } from "@/context/layout"
 import { ModelsProvider } from "@/context/models"
 import { NotificationProvider } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
@@ -47,6 +48,7 @@ import { ServerConnection, ServerProvider, serverName, useServer } from "@/conte
 import { SessionHistoryProvider } from "@/context/session-history"
 import { SettingsProvider } from "@/context/settings"
 import { TerminalProvider } from "@/context/terminal"
+import { SectionButton } from "@/pages/config-section-button"
 import DirectoryLayout from "@/pages/directory-layout"
 import Layout from "@/pages/layout"
 import { ErrorPage } from "./pages/error"
@@ -57,6 +59,93 @@ const Session = lazy(() => import("@/pages/session"))
 const Config = lazy(() => import("@/pages/config"))
 const Loading = () => <div class="size-full" />
 
+const CONFIG_FALLBACK_SECTIONS = [
+  { id: "agents-md", label: "AGENTS.md", icon: "review" },
+  { id: "providers", key: "config.providers.title", icon: "providers" },
+  { id: "agents", key: "config.agents.title", icon: "robot" },
+  { id: "skills", key: "config.skills.title", icon: "book" },
+  { id: "plugins", key: "config.plugins.title", icon: "code" },
+  { id: "claws", key: "config.claws.title", icon: "openclaw" },
+] as const satisfies ReadonlyArray<{
+  id: string
+  icon: IconName
+  label?: string
+  key?: string
+}>
+
+function ConfigRouteFrame(props: ParentProps) {
+  const platform = usePlatform()
+  const layout = useLayout()
+
+  onMount(() => {
+    if (platform.platform !== "desktop") return
+    queueMicrotask(() => {
+      if (!layout.sidebar.opened()) return
+      layout.sidebar.close()
+    })
+  })
+
+  return <>{props.children}</>
+}
+
+function ConfigLoadingShell() {
+  const language = useLanguage()
+  const platform = usePlatform()
+  const showClawsSection = () =>
+    !!(
+      (platform.getOpenclawConfig && platform.setOpenclawConfig && platform.testOpenclawConfig) ||
+      (platform.getGenericagentConfig && platform.setGenericagentConfig && platform.testGenericagentConfig) ||
+      (platform.getHermesConfig && platform.setHermesConfig && platform.testHermesConfig)
+    )
+
+  return (
+    <div class="size-full overflow-hidden bg-background-base">
+      <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
+        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] backdrop-blur xl:w-[200px] xl:border-r xl:border-b-0">
+          <div class="flex h-full min-h-0 flex-col">
+            <div class="border-b border-border-weak-base px-3 py-4">
+              <div class="min-w-0">
+                <div class="text-18-medium text-text-strong">{language.t("config.title")}</div>
+                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.description")}</div>
+              </div>
+            </div>
+            <div class="config-scrollbar flex-1 overflow-y-auto p-2">
+              <div class="flex flex-col gap-1.5">
+                <For each={CONFIG_FALLBACK_SECTIONS}>
+                  {(section) => (
+                    <Show when={section.id !== "claws" || showClawsSection()}>
+                      <SectionButton
+                        current={section.id === "agents-md"}
+                        title={"key" in section ? language.t(section.key) : section.label}
+                        icon={section.icon}
+                      />
+                    </Show>
+                  )}
+                </For>
+              </div>
+            </div>
+            <div class="border-t border-border-weak-base p-2">
+              <div class="h-10 rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5 text-13-medium text-text-weak">
+                {language.t("common.goBack")}
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
+          <section class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base-active)_72%,transparent),color-mix(in_srgb,var(--surface-base)_88%,transparent))] backdrop-blur xl:w-[400px] xl:border-r xl:border-b-0">
+            <div class="px-4 py-4">
+              <div class="text-15-medium text-text-strong">AGENTS.md</div>
+              <div class="mt-1 h-3 w-40 rounded-full bg-surface-secondary" />
+            </div>
+          </section>
+          <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background-base)_92%,var(--surface-base)_8%),var(--background-base))]" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const SessionRoute = () => (
   <SessionProviders>
     <Session />
@@ -66,31 +155,33 @@ const SessionRoute = () => (
 const SessionIndexRoute = () => <Navigate href="session" />
 
 const ConfigRoute = () => (
-  <ErrorBoundary
-    fallback={(error, reset) => {
-      // 捕获 context 相关错误，提供重试机制
-      if (error.message?.includes("GlobalSyncProvider")) {
-        return (
-          <div class="flex size-full items-center justify-center">
-            <div class="flex flex-col items-center gap-4">
-              <div class="text-sm text-muted-foreground">配置页面加载失败</div>
-              <button
-                class="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
-                onClick={() => reset()}
-              >
-                重试
-              </button>
+  <ConfigRouteFrame>
+    <ErrorBoundary
+      fallback={(error, reset) => {
+        // 捕获 context 相关错误，提供重试机制
+        if (error.message?.includes("GlobalSyncProvider")) {
+          return (
+            <div class="flex size-full items-center justify-center">
+              <div class="flex flex-col items-center gap-4">
+                <div class="text-sm text-muted-foreground">配置页面加载失败</div>
+                <button
+                  class="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground hover:bg-primary/90"
+                  onClick={() => reset()}
+                >
+                  重试
+                </button>
+              </div>
             </div>
-          </div>
-        )
-      }
-      return <ErrorPage error={error} />
-    }}
-  >
-    <Suspense fallback={<Loading />}>
-      <Config />
-    </Suspense>
-  </ErrorBoundary>
+          )
+        }
+        return <ErrorPage error={error} />
+      }}
+    >
+      <Suspense fallback={<ConfigLoadingShell />}>
+        <Config />
+      </Suspense>
+    </ErrorBoundary>
+  </ConfigRouteFrame>
 )
 
 function CrashProbe() {
