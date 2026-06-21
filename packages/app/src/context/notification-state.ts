@@ -1,4 +1,5 @@
 import type { EventSessionError } from "@opencode-ai/sdk/v2"
+import type { Session } from "@opencode-ai/sdk/v2/client"
 
 type NotificationBase = {
   directory?: string
@@ -18,6 +19,15 @@ type ErrorNotification = NotificationBase & {
 }
 
 export type Notification = TurnCompleteNotification | ErrorNotification
+
+export function shouldNotifyTurnComplete(
+  session: Pick<Session, "parentID" | "time"> | undefined,
+): session is Pick<Session, "parentID" | "time"> {
+  if (!session) return false
+  if (session.parentID) return false
+  if (session.time.archived) return false
+  return true
+}
 
 export function markCurrentNotifications(list: Notification[], session: string, directory: string) {
   let changed = false
