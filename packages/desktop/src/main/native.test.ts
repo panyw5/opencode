@@ -2,7 +2,7 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { describe, expect, test } from "bun:test"
 
-import { resolveDesktopPath, tempMarkdownAttachmentPath } from "./native-path"
+import { attachmentExtension, resolveDesktopPath, tempMarkdownAttachmentPath } from "./native-path"
 
 describe("native desktop paths", () => {
   test("expands home aliases before resolving paths", () => {
@@ -29,5 +29,25 @@ describe("native desktop paths", () => {
     expect(path.endsWith(join(".opencode", "tmp", "attachments", "prompt-2026-06-22T09-30-15-123Z-abcdef12.md"))).toBe(
       true,
     )
+  })
+
+  test("builds temporary attachment paths with custom extensions", () => {
+    const root = join("/tmp", "opencode-md-attachment")
+    const path = tempMarkdownAttachmentPath(root, {
+      id: "abcdef12",
+      now: new Date("2026-06-22T09:30:15.123Z"),
+      extension: ".txt",
+    })
+
+    expect(path.endsWith(join(".opencode", "tmp", "attachments", "prompt-2026-06-22T09-30-15-123Z-abcdef12.txt"))).toBe(
+      true,
+    )
+  })
+
+  test("sanitizes temporary attachment extensions", () => {
+    expect(attachmentExtension("ts")).toBe("ts")
+    expect(attachmentExtension(".json")).toBe("json")
+    expect(attachmentExtension("")).toBe("md")
+    expect(attachmentExtension("../sh")).toBe("md")
   })
 })

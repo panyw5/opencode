@@ -340,7 +340,9 @@ export const dict = {
   "prompt.editor.title": "Edit prompt",
   "prompt.editor.markdownAttachmentTitle": "添加临时附件",
   "prompt.editor.markdownAttachmentDescription":
-    "保存到当前项目的 .opencode/tmp/attachments/，文件名格式 prompt-<ISO 时间戳>-<随机 ID>.md",
+    "保存到当前项目的 .opencode/tmp/attachments/，文件名格式 prompt-<ISO 时间戳>-<随机 ID>.<扩展名>",
+  "prompt.editor.saveAs": "保存为",
+  "prompt.editor.extension": "文件扩展名",
   "prompt.editor.preview": "Preview",
   "prompt.editor.showPreview": "Show preview",
   "prompt.editor.hidePreview": "Hide preview",

@@ -89,8 +89,8 @@ const api: ElectronAPI = {
   readConfigFile: (path) => ipcRenderer.invoke("read-config-file", path),
   writeConfigFile: (path, content) => ipcRenderer.invoke("write-config-file", path, content),
   createConfigFile: (path, content) => ipcRenderer.invoke("create-config-file", path, content),
-  createTempMarkdownAttachment: (directory, content) =>
-    ipcRenderer.invoke("create-temp-markdown-attachment", directory, content),
+  createTempMarkdownAttachment: (directory, content, extension) =>
+    ipcRenderer.invoke("create-temp-markdown-attachment", directory, content, extension),
   getConfigWorkspace: () => ipcRenderer.invoke("get-config-workspace"),
   listConfigDirectory: (path) => ipcRenderer.invoke("list-config-directory", path),
   listLocalDirectory: (path) => ipcRenderer.invoke("list-local-directory", path),

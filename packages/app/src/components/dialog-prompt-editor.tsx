@@ -19,10 +19,21 @@ import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 type DialogPromptEditorProps = {
   text: string
   placeholder: string
-  save: (value: string) => void
+  save: (value: string, extension?: string) => void
   title?: string
   description?: string
   saveOnClose?: boolean
+  saveExtension?: {
+    defaultValue: string
+  }
+}
+
+function normalizeEditorExtension(value: string): string {
+  return value
+    .trim()
+    .replace(/^\.+/, "")
+    .replace(/[^a-zA-Z0-9_-]/g, "")
+    .slice(0, 16)
 }
 
 export function DialogPromptEditor(props: DialogPromptEditorProps) {
@@ -35,6 +46,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
     text: props.text,
     h: 280,
     preview: false,
+    extension: normalizeEditorExtension(props.saveExtension?.defaultValue ?? "md") || "md",
   })
   const html = createMemo(() => paint(state.text))
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
@@ -72,7 +84,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
   const save = () => {
     closing = true
     shouldSaveOnClose = false
-    props.save(state.text)
+    props.save(state.text, props.saveExtension ? state.extension : undefined)
     dialog.close()
   }
 
@@ -229,7 +241,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
   onCleanup(() => {
     if (closing || !shouldSaveOnClose) return
     shouldSaveOnClose = false
-    props.save(state.text)
+    props.save(state.text, props.saveExtension ? state.extension : undefined)
   })
 
   return (
@@ -421,7 +433,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
             <Markdown text={state.text} math="full" highlight="defer" class="text-14-regular" />
           </div>
         </div>
-        <div class="flex items-center justify-between gap-3 rounded-xl border border-border-weak-base bg-surface-raised-base px-3 py-2.5 shadow-xs-border-base">
+        <div class="flex items-center justify-between gap-3 rounded-xl border border-border-weak-base px-3 py-2.5 shadow-xs-border-base">
           <div class="flex items-center gap-2 text-12-medium text-text-weak">
             <span class="rounded-md border border-border-weak-base bg-background-base px-2 py-0.5">{mod()}</span>
             <span class="text-text-subtle">+</span>
@@ -443,9 +455,27 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
             <Button size="large" variant="ghost" class="min-w-20" onClick={discard}>
               {language.t("prompt.editor.discardChanges")}
             </Button>
-            <Button size="large" variant="primary" class="min-w-20 shadow-xs-border-base" onClick={save}>
-              {language.t("common.save")}
+            <Button
+              size="large"
+              variant="ghost"
+              class="min-w-20"
+              icon={props.saveExtension ? "save" : undefined}
+              onClick={save}
+            >
+              {language.t(props.saveExtension ? "prompt.editor.saveAs" : "common.save")}
             </Button>
+            {props.saveExtension && (
+              <div class="flex items-center gap-1 text-14-medium text-text-weak">
+                <span>.</span>
+                <input
+                  value={state.extension}
+                  aria-label={language.t("prompt.editor.extension")}
+                  spellcheck={false}
+                  class="h-8 w-14 rounded-md border border-border-weak-base bg-background-base px-2 text-14-medium text-text-strong outline-none focus:border-border-focus"
+                  onInput={(event) => setState("extension", normalizeEditorExtension(event.currentTarget.value))}
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>

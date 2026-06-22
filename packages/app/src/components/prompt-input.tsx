@@ -771,7 +771,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         title={language.t("prompt.editor.markdownAttachmentTitle")}
         description={language.t("prompt.editor.markdownAttachmentDescription")}
         saveOnClose={false}
-        save={(text) => {
+        saveExtension={{ defaultValue: "md" }}
+        save={(text, extension) => {
           const content = text.trim()
           if (!content) {
             showToast({
@@ -781,7 +782,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             return
           }
 
-          void createTempMarkdownAttachment(info()?.directory || sdk.directory, text)
+          void createTempMarkdownAttachment(info()?.directory || sdk.directory, text, extension)
             .then((path) => {
               editorRef.focus()
               addPart({ type: "file", path, content: "@" + path, start: 0, end: 0 })

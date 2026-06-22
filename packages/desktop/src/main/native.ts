@@ -275,14 +275,18 @@ export async function createConfigFile(path: string, content: string) {
   await writeFile(target, content, { encoding: "utf8", flag: "wx" })
 }
 
-export async function createTempMarkdownAttachment(directory: string, content: string): Promise<string> {
+export async function createTempMarkdownAttachment(
+  directory: string,
+  content: string,
+  extension?: string,
+): Promise<string> {
   const root = resolveDesktopPath(directory)
   registerAllowedRoot(root)
   const targetDir = join(root, ".opencode", "tmp", "attachments")
   registerAllowedRoot(targetDir)
   await mkdir(targetDir, { recursive: true })
 
-  const target = tempMarkdownAttachmentPath(root, { id: randomUUID().slice(0, 8), now: new Date() })
+  const target = tempMarkdownAttachmentPath(root, { id: randomUUID().slice(0, 8), now: new Date(), extension })
   await writeFile(target, content, { encoding: "utf8", flag: "wx" })
   return target
 }

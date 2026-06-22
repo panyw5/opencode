@@ -7,8 +7,14 @@ export function resolveDesktopPath(path: string) {
   return resolve(path)
 }
 
-export function tempMarkdownAttachmentPath(directory: string, input: { id: string; now: Date }): string {
+export function attachmentExtension(input?: string): string {
+  const extension = (input ?? "md").trim().replace(/^\.+/, "").toLowerCase()
+  if (!/^[a-z0-9][a-z0-9_-]{0,15}$/.test(extension)) return "md"
+  return extension
+}
+
+export function tempMarkdownAttachmentPath(directory: string, input: { id: string; now: Date; extension?: string }): string {
   const root = resolveDesktopPath(directory)
   const stamp = input.now.toISOString().replace(/[:.]/g, "-")
-  return join(root, ".opencode", "tmp", "attachments", `prompt-${stamp}-${input.id}.md`)
+  return join(root, ".opencode", "tmp", "attachments", `prompt-${stamp}-${input.id}.${attachmentExtension(input.extension)}`)
 }

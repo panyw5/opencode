@@ -390,7 +390,8 @@ const createPlatform = (refreshExtraAgents?: () => void): Platform => {
 
     createTempMarkdownAttachment:
       typeof desktopApi.createTempMarkdownAttachment === "function"
-        ? (directory: string, content: string) => desktopApi.createTempMarkdownAttachment(directory, content)
+        ? (directory: string, content: string, extension?: string) =>
+            desktopApi.createTempMarkdownAttachment(directory, content, extension)
         : undefined,
 
     getConfigWorkspace: () => desktopApi.getConfigWorkspace(),
