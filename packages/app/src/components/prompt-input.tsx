@@ -769,6 +769,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         text=""
         placeholder={placeholder()}
         title={language.t("prompt.editor.markdownAttachmentTitle")}
+        description={language.t("prompt.editor.markdownAttachmentDescription")}
         saveOnClose={false}
         save={(text) => {
           const content = text.trim()

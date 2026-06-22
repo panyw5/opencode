@@ -21,6 +21,7 @@ type DialogPromptEditorProps = {
   placeholder: string
   save: (value: string) => void
   title?: string
+  description?: string
   saveOnClose?: boolean
 }
 
@@ -233,7 +234,12 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
 
   return (
     <Dialog
-      title={<div class="pl-3">{props.title ?? language.t("prompt.editor.title")}</div>}
+      title={
+        <div class="flex min-w-0 items-baseline gap-3 pl-3">
+          <span class="shrink-0">{props.title ?? language.t("prompt.editor.title")}</span>
+          <span class="min-w-0 truncate text-12-regular text-text-weak">{props.description}</span>
+        </div>
+      }
       size="x-large"
       transition
       containerStyle={{
