@@ -68,9 +68,6 @@ const CurrentModelSummary: Component<{ model: ModelState; class?: string }> = (p
     <div
       class={`mx-1 mb-2 rounded-md border border-border-weak-base bg-surface-base px-2.5 py-2 ${props.class ?? ""}`}
     >
-      <div class="mb-1 text-11-medium uppercase tracking-wide text-text-weak">
-        {language.t("dialog.model.current")}
-      </div>
       <Show
         when={current()}
         fallback={<div class="text-13-regular text-text-subtle">{language.t("dialog.model.select.title")}</div>}
@@ -79,9 +76,9 @@ const CurrentModelSummary: Component<{ model: ModelState; class?: string }> = (p
           <div class="flex min-w-0 items-start gap-2">
             <ProviderIcon id={item().provider.id} class="mt-0.5 size-4 shrink-0 icon-strong-base" />
             <div class="min-w-0 flex-1">
-              <div class="flex min-w-0 items-center gap-1 text-13-medium text-text-strong">
+              <div class="flex min-w-0 items-center gap-1 text-16-medium font-semibold text-accent">
                 <span class="truncate">{item().provider.name}</span>
-                <span class="shrink-0 text-text-weak">/</span>
+                <span class="shrink-0 opacity-70">/</span>
                 <span class="truncate">{item().name}</span>
               </div>
               <Show when={showIDs()}>
