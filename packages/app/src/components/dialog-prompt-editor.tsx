@@ -20,6 +20,8 @@ type DialogPromptEditorProps = {
   text: string
   placeholder: string
   save: (value: string) => void
+  title?: string
+  saveOnClose?: boolean
 }
 
 export function DialogPromptEditor(props: DialogPromptEditorProps) {
@@ -48,7 +50,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
     menu: undefined as HTMLDivElement | undefined,
   }
   let closing = false
-  let shouldSaveOnClose = true
+  let shouldSaveOnClose = props.saveOnClose ?? true
 
   const fit = () => {
     if (!ref.box) return
@@ -231,7 +233,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
 
   return (
     <Dialog
-      title={<div class="pl-3">{language.t("prompt.editor.title")}</div>}
+      title={<div class="pl-3">{props.title ?? language.t("prompt.editor.title")}</div>}
       size="x-large"
       transition
       containerStyle={{

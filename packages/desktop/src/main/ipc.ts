@@ -30,6 +30,7 @@ import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import {
   createConfigFile,
+  createTempMarkdownAttachment,
   archiveTrellisTask,
   detectOpenclawConfig,
   filterDirectories,
@@ -263,6 +264,9 @@ export function registerIpcHandlers(deps: Deps) {
   )
   ipcMain.handle("create-config-file", (_event: IpcMainInvokeEvent, path: string, content: string) =>
     createConfigFile(path, content),
+  )
+  ipcMain.handle("create-temp-markdown-attachment", (_event: IpcMainInvokeEvent, directory: string, content: string) =>
+    createTempMarkdownAttachment(directory, content),
   )
   ipcMain.handle("get-config-workspace", () => getConfigWorkspace())
   ipcMain.handle("list-config-directory", (_event: IpcMainInvokeEvent, path: string) => listConfigDirectory(path))

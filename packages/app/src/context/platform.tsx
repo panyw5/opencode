@@ -320,6 +320,9 @@ export type Platform = {
   /** Create a config file and fail if it already exists (desktop only) */
   createConfigFile?(path: string, content: string): Promise<void>
 
+  /** Create a project-scoped temporary markdown attachment file (desktop only) */
+  createTempMarkdownAttachment?(directory: string, content: string): Promise<string>
+
   /** Inspect global config workspace (desktop only) */
   getConfigWorkspace?(): Promise<ConfigWorkspace>
 

@@ -760,6 +760,43 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const pick = () => fileInputRef?.click()
 
+  const attachMarkdown = () => {
+    if (store.mode !== "normal") return
+    const createTempMarkdownAttachment = platform.createTempMarkdownAttachment
+    if (!createTempMarkdownAttachment) return
+    dialog.show(() => (
+      <DialogPromptEditor
+        text=""
+        placeholder={placeholder()}
+        title={language.t("prompt.editor.markdownAttachmentTitle")}
+        saveOnClose={false}
+        save={(text) => {
+          const content = text.trim()
+          if (!content) {
+            showToast({
+              title: language.t("prompt.toast.markdownAttachmentEmpty.title"),
+              description: language.t("prompt.toast.markdownAttachmentEmpty.description"),
+            })
+            return
+          }
+
+          void createTempMarkdownAttachment(info()?.directory || sdk.directory, text)
+            .then((path) => {
+              editorRef.focus()
+              addPart({ type: "file", path, content: "@" + path, start: 0, end: 0 })
+            })
+            .catch((err: unknown) => {
+              showToast({
+                variant: "error",
+                title: language.t("prompt.toast.markdownAttachmentFailed.title"),
+                description: err instanceof Error ? err.message : String(err),
+              })
+            })
+        }}
+      />
+    ))
+  }
+
   const setMode = (mode: "normal" | "shell") => {
     setStore("mode", mode)
     setStore("popover", null)
@@ -778,6 +815,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       keybind: "mod+u",
       disabled: store.mode !== "normal",
       onSelect: pick,
+    },
+    {
+      id: "file.attachMarkdown",
+      title: language.t("prompt.action.markdownAttachment"),
+      keywords: kw("prompt.action.markdownAttachment"),
+      category: language.t("command.category.file"),
+      disabled: store.mode !== "normal" || !platform.createTempMarkdownAttachment,
+      onSelect: attachMarkdown,
     },
     {
       id: "prompt.mode.shell",
@@ -1921,7 +1966,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               if (!(target instanceof HTMLElement)) return
               if (
                 target.closest(
-                  '[data-action="prompt-attach"], [data-action="prompt-expand"], [data-action="prompt-submit"]',
+                  '[data-action="prompt-attach"], [data-action="prompt-markdown-attachment"], [data-action="prompt-expand"], [data-action="prompt-submit"]',
                 )
               ) {
                 return
@@ -2016,6 +2061,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       <Icon name="plus" class="size-4.5" />
                     </Button>
                   </TooltipKeybind>
+                  <Show when={platform.createTempMarkdownAttachment}>
+                    <Tooltip {...hover} placement="top" value={language.t("prompt.action.markdownAttachment")}>
+                      <IconButton
+                        data-action="prompt-markdown-attachment"
+                        type="button"
+                        icon="read"
+                        variant="ghost"
+                        class="size-9 rounded-full"
+                        style={buttons()}
+                        onClick={attachMarkdown}
+                        disabled={store.mode !== "normal"}
+                        tabIndex={store.mode === "normal" ? undefined : -1}
+                        aria-label={language.t("prompt.action.markdownAttachment")}
+                      />
+                    </Tooltip>
+                  </Show>
                   <Show when={platform.platform === "desktop"}>
                     <Tooltip {...hover} placement="top" value={language.t("prompt.action.expand")}>
                       <IconButton

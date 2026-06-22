@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { constants as fsConstants } from "node:fs"
 import {
@@ -38,7 +39,7 @@ import type {
   TrellisTask,
   TrellisTaskList,
 } from "../preload/types"
-import { resolveDesktopPath } from "./native-path"
+import { resolveDesktopPath, tempMarkdownAttachmentPath } from "./native-path"
 
 const execFileAsync = promisify(execFile)
 const TEXT_FILE_LIMIT = 2 * 1024 * 1024
@@ -272,6 +273,18 @@ export async function createConfigFile(path: string, content: string) {
   const target = assertAllowedLocalPath(path)
   await mkdir(dirname(target), { recursive: true })
   await writeFile(target, content, { encoding: "utf8", flag: "wx" })
+}
+
+export async function createTempMarkdownAttachment(directory: string, content: string): Promise<string> {
+  const root = resolveDesktopPath(directory)
+  registerAllowedRoot(root)
+  const targetDir = join(root, ".opencode", "tmp", "attachments")
+  registerAllowedRoot(targetDir)
+  await mkdir(targetDir, { recursive: true })
+
+  const target = tempMarkdownAttachmentPath(root, { id: randomUUID().slice(0, 8), now: new Date() })
+  await writeFile(target, content, { encoding: "utf8", flag: "wx" })
+  return target
 }
 
 export async function listTrellisTasks(directory: string): Promise<TrellisTaskList> {
