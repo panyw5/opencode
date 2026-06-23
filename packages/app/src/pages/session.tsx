@@ -30,6 +30,8 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
+import { setCursorPosition } from "@/components/prompt-input/editor-dom"
+import { promptLength } from "@/components/prompt-input/history"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
@@ -1064,7 +1066,15 @@ export default function Page() {
     setFileTreeTab("all")
   }
 
-  const focusInput = () => inputRef?.focus()
+  const focusInput = () => {
+    const input = inputRef
+    if (!input) return
+    requestAnimationFrame(() => {
+      if (!input.isConnected) return
+      input.focus()
+      setCursorPosition(input, promptLength(prompt.current()))
+    })
+  }
   const openChildAgent = (entry: SessionChildAgentEntry): void => {
     const dir = params.dir
     if (!dir) return
