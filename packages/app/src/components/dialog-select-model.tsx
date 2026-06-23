@@ -52,40 +52,82 @@ const isFree = (provider: string, cost: { input: number } | undefined) =>
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 
+const MODEL_PROVIDER_ICON_PREFIXES: Record<string, string> = {
+  "ai21": "ai21",
+  "alibaba": "alibaba",
+  "amazon": "amazon-bedrock",
+  "anthropic": "anthropic",
+  "azure": "azure",
+  "cerebras": "cerebras",
+  "claude": "anthropic",
+  "cloudflare": "cloudflare-workers-ai",
+  "cohere": "cohere",
+  "deepseek": "deepseek",
+  "fireworks": "fireworks-ai",
+  "gemini": "google",
+  "github": "github-copilot",
+  "google": "google",
+  "groq": "groq",
+  "huggingface": "huggingface",
+  "llama": "llama",
+  "meta": "llama",
+  "mistral": "mistral",
+  "moonshot": "moonshotai",
+  "nova": "amazon-bedrock",
+  "openai": "openai",
+  "perplexity": "perplexity",
+  "qwen": "alibaba",
+  "xai": "xai",
+}
+
+function modelProviderIconID(item: NonNullable<ReturnType<ModelState["current"]>>): string {
+  const apiID = item.api.id.toLowerCase()
+  const candidates = apiID.replace(/^hf:/, "").split(/[/.:-]/)
+  for (const candidate of candidates) {
+    const mapped = MODEL_PROVIDER_ICON_PREFIXES[candidate]
+    if (mapped) return mapped
+  }
+  if (item.api.npm === "@ai-sdk/anthropic") return "anthropic"
+  if (item.api.npm === "@ai-sdk/openai") return "openai"
+  if (item.api.npm === "@ai-sdk/google") return "google"
+  if (item.api.npm === "@ai-sdk/google-vertex") return "google-vertex"
+  if (item.api.npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock"
+  if (item.api.npm === "@openrouter/ai-sdk-provider") return "openrouter"
+  if (item.api.npm === "gitlab-ai-provider") return "gitlab"
+  return item.provider.id
+}
+
 const CurrentModelSummary: Component<{ model: ModelState; class?: string }> = (props) => {
   const language = useLanguage()
   const current = createMemo(() => props.model.current())
-  const showIDs = createMemo(() => {
-    const item = current()
-    if (!item) return false
-    return (
-      item.provider.id.toLowerCase() !== item.provider.name.toLowerCase() ||
-      item.id.toLowerCase() !== item.name.toLowerCase()
-    )
-  })
 
   return (
     <div
-      class={`mx-1 mb-2 rounded-md border border-border-weak-base bg-surface-base px-2.5 py-2 ${props.class ?? ""}`}
+      class={`mx-1 mb-2 rounded-md border px-2.5 py-2 ${props.class ?? ""}`}
+      style={{
+        "background-color": "var(--apple-light-alpha-5)",
+        "border-color": "var(--border-weak-base)",
+      }}
     >
       <Show
         when={current()}
         fallback={<div class="text-13-regular text-text-subtle">{language.t("dialog.model.select.title")}</div>}
       >
         {(item) => (
-          <div class="flex min-w-0 items-start gap-2">
-            <ProviderIcon id={item().provider.id} class="mt-0.5 size-4 shrink-0 icon-strong-base" />
+          <div class="flex min-w-0 items-center gap-2">
+            <div class="flex size-5 shrink-0 items-center justify-center">
+              <ProviderIcon
+                id={modelProviderIconID(item())}
+                class="size-4 icon-strong-base"
+                aria-label={item().provider.name}
+              />
+            </div>
             <div class="min-w-0 flex-1">
               <div class="flex min-w-0 items-center gap-1 text-16-medium font-semibold text-accent">
                 <span class="truncate">{item().provider.name}</span>
                 <span class="shrink-0 opacity-70">/</span>
                 <span class="truncate">{item().name}</span>
               </div>
-              <Show when={showIDs()}>
-                <div class="truncate font-mono text-11-regular text-text-subtle">
-                  {item().provider.id}/{item().id}
-                </div>
-              </Show>
             </div>
           </div>
         )}
@@ -447,7 +489,7 @@ export function ModelSelectorPopover(props: {
             resizeObserver.observe(el)
           }}
           data-component="popover-content"
-          class="w-72 h-[39rem] max-h-[calc(100vh-96px)] flex flex-col p-2 overflow-hidden"
+          class="w-[338px] h-[39rem] max-h-[calc(100vh-96px)] flex flex-col p-2 overflow-hidden"
           style={props.style}
           onEscapeKeyDown={(event) => {
             logModelOpen("close", {
