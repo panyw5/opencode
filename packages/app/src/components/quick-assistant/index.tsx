@@ -788,7 +788,8 @@ export function QuickAssistant() {
             "background-color":
               platform.platform === "desktop" && platform.os === "windows"
                 ? "var(--surface-raised-stronger-non-alpha)"
-                : "color-mix(in srgb, var(--background-stronger) 70%, transparent)",
+                : "var(--apple-dark-alpha-1)",
+            "border-color": "var(--amber-light-alpha-2)",
             "backdrop-filter":
               platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
             "-webkit-backdrop-filter":

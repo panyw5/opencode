@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import { context, isSessionNotFoundError, mergeMessages, prompt } from "./quick-assistant/helpers"
+import { quickAssistantMessageText } from "./quick-assistant/messages"
 
 const msg = (id: string, role: "user" | "assistant") =>
   ({
@@ -46,6 +47,18 @@ describe("quick assistant prompt", () => {
         "</current-opencode-session>",
       ].join("\n"),
     )
+  })
+})
+
+describe("quick assistant message copy", () => {
+  test("uses rendered message text for copy content", () => {
+    expect(
+      quickAssistantMessageText([
+        { type: "text", text: "hello" },
+        { type: "tool", tool: "bash" },
+        { type: "file", filename: "notes.md", url: "file:///tmp/notes.md" },
+      ] as Part[]),
+    ).toBe(["hello", "[tool] bash", "[file] notes.md"].join("\n"))
   })
 })
 
