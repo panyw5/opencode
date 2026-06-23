@@ -176,10 +176,21 @@
 
   [data-slot="markdown-copy-button"] {
     position: absolute;
-    right: 4px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--border-weak-base);
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--background-base) 90%, transparent);
+    box-shadow: var(--shadow-xs-border-base);
+    color: var(--icon-base);
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.12s ease;
+    transition:
+      opacity 0.12s ease,
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
     z-index: 2;
 
     &::after {
@@ -214,11 +225,16 @@
   }
 
   [data-slot="markdown-copy-button"][data-position="top"] {
-    top: 4px;
+    top: 8px;
   }
 
   [data-slot="markdown-copy-button"][data-position="bottom"] {
-    bottom: 4px;
+    bottom: 8px;
+  }
+
+  [data-slot="markdown-copy-button"][data-size="small"] {
+    width: 28px;
+    height: 28px;
   }
 
   [data-slot="markdown-copy-button"]:hover::after,
@@ -227,25 +243,26 @@
   }
 
   [data-slot="markdown-copy-button"][data-variant="secondary"] {
-    background: rgba(22, 22, 22, 0.58);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+    background: color-mix(in srgb, var(--background-base) 90%, transparent);
+    border: 1px solid var(--border-weak-base);
+    border-radius: 9999px;
+    box-shadow: var(--shadow-xs-border-base);
   }
 
   [data-slot="markdown-copy-button"][data-variant="secondary"]:hover,
   [data-slot="markdown-copy-button"][data-variant="secondary"]:focus-visible {
-    background: rgba(22, 22, 22, 0.74);
-    border-color: rgba(255, 255, 255, 0.2);
+    background: var(--surface-base-hover);
+    border-color: var(--border-strong-base);
   }
 
   [data-slot="markdown-copy-button"][data-variant="secondary"] [data-slot="icon-svg"] {
-    color: rgba(255, 255, 255, 0.86);
+    color: var(--icon-base);
     transition: color 0.12s ease;
   }
 
   [data-slot="markdown-copy-button"][data-variant="secondary"]:hover [data-slot="icon-svg"],
   [data-slot="markdown-copy-button"][data-variant="secondary"]:focus-visible [data-slot="icon-svg"] {
-    color: #ffffff;
+    color: var(--icon-strong-base);
   }
 
   [data-component="markdown-code"]:hover [data-slot="markdown-copy-button"] {
@@ -262,6 +279,8 @@
   [data-slot="markdown-copy-button"]:focus-visible {
     opacity: 1;
     pointer-events: auto;
+    outline: none;
+    box-shadow: var(--shadow-xs-border-focus);
   }
 
   [data-slot="markdown-copy-button"] [data-slot="check-icon"] {
