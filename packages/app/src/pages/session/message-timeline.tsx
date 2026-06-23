@@ -747,18 +747,10 @@ export function MessageTimeline(props: {
   createEffect(
     on(sessionID, (newID, prevID) => {
       if (prevID !== undefined && newID !== prevID) {
-        console.warn(
-          `[flash-debug] sessionSwitching: prev=${prevID} new=${newID} time=${performance.now().toFixed(1)}`,
-        )
         setSessionSwitching(true)
         // Re-enable windowing after a delay to allow messages to render and collect height data
         makeTimer(
-          () => {
-            console.warn(
-              `[flash-debug] sessionSwitching:done id=${newID} time=${performance.now().toFixed(1)}`,
-            )
-            setSessionSwitching(false)
-          },
+          () => setSessionSwitching(false),
           500,
           setTimeout,
         )
@@ -2441,9 +2433,6 @@ export function MessageTimeline(props: {
           viewportRef={(el) => {
             viewport = el
             props.setScrollRef(el)
-            console.warn(
-              `[flash-debug] MessageTimeline:viewportRef mounted scrollHeight=${el.scrollHeight} clientHeight=${el.clientHeight} scrollTop=${el.scrollTop} time=${performance.now().toFixed(1)}`,
-            )
             probeLayout("viewport-mounted", true)
             scheduleWindow()
           }}
