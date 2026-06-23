@@ -8,6 +8,17 @@ import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./glob.txt"
 import * as Tool from "./tool"
 import { Reference } from "@/reference/reference"
+import { abortAfterAny } from "@/util/abort"
+
+const GLOB_TIMEOUT_MS = 30_000
+const GLOB_TIMEOUT_ENV = "OPENCODE_GLOB_TIMEOUT_MS"
+
+function globTimeoutMs() {
+  const raw = process.env[GLOB_TIMEOUT_ENV]
+  if (!raw) return GLOB_TIMEOUT_MS
+  const value = Number.parseInt(raw, 10)
+  return Number.isFinite(value) && value > 0 ? value : GLOB_TIMEOUT_MS
+}
 
 export const Parameters = Schema.Struct({
   pattern: Schema.String.annotate({ description: "The glob pattern to match files against" }),
@@ -53,7 +64,8 @@ export const GlobTool = Tool.define(
 
           const limit = 100
           let truncated = false
-          const files = yield* rg.files({ cwd: search, glob: [params.pattern], signal: ctx.abort }).pipe(
+          const timeout = abortAfterAny(globTimeoutMs(), ctx.abort)
+          const files = yield* rg.files({ cwd: search, glob: [params.pattern], signal: timeout.signal }).pipe(
             Stream.mapEffect((file) =>
               Effect.gen(function* () {
                 const full = path.resolve(search, file)
@@ -69,6 +81,11 @@ export const GlobTool = Tool.define(
             Stream.take(limit + 1),
             Stream.runCollect,
             Effect.map((chunk) => [...chunk]),
+            Effect.ensuring(Effect.sync(timeout.clearTimeout)),
+            Effect.mapError((error) => {
+              if (timeout.signal.aborted && !ctx.abort.aborted) return new Error("Glob search timed out")
+              return error
+            }),
           )
 
           if (files.length > limit) {

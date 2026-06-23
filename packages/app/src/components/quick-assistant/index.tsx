@@ -3,7 +3,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { useParams } from "@solidjs/router"
-import { batch, createEffect, createMemo, Show } from "solid-js"
+import { batch, createEffect, createMemo, onCleanup, Show } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -39,6 +39,9 @@ type Pick = {
 
 type AgentPick = State["agent"][number]
 const QUICK_AGENT = "assistant"
+const QUICK_ASSISTANT_MESSAGE_LIMIT = 80
+const QUICK_ASSISTANT_SETTLE_MS = 3_000
+const QUICK_ASSISTANT_STALE_MS = 300_000
 
 type Saved = {
   open: boolean
@@ -258,6 +261,8 @@ export function QuickAssistant() {
     loading: false,
   })
   let input!: HTMLTextAreaElement
+  let settleTimer: ReturnType<typeof setTimeout> | undefined
+  let staleTimer: ReturnType<typeof setTimeout> | undefined
   const win = createMemo(() => platform.os === "windows")
 
   const dir = createMemo(() => native(decode64(params.dir) ?? "", win()))
@@ -355,6 +360,120 @@ export function QuickAssistant() {
     })
   }
 
+  const clearTimers = () => {
+    if (settleTimer) clearTimeout(settleTimer)
+    if (staleTimer) clearTimeout(staleTimer)
+    settleTimer = undefined
+    staleTimer = undefined
+  }
+
+  const refreshSession = async (
+    client: ReturnType<typeof globalSDK.createClient>,
+    id: string,
+    setStore: SetStoreFunction<State>,
+  ) => {
+    const [statusResult, messageResult] = await Promise.allSettled([
+      client.session.status(),
+      client.session.messages({ sessionID: id, limit: QUICK_ASSISTANT_MESSAGE_LIMIT }),
+    ])
+    if (statusResult.status === "rejected" && isSessionNotFoundError(statusResult.reason)) throw statusResult.reason
+    if (messageResult.status === "rejected" && isSessionNotFoundError(messageResult.reason)) throw messageResult.reason
+
+    batch(() => {
+      if (statusResult.status === "fulfilled") {
+        const next = statusResult.value.data?.[id] ?? { type: "idle" as const }
+        setStore("session_status", id, next)
+      }
+
+      if (messageResult.status === "fulfilled") {
+        const items = (messageResult.value.data ?? []).filter((item) => !!item?.info?.id)
+        const message = items.map((item) => item.info).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        const next = mergeMessages(data()?.message[id], message)
+        setStore("message", id, reconcile(next, { key: "id" }))
+        for (const item of items) {
+          setStore("part", item.info.id, item.parts)
+        }
+      }
+    })
+  }
+
+  const lastCompletedAssistant = (id: string) => {
+    const last = data()?.message[id]?.at(-1)
+    if (!last || last.role !== "assistant") return false
+    return typeof last.time.completed === "number"
+  }
+
+  const completePendingAssistant = (id: string, setStore: SetStoreFunction<State>) => {
+    const messages = data()?.message[id]
+    if (!messages) return
+    const last = messages?.at(-1)
+    if (!last || last.role !== "assistant") return
+    if (typeof last.time.completed === "number") return
+    setStore("message", id, messages.length - 1, "time", {
+      ...last.time,
+      completed: Date.now(),
+    })
+  }
+
+  const markIdle = (id: string, setStore: SetStoreFunction<State>) => {
+    batch(() => {
+      setStore("session_status", id, { type: "idle" })
+      completePendingAssistant(id, setStore)
+    })
+  }
+
+  const finishIfSettled = (id: string, completedReplyOnly = false) => {
+    if (sessionID() !== id) return
+    if (completedReplyOnly && !lastCompletedAssistant(id)) return
+    const current = data()
+    if (working(current?.session_status[id], current?.message[id])) return
+    clearTimers()
+    setState("loading", false)
+  }
+
+  const scheduleRecovery = (
+    client: ReturnType<typeof globalSDK.createClient>,
+    id: string,
+    setStore: SetStoreFunction<State>,
+  ) => {
+    clearTimers()
+    settleTimer = setTimeout(() => {
+      if (sessionID() !== id) return
+      refreshSession(client, id, setStore)
+        .then(() => {
+          if (data()?.session_status[id]?.type === "idle") markIdle(id, setStore)
+          finishIfSettled(id)
+        })
+        .catch((err: unknown) => {
+          if (isSessionNotFoundError(err)) {
+            clearSession()
+            setState("loading", false)
+          }
+        })
+    }, QUICK_ASSISTANT_SETTLE_MS)
+
+    staleTimer = setTimeout(() => {
+      if (sessionID() !== id) return
+      refreshSession(client, id, setStore)
+        .catch((err: unknown) => {
+          if (isSessionNotFoundError(err)) clearSession()
+        })
+        .finally(() => {
+          if (sessionID() !== id) return
+          const current = data()
+          if (!working(current?.session_status[id], current?.message[id])) {
+            setState("loading", false)
+            return
+          }
+          console.debug(`[quick-assistant] stale busy state cleared session=${id}`)
+          markIdle(id, setStore)
+          setState("loading", false)
+        })
+    }, QUICK_ASSISTANT_STALE_MS)
+  }
+
+  onCleanup(clearTimers)
+
   const ensureSession = async (
     client: ReturnType<typeof globalSDK.createClient>,
     setStore: SetStoreFunction<State>,
@@ -422,8 +541,9 @@ export function QuickAssistant() {
             description: formatServerError(err, language.t, language.t("common.requestFailed")),
           })
         })
-      if (setStore) setStore("session_status", id, { type: "idle" })
+      if (setStore) markIdle(id, setStore)
     }
+    clearTimers()
     clearSession()
     setState("loading", false)
     setState("text", "")
@@ -454,26 +574,12 @@ export function QuickAssistant() {
     if (!current || !id || !store || !setStore) return
     if (store.message[id] !== undefined) return
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
-    client.session
-      .messages({ sessionID: id, limit: 80 })
-      .then((result) => {
-        const items = (result.data ?? []).filter((item) => !!item?.info?.id)
-        const message = items.map((item) => item.info).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-        const local = store.message[id] ?? []
-        const next = mergeMessages(local, message)
-        batch(() => {
-          setStore("message", id, reconcile(next, { key: "id" }))
-          for (const item of items) {
-            setStore("part", item.info.id, item.parts)
-          }
-        })
-      })
-      .catch((err: unknown) => {
-        if (isSessionNotFoundError(err)) {
-          clearSession()
-          return
-        }
-      })
+    refreshSession(client, id, setStore).catch((err: unknown) => {
+      if (isSessionNotFoundError(err)) {
+        clearSession()
+        return
+      }
+    })
   })
 
   createEffect(() => {
@@ -488,19 +594,26 @@ export function QuickAssistant() {
       if (event.type === "session.status") {
         if (event.properties.sessionID !== id) return
         setStore("session_status", id, event.properties.status)
+        if (event.properties.status.type === "idle") {
+          completePendingAssistant(id, setStore)
+          clearTimers()
+          setState("loading", false)
+        }
         return
       }
 
       if (event.type === "session.idle") {
         if (event.properties.sessionID !== id) return
-        setStore("session_status", id, { type: "idle" })
+        markIdle(id, setStore)
+        clearTimers()
         setState("loading", false)
         return
       }
 
       if (event.type !== "session.error") return
       if (event.properties.sessionID !== id) return
-      setStore("session_status", id, { type: "idle" })
+      markIdle(id, setStore)
+      clearTimers()
       setState("loading", false)
       showToast({
         title: "Quick Assistant",
@@ -588,6 +701,7 @@ export function QuickAssistant() {
       setSaved("open", true)
     })
 
+    clearTimers()
     await client.session
       .promptAsync({
         sessionID: id,
@@ -608,7 +722,7 @@ export function QuickAssistant() {
       .catch((err: unknown) => {
         const aborted = errorName(err) === "AbortError"
         batch(() => {
-          setStore("session_status", id, { type: "idle" })
+          markIdle(id, setStore)
           if (aborted) {
             setStore("message", (items) => {
               const list = items[id] ?? []
@@ -635,7 +749,8 @@ export function QuickAssistant() {
         })
       })
 
-    if (!busy()) setState("loading", false)
+    scheduleRecovery(client, id, setStore)
+    finishIfSettled(id)
   }
 
   const dock = createMemo(() => enabled() && !!activeDir())

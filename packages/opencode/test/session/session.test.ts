@@ -368,6 +368,31 @@ describe("orphaned assistant recovery", () => {
     }),
   )
 
+  it.instance("messages finalizes stale orphaned assistants before returning history", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const { info, assistant } = yield* createOrphanedToolSession
+      yield* session.updateMessage({
+        ...assistant,
+        time: { created: Date.now() - SessionNs.ORPHANED_ASSISTANT_STALE_AFTER_MS - 1 },
+      })
+
+      const messages = yield* session.messages({ sessionID: info.id })
+      const latest = messages.find((item) => item.info.id === assistant.id)
+      expect(latest?.info.role).toBe("assistant")
+      if (!latest || latest.info.role !== "assistant") return
+      expect(latest.info.time.completed).toBeNumber()
+
+      const latestTool = latest.parts.find((part): part is MessageV2.ToolPart => part.type === "tool")
+      expect(latestTool?.state.status).toBe("error")
+      if (!latestTool || latestTool.state.status !== "error") return
+      expect(latestTool.state.metadata?.abortSource).toBe("orphan-finalizer")
+      expect(latestTool.state.metadata?.abortReason).toContain("threshold is 24h")
+
+      yield* session.remove(info.id)
+    }),
+  )
+
   it.instance("finalizes orphaned child sessions when task metadata was not persisted", () =>
     Effect.gen(function* () {
       const session = yield* SessionNs.Service

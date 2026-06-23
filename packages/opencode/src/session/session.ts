@@ -885,6 +885,10 @@ export const layer: Layer.Layer<
     })
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
+      yield* finalizeOrphanedAssistantInner(input.sessionID, new Set(), {
+        staleAfterMs: ORPHANED_ASSISTANT_STALE_AFTER_MS,
+      })
+
       if (input.limit) {
         return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit })).items
       }

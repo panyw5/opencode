@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import path from "path"
 import { Cause, Effect, Exit, Layer } from "effect"
+import * as Stream from "effect/Stream"
 import { GlobTool } from "../../src/tool/glob"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
@@ -26,11 +27,29 @@ const referenceLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     Layer.provide(RuntimeFlags.layer(flags)),
   )
 
-const toolLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
+const stuckRipgrepLayer = Layer.succeed(Ripgrep.Service, {
+  files: (input) =>
+    Stream.fromEffect(
+      Effect.callback<never, Error>((resume) => {
+        if (input.signal?.aborted) {
+          resume(Effect.fail(new Error("fake ripgrep aborted")))
+          return
+        }
+
+        const onAbort = () => resume(Effect.fail(new Error("fake ripgrep aborted")))
+        input.signal?.addEventListener("abort", onAbort, { once: true })
+        return Effect.sync(() => input.signal?.removeEventListener("abort", onAbort))
+      }),
+    ),
+  tree: () => Effect.fail(new Error("unused")),
+  search: () => Effect.fail(new Error("unused")),
+} satisfies Ripgrep.Interface)
+
+const toolLayer = (flags: Partial<RuntimeFlags.Info> = {}, ripgrepLayer = Ripgrep.defaultLayer) =>
   Layer.mergeAll(
     CrossSpawnSpawner.defaultLayer,
     AppFileSystem.defaultLayer,
-    Ripgrep.defaultLayer,
+    ripgrepLayer,
     Truncate.defaultLayer,
     Agent.defaultLayer,
     Git.defaultLayer,
@@ -39,6 +58,7 @@ const toolLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 
 const it = testEffect(toolLayer())
 const scout = testEffect(toolLayer({ experimentalScout: true }))
+const stuck = testEffect(toolLayer({}, stuckRipgrepLayer))
 
 const ctx = {
   sessionID: SessionID.make("ses_test"),
@@ -77,6 +97,21 @@ const githubBase = <A, E, R>(url: string, self: Effect.Effect<A, E, R>) =>
       Effect.sync(() => {
         if (previous) process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL = previous
         else delete process.env.OPENCODE_REPO_CLONE_GITHUB_BASE_URL
+      }),
+  )
+
+const withGlobTimeout = <A, E, R>(ms: number, self: Effect.Effect<A, E, R>) =>
+  Effect.acquireUseRelease(
+    Effect.sync(() => {
+      const previous = process.env.OPENCODE_GLOB_TIMEOUT_MS
+      process.env.OPENCODE_GLOB_TIMEOUT_MS = String(ms)
+      return previous
+    }),
+    () => self,
+    (previous) =>
+      Effect.sync(() => {
+        if (previous === undefined) delete process.env.OPENCODE_GLOB_TIMEOUT_MS
+        else process.env.OPENCODE_GLOB_TIMEOUT_MS = previous
       }),
   )
 
@@ -138,6 +173,32 @@ describe("tool.glob", () => {
       if (Exit.isFailure(exit)) {
         const err = Cause.squash(exit.cause)
         expect(err instanceof Error ? err.message : String(err)).toContain("glob path must be a directory")
+      }
+    }),
+  )
+
+  stuck.instance("times out hung ripgrep searches", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const info = yield* GlobTool
+      const glob = yield* info.init()
+      const exit = yield* withGlobTimeout(
+        1,
+        glob
+          .execute(
+            {
+              pattern: "*.ts",
+              path: test.directory,
+            },
+            ctx,
+          )
+          .pipe(Effect.exit),
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const err = Cause.squash(exit.cause)
+        expect(err instanceof Error ? err.message : String(err)).toContain("Glob search timed out")
       }
     }),
   )
