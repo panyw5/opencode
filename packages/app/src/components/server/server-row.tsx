@@ -69,6 +69,10 @@ export function ServerRow(props: ServerRowProps) {
   )
 
   const badge = children(() => props.badge)
+  const errorMessage = createMemo(() => {
+    if (props.status?.healthy !== false) return
+    return props.status.message || language.t("common.requestFailed")
+  })
 
   return (
     <Tooltip
@@ -114,8 +118,8 @@ export function ServerRow(props: ServerRowProps) {
               </div>
             )}
           </Show>
-          <Show when={props.status?.healthy === false && props.status.message}>
-            <div class="text-12-regular text-text-danger-base truncate max-w-full">{props.status?.message}</div>
+          <Show when={errorMessage()}>
+            {(message) => <div class="text-12-regular text-text-danger-base truncate max-w-full">{message()}</div>}
           </Show>
         </div>
         {props.children}

@@ -42,6 +42,39 @@ const pluginEmptyMessage = (value: string, file: string): JSXElement => {
   )
 }
 
+const tabLabel = (props: { count: number; label: JSXElement; issue: boolean }) => (
+  <span class="inline-flex items-center gap-1">
+    <span
+      classList={{
+        "size-1.5 rounded-full shrink-0": true,
+        "bg-icon-critical-base": props.issue,
+        "bg-icon-success-base": !props.issue,
+      }}
+    />
+    <span>
+      {props.count > 0 ? `${props.count} ` : ""}
+      {props.label}
+    </span>
+  </span>
+)
+
+const mcpIssueMessage = (
+  status: ReturnType<typeof mcp>["status"] | undefined,
+  language: ReturnType<typeof useLanguage>,
+) => {
+  if (!status) return language.t("mcp.status.failed")
+  if (status.status === "failed") return status.error
+  if (status.status === "needs_auth") return language.t("mcp.status.needs_auth")
+  if (status.status === "needs_client_registration") return status.error
+  return undefined
+}
+
+const lspIssueMessage = (status: string | undefined, language: ReturnType<typeof useLanguage>) => {
+  if (status === "error") return language.t("common.requestFailed")
+  if (status && status !== "connected") return status
+  return undefined
+}
+
 const listServersByHealth = (
   list: ServerConnection.Any[],
   active: ServerConnection.Key | undefined,
@@ -200,7 +233,9 @@ export function StatusPopover() {
   })
   const mcpNames = createMemo(() => Object.keys(sync.data.mcp ?? {}).sort((a, b) => a.localeCompare(b)))
   const mcpStatus = (name: string) => sync.data.mcp?.[name]?.status
-  const group = createMemo(() => label(sync.data.path.directory, global.data.project) || getFilename(sync.data.path.directory))
+  const group = createMemo(
+    () => label(sync.data.path.directory, global.data.project) || getFilename(sync.data.path.directory),
+  )
   const projectCfg = createMemo(() => parse(cfg.project))
   const projectDirCfg = createMemo(() => parse(cfg.projectDir))
   const claudeCfg = createMemo(() => claude(cfg.claude, sync.data.path.directory))
@@ -217,10 +252,12 @@ export function StatusPopover() {
     let dead = false
     void list(dir)
       .then(async (files) => {
-        const project = files.find((item) => item.id === "project-opencode-jsonc" && item.exists)
-          ?? files.find((item) => item.id === "project-opencode-json" && item.exists)
-        const projectDir = files.find((item) => item.id === "project-dir-opencode-jsonc" && item.exists)
-          ?? files.find((item) => item.id === "project-dir-opencode-json" && item.exists)
+        const project =
+          files.find((item) => item.id === "project-opencode-jsonc" && item.exists) ??
+          files.find((item) => item.id === "project-opencode-json" && item.exists)
+        const projectDir =
+          files.find((item) => item.id === "project-dir-opencode-jsonc" && item.exists) ??
+          files.find((item) => item.id === "project-dir-opencode-json" && item.exists)
         const claudePath = configPath(global.data.path.home, ".claude.json")
         const omoJsonPath = configPath(global.data.path.config, "oh-my-openagent.json")
         const omoJsoncPath = configPath(global.data.path.config, "oh-my-openagent.jsonc")
@@ -308,6 +345,11 @@ export function StatusPopover() {
     })
     return serverHealthy && !anyMcpIssue
   })
+  const serverIssue = createMemo(
+    () => server.healthy() === false || Object.values(health).some((value) => value?.healthy === false),
+  )
+  const mcpIssue = createMemo(() => mcpItems().some((entry) => !!mcpIssueMessage(entry.status, language)))
+  const lspIssue = createMemo(() => lspItems().some((entry) => !!lspIssueMessage(entry.status, language)))
 
   const copy = (value: string) => {
     void navigator.clipboard.writeText(value).then(
@@ -383,7 +425,13 @@ export function StatusPopover() {
           data-active={tab()}
           value={tab()}
           onChange={(value) => {
-            if (value === "servers" || value === "mcp" || value === "lsp" || value === "plugins" || value === "skills") {
+            if (
+              value === "servers" ||
+              value === "mcp" ||
+              value === "lsp" ||
+              value === "plugins" ||
+              value === "skills"
+            ) {
               setTab(value)
             }
           }}
@@ -391,24 +439,23 @@ export function StatusPopover() {
         >
           <Tabs.List data-slot="tablist" class="bg-transparent border-b-0 px-4 pt-2 pb-0 gap-4 h-10">
             <Tabs.Trigger value="servers" data-slot="tab" class="text-12-regular">
-              {sortedServers().length > 0 ? `${sortedServers().length} ` : ""}
-              {language.t("status.popover.tab.servers")}
+              {tabLabel({
+                count: sortedServers().length,
+                label: language.t("status.popover.tab.servers"),
+                issue: serverIssue(),
+              })}
             </Tabs.Trigger>
             <Tabs.Trigger value="mcp" data-slot="tab" class="text-12-regular">
-              {mcpConnected() > 0 ? `${mcpConnected()} ` : ""}
-              {language.t("status.popover.tab.mcp")}
+              {tabLabel({ count: mcpConnected(), label: language.t("status.popover.tab.mcp"), issue: mcpIssue() })}
             </Tabs.Trigger>
             <Tabs.Trigger value="lsp" data-slot="tab" class="text-12-regular">
-              {lspCount() > 0 ? `${lspCount()} ` : ""}
-              {language.t("status.popover.tab.lsp")}
+              {tabLabel({ count: lspCount(), label: language.t("status.popover.tab.lsp"), issue: lspIssue() })}
             </Tabs.Trigger>
             <Tabs.Trigger value="plugins" data-slot="tab" class="text-12-regular">
-              {pluginCount() > 0 ? `${pluginCount()} ` : ""}
-              {language.t("status.popover.tab.plugins")}
+              {tabLabel({ count: pluginCount(), label: language.t("status.popover.tab.plugins"), issue: false })}
             </Tabs.Trigger>
             <Tabs.Trigger value="skills" data-slot="tab" class="text-12-regular">
-              {skillCount() > 0 ? `${skillCount()} ` : ""}
-              {skillTab()}
+              {tabLabel({ count: skillCount(), label: skillTab(), issue: false })}
             </Tabs.Trigger>
           </Tabs.List>
 
@@ -422,7 +469,7 @@ export function StatusPopover() {
                       const isBlocked = () => health[key]?.healthy === false
                       return (
                         <div
-                          class="status-list-item flex items-center gap-2 w-full h-8 pl-3 pr-1.5 py-1.5 rounded-md transition-colors text-left"
+                          class="status-list-item flex items-center gap-2 w-full min-h-8 pl-3 pr-1.5 py-1.5 rounded-md transition-colors text-left"
                           classList={{
                             "cursor-not-allowed": isBlocked(),
                           }}
@@ -491,27 +538,42 @@ export function StatusPopover() {
                         return (
                           <button
                             type="button"
-                            class="status-list-item flex items-center gap-2 w-full h-8 pl-3 pr-2 py-1 rounded-md transition-colors text-left"
+                            class="status-list-item flex items-center gap-2 w-full min-h-8 pl-3 pr-2 py-1 rounded-md transition-colors text-left"
                             onClick={() => {
                               if (toggleMcp.isPending) return
                               toggleMcp.mutate(entry.name)
                             }}
                             disabled={toggleMcp.isPending && toggleMcp.variables === entry.name}
                           >
-                            <div
-                              classList={{
-                                "size-1.5 rounded-full shrink-0": true,
-                                "bg-icon-success-base": status() === "connected",
-                                "bg-icon-critical-base": status() === "failed",
-                                "bg-border-weak-base": status() === "disabled",
-                                "bg-icon-warning-base":
-                                  status() === "needs_auth" || status() === "needs_client_registration",
-                              }}
-                            />
-                            <div class="flex-1 min-w-0 text-14-regular text-text-base truncate">
-                              {entry.name}
-                              <Show when={entry.project}>
-                                <span class="text-text-weak"> {" | "}{entry.project}</span>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex items-center gap-2 min-w-0">
+                                <div
+                                  classList={{
+                                    "size-1.5 rounded-full shrink-0": true,
+                                    "bg-icon-success-base": status() === "connected",
+                                    "bg-icon-critical-base": status() === "failed",
+                                    "bg-border-weak-base": status() === "disabled",
+                                    "bg-icon-warning-base":
+                                      status() === "needs_auth" || status() === "needs_client_registration",
+                                  }}
+                                />
+                                <div class="text-14-regular text-text-base truncate">
+                                  {entry.name}
+                                  <Show when={entry.project}>
+                                    <span class="text-text-weak">
+                                      {" "}
+                                      {" | "}
+                                      {entry.project}
+                                    </span>
+                                  </Show>
+                                </div>
+                              </div>
+                              <Show when={mcpIssueMessage(entry.status, language)}>
+                                {(message) => (
+                                  <div class="ml-3.5 text-12-regular text-text-danger-base truncate max-w-full">
+                                    {message()}
+                                  </div>
+                                )}
                               </Show>
                             </div>
                             <div onClick={(event) => event.stopPropagation()}>
@@ -549,14 +611,25 @@ export function StatusPopover() {
                     <For each={lspItems()}>
                       {(item) => (
                         <div class="flex items-center gap-2 w-full px-2 py-1">
-                          <div
-                            classList={{
-                              "size-1.5 rounded-full shrink-0": true,
-                              "bg-icon-success-base": item.status === "connected",
-                              "bg-icon-critical-base": item.status === "error",
-                            }}
-                          />
-                          <span class="text-14-regular text-text-base truncate">{item.name || item.id}</span>
+                          <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 min-w-0">
+                              <div
+                                classList={{
+                                  "size-1.5 rounded-full shrink-0": true,
+                                  "bg-icon-success-base": item.status === "connected",
+                                  "bg-icon-critical-base": item.status === "error",
+                                }}
+                              />
+                              <div class="text-14-regular text-text-base truncate">{item.name || item.id}</div>
+                            </div>
+                            <Show when={lspIssueMessage(item.status, language)}>
+                              {(message) => (
+                                <div class="ml-3.5 text-12-regular text-text-danger-base truncate max-w-full">
+                                  {message()}
+                                </div>
+                              )}
+                            </Show>
+                          </div>
                         </div>
                       )}
                     </For>
@@ -584,7 +657,11 @@ export function StatusPopover() {
                           <div class="flex-1 min-w-0 text-14-regular text-text-base truncate">
                             {plugin.name}
                             <Show when={plugin.project}>
-                              <span class="text-text-weak"> {" | "}{plugin.project}</span>
+                              <span class="text-text-weak">
+                                {" "}
+                                {" | "}
+                                {plugin.project}
+                              </span>
                             </Show>
                           </div>
                           <Button
@@ -639,9 +716,17 @@ export function StatusPopover() {
                           <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
                           <div class="flex-1 min-w-0 text-14-regular text-text-base truncate">
                             {entry.name}
-                            <span class="text-text-weak"> {" | "}{entry.scope}</span>
+                            <span class="text-text-weak">
+                              {" "}
+                              {" | "}
+                              {entry.scope}
+                            </span>
                             <Show when={entry.source}>
-                              <span class="text-text-weak"> {" | "}{entry.source}</span>
+                              <span class="text-text-weak">
+                                {" "}
+                                {" | "}
+                                {entry.source}
+                              </span>
                             </Show>
                           </div>
                           <Button
