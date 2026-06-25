@@ -1567,29 +1567,34 @@ export const layer = Layer.effect(
       }
       const agentName = cmd.agent ?? input.agent
 
-      const raw = input.arguments.match(argsRegex) ?? []
-      const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
       const templateCommand = yield* Effect.promise(async () => cmd.template)
+      let template = templateCommand
 
-      const placeholders = templateCommand.match(placeholderRegex) ?? []
-      let last = 0
-      for (const item of placeholders) {
-        const value = Number(item.slice(1))
-        if (value > last) last = value
-      }
+      if (cmd.source === "skill") {
+        if (input.arguments.trim()) template = template + "\n\n" + input.arguments
+      } else {
+        const raw = input.arguments.match(argsRegex) ?? []
+        const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
+        const placeholders = templateCommand.match(placeholderRegex) ?? []
+        let last = 0
+        for (const item of placeholders) {
+          const value = Number(item.slice(1))
+          if (value > last) last = value
+        }
 
-      const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
-        const position = Number(index)
-        const argIndex = position - 1
-        if (argIndex >= args.length) return ""
-        if (position === last) return args.slice(argIndex).join(" ")
-        return args[argIndex]
-      })
-      const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
-      let template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
+        const withArgs = templateCommand.replaceAll(placeholderRegex, (_, index) => {
+          const position = Number(index)
+          const argIndex = position - 1
+          if (argIndex >= args.length) return ""
+          if (position === last) return args.slice(argIndex).join(" ")
+          return args[argIndex]
+        })
+        const usesArgumentsPlaceholder = templateCommand.includes("$ARGUMENTS")
+        template = withArgs.replaceAll("$ARGUMENTS", input.arguments)
 
-      if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
-        template = template + "\n\n" + input.arguments
+        if (placeholders.length === 0 && !usesArgumentsPlaceholder && input.arguments.trim()) {
+          template = template + "\n\n" + input.arguments
+        }
       }
 
       const shellMatches = ConfigMarkdown.shell(template)

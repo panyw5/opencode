@@ -1606,6 +1606,83 @@ unix(
   30_000,
 )
 
+const researchSkillWithLatexExamples = [
+  "---",
+  "name: research",
+  "description: perform academic research",
+  "---",
+  "",
+  "- **行内式子** 使用 $1\\times 1\\times H$",
+  "- **数值计算** 使用 $2\\times 10\\times 8 = 160$",
+].join("\n")
+
+it.instance("command replaces arguments before resolving markdown references", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    yield* writeText(
+      path.join(dir, ".opencode", "skills", "research", "SKILL.md"),
+      researchSkillWithLatexExamples,
+    )
+    yield* writeText(
+      path.join(dir, ".opencode", "commands", "research.md"),
+      [
+        "---",
+        "description: Test research command",
+        "---",
+        "",
+        "Use @.opencode/skills/research/SKILL.md for instructions.",
+        "",
+        "Question: $ARGUMENTS",
+      ].join("\n"),
+    )
+
+    const { prompt, chat } = yield* boot()
+    yield* llm.text("done")
+
+    const result = yield* prompt.command({
+      sessionID: chat.id,
+      command: "research",
+      arguments: "帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。",
+    })
+
+    expect(result.info.role).toBe("assistant")
+    const inputs = yield* llm.inputs
+    const messages = JSON.stringify(inputs.at(-1)?.messages)
+    expect(messages).toContain("$1\\\\times 1\\\\times H$")
+    expect(messages).toContain("$2\\\\times 10\\\\times 8 = 160$")
+    expect(messages).toContain("帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。")
+    expect(messages).not.toContain("使用 帮我查一下什么文献介绍了 Zhu")
+  }),
+  { git: true },
+)
+
+it.instance("skill-backed slash command appends arguments without replacing LaTeX dollar examples", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    yield* writeText(
+      path.join(dir, ".opencode", "skills", "research", "SKILL.md"),
+      researchSkillWithLatexExamples,
+    )
+
+    const { prompt, chat } = yield* boot()
+    yield* llm.text("done")
+
+    const result = yield* prompt.command({
+      sessionID: chat.id,
+      command: "research",
+      arguments: "帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。",
+    })
+
+    expect(result.info.role).toBe("assistant")
+    const inputs = yield* llm.inputs
+    const messages = JSON.stringify(inputs.at(-1)?.messages)
+    expect(messages).toContain("$1\\\\times 1\\\\times H$")
+    expect(messages).toContain("$2\\\\times 10\\\\times 8 = 160$")
+    expect(messages).toContain("帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。")
+    expect(messages).not.toContain("使用 帮我查一下什么文献介绍了 Zhu")
+  }),
+)
+
 unixNoLLMServer(
   "cancel interrupts shell and resolves cleanly",
   () =>
