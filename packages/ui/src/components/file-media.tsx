@@ -9,6 +9,8 @@ import {
   normalizeMimeType,
   svgTextFromValue,
 } from "../pierre/media"
+import { IconButton } from "./icon-button"
+import { Tooltip } from "./tooltip"
 
 export type FileMediaOptions = {
   mode?: "auto" | "off"
@@ -27,7 +29,12 @@ function mediaValue(cfg: FileMediaOptions, mode: "image" | "audio" | "pdf") {
   return cfg.after ?? cfg.before
 }
 
-export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX.Element }) {
+export function FileMedia(props: {
+  media?: FileMediaOptions
+  fallback: () => JSX.Element
+  openFolder?: () => void
+  copyPath?: () => void
+}) {
   const i18n = useI18n()
   const cfg = () => props.media
   const kind = createMemo(() => {
@@ -166,6 +173,41 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
           ? "ui.fileMedia.kind.audio"
           : "ui.fileMedia.kind.pdf",
     )
+  const notice = (message: string, actions = false) => (
+    <div class="flex min-h-40 flex-col items-center justify-center gap-3 px-6 py-4 text-center text-text-weak">
+      <div>{message}</div>
+      <Show when={actions && (props.openFolder || props.copyPath)}>
+        <div class="flex items-center justify-center gap-2">
+          <Show when={props.openFolder}>
+            {(openFolder) => (
+              <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">
+                <IconButton
+                  icon="folder"
+                  variant="secondary"
+                  class="h-8 w-8 rounded-md"
+                  onClick={openFolder()}
+                  aria-label={i18n.t("ui.file.openFolder")}
+                />
+              </Tooltip>
+            )}
+          </Show>
+          <Show when={props.copyPath}>
+            {(copyPath) => (
+              <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
+                <IconButton
+                  icon="copy"
+                  variant="secondary"
+                  class="h-8 w-8 rounded-md"
+                  onClick={copyPath()}
+                  aria-label={i18n.t("ui.file.copyPath")}
+                />
+              </Tooltip>
+            )}
+          </Show>
+        </div>
+      </Show>
+    </div>
+  )
 
   return (
     <Switch>
@@ -179,31 +221,15 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
             const label = kindLabel(k)
 
             if (deleted()) {
-              return (
-                <div class="flex min-h-40 items-center justify-center px-6 py-4 text-center text-text-weak">
-                  {i18n.t("ui.fileMedia.state.removed", { kind: label })}
-                </div>
-              )
+              return notice(i18n.t("ui.fileMedia.state.removed", { kind: label }))
             }
             if (status() === "loading") {
-              return (
-                <div class="flex min-h-40 items-center justify-center px-6 py-4 text-center text-text-weak">
-                  {i18n.t("ui.fileMedia.state.loading", { kind: label })}
-                </div>
-              )
+              return notice(i18n.t("ui.fileMedia.state.loading", { kind: label }))
             }
             if (status() === "error") {
-              return (
-                <div class="flex min-h-40 items-center justify-center px-6 py-4 text-center text-text-weak">
-                  {i18n.t("ui.fileMedia.state.error", { kind: label })}
-                </div>
-              )
+              return notice(i18n.t("ui.fileMedia.state.error", { kind: label }), true)
             }
-            return (
-              <div class="flex min-h-40 items-center justify-center px-6 py-4 text-center text-text-weak">
-                {i18n.t("ui.fileMedia.state.unavailable", { kind: label })}
-              </div>
-            )
+            return notice(i18n.t("ui.fileMedia.state.unavailable", { kind: label }), true)
           })()}
         >
           {(value) => {

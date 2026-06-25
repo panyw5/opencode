@@ -1344,8 +1344,22 @@ export function File<T>(props: FileProps<T>) {
     if (mediaKindFromPath(props.file.name) === "svg") {
       return TextViewer(props)
     }
-    return <FileMedia media={props.media} fallback={() => TextViewer(props)} />
+    return (
+      <FileMedia
+        media={props.media}
+        fallback={() => TextViewer(props)}
+        openFolder={props.openFolder}
+        copyPath={props.copyPath}
+      />
+    )
   }
 
-  return <FileMedia media={props.media} fallback={() => DiffViewer(props)} />
+  return (
+    <FileMedia
+      media={props.media}
+      fallback={() => DiffViewer(props)}
+      openFolder={props.openFolder}
+      copyPath={props.copyPath}
+    />
+  )
 }
