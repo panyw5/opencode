@@ -177,6 +177,7 @@ export default function Layout(props: ParentProps) {
   const command = useCommand()
   const theme = useTheme()
   const language = useLanguage()
+  const [reloadingBackend, setReloadingBackend] = createSignal(false)
   createEffect(() => {
     if (!import.meta.env.DEV) return
     if (platform.platform !== "desktop") return
@@ -1144,6 +1145,30 @@ export default function Layout(props: ParentProps) {
     }
   }
 
+  async function reloadBackendFromCommand() {
+    if (!platform.reloadBackend || reloadingBackend()) return
+    setReloadingBackend(true)
+    await platform
+      .reloadBackend()
+      .then(() => {
+        showToast({
+          variant: "success",
+          title: language.t("toast.server.reloadBackend.success.title"),
+          description: language.t("toast.server.reloadBackend.success.description"),
+          duration: 1800,
+        })
+      })
+      .catch((err: unknown) => {
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+          duration: 2200,
+        })
+      })
+      .finally(() => setReloadingBackend(false))
+  }
+
   command.register("layout", () => {
     const commands: CommandOption[] = [
       {
@@ -1229,28 +1254,8 @@ export default function Layout(props: ParentProps) {
         description: language.t("command.server.reloadBackend.description"),
         keywords: kw("command.server.reloadBackend", "command.server.reloadBackend.description"),
         category: language.t("command.category.server"),
-        disabled: !platform.reloadBackend,
-        onSelect: async () => {
-          if (!platform.reloadBackend) return
-          await platform
-            .reloadBackend()
-            .then(() => {
-              showToast({
-                variant: "success",
-                title: language.t("toast.server.reloadBackend.success.title"),
-                description: language.t("toast.server.reloadBackend.success.description"),
-                duration: 1800,
-              })
-            })
-            .catch((err: unknown) => {
-              showToast({
-                variant: "error",
-                title: language.t("common.requestFailed"),
-                description: err instanceof Error ? err.message : String(err),
-                duration: 2200,
-              })
-            })
-        },
+        disabled: !platform.reloadBackend || reloadingBackend(),
+        onSelect: () => void reloadBackendFromCommand(),
       },
       {
         id: "settings.open",
@@ -3189,6 +3194,19 @@ export default function Layout(props: ParentProps) {
             <span class="text-16-medium">
               {folderDragging() ? language.t("sidebar.dropFolder") : language.t("sidebar.dropFile")}
             </span>
+          </div>
+        </div>
+      </Show>
+      <Show when={reloadingBackend()}>
+        <div
+          class="fixed inset-0 z-[120] flex items-center justify-center bg-background-base/80 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div class="flex items-center gap-3 rounded-[24px] border border-border-weak-base bg-surface-raised-base/90 px-5 py-4 text-text-strong shadow-2xl">
+            <Spinner class="size-5 text-text-strong" />
+            <span class="text-15-medium">{language.t("config.reloadBackend.loading")}</span>
           </div>
         </div>
       </Show>
