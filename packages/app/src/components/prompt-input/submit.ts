@@ -1,7 +1,6 @@
 import type { Message, Session } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { Binary } from "@opencode-ai/core/util/binary"
 import { useNavigate, useParams } from "@solidjs/router"
 import type { Accessor } from "solid-js"
 import type { FileSelection } from "@/context/file"
@@ -341,20 +340,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
   }
 
-  const seed = (dir: string, info: Session) => {
-    const [, setStore] = globalSync.child(dir)
-    setStore("session", (list: Session[]) => {
-      const result = Binary.search(list, info.id, (item) => item.id)
-      const next = [...list]
-      if (result.found) {
-        next[result.index] = info
-        return next
-      }
-      next.splice(result.index, 0, info)
-      return next
-    })
-  }
-
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
 
@@ -562,7 +547,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       performance.mark("submit:session-create:end")
       performance.measure("submit:session-create", "submit:session-create:start", "submit:session-create:end")
       if (created) {
-        seed(sessionDirectory, created)
+        sync.session.created({ directory: sessionDirectory, info: created })
         session = created
         if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
         local.session.promote(sessionDirectory, session.id)

@@ -11,7 +11,7 @@ import {
 } from "./global-sync/session-prefetch"
 import { useGlobalSync } from "./global-sync"
 import { useSDK } from "./sdk"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -216,6 +216,20 @@ const initialMessagePageSize = 80
       const match = Binary.search(store.session, sessionID, (s) => s.id)
       if (match.found) return store.session[match.index]
       return undefined
+    }
+
+    const setSession = (setStore: Setter, info: Session) => {
+      setStore(
+        "session",
+        produce((draft: Session[]) => {
+          const match = Binary.search(draft, info.id, (s) => s.id)
+          if (match.found) {
+            draft[match.index] = info
+            return
+          }
+          draft.splice(match.index, 0, info)
+        }),
+      )
     }
 
     const setOptimistic = (directory: string, sessionID: string, item: OptimisticItem) => {
@@ -444,6 +458,19 @@ const initialMessagePageSize = 80
       },
       session: {
         get: getSession,
+        created(input: { directory?: string; info: Session }) {
+          const directory = input.directory ?? sdk.directory
+          const [, setStore] = target(input.directory)
+          const key = keyFor(directory, input.info.id)
+          touch(directory, setStore, input.info.id)
+          batch(() => {
+            setSession(setStore, input.info)
+            setStore("message", input.info.id, (messages: Message[] | undefined) => messages ?? [])
+            setMeta("cursor", key, undefined)
+            setMeta("complete", key, false)
+            setMeta("loading", key, false)
+          })
+        },
         optimistic: {
           add(input: { directory?: string; sessionID: string; message: Message; parts: Part[] }) {
             const directory = input.directory ?? sdk.directory
@@ -530,17 +557,7 @@ const initialMessagePageSize = 80
                     if (!tracked(directory, sessionID)) return
                     const data = session.data
                     if (!data) return
-                    setStore(
-                      "session",
-                      produce((draft) => {
-                        const match = Binary.search(draft, sessionID, (s) => s.id)
-                        if (match.found) {
-                          draft[match.index] = data
-                          return
-                        }
-                        draft.splice(match.index, 0, data)
-                      }),
-                    )
+                    setSession(setStore, data)
                   })
 
             const messagesReq =
