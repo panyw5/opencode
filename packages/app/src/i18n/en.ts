@@ -48,6 +48,7 @@ export const dict = {
   "command.session.next": "Next session",
   "command.session.previous.unseen": "Previous unread session",
   "command.session.next.unseen": "Next unread session",
+  "command.session.jump": "Jump to session {{index}}",
   "command.session.archive": "Archive session",
 
   "trellis.tasks.title": "Tasks",

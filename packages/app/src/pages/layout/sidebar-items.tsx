@@ -2,6 +2,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Keybind } from "@opencode-ai/ui/keybind"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -9,6 +10,7 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { A, useParams } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { useCommand } from "@/context/command"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
@@ -206,6 +208,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const params = useParams()
   const layout = useLayout()
   const language = useLanguage()
+  const command = useCommand()
   const notification = useNotification()
   const permission = usePermission()
   const globalSync = useGlobalSync()
@@ -235,6 +238,20 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const hoverAllowed = createMemo(() => !props.mobile && props.sidebarExpanded())
   const hoverEnabled = createMemo(() => hoverAllowed())
   const tooltip = createMemo(() => !props.reduced && (props.mobile || !props.sidebarExpanded()))
+  const jumpIndex = createMemo(() => {
+    const nav = props.navList?.()
+    const list = nav?.some((item) => item.id === props.session.id && item.directory === props.session.directory)
+      ? nav
+      : props.list
+    const index = list.findIndex((item) => item.id === props.session.id && item.directory === props.session.directory)
+    if (index < 0 || index > 4) return
+    return index + 1
+  })
+  const jumpKeybind = createMemo(() => {
+    const index = jumpIndex()
+    if (!index) return
+    return command.keybind(`session.jump.${index}`)
+  })
   const copy = () => {
     const text = `Session ID: ${props.session.id}\nProject path: ${props.session.directory}`
     const clip = typeof navigator === "undefined" ? undefined : navigator.clipboard
@@ -353,17 +370,25 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
 
       <div class="shrink-0 flex items-center gap-1">
         <div
-          class="overflow-hidden flex items-center gap-1"
+          class="relative overflow-hidden flex items-center gap-1"
           classList={{
             "transition-[width,opacity]": !props.reduced,
-            "w-[52px] opacity-100 pointer-events-auto": !!props.mobile,
-            "w-0 opacity-0 pointer-events-none": !props.mobile || !!props.reduced,
+            "w-[52px] opacity-100 pointer-events-auto":
+              !!props.mobile || (!props.mobile && !props.reduced && !!jumpKeybind()),
+            "w-0 opacity-0 pointer-events-none": (!props.mobile && !jumpKeybind()) || !!props.reduced,
             "group-hover/session:w-[52px] group-hover/session:opacity-100 group-hover/session:pointer-events-auto":
               !props.reduced,
             "group-focus-within/session:w-[52px] group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto":
               !props.reduced,
           }}
         >
+          <Show when={!props.mobile && !props.reduced && jumpKeybind()}>
+            {(keybind) => (
+              <Keybind class="absolute right-0 top-1/2 -translate-y-1/2 h-5 rounded-md border border-border-base/60 bg-surface-base/70 px-1.5 text-[11px] text-text-weak shadow-none transition-opacity duration-150 group-hover/session:opacity-0 group-focus-within/session:opacity-0">
+                {keybind()}
+              </Keybind>
+            )}
+          </Show>
           <Show
             when={!props.reduced}
             fallback={
@@ -398,7 +423,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                 <IconButton
                   icon="copy"
                   variant="ghost"
-                  class="size-6 rounded-md shrink-0"
+                  class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
+                  classList={{
+                    "opacity-0 pointer-events-none group-hover/session:pointer-events-auto group-focus-within/session:pointer-events-auto":
+                      !props.mobile && !!jumpKeybind(),
+                  }}
                   aria-label={language.t("session.copyInfo")}
                   onClick={(event) => {
                     event.preventDefault()
@@ -411,7 +440,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                 <IconButton
                   icon="archive"
                   variant="ghost"
-                  class="size-6 rounded-md shrink-0"
+                  class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
+                  classList={{
+                    "opacity-0 pointer-events-none group-hover/session:pointer-events-auto group-focus-within/session:pointer-events-auto":
+                      !props.mobile && !!jumpKeybind(),
+                  }}
                   aria-label={language.t("common.archive")}
                   onClick={(event) => {
                     event.preventDefault()

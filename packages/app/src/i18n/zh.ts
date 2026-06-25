@@ -56,6 +56,7 @@ export const dict = {
   "command.session.next": "下一个会话",
   "command.session.previous.unseen": "上一个未读会话",
   "command.session.next.unseen": "下一个未读会话",
+  "command.session.jump": "跳转到第 {{index}} 个会话",
   "command.session.archive": "归档会话",
 
   "trellis.tasks.title": "任务",

@@ -33,6 +33,20 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   throw new Error(t("error.dev.rootNotFound"))
 }
 
+if (import.meta.env.DEV) {
+  const warn = console.warn.bind(console)
+  const solidDndCleanupWarnings = [
+    "Cannot remove transformer from nonexistent droppable with id:",
+    "Cannot remove nonexistent droppable with id:",
+    "Cannot remove nonexistent draggable with id:",
+  ]
+  console.warn = (...args: unknown[]) => {
+    const first = args[0]
+    if (typeof first === "string" && solidDndCleanupWarnings.some((prefix) => first.startsWith(prefix))) return
+    warn(...args)
+  }
+}
+
 function trellisTaskCurrentFile(path: string): string {
   const normalized = path.replace(/\\/g, "/").replace(/\/+$/, "")
   const taskName = normalized.split("/").filter(Boolean).at(-1)

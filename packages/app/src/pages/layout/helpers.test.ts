@@ -17,6 +17,7 @@ import {
   latestProjectSession,
   latestRootSession,
   projectOwner,
+  sessionByOneBasedIndex,
   sortedProjectSessions,
   latestWorkspaceSession,
   waitForMatch,
@@ -249,6 +250,18 @@ describe("layout workspace helpers", () => {
     )
 
     expect(result.map((item) => item.id)).toEqual(["workspace", "root"])
+  })
+
+  test("selects a session by one-based list index", () => {
+    const sessions = [
+      session({ id: "first", directory: "/workspace" }),
+      session({ id: "second", directory: "/workspace" }),
+    ]
+
+    expect(sessionByOneBasedIndex(sessions, 1)?.id).toBe("first")
+    expect(sessionByOneBasedIndex(sessions, 2)?.id).toBe("second")
+    expect(sessionByOneBasedIndex(sessions, 0)).toBeUndefined()
+    expect(sessionByOneBasedIndex(sessions, 3)).toBeUndefined()
   })
 
   test("treats loading sessions as initial load only before visible root sessions exist", () => {

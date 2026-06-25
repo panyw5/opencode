@@ -85,6 +85,7 @@ import {
   latestProjectSession,
   latestRootSession,
   projectOwner,
+  sessionByOneBasedIndex,
   sortedProjectSessions,
   sortedRootSessions,
   waitForMatch,
@@ -1060,6 +1061,17 @@ export default function Layout(props: ParentProps) {
     navigateToSession(session)
   }
 
+  function navigateSessionByIndex(index: number) {
+    const sessions = currentSessions()
+    const session = sessionByOneBasedIndex(sessions, index)
+    if (!session) return
+
+    prefetchSession(session, "high")
+    warm(sessions, index - 1)
+
+    navigateToSession(session)
+  }
+
   function navigateProjectByOffset(offset: number) {
     const projects = layout.projects.list()
     if (projects.length === 0) return
@@ -1358,6 +1370,17 @@ export default function Layout(props: ParentProps) {
         keybind: "shift+alt+arrowdown",
         onSelect: () => navigateSessionByUnseen(1),
       },
+      ...[1, 2, 3, 4, 5].map((index) =>
+        ({
+          id: `session.jump.${index}`,
+          title: language.t("command.session.jump", { index }),
+          keywords: kw("command.session.jump"),
+          category: language.t("command.category.session"),
+          keybind: `mod+${index}`,
+          disabled: currentSessions().length < index,
+          onSelect: () => navigateSessionByIndex(index),
+        }),
+      ),
       {
         id: "session.archive",
         title: language.t("command.session.archive"),

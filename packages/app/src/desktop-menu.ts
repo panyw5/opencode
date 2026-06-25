@@ -173,6 +173,11 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       { type: "separator" },
       { type: "item", label: "Previous Session", command: "session.previous", accelerator: { macos: "Option+Up" } },
       { type: "item", label: "Next Session", command: "session.next", accelerator: { macos: "Option+Down" } },
+      { type: "item", label: "Jump to Session 1", command: "session.jump.1", accelerator: { macos: "Cmd+1" } },
+      { type: "item", label: "Jump to Session 2", command: "session.jump.2", accelerator: { macos: "Cmd+2" } },
+      { type: "item", label: "Jump to Session 3", command: "session.jump.3", accelerator: { macos: "Cmd+3" } },
+      { type: "item", label: "Jump to Session 4", command: "session.jump.4", accelerator: { macos: "Cmd+4" } },
+      { type: "item", label: "Jump to Session 5", command: "session.jump.5", accelerator: { macos: "Cmd+5" } },
       { type: "separator" },
       {
         type: "item",

@@ -140,6 +140,11 @@ export const latestProjectSession = (
   return latestRootSession(stores, now)
 }
 
+export function sessionByOneBasedIndex(sessions: readonly Session[], index: number) {
+  if (!Number.isInteger(index) || index < 1) return
+  return sessions[index - 1]
+}
+
 export function hasProjectPermissions(
   session: Session[],
   request: Record<string, PermissionRequest[] | undefined>,
