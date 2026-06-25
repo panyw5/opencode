@@ -384,7 +384,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         >
           <Show when={!props.mobile && !props.reduced && jumpKeybind()}>
             {(keybind) => (
-              <Keybind class="absolute right-0 top-1/2 -translate-y-1/2 h-5 rounded-md border border-border-base/60 bg-surface-base/70 px-1.5 text-[11px] text-text-weak shadow-none transition-opacity duration-150 group-hover/session:opacity-0 group-focus-within/session:opacity-0">
+              <Keybind class="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 h-5 rounded-md border border-border-base/60 bg-surface-base/70 px-1.5 text-[11px] text-text-weak shadow-none transition-opacity duration-150 group-hover/session:opacity-0 group-focus-within/session:opacity-0">
                 {keybind()}
               </Keybind>
             )}
