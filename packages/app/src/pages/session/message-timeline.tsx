@@ -1508,9 +1508,6 @@ export function MessageTimeline(props: {
     if (Math.abs(dist) <= 1) return
 
     follow(root, source, "smooth")
-    console.debug(
-      `[timeline] bottom pin: source=${source} dist=${Math.round(dist)} top=${Math.round(root.scrollTop)} scrollHeight=${Math.round(root.scrollHeight)} clientHeight=${Math.round(root.clientHeight)}`,
-    )
   }
 
   const schedulePin = (source: string) => {
