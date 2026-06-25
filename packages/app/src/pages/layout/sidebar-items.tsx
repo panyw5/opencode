@@ -30,6 +30,11 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   const stores = createMemo(() => dirs().map((directory) => globalSync.child(directory, { bootstrap: false })[0]))
   const loaded = createMemo(() => dirs().some((directory) => globalSync.loaded(directory)))
   const loadingSessions = createMemo(() => isInitialSessionLoad(stores()))
+  const hasActiveSession = createMemo(() =>
+    stores().some((store) =>
+      store.session.some((session) => working(store.session_status[session.id], store.message[session.id])),
+    ),
+  )
   const count = createMemo(() =>
     dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )
@@ -88,6 +93,16 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
       </div>
       <Show when={loadingSessions()}>
         <div data-slot="sheen" class="pointer-events-none absolute inset-0 z-[5]" />
+      </Show>
+      <Show when={hasActiveSession()}>
+        <div
+          data-component="project-activity-badge"
+          aria-hidden="true"
+          class="pointer-events-none absolute -bottom-0.5 -right-0.5 z-10 flex size-3"
+        >
+          <span data-slot="project-activity-ripple" class="absolute inline-flex h-full w-full rounded-full" />
+          <span data-slot="project-activity-dot" class="relative inline-flex size-3 rounded-full" />
+        </div>
       </Show>
       <Show when={notify()}>
         <div

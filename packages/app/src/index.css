@@ -235,6 +235,26 @@
     animation: sidebar-session-loading-sheen 1.8s linear infinite;
   }
 
+  [data-action="project-switch"] {
+    overflow: visible !important;
+  }
+
+  [data-component="project-activity-badge"] {
+    color: #d8c36d;
+  }
+
+  [data-component="project-activity-badge"] [data-slot="project-activity-ripple"] {
+    background: #e6d28a;
+    opacity: 0.68;
+    transform-origin: center;
+    animation: project-activity-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
+  [data-component="project-activity-badge"] [data-slot="project-activity-dot"] {
+    background: #d8c36d;
+    box-shadow: 0 0 0 2px var(--background-base);
+  }
+
   [data-dock-surface="shell"][data-slot="prompt-shell"] {
     border-top-left-radius: 28px;
     border-top-right-radius: 28px;
@@ -506,6 +526,14 @@
   @keyframes genericagent-refresh-icon-spin {
     to {
       transform: rotate(360deg);
+    }
+  }
+
+  @keyframes project-activity-ping {
+    75%,
+    100% {
+      transform: scale(2);
+      opacity: 0;
     }
   }
 }
