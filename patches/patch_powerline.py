@@ -67,10 +67,17 @@ ANCHOR_FONT_SIZE = "this.fontSize * 0.8"
 
 metrics_start = src.find(ANCHOR_ASCENT)
 if metrics_start > 0:
-    # Walk back to find the assignment start: "<s> = <w>.actualBoundingBox..."
-    assign_start = src.rfind("=", 0, metrics_start)
-    if assign_start > 0:
-        assign_start = src.rfind(" ", 0, assign_start) + 1
+    # Walk back to find the assignment start: "<s> = <w>.actualBoundingBox...".
+    # In newer ghostty-web builds this follows another const binding on the
+    # same line, e.g. "const o = ..., G = o.actualBoundingBoxAscent ...".
+    line_start = src.rfind("\n", 0, metrics_start)
+    comma_start = src.rfind(",", 0, metrics_start)
+    if comma_start > line_start:
+        assign_start = comma_start + 1
+        while assign_start < len(src) and src[assign_start].isspace():
+            assign_start += 1
+    else:
+        assign_start = line_start + 1
     metrics_end = src.find("this.fontSize * 0.2", metrics_start)
     if metrics_end > 0:
         metrics_end += len("this.fontSize * 0.2")
@@ -81,7 +88,7 @@ else:
 if metrics_region and not already_padded:
     # Extract variable names: <s> = <w>.actualBoundingBoxAscent || ... || <C>.actualBoundingBoxAscent || <g>.actualBoundingBoxAscent
     m = re.match(
-        r'(\w+)\s*=\s*(\w+)\.actualBoundingBoxAscent[^|]*\|\|[^|]*\|\|\s*'
+        r'(\w+)\s*=\s*(\w+)\.actualBoundingBoxAscent\s*\|\|\s*(?:\2\.fontBoundingBoxAscent\s*\|\|\s*)?'
         r'(\w+)\.actualBoundingBoxAscent[^|]*\|\|\s*(\w+)\.actualBoundingBoxAscent',
         metrics_region,
     )
@@ -104,6 +111,9 @@ if metrics_region and not already_padded:
             sys.exit(1)
     else:
         print("ERROR: could not parse measureFont metrics region", file=sys.stderr)
+        print(f"DEBUG: metrics_start={metrics_start} assign_start={assign_start} metrics_end={metrics_end}", file=sys.stderr)
+        print(f"DEBUG: metrics_region={metrics_region[:500]!r}", file=sys.stderr)
+        print(f"DEBUG: anchor_context={src[max(0, metrics_start - 200):metrics_start + 500]!r}", file=sys.stderr)
         sys.exit(1)
 elif "renderPowerlineGlyph" not in src and not metrics_region:
     print("ERROR: could not find measureFont metrics line", file=sys.stderr)
@@ -117,11 +127,13 @@ else:
 # Match: <k> = Math.ceil(<s>), <N> = Math.ceil(<h>), <t> = <k> + <N>;
 
 ceil_anchor = "Math.ceil("
-ceil_idx = src.find(ceil_anchor)
+ceil_idx = src.find(ceil_anchor, metrics_end if metrics_region else 0)
 if ceil_idx > 0 and not already_padded:
-    # Get ~100 chars around the match for parsing
-    ceil_start = src.rfind(";", 0, ceil_idx)
+    # Get the three assignment segment for parsing.
+    ceil_start = src.rfind(",", 0, ceil_idx)
     ceil_start = ceil_start + 1 if ceil_start >= 0 else max(0, ceil_idx - 60)
+    while ceil_start < len(src) and src[ceil_start].isspace():
+        ceil_start += 1
     ceil_end = src.find(";", ceil_idx)
     ceil_end = ceil_end + 1 if ceil_end >= 0 else ceil_idx + 100
     ceil_region = src[ceil_start:ceil_end]
@@ -142,6 +154,8 @@ if ceil_idx > 0 and not already_padded:
         print(f"added cell padding: top={CELL_PAD_TOP} bottom={CELL_PAD_BOTTOM}")
     else:
         print("ERROR: could not find ceil/sum line", file=sys.stderr)
+        print(f"DEBUG: ceil_idx={ceil_idx} ceil_start={ceil_start} ceil_end={ceil_end}", file=sys.stderr)
+        print(f"DEBUG: ceil_region={ceil_region[:500]!r}", file=sys.stderr)
         sys.exit(1)
 elif not already_padded:
     print("ERROR: could not find ceil/sum line", file=sys.stderr)
