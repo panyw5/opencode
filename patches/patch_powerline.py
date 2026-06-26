@@ -28,8 +28,12 @@ Three fixes are injected:
    down by CELL_PAD_TOP so text stays centered relative to its row).
 
 Idempotent: the patch is a no-op if renderPowerlineGlyph already exists.
+
+All match patterns use regex with back-references so the patch survives
+minified variable-name changes across ghostty-web rebuilds.
 """
 
+import re
 import sys
 
 # Tweakable: extra pixels added to each cell's ascent and descent. 2/2
@@ -46,49 +50,100 @@ with open(path, "r") as f:
     src = f.read()
 
 PAD_MARKER = f"/* opencode-pad {CELL_PAD_TOP}/{CELL_PAD_BOTTOM} */"
-if "renderPowerlineGlyph" in src and PAD_MARKER in src:
+already_padded = PAD_MARKER in src
+if "renderPowerlineGlyph" in src and already_padded:
     print("already patched, skipping")
     sys.exit(0)
 
 # -----------------------------------------------------------------------------
 # Patch 1: prefer fontBoundingBox* over actualBoundingBox* in measureFont()
 # -----------------------------------------------------------------------------
+# The metrics line contains actualBoundingBoxAscent/Descent with a specific
+# fallback chain. Variable names change on every minified rebuild, so we
+# locate the region by string search and extract names with a simple regex.
 
-old_metrics = (
-    "s = w.actualBoundingBoxAscent || w.fontBoundingBoxAscent || "
-    "C.actualBoundingBoxAscent || g.actualBoundingBoxAscent || this.fontSize * 0.8, "
-    "h = w.actualBoundingBoxDescent || w.fontBoundingBoxDescent || "
-    "C.actualBoundingBoxDescent || g.actualBoundingBoxDescent || this.fontSize * 0.2"
-)
-new_metrics = (
-    "s = w.fontBoundingBoxAscent || w.actualBoundingBoxAscent || "
-    "C.fontBoundingBoxAscent || C.actualBoundingBoxAscent || g.actualBoundingBoxAscent || this.fontSize * 0.8, "
-    "h = w.fontBoundingBoxDescent || w.actualBoundingBoxDescent || "
-    "C.fontBoundingBoxDescent || C.actualBoundingBoxDescent || g.actualBoundingBoxDescent || this.fontSize * 0.2"
-)
+ANCHOR_ASCENT = ".actualBoundingBoxAscent || "
+ANCHOR_FONT_SIZE = "this.fontSize * 0.8"
 
-if old_metrics in src:
-    src = src.replace(old_metrics, new_metrics, 1)
-    print("patched measureFont metrics to prefer fontBoundingBox*")
-elif new_metrics not in src:
-    print("ERROR: could not find original measureFont metrics line", file=sys.stderr)
+metrics_start = src.find(ANCHOR_ASCENT)
+if metrics_start > 0:
+    # Walk back to find the assignment start: "<s> = <w>.actualBoundingBox..."
+    assign_start = src.rfind("=", 0, metrics_start)
+    if assign_start > 0:
+        assign_start = src.rfind(" ", 0, assign_start) + 1
+    metrics_end = src.find("this.fontSize * 0.2", metrics_start)
+    if metrics_end > 0:
+        metrics_end += len("this.fontSize * 0.2")
+    metrics_region = src[assign_start:metrics_end] if metrics_end > 0 else ""
+else:
+    metrics_region = ""
+
+if metrics_region and not already_padded:
+    # Extract variable names: <s> = <w>.actualBoundingBoxAscent || ... || <C>.actualBoundingBoxAscent || <g>.actualBoundingBoxAscent
+    m = re.match(
+        r'(\w+)\s*=\s*(\w+)\.actualBoundingBoxAscent[^|]*\|\|[^|]*\|\|\s*'
+        r'(\w+)\.actualBoundingBoxAscent[^|]*\|\|\s*(\w+)\.actualBoundingBoxAscent',
+        metrics_region,
+    )
+    if m:
+        s, w, C, g = m.group(1), m.group(2), m.group(3), m.group(4)
+        # Extract descent var: <h> = <w>.actualBoundingBoxDescent ...
+        h_m = re.search(r',\s*(\w+)\s*=\s*\w+\.actualBoundingBoxDescent', metrics_region)
+        h = h_m.group(1) if h_m else None
+        if h:
+            replacement = (
+                f"{s} = {w}.fontBoundingBoxAscent || {w}.actualBoundingBoxAscent || "
+                f"{C}.fontBoundingBoxAscent || {C}.actualBoundingBoxAscent || {g}.actualBoundingBoxAscent || this.fontSize * 0.8, "
+                f"{h} = {w}.fontBoundingBoxDescent || {w}.actualBoundingBoxDescent || "
+                f"{C}.fontBoundingBoxDescent || {C}.actualBoundingBoxDescent || {g}.actualBoundingBoxDescent || this.fontSize * 0.2"
+            )
+            src = src[:assign_start] + replacement + src[metrics_end:]
+            print("patched measureFont metrics to prefer fontBoundingBox*")
+        else:
+            print("ERROR: could not extract descent variable", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("ERROR: could not parse measureFont metrics region", file=sys.stderr)
+        sys.exit(1)
+elif "renderPowerlineGlyph" not in src and not metrics_region:
+    print("ERROR: could not find measureFont metrics line", file=sys.stderr)
     sys.exit(1)
+else:
+    print("measureFont metrics already patched")
 
 # -----------------------------------------------------------------------------
 # Patch 3: add per-cell vertical padding via Math.ceil(...) bumps
 # -----------------------------------------------------------------------------
+# Match: <k> = Math.ceil(<s>), <N> = Math.ceil(<h>), <t> = <k> + <N>;
 
-old_ceil = "k = Math.ceil(s), N = Math.ceil(h), t = k + N;"
-new_ceil = (
-    f"k = Math.ceil(s) + {CELL_PAD_TOP} {PAD_MARKER}, "
-    f"N = Math.ceil(h) + {CELL_PAD_BOTTOM}, "
-    f"t = k + N;"
-)
+ceil_anchor = "Math.ceil("
+ceil_idx = src.find(ceil_anchor)
+if ceil_idx > 0 and not already_padded:
+    # Get ~100 chars around the match for parsing
+    ceil_start = src.rfind(";", 0, ceil_idx)
+    ceil_start = ceil_start + 1 if ceil_start >= 0 else max(0, ceil_idx - 60)
+    ceil_end = src.find(";", ceil_idx)
+    ceil_end = ceil_end + 1 if ceil_end >= 0 else ceil_idx + 100
+    ceil_region = src[ceil_start:ceil_end]
 
-if old_ceil in src:
-    src = src.replace(old_ceil, new_ceil, 1)
-    print(f"added cell padding: top={CELL_PAD_TOP} bottom={CELL_PAD_BOTTOM}")
-elif PAD_MARKER not in src:
+    cm = re.match(
+        r'(\w+)\s*=\s*Math\.ceil\((\w+)\),\s*(\w+)\s*=\s*Math\.ceil\((\w+)\),\s*(\w+)\s*=\s*\1\s*\+\s*\3;',
+        ceil_region.strip(),
+    )
+    if cm:
+        k, sv, N, hv, t = cm.group(1), cm.group(2), cm.group(3), cm.group(4), cm.group(5)
+        old = ceil_region.strip()
+        new = (
+            f"{k} = Math.ceil({sv}) + {CELL_PAD_TOP} {PAD_MARKER}, "
+            f"{N} = Math.ceil({hv}) + {CELL_PAD_BOTTOM}, "
+            f"{t} = {k} + {N};"
+        )
+        src = src[:ceil_start] + src[ceil_start:].replace(old, new, 1)
+        print(f"added cell padding: top={CELL_PAD_TOP} bottom={CELL_PAD_BOTTOM}")
+    else:
+        print("ERROR: could not find ceil/sum line", file=sys.stderr)
+        sys.exit(1)
+elif not already_padded:
     print("ERROR: could not find ceil/sum line", file=sys.stderr)
     sys.exit(1)
 
@@ -146,9 +201,14 @@ if "renderPowerlineGlyph" not in src:
 
     # Now find the renderCellText body where text is composed and dispatch
     # powerline codepoints before fillText.
+    # Match: const <wvar> = <xvar>, <hvar> = <yvar> + this.metrics.baseline;
+    body_pat = re.compile(
+        r'const\s+(\w+)\s*=\s*(\w+),\s*(\w+)\s*=\s*(\w+)\s*\+\s*this\.metrics\.baseline;'
+    )
+
     target_line = None
     for i, line in enumerate(lines):
-        if "const s = C, h = I + this.metrics.baseline;" in line and i > target:
+        if i > target and body_pat.search(line):
             target_line = i
             break
 
@@ -156,14 +216,29 @@ if "renderPowerlineGlyph" not in src:
         print("ERROR: could not locate renderCellText body anchor", file=sys.stderr)
         sys.exit(1)
 
+    bm = body_pat.search(lines[target_line])
+    wvar, xvar, hvar, yvar = bm.group(1), bm.group(2), bm.group(3), bm.group(4)
+
+    # Find the FAINT flag enum variable from the same scope.
+    faint_var = None
+    for i in range(target_line, min(target_line + 20, len(lines))):
+        fm = re.search(r'(\w+)\.FAINT', lines[i])
+        if fm:
+            faint_var = fm.group(1)
+            break
+
+    if faint_var is None:
+        print("ERROR: could not locate FAINT flag variable", file=sys.stderr)
+        sys.exit(1)
+
     print(f"dispatching powerline codepoints before fillText at line {target_line + 1}")
-    lines[target_line] = "    const s = C, h = I + this.metrics.baseline;\n"
-    lines.insert(target_line + 1, "    const cp = A.codepoint || 0;\n")
+    print(f"  vars: w={wvar} x={xvar} h={hvar} y={yvar} faint={faint_var}")
+    lines.insert(target_line + 1, f"    const cp = A.codepoint || 0;\n")
     lines.insert(
         target_line + 2,
-        "    if (cp >= 57520 && cp <= 57526 && this.renderPowerlineGlyph(cp, C, I, D, this.metrics.height)) {\n",
+        f"    if (cp >= 57520 && cp <= 57526 && this.renderPowerlineGlyph(cp, {xvar}, {yvar}, {wvar}, this.metrics.height)) {{\n",
     )
-    lines.insert(target_line + 3, "      A.flags & G.FAINT && (this.ctx.globalAlpha = 1);\n")
+    lines.insert(target_line + 3, f"      A.flags & {faint_var}.FAINT && (this.ctx.globalAlpha = 1);\n")
     lines.insert(target_line + 4, "      return;\n")
     lines.insert(target_line + 5, "    }\n")
 
