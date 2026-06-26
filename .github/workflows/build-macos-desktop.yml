@@ -49,6 +49,8 @@ jobs:
           DMG="$(find dist -maxdepth 1 -name '*.dmg' -type f | head -n 1)"
           test -n "$DMG"
           mv "$DMG" "dist/OpenCode_${VERSION}_x64.dmg"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload macOS x64 DMG
         uses: actions/upload-artifact@v4
