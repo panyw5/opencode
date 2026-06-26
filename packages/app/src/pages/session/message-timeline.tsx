@@ -44,7 +44,6 @@ import {
 import {
   collectSessionLayoutMetrics,
   logSessionLayout,
-  sessionLayoutDebugEnabled,
 } from "@/pages/session/session-layout-debug"
 import { resolveLinkedPath } from "@/pages/session/message-link-path"
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
@@ -901,17 +900,11 @@ export function MessageTimeline(props: {
     })
 
   const probeLayout = (source: string, force = false) => {
+    if (!force) return
     const root = viewport
     if (!root) return
-    const max = Math.max(0, root.scrollHeight - root.clientHeight)
-    const nearBottom = max - root.scrollTop <= 80
-    if (!force && !sessionLayoutDebugEnabled() && !nearBottom) return
-
-    const now = performance.now()
-    if (!force && now - layoutLastAt < 250) return
     layoutSource = source
     if (layoutFrame !== undefined) {
-      if (!force) return
       cancelAnimationFrame(layoutFrame)
       layoutFrame = undefined
     }
@@ -919,7 +912,7 @@ export function MessageTimeline(props: {
     layoutFrame = requestAnimationFrame(() => {
       layoutFrame = undefined
       layoutLastAt = performance.now()
-      logSessionLayout(layoutSource, collectLayout(), { mode: props.live ? "live" : "history" }, { force })
+      logSessionLayout(layoutSource, collectLayout(), { mode: props.live ? "live" : "history" })
     })
   }
 

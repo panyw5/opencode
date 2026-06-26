@@ -1,7 +1,3 @@
-const layoutDebugKey = "opencode.session.layout.debug"
-const markdownDebugKey = "opencode.markdown.debug"
-const virtualDebugKey = "opencode.session.virtual.debug"
-
 export type SessionLayoutMetricValue = string | number | boolean
 export type SessionLayoutMetrics = Record<string, SessionLayoutMetricValue | undefined>
 
@@ -22,10 +18,6 @@ type SessionLayoutInput = {
   currentId?: string
   seekingId?: string
   live?: boolean
-}
-
-type LogOptions = {
-  force?: boolean
 }
 
 const none = "none"
@@ -60,24 +52,6 @@ function prefixed(prefix: string, metrics: SessionLayoutMetrics): SessionLayoutM
     result[`${prefix}${key}`] = value
   }
   return result
-}
-
-function readDebugFlag(key: string): string | undefined {
-  try {
-    return window.localStorage.getItem(key) ?? undefined
-  } catch {
-    return undefined
-  }
-}
-
-export function sessionLayoutDebugEnabled(): boolean {
-  if (typeof window === "undefined") return false
-  const virtualFlag = readDebugFlag(virtualDebugKey)
-  return (
-    readDebugFlag(layoutDebugKey) === "1" ||
-    readDebugFlag(markdownDebugKey) === "1" ||
-    (virtualFlag !== undefined && virtualFlag !== "0")
-  )
 }
 
 export function collectSessionLayoutMetrics(input: SessionLayoutInput): SessionLayoutMetrics {
@@ -183,16 +157,9 @@ export function logSessionLayout(
   source: string,
   metrics: SessionLayoutMetrics,
   extra: SessionLayoutMetrics = {},
-  options: LogOptions = {},
 ): void {
   const fields: SessionLayoutMetrics = { ...metrics, ...extra }
-  const suspicious = sessionLayoutLooksBlank(fields)
-  if (!options.force && !sessionLayoutDebugEnabled() && !suspicious) return
-
-  const line = `[session-layout] source=${source} ${formatSessionLayoutMetrics(fields)}`
-  if (suspicious) {
-    console.warn(line)
-    return
+  if (sessionLayoutLooksBlank(fields)) {
+    console.warn(`[session-layout] source=${source} ${formatSessionLayoutMetrics(fields)}`)
   }
-  console.debug(line)
 }

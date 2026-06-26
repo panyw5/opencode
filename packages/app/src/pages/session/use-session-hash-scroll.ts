@@ -59,7 +59,7 @@ export const useSessionHashScroll = (input: {
     )
   }
 
-  const traceLayout = (stage: string, id?: string, extra: SessionLayoutMetrics = {}, force = false) => {
+  const traceLayout = (stage: string, id?: string, extra: SessionLayoutMetrics = {}) => {
     const metrics = collectSessionLayoutMetrics({
       root: input.scroller(),
       sessionId: input.sessionID(),
@@ -70,7 +70,7 @@ export const useSessionHashScroll = (input: {
       seekingId: id,
       live: input.live(),
     })
-    logSessionLayout(`hash:${stage}`, metrics, { id: id ?? "none", ...extra }, { force })
+    logSessionLayout(`hash:${stage}`, metrics, { id: id ?? "none", ...extra })
   }
 
   createEffect(() => {
@@ -151,13 +151,12 @@ export const useSessionHashScroll = (input: {
         beforeTop: before?.top,
         beforeHeight: before?.height,
       },
-      true,
     )
     root.scrollTo({ top, behavior })
     const after = snap(root)
     trace("scroll-after", id, `behavior=${behavior} afterTop=${after?.top ?? "none"} afterHeight=${after?.height ?? "none"}`)
-    traceLayout("scroll-after", id, { behavior, afterTop: after?.top, afterHeight: after?.height }, true)
-    queue(() => traceLayout("scroll-after-raf", id, { behavior }, true))
+    traceLayout("scroll-after", id, { behavior, afterTop: after?.top, afterHeight: after?.height })
+    queue(() => traceLayout("scroll-after-raf", id, { behavior }))
     return true
   }
 
@@ -237,7 +236,7 @@ export const useSessionHashScroll = (input: {
 
   const scrollToMessage = (message: UserMessage, behavior: ScrollBehavior = "smooth") => {
     trace("message-start", message.id, `behavior=${behavior}`)
-    traceLayout("message-start", message.id, { behavior }, true)
+    traceLayout("message-start", message.id, { behavior })
     cancel()
     input.setSeekingMessage(message.id)
     input.enterAnchored()
