@@ -105,7 +105,14 @@ export function setDockIcon() {
   if (!icon.isEmpty()) app.dock?.setIcon(icon)
 }
 
-export function createMainWindow() {
+export type CreateMainWindowOptions = {
+  activate?: boolean
+  show?: boolean
+}
+
+export function createMainWindow(options: CreateMainWindowOptions = {}) {
+  const shouldActivate = options.activate ?? true
+  const shouldShow = options.show ?? true
   const state = windowState({
     defaultWidth: 1280,
     defaultHeight: 800,
@@ -163,7 +170,12 @@ export function createMainWindow() {
   wireZoom(win)
 
   win.once("ready-to-show", () => {
-    win.show()
+    if (!shouldShow) return
+    if (shouldActivate) {
+      win.show()
+      return
+    }
+    win.showInactive()
   })
 
   return win

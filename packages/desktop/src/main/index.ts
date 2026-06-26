@@ -324,6 +324,7 @@ const main = Effect.gen(function* () {
     return !existsSync(join(base, "opencode", "opencode.db"))
   })()
   let overlay: BrowserWindow | null = null
+  let didStartupWindowBlur = false
 
   const port = yield* Effect.gen(function* () {
     const fromEnv = process.env.OPENCODE_PORT
@@ -437,6 +438,12 @@ const main = Effect.gen(function* () {
     )
     if (show) {
       overlay = createLoadingWindow()
+      overlay.on("blur", () => {
+        didStartupWindowBlur = true
+      })
+      overlay.on("focus", () => {
+        didStartupWindowBlur = false
+      })
       yield* Effect.sleep("1 second")
     }
   }
@@ -447,7 +454,13 @@ const main = Effect.gen(function* () {
 
   if (overlay) yield* Deferred.await(loadingComplete)
 
-  mainWindow = createMainWindow()
+  const shouldShowMainWindow = overlay ? !didStartupWindowBlur : true
+  mainWindow = createMainWindow({ activate: shouldShowMainWindow, show: shouldShowMainWindow })
+  if (!shouldShowMainWindow) {
+    app.once("activate", () => {
+      mainWindow?.show()
+    })
+  }
   if (mainWindow) {
     createMenu({
       trigger: (id) => {
