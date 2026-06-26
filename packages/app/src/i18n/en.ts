@@ -64,6 +64,14 @@ export const dict = {
   "trellis.tasks.openFolder": "Open folder",
   "trellis.tasks.setCurrent": "Set current task",
   "trellis.tasks.archive": "Archive task",
+  "trellis.tasks.new.button": "New task",
+  "trellis.tasks.new.title": "New Trellis task",
+  "trellis.tasks.new.description": "Save a task folder under .trellis/tasks with this content as prd.md.",
+  "trellis.tasks.new.nameLabel": "Task name",
+  "trellis.tasks.new.namePlaceholder": "Describe the task",
+  "trellis.tasks.new.prdPlaceholder": "Write the task PRD in Markdown...",
+  "trellis.tasks.new.nameRequired": "Task name is required.",
+  "trellis.tasks.new.save": "Create task",
 
   "command.palette": "Command palette",
 

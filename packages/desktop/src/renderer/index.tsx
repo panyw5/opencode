@@ -416,6 +416,9 @@ const createPlatform = (refreshExtraAgents?: () => void): Platform => {
 
     listTrellisTasks: (directory: string) => desktopApi.listTrellisTasks(directory),
 
+    createTrellisTask: (directory: string, name: string, content: string) =>
+      desktopApi.createTrellisTask(directory, name, content),
+
     setTrellisCurrentTask: async (path: string) => {
       if (desktopApi.setTrellisCurrentTask) {
         await desktopApi.setTrellisCurrentTask(path)

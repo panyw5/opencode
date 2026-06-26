@@ -95,6 +95,7 @@ const api: ElectronAPI = {
   listConfigDirectory: (path) => ipcRenderer.invoke("list-config-directory", path),
   listLocalDirectory: (path) => ipcRenderer.invoke("list-local-directory", path),
   listTrellisTasks: (directory) => ipcRenderer.invoke("list-trellis-tasks", directory),
+  createTrellisTask: (directory, name, content) => ipcRenderer.invoke("create-trellis-task", directory, name, content),
   setTrellisCurrentTask: (path) => ipcRenderer.invoke("set-trellis-current-task", path),
   archiveTrellisTask: (path) => ipcRenderer.invoke("archive-trellis-task", path),
   getOpenclawConfig: () => ipcRenderer.invoke("get-openclaw-config"),

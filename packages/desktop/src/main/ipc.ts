@@ -55,6 +55,7 @@ import {
   setOpenclawConfig,
   setTrellisCurrentTask,
   writeConfigFile,
+  createTrellisTask,
 } from "./native"
 
 const pickerFilters = (ext?: string[]) => {
@@ -274,6 +275,9 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("list-config-directory", (_event: IpcMainInvokeEvent, path: string) => listConfigDirectory(path))
   ipcMain.handle("list-local-directory", (_event: IpcMainInvokeEvent, path: string) => listLocalDirectory(path))
   ipcMain.handle("list-trellis-tasks", (_event: IpcMainInvokeEvent, directory: string) => listTrellisTasks(directory))
+  ipcMain.handle("create-trellis-task", (_event: IpcMainInvokeEvent, directory: string, name: string, content: string) =>
+    createTrellisTask(directory, name, content),
+  )
   ipcMain.handle("set-trellis-current-task", (_event: IpcMainInvokeEvent, path: string) => setTrellisCurrentTask(path))
   ipcMain.handle("archive-trellis-task", (_event: IpcMainInvokeEvent, path: string) => archiveTrellisTask(path))
   ipcMain.handle("get-openclaw-config", () => getOpenclawConfig())

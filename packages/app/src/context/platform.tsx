@@ -305,6 +305,9 @@ export type Platform = {
   /** List Trellis tasks for a project directory (desktop only) */
   listTrellisTasks?(directory: string): Promise<TrellisTaskList>
 
+  /** Create a Trellis task with a prd.md file (desktop only) */
+  createTrellisTask?(directory: string, name: string, content: string): Promise<string>
+
   /** Mark a Trellis task as the current task (desktop only) */
   setTrellisCurrentTask?(path: string): Promise<void>
 

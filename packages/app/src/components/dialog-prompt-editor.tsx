@@ -1,5 +1,5 @@
 import { useFilteredList } from "@opencode-ai/ui/hooks"
-import { createEffect, createMemo, createSignal, For, onCleanup } from "solid-js"
+import { createEffect, createMemo, createSignal, For, type JSXElement, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
@@ -19,10 +19,14 @@ import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 type DialogPromptEditorProps = {
   text: string
   placeholder: string
-  save: (value: string, extension?: string) => void
+  save: (value: string, extension?: string) => void | Promise<void>
   title?: string
   description?: string
+  before?: JSXElement
   saveOnClose?: boolean
+  saveLabel?: string
+  savingLabel?: string
+  searchFilesAndDirectories?: (query: string) => Promise<string[]>
   saveExtension?: {
     defaultValue: string
   }
@@ -41,13 +45,15 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
   const language = useLanguage()
   const settings = useSettings()
   const platform = usePlatform()
-  const files = useFile()
+  const fileSearch = props.searchFilesAndDirectories ?? useFile().searchFilesAndDirectories
   const [state, setState] = createStore({
     text: props.text,
     h: 280,
     preview: false,
     extension: normalizeEditorExtension(props.saveExtension?.defaultValue ?? "md") || "md",
   })
+  const [saving, setSaving] = createSignal(false)
+  const [saveError, setSaveError] = createSignal<string | undefined>()
   const html = createMemo(() => paint(state.text))
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
   const mod = createMemo(() => (platform.os === "macos" ? "⌘" : language.t("common.key.ctrl")))
@@ -81,11 +87,20 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
     ref.back.scrollLeft = ref.box.scrollLeft
   }
 
-  const save = () => {
-    closing = true
-    shouldSaveOnClose = false
-    props.save(state.text, props.saveExtension ? state.extension : undefined)
-    dialog.close()
+  const save = async () => {
+    if (saving()) return
+    setSaving(true)
+    setSaveError(undefined)
+    try {
+      await props.save(state.text, props.saveExtension ? state.extension : undefined)
+      closing = true
+      shouldSaveOnClose = false
+      dialog.close()
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
   }
 
   const discard = () => {
@@ -184,7 +199,11 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
     onKeyDown: atOnKeyDown,
   } = useFilteredList<AtOption>({
     items: async (query) =>
-      (await files.searchFilesAndDirectories(query)).map((path) => ({ type: "file", path, display: path })),
+      (await fileSearch(query)).map((path) => ({
+        type: "file",
+        path,
+        display: path,
+      })),
     key: atKey,
     filterKeys: ["display"],
     onSelect: handleAtSelect,
@@ -260,6 +279,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
       }}
     >
       <div class="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
+        {props.before && <div class="flex flex-col gap-2">{props.before}</div>}
         <div
           class="relative overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"
           classList={{
@@ -379,7 +399,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
 
                 if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === "Enter") {
                   event.preventDefault()
-                  save()
+                  void save()
                   return
                 }
 
@@ -460,9 +480,12 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
               variant="ghost"
               class="min-w-20"
               icon={props.saveExtension ? "save" : undefined}
-              onClick={save}
+              disabled={saving()}
+              onClick={() => void save()}
             >
-              {language.t(props.saveExtension ? "prompt.editor.saveAs" : "common.save")}
+              {saving()
+                ? (props.savingLabel ?? language.t("common.saving"))
+                : (props.saveLabel ?? language.t(props.saveExtension ? "prompt.editor.saveAs" : "common.save"))}
             </Button>
             {props.saveExtension && (
               <div class="flex items-center gap-1 text-14-medium text-text-weak">
@@ -478,6 +501,11 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
             )}
           </div>
         </div>
+        {saveError() && (
+          <div class="rounded-xl border border-border-critical-base bg-surface-critical-base px-3 py-3 text-13-regular text-text-strong">
+            {saveError()}
+          </div>
+        )}
       </div>
     </Dialog>
   )

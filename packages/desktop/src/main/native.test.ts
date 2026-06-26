@@ -2,7 +2,7 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { describe, expect, test } from "bun:test"
 
-import { attachmentExtension, resolveDesktopPath, tempMarkdownAttachmentPath } from "./native-path"
+import { attachmentExtension, resolveDesktopPath, tempMarkdownAttachmentPath, trellisTaskFolderName } from "./native-path"
 
 describe("native desktop paths", () => {
   test("expands home aliases before resolving paths", () => {
@@ -49,5 +49,18 @@ describe("native desktop paths", () => {
     expect(attachmentExtension(".json")).toBe("json")
     expect(attachmentExtension("")).toBe("md")
     expect(attachmentExtension("../sh")).toBe("md")
+  })
+})
+
+describe("trellis tasks", () => {
+  test("keeps user-readable task folder names", () => {
+    expect(trellisTaskFolderName("My Task")).toBe("My Task")
+  })
+
+  test("sanitizes task folder names", () => {
+    expect(trellisTaskFolderName("../Bad/Name")).toBe("Bad-Name")
+    expect(trellisTaskFolderName("task: invalid/name")).toBe("task- invalid-name")
+    expect(() => trellisTaskFolderName("../")).toThrow("valid folder name")
+    expect(() => trellisTaskFolderName("archive")).toThrow("archive")
   })
 })

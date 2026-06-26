@@ -72,6 +72,14 @@ export const dict = {
   "trellis.tasks.openFolder": "打开文件夹",
   "trellis.tasks.setCurrent": "设为当前任务",
   "trellis.tasks.archive": "归档任务",
+  "trellis.tasks.new.button": "新建任务",
+  "trellis.tasks.new.title": "新建 Trellis 任务",
+  "trellis.tasks.new.description": "在 .trellis/tasks 下创建任务文件夹，并将编辑器内容保存为 prd.md。",
+  "trellis.tasks.new.nameLabel": "任务名称",
+  "trellis.tasks.new.namePlaceholder": "描述任务",
+  "trellis.tasks.new.prdPlaceholder": "用 Markdown 编写任务 PRD...",
+  "trellis.tasks.new.nameRequired": "请输入任务名称。",
+  "trellis.tasks.new.save": "创建任务",
 
   "command.palette": "命令面板",
 

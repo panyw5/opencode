@@ -9,6 +9,7 @@ import {
   readFile,
   readdir,
   rename,
+  rm,
   stat,
   unlink,
   writeFile,
@@ -39,7 +40,7 @@ import type {
   TrellisTask,
   TrellisTaskList,
 } from "../preload/types"
-import { resolveDesktopPath, tempMarkdownAttachmentPath } from "./native-path"
+import { resolveDesktopPath, tempMarkdownAttachmentPath, trellisTaskFolderName } from "./native-path"
 
 const execFileAsync = promisify(execFile)
 const TEXT_FILE_LIMIT = 2 * 1024 * 1024
@@ -306,6 +307,49 @@ export async function listTrellisTasks(directory: string): Promise<TrellisTaskLi
     tasks.push(...result.tasks)
   }
   return { root, current, skipped, tasks }
+}
+
+export async function createTrellisTask(directory: string, name: string, content: string): Promise<string> {
+  const root = resolveDesktopPath(directory)
+  registerAllowedRoot(root)
+  const title = name.trim()
+  if (!title) throw new Error("Task name is required")
+
+  const folderName = trellisTaskFolderName(title)
+  const trellisRoot = join(root, ".trellis")
+  const tasksRoot = join(trellisRoot, "tasks")
+  const taskPath = join(tasksRoot, folderName)
+  registerAllowedRoot(trellisRoot)
+  await mkdir(tasksRoot, { recursive: true })
+  await mkdir(taskPath)
+
+  try {
+    await writeFile(join(taskPath, "prd.md"), content, { encoding: "utf8", flag: "wx" })
+    await writeFile(
+      join(taskPath, "task.json"),
+      JSON.stringify(
+        {
+          id: folderName,
+          name: title,
+          title,
+          status: "planning",
+          priority: "P2",
+          assignee: null,
+          package: null,
+          parent: null,
+          children: [],
+          createdAt: new Date().toISOString().slice(0, 10),
+        },
+        null,
+        2,
+      ) + "\n",
+      { encoding: "utf8", flag: "wx" },
+    )
+    return taskPath
+  } catch (error) {
+    await rm(taskPath, { recursive: true, force: true }).catch(() => undefined)
+    throw error
+  }
 }
 
 export async function setTrellisCurrentTask(path: string): Promise<void> {

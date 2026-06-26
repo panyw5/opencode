@@ -222,6 +222,7 @@ export type ElectronAPI = {
   listConfigDirectory: (path: string) => Promise<ConfigTreeItem[]>
   listLocalDirectory: (path: string) => Promise<ConfigTreeItem[]>
   listTrellisTasks: (directory: string) => Promise<TrellisTaskList>
+  createTrellisTask: (directory: string, name: string, content: string) => Promise<string>
   setTrellisCurrentTask?: (path: string) => Promise<void>
   archiveTrellisTask?: (path: string) => Promise<void>
   getOpenclawConfig: () => Promise<OpenclawConfig>

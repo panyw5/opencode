@@ -9,6 +9,7 @@ import { getFilename } from "@opencode-ai/core/util/path"
 import { useLanguage } from "@/context/language"
 import { usePlatform, type TrellisTask } from "@/context/platform"
 import { useGlobalSDK } from "@/context/global-sdk"
+import { DialogPromptEditor } from "@/components/dialog-prompt-editor"
 import { errorMessage } from "./helpers"
 
 const labelStatus = (status: string) =>
@@ -44,6 +45,59 @@ const progressColor = (task: TrellisTask): string => {
   if (task.status === "in_progress" || task.status === "implementing") return "text-icon-brand-base"
   if (task.status === "planning") return "text-icon-info-base"
   return "text-icon-base"
+}
+
+function NewTrellisTaskDialog(props: {
+  onCreate: (name: string, content: string) => Promise<void>
+  searchFilesAndDirectories: (query: string) => Promise<string[]>
+}): JSX.Element {
+  const language = useLanguage()
+  const [name, setName] = createSignal("")
+  const [nameError, setNameError] = createSignal<string | undefined>()
+
+  const save = async (content: string) => {
+    const title = name().trim()
+    if (!title) {
+      const message = language.t("trellis.tasks.new.nameRequired")
+      setNameError(message)
+      throw new Error(message)
+    }
+    setNameError(undefined)
+    await props.onCreate(title, content)
+  }
+
+  return (
+    <DialogPromptEditor
+      text=""
+      placeholder={language.t("trellis.tasks.new.prdPlaceholder")}
+      title={language.t("trellis.tasks.new.title")}
+      description={language.t("trellis.tasks.new.description")}
+      saveOnClose={false}
+      saveLabel={language.t("trellis.tasks.new.save")}
+      searchFilesAndDirectories={props.searchFilesAndDirectories}
+      save={save}
+      before={
+        <label class="flex shrink-0 flex-col gap-2">
+          <span class="text-12-medium text-text-base">{language.t("trellis.tasks.new.nameLabel")}</span>
+          <input
+            value={name()}
+            autofocus
+            spellcheck={false}
+            class="h-10 rounded-lg border border-border-weak-base bg-background-base px-3 text-14-regular text-text-strong outline-none transition-colors placeholder:text-text-weak focus:border-border-focus disabled:cursor-not-allowed disabled:opacity-60"
+            classList={{ "border-border-critical-base": !!nameError() }}
+            placeholder={language.t("trellis.tasks.new.namePlaceholder")}
+            onInput={(event) => {
+              setName(event.currentTarget.value)
+              if (nameError()) setNameError(undefined)
+            }}
+          />
+          <Show when={nameError()}>
+            {(message) => <span class="text-12-regular text-text-danger-base">{message()}</span>}
+          </Show>
+        </label>
+      }
+    />
+  )
 }
 
 function TaskCard(props: {
@@ -208,6 +262,23 @@ export function TrellisTasksPanel(props: {
     }
   }
 
+  const createTask = async (name: string, content: string) => {
+    if (!platform.createTrellisTask) throw new Error(language.t("trellis.tasks.desktopOnly"))
+    setActionError(undefined)
+    await platform.createTrellisTask(dir(), name, content)
+    await refetch()
+  }
+
+  const newTask = () => {
+    if (!platform.createTrellisTask) return
+    const searchFilesAndDirectories = async (query: string) => {
+      const client = sdk.createClient({ directory: dir(), throwOnError: true })
+      const result = await client.find.files({ query, dirs: "true" })
+      return result.data ?? []
+    }
+    dialog.show(() => <NewTrellisTaskDialog onCreate={createTask} searchFilesAndDirectories={searchFilesAndDirectories} />)
+  }
+
   const open = async (path: string) => {
     const name = getFilename(path)
     const prdAbsPath = path.endsWith("/") ? path + "prd.md" : path + "/prd.md"
@@ -290,17 +361,30 @@ export function TrellisTasksPanel(props: {
               {dir() || language.t("trellis.tasks.noProject")}
             </div>
           </div>
-          <Tooltip placement="bottom" value={language.t("trellis.tasks.refresh")}>
-            <IconButton
-              icon="refresh"
-              variant="ghost"
-              size="large"
-              class="shrink-0 rounded-lg"
-              disabled={!dir() || !platform.listTrellisTasks || data.loading}
-              aria-label={language.t("trellis.tasks.refresh")}
-              onClick={() => void refetch()}
-            />
-          </Tooltip>
+          <div class="flex shrink-0 items-center gap-1">
+            <Tooltip placement="bottom" value={language.t("trellis.tasks.new.button")}>
+              <IconButton
+                icon="plus"
+                variant="ghost"
+                size="large"
+                class="rounded-lg"
+                disabled={!dir() || !platform.createTrellisTask}
+                aria-label={language.t("trellis.tasks.new.button")}
+                onClick={newTask}
+              />
+            </Tooltip>
+            <Tooltip placement="bottom" value={language.t("trellis.tasks.refresh")}>
+              <IconButton
+                icon="refresh"
+                variant="ghost"
+                size="large"
+                class="rounded-lg"
+                disabled={!dir() || !platform.listTrellisTasks || data.loading}
+                aria-label={language.t("trellis.tasks.refresh")}
+                onClick={() => void refetch()}
+              />
+            </Tooltip>
+          </div>
         </div>
       </div>
 
