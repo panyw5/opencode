@@ -979,7 +979,46 @@ function TextViewer<T>(props: TextFileProps<T>) {
     return dataUrlFromMediaValue(props.media?.current ?? props.file.contents, "svg")
   })
 
-  if (!md() && !svg()) return SourceViewer<T>(props)
+  if (!md() && !svg()) {
+    const sourceBar = (
+      <div
+        data-slot="file-markdown-actions"
+        class="flex items-center justify-end gap-2"
+        data-prevent-autofocus=""
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+          <Show when={props.copyPath}>
+            {(copyPath) => (
+              <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
+                <IconButton
+                  icon="copy"
+                  variant="ghost"
+                  class="h-8 w-8 rounded-md"
+                  onClick={copyPath()}
+                  aria-label={i18n.t("ui.file.copyPath")}
+                />
+              </Tooltip>
+            )}
+          </Show>
+          <Show when={props.openFolder}>
+            {(openFolder) => (
+              <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">
+                <IconButton
+                  icon="folder"
+                  variant="ghost"
+                  class="h-8 w-8 rounded-md"
+                  onClick={openFolder()}
+                  aria-label={i18n.t("ui.file.openFolder")}
+                />
+              </Tooltip>
+            )}
+          </Show>
+        </div>
+      </div>
+    )
+    return SourceViewer<T>({ ...props, head: sourceBar })
+  }
 
   const [mode, setMode] = createSignal<"preview" | "source">(linked() ? "source" : "preview")
   const [full, setFull] = createSignal(false)
