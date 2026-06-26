@@ -9,6 +9,8 @@ import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsAssistant } from "./settings-assistant"
+import { SettingsMcp } from "./settings-mcp"
+import { SettingsCommands } from "./settings-commands"
 
 export const DialogSettings: Component = () => {
   const language = useLanguage()
@@ -50,6 +52,14 @@ export const DialogSettings: Component = () => {
                       <Icon name="bubble-5" />
                       {language.t("settings.assistant.title")}
                     </Tabs.Trigger>
+                    <Tabs.Trigger value="mcp">
+                      <Icon name="mcp" />
+                      {language.t("settings.mcp.title")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="commands">
+                      <Icon name="terminal" />
+                      {language.t("settings.commands.title")}
+                    </Tabs.Trigger>
                   </div>
                 </div>
               </div>
@@ -74,6 +84,12 @@ export const DialogSettings: Component = () => {
         </Tabs.Content>
         <Tabs.Content value="assistant" class="no-scrollbar">
           <SettingsAssistant />
+        </Tabs.Content>
+        <Tabs.Content value="mcp" class="no-scrollbar">
+          <SettingsMcp />
+        </Tabs.Content>
+        <Tabs.Content value="commands" class="no-scrollbar">
+          <SettingsCommands />
         </Tabs.Content>
       </Tabs>
     </Dialog>
