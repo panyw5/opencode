@@ -7,6 +7,7 @@ import {
   For,
   Match,
   on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -1080,6 +1081,7 @@ function ListButton(props: {
   meta?: string
   warn?: boolean
   tone?: "danger"
+  titleClass?: string
   onClick: () => void
   extra?: JSX.Element
 }) {
@@ -1099,7 +1101,7 @@ function ListButton(props: {
             class="truncate text-13-medium transition-colors"
             classList={{
               "text-text-danger-base": props.tone === "danger",
-              "text-text-strong": props.tone !== "danger",
+              [props.titleClass ?? "text-text-strong"]: props.tone !== "danger",
             }}
           >
             {props.title}
@@ -1144,8 +1146,30 @@ function SkillListButton(props: {
   note?: string
   warn?: boolean
   warnLabel?: string
+  deletable?: boolean
+  onDelete?: () => void
   onClick: () => void
 }) {
+  const language = useLanguage()
+  const [confirmDelete, setConfirmDelete] = createSignal(false)
+
+  function handleDeleteClick(e: MouseEvent) {
+    e.stopPropagation()
+    if (confirmDelete()) {
+      props.onDelete?.()
+      setConfirmDelete(false)
+    } else {
+      setConfirmDelete(true)
+    }
+  }
+
+  createEffect(() => {
+    if (!confirmDelete()) return
+    const handler = () => setConfirmDelete(false)
+    document.addEventListener("click", handler)
+    onCleanup(() => document.removeEventListener("click", handler))
+  })
+
   return (
     <button
       type="button"
@@ -1174,7 +1198,7 @@ function SkillListButton(props: {
               class="min-w-0 truncate text-15-medium transition-colors"
               classList={{
                 "text-text-danger-base": !!props.warn,
-                "text-text-strong": !props.warn,
+                "text-text-success-base": !props.warn,
               }}
             >
               {props.title}
@@ -1198,6 +1222,27 @@ function SkillListButton(props: {
           </Show>
         </div>
       </div>
+      <Show when={props.deletable && props.onDelete}>
+        <button
+          type="button"
+          class="ml-2 shrink-0 rounded-md p-1.5 transition-colors duration-150"
+          classList={{
+            "bg-surface-danger-base/15 text-text-danger-base hover:bg-surface-danger-base/25": confirmDelete(),
+            "text-text-weak opacity-0 group-hover:opacity-100 hover:text-text-danger-base hover:bg-surface-secondary":
+              !confirmDelete(),
+          }}
+          onClick={handleDeleteClick}
+          aria-label={confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.skills.delete.action")}
+          title={confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.skills.delete.action")}
+        >
+          <Show
+            when={confirmDelete()}
+            fallback={<Icon name="trash" size="small" />}
+          >
+            <span class="text-11-medium whitespace-nowrap">{language.t("config.skills.delete.confirm")}</span>
+          </Show>
+        </button>
+      </Show>
     </button>
   )
 }
@@ -1246,7 +1291,7 @@ function PluginListButton(props: {
             class="min-w-0 truncate text-15-medium transition-colors"
             classList={{
               "text-text-danger-base": !!props.warn,
-              "text-text-strong": !props.warn,
+              "text-text-info-base": !props.warn,
             }}
           >
             {props.title}
@@ -1426,7 +1471,7 @@ function ProviderListButton(props: {
     >
       <div class="min-w-0 flex-1">
         <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <div class="min-w-0 truncate text-15-medium text-text-strong transition-colors">{props.item.id}</div>
+          <div class="min-w-0 truncate text-15-medium text-text-interactive-base transition-colors">{props.item.id}</div>
           <span
             class="shrink-0 rounded-full border px-2 py-0.5 text-11-medium transition-colors"
             classList={{
@@ -5185,6 +5230,31 @@ export default function ConfigPage() {
       .finally(() => setState("skillMarketInstalling", ""))
   }
 
+  async function deleteSkill(item: DocItem) {
+    if (!platform.renameConfigFile) return
+    const bakPath = `${item.path}.bak`
+    await platform
+      .renameConfigFile(item.path, bakPath)
+      .then(() => {
+        cache.delete(item.path)
+        if (state.pick === item.id) {
+          batch(() => {
+            setState("pick", "")
+            setState("text", "")
+            setState("saved", "")
+          })
+        }
+        bump("skillRev")
+        showToast({ variant: "success", title: t("config.action.delete"), description: item.label })
+      })
+      .catch((err: unknown) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+  }
+
   function toggleCustomSecret() {
     setState("custom", "secret", (value) => !value)
   }
@@ -5379,7 +5449,7 @@ export default function ConfigPage() {
   return (
     <div class="size-full overflow-hidden bg-background-base">
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
-        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] backdrop-blur xl:w-[200px] xl:border-r xl:border-b-0">
+        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] xl:w-[200px] xl:border-r xl:border-b-0">
           <div class="flex h-full min-h-0 flex-col">
             <div class="border-b border-border-weak-base px-3 py-4">
               <div class="min-w-0">
@@ -5694,6 +5764,7 @@ export default function ConfigPage() {
                                     title={item.label}
                                     note={loadedMap().get(item.label)?.description || item.note}
                                     meta={short(item.path, space()?.agentsRoot)}
+                                    titleClass="text-text-warning-base"
                                     onClick={() => void open(item)}
                                   />
                                 )}
@@ -5743,6 +5814,7 @@ export default function ConfigPage() {
                                               meta={[item.origin, short(item.path, item.root)]
                                                 .filter(Boolean)
                                                 .join(" · ")}
+                                              titleClass="text-text-warning-base"
                                               onClick={() => void open(item)}
                                             />
                                           )}
@@ -5774,6 +5846,7 @@ export default function ConfigPage() {
                                     meta={[item.project, item.origin, short(item.path, item.root)]
                                       .filter(Boolean)
                                       .join(" · ")}
+                                    titleClass="text-text-warning-base"
                                     onClick={() => void open(item)}
                                   />
                                 )}
@@ -5792,6 +5865,7 @@ export default function ConfigPage() {
                             title={item.label}
                             note={item.note}
                             meta={item.meta}
+                            titleClass="text-text-critical-base"
                             onClick={() => setState("pick", item.id)}
                             extra={
                               <span
@@ -5987,6 +6061,8 @@ export default function ConfigPage() {
                                       note={item.note}
                                       warn={!!item.warn}
                                       warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
+                                      deletable={item.editable}
+                                      onDelete={() => void deleteSkill(item)}
                                       onClick={() => void open(item)}
                                     />
                                   )}
@@ -6014,6 +6090,8 @@ export default function ConfigPage() {
                                       note={item.note}
                                       warn={!!item.warn}
                                       warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
+                                      deletable={item.editable}
+                                      onDelete={() => void deleteSkill(item)}
                                       onClick={() => void open(item)}
                                     />
                                   )}
@@ -6041,6 +6119,8 @@ export default function ConfigPage() {
                                       note={item.note}
                                       warn={!!item.warn}
                                       warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
+                                      deletable={item.editable}
+                                      onDelete={() => void deleteSkill(item)}
                                       onClick={() => void open(item)}
                                     />
                                   )}
@@ -6077,6 +6157,8 @@ export default function ConfigPage() {
                                             note={item.note}
                                             warn={!!item.warn}
                                             warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
+                                            deletable={item.editable}
+                                            onDelete={() => void deleteSkill(item)}
                                             onClick={() => keepSkillsScroll(() => void open(item))}
                                           />
                                         )}
