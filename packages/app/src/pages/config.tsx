@@ -73,7 +73,6 @@ import {
   normalizePath,
 } from "@/utils/config-source"
 import type { Agent, Config, Project, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
-import { ConfigMcpPanel } from "./config-mcp-panel"
 
 const CORE_SECTIONS = ["agents-md", "providers", "agents", "skills", "plugins", "mcp", "commands", "claws"] as const
 type CoreSection = (typeof CORE_SECTIONS)[number]
@@ -2816,6 +2815,9 @@ export default function ConfigPage() {
     cmdPath: "",
     cmdSaving: false,
     cmdErr: "",
+    mcpForm: { type: "local" as "local" | "remote", command: "", url: "", environment: "", headers: "" },
+    mcpSaving: false,
+    mcpDirty: false,
   })
 
   function bump(...list: Array<"workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "mcpRev" | "commandRev">) {
@@ -2868,6 +2870,124 @@ export default function ConfigPage() {
   const mcpProjectName = createMemo(() => sync.data.project || name(sync.data.path?.directory ?? ""))
   const mcpProjectOpen = () => !state.treeClosed["mcp-project"]
   const toggleMcpProject = () => setState("treeClosed", "mcp-project", (v) => !v)
+
+  const selectedMcpName = createMemo(() => {
+    if (!state.pick.startsWith("mcp:")) return undefined
+    return state.pick.slice(4)
+  })
+
+  const selectedMcpStatus = createMemo(() => {
+    const n = selectedMcpName()
+    if (!n) return undefined
+    return sync.data.mcp?.[n]?.status ?? "disabled"
+  })
+
+  const selectedMcpConfig = createMemo(() => {
+    const n = selectedMcpName()
+    if (!n) return undefined
+    const cfg = globalSync.data.config.mcp ?? {}
+    return cfg[n] as Record<string, unknown> | undefined
+  })
+
+  createEffect(
+    on(
+      () => selectedMcpConfig(),
+      (entry) => {
+        if (!entry) return
+        const entryType = ((entry.type as string) ?? "local") as "local" | "remote"
+        setState("mcpForm", {
+          type: entryType,
+          command: entryType === "local" ? ((entry.command as string[]) ?? []).join(" ") : "",
+          url: entryType === "remote" ? ((entry.url as string) ?? "") : "",
+          environment:
+            entryType === "local" && entry.environment
+              ? Object.entries(entry.environment as Record<string, string>)
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join("\n")
+              : "",
+          headers:
+            entryType === "remote" && entry.headers
+              ? Object.entries(entry.headers as Record<string, string>)
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join("\n")
+              : "",
+        })
+        setState("mcpDirty", false)
+      },
+    ),
+  )
+
+  function setMcpField(field: "type" | "command" | "url" | "environment" | "headers", value: string) {
+    setState("mcpForm", field, value)
+    setState("mcpDirty", true)
+  }
+
+  function parseKeyValue(text: string): Record<string, string> | undefined {
+    if (!text.trim()) return undefined
+    const result: Record<string, string> = {}
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const eq = trimmed.indexOf("=")
+      if (eq <= 0) continue
+      result[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim()
+    }
+    return Object.keys(result).length > 0 ? result : undefined
+  }
+
+  async function saveMcpServer() {
+    const n = selectedMcpName()
+    if (!n || state.mcpSaving) return
+    setState("mcpSaving", true)
+    try {
+      const form = state.mcpForm
+      let config: Record<string, unknown>
+      if (form.type === "local") {
+        const parts = form.command.trim().split(/\s+/).filter(Boolean)
+        if (parts.length === 0) return
+        config = { type: "local", command: parts }
+        const env = parseKeyValue(form.environment)
+        if (env) config.environment = env
+      } else {
+        if (!form.url.trim()) return
+        config = { type: "remote", url: form.url.trim() }
+        const hdrs = parseKeyValue(form.headers)
+        if (hdrs) config.headers = hdrs
+      }
+      await globalSDK.client.mcp.add({ name: n, config: config as never })
+      const current = globalSync.data.config.mcp ?? {}
+      await globalSync.updateConfig({ mcp: { ...current, [n]: config as never } })
+      setState("mcpDirty", false)
+      bump("mcpRev")
+    } finally {
+      setState("mcpSaving", false)
+    }
+  }
+
+  async function deleteMcpServer() {
+    const n = selectedMcpName()
+    if (!n) return
+    const current = globalSync.data.config.mcp ?? {}
+    const next: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(current)) {
+      if (k !== n) next[k] = v
+    }
+    await globalSync.updateConfig({ mcp: next as never })
+    setState("pick", "")
+    bump("mcpRev")
+  }
+
+  async function toggleMcpConnection() {
+    const n = selectedMcpName()
+    if (!n) return
+    const status = selectedMcpStatus()
+    if (status === "connected") {
+      await globalSDK.client.mcp.disconnect({ name: n })
+    } else {
+      await globalSDK.client.mcp.connect({ name: n })
+    }
+    bump("mcpRev")
+  }
 
   const [workspace] = createResource(
     () => state.workspaceRev,
@@ -4172,6 +4292,9 @@ export default function ConfigPage() {
     if (section === "commands") {
       const list = commandDocs().map((item) => item.id)
       return state.pick === COMMAND_NEW ? [COMMAND_NEW, ...list] : list
+    }
+    if (section === "mcp") {
+      return [...mcpGlobal(), ...mcpProject()].map((s) => `mcp:${s.name}`)
     }
     return (plugins() ?? []).map((item) => item.id)
   }
@@ -5703,11 +5826,11 @@ export default function ConfigPage() {
                                 <For each={mcpGlobal()}>
                                   {(server) => (
                                     <PluginListButton
-                                      active={false}
+                                      active={state.pick === `mcp:${server.name}`}
                                       title={server.name}
                                       note={server.detail}
                                       meta={server.type !== "unknown" ? server.type : undefined}
-                                      onClick={() => {}}
+                                      onClick={() => setState("pick", `mcp:${server.name}`)}
                                       extra={
                                         <span
                                           class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
@@ -5738,11 +5861,11 @@ export default function ConfigPage() {
                               <For each={mcpProject()}>
                                 {(server) => (
                                   <PluginListButton
-                                    active={false}
+                                    active={state.pick === `mcp:${server.name}`}
                                     title={server.name}
                                     note={server.detail}
                                     meta={server.type !== "unknown" ? server.type : undefined}
-                                    onClick={() => {}}
+                                    onClick={() => setState("pick", `mcp:${server.name}`)}
                                     extra={
                                       <span
                                         class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
@@ -6206,7 +6329,126 @@ export default function ConfigPage() {
               </Match>
 
               <Match when={state.section === "mcp"}>
-                <ConfigMcpPanel />
+                <Show
+                  when={selectedMcpName()}
+                  fallback={
+                    <div class="flex h-full items-center justify-center px-4 py-10">
+                      <div class="text-13-regular text-text-weak">{t("config.mcp.editor.select")}</div>
+                    </div>
+                  }
+                >
+                  {(serverName) => (
+                    <div class="flex h-full min-h-0 flex-col">
+                      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-6 py-4">
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-2">
+                            <div class="truncate text-20-medium text-text-strong">{serverName()}</div>
+                            <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                              {state.mcpForm.type === "local"
+                                ? t("config.mcp.type.local")
+                                : t("config.mcp.type.remote")}
+                            </span>
+                            <span
+                              class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
+                              classList={{
+                                "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
+                                  selectedMcpStatus() === "connected",
+                                "border-transparent bg-surface-secondary text-text-weak":
+                                  selectedMcpStatus() !== "connected",
+                              }}
+                            >
+                              {selectedMcpStatus()}
+                            </span>
+                          </div>
+                        </div>
+                        <div class="flex shrink-0 items-center gap-2">
+                          <Toggle
+                            checked={selectedMcpStatus() === "connected"}
+                            onChange={() => void toggleMcpConnection()}
+                          >
+                            {selectedMcpStatus() === "connected"
+                              ? t("config.mcp.editor.disconnect")
+                              : t("config.mcp.editor.connect")}
+                          </Toggle>
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            icon="trash"
+                            onClick={() => void deleteMcpServer()}
+                          >
+                            {t("config.mcp.editor.delete")}
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            icon="save"
+                            disabled={!state.mcpDirty || state.mcpSaving}
+                            onClick={() => void saveMcpServer()}
+                          >
+                            {state.mcpSaving ? "..." : t("config.mcp.editor.save")}
+                          </Button>
+                        </div>
+                      </div>
+                      <div class="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                        <div class="flex max-w-[920px] flex-col gap-6">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-12-medium text-text-base">{t("config.mcp.editor.type")}</span>
+                            <Select
+                              options={[
+                                { value: "local" as const, label: t("config.mcp.type.local") },
+                                { value: "remote" as const, label: t("config.mcp.type.remote") },
+                              ]}
+                              current={
+                                state.mcpForm.type === "local"
+                                  ? { value: "local" as const, label: t("config.mcp.type.local") }
+                                  : { value: "remote" as const, label: t("config.mcp.type.remote") }
+                              }
+                              value={(o) => o.value}
+                              label={(o) => o.label}
+                              onSelect={(o) => o && setMcpField("type", o.value)}
+                              variant="secondary"
+                              size="large"
+                            />
+                          </div>
+                          <Switch>
+                            <Match when={state.mcpForm.type === "local"}>
+                              <TextField
+                                label={t("config.mcp.editor.command")}
+                                placeholder="npx -y @modelcontextprotocol/server-filesystem /path"
+                                value={state.mcpForm.command}
+                                onChange={(v) => setMcpField("command", v ?? "")}
+                              />
+                              <TextField
+                                label={t("config.mcp.editor.environment")}
+                                placeholder={"KEY=value\nKEY2=value2"}
+                                value={state.mcpForm.environment}
+                                onChange={(v) => setMcpField("environment", v ?? "")}
+                                multiline
+                                rows={3}
+                              />
+                            </Match>
+                            <Match when={state.mcpForm.type === "remote"}>
+                              <TextField
+                                label={t("config.mcp.editor.url")}
+                                placeholder="https://mcp.example.com/sse"
+                                value={state.mcpForm.url}
+                                onChange={(v) => setMcpField("url", v ?? "")}
+                              />
+                              <TextField
+                                label={t("config.mcp.editor.headers")}
+                                placeholder={"Authorization=Bearer token\nX-Custom=value"}
+                                value={state.mcpForm.headers}
+                                onChange={(v) => setMcpField("headers", v ?? "")}
+                                multiline
+                                rows={3}
+                              />
+                            </Match>
+                          </Switch>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Show>
               </Match>
 
               <Match when={state.section === "commands"}>
