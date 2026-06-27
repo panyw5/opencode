@@ -2818,6 +2818,7 @@ export default function ConfigPage() {
     mcpForm: { type: "local" as "local" | "remote", command: "", url: "", environment: "", headers: "" },
     mcpSaving: false,
     mcpDirty: false,
+    mcpBusy: "",
   })
 
   function bump(...list: Array<"workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "mcpRev" | "commandRev">) {
@@ -2977,16 +2978,23 @@ export default function ConfigPage() {
     bump("mcpRev")
   }
 
-  async function toggleMcpConnection() {
-    const n = selectedMcpName()
-    if (!n) return
-    const status = selectedMcpStatus()
-    if (status === "connected") {
-      await globalSDK.client.mcp.disconnect({ name: n })
-    } else {
-      await globalSDK.client.mcp.connect({ name: n })
-    }
-    bump("mcpRev")
+  function toggleMcp(name: string, enabled: boolean) {
+    if (state.mcpBusy === name) return
+    setState("mcpBusy", name)
+    const action = enabled
+      ? globalSDK.client.mcp.connect({ name })
+      : globalSDK.client.mcp.disconnect({ name })
+    void action
+      .catch((err: unknown) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+      .finally(() => {
+        setState("mcpBusy", "")
+        bump("mcpRev")
+      })
   }
 
   const [workspace] = createResource(
@@ -5832,17 +5840,14 @@ export default function ConfigPage() {
                                       meta={server.type !== "unknown" ? server.type : undefined}
                                       onClick={() => setState("pick", `mcp:${server.name}`)}
                                       extra={
-                                        <span
-                                          class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
-                                          classList={{
-                                            "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
-                                              server.status === "connected",
-                                            "border-transparent bg-surface-secondary text-text-weak":
-                                              server.status !== "connected",
-                                          }}
+                                        <Toggle
+                                          checked={server.status === "connected"}
+                                          disabled={state.mcpBusy === server.name}
+                                          onChange={(value) => toggleMcp(server.name, value)}
+                                          hideLabel
                                         >
-                                          {server.status}
-                                        </span>
+                                          {server.name}
+                                        </Toggle>
                                       }
                                     />
                                   )}
@@ -5867,17 +5872,14 @@ export default function ConfigPage() {
                                     meta={server.type !== "unknown" ? server.type : undefined}
                                     onClick={() => setState("pick", `mcp:${server.name}`)}
                                     extra={
-                                      <span
-                                        class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
-                                        classList={{
-                                          "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
-                                            server.status === "connected",
-                                          "border-transparent bg-surface-secondary text-text-weak":
-                                            server.status !== "connected",
-                                        }}
+                                      <Toggle
+                                        checked={server.status === "connected"}
+                                        disabled={state.mcpBusy === server.name}
+                                        onChange={(value) => toggleMcp(server.name, value)}
+                                        hideLabel
                                       >
-                                        {server.status}
-                                      </span>
+                                        {server.name}
+                                      </Toggle>
                                     }
                                   />
                                 )}
@@ -6362,14 +6364,6 @@ export default function ConfigPage() {
                           </div>
                         </div>
                         <div class="flex shrink-0 items-center gap-2">
-                          <Toggle
-                            checked={selectedMcpStatus() === "connected"}
-                            onChange={() => void toggleMcpConnection()}
-                          >
-                            {selectedMcpStatus() === "connected"
-                              ? t("config.mcp.editor.disconnect")
-                              : t("config.mcp.editor.connect")}
-                          </Toggle>
                           <Button
                             size="small"
                             variant="ghost"

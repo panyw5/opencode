@@ -1326,8 +1326,6 @@ export const dict = {
   "config.mcp.editor.headers": "请求头",
   "config.mcp.editor.save": "保存",
   "config.mcp.editor.delete": "删除",
-  "config.mcp.editor.connect": "连接",
-  "config.mcp.editor.disconnect": "断开",
   "config.commands.title": "命令",
   "config.commands.header": "创建和管理智能体的斜杠命令。",
   "config.commands.empty": "未配置自定义命令。",

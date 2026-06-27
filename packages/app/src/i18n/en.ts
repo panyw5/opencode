@@ -1373,8 +1373,6 @@ export const dict = {
   "config.mcp.editor.headers": "Headers",
   "config.mcp.editor.save": "Save",
   "config.mcp.editor.delete": "Delete",
-  "config.mcp.editor.connect": "Connect",
-  "config.mcp.editor.disconnect": "Disconnect",
   "config.commands.title": "Commands",
   "config.commands.header": "Create and manage slash commands for agents.",
   "config.commands.empty": "No custom commands configured.",
