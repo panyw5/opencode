@@ -65,6 +65,8 @@ const CONFIG_FALLBACK_SECTIONS = [
   { id: "agents", key: "config.agents.title", icon: "robot" },
   { id: "skills", key: "config.skills.title", icon: "book" },
   { id: "plugins", key: "config.plugins.title", icon: "code" },
+  { id: "mcp", key: "config.mcp.title", icon: "mcp" },
+  { id: "commands", key: "config.commands.title", icon: "terminal" },
   { id: "claws", key: "config.claws.title", icon: "openclaw" },
 ] as const satisfies ReadonlyArray<{
   id: string
