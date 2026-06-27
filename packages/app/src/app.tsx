@@ -103,7 +103,7 @@ function ConfigLoadingShell() {
   return (
     <div class="size-full overflow-hidden bg-background-base">
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
-        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] backdrop-blur xl:w-[200px] xl:border-r xl:border-b-0">
+        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] xl:w-[200px] xl:border-r xl:border-b-0">
           <div class="flex h-full min-h-0 flex-col">
             <div class="border-b border-border-weak-base px-3 py-4">
               <div class="min-w-0">
