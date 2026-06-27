@@ -1314,6 +1314,8 @@ export const dict = {
   "config.mcp.header": "管理 Model Context Protocol 服务器连接和状态。",
   "config.mcp.empty": "未配置 MCP 服务器。",
   "config.mcp.add": "添加服务器",
+  "config.mcp.group.global": "全局",
+  "config.mcp.group.project": "项目",
   "config.commands.title": "命令",
   "config.commands.header": "创建和管理智能体的斜杠命令。",
   "config.commands.empty": "未配置自定义命令。",

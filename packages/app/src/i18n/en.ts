@@ -1361,6 +1361,8 @@ export const dict = {
   "config.mcp.header": "Manage Model Context Protocol server connections and status.",
   "config.mcp.empty": "No MCP servers configured.",
   "config.mcp.add": "Add Server",
+  "config.mcp.group.global": "Global",
+  "config.mcp.group.project": "Project",
   "config.commands.title": "Commands",
   "config.commands.header": "Create and manage slash commands for agents.",
   "config.commands.empty": "No custom commands configured.",

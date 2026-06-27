@@ -2822,11 +2822,10 @@ export default function ConfigPage() {
     list.forEach((key) => setState(key, (value) => value + 1))
   }
 
-  const mcpServers = createMemo(() => {
+  const mcpGlobal = createMemo(() => {
     const cfg = globalSync.data.config.mcp ?? {}
     const dirMcp = sync.data.mcp ?? {}
-    const allNames = new Set([...Object.keys(cfg), ...Object.keys(dirMcp)])
-    return Array.from(allNames)
+    return Object.keys(cfg)
       .map((name_) => {
         const entry = cfg[name_] as Record<string, unknown> | undefined
         const status = dirMcp[name_]?.status ?? "disabled"
@@ -2842,6 +2841,33 @@ export default function ConfigPage() {
       })
       .sort((a, b) => a.name.localeCompare(b.name))
   })
+
+  const mcpProject = createMemo(() => {
+    const globalCfg = globalSync.data.config.mcp ?? {}
+    const mergedCfg = sync.data.config?.mcp ?? {}
+    const dirMcp = sync.data.mcp ?? {}
+    const globalNames = new Set(Object.keys(globalCfg))
+    return Object.keys(mergedCfg)
+      .filter((name_) => !globalNames.has(name_))
+      .map((name_) => {
+        const entry = mergedCfg[name_] as Record<string, unknown> | undefined
+        const status = dirMcp[name_]?.status ?? "disabled"
+        const type = entry ? ((entry.type as string) ?? "unknown") : "unknown"
+        const detail = entry
+          ? type === "local"
+            ? ((entry.command as string[]) ?? []).join(" ")
+            : type === "remote"
+              ? (entry.url as string) ?? ""
+              : ""
+          : ""
+        return { name: name_, type, detail, status }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  })
+
+  const mcpProjectName = createMemo(() => sync.data.project || name(sync.data.path?.directory ?? ""))
+  const mcpProjectOpen = () => !state.treeClosed["mcp-project"]
+  const toggleMcpProject = () => setState("treeClosed", "mcp-project", (v) => !v)
 
   const [workspace] = createResource(
     () => state.workspaceRev,
@@ -5655,36 +5681,87 @@ export default function ConfigPage() {
 
                     <Match when={state.section === "mcp"}>
                       <Show
-                        when={mcpServers().length > 0}
+                        when={mcpGlobal().length > 0 || mcpProject().length > 0}
                         fallback={
                           <div class="rounded-xl border border-dashed border-border-weak-base bg-surface-base px-4 py-8 text-12-regular text-text-weak">
                             {t("config.mcp.empty")}
                           </div>
                         }
                       >
-                        <For each={mcpServers()}>
-                          {(server) => (
-                            <ListButton
-                              active={false}
-                              onClick={() => {}}
-                              title={server.name}
-                              note={server.detail}
-                              extra={
-                                <span
-                                  class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
-                                  classList={{
-                                    "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
-                                      server.status === "connected",
-                                    "border-transparent bg-surface-secondary text-text-weak":
-                                      server.status !== "connected",
-                                  }}
-                                >
-                                  {server.status}
-                                </span>
-                              }
-                            />
-                          )}
-                        </For>
+                        <div class="flex flex-col gap-3">
+                          <Show when={mcpGlobal().length > 0}>
+                            <div class="flex flex-col gap-2">
+                              <div class="flex items-center justify-between gap-3 px-1">
+                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                                  {t("config.mcp.group.global")}
+                                </div>
+                                <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                                  {mcpGlobal().length}
+                                </div>
+                              </div>
+                              <div class="flex flex-col gap-2.5">
+                                <For each={mcpGlobal()}>
+                                  {(server) => (
+                                    <PluginListButton
+                                      active={false}
+                                      title={server.name}
+                                      note={server.detail}
+                                      meta={server.type !== "unknown" ? server.type : undefined}
+                                      onClick={() => {}}
+                                      extra={
+                                        <span
+                                          class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
+                                          classList={{
+                                            "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
+                                              server.status === "connected",
+                                            "border-transparent bg-surface-secondary text-text-weak":
+                                              server.status !== "connected",
+                                          }}
+                                        >
+                                          {server.status}
+                                        </span>
+                                      }
+                                    />
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          </Show>
+                          <Show when={mcpProject().length > 0}>
+                            <ProjectListGroup
+                              label={mcpProjectName()}
+                              path={sync.data.path?.directory}
+                              count={mcpProject().length}
+                              open={mcpProjectOpen()}
+                              onToggle={toggleMcpProject}
+                            >
+                              <For each={mcpProject()}>
+                                {(server) => (
+                                  <PluginListButton
+                                    active={false}
+                                    title={server.name}
+                                    note={server.detail}
+                                    meta={server.type !== "unknown" ? server.type : undefined}
+                                    onClick={() => {}}
+                                    extra={
+                                      <span
+                                        class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
+                                        classList={{
+                                          "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
+                                            server.status === "connected",
+                                          "border-transparent bg-surface-secondary text-text-weak":
+                                            server.status !== "connected",
+                                        }}
+                                      >
+                                        {server.status}
+                                      </span>
+                                    }
+                                  />
+                                )}
+                              </For>
+                            </ProjectListGroup>
+                          </Show>
+                        </div>
                       </Show>
                     </Match>
 
