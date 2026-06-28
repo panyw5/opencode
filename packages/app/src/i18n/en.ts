@@ -72,6 +72,15 @@ export const dict = {
   "trellis.tasks.new.prdPlaceholder": "Write the task PRD in Markdown...",
   "trellis.tasks.new.nameRequired": "Task name is required.",
   "trellis.tasks.new.save": "Create task",
+  "trellis.tasks.edit": "Edit source",
+  "trellis.tasks.preview": "Preview",
+  "trellis.tasks.save": "Save",
+  "trellis.tasks.saving": "Saving…",
+  "trellis.tasks.cancel": "Cancel",
+  "trellis.tasks.saveFailed": "Failed to save",
+  "trellis.tasks.maximize": "Maximize",
+  "trellis.tasks.restore": "Restore",
+  "trellis.tasks.close": "Close",
 
   "command.palette": "Command palette",
 
@@ -1313,6 +1322,8 @@ export const dict = {
   "config.skills.group.project": "Project",
   "config.skills.badge.needsMetadata": "needs metadata",
   "config.skills.warn.metadataSuffix": "to the frontmatter.",
+  "config.skills.delete.action": "Delete skill",
+  "config.skills.delete.confirm": "Confirm delete",
   "config.skills.create.title": "New custom skill",
   "config.skills.create.description":
     "Create a new skill folder in your OpenCode config, then save this markdown as `SKILL.md`.",

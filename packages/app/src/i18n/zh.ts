@@ -80,6 +80,15 @@ export const dict = {
   "trellis.tasks.new.prdPlaceholder": "用 Markdown 编写任务 PRD...",
   "trellis.tasks.new.nameRequired": "请输入任务名称。",
   "trellis.tasks.new.save": "创建任务",
+  "trellis.tasks.edit": "编辑源码",
+  "trellis.tasks.preview": "预览",
+  "trellis.tasks.save": "保存",
+  "trellis.tasks.saving": "正在保存…",
+  "trellis.tasks.cancel": "取消",
+  "trellis.tasks.saveFailed": "保存失败",
+  "trellis.tasks.maximize": "最大化",
+  "trellis.tasks.restore": "还原",
+  "trellis.tasks.close": "关闭",
 
   "command.palette": "命令面板",
 
@@ -1266,6 +1275,8 @@ export const dict = {
   "config.skills.group.project": "项目",
   "config.skills.badge.needsMetadata": "缺少元数据",
   "config.skills.warn.metadataSuffix": "添加到 frontmatter 中。",
+  "config.skills.delete.action": "删除技能",
+  "config.skills.delete.confirm": "确认删除",
   "config.skills.create.title": "新建自定义技能",
   "config.skills.create.description":
     "在 OpenCode 配置目录下创建一个新的技能文件夹，并将这份 markdown 保存为 `SKILL.md`。",

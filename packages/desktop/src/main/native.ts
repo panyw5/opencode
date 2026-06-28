@@ -276,6 +276,13 @@ export async function createConfigFile(path: string, content: string) {
   await writeFile(target, content, { encoding: "utf8", flag: "wx" })
 }
 
+export async function renameConfigFile(oldPath: string, newPath: string) {
+  const src = assertAllowedLocalPath(oldPath)
+  const dest = assertAllowedLocalPath(newPath)
+  await mkdir(dirname(dest), { recursive: true })
+  await rename(src, dest)
+}
+
 export async function createTempMarkdownAttachment(
   directory: string,
   content: string,

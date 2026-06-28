@@ -10,6 +10,8 @@ import { useLanguage } from "@/context/language"
 import { usePlatform, type TrellisTask } from "@/context/platform"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { DialogPromptEditor } from "@/components/dialog-prompt-editor"
+import { paint } from "@/components/prompt-input/expand"
+import { monoFontFamily, useSettings } from "@/context/settings"
 import { errorMessage } from "./helpers"
 
 const labelStatus = (status: string) =>
@@ -206,6 +208,279 @@ function TaskCard(props: {
   )
 }
 
+function PrdPreviewDialog(props: {
+  name: string
+  prdAbsPath: string
+  initialContent: string | undefined
+}): JSX.Element {
+  const language = useLanguage()
+  const platform = usePlatform()
+  const settings = useSettings()
+  const dialog = useDialog()
+  const canWrite = createMemo(() => typeof platform.writeConfigFile === "function")
+  const [mode, setMode] = createSignal<"preview" | "edit">("preview")
+  const [draft, setDraft] = createSignal(props.initialContent ?? "")
+  const [dirty, setDirty] = createSignal(false)
+  const [saving, setSaving] = createSignal(false)
+  const [saveError, setSaveError] = createSignal<string | undefined>()
+  const [maximized, setMaximized] = createSignal(false)
+  const font = createMemo(() => monoFontFamily(settings.appearance.font()))
+  const html = createMemo(() => paint(draft()))
+  const prdEditor = {
+    box: undefined as HTMLTextAreaElement | undefined,
+    back: undefined as HTMLDivElement | undefined,
+  }
+  const syncPrdScroll = () => {
+    if (!prdEditor.box || !prdEditor.back) return
+    prdEditor.back.scrollTop = prdEditor.box.scrollTop
+    prdEditor.back.scrollLeft = prdEditor.box.scrollLeft
+  }
+
+  const editorH = createMemo(() => (maximized() ? "calc(95vh - 130px)" : "calc(90vh - 130px)"))
+
+  const enterEdit = () => {
+    if (!canWrite()) return
+    setSaveError(undefined)
+    setMode("edit")
+  }
+
+  const cancelEdit = () => {
+    setDraft(props.initialContent ?? "")
+    setDirty(false)
+    setSaveError(undefined)
+    setMode("preview")
+  }
+
+  const save = async () => {
+    if (!canWrite() || saving()) return
+    const writeConfigFile = platform.writeConfigFile!
+    setSaving(true)
+    setSaveError(undefined)
+    try {
+      await writeConfigFile(props.prdAbsPath, draft())
+      setDirty(false)
+      setMode("preview")
+    } catch (err) {
+      setSaveError(errorMessage(err, language.t("trellis.tasks.saveFailed")))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const onInput: JSX.EventHandlerUnion<HTMLTextAreaElement, Event> = (event) => {
+    setDraft(event.currentTarget.value)
+    setDirty(true)
+    setSaveError(undefined)
+  }
+
+  const onKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === "Enter") {
+      event.preventDefault()
+      if (dirty() && !saving()) void save()
+      return
+    }
+    if (event.key === "Escape" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+      event.preventDefault()
+      cancelEdit()
+    }
+  }
+
+  return (
+    <>
+      <style
+        data-prd-dialog-scope={props.name}
+        innerHTML={`
+          [data-component="dialog"][data-prd-dialog="${props.name}"] [data-slot="dialog-container"] {
+            height: 90vh !important;
+            max-height: 90vh !important;
+          }
+          [data-component="dialog"][data-prd-dialog="${props.name}"][data-maximized] [data-slot="dialog-container"] {
+            width: 90vw !important;
+            max-width: 90vw !important;
+            height: 95vh !important;
+            max-height: 95vh !important;
+          }
+        `}
+      />
+      <Dialog
+        title={props.name}
+        size="x-large"
+        data-prd-dialog={props.name}
+        data-maximized={maximized() ? "" : undefined}
+        action={
+        <div class="flex items-center gap-2">
+          <Show when={canWrite() && typeof props.initialContent === "string"}>
+            <div
+              role="group"
+              class="flex items-center rounded-lg border border-border-weak-base bg-background-stronger p-0.5"
+            >
+              <button
+                type="button"
+                class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
+                classList={{
+                  "bg-background-base text-text-strong shadow-sm": mode() === "preview",
+                  "text-text-base hover:text-text-strong": mode() !== "preview",
+                }}
+                onClick={() => setMode("preview")}
+              >
+                <Icon name="eye" size="small" />
+                {language.t("trellis.tasks.preview")}
+              </button>
+              <button
+                type="button"
+                class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
+                classList={{
+                  "bg-background-base text-text-strong shadow-sm": mode() === "edit",
+                  "text-text-base hover:text-text-strong": mode() !== "edit",
+                }}
+                onClick={enterEdit}
+              >
+                <Icon name="edit" size="small" />
+                {language.t("trellis.tasks.edit")}
+              </button>
+            </div>
+          </Show>
+          <Show when={platform.openPath}>
+            <Tooltip placement="bottom" value={language.t("trellis.tasks.openFolder")}>
+              <IconButton
+                icon="folder"
+                variant="ghost"
+                size="small"
+                aria-label={language.t("trellis.tasks.openFolder")}
+                onClick={() => void platform.openPath!(props.prdAbsPath.replace(/\/prd\.md$/i, ""))}
+              />
+            </Tooltip>
+          </Show>
+          <Tooltip
+            placement="bottom"
+            value={
+              maximized()
+                ? language.t("trellis.tasks.restore")
+                : language.t("trellis.tasks.maximize")
+            }
+          >
+            <IconButton
+              icon={maximized() ? "collapse" : "expand"}
+              variant="ghost"
+              size="small"
+              aria-label={
+                maximized()
+                  ? language.t("trellis.tasks.restore")
+                  : language.t("trellis.tasks.maximize")
+              }
+              onClick={() => setMaximized((v) => !v)}
+            />
+          </Tooltip>
+          <Tooltip placement="bottom" value={language.t("trellis.tasks.close")}>
+            <IconButton
+              icon="close"
+              variant="ghost"
+              size="small"
+              aria-label={language.t("trellis.tasks.close")}
+              onClick={() => dialog.close()}
+            />
+          </Tooltip>
+        </div>
+      }
+    >
+      <div class="flex min-h-0 flex-1 flex-col p-4">
+        <Show when={saveError()}>{(err) => <ErrorCard err={err()} />}</Show>
+        <div
+          class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"
+          classList={{ "border-border-focus": mode() === "edit" }}
+          style={{ height: mode() === "edit" ? editorH() : maximized() ? "calc(95vh - 90px)" : "calc(90vh - 90px)" }}
+        >
+          <Show
+            when={mode() === "preview"}
+            fallback={
+              <div
+                class="relative min-h-0 w-full overflow-hidden"
+                style={{ height: editorH() }}
+              >
+                <div
+                  ref={(el) => {
+                    prdEditor.back = el
+                  }}
+                  aria-hidden="true"
+                  class="pointer-events-none absolute inset-0 overflow-auto px-4 py-3 text-14-mono text-text-strong whitespace-pre-wrap break-words"
+                  style={{ "font-family": font() }}
+                >
+                  <div class="min-h-full w-full" innerHTML={html()} />
+                </div>
+                <textarea
+                  ref={(el) => {
+                    prdEditor.box = el
+                  }}
+                  value={draft()}
+                  autofocus
+                  spellcheck={false}
+                  placeholder={language.t("trellis.tasks.new.prdPlaceholder")}
+                  class="absolute inset-0 resize-none overflow-auto px-4 py-3 text-14-mono whitespace-pre-wrap bg-transparent focus:outline-none"
+                  style={{
+                    color: "transparent",
+                    "-webkit-text-fill-color": "transparent",
+                    "caret-color": "var(--text-strong)",
+                    "font-family": font(),
+                    height: editorH(),
+                  }}
+                  onInput={onInput}
+                  onScroll={syncPrdScroll}
+                  onKeyDown={onKeyDown}
+                />
+              </div>
+            }
+          >
+            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <Show
+                when={typeof props.initialContent === "string"}
+                fallback={<Empty text={language.t("trellis.tasks.noPrd")} />}
+              >
+                <Markdown text={props.initialContent as string} />
+              </Show>
+            </div>
+          </Show>
+        </div>
+        <Show when={mode() === "edit"}>
+          <div class="mt-3 flex items-center justify-between gap-3">
+            <div class="flex items-center gap-2 text-11-regular text-text-weak">
+              <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">
+                {platform.os === "macos" ? "⌘" : language.t("common.key.ctrl")}
+              </span>
+              <span>+</span>
+              <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">
+                {language.t("common.key.enter")}
+              </span>
+              <span>{language.t("trellis.tasks.save")}</span>
+              <span class="mx-1 text-text-subtle">·</span>
+              <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">Esc</span>
+              <span>{language.t("trellis.tasks.cancel")}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="rounded-md border border-border-weak-base bg-background-base px-3 py-1.5 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={saving() || !dirty()}
+                onClick={cancelEdit}
+              >
+                {language.t("trellis.tasks.cancel")}
+              </button>
+              <button
+                type="button"
+                class="rounded-md bg-surface-interactive-base px-4 py-1.5 text-12-medium text-text-on-interactive transition-colors hover:bg-surface-interactive-base-hover disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={saving() || !dirty()}
+                onClick={() => void save()}
+              >
+                {saving() ? language.t("trellis.tasks.saving") : language.t("trellis.tasks.save")}
+              </button>
+            </div>
+          </div>
+        </Show>
+      </div>
+    </Dialog>
+    </>
+  )
+}
+
 export function TrellisTasksPanel(props: {
   directory: Accessor<string>
   width: Accessor<number>
@@ -306,32 +581,7 @@ export function TrellisTasksPanel(props: {
       }
     }
     dialog.show(() => (
-      <Dialog
-        title={name}
-        size="x-large"
-        class="[&_[data-slot='dialog-container']]:(max-h-[90vh]! h-[90vh]!)"
-        action={
-          <div class="flex items-center gap-1">
-            <Show when={platform.openPath}>
-              <Tooltip placement="bottom" value={language.t("trellis.tasks.openFolder")}>
-                <IconButton
-                  icon="folder"
-                  variant="ghost"
-                  size="small"
-                  aria-label={language.t("trellis.tasks.openFolder")}
-                  onClick={() => void platform.openPath!(path)}
-                />
-              </Tooltip>
-            </Show>
-          </div>
-        }
-      >
-        <div class="flex-1 overflow-y-auto p-4">
-          <Show when={typeof content === "string"} fallback={<Empty text={language.t("trellis.tasks.noPrd")} />}>
-            <Markdown text={content as string} />
-          </Show>
-        </div>
-      </Dialog>
+      <PrdPreviewDialog name={name} prdAbsPath={prdAbsPath} initialContent={content} />
     ))
   }
 

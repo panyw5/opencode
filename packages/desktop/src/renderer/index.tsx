@@ -402,6 +402,8 @@ const createPlatform = (refreshExtraAgents?: () => void): Platform => {
 
     createConfigFile: (path: string, content: string) => desktopApi.createConfigFile(path, content),
 
+    renameConfigFile: (oldPath: string, newPath: string) => desktopApi.renameConfigFile(oldPath, newPath),
+
     createTempMarkdownAttachment:
       typeof desktopApi.createTempMarkdownAttachment === "function"
         ? (directory: string, content: string, extension?: string) =>
