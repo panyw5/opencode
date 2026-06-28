@@ -107,8 +107,7 @@ function ConfigLoadingShell() {
           <div class="flex h-full min-h-0 flex-col">
             <div class="border-b border-border-weak-base px-3 py-4">
               <div class="min-w-0">
-                <div class="text-18-medium text-text-strong">{language.t("config.title")}</div>
-                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.description")}</div>
+                <div class="text-24-medium text-text-strong">{language.t("config.title")}</div>
               </div>
             </div>
             <div class="config-scrollbar flex-1 overflow-y-auto p-2">
@@ -137,8 +136,7 @@ function ConfigLoadingShell() {
         <div class="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
           <section class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base-active)_72%,transparent),color-mix(in_srgb,var(--surface-base)_88%,transparent))] backdrop-blur xl:w-[400px] xl:border-r xl:border-b-0">
             <div class="px-4 py-4">
-              <div class="text-15-medium text-text-strong">AGENTS.md</div>
-              <div class="mt-1 h-3 w-40 rounded-full bg-surface-secondary" />
+              <div class="text-20-medium text-text-strong">AGENTS.md</div>
             </div>
           </section>
           <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background-base)_92%,var(--surface-base)_8%),var(--background-base))]" />

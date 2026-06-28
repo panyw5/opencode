@@ -140,6 +140,7 @@ type CustomState = FormState & {
 const CUSTOM_NEW = "provider:_new_custom"
 const SKILL_NEW = "skill:_new_custom"
 const COMMAND_NEW = "cmd:_new_custom"
+const MCP_NEW = "mcp:_new"
 
 const CUSTOM_PROVIDER_NPM_PACKAGES: readonly string[] = [OPENAI_COMPATIBLE, "@ai-sdk/openai", "@ai-sdk/anthropic"]
 
@@ -1708,7 +1709,7 @@ function Editor(props: {
       <div class="border-b border-border-weak-base px-5 py-4">
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <div class="truncate text-15-medium text-text-strong">
+            <div class="truncate text-20-medium text-text-strong">
               {props.item?.label ?? language.t("config.editor.selectItem")}
             </div>
             <Show when={props.item?.editable !== undefined}>
@@ -1880,7 +1881,7 @@ function ProviderDetail(props: {
         <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-4 py-4">
           <div>
             <div class="flex items-center gap-2">
-              <div class="text-15-medium text-text-strong">{props.item?.id}</div>
+              <div class="text-20-medium text-text-strong">{props.item?.id}</div>
               <Show when={props.item}>
                 <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
                   {providerEnabled(props.item)
@@ -2025,7 +2026,7 @@ function ClawHeader(props: {
     <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-4 py-4">
       <div class="min-w-0">
         <div class="flex items-center gap-2">
-          <div class="text-15-medium text-text-strong">{props.item?.label}</div>
+          <div class="text-20-medium text-text-strong">{props.item?.label}</div>
           <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
             {props.enabled ? language.t("config.claws.badge.enabled") : language.t("config.claws.badge.disabled")}
           </span>
@@ -2861,6 +2862,7 @@ export default function ConfigPage() {
     cmdSaving: false,
     cmdErr: "",
     mcpForm: { type: "local" as "local" | "remote", command: "", url: "", environment: "", headers: "" },
+    mcpNewName: "",
     mcpSaving: false,
     mcpDirty: false,
     mcpBusy: "",
@@ -2918,6 +2920,7 @@ export default function ConfigPage() {
   const toggleMcpProject = () => setState("treeClosed", "mcp-project", (v) => !v)
 
   const selectedMcpName = createMemo(() => {
+    if (state.pick === MCP_NEW) return undefined
     if (!state.pick.startsWith("mcp:")) return undefined
     return state.pick.slice(4)
   })
@@ -2982,8 +2985,13 @@ export default function ConfigPage() {
   }
 
   async function saveMcpServer() {
-    const n = selectedMcpName()
+    const isNew = state.pick === MCP_NEW
+    const n = isNew ? state.mcpNewName.trim() : selectedMcpName()
     if (!n || state.mcpSaving) return
+    if (isNew) {
+      const existing = globalSync.data.config.mcp ?? {}
+      if (existing[n]) return
+    }
     setState("mcpSaving", true)
     try {
       const form = state.mcpForm
@@ -3005,6 +3013,10 @@ export default function ConfigPage() {
       await globalSync.updateConfig({ mcp: { ...current, [n]: config as never } })
       setState("mcpDirty", false)
       bump("mcpRev")
+      if (isNew) {
+        setState("pick", `mcp:${n}`)
+        setState("mcpNewName", "")
+      }
     } finally {
       setState("mcpSaving", false)
     }
@@ -3040,6 +3052,14 @@ export default function ConfigPage() {
         setState("mcpBusy", "")
         bump("mcpRev")
       })
+  }
+
+  function createMcp() {
+    setState("pick", MCP_NEW)
+    setState("mcpNewName", "")
+    setState("mcpForm", { type: "local" as const, command: "", url: "", environment: "", headers: "" })
+    setState("mcpDirty", true)
+    setState("mcpSaving", false)
   }
 
   const [workspace] = createResource(
@@ -4347,7 +4367,8 @@ export default function ConfigPage() {
       return state.pick === COMMAND_NEW ? [COMMAND_NEW, ...list] : list
     }
     if (section === "mcp") {
-      return [...mcpGlobal(), ...mcpProject()].map((s) => `mcp:${s.name}`)
+      const list = [...mcpGlobal(), ...mcpProject()].map((s) => `mcp:${s.name}`)
+      return state.pick === MCP_NEW ? [MCP_NEW, ...list] : list
     }
     return (plugins() ?? []).map((item) => item.id)
   }
@@ -5453,8 +5474,7 @@ export default function ConfigPage() {
           <div class="flex h-full min-h-0 flex-col">
             <div class="border-b border-border-weak-base px-3 py-4">
               <div class="min-w-0">
-                <div class="text-18-medium text-text-strong">{t("config.title")}</div>
-                <div class="mt-1 text-12-regular text-text-weak">{t("config.description")}</div>
+                <div class="text-24-medium text-text-strong">{t("config.title")}</div>
               </div>
             </div>
             <div class="config-scrollbar flex-1 overflow-y-auto p-2">
@@ -5531,12 +5551,10 @@ export default function ConfigPage() {
               <div class="px-4 py-4">
                 <Switch>
                   <Match when={state.section === "agents-md"}>
-                    <div class="text-15-medium text-text-strong">AGENTS.md</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.agentsMd.header")}</div>
+                    <div class="text-20-medium text-text-strong">AGENTS.md</div>
                   </Match>
                   <Match when={state.section === "providers"}>
-                    <div class="text-15-medium text-text-strong">{t("config.providers.title")}</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.providers.header")}</div>
+                    <div class="text-20-medium text-text-strong">{t("config.providers.title")}</div>
                     <div class="mt-3 flex items-center gap-2">
                       <Button size="small" variant="ghost" icon="plus-small" onClick={createCustomProvider}>
                         {t("config.custom.new")}
@@ -5563,20 +5581,28 @@ export default function ConfigPage() {
                     </div>
                   </Match>
                   <Match when={state.section === "agents"}>
-                    <div class="text-15-medium text-text-strong">{t("config.agents.title")}</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.agents.header")}</div>
+                    <div class="text-20-medium text-text-strong">{t("config.agents.title")}</div>
                   </Match>
                   <Match when={state.section === "claws" && clawsSectionEnabled()}>
-                    <div class="text-15-medium text-text-strong">{t("config.claws.title")}</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.claws.header")}</div>
+                    <div class="text-20-medium text-text-strong">{t("config.claws.title")}</div>
                   </Match>
                   <Match when={state.section === "mcp"}>
-                    <div class="text-15-medium text-text-strong">{t("config.mcp.title")}</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.mcp.header")}</div>
+                    <div class="text-20-medium text-text-strong">{t("config.mcp.title")}</div>
+                    <div class="mt-3 flex items-center gap-2">
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        icon="plus-small"
+                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
+                        onClick={createMcp}
+                        disabled={!globalSync.updateConfig}
+                      >
+                        {t("config.mcp.add")}
+                      </Button>
+                    </div>
                   </Match>
                   <Match when={state.section === "commands"}>
-                    <div class="text-15-medium text-text-strong">{t("config.commands.title")}</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.commands.header")}</div>
+                    <div class="text-20-medium text-text-strong">{t("config.commands.title")}</div>
                     <div class="mt-3 flex flex-wrap items-center gap-2">
                       <Button
                         size="small"
@@ -5591,8 +5617,7 @@ export default function ConfigPage() {
                     </div>
                   </Match>
                   <Match when={state.section === "skills"}>
-                    <div class="text-15-medium text-text-strong">{t("config.skills.title")}</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.skills.header")}</div>
+                    <div class="text-20-medium text-text-strong">{t("config.skills.title")}</div>
                     <div class="mt-3 flex flex-wrap items-center gap-2">
                       <Button
                         size="small"
@@ -5616,8 +5641,7 @@ export default function ConfigPage() {
                     </div>
                   </Match>
                   <Match when={state.section === "plugins"}>
-                    <div class="text-15-medium text-text-strong">{t("config.plugins.title")}</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.plugins.header")}</div>
+                    <div class="text-20-medium text-text-strong">{t("config.plugins.title")}</div>
                   </Match>
                 </Switch>
               </div>
@@ -6368,7 +6392,7 @@ export default function ConfigPage() {
                   when={selectedPlugin()?.path}
                   fallback={
                     <div class="bg-surface-base px-4 py-10">
-                      <div class="text-15-medium text-text-strong">
+                      <div class="text-20-medium text-text-strong">
                         {selectedPlugin()?.label ?? t("config.plugins.select")}
                       </div>
                       <div class="mt-2 text-12-regular text-text-weak">
@@ -6414,60 +6438,78 @@ export default function ConfigPage() {
 
               <Match when={state.section === "mcp"}>
                 <Show
-                  when={selectedMcpName()}
+                  when={selectedMcpName() || state.pick === MCP_NEW}
                   fallback={
                     <div class="flex h-full items-center justify-center px-4 py-10">
                       <div class="text-13-regular text-text-weak">{t("config.mcp.editor.select")}</div>
                     </div>
                   }
                 >
-                  {(serverName) => (
-                    <div class="flex h-full min-h-0 flex-col">
-                      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-6 py-4">
-                        <div class="min-w-0">
-                          <div class="flex items-center gap-2">
-                            <div class="truncate text-20-medium text-text-strong">{serverName()}</div>
-                            <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                              {state.mcpForm.type === "local"
-                                ? t("config.mcp.type.local")
-                                : t("config.mcp.type.remote")}
-                            </span>
-                            <span
-                              class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
-                              classList={{
-                                "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
-                                  selectedMcpStatus() === "connected",
-                                "border-transparent bg-surface-secondary text-text-weak":
-                                  selectedMcpStatus() !== "connected",
-                              }}
+                  {(serverName) => {
+                    const isNew = () => state.pick === MCP_NEW
+                    const displayName = () => (isNew() ? t("config.mcp.add") : serverName())
+                    return (
+                      <div class="flex h-full min-h-0 flex-col">
+                        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-6 py-4">
+                          <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                              <div class="truncate text-20-medium text-text-strong">{displayName()}</div>
+                              <Show when={!isNew()}>
+                                <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                                  {state.mcpForm.type === "local"
+                                    ? t("config.mcp.type.local")
+                                    : t("config.mcp.type.remote")}
+                                </span>
+                                <span
+                                  class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
+                                  classList={{
+                                    "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
+                                      selectedMcpStatus() === "connected",
+                                    "border-transparent bg-surface-secondary text-text-weak":
+                                      selectedMcpStatus() !== "connected",
+                                  }}
+                                >
+                                  {selectedMcpStatus()}
+                                </span>
+                              </Show>
+                            </div>
+                          </div>
+                          <div class="flex shrink-0 items-center gap-2">
+                            <Show when={!isNew()}>
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                icon="trash"
+                                onClick={() => void deleteMcpServer()}
+                              >
+                                {t("config.mcp.editor.delete")}
+                              </Button>
+                            </Show>
+                            <Button
+                              size="small"
+                              variant="ghost"
+                              icon="save"
+                              disabled={!state.mcpDirty || state.mcpSaving || (isNew() && !state.mcpNewName.trim())}
+                              onClick={() => void saveMcpServer()}
                             >
-                              {selectedMcpStatus()}
-                            </span>
+                              {state.mcpSaving ? "..." : t("config.mcp.editor.save")}
+                            </Button>
                           </div>
                         </div>
-                        <div class="flex shrink-0 items-center gap-2">
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            icon="trash"
-                            onClick={() => void deleteMcpServer()}
-                          >
-                            {t("config.mcp.editor.delete")}
-                          </Button>
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            icon="save"
-                            disabled={!state.mcpDirty || state.mcpSaving}
-                            onClick={() => void saveMcpServer()}
-                          >
-                            {state.mcpSaving ? "..." : t("config.mcp.editor.save")}
-                          </Button>
-                        </div>
-                      </div>
-                      <div class="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-                        <div class="flex max-w-[920px] flex-col gap-6">
-                          <div class="flex flex-col gap-1">
+                        <div class="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                          <div class="flex max-w-[920px] flex-col gap-6">
+                            <Show when={isNew()}>
+                              <TextField
+                                label={t("config.mcp.editor.name")}
+                                placeholder="my-mcp-server"
+                                value={state.mcpNewName}
+                                onChange={(v) => {
+                                  setState("mcpNewName", v ?? "")
+                                  setState("mcpDirty", true)
+                                }}
+                              />
+                            </Show>
+                            <div class="flex flex-col gap-1">
                             <span class="text-12-medium text-text-base">{t("config.mcp.editor.type")}</span>
                             <Select
                               options={[
@@ -6523,7 +6565,8 @@ export default function ConfigPage() {
                         </div>
                       </div>
                     </div>
-                  )}
+                    );
+                  }}
                 </Show>
               </Match>
 
@@ -6692,7 +6735,7 @@ function CommandCreator(props: {
       <div class="flex items-center gap-3 border-b border-border-weak-base px-6 py-3">
         <input
           type="text"
-          class="w-full bg-transparent text-15-medium text-text-strong outline-none placeholder:text-text-weaker"
+          class="w-full bg-transparent text-20-medium text-text-strong outline-none placeholder:text-text-weaker"
           placeholder={language.t("config.commands.create.placeholder")}
           value={props.title}
           onInput={(e) => props.onTitle(e.currentTarget.value)}
@@ -6755,7 +6798,7 @@ function SkillCreator(props: {
       <div class="border-b border-border-weak-base px-5 py-4">
         <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <div class="truncate text-15-medium text-text-strong">{language.t("config.skills.create.title")}</div>
+            <div class="truncate text-20-medium text-text-strong">{language.t("config.skills.create.title")}</div>
             <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
               {language.t("config.editor.badge.editable")}
             </span>
@@ -6950,7 +6993,7 @@ function SkillMarket(props: {
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <div class="truncate text-15-medium text-text-strong">{language.t("config.skills.market.title")}</div>
+              <div class="truncate text-20-medium text-text-strong">{language.t("config.skills.market.title")}</div>
               <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
                 {language.t("config.skills.market.badge")}
               </span>
