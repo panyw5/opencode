@@ -7,6 +7,7 @@ import {
   For,
   Match,
   on,
+  onCleanup,
   onMount,
   Show,
   Switch,
@@ -58,6 +59,7 @@ import {
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
+import { useSync } from "@/context/sync"
 import { normalizeProviderList } from "@/context/global-sync/utils"
 import { providerDisplaySdk } from "./config-provider-display"
 import { SectionButton } from "./config-section-button"
@@ -73,7 +75,7 @@ import {
 } from "@/utils/config-source"
 import type { Agent, Config, Project, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 
-const CORE_SECTIONS = ["agents-md", "providers", "agents", "skills", "plugins", "claws"] as const
+const CORE_SECTIONS = ["agents-md", "providers", "agents", "skills", "plugins", "mcp", "commands", "claws"] as const
 type CoreSection = (typeof CORE_SECTIONS)[number]
 type Section = CoreSection | (string & {})
 
@@ -82,7 +84,7 @@ function isKnownSection(value: string): boolean {
   return extraAgents.some((agent) => agent.configSection === value)
 }
 
-type SkillGroup = "opencode" | "claude" | "project" | "external" | "plugin"
+type SkillGroup = "opencode" | "claude" | "project" | "external" | "plugin" | "global"
 
 type DocItem = {
   id: string
@@ -137,6 +139,7 @@ type CustomState = FormState & {
 
 const CUSTOM_NEW = "provider:_new_custom"
 const SKILL_NEW = "skill:_new_custom"
+const COMMAND_NEW = "cmd:_new_custom"
 
 const CUSTOM_PROVIDER_NPM_PACKAGES: readonly string[] = [OPENAI_COMPATIBLE, "@ai-sdk/openai", "@ai-sdk/anthropic"]
 
@@ -1057,6 +1060,8 @@ function sectionIcon(section: Section): IconProps["name"] {
   if (section === "agents") return "robot"
   if (section === "skills") return "book"
   if (section === "plugins") return "code"
+  if (section === "mcp") return "mcp"
+  if (section === "commands") return "terminal"
   const agent = extraAgents.find((item) => item.configSection === section)
   if (agent) return agent.icon
   return "openclaw"
@@ -1076,6 +1081,7 @@ function ListButton(props: {
   meta?: string
   warn?: boolean
   tone?: "danger"
+  titleClass?: string
   onClick: () => void
   extra?: JSX.Element
 }) {
@@ -1095,7 +1101,7 @@ function ListButton(props: {
             class="truncate text-13-medium transition-colors"
             classList={{
               "text-text-danger-base": props.tone === "danger",
-              "text-text-strong": props.tone !== "danger",
+              [props.titleClass ?? "text-text-strong"]: props.tone !== "danger",
             }}
           >
             {props.title}
@@ -1140,8 +1146,30 @@ function SkillListButton(props: {
   note?: string
   warn?: boolean
   warnLabel?: string
+  deletable?: boolean
+  onDelete?: () => void
   onClick: () => void
 }) {
+  const language = useLanguage()
+  const [confirmDelete, setConfirmDelete] = createSignal(false)
+
+  function handleDeleteClick(e: MouseEvent) {
+    e.stopPropagation()
+    if (confirmDelete()) {
+      props.onDelete?.()
+      setConfirmDelete(false)
+    } else {
+      setConfirmDelete(true)
+    }
+  }
+
+  createEffect(() => {
+    if (!confirmDelete()) return
+    const handler = () => setConfirmDelete(false)
+    document.addEventListener("click", handler)
+    onCleanup(() => document.removeEventListener("click", handler))
+  })
+
   return (
     <button
       type="button"
@@ -1170,7 +1198,7 @@ function SkillListButton(props: {
               class="min-w-0 truncate text-15-medium transition-colors"
               classList={{
                 "text-text-danger-base": !!props.warn,
-                "text-text-strong": !props.warn,
+                "text-text-success-base": !props.warn,
               }}
             >
               {props.title}
@@ -1194,6 +1222,27 @@ function SkillListButton(props: {
           </Show>
         </div>
       </div>
+      <Show when={props.deletable && props.onDelete}>
+        <button
+          type="button"
+          class="ml-2 shrink-0 rounded-md p-1.5 transition-colors duration-150"
+          classList={{
+            "bg-surface-danger-base/15 text-text-danger-base hover:bg-surface-danger-base/25": confirmDelete(),
+            "text-text-weak opacity-0 group-hover:opacity-100 hover:text-text-danger-base hover:bg-surface-secondary":
+              !confirmDelete(),
+          }}
+          onClick={handleDeleteClick}
+          aria-label={confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.skills.delete.action")}
+          title={confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.skills.delete.action")}
+        >
+          <Show
+            when={confirmDelete()}
+            fallback={<Icon name="trash" size="small" />}
+          >
+            <span class="text-11-medium whitespace-nowrap">{language.t("config.skills.delete.confirm")}</span>
+          </Show>
+        </button>
+      </Show>
     </button>
   )
 }
@@ -1242,7 +1291,7 @@ function PluginListButton(props: {
             class="min-w-0 truncate text-15-medium transition-colors"
             classList={{
               "text-text-danger-base": !!props.warn,
-              "text-text-strong": !props.warn,
+              "text-text-info-base": !props.warn,
             }}
           >
             {props.title}
@@ -1422,7 +1471,7 @@ function ProviderListButton(props: {
     >
       <div class="min-w-0 flex-1">
         <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <div class="min-w-0 truncate text-15-medium text-text-strong transition-colors">{props.item.id}</div>
+          <div class="min-w-0 truncate text-15-medium text-text-interactive-base transition-colors">{props.item.id}</div>
           <span
             class="shrink-0 rounded-full border px-2 py-0.5 text-11-medium transition-colors"
             classList={{
@@ -2750,6 +2799,7 @@ export default function ConfigPage() {
   const platform = usePlatform()
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
+  const sync = useSync()
   const server = useServer()
   const navigate = useNavigate()
   const params = useParams()
@@ -2804,10 +2854,192 @@ export default function ConfigPage() {
     clawRev: 0,
     gaRev: 0,
     hmRev: 0,
+    mcpRev: 0,
+    commandRev: 0,
+    cmdTitle: "",
+    cmdPath: "",
+    cmdSaving: false,
+    cmdErr: "",
+    mcpForm: { type: "local" as "local" | "remote", command: "", url: "", environment: "", headers: "" },
+    mcpSaving: false,
+    mcpDirty: false,
+    mcpBusy: "",
   })
 
-  function bump(...list: Array<"workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev">) {
+  function bump(...list: Array<"workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "mcpRev" | "commandRev">) {
     list.forEach((key) => setState(key, (value) => value + 1))
+  }
+
+  const mcpGlobal = createMemo(() => {
+    const cfg = globalSync.data.config.mcp ?? {}
+    const dirMcp = sync.data.mcp ?? {}
+    return Object.keys(cfg)
+      .map((name_) => {
+        const entry = cfg[name_] as Record<string, unknown> | undefined
+        const status = dirMcp[name_]?.status ?? "disabled"
+        const type = entry ? ((entry.type as string) ?? "unknown") : "unknown"
+        const detail = entry
+          ? type === "local"
+            ? ((entry.command as string[]) ?? []).join(" ")
+            : type === "remote"
+              ? (entry.url as string) ?? ""
+              : ""
+          : ""
+        return { name: name_, type, detail, status }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  })
+
+  const mcpProject = createMemo(() => {
+    const globalCfg = globalSync.data.config.mcp ?? {}
+    const mergedCfg = sync.data.config?.mcp ?? {}
+    const dirMcp = sync.data.mcp ?? {}
+    const globalNames = new Set(Object.keys(globalCfg))
+    return Object.keys(mergedCfg)
+      .filter((name_) => !globalNames.has(name_))
+      .map((name_) => {
+        const entry = mergedCfg[name_] as Record<string, unknown> | undefined
+        const status = dirMcp[name_]?.status ?? "disabled"
+        const type = entry ? ((entry.type as string) ?? "unknown") : "unknown"
+        const detail = entry
+          ? type === "local"
+            ? ((entry.command as string[]) ?? []).join(" ")
+            : type === "remote"
+              ? (entry.url as string) ?? ""
+              : ""
+          : ""
+        return { name: name_, type, detail, status }
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  })
+
+  const mcpProjectName = createMemo(() => sync.data.project || name(sync.data.path?.directory ?? ""))
+  const mcpProjectOpen = () => !state.treeClosed["mcp-project"]
+  const toggleMcpProject = () => setState("treeClosed", "mcp-project", (v) => !v)
+
+  const selectedMcpName = createMemo(() => {
+    if (!state.pick.startsWith("mcp:")) return undefined
+    return state.pick.slice(4)
+  })
+
+  const selectedMcpStatus = createMemo(() => {
+    const n = selectedMcpName()
+    if (!n) return undefined
+    return sync.data.mcp?.[n]?.status ?? "disabled"
+  })
+
+  const selectedMcpConfig = createMemo(() => {
+    const n = selectedMcpName()
+    if (!n) return undefined
+    const cfg = globalSync.data.config.mcp ?? {}
+    return cfg[n] as Record<string, unknown> | undefined
+  })
+
+  createEffect(
+    on(
+      () => selectedMcpConfig(),
+      (entry) => {
+        if (!entry) return
+        const entryType = ((entry.type as string) ?? "local") as "local" | "remote"
+        setState("mcpForm", {
+          type: entryType,
+          command: entryType === "local" ? ((entry.command as string[]) ?? []).join(" ") : "",
+          url: entryType === "remote" ? ((entry.url as string) ?? "") : "",
+          environment:
+            entryType === "local" && entry.environment
+              ? Object.entries(entry.environment as Record<string, string>)
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join("\n")
+              : "",
+          headers:
+            entryType === "remote" && entry.headers
+              ? Object.entries(entry.headers as Record<string, string>)
+                  .map(([k, v]) => `${k}=${v}`)
+                  .join("\n")
+              : "",
+        })
+        setState("mcpDirty", false)
+      },
+    ),
+  )
+
+  function setMcpField(field: "type" | "command" | "url" | "environment" | "headers", value: string) {
+    setState("mcpForm", field, value)
+    setState("mcpDirty", true)
+  }
+
+  function parseKeyValue(text: string): Record<string, string> | undefined {
+    if (!text.trim()) return undefined
+    const result: Record<string, string> = {}
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim()
+      if (!trimmed) continue
+      const eq = trimmed.indexOf("=")
+      if (eq <= 0) continue
+      result[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim()
+    }
+    return Object.keys(result).length > 0 ? result : undefined
+  }
+
+  async function saveMcpServer() {
+    const n = selectedMcpName()
+    if (!n || state.mcpSaving) return
+    setState("mcpSaving", true)
+    try {
+      const form = state.mcpForm
+      let config: Record<string, unknown>
+      if (form.type === "local") {
+        const parts = form.command.trim().split(/\s+/).filter(Boolean)
+        if (parts.length === 0) return
+        config = { type: "local", command: parts }
+        const env = parseKeyValue(form.environment)
+        if (env) config.environment = env
+      } else {
+        if (!form.url.trim()) return
+        config = { type: "remote", url: form.url.trim() }
+        const hdrs = parseKeyValue(form.headers)
+        if (hdrs) config.headers = hdrs
+      }
+      await globalSDK.client.mcp.add({ name: n, config: config as never })
+      const current = globalSync.data.config.mcp ?? {}
+      await globalSync.updateConfig({ mcp: { ...current, [n]: config as never } })
+      setState("mcpDirty", false)
+      bump("mcpRev")
+    } finally {
+      setState("mcpSaving", false)
+    }
+  }
+
+  async function deleteMcpServer() {
+    const n = selectedMcpName()
+    if (!n) return
+    const current = globalSync.data.config.mcp ?? {}
+    const next: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(current)) {
+      if (k !== n) next[k] = v
+    }
+    await globalSync.updateConfig({ mcp: next as never })
+    setState("pick", "")
+    bump("mcpRev")
+  }
+
+  function toggleMcp(name: string, enabled: boolean) {
+    if (state.mcpBusy === name) return
+    setState("mcpBusy", name)
+    const action = enabled
+      ? globalSDK.client.mcp.connect({ name })
+      : globalSDK.client.mcp.disconnect({ name })
+    void action
+      .catch((err: unknown) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+      .finally(() => {
+        setState("mcpBusy", "")
+        bump("mcpRev")
+      })
   }
 
   const [workspace] = createResource(
@@ -3178,6 +3410,45 @@ export default function ConfigPage() {
     return walk(root)
   }
 
+  const scanCommands = async (
+    root: string,
+    extra: { group: "global" | "project"; root?: string; project?: string },
+  ): Promise<DocItem[]> => {
+    if (!platform.listConfigDirectory || !platform.readConfigFile) return []
+    if (!file(root)) return []
+
+    const walk = async (dir: string): Promise<DocItem[]> => {
+      const list = await platform.listConfigDirectory?.(dir).catch(() => [])
+      if (!list?.length) return []
+      return Promise.all(
+        sortTree(list).map(async (item) => {
+          if (item.kind === "directory") return walk(item.path)
+          if (!item.path.endsWith(".md")) return []
+          const text = await platform.readConfigFile?.(item.path).catch(() => null)
+          if (text == null) return []
+          const rel = item.path.slice(root.length + 1).replace(/\.md$/, "")
+          const cmdName = rel.replace(/^(command|commands)\//, "")
+          const fm = frontmatterData(text)
+          return [
+            {
+              id: `cmd:${item.path}`,
+              label: cmdName,
+              path: item.path,
+              editable: file(item.path),
+              source: extra.group,
+              note: fm?.description ?? "",
+              content: text,
+              group: extra.group as SkillGroup,
+              root: extra.root,
+              project: extra.project,
+            },
+          ]
+        }),
+      ).then((list) => list.flat())
+    }
+    return walk(root)
+  }
+
   const scanAgents = async (
     root: string,
     extra: Pick<DocItem, "source" | "group" | "project" | "origin" | "root">,
@@ -3459,6 +3730,61 @@ export default function ConfigPage() {
         root: item.root,
       }))
   })
+
+  const globalCommandsDir = createMemo(() =>
+    mainPath().home ? join(mainPath().home, ".opencode", "commands") : undefined,
+  )
+  const [diskGlobalCmds] = createResource(
+    () => [state.commandRev, globalCommandsDir()] as const,
+    async ([, dir]) => (dir ? scanCommands(dir, { group: "global" }) : []),
+  )
+  const [diskProjectCmds] = createResource(
+    () => [state.commandRev, openedKey()] as const,
+    async () => {
+      const list = untrack(opened)
+      return Promise.all(
+        list.map(async (item) => {
+          const label = item.name ?? name(item.worktree)
+          const dir = join(item.worktree, ".opencode", "commands")
+          return scanCommands(dir, { group: "project", root: item.worktree, project: label })
+        }),
+      ).then((results) => results.flat())
+    },
+  )
+
+  const commandDocs = createMemo(() => [...(diskGlobalCmds() ?? []), ...(diskProjectCmds() ?? [])])
+  const commandGlobal = createMemo(() => (diskGlobalCmds() ?? []).filter((item) => item.group === "global"))
+  const commandProject = createMemo(() => (diskProjectCmds() ?? []).filter((item) => item.group === "project"))
+
+  const projectCommands = createMemo(() => {
+    const map = new Map<string, { label: string; path?: string; items: DocItem[] }>()
+    for (const item of commandProject()
+      .slice()
+      .sort((a, b) => (a.project ?? "").localeCompare(b.project ?? "") || a.label.localeCompare(b.label))) {
+      const key = item.root ?? item.project ?? item.path
+      const prev = map.get(key)
+      if (prev) {
+        prev.items.push(item)
+        continue
+      }
+      map.set(key, {
+        label: item.project ?? name(item.root ?? item.path),
+        path: item.root,
+        items: [item],
+      })
+    }
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
+  })
+
+  const commandProjectOpen = (key: string) => !!state.treeClosed[`cmd-project:${key}`]
+  const toggleCommandProject = (key: string) => setState("treeClosed", `cmd-project:${key}`, (v) => !v)
+
+  const commandLoading = createMemo(
+    () =>
+      state.section === "commands" &&
+      (diskGlobalCmds.loading || diskProjectCmds.loading) &&
+      commandDocs().length === 0,
+  )
 
   const skillOpenCode = createMemo(() => skillDocs().filter((item) => item.group === "opencode"))
   const skillClaude = createMemo(() => skillDocs().filter((item) => item.group === "claude"))
@@ -3779,7 +4105,7 @@ export default function ConfigPage() {
 
   const docs = createMemo(() => {
     const map = new Map<string, DocItem>()
-    for (const item of [...agentsMd(), ...agents(), ...skillDocs(), ...pluginDocs()]) map.set(item.id, item)
+    for (const item of [...agentsMd(), ...agents(), ...skillDocs(), ...pluginDocs(), ...commandDocs()]) map.set(item.id, item)
     return map
   })
 
@@ -3787,6 +4113,19 @@ export default function ConfigPage() {
     if (state.section === "agents-md") return agentsMd().find((item) => item.id === state.doc)
     if (state.section === "agents") return agents().find((item) => item.id === state.doc)
     if (state.section === "plugins") return pluginDocs().find((item) => item.id === state.doc)
+    if (state.section === "commands") {
+      const item = commandDocs().find((item) => item.id === state.doc)
+      if (item) return item
+      if (state.doc !== state.cmdPath || !state.cmdPath) return
+      return {
+        id: `cmd:${state.cmdPath}`,
+        label: state.cmdTitle.trim() || name(dir(state.cmdPath)),
+        path: state.cmdPath,
+        editable: true,
+        source: "project",
+        group: "project" as const,
+      }
+    }
     if (state.section !== "skills") return
 
     const item = skillDocs().find((item) => item.id === state.doc)
@@ -4002,6 +4341,13 @@ export default function ConfigPage() {
     if (section === "skills") {
       const list = skillDocs().map((item) => item.id)
       return state.pick === SKILL_NEW ? [SKILL_NEW, ...list] : list
+    }
+    if (section === "commands") {
+      const list = commandDocs().map((item) => item.id)
+      return state.pick === COMMAND_NEW ? [COMMAND_NEW, ...list] : list
+    }
+    if (section === "mcp") {
+      return [...mcpGlobal(), ...mcpProject()].map((s) => `mcp:${s.name}`)
     }
     return (plugins() ?? []).map((item) => item.id)
   }
@@ -4680,6 +5026,80 @@ export default function ConfigPage() {
     }
   }
 
+  function commandTemplate(title: string) {
+    const cmdName = title.trim()
+    return [
+      "---",
+      `description: "${cmdName ? "Describe this command" : "New command"}"`,
+      "---",
+      "",
+      cmdName ? `# /${cmdName}` : "# New Command",
+      "",
+      "Add the command template here.",
+      "",
+    ].join("\n")
+  }
+
+  function createCommand() {
+    const text = commandTemplate("")
+    setState("pick", COMMAND_NEW)
+    setState("doc", COMMAND_NEW)
+    setState("text", text)
+    setState("saved", text)
+    setState("busy", false)
+    setState("cmdTitle", "")
+    setState("cmdErr", "")
+    setState("cmdPath", "")
+    setState("cmdSaving", false)
+  }
+
+  function setCommandTitle(value: string) {
+    const prev = state.cmdTitle
+    setState("cmdTitle", value)
+    setState("cmdErr", "")
+    if (state.text !== commandTemplate(prev)) return
+    const text = commandTemplate(value)
+    setState("text", text)
+    setState("saved", text)
+  }
+
+  async function saveCommand() {
+    const root = mainPath().directory
+    if (!root || !platform.createConfigFile) return
+    const title = state.cmdTitle.trim()
+    if (!title) {
+      setState("cmdErr", t("config.commands.error.nameRequired"))
+      return
+    }
+    const safeName = title.replace(/[^a-zA-Z0-9_\-\/]/g, "-").replace(/^-+|-+$/g, "")
+    if (!safeName) {
+      setState("cmdErr", t("config.commands.error.nameRequired"))
+      return
+    }
+    const path = join(root, ".opencode", "commands", safeName + ".md")
+    setState("cmdSaving", true)
+    try {
+      await platform.createConfigFile(path, state.text)
+      cache.set(path, state.text)
+      setState("cmdPath", path)
+      bump("commandRev")
+      await open({
+        id: `cmd:${path}`,
+        label: safeName,
+        path,
+        editable: true,
+        source: "project",
+        group: "project",
+        root,
+      })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      showToast({ title: "Failed", description: message })
+    } finally {
+      setState("cmdSaving", false)
+    }
+  }
+
   function createSkill() {
     const text = skillTemplate("")
     setState("skillPanel", "editor")
@@ -4808,6 +5228,31 @@ export default function ConfigPage() {
         })
       })
       .finally(() => setState("skillMarketInstalling", ""))
+  }
+
+  async function deleteSkill(item: DocItem) {
+    if (!platform.renameConfigFile) return
+    const bakPath = `${item.path}.bak`
+    await platform
+      .renameConfigFile(item.path, bakPath)
+      .then(() => {
+        cache.delete(item.path)
+        if (state.pick === item.id) {
+          batch(() => {
+            setState("pick", "")
+            setState("text", "")
+            setState("saved", "")
+          })
+        }
+        bump("skillRev")
+        showToast({ variant: "success", title: t("config.action.delete"), description: item.label })
+      })
+      .catch((err: unknown) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
   }
 
   function toggleCustomSecret() {
@@ -5004,7 +5449,7 @@ export default function ConfigPage() {
   return (
     <div class="size-full overflow-hidden bg-background-base">
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
-        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] backdrop-blur xl:w-[200px] xl:border-r xl:border-b-0">
+        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] xl:w-[200px] xl:border-r xl:border-b-0">
           <div class="flex h-full min-h-0 flex-col">
             <div class="border-b border-border-weak-base px-3 py-4">
               <div class="min-w-0">
@@ -5043,6 +5488,18 @@ export default function ConfigPage() {
                   title={t("config.plugins.title")}
                   icon={sectionIcon("plugins")}
                   onClick={() => jump("plugins")}
+                />
+                <SectionButton
+                  current={state.section === "mcp"}
+                  title={t("config.mcp.title")}
+                  icon={sectionIcon("mcp")}
+                  onClick={() => jump("mcp")}
+                />
+                <SectionButton
+                  current={state.section === "commands"}
+                  title={t("config.commands.title")}
+                  icon={sectionIcon("commands")}
+                  onClick={() => jump("commands")}
                 />
                 {clawsSectionEnabled() && (
                   <SectionButton
@@ -5112,6 +5569,26 @@ export default function ConfigPage() {
                   <Match when={state.section === "claws" && clawsSectionEnabled()}>
                     <div class="text-15-medium text-text-strong">{t("config.claws.title")}</div>
                     <div class="mt-1 text-12-regular text-text-weak">{t("config.claws.header")}</div>
+                  </Match>
+                  <Match when={state.section === "mcp"}>
+                    <div class="text-15-medium text-text-strong">{t("config.mcp.title")}</div>
+                    <div class="mt-1 text-12-regular text-text-weak">{t("config.mcp.header")}</div>
+                  </Match>
+                  <Match when={state.section === "commands"}>
+                    <div class="text-15-medium text-text-strong">{t("config.commands.title")}</div>
+                    <div class="mt-1 text-12-regular text-text-weak">{t("config.commands.header")}</div>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        icon="folder-add-left"
+                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
+                        onClick={createCommand}
+                        disabled={!platform.createConfigFile}
+                      >
+                        {t("config.commands.create.action")}
+                      </Button>
+                    </div>
                   </Match>
                   <Match when={state.section === "skills"}>
                     <div class="text-15-medium text-text-strong">{t("config.skills.title")}</div>
@@ -5287,6 +5764,7 @@ export default function ConfigPage() {
                                     title={item.label}
                                     note={loadedMap().get(item.label)?.description || item.note}
                                     meta={short(item.path, space()?.agentsRoot)}
+                                    titleClass="text-text-warning-base"
                                     onClick={() => void open(item)}
                                   />
                                 )}
@@ -5336,6 +5814,7 @@ export default function ConfigPage() {
                                               meta={[item.origin, short(item.path, item.root)]
                                                 .filter(Boolean)
                                                 .join(" · ")}
+                                              titleClass="text-text-warning-base"
                                               onClick={() => void open(item)}
                                             />
                                           )}
@@ -5367,6 +5846,7 @@ export default function ConfigPage() {
                                     meta={[item.project, item.origin, short(item.path, item.root)]
                                       .filter(Boolean)
                                       .join(" · ")}
+                                    titleClass="text-text-warning-base"
                                     onClick={() => void open(item)}
                                   />
                                 )}
@@ -5385,6 +5865,7 @@ export default function ConfigPage() {
                             title={item.label}
                             note={item.note}
                             meta={item.meta}
+                            titleClass="text-text-critical-base"
                             onClick={() => setState("pick", item.id)}
                             extra={
                               <span
@@ -5401,6 +5882,158 @@ export default function ConfigPage() {
                           />
                         )}
                       </For>
+                    </Match>
+
+                    <Match when={state.section === "mcp"}>
+                      <Show
+                        when={mcpGlobal().length > 0 || mcpProject().length > 0}
+                        fallback={
+                          <div class="rounded-xl border border-dashed border-border-weak-base bg-surface-base px-4 py-8 text-12-regular text-text-weak">
+                            {t("config.mcp.empty")}
+                          </div>
+                        }
+                      >
+                        <div class="flex flex-col gap-3">
+                          <Show when={mcpGlobal().length > 0}>
+                            <div class="flex flex-col gap-2">
+                              <div class="flex items-center justify-between gap-3 px-1">
+                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                                  {t("config.mcp.group.global")}
+                                </div>
+                                <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                                  {mcpGlobal().length}
+                                </div>
+                              </div>
+                              <div class="flex flex-col gap-2.5">
+                                <For each={mcpGlobal()}>
+                                  {(server) => (
+                                    <PluginListButton
+                                      active={state.pick === `mcp:${server.name}`}
+                                      title={server.name}
+                                      note={server.detail}
+                                      meta={server.type !== "unknown" ? server.type : undefined}
+                                      onClick={() => setState("pick", `mcp:${server.name}`)}
+                                      extra={
+                                        <Toggle
+                                          checked={server.status === "connected"}
+                                          disabled={state.mcpBusy === server.name}
+                                          onChange={(value) => toggleMcp(server.name, value)}
+                                          hideLabel
+                                        >
+                                          {server.name}
+                                        </Toggle>
+                                      }
+                                    />
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          </Show>
+                          <Show when={mcpProject().length > 0}>
+                            <ProjectListGroup
+                              label={mcpProjectName()}
+                              path={sync.data.path?.directory}
+                              count={mcpProject().length}
+                              open={mcpProjectOpen()}
+                              onToggle={toggleMcpProject}
+                            >
+                              <For each={mcpProject()}>
+                                {(server) => (
+                                  <PluginListButton
+                                    active={state.pick === `mcp:${server.name}`}
+                                    title={server.name}
+                                    note={server.detail}
+                                    meta={server.type !== "unknown" ? server.type : undefined}
+                                    onClick={() => setState("pick", `mcp:${server.name}`)}
+                                    extra={
+                                      <Toggle
+                                        checked={server.status === "connected"}
+                                        disabled={state.mcpBusy === server.name}
+                                        onChange={(value) => toggleMcp(server.name, value)}
+                                        hideLabel
+                                      >
+                                        {server.name}
+                                      </Toggle>
+                                    }
+                                  />
+                                )}
+                              </For>
+                            </ProjectListGroup>
+                          </Show>
+                        </div>
+                      </Show>
+                    </Match>
+
+                    <Match when={state.section === "commands"}>
+                      <Show
+                        when={!commandLoading()}
+                        fallback={<Wait text={`${t("common.loading")}${t("common.loading.ellipsis")}`} />}
+                      >
+                        <div class="flex flex-col gap-3">
+                          <Show when={commandGlobal().length > 0}>
+                            <div class="flex flex-col gap-2">
+                              <div class="flex items-center justify-between gap-3 px-1">
+                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                                  {t("config.commands.group.global")}
+                                </div>
+                                <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                                  {commandGlobal().length}
+                                </div>
+                              </div>
+                              <div class="flex flex-col gap-2.5">
+                                <For each={commandGlobal()}>
+                                  {(item) => (
+                                    <PluginListButton
+                                      active={state.pick === item.id}
+                                      title={item.label}
+                                      note={item.note}
+                                      meta={item.path ? short(item.path, item.root) : undefined}
+                                      onClick={() => void open(item)}
+                                    />
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          </Show>
+                          <Show when={projectCommands().length > 0}>
+                            <div class="flex flex-col">
+                              <div class="flex items-center justify-between gap-3 px-1">
+                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                                  {t("config.commands.group.project")}
+                                </div>
+                                <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                                  {projectCommands().length}
+                                </div>
+                              </div>
+                              <div class="mt-2 flex flex-col gap-3">
+                                <For each={projectCommands()}>
+                                  {(group) => (
+                                    <ProjectListGroup
+                                      label={group.label}
+                                      path={group.path}
+                                      count={group.items.length}
+                                      open={commandProjectOpen(group.label)}
+                                      onToggle={() => toggleCommandProject(group.label)}
+                                    >
+                                      <For each={group.items}>
+                                        {(item) => (
+                                          <PluginListButton
+                                            active={state.pick === item.id}
+                                            title={item.label}
+                                            note={item.note}
+                                            meta={item.path ? short(item.path, item.root) : undefined}
+                                            onClick={() => void open(item)}
+                                          />
+                                        )}
+                                      </For>
+                                    </ProjectListGroup>
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          </Show>
+                        </div>
+                      </Show>
                     </Match>
 
                     <Match when={state.section === "skills"}>
@@ -5428,6 +6061,8 @@ export default function ConfigPage() {
                                       note={item.note}
                                       warn={!!item.warn}
                                       warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
+                                      deletable={item.editable}
+                                      onDelete={() => void deleteSkill(item)}
                                       onClick={() => void open(item)}
                                     />
                                   )}
@@ -5455,6 +6090,8 @@ export default function ConfigPage() {
                                       note={item.note}
                                       warn={!!item.warn}
                                       warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
+                                      deletable={item.editable}
+                                      onDelete={() => void deleteSkill(item)}
                                       onClick={() => void open(item)}
                                     />
                                   )}
@@ -5482,6 +6119,8 @@ export default function ConfigPage() {
                                       note={item.note}
                                       warn={!!item.warn}
                                       warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
+                                      deletable={item.editable}
+                                      onDelete={() => void deleteSkill(item)}
                                       onClick={() => void open(item)}
                                     />
                                   )}
@@ -5518,6 +6157,8 @@ export default function ConfigPage() {
                                             note={item.note}
                                             warn={!!item.warn}
                                             warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
+                                            deletable={item.editable}
+                                            onDelete={() => void deleteSkill(item)}
                                             onClick={() => keepSkillsScroll(() => void open(item))}
                                           />
                                         )}
@@ -5771,6 +6412,152 @@ export default function ConfigPage() {
                 </Show>
               </Match>
 
+              <Match when={state.section === "mcp"}>
+                <Show
+                  when={selectedMcpName()}
+                  fallback={
+                    <div class="flex h-full items-center justify-center px-4 py-10">
+                      <div class="text-13-regular text-text-weak">{t("config.mcp.editor.select")}</div>
+                    </div>
+                  }
+                >
+                  {(serverName) => (
+                    <div class="flex h-full min-h-0 flex-col">
+                      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-6 py-4">
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-2">
+                            <div class="truncate text-20-medium text-text-strong">{serverName()}</div>
+                            <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                              {state.mcpForm.type === "local"
+                                ? t("config.mcp.type.local")
+                                : t("config.mcp.type.remote")}
+                            </span>
+                            <span
+                              class="shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
+                              classList={{
+                                "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
+                                  selectedMcpStatus() === "connected",
+                                "border-transparent bg-surface-secondary text-text-weak":
+                                  selectedMcpStatus() !== "connected",
+                              }}
+                            >
+                              {selectedMcpStatus()}
+                            </span>
+                          </div>
+                        </div>
+                        <div class="flex shrink-0 items-center gap-2">
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            icon="trash"
+                            onClick={() => void deleteMcpServer()}
+                          >
+                            {t("config.mcp.editor.delete")}
+                          </Button>
+                          <Button
+                            size="small"
+                            variant="ghost"
+                            icon="save"
+                            disabled={!state.mcpDirty || state.mcpSaving}
+                            onClick={() => void saveMcpServer()}
+                          >
+                            {state.mcpSaving ? "..." : t("config.mcp.editor.save")}
+                          </Button>
+                        </div>
+                      </div>
+                      <div class="min-h-0 flex-1 overflow-y-auto px-6 py-6">
+                        <div class="flex max-w-[920px] flex-col gap-6">
+                          <div class="flex flex-col gap-1">
+                            <span class="text-12-medium text-text-base">{t("config.mcp.editor.type")}</span>
+                            <Select
+                              options={[
+                                { value: "local" as const, label: t("config.mcp.type.local") },
+                                { value: "remote" as const, label: t("config.mcp.type.remote") },
+                              ]}
+                              current={
+                                state.mcpForm.type === "local"
+                                  ? { value: "local" as const, label: t("config.mcp.type.local") }
+                                  : { value: "remote" as const, label: t("config.mcp.type.remote") }
+                              }
+                              value={(o) => o.value}
+                              label={(o) => o.label}
+                              onSelect={(o) => o && setMcpField("type", o.value)}
+                              variant="secondary"
+                              size="large"
+                            />
+                          </div>
+                          <Switch>
+                            <Match when={state.mcpForm.type === "local"}>
+                              <TextField
+                                label={t("config.mcp.editor.command")}
+                                placeholder="npx -y @modelcontextprotocol/server-filesystem /path"
+                                value={state.mcpForm.command}
+                                onChange={(v) => setMcpField("command", v ?? "")}
+                              />
+                              <TextField
+                                label={t("config.mcp.editor.environment")}
+                                placeholder={"KEY=value\nKEY2=value2"}
+                                value={state.mcpForm.environment}
+                                onChange={(v) => setMcpField("environment", v ?? "")}
+                                multiline
+                                rows={3}
+                              />
+                            </Match>
+                            <Match when={state.mcpForm.type === "remote"}>
+                              <TextField
+                                label={t("config.mcp.editor.url")}
+                                placeholder="https://mcp.example.com/sse"
+                                value={state.mcpForm.url}
+                                onChange={(v) => setMcpField("url", v ?? "")}
+                              />
+                              <TextField
+                                label={t("config.mcp.editor.headers")}
+                                placeholder={"Authorization=Bearer token\nX-Custom=value"}
+                                value={state.mcpForm.headers}
+                                onChange={(v) => setMcpField("headers", v ?? "")}
+                                multiline
+                                rows={3}
+                              />
+                            </Match>
+                          </Switch>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </Show>
+              </Match>
+
+              <Match when={state.section === "commands"}>
+                <Show
+                  when={state.pick !== COMMAND_NEW}
+                  fallback={
+                    <CommandCreator
+                      root={mainPath().directory}
+                      title={state.cmdTitle}
+                      text={state.text}
+                      busy={state.cmdSaving}
+                      err={state.cmdErr || undefined}
+                      onTitle={setCommandTitle}
+                      onInput={(value) => setState("text", value)}
+                      onSave={() => void saveCommand()}
+                    />
+                  }
+                >
+                  <Editor
+                    item={currentDoc()}
+                    text={state.text}
+                    dirty={dirty()}
+                    busy={state.busy}
+                    reloading={state.reloadingBackend}
+                    onInput={(value) => setState("text", value)}
+                    onSave={() => void save()}
+                    onReload={() => void reload()}
+                    onOpenFolder={currentDoc() ? openFolder : undefined}
+                    empty={t("config.commands.select")}
+                    markdown
+                  />
+                </Show>
+              </Match>
               <Match when={state.section === "skills"}>
                 <Show
                   when={skillWait()}
@@ -5888,6 +6675,52 @@ export default function ConfigPage() {
     </div>
   )
 }
+function CommandCreator(props: {
+  root?: string
+  title: string
+  text: string
+  busy: boolean
+  err?: string
+  onTitle: (value: string) => void
+  onInput: (value: string) => void
+  onSave: () => void
+}) {
+  const language = useLanguage()
+
+  return (
+    <div class="flex h-full min-h-0 flex-col">
+      <div class="flex items-center gap-3 border-b border-border-weak-base px-6 py-3">
+        <input
+          type="text"
+          class="w-full bg-transparent text-15-medium text-text-strong outline-none placeholder:text-text-weaker"
+          placeholder={language.t("config.commands.create.placeholder")}
+          value={props.title}
+          onInput={(e) => props.onTitle(e.currentTarget.value)}
+          disabled={props.busy}
+        />
+        <Button
+          size="small"
+          variant="primary"
+          onClick={props.onSave}
+          disabled={props.busy || !props.title.trim()}
+        >
+          {props.busy ? language.t("common.loading.ellipsis") : language.t("common.save")}
+        </Button>
+      </div>
+      <Show when={props.err}>
+        <div class="border-b border-border-weak-base bg-surface-danger-base/10 px-6 py-2 text-12-regular text-text-danger">
+          {props.err}
+        </div>
+      </Show>
+      <div class="min-h-0 flex-1 overflow-y-auto p-6">
+        <div class="mx-auto max-w-[720px]">
+          <Markdown text={props.text} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const yaml = (value: string) => JSON.stringify(value.trim())
 
 function skillTemplate(title: string) {
