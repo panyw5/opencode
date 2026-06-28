@@ -90,6 +90,9 @@ function ConfigRouteFrame(props: ParentProps) {
   return <>{props.children}</>
 }
 
+// Skeleton shell shown while Config page lazy-loads.
+// MUST stay in sync with pages/config.tsx sidebar and middle column styles
+// (font sizes, titles, descriptions) to avoid a visual flash on first render.
 function ConfigLoadingShell() {
   const language = useLanguage()
   const platform = usePlatform()

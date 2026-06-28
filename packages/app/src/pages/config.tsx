@@ -5467,6 +5467,9 @@ export default function ConfigPage() {
     void update({ plugin: next })
   }
 
+  // NOTE: Config page is lazy-loaded. When changing sidebar text/font sizes,
+  // middle column titles, or section descriptions here, also update
+  // ConfigLoadingShell in app.tsx to avoid a visual flash on first render.
   return (
     <div class="size-full overflow-hidden bg-background-base">
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
