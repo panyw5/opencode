@@ -179,7 +179,7 @@ function TaskCard(props: {
               {(item) => <span class="rounded-md bg-surface-base/20 px-1.5 py-0.5 text-text-base">{item}</span>}
             </For>
           </div>
-          <div class="mt-2 flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
+          <div class="mt-2 flex flex-wrap items-center gap-2">
             <button
               type="button"
               class="rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
