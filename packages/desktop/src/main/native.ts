@@ -276,6 +276,11 @@ export async function createConfigFile(path: string, content: string) {
   await writeFile(target, content, { encoding: "utf8", flag: "wx" })
 }
 
+export async function deleteConfigFile(path: string) {
+  const target = assertAllowedLocalPath(path)
+  await unlink(target)
+}
+
 export async function renameConfigFile(oldPath: string, newPath: string) {
   const src = assertAllowedLocalPath(oldPath)
   const dest = assertAllowedLocalPath(newPath)

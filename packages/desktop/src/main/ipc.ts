@@ -31,6 +31,7 @@ import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar }
 import {
   createConfigFile,
   createTempMarkdownAttachment,
+  deleteConfigFile,
   renameConfigFile,
   archiveTrellisTask,
   detectOpenclawConfig,
@@ -267,6 +268,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("create-config-file", (_event: IpcMainInvokeEvent, path: string, content: string) =>
     createConfigFile(path, content),
   )
+  ipcMain.handle("delete-config-file", (_event: IpcMainInvokeEvent, path: string) => deleteConfigFile(path))
   ipcMain.handle("rename-config-file", (_event: IpcMainInvokeEvent, oldPath: string, newPath: string) =>
     renameConfigFile(oldPath, newPath),
   )

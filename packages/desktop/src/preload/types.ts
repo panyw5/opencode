@@ -217,6 +217,7 @@ export type ElectronAPI = {
   readConfigFile: (path: string) => Promise<string | null>
   writeConfigFile: (path: string, content: string) => Promise<void>
   createConfigFile: (path: string, content: string) => Promise<void>
+  deleteConfigFile: (path: string) => Promise<void>
   renameConfigFile: (oldPath: string, newPath: string) => Promise<void>
   createTempMarkdownAttachment: (directory: string, content: string, extension?: string) => Promise<string>
   getConfigWorkspace: () => Promise<ConfigWorkspace>

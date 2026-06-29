@@ -323,6 +323,9 @@ export type Platform = {
   /** Create a config file and fail if it already exists (desktop only) */
   createConfigFile?(path: string, content: string): Promise<void>
 
+  /** Delete a config file (desktop only) */
+  deleteConfigFile?(path: string): Promise<void>
+
   /** Rename (move) a config file from oldPath to newPath (desktop only) */
   renameConfigFile?(oldPath: string, newPath: string): Promise<void>
 
