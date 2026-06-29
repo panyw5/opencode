@@ -3469,6 +3469,16 @@ export default function ConfigPage() {
     return walk(root)
   }
 
+  const scanCommandFolders = async (
+    root: string,
+    extra: { group: "global" | "project"; root?: string; project?: string },
+  ): Promise<DocItem[]> => {
+    return Promise.all([
+      scanCommands(join(root, "command"), extra),
+      scanCommands(join(root, "commands"), extra),
+    ]).then((list) => list.flat())
+  }
+
   const scanAgents = async (
     root: string,
     extra: Pick<DocItem, "source" | "group" | "project" | "origin" | "root">,
@@ -3751,22 +3761,27 @@ export default function ConfigPage() {
       }))
   })
 
-  const globalCommandsDir = createMemo(() =>
-    mainPath().home ? join(mainPath().home, ".opencode", "commands") : undefined,
-  )
+  const globalCommandsDir = createMemo(() => space()?.configRoot)
   const [diskGlobalCmds] = createResource(
     () => [state.commandRev, globalCommandsDir()] as const,
-    async ([, dir]) => (dir ? scanCommands(dir, { group: "global" }) : []),
+    async ([, dir]) => (dir ? scanCommandFolders(dir, { group: "global", root: dir }) : []),
   )
   const [diskProjectCmds] = createResource(
-    () => [state.commandRev, openedKey()] as const,
-    async () => {
+    () => [state.commandRev, openedKey(), mainPath().directory] as const,
+    async ([, , currentDir]) => {
       const list = untrack(opened)
+      const projects = new Map<string, { root: string; label: string }>()
+      for (const item of list) {
+        projects.set(norm(item.worktree), { root: item.worktree, label: item.name ?? name(item.worktree) })
+      }
+      if (currentDir && file(currentDir)) {
+        const key = norm(currentDir)
+        if (!projects.has(key)) projects.set(key, { root: currentDir, label: name(currentDir) })
+      }
       return Promise.all(
-        list.map(async (item) => {
-          const label = item.name ?? name(item.worktree)
-          const dir = join(item.worktree, ".opencode", "commands")
-          return scanCommands(dir, { group: "project", root: item.worktree, project: label })
+        Array.from(projects.values()).map(async (item) => {
+          const dir = join(item.root, ".opencode")
+          return scanCommandFolders(dir, { group: "project", root: item.root, project: item.label })
         }),
       ).then((results) => results.flat())
     },
@@ -4136,14 +4151,14 @@ export default function ConfigPage() {
     if (state.section === "commands") {
       const item = commandDocs().find((item) => item.id === state.doc)
       if (item) return item
-      if (state.doc !== state.cmdPath || !state.cmdPath) return
+      if (state.doc !== `cmd:${state.cmdPath}` || !state.cmdPath) return
       return {
         id: `cmd:${state.cmdPath}`,
         label: state.cmdTitle.trim() || name(dir(state.cmdPath)),
         path: state.cmdPath,
         editable: true,
-        source: "project",
-        group: "project" as const,
+        source: "global",
+        group: "global" as const,
       }
     }
     if (state.section !== "skills") return
@@ -4364,6 +4379,9 @@ export default function ConfigPage() {
     }
     if (section === "commands") {
       const list = commandDocs().map((item) => item.id)
+      if (state.cmdPath && state.pick === `cmd:${state.cmdPath}` && !list.includes(state.pick)) {
+        return [state.pick, ...list]
+      }
       return state.pick === COMMAND_NEW ? [COMMAND_NEW, ...list] : list
     }
     if (section === "mcp") {
@@ -4416,6 +4434,7 @@ export default function ConfigPage() {
         agents().length,
         claws().length,
         skillDocs().length,
+        commandDocs().length,
         plugins()?.length ?? 0,
       ],
       () => {
@@ -5085,32 +5104,38 @@ export default function ConfigPage() {
   }
 
   async function saveCommand() {
-    const root = mainPath().directory
+    const root = space()?.configRoot
     if (!root || !platform.createConfigFile) return
     const title = state.cmdTitle.trim()
     if (!title) {
       setState("cmdErr", t("config.commands.error.nameRequired"))
       return
     }
-    const safeName = title.replace(/[^a-zA-Z0-9_\-\/]/g, "-").replace(/^-+|-+$/g, "")
+    const safeName = commandSafeName(title)
     if (!safeName) {
       setState("cmdErr", t("config.commands.error.nameRequired"))
       return
     }
-    const path = join(root, ".opencode", "commands", safeName + ".md")
+    const path = join(root, "commands", safeName + ".md")
     setState("cmdSaving", true)
     try {
       await platform.createConfigFile(path, state.text)
       cache.set(path, state.text)
-      setState("cmdPath", path)
+      batch(() => {
+        setState("cmdPath", path)
+        setState("doc", `cmd:${path}`)
+        setState("pick", `cmd:${path}`)
+        setState("saved", state.text)
+        setState("busy", false)
+      })
       bump("commandRev")
       await open({
         id: `cmd:${path}`,
         label: safeName,
         path,
         editable: true,
-        source: "project",
-        group: "project",
+        source: "global",
+        group: "global",
         root,
       })
     } catch (err: unknown) {
@@ -5613,7 +5638,7 @@ export default function ConfigPage() {
                         icon="folder-add-left"
                         class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
                         onClick={createCommand}
-                        disabled={!platform.createConfigFile}
+                        disabled={!space()?.configRoot || !platform.createConfigFile}
                       >
                         {t("config.commands.create.action")}
                       </Button>
@@ -6578,7 +6603,7 @@ export default function ConfigPage() {
                   when={state.pick !== COMMAND_NEW}
                   fallback={
                     <CommandCreator
-                      root={mainPath().directory}
+                      root={space()?.configRoot}
                       title={state.cmdTitle}
                       text={state.text}
                       busy={state.cmdSaving}
@@ -6721,6 +6746,14 @@ export default function ConfigPage() {
     </div>
   )
 }
+function commandSafeName(title: string) {
+  return title
+    .trim()
+    .replace(/^\//, "")
+    .replace(/[^a-zA-Z0-9_\-\/]/g, "-")
+    .replace(/^-+|-+$/g, "")
+}
+
 function CommandCreator(props: {
   root?: string
   title: string
@@ -6735,33 +6768,46 @@ function CommandCreator(props: {
 
   return (
     <div class="flex h-full min-h-0 flex-col">
-      <div class="flex items-center gap-3 border-b border-border-weak-base px-6 py-3">
-        <input
-          type="text"
-          class="w-full bg-transparent text-20-medium text-text-strong outline-none placeholder:text-text-weaker"
-          placeholder={language.t("config.commands.create.placeholder")}
-          value={props.title}
-          onInput={(e) => props.onTitle(e.currentTarget.value)}
-          disabled={props.busy}
-        />
-        <Button
-          size="small"
-          variant="primary"
-          onClick={props.onSave}
-          disabled={props.busy || !props.title.trim()}
-        >
-          {props.busy ? language.t("common.loading.ellipsis") : language.t("common.save")}
-        </Button>
+      <div class="border-b border-border-weak-base px-6 py-4">
+        <div class="flex items-center gap-3">
+          <input
+            type="text"
+            class="w-full bg-transparent text-20-medium text-text-strong outline-none placeholder:text-text-weaker"
+            placeholder={language.t("config.commands.create.placeholder")}
+            value={props.title}
+            onInput={(e) => props.onTitle(e.currentTarget.value)}
+            disabled={props.busy}
+          />
+          <Button
+            size="small"
+            variant="primary"
+            onClick={props.onSave}
+            disabled={props.busy || !props.title.trim()}
+          >
+            {props.busy ? language.t("common.loading.ellipsis") : language.t("common.save")}
+          </Button>
+        </div>
+        <Show when={props.root}>
+          {(root) => (
+            <div class="mt-2 break-all font-mono text-[12px] leading-5 text-text-weak">
+              {join(root(), "commands", `${commandSafeName(props.title) || "command"}.md`)}
+            </div>
+          )}
+        </Show>
       </div>
       <Show when={props.err}>
         <div class="border-b border-border-weak-base bg-surface-danger-base/10 px-6 py-2 text-12-regular text-text-danger">
           {props.err}
         </div>
       </Show>
-      <div class="min-h-0 flex-1 overflow-y-auto p-6">
-        <div class="mx-auto max-w-[720px]">
-          <Markdown text={props.text} />
-        </div>
+      <div class="min-h-0 flex-1 px-5 py-4">
+        <MarkdownField
+          text={props.text}
+          busy={props.busy}
+          editable={!props.busy}
+          onInput={props.onInput}
+          paint={paint}
+        />
       </div>
     </div>
   )
