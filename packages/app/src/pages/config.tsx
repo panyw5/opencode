@@ -1749,22 +1749,73 @@ function Editor(props: {
     <div class="flex h-full min-h-0 flex-col">
       <div class="border-b border-border-weak-base px-5 py-4">
         <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <div class="truncate text-20-medium text-text-strong">
-              {props.item?.label ?? language.t("config.editor.selectItem")}
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 items-center gap-2">
+                <div class="truncate text-20-medium text-text-strong">
+                  {props.item?.label ?? language.t("config.editor.selectItem")}
+                </div>
+                <Show when={props.item?.editable !== undefined}>
+                  <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                    {props.item?.editable
+                      ? language.t("config.editor.badge.editable")
+                      : language.t("config.editor.badge.readOnly")}
+                  </span>
+                </Show>
+                <Show when={source()}>
+                  <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                    {language.t(source()!)}
+                  </span>
+                </Show>
+              </div>
             </div>
-            <Show when={props.item?.editable !== undefined}>
-              <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                {props.item?.editable
-                  ? language.t("config.editor.badge.editable")
-                  : language.t("config.editor.badge.readOnly")}
-              </span>
-            </Show>
-            <Show when={source()}>
-              <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                {language.t(source()!)}
-              </span>
-            </Show>
+            <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <Show when={props.extra}>
+                <div>{props.extra}</div>
+              </Show>
+              <Show when={props.onOpenFolder}>
+                <Button size="small" variant="ghost" onClick={props.onOpenFolder}>
+                  <Icon name="folder" size="small" class="shrink-0" />
+                  {language.t("config.action.openFolder")}
+                </Button>
+              </Show>
+              <Button
+                size="small"
+                variant="ghost"
+                icon={props.reloading ? undefined : "reset"}
+                onClick={props.onReload}
+                disabled={props.reloading}
+              >
+                <Show when={props.reloading}>
+                  <Spinner class="size-3" />
+                </Show>
+                {props.reloading
+                  ? language.t("config.reloadBackend.loading")
+                  : language.t("command.server.reloadBackend")}
+              </Button>
+              <Show when={props.onDelete}>
+                {(onDelete) => (
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    icon="trash"
+                    onClick={onDelete()}
+                    disabled={!props.item?.editable || props.busy}
+                  >
+                    {language.t("config.action.delete")}
+                  </Button>
+                )}
+              </Show>
+              <Button
+                size="small"
+                variant="secondary"
+                icon="check-small"
+                onClick={props.onSave}
+                disabled={!props.item?.editable || !props.dirty}
+              >
+                {language.t("common.save")}
+              </Button>
+            </div>
           </div>
           <div class="mt-1 break-all font-mono text-[12px] leading-5 text-text-weak">
             {props.item?.path ?? ""}
@@ -1787,53 +1838,6 @@ function Editor(props: {
               {props.warn}
             </div>
           </Show>
-          <div class="mt-3 flex flex-wrap items-center gap-2">
-            <Show when={props.extra}>
-              <div>{props.extra}</div>
-            </Show>
-            <Show when={props.onOpenFolder}>
-              <Button size="small" variant="ghost" onClick={props.onOpenFolder}>
-                <Icon name="folder" size="small" class="shrink-0" />
-                {language.t("config.action.openFolder")}
-              </Button>
-            </Show>
-            <Button
-              size="small"
-              variant="ghost"
-              icon={props.reloading ? undefined : "reset"}
-              onClick={props.onReload}
-              disabled={props.reloading}
-            >
-              <Show when={props.reloading}>
-                <Spinner class="size-3" />
-              </Show>
-              {props.reloading
-                ? language.t("config.reloadBackend.loading")
-                : language.t("command.server.reloadBackend")}
-            </Button>
-            <Show when={props.onDelete}>
-              {(onDelete) => (
-                <Button
-                  size="small"
-                  variant="ghost"
-                  icon="trash"
-                  onClick={onDelete()}
-                  disabled={!props.item?.editable || props.busy}
-                >
-                  {language.t("config.action.delete")}
-                </Button>
-              )}
-            </Show>
-            <Button
-              size="small"
-              variant="secondary"
-              icon="check-small"
-              onClick={props.onSave}
-              disabled={!props.item?.editable || !props.dirty}
-            >
-              {language.t("common.save")}
-            </Button>
-          </div>
           <Show when={props.reloading}>
             <div class="mt-3 rounded-xl border border-border-weak-base bg-surface-secondary px-3 py-2 text-12-regular text-text-weak">
               {language.t("config.reloadBackend.loading")}
@@ -3989,6 +3993,31 @@ export default function ConfigPage() {
         items: [item],
       })
     }
+    if (state.pick === SKILL_NEW && state.skillCreateProjectRoot) {
+      const key = state.skillCreateProjectRoot
+      const title = state.skillTitle.trim()
+      const label = title || t("config.skills.create.action")
+      const path = join(state.skillCreateRoot, title || "skill", "SKILL.md")
+      const item: DocItem = {
+        id: SKILL_NEW,
+        label,
+        path,
+        editable: true,
+        source: "project",
+        group: "project",
+        project: state.skillCreateProjectLabel || name(state.skillCreateProjectRoot),
+        root: state.skillCreateProjectRoot,
+      }
+      const prev = map.get(key)
+      if (prev) prev.items = [item, ...prev.items.filter((entry) => entry.id !== SKILL_NEW)]
+      else {
+        map.set(key, {
+          label: state.skillCreateProjectLabel || name(state.skillCreateProjectRoot),
+          path: state.skillCreateProjectRoot,
+          items: [item],
+        })
+      }
+    }
 
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
   })
@@ -5433,6 +5462,26 @@ export default function ConfigPage() {
       .finally(() => setState("skillSaving", false))
   }
 
+  function cancelSkillCreate() {
+    const text = skillTemplate("")
+    batch(() => {
+      setState("pick", "")
+      setState("doc", "")
+      setState("text", text)
+      setState("saved", text)
+      setState("skillTitle", "")
+      setState("skillErr", "")
+      setState("skillPath", "")
+      setState("skillNote", "")
+      setState("skillWarn", "")
+      setState("skillCreateRoot", "")
+      setState("skillCreateProjectRoot", "")
+      setState("skillCreateProjectLabel", "")
+      setState("skillSaving", false)
+      setState("busy", false)
+    })
+  }
+
   async function installMarketSkill(item: SkillMarketItem) {
     const root = space()?.skillsRoot
     if (!root || !platform.createConfigFile) {
@@ -5996,7 +6045,7 @@ export default function ConfigPage() {
                       >
                         <div class="flex flex-col gap-3">
                           <Show when={agentOpenCode().length > 0}>
-                            <div class="flex flex-col">
+                            <div class="flex flex-col gap-2">
                               <div class="flex items-center justify-between gap-3 px-1">
                                 <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
                                   {t("config.skills.group.opencode")}
@@ -6005,23 +6054,24 @@ export default function ConfigPage() {
                                   {agentOpenCode().length}
                                 </div>
                               </div>
-                              <For each={agentOpenCode()}>
-                                {(item) => (
-                                  <ListButton
-                                    active={state.pick === item.id}
-                                    title={item.label}
-                                    note={loadedMap().get(item.label)?.description || item.note}
-                                    meta={short(item.path, space()?.agentsRoot)}
-                                    titleClass="text-text-warning-base"
-                                    onClick={() => void open(item)}
-                                  />
-                                )}
-                              </For>
+                              <div class="flex flex-col gap-2.5">
+                                <For each={agentOpenCode()}>
+                                  {(item) => (
+                                    <PluginListButton
+                                      active={state.pick === item.id}
+                                      title={item.label}
+                                      note={loadedMap().get(item.label)?.description || item.note}
+                                      meta={short(item.path, space()?.agentsRoot)}
+                                      onClick={() => void open(item)}
+                                    />
+                                  )}
+                                </For>
+                              </div>
                             </div>
                           </Show>
 
                           <Show when={agentProject().length > 0}>
-                            <div class="flex flex-col gap-1">
+                            <div class="flex flex-col">
                               <div class="flex items-center justify-between gap-3 px-1">
                                 <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
                                   {t("config.skills.group.project")}
@@ -6030,53 +6080,36 @@ export default function ConfigPage() {
                                   {agentProject().length}
                                 </div>
                               </div>
-                              <For each={projectAgentGroups()}>
-                                {([name, items]) => (
-                                  <div class="flex flex-col rounded-xl border border-border-weak-base bg-background-base/70">
-                                    <button
-                                      type="button"
-                                      class="flex items-center justify-between gap-3 border-b border-border-weak-base px-3 py-2 text-left"
-                                      onClick={() => toggleAgentProject(name)}
+                              <div class="mt-2 flex flex-col gap-3">
+                                <For each={projectAgentGroups()}>
+                                  {([name, items]) => (
+                                    <ProjectListGroup
+                                      label={name}
+                                      path={items[0]?.root}
+                                      count={items.length}
+                                      open={agentProjectOpen(name)}
+                                      onToggle={() => toggleAgentProject(name)}
                                     >
-                                      <div class="flex min-w-0 items-center gap-2">
-                                        <div class="text-text-weak">
-                                          <Icon
-                                            name={agentProjectOpen(name) ? "chevron-down" : "chevron-right"}
-                                            size="small"
+                                      <For each={items}>
+                                        {(item) => (
+                                          <PluginListButton
+                                            active={state.pick === item.id}
+                                            title={item.label}
+                                            note={loadedMap().get(item.label)?.description || item.note}
+                                            meta={[item.origin, short(item.path, item.root)].filter(Boolean).join(" · ")}
+                                            onClick={() => void open(item)}
                                           />
-                                        </div>
-                                        <div class="truncate text-12-medium text-text-strong">{name}</div>
-                                      </div>
-                                      <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                                        {items.length}
-                                      </div>
-                                    </button>
-                                    <Show when={agentProjectOpen(name)}>
-                                      <div class="flex flex-col p-1">
-                                        <For each={items}>
-                                          {(item) => (
-                                            <ListButton
-                                              active={state.pick === item.id}
-                                              title={item.label}
-                                              note={loadedMap().get(item.label)?.description || item.note}
-                                              meta={[item.origin, short(item.path, item.root)]
-                                                .filter(Boolean)
-                                                .join(" · ")}
-                                              titleClass="text-text-warning-base"
-                                              onClick={() => void open(item)}
-                                            />
-                                          )}
-                                        </For>
-                                      </div>
-                                    </Show>
-                                  </div>
-                                )}
-                              </For>
+                                        )}
+                                      </For>
+                                    </ProjectListGroup>
+                                  )}
+                                </For>
+                              </div>
                             </div>
                           </Show>
 
                           <Show when={agentPlugin().length > 0}>
-                            <div class="flex flex-col">
+                            <div class="flex flex-col gap-2">
                               <div class="flex items-center justify-between gap-3 px-1">
                                 <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
                                   {t("config.plugins.title")}
@@ -6085,20 +6118,21 @@ export default function ConfigPage() {
                                   {agentPlugin().length}
                                 </div>
                               </div>
-                              <For each={agentPlugin()}>
-                                {(item) => (
-                                  <ListButton
-                                    active={state.pick === item.id}
-                                    title={item.label}
-                                    note={loadedMap().get(item.label)?.description || item.note}
-                                    meta={[item.project, item.origin, short(item.path, item.root)]
-                                      .filter(Boolean)
-                                      .join(" · ")}
-                                    titleClass="text-text-warning-base"
-                                    onClick={() => void open(item)}
-                                  />
-                                )}
-                              </For>
+                              <div class="flex flex-col gap-2.5">
+                                <For each={agentPlugin()}>
+                                  {(item) => (
+                                    <PluginListButton
+                                      active={state.pick === item.id}
+                                      title={item.label}
+                                      note={loadedMap().get(item.label)?.description || item.note}
+                                      meta={[item.project, item.origin, short(item.path, item.root)]
+                                        .filter(Boolean)
+                                        .join(" · ")}
+                                      onClick={() => void open(item)}
+                                    />
+                                  )}
+                                </For>
+                              </div>
                             </div>
                           </Show>
                         </div>
@@ -6106,30 +6140,31 @@ export default function ConfigPage() {
                     </Match>
 
                     <Match when={state.section === "claws" && clawsSectionEnabled()}>
-                      <For each={claws()}>
-                        {(item) => (
-                          <ListButton
-                            active={state.pick === item.id}
-                            title={item.label}
-                            note={item.note}
-                            meta={item.meta}
-                            titleClass="text-text-critical-base"
-                            onClick={() => setState("pick", item.id)}
-                            extra={
-                              <span
-                                class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
-                                classList={{
-                                  "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
-                                    item.enabled,
-                                  "border-transparent bg-surface-secondary text-text-weak": !item.enabled,
-                                }}
-                              >
-                                {item.enabled ? t("config.claws.badge.enabled") : t("config.claws.badge.disabled")}
-                              </span>
-                            }
-                          />
-                        )}
-                      </For>
+                      <div class="flex flex-col gap-2.5">
+                        <For each={claws()}>
+                          {(item) => (
+                            <PluginListButton
+                              active={state.pick === item.id}
+                              title={item.label}
+                              note={item.note}
+                              meta={item.meta}
+                              onClick={() => setState("pick", item.id)}
+                              extra={
+                                <span
+                                  class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
+                                  classList={{
+                                    "border-border-success-base/60 bg-surface-success-base text-text-on-success-base":
+                                      item.enabled,
+                                    "border-transparent bg-surface-secondary text-text-weak": !item.enabled,
+                                  }}
+                                >
+                                  {item.enabled ? t("config.claws.badge.enabled") : t("config.claws.badge.disabled")}
+                                </span>
+                              }
+                            />
+                          )}
+                        </For>
+                      </div>
                     </Match>
 
                     <Match when={state.section === "mcp"}>
@@ -6420,7 +6455,11 @@ export default function ConfigPage() {
                                             warnLabel={item.warn ? t("config.skills.badge.needsMetadata") : undefined}
                                             deletable={item.editable}
                                             onDelete={() => void deleteSkill(item)}
-                                            onClick={() => keepSkillsScroll(() => void open(item))}
+                                            onClick={() =>
+                                              keepSkillsScroll(() =>
+                                                item.id === SKILL_NEW ? setState("pick", SKILL_NEW) : void open(item),
+                                              )
+                                            }
                                           />
                                         )}
                                       </For>
@@ -6890,6 +6929,7 @@ export default function ConfigPage() {
                           onTitle={setSkillTitle}
                           onInput={(value) => setState("text", value)}
                           onSave={() => void saveSkill()}
+                          onCancel={cancelSkillCreate}
                         />
                       </Match>
                       <Match when={true}>
@@ -7075,47 +7115,42 @@ function SkillCreator(props: {
   onTitle: (value: string) => void
   onInput: (value: string) => void
   onSave: () => void
+  onCancel: () => void
 }) {
   const language = useLanguage()
 
   return (
     <div class="flex h-full min-h-0 flex-col">
       <div class="border-b border-border-weak-base px-5 py-4">
-        <div class="min-w-0">
-          <div class="flex items-center gap-2">
-            <div class="truncate text-20-medium text-text-strong">{language.t("config.skills.create.title")}</div>
-            <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-              {language.t("config.editor.badge.editable")}
-            </span>
-          </div>
-          <div class="mt-1 text-12-regular text-text-weak">{language.t("config.skills.create.description")}</div>
-          <div class="mt-3 flex flex-wrap items-center gap-2">
-            <SaveButton
-              label={language.t("common.save")}
-              onClick={props.onSave}
-              disabled={props.busy || !props.title.trim()}
-            />
-          </div>
+        <div class="flex items-center gap-3">
+          <input
+            type="text"
+            class="w-full bg-transparent text-20-medium text-text-strong outline-none placeholder:text-text-weaker"
+            placeholder={language.t("config.skills.create.title")}
+            value={props.title}
+            onInput={(event) => props.onTitle(event.currentTarget.value)}
+            disabled={props.busy}
+          />
+          <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+            {language.t("config.editor.badge.editable")}
+          </span>
+          <Button size="small" variant="ghost" icon="close" onClick={props.onCancel} disabled={props.busy}>
+            {language.t("common.cancel")}
+          </Button>
+          <SaveButton
+            label={language.t("common.save")}
+            onClick={props.onSave}
+            disabled={props.busy || !props.title.trim()}
+          />
         </div>
       </div>
+      <Show when={props.err}>
+        <div class="border-b border-border-weak-base bg-surface-danger-base/10 px-6 py-2 text-12-regular text-text-danger">
+          {props.err}
+        </div>
+      </Show>
       <div class="grid min-h-0 flex-1 auto-rows-fr gap-4 px-5 py-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div class="flex min-h-0 flex-col gap-4">
-          <div class="rounded-xl border border-border-weak-base bg-background-base p-4">
-            <TextField
-              label={language.t("config.skills.create.field")}
-              placeholder={language.t("config.skills.create.placeholder")}
-              value={props.title}
-              onChange={props.onTitle}
-              validationState={props.err ? "invalid" : undefined}
-              error={props.err}
-            />
-            <div class="mt-3 rounded-lg border border-border-weak-base bg-surface-secondary px-3 py-2 text-12-regular text-text-weak">
-              {language.t("config.skills.create.preview", {
-                root: props.root ?? "~/.config/opencode/skills",
-                folder: props.title.trim() || language.t("config.skills.create.previewPending"),
-              })}
-            </div>
-          </div>
           <div class="min-h-0 flex-1">
             <MarkdownField text={props.text} busy={props.busy} editable={true} onInput={props.onInput} paint={paint} />
           </div>
