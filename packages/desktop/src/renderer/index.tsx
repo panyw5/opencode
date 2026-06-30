@@ -16,7 +16,7 @@ import {
 } from "@opencode-ai/app"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
-import { MemoryRouter } from "@solidjs/router"
+import { createMemoryHistory, MemoryRouter, type BaseRouterProps } from "@solidjs/router"
 import { createEffect, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
 import pkg from "../../package.json"
@@ -88,6 +88,7 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 void initI18n()
 
 const deepLinkEvent = "opencode:deep-link"
+const lastActiveUrlKey = "opencode.desktop.last-active-url"
 
 const emitDeepLinks = (urls: string[]) => {
   if (urls.length === 0) return
@@ -100,6 +101,30 @@ const emitDeepLinks = (urls: string[]) => {
 const listenForDeepLinks = () => {
   void desktopApi.consumeInitialDeepLinks().then((urls) => emitDeepLinks(urls))
   return desktopApi.onDeepLink((urls) => emitDeepLinks(urls))
+}
+
+function getLastActiveUrl() {
+  if (typeof localStorage !== "object") return "/"
+  try {
+    const value = localStorage.getItem(lastActiveUrlKey)
+    if (value?.startsWith("/") && !value.startsWith("//")) return value
+  } catch {}
+  return "/"
+}
+
+function setLastActiveUrl(value: string) {
+  if (typeof localStorage !== "object") return
+  try {
+    localStorage.setItem(lastActiveUrlKey, value)
+  } catch {}
+}
+
+function DesktopMemoryRouter(props: BaseRouterProps) {
+  const history = createMemoryHistory()
+  const initialUrl = getLastActiveUrl()
+  if (initialUrl !== "/") history.set({ value: initialUrl, replace: true, scroll: false })
+  onCleanup(history.listen(setLastActiveUrl))
+  return <MemoryRouter {...props} history={history} />
 }
 
 const createPlatform = (refreshExtraAgents?: () => void): Platform => {
@@ -602,7 +627,7 @@ render(() => {
               <AppInterface
                 defaultServer={defaultServer.latest ?? ServerConnection.Key.make("sidecar")}
                 servers={servers()}
-                router={MemoryRouter}
+                router={DesktopMemoryRouter}
               >
                 <Inner />
               </AppInterface>
