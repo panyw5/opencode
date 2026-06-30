@@ -78,6 +78,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const [store, setStore] = createStore<{
       current?: string
       draft?: State
+      promoting?: State
       last?: {
         type: "agent" | "model" | "variant"
         agent?: string
@@ -121,7 +122,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const scope = createMemo<State | undefined>(() => {
       const session = id()
-      if (!session) return store.draft
+      if (!session) return store.draft ?? store.promoting
       return saved.session[session] ?? handoff.get(handoffKey(sdk.directory, session))
     })
 
@@ -135,11 +136,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       if (!next) return
       if (saved.session[session] !== undefined) {
         handoff.delete(key)
+        setStore("promoting", undefined)
         return
       }
 
       setSaved("session", session, clone(next))
       handoff.delete(key)
+      setStore("promoting", undefined)
     })
 
     // Preserve model selection when switching to a session without saved state
@@ -381,19 +384,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       agent,
       session: {
         reset() {
-          setStore("draft", undefined)
+          setStore({ draft: undefined, promoting: undefined })
         },
         promote(dir: string, session: string) {
           const next = clone(snapshot())
           if (!next) return
+          const key = handoffKey(dir, session)
+          handoff.set(key, next)
 
           if (dir === sdk.directory) {
             setSaved("session", session, next)
-            setStore("draft", undefined)
-            return
           }
 
-          handoff.set(handoffKey(dir, session), next)
+          setStore("promoting", next)
           setStore("draft", undefined)
         },
         restore(msg: { sessionID: string; agent: string; model: ModelKey; variant?: string }) {
