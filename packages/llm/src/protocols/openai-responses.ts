@@ -52,7 +52,7 @@ const OpenAIResponsesReasoningSummaryText = Schema.Struct({
 
 const OpenAIResponsesReasoningItem = Schema.Struct({
   type: Schema.tag("reasoning"),
-  id: Schema.String,
+  id: Schema.optionalKey(Schema.String),
   summary: Schema.Array(OpenAIResponsesReasoningSummaryText),
   encrypted_content: optionalNull(Schema.String),
 })
@@ -228,6 +228,7 @@ const lowerTool = (tool: ToolDefinition): OpenAIResponsesTool => ({
   name: tool.name,
   description: tool.description,
   parameters: tool.inputSchema,
+  strict: false,
 })
 
 const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
@@ -251,9 +252,8 @@ const lowerReasoning = (part: ReasoningPart, store: boolean | undefined): OpenAI
   // With store:false, OpenAI only accepts previous reasoning items when the
   // encrypted state is present. Bare rs_* ids point to non-persisted items.
   if (store === false && typeof openai.reasoningEncryptedContent !== "string") return undefined
-  return {
+  const item: OpenAIResponsesInputItem = {
     type: "reasoning",
-    id: openai.itemId,
     summary: part.text.length > 0 ? [{ type: "summary_text", text: part.text }] : [],
     encrypted_content:
       typeof openai.reasoningEncryptedContent === "string"
@@ -262,6 +262,8 @@ const lowerReasoning = (part: ReasoningPart, store: boolean | undefined): OpenAI
           ? null
           : undefined,
   }
+  if (store === false) return item
+  return { ...item, id: openai.itemId }
 }
 
 const lowerUserContent = Effect.fn("OpenAIResponses.lowerUserContent")(function* (
@@ -727,6 +729,7 @@ export const route = Route.make({
   endpoint,
   auth,
   transport: httpTransport,
+  defaults: { providerOptions: { openai: { store: false } } },
 })
 
 const decodeWebSocketMessage = ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenAIResponsesWebSocketMessage))
@@ -754,6 +757,7 @@ export const webSocketRoute = Route.make({
   endpoint,
   auth,
   transport: webSocketTransport,
+  defaults: { providerOptions: { openai: { store: false } } },
 })
 
 export * as OpenAIResponses from "./openai-responses"

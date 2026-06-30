@@ -353,15 +353,19 @@ const step = (state: ParserState, event: GeminiEvent) => {
 
   for (const part of candidate.content.parts) {
     if ("text" in part && part.text.length > 0) {
-      lifecycle = part.thought
-        ? Lifecycle.reasoningDelta(lifecycle, events, "reasoning-0", part.text)
-        : Lifecycle.textDelta(lifecycle, events, "text-0", part.text)
+      if (part.thought) {
+        lifecycle = Lifecycle.reasoningDelta(lifecycle, events, "reasoning-0", part.text)
+        continue
+      }
+      lifecycle = Lifecycle.reasoningEnd(lifecycle, events, "reasoning-0")
+      lifecycle = Lifecycle.textDelta(lifecycle, events, "text-0", part.text)
       continue
     }
 
     if ("functionCall" in part) {
       const input = part.functionCall.args
       const id = `tool_${nextToolCallId++}`
+      lifecycle = Lifecycle.reasoningEnd(lifecycle, events, "reasoning-0")
       lifecycle = Lifecycle.stepStart(lifecycle, events)
       events.push(LLMEvent.toolCall({ id, name: part.functionCall.name, input }))
       hasToolCalls = true

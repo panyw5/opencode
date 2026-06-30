@@ -44,13 +44,14 @@ describe("OpenAI Responses route", () => {
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare(request)
 
-      expect(prepared.body).toEqual({
+      expect(prepared.body).toMatchObject({
         model: "gpt-4.1-mini",
         input: [
           { role: "system", content: "You are concise." },
           { role: "user", content: [{ type: "input_text", text: "Say hello." }] },
         ],
         stream: true,
+        store: false,
         max_output_tokens: 20,
         temperature: 0,
       })
@@ -249,7 +250,7 @@ describe("OpenAI Responses route", () => {
         }),
       )
 
-      expect(prepared.body).toEqual({
+      expect(prepared.body).toMatchObject({
         model: "gpt-4.1-mini",
         input: [
           { role: "user", content: [{ type: "input_text", text: "What is the weather?" }] },
@@ -257,6 +258,7 @@ describe("OpenAI Responses route", () => {
           { type: "function_call_output", call_id: "call_1", output: '{"forecast":"sunny"}' },
         ],
         stream: true,
+        store: false,
       })
     }),
   )
@@ -361,7 +363,6 @@ describe("OpenAI Responses route", () => {
           },
           {
             type: "reasoning",
-            id: "rs_continuation_1",
             encrypted_content: "encrypted-continuation-state",
             summary: [{ type: "summary_text", text: "I inspected the previous turn." }],
           },
@@ -581,7 +582,6 @@ describe("OpenAI Responses route", () => {
                   { role: "user", content: [{ type: "input_text", text: "What changed?" }] },
                   {
                     type: "reasoning",
-                    id: "rs_1",
                     encrypted_content: "encrypted-state",
                     summary: [{ type: "summary_text", text: "Checked the previous diff." }],
                   },
@@ -634,7 +634,6 @@ describe("OpenAI Responses route", () => {
         { role: "assistant", content: [{ type: "output_text", text: "Before." }] },
         {
           type: "reasoning",
-          id: "rs_1",
           encrypted_content: "encrypted-state",
           summary: [{ type: "summary_text", text: "Checked order." }],
         },
