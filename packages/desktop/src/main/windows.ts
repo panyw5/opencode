@@ -1,4 +1,6 @@
 import windowState from "electron-window-state"
+import { oc2Theme } from "@opencode-ai/ui/theme/default-themes"
+import { resolveThemeVariant } from "@opencode-ai/ui/theme/resolve"
 import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -15,6 +17,10 @@ const rendererHost = "renderer"
 const clipboardWritePermission = "clipboard-sanitized-write"
 const notificationPermission = "notifications"
 const rendererPermissions = new Set([clipboardWritePermission, notificationPermission])
+const oc2Background = {
+  light: resolveThemeVariant(oc2Theme.light, false)["background-base"],
+  dark: resolveThemeVariant(oc2Theme.dark, true)["background-base"],
+}
 const documentPolicyHeader = "Document-Policy"
 const jsCallStacksDocumentPolicy = "include-js-call-stacks-in-crash-reports"
 
@@ -46,6 +52,7 @@ export function setRelaunchHandler(handler: () => void) {
 
 export function setBackgroundColor(color: string) {
   backgroundColor = color
+  BrowserWindow.getAllWindows().forEach((win) => win.setBackgroundColor(color))
 }
 
 export function getBackgroundColor(): string | undefined {
@@ -63,6 +70,10 @@ function iconPath() {
 
 function tone() {
   return nativeTheme.shouldUseDarkColors ? "dark" : "light"
+}
+
+function defaultBackgroundColor() {
+  return oc2Background[tone()]
 }
 
 function overlay(theme: Partial<TitlebarTheme> = {}, zoom = 1) {
@@ -128,7 +139,7 @@ export function createMainWindow(options: CreateMainWindowOptions = {}) {
     autoHideMenuBar: true,
     title: "OpenCode",
     icon: iconPath(),
-    backgroundColor,
+    backgroundColor: backgroundColor ?? defaultBackgroundColor(),
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,
@@ -191,7 +202,7 @@ export function createLoadingWindow() {
     show: true,
     autoHideMenuBar: true,
     icon: iconPath(),
-    backgroundColor,
+    backgroundColor: backgroundColor ?? defaultBackgroundColor(),
     ...(process.platform === "darwin" ? { titleBarStyle: "hidden" as const } : {}),
     ...(process.platform === "win32"
       ? {
@@ -389,16 +400,18 @@ function addDocumentPolicy(response: Response, file: string) {
 }
 
 function allowRendererPermissions(win: BrowserWindow) {
+  const webContentsId = win.webContents.id
+
   win.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
     callback(
       rendererPermissions.has(permission) &&
         isTrustedRendererUrl(details.requestingUrl) &&
-        webContents.id === win.webContents.id,
+        webContents.id === webContentsId,
     )
   })
   win.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
     if (!rendererPermissions.has(permission)) return false
-    if (webContents && webContents.id !== win.webContents.id) return false
+    if (webContents && webContents.id !== webContentsId) return false
     return isTrustedRendererUrl(details.requestingUrl) || isTrustedRendererUrl(requestingOrigin)
   })
 }
