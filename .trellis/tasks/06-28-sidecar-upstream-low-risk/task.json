@@ -1,0 +1,52 @@
+{
+  "id": "sidecar-upstream-low-risk",
+  "name": "sidecar-upstream-low-risk",
+  "title": "merge low-risk upstream sidecar and provider updates",
+  "description": "Merge low-risk upstream Electron sidecar, provider, LLM, SDK-adjacent fixes while avoiding session database schema changes. Defer medium-risk updates until after manual testing.",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "desktop sidecar provider llm sdk",
+  "package": null,
+  "priority": "P1",
+  "creator": "codex-agent",
+  "assignee": "codex-agent",
+  "createdAt": "2026-06-28",
+  "completedAt": null,
+  "branch": "trellis/sidecar-upstream-low-risk",
+  "base_branch": "dev",
+  "worktree_path": ".worktrees/sidecar-upstream-low-risk",
+  "current_phase": 3,
+  "next_action": [
+    {
+      "phase": 1,
+      "action": "research"
+    },
+    {
+      "phase": 2,
+      "action": "low-risk-merge"
+    },
+    {
+      "phase": 3,
+      "action": "human-test"
+    },
+    {
+      "phase": 4,
+      "action": "medium-risk-merge"
+    },
+    {
+      "phase": 5,
+      "action": "check"
+    }
+  ],
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "Avoid storage/db/session SQL migrations and durable schema rewrites unless explicitly promoted to a separate database migration task.",
+  "meta": {
+    "upstream_dev": "6861fedd09",
+    "risk_phase": "low"
+  }
+}
