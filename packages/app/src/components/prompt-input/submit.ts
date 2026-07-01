@@ -177,11 +177,11 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       messageID,
     })
 
-  setBusy()
   performance.mark("submit:optimistic-add:start")
   add()
   performance.mark("submit:optimistic-add:end")
   performance.measure("submit:optimistic-add", "submit:optimistic-add:start", "submit:optimistic-add:end")
+  setBusy()
 
   try {
     if (!(await wait())) {

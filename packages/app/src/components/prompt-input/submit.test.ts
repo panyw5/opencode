@@ -26,6 +26,7 @@ const sentCommands: Array<{ directory: string; messageID?: string }> = []
 const abortedSessions: Array<{ directory: string; sessionID: string }> = []
 const syncedDirectories: string[] = []
 const messagePages: Record<string, Array<{ info: { id: string } }>> = {}
+const syncEvents: string[] = []
 
 let params: { id?: string } = {}
 let current = "/repo/worktree-a"
@@ -156,6 +157,12 @@ beforeAll(async () => {
       project: { worktree: root },
       data: { command: [] },
       session: {
+        created: (input: { directory?: string; info: { id: string; title?: string } }) => {
+          const directory = input.directory ?? current
+          syncedDirectories.push(directory)
+          storedSessions[directory] ??= []
+          storedSessions[directory].push(input.info)
+        },
         optimistic: {
           add: (value: {
             directory?: string
@@ -243,6 +250,7 @@ beforeEach(() => {
   sentCommands.length = 0
   abortedSessions.length = 0
   syncedDirectories.length = 0
+  syncEvents.length = 0
   toasts.length = 0
   current = "/repo/worktree-a"
   root = "/repo/main"
@@ -424,6 +432,44 @@ describe("prompt submit worktree selection", () => {
         variant: "high",
       },
     })
+  })
+
+  test("adds optimistic follow-up before marking the session busy", async () => {
+    const ok = await sendFollowupDraft({
+      client: clientFor("/repo/main", false) as never,
+      globalSync: {
+        child: () => [
+          {},
+          (...args: unknown[]) => {
+            if (args[0] === "session_status") {
+              syncEvents.push(`status:${(args[2] as { type?: string } | undefined)?.type}`)
+            }
+          },
+        ],
+      } as never,
+      sync: {
+        data: { command: [] },
+        session: {
+          optimistic: {
+            add: () => syncEvents.push("optimistic:add"),
+            remove: () => syncEvents.push("optimistic:remove"),
+          },
+        },
+      } as never,
+      draft: {
+        sessionID: "session-1",
+        sessionDirectory: "/repo/main",
+        prompt: promptValue,
+        context: [],
+        agent: "agent",
+        model: { providerID: "provider", modelID: "model" },
+      },
+      messageID: "message-1",
+      optimisticBusy: true,
+    })
+
+    expect(ok).toBe(true)
+    expect(syncEvents.slice(0, 2)).toEqual(["optimistic:add", "status:busy"])
   })
 
   test("seeds new sessions before optimistic prompts are added", async () => {
