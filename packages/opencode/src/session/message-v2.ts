@@ -639,6 +639,41 @@ function normalizeDataUrl(data: string, mediaType: string): string {
   return `data:${mediaType};base64,${stripDataUrlPrefix(data)}`
 }
 
+function toolReplayRank(part: ToolPart): number {
+  switch (part.state.status) {
+    case "completed":
+      return 4
+    case "error":
+      return 3
+    case "running":
+      return 2
+    case "pending":
+      return 1
+  }
+  return 0
+}
+
+function dedupeReplayToolParts(parts: Part[]): Part[] {
+  const best = new Map<string, ToolPart>()
+  for (const part of parts) {
+    if (part.type !== "tool") continue
+    const current = best.get(part.callID)
+    if (!current || toolReplayRank(part) >= toolReplayRank(current)) best.set(part.callID, part)
+  }
+  const emitted = new Set<string>()
+  const result: Part[] = []
+  for (const part of parts) {
+    if (part.type !== "tool") {
+      result.push(part)
+      continue
+    }
+    if (emitted.has(part.callID)) continue
+    emitted.add(part.callID)
+    result.push(best.get(part.callID) ?? part)
+  }
+  return result
+}
+
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
   input: WithParts[],
   model: Provider.Model,
@@ -785,7 +820,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
         if (part.type !== "reasoning") return false
         return part.metadata?.anthropic?.signature != null
       })
-      for (const part of msg.parts) {
+      for (const part of dedupeReplayToolParts(msg.parts)) {
         if (part.type === "text") {
           const text = part.text === "" && hasSignedReasoning ? " " : part.text
           assistantMessage.parts.push({

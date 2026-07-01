@@ -127,6 +127,7 @@
     "web-tree-sitter"
   ],
   "overrides": {
+    "@ai-sdk/deepseek": "2.0.39",
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",
     "@opentui/solid": "catalog:",
