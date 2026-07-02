@@ -17,6 +17,8 @@
 }
 
 [data-component="list"] {
+  --list-item-hover-bg: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -268,11 +270,11 @@
 
       &:hover {
         border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.08);
+        background: var(--list-item-hover-bg);
       }
       &[data-active="true"] {
         border-radius: var(--radius-md);
-        background: rgba(255, 255, 255, 0.08);
+        background: var(--list-item-hover-bg);
         color: var(--text-strong);
         [data-slot="list-item-active-icon"] {
           display: inline-flex;

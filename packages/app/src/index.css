@@ -130,36 +130,39 @@
   }
 
   [data-component="sidebar-session"] {
-    --sidebar-session-accent: #c98a6d;
-    --sidebar-session-hover-bg: #2c2924;
-    --sidebar-session-hover-border: rgba(201, 138, 109, 0.14);
-    --sidebar-session-active-bg-top: #302c27;
-    --sidebar-session-active-bg-bottom: #292622;
-    --sidebar-session-active-border: rgba(201, 138, 109, 0.2);
-    --sidebar-session-active-shadow: rgba(0, 0, 0, 0.34);
+    --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
+    --sidebar-session-hover-bg: light-dark(#f1f1f1, #2c2924);
+    --sidebar-session-hover-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.14));
+    --sidebar-session-hover-fg: light-dark(#2f2f2f, var(--text-strong));
+    --sidebar-session-hover-icon: light-dark(#8a8a8a, var(--icon-base));
+    --sidebar-session-active-bg-top: light-dark(#f1f1f1, #302c27);
+    --sidebar-session-active-bg-bottom: light-dark(#eeeeee, #292622);
+    --sidebar-session-active-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.2));
+    --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
   }
 
   html[data-theme="aether"] [data-component="sidebar-session"] {
-    --sidebar-session-hover-bg: light-dark(#e8e2d8, #2c2924);
-    --sidebar-session-hover-border: light-dark(rgba(201, 138, 109, 0.1), rgba(201, 138, 109, 0.14));
-    --sidebar-session-active-bg-top: light-dark(#e3ddd2, rgb(65, 65, 65));
-    --sidebar-session-active-bg-bottom: light-dark(#e0d9cd, rgb(65, 65, 65));
-    --sidebar-session-active-border: light-dark(rgba(193, 95, 60, 0.15), rgba(201, 138, 109, 0.2));
-    --sidebar-session-active-shadow: light-dark(rgba(193, 95, 60, 0.08), rgba(0, 0, 0, 0.34));
+    --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
+    --sidebar-session-hover-bg: light-dark(#f1f1f1, #2c2924);
+    --sidebar-session-hover-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.14));
+    --sidebar-session-active-bg-top: light-dark(#f1f1f1, rgb(65, 65, 65));
+    --sidebar-session-active-bg-bottom: light-dark(#eeeeee, rgb(65, 65, 65));
+    --sidebar-session-active-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.2));
+    --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
   }
 
-  /* Arc theme — warm purple-gray sidebar palette.
-      Light values must lighten the dusty-mauve sidebar (#756B7E) by overlay
-      so hover/active rows read clearly against it. Dark values match the
-      warm purple-gray (#4a3d47). */
+  /* Arc keeps its warm purple-gray treatment in dark mode, while light mode
+     uses the same neutral gray hover/active rows as the default sidebar. */
   html[data-theme="arc"] [data-component="sidebar-session"] {
-    --sidebar-session-accent: light-dark(#ffffff, #d4d0d6);
-    --sidebar-session-hover-bg: light-dark(#8b8294, #554750);
-    --sidebar-session-hover-border: light-dark(rgba(255, 255, 255, 0.12), rgba(212, 208, 214, 0.16));
-    --sidebar-session-active-bg-top: light-dark(#948a9f, #5d4f59);
-    --sidebar-session-active-bg-bottom: light-dark(#8a8094, #534548);
-    --sidebar-session-active-border: light-dark(rgba(255, 255, 255, 0.2), rgba(212, 208, 214, 0.22));
-    --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.4));
+    --sidebar-session-accent: light-dark(#2f2f2f, #d4d0d6);
+    --sidebar-session-hover-bg: light-dark(#f1f1f1, #554750);
+    --sidebar-session-hover-border: light-dark(rgba(0, 0, 0, 0.03), rgba(212, 208, 214, 0.16));
+    --sidebar-session-hover-fg: light-dark(#2f2f2f, #d4d0d6);
+    --sidebar-session-hover-icon: light-dark(#8a8a8a, #d4d0d6);
+    --sidebar-session-active-bg-top: light-dark(#f1f1f1, #5d4f59);
+    --sidebar-session-active-bg-bottom: light-dark(#eeeeee, #534548);
+    --sidebar-session-active-border: light-dark(rgba(0, 0, 0, 0.03), rgba(212, 208, 214, 0.22));
+    --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.4));
   }
 
   [data-component="sidebar-session"]:hover,
@@ -167,6 +170,18 @@
   [data-component="sidebar-session"]:has([data-expanded]) {
     background-color: var(--sidebar-session-hover-bg);
     border-color: var(--sidebar-session-hover-border);
+  }
+
+  [data-component="sidebar-session"]:hover span,
+  [data-component="sidebar-session"]:has(:focus-visible) span,
+  [data-component="sidebar-session"]:has([data-expanded]) span {
+    color: var(--sidebar-session-hover-fg) !important;
+  }
+
+  [data-component="sidebar-session"]:hover [data-component="icon-button"] [data-slot="icon-svg"],
+  [data-component="sidebar-session"]:has(:focus-visible) [data-component="icon-button"] [data-slot="icon-svg"],
+  [data-component="sidebar-session"]:has([data-expanded]) [data-component="icon-button"] [data-slot="icon-svg"] {
+    color: var(--sidebar-session-hover-icon);
   }
 
   [data-component="sidebar-session"][data-active="true"] {
@@ -179,20 +194,20 @@
 
   [data-component="sidebar-session"][data-active="true"]:hover,
   [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
-    background: light-dark(linear-gradient(180deg, #ddd6c8, #d8d0c2), linear-gradient(180deg, #34302b, #2c2824));
-    border-color: light-dark(rgba(193, 95, 60, 0.2), rgba(201, 138, 109, 0.28));
+    background: light-dark(#f1f1f1, linear-gradient(180deg, #34302b, #2c2824));
+    border-color: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.28));
   }
 
   html[data-theme="aether"] [data-component="sidebar-session"][data-active="true"]:hover,
   html[data-theme="aether"] [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
-    background: light-dark(#ddd6c8, rgb(65, 65, 65));
+    background: light-dark(#f1f1f1, rgb(65, 65, 65));
   }
 
   /* Arc: stronger overlay on active+hover */
   html[data-theme="arc"] [data-component="sidebar-session"][data-active="true"]:hover,
   html[data-theme="arc"] [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
-    background: light-dark(linear-gradient(180deg, #9c92a6, #92889b), linear-gradient(180deg, #645760, #5d4f59));
-    border-color: light-dark(rgba(255, 255, 255, 0.24), rgba(212, 208, 214, 0.28));
+    background: light-dark(#f1f1f1, linear-gradient(180deg, #645760, #5d4f59));
+    border-color: light-dark(rgba(0, 0, 0, 0.03), rgba(212, 208, 214, 0.28));
   }
 
   [data-component="sidebar-session-loading"] {
@@ -260,6 +275,13 @@
     border-top-right-radius: 28px;
   }
 
+  html[data-platform="desktop"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
+    border-color: light-dark(
+      color-mix(in oklch, var(--border-weak-base) 54%, transparent),
+      color-mix(in oklch, var(--border-strong-base) 88%, transparent)
+    );
+  }
+
   /* The default dock-surface.css gives the prompt shell a 3-stop drop
      shadow that lifts it off the canvas. The :focus-within rule below
      adds a warm focus ring; we MUST also re-state the inset border /
@@ -305,6 +327,46 @@
     box-shadow:
       inset 0 1px 0 light-dark(rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
       0 10px 24px -18px light-dark(rgba(193, 95, 60, 0.3), rgba(0, 0, 0, 0.34));
+  }
+
+  html[data-theme="chatgpt"] {
+    --chatgpt-session-radius-lg: 24px;
+    --chatgpt-session-radius-md: 18px;
+    --chatgpt-session-radius-sm: 16px;
+  }
+
+  html[data-theme="chatgpt"] [data-component="user-message"] [data-slot="user-message-text"] {
+    border-radius: var(--chatgpt-session-radius-lg);
+  }
+
+  html[data-theme="chatgpt"] [data-component="user-message"] [data-slot="user-message-attachment"],
+  html[data-theme="chatgpt"] [data-component="user-message"] [data-slot="user-message-attachment-image"] {
+    border-radius: var(--chatgpt-session-radius-sm);
+  }
+
+  html[data-theme="chatgpt"] [data-component="collapsible"].tool-collapsible,
+  html[data-theme="chatgpt"] [data-component="card"][data-kind="tool-error-card"],
+  html[data-theme="chatgpt"] [data-component="card"].error-card,
+  html[data-theme="chatgpt"] [data-component="bash-output"],
+  html[data-theme="chatgpt"] [data-component="diagnostics"] {
+    border-radius: var(--chatgpt-session-radius-md);
+  }
+
+  html[data-theme="chatgpt"] [data-component="tool-input"],
+  html[data-theme="chatgpt"] [data-component="tool-output"][data-scrollable],
+  html[data-theme="chatgpt"] [data-component="edit-content"],
+  html[data-theme="chatgpt"] [data-component="write-content"],
+  html[data-theme="chatgpt"] [data-component="apply-patch-file-diff"] {
+    border-radius: inherit;
+  }
+
+  html[data-theme="chatgpt"] [data-component="markdown"] .shiki {
+    border-radius: var(--chatgpt-session-radius-md);
+  }
+
+  html[data-theme="chatgpt"] [data-component="markdown"] img,
+  html[data-theme="chatgpt"] [data-slot="answer-image-thumbnail"] {
+    border-radius: var(--chatgpt-session-radius-md);
   }
 
   [data-component="quick-assistant-message"][data-role="user"] {

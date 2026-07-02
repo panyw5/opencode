@@ -1,5 +1,7 @@
 [data-component="dropdown-menu-content"],
 [data-component="dropdown-menu-sub-content"] {
+  --dropdown-menu-item-hover-bg: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+
   min-width: 8rem;
   overflow: hidden;
   border-radius: var(--radius-xl);
@@ -55,8 +57,9 @@
     letter-spacing: var(--letter-spacing-normal);
     color: var(--text-strong);
 
+    &:hover,
     &[data-highlighted] {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--dropdown-menu-item-hover-bg);
     }
 
     &[data-disabled] {
@@ -72,7 +75,7 @@
 
   [data-slot="dropdown-menu-sub-trigger"] {
     &[data-expanded] {
-      background: var(--surface-raised-base-hover);
+      background: var(--dropdown-menu-item-hover-bg);
     }
   }
 

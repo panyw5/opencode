@@ -1,5 +1,7 @@
 [data-component="context-menu-content"],
 [data-component="context-menu-sub-content"] {
+  --context-menu-item-hover-bg: light-dark(rgba(0, 0, 0, 0.06), var(--surface-raised-base-hover));
+
   min-width: 8rem;
   overflow: hidden;
   border: 1px solid color-mix(in oklch, var(--border-strong-base) 88%, transparent);
@@ -62,8 +64,9 @@
     transition-timing-function: var(--transition-easing);
     user-select: none;
 
-    &:hover {
-      background-color: var(--surface-raised-base-hover);
+    &:hover,
+    &[data-highlighted] {
+      background-color: var(--context-menu-item-hover-bg);
     }
 
     &[data-disabled] {
@@ -74,7 +77,7 @@
 
   [data-slot="context-menu-sub-trigger"] {
     &[data-expanded] {
-      background: var(--surface-raised-base-hover);
+      background: var(--context-menu-item-hover-bg);
       outline: none;
       border: none;
     }

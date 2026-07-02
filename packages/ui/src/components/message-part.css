@@ -1454,7 +1454,7 @@
 
       [data-slot="option-description"] {
         font-size: 14px;
-        color: var(--text-weak);
+        color: light-dark(#6f6f6f, var(--text-weak));
       }
     }
 
@@ -1489,7 +1489,7 @@
         }
 
         &::placeholder {
-          color: var(--text-weak);
+          color: light-dark(#8a8a8a, var(--text-weak));
         }
       }
 
@@ -1639,7 +1639,7 @@
     font-size: 15px;
     font-weight: var(--font-weight-regular);
     line-height: var(--line-height-large);
-    color: var(--amber-darkalpha-10);
+    color: light-dark(#6f6f6f, var(--amber-darkalpha-10));
     min-width: 0;
     overflow-wrap: anywhere;
     white-space: normal;
@@ -1685,7 +1685,7 @@
     }
 
     &::placeholder {
-      color: var(--text-weak);
+      color: light-dark(#8a8a8a, var(--text-weak));
     }
 
     &:focus-visible {

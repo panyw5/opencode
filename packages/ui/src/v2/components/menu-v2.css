@@ -33,7 +33,7 @@
   --menu-v2-accent: var(--text-text-accent);
   --menu-v2-badge-bg: var(--background-bg-layer-02);
   --menu-v2-badge-border: var(--border-border-base);
-  --menu-v2-hover: var(--overlay-simple-overlay-hover);
+  --menu-v2-hover: light-dark(rgba(0, 0, 0, 0.06), var(--overlay-simple-overlay-hover));
 
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -130,6 +130,7 @@
     color: var(--menu-v2-fg-muted);
   }
 
+  &:hover,
   &[data-highlighted] {
     background: var(--menu-v2-hover);
   }

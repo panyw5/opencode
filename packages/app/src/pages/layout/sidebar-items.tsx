@@ -351,7 +351,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       data-component="sidebar-session"
       data-active={isActive() ? "true" : "false"}
       classList={{
-        "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-2 pr-3 border border-transparent": true,
+        "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-4 pr-3 border border-transparent": true,
         "transition-[background-color,border-color,box-shadow]": !props.reduced,
       }}
     >

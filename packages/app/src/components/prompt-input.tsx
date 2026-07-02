@@ -594,8 +594,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const glass = createMemo(() => ({
     "background-color":
       platform.platform === "desktop" && platform.os === "windows"
-        ? "var(--surface-raised-stronger-non-alpha)"
-        : "rgb(12 12 14 / 0.34)",
+        ? "light-dark(#ffffff, var(--surface-raised-stronger-non-alpha))"
+        : platform.platform === "desktop"
+          ? "light-dark(#ffffff, rgb(12 12 14 / 0.34))"
+          : "rgb(12 12 14 / 0.34)",
     "backdrop-filter": platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
     "-webkit-backdrop-filter":
       platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",

@@ -91,6 +91,8 @@
 }
 
 [data-component="select-content"] {
+  --select-item-hover-bg: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+
   min-width: 104px;
   max-width: 23rem;
   overflow: hidden;
@@ -153,7 +155,7 @@
     user-select: none;
 
     &[data-highlighted] {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--select-item-hover-bg);
     }
     &[data-disabled] {
       background-color: var(--surface-raised-base);
@@ -171,7 +173,7 @@
       outline: none;
     }
     &:hover {
-      background: rgba(255, 255, 255, 0.08);
+      background: var(--select-item-hover-bg);
     }
   }
 }
