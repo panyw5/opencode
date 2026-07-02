@@ -32,6 +32,8 @@ target
 .opencode/agents/
 .opencode/commands/
 .opencode/lib/
+!.opencode/lib/
+!.opencode/lib/trellis-context.js
 .opencode/plugin/
 
 # Trellis local state files

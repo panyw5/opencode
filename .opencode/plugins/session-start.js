@@ -8,11 +8,7 @@
 
 import { existsSync, readFileSync, readdirSync, statSync } from "fs"
 import { basename, join } from "path"
-import { execFileSync } from "child_process"
-import { platform } from "os"
 import { TrellisContext, contextCollector, debugLog } from "../lib/trellis-context.js"
-
-const PYTHON_CMD = platform() === "win32" ? "python" : "python3"
 
 
 /**
@@ -28,7 +24,7 @@ function getTaskStatus(ctx) {
   const taskDir = ctx.resolveTaskDir(taskRef)
 
   if (!taskDir || !existsSync(taskDir)) {
-    return `Status: STALE POINTER\nTask: ${taskRef}\nNext: Task directory not found. Run: python3 ./.trellis/scripts/task.py finish`
+    return `Status: STALE POINTER\nTask: ${taskRef}\nNext: Task directory not found. Run: ./.trellis/scripts/task.sh finish`
   }
 
   let taskData = {}
@@ -46,7 +42,7 @@ function getTaskStatus(ctx) {
 
   if (taskStatus === "completed") {
     const dirName = basename(taskDir)
-    return `Status: COMPLETED\nTask: ${taskTitle}\nNext: Archive with \`python3 ./.trellis/scripts/task.py archive ${dirName}\` or start a new task`
+    return `Status: COMPLETED\nTask: ${taskTitle}\nNext: Archive with \`./.trellis/scripts/task.sh archive ${dirName}\` or start a new task`
   }
 
   let hasContext = false
@@ -80,20 +76,19 @@ function getTaskStatus(ctx) {
 
 /**
  * Load Trellis config for session-start decisions.
- * Calls get_context.py --mode packages --json for reliable config data.
+ * Calls the Trellis context script for reliable config data when available.
  */
 function loadTrellisConfig(directory) {
-  const scriptPath = join(directory, ".trellis", "scripts", "get_context.py")
+  const shellScriptPath = join(directory, ".trellis", "scripts", "get-context.sh")
+  const pythonScriptPath = join(directory, ".trellis", "scripts", "get_context.py")
+  const scriptPath = existsSync(shellScriptPath) ? shellScriptPath : pythonScriptPath
   if (!existsSync(scriptPath)) {
     return { isMonorepo: false, packages: {}, specScope: null, activeTaskPackage: null, defaultPackage: null }
   }
   try {
-    const output = execFileSync(PYTHON_CMD, [scriptPath, "--mode", "packages", "--json"], {
-      cwd: directory,
-      timeout: 5000,
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    })
+    const ctx = new TrellisContext(directory)
+    const output = ctx.runScript(scriptPath, ["--mode", "packages", "--json"])
+    if (!output) return { isMonorepo: false, packages: {}, specScope: null, activeTaskPackage: null, defaultPackage: null }
     const data = JSON.parse(output)
     if (data.mode !== "monorepo") {
       return { isMonorepo: false, packages: {}, specScope: null, activeTaskPackage: null, defaultPackage: null }
@@ -217,7 +212,9 @@ Read and follow all instructions below carefully.
   }
 
   // 2. Current Context (dynamic)
-  const contextScript = join(trellisDir, "scripts", "get_context.py")
+  const shellContextScript = join(trellisDir, "scripts", "get-context.sh")
+  const pythonContextScript = join(trellisDir, "scripts", "get_context.py")
+  const contextScript = existsSync(shellContextScript) ? shellContextScript : pythonContextScript
   if (existsSync(contextScript)) {
     const output = ctx.runScript(contextScript)
     if (output) {
