@@ -1,3 +1,5 @@
+import { pair } from "@/components/dialog-prompt-editor-input"
+
 export type PrdDocumentState = {
   savedContent: string
   draft: string
@@ -23,4 +25,13 @@ export function revertPrdDocumentDraft(state: PrdDocumentState): PrdDocumentStat
     ...state,
     draft: state.savedContent,
   }
+}
+
+export function applyPrdDocumentPairEdit(input: {
+  text: string
+  start: number
+  end: number
+  key: string
+}) {
+  return pair(input)
 }

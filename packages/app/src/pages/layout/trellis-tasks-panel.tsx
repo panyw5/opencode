@@ -18,7 +18,12 @@ import { type AtOption } from "@/components/prompt-input/slash-popover"
 import { at, mention } from "@/components/dialog-prompt-editor-input"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { errorMessage } from "./helpers"
-import { commitPrdDocumentSave, createPrdDocumentState, revertPrdDocumentDraft } from "./trellis-prd-document"
+import {
+  applyPrdDocumentPairEdit,
+  commitPrdDocumentSave,
+  createPrdDocumentState,
+  revertPrdDocumentDraft,
+} from "./trellis-prd-document"
 
 const labelStatus = (status: string) =>
   status
@@ -422,6 +427,27 @@ function PrdPreviewDialog(props: {
     if (event.key === "Escape" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
       event.preventDefault()
       cancelEdit()
+      return
+    }
+
+    const next = applyPrdDocumentPairEdit({
+      text: draft(),
+      start: event.currentTarget.selectionStart ?? 0,
+      end: event.currentTarget.selectionEnd ?? 0,
+      key: event.key,
+    })
+    if (next) {
+      event.preventDefault()
+      setDraft(next.text)
+      setDirty(true)
+      setSaveError(undefined)
+      setPopover(null)
+      requestAnimationFrame(() => {
+        if (!prdEditor.box) return
+        prdEditor.box.setSelectionRange(next.start, next.end)
+        syncPrdScroll()
+        refreshAtMenu()
+      })
     }
   }
 
