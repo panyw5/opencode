@@ -166,7 +166,7 @@
     white-space: pre-wrap;
     word-break: break-word;
     overflow: hidden;
-    background: light-dark(#d4ee77, var(--surface-weak));
+    background: light-dark(var(--apple-light-alpha-3), var(--surface-weak));
     border: 1px solid var(--border-weak-base);
     padding: 8px 12px;
     border-radius: 6px;

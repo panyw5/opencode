@@ -3,11 +3,16 @@
 }
 
 [data-component="popover-content"] {
+  --popover-frosted-bg: light-dark(
+    color-mix(in srgb, var(--background-stronger) 82%, transparent),
+    color-mix(in srgb, var(--background-stronger) 70%, transparent)
+  );
+
   z-index: 50;
   min-width: 200px;
   max-width: 320px;
   border-radius: var(--radius-xl);
-  background-color: color-mix(in srgb, var(--background-stronger) 70%, transparent);
+  background-color: var(--popover-frosted-bg);
   border: 1px solid var(--border-weak-base);
   background-clip: padding-box;
   backdrop-filter: blur(40px) saturate(150%);
@@ -77,7 +82,7 @@
   }
 
   [data-slot="popover-arrow"] {
-    fill: color-mix(in srgb, var(--background-stronger) 70%, transparent);
+    fill: var(--popover-frosted-bg);
   }
 }
 

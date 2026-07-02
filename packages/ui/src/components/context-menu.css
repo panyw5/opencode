@@ -1,13 +1,17 @@
 [data-component="context-menu-content"],
 [data-component="context-menu-sub-content"] {
   --context-menu-item-hover-bg: light-dark(rgba(0, 0, 0, 0.06), var(--surface-raised-base-hover));
+  --context-menu-frosted-bg: light-dark(
+    color-mix(in srgb, var(--background-stronger) 82%, transparent),
+    rgb(12 12 14 / 0.34)
+  );
 
   min-width: 8rem;
   overflow: hidden;
   border: 1px solid color-mix(in oklch, var(--border-strong-base) 88%, transparent);
   border-radius: var(--radius-xl);
   background-clip: padding-box;
-  background-color: rgb(12 12 14 / 0.34);
+  background-color: var(--context-menu-frosted-bg);
   backdrop-filter: blur(40px) saturate(150%);
   -webkit-backdrop-filter: blur(40px) saturate(150%);
   padding: 6px;
@@ -122,7 +126,7 @@
   }
 
   [data-slot="context-menu-arrow"] {
-    fill: rgb(12 12 14 / 0.34);
+    fill: var(--context-menu-frosted-bg);
   }
 }
 

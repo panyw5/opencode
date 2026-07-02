@@ -5,12 +5,17 @@
 }
 
 [data-component="hover-card-content"] {
+  --hover-card-frosted-bg: light-dark(
+    color-mix(in srgb, var(--background-stronger) 82%, transparent),
+    rgb(12 12 14 / 0.34)
+  );
+
   z-index: 50;
   min-width: 200px;
   max-width: 320px;
   max-height: calc(100vh - 1rem);
   border-radius: 8px;
-  background-color: rgb(12 12 14 / 0.34);
+  background-color: var(--hover-card-frosted-bg);
   pointer-events: auto;
   border: 1px solid color-mix(in oklch, var(--border-strong-base) 88%, transparent);
   background-clip: padding-box;

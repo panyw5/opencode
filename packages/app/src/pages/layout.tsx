@@ -2833,7 +2833,7 @@ export default function Layout(props: ParentProps) {
                         transform: "translate3d(52px, 0, 0)",
                       }}
                     >
-                      <span class="block min-w-0 truncate select-text text-12-regular text-text-weak">
+                      <span class="block min-w-0 truncate select-text text-12-mono text-text-weak">
                         {worktree().replace(homedir(), "~")}
                       </span>
                     </Tooltip>
@@ -2929,57 +2929,56 @@ export default function Layout(props: ParentProps) {
                 fallback={
                   <>
                     <div class="shrink-0 py-4 px-3">
-                      <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                        <Button
-                          size="large"
-                          icon="new-session"
-                          variant="ghost"
-                          class="w-full border border-border-weak-base"
-                          onClick={() => {
-                            const dir = worktree()
-                            if (!dir) return
-                            navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
-                          }}
-                        >
-                          {language.t("command.session.new")}
-                        </Button>
-                        <div class="flex items-center gap-2">
-                          <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
-                            <IconButton
-                              icon="task"
-                              variant="ghost"
-                              size="large"
-                              class="rounded-lg border border-border-weak-base"
-                              aria-label={language.t("trellis.tasks.title")}
-                              onClick={openTasksPanel}
-                            />
-                          </Tooltip>
-                          <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
-                            <IconButton
-                              icon="bell-off"
-                              variant="ghost"
-                              size="large"
-                              class="rounded-lg border border-border-weak-base"
-                              disabled={unseenCount() === 0}
-                              aria-label={language.t("sidebar.project.clearNotifications")}
-                              onClick={clearNotifications}
-                            />
-                          </Tooltip>
-                          <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
-                            <IconButton
-                              icon="archive"
-                              variant="ghost"
-                              size="large"
-                              class="rounded-lg border border-border-weak-base"
-                              aria-label={language.t("sidebar.project.viewArchivedSessions")}
-                              onClick={() => {
-                                const item = project()
-                                if (!item) return
-                                dialog.show(() => <DialogArchivedSessions project={item} />)
-                              }}
-                            />
-                          </Tooltip>
-                        </div>
+                      <div class="grid grid-cols-4 gap-2">
+                        <Tooltip placement="bottom" value={language.t("command.session.new")}>
+                          <IconButton
+                            icon="new-session"
+                            variant="ghost"
+                            size="large"
+                            class="h-10 w-full rounded-xl border border-border-weak-base"
+                            aria-label={language.t("command.session.new")}
+                            onClick={() => {
+                              const dir = worktree()
+                              if (!dir) return
+                              navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
+                            }}
+                          />
+                        </Tooltip>
+                        <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
+                          <IconButton
+                            icon="task"
+                            variant="ghost"
+                            size="large"
+                            class="h-10 w-full rounded-xl border border-border-weak-base"
+                            aria-label={language.t("trellis.tasks.title")}
+                            onClick={openTasksPanel}
+                          />
+                        </Tooltip>
+                        <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
+                          <IconButton
+                            icon="bell-off"
+                            variant="ghost"
+                            size="large"
+                            class="h-10 w-full rounded-xl border border-border-weak-base"
+                            disabled={unseenCount() === 0}
+                            aria-label={language.t("sidebar.project.clearNotifications")}
+                            onClick={clearNotifications}
+                          />
+                        </Tooltip>
+                        <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
+                          <IconButton
+                            icon="archive"
+                            variant="ghost"
+                            size="large"
+                            class="h-10 w-full rounded-xl border border-border-weak-base"
+                            aria-label={language.t("sidebar.project.viewArchivedSessions")}
+                            onClick={() => {
+                              const item = project()
+                              if (!item) return
+                              dialog.show(() => <DialogArchivedSessions project={item} />)
+                            }}
+                          />
+                        </Tooltip>
                       </div>
                     </div>
                     <div class="flex-1 min-h-0">
@@ -2995,56 +2994,56 @@ export default function Layout(props: ParentProps) {
               >
                 <>
                   <div class="shrink-0 py-4 px-3">
-                    <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                      <Button
-                        size="large"
-                        icon="plus-small"
-                        class="w-full"
-                        onClick={() => {
-                          const item = project()
-                          if (!item) return
-                          createWorkspace(item)
-                        }}
-                      >
-                        {language.t("workspace.new")}
-                      </Button>
-                      <div class="flex items-center gap-2">
-                        <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
-                          <IconButton
-                            icon="task"
-                            variant="ghost"
-                            size="large"
-                            class="rounded-lg border border-border-weak-base"
-                            aria-label={language.t("trellis.tasks.title")}
-                            onClick={openTasksPanel}
-                          />
-                        </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
-                          <IconButton
-                            icon="bell-off"
-                            variant="ghost"
-                            size="large"
-                            class="rounded-lg border border-border-weak-base"
-                            disabled={unseenCount() === 0}
-                            aria-label={language.t("sidebar.project.clearNotifications")}
-                            onClick={clearNotifications}
-                          />
-                        </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
-                          <IconButton
-                            icon="archive"
-                            variant="ghost"
-                            size="large"
-                            class="rounded-lg border border-border-weak-base"
-                            aria-label={language.t("sidebar.project.viewArchivedSessions")}
-                            onClick={() => {
-                              const item = project()
-                              if (!item) return
-                              dialog.show(() => <DialogArchivedSessions project={item} />)
-                            }}
-                          />
-                        </Tooltip>
-                      </div>
+                    <div class="grid grid-cols-4 gap-2">
+                      <Tooltip placement="bottom" value={language.t("workspace.new")}>
+                        <IconButton
+                          icon="plus-small"
+                          variant="ghost"
+                          size="large"
+                          class="h-10 w-full rounded-xl border border-border-weak-base"
+                          aria-label={language.t("workspace.new")}
+                          onClick={() => {
+                            const item = project()
+                            if (!item) return
+                            createWorkspace(item)
+                          }}
+                        />
+                      </Tooltip>
+                      <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
+                        <IconButton
+                          icon="task"
+                          variant="ghost"
+                          size="large"
+                          class="h-10 w-full rounded-xl border border-border-weak-base"
+                          aria-label={language.t("trellis.tasks.title")}
+                          onClick={openTasksPanel}
+                        />
+                      </Tooltip>
+                      <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
+                        <IconButton
+                          icon="bell-off"
+                          variant="ghost"
+                          size="large"
+                          class="h-10 w-full rounded-xl border border-border-weak-base"
+                          disabled={unseenCount() === 0}
+                          aria-label={language.t("sidebar.project.clearNotifications")}
+                          onClick={clearNotifications}
+                        />
+                      </Tooltip>
+                      <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
+                        <IconButton
+                          icon="archive"
+                          variant="ghost"
+                          size="large"
+                          class="h-10 w-full rounded-xl border border-border-weak-base"
+                          aria-label={language.t("sidebar.project.viewArchivedSessions")}
+                          onClick={() => {
+                            const item = project()
+                            if (!item) return
+                            dialog.show(() => <DialogArchivedSessions project={item} />)
+                          }}
+                        />
+                      </Tooltip>
                     </div>
                   </div>
                   <div class="relative flex-1 min-h-0">

@@ -314,7 +314,7 @@
   }
 
   html[data-platform="desktop"] [data-component="user-message"] [data-slot="user-message-text"] {
-    background: light-dark(#d4ee77, color-mix(in oklch, var(--surface-weak) 78%, #d4ee77));
+    background: light-dark(var(--apple-light-alpha-3), color-mix(in oklch, var(--surface-weak) 78%, #d4ee77));
   }
 
   html[data-platform="desktop"] [data-component="user-message"] [data-slot="user-message-text"] a {
