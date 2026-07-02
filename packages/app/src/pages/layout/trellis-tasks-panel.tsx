@@ -646,7 +646,7 @@ function PrdPreviewDialog(props: {
                     prdEditor.back = el
                   }}
                   aria-hidden="true"
-                  class="pointer-events-none absolute inset-0 overflow-auto px-4 py-3 text-14-mono text-text-strong whitespace-pre-wrap break-words"
+                  class="pointer-events-none absolute inset-0 overflow-auto px-4 pt-3 pb-[22px] text-14-mono text-text-strong whitespace-pre-wrap break-words"
                   style={{ "font-family": font() }}
                 >
                   <div class="min-h-full w-full" innerHTML={html()} />
@@ -659,7 +659,7 @@ function PrdPreviewDialog(props: {
                   autofocus
                   spellcheck={false}
                   placeholder={language.t("trellis.tasks.new.prdPlaceholder")}
-                  class="absolute inset-0 resize-none overflow-auto px-4 py-3 text-14-mono whitespace-pre-wrap bg-transparent focus:outline-none"
+                  class="absolute inset-0 resize-none overflow-auto px-4 pt-3 pb-[22px] text-14-mono whitespace-pre-wrap bg-transparent focus:outline-none"
                   style={{
                     color: "transparent",
                     "-webkit-text-fill-color": "transparent",
