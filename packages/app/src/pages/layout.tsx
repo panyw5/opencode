@@ -2935,7 +2935,11 @@ export default function Layout(props: ParentProps) {
                             icon="new-session"
                             variant="ghost"
                             size="large"
-                            class="h-10 w-full rounded-xl border border-border-weak-base"
+                            class="h-10 w-full rounded-xl"
+                            style={{
+                              "background-color":
+                                "light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent))",
+                            }}
                             aria-label={language.t("command.session.new")}
                             onClick={() => {
                               const dir = worktree()
@@ -2949,7 +2953,11 @@ export default function Layout(props: ParentProps) {
                             icon="task"
                             variant="ghost"
                             size="large"
-                            class="h-10 w-full rounded-xl border border-border-weak-base"
+                            class="h-10 w-full rounded-xl"
+                            style={{
+                              "background-color":
+                                "light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent))",
+                            }}
                             aria-label={language.t("trellis.tasks.title")}
                             onClick={openTasksPanel}
                           />
@@ -2959,7 +2967,11 @@ export default function Layout(props: ParentProps) {
                             icon="bell-off"
                             variant="ghost"
                             size="large"
-                            class="h-10 w-full rounded-xl border border-border-weak-base"
+                            class="h-10 w-full rounded-xl"
+                            style={{
+                              "background-color":
+                                "light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent))",
+                            }}
                             disabled={unseenCount() === 0}
                             aria-label={language.t("sidebar.project.clearNotifications")}
                             onClick={clearNotifications}
@@ -2970,7 +2982,11 @@ export default function Layout(props: ParentProps) {
                             icon="archive"
                             variant="ghost"
                             size="large"
-                            class="h-10 w-full rounded-xl border border-border-weak-base"
+                            class="h-10 w-full rounded-xl"
+                            style={{
+                              "background-color":
+                                "light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent))",
+                            }}
                             aria-label={language.t("sidebar.project.viewArchivedSessions")}
                             onClick={() => {
                               const item = project()
@@ -3000,7 +3016,11 @@ export default function Layout(props: ParentProps) {
                           icon="plus-small"
                           variant="ghost"
                           size="large"
-                          class="h-10 w-full rounded-xl border border-border-weak-base"
+                          class="h-10 w-full rounded-xl"
+                          style={{
+                            "background-color":
+                              "light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent))",
+                          }}
                           aria-label={language.t("workspace.new")}
                           onClick={() => {
                             const item = project()
@@ -3014,7 +3034,11 @@ export default function Layout(props: ParentProps) {
                           icon="task"
                           variant="ghost"
                           size="large"
-                          class="h-10 w-full rounded-xl border border-border-weak-base"
+                          class="h-10 w-full rounded-xl"
+                          style={{
+                            "background-color":
+                              "light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent))",
+                          }}
                           aria-label={language.t("trellis.tasks.title")}
                           onClick={openTasksPanel}
                         />
@@ -3024,7 +3048,11 @@ export default function Layout(props: ParentProps) {
                           icon="bell-off"
                           variant="ghost"
                           size="large"
-                          class="h-10 w-full rounded-xl border border-border-weak-base"
+                          class="h-10 w-full rounded-xl"
+                          style={{
+                            "background-color":
+                              "light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent))",
+                          }}
                           disabled={unseenCount() === 0}
                           aria-label={language.t("sidebar.project.clearNotifications")}
                           onClick={clearNotifications}
@@ -3035,7 +3063,11 @@ export default function Layout(props: ParentProps) {
                           icon="archive"
                           variant="ghost"
                           size="large"
-                          class="h-10 w-full rounded-xl border border-border-weak-base"
+                          class="h-10 w-full rounded-xl"
+                          style={{
+                            "background-color":
+                              "light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent))",
+                          }}
                           aria-label={language.t("sidebar.project.viewArchivedSessions")}
                           onClick={() => {
                             const item = project()

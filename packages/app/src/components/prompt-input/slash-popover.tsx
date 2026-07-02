@@ -53,7 +53,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                  border border-white/10 shadow-[var(--shadow-lg-border-base)]"
         style={{
           "background-color":
-            desktop() && props.popover === "at"
+            desktop()
               ? desktopAtBackground()
               : windows()
                 ? "var(--surface-raised-stronger-non-alpha)"
