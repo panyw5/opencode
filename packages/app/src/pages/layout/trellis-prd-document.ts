@@ -1,0 +1,26 @@
+export type PrdDocumentState = {
+  savedContent: string
+  draft: string
+}
+
+export function createPrdDocumentState(initialContent: string | undefined): PrdDocumentState {
+  const content = initialContent ?? ""
+  return {
+    savedContent: content,
+    draft: content,
+  }
+}
+
+export function commitPrdDocumentSave(state: PrdDocumentState): PrdDocumentState {
+  return {
+    savedContent: state.draft,
+    draft: state.draft,
+  }
+}
+
+export function revertPrdDocumentDraft(state: PrdDocumentState): PrdDocumentState {
+  return {
+    ...state,
+    draft: state.savedContent,
+  }
+}

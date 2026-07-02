@@ -1,18 +1,24 @@
-import { createEffect, createResource, createMemo, createSignal, For, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createResource, createMemo, createSignal, For, Show, onCleanup, type Accessor, type JSX } from "solid-js"
+import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { Icon, type IconName } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Markdown } from "@opencode-ai/ui/markdown"
-import { getFilename } from "@opencode-ai/core/util/path"
+import { FileIcon } from "@opencode-ai/ui/file-icon"
+import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { useLanguage } from "@/context/language"
 import { usePlatform, type TrellisTask } from "@/context/platform"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { DialogPromptEditor } from "@/components/dialog-prompt-editor"
+import { resolveAtMenuLeft } from "@/components/at-menu-position"
 import { paint } from "@/components/prompt-input/expand"
+import { type AtOption } from "@/components/prompt-input/slash-popover"
+import { at, mention } from "@/components/dialog-prompt-editor-input"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { errorMessage } from "./helpers"
+import { commitPrdDocumentSave, createPrdDocumentState, revertPrdDocumentDraft } from "./trellis-prd-document"
 
 const labelStatus = (status: string) =>
   status
@@ -212,31 +218,160 @@ function PrdPreviewDialog(props: {
   name: string
   prdAbsPath: string
   initialContent: string | undefined
+  searchFilesAndDirectories?: (query: string) => Promise<string[]>
 }): JSX.Element {
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
   const dialog = useDialog()
   const canWrite = createMemo(() => typeof platform.writeConfigFile === "function")
+  const initialDocument = createPrdDocumentState(props.initialContent)
   const [mode, setMode] = createSignal<"preview" | "edit">("preview")
-  const [draft, setDraft] = createSignal(props.initialContent ?? "")
+  const [savedContent, setSavedContent] = createSignal(initialDocument.savedContent)
+  const [draft, setDraft] = createSignal(initialDocument.draft)
   const [dirty, setDirty] = createSignal(false)
   const [saving, setSaving] = createSignal(false)
   const [saveError, setSaveError] = createSignal<string | undefined>()
   const [maximized, setMaximized] = createSignal(false)
+  const [popover, setPopover] = createSignal<"at" | null>(null)
+  const [menu, setMenu] = createSignal({
+    top: 12,
+    left: 12,
+    max: 320,
+  })
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
   const html = createMemo(() => paint(draft()))
   const prdEditor = {
     box: undefined as HTMLTextAreaElement | undefined,
     back: undefined as HTMLDivElement | undefined,
+    menu: undefined as HTMLDivElement | undefined,
   }
   const syncPrdScroll = () => {
     if (!prdEditor.box || !prdEditor.back) return
     prdEditor.back.scrollTop = prdEditor.box.scrollTop
     prdEditor.back.scrollLeft = prdEditor.box.scrollLeft
   }
+  const atKey = (item: AtOption | undefined) => {
+    if (!item) return ""
+    return item.type === "agent" ? `agent:${item.name}` : `file:${item.path}`
+  }
+  const handleAtSelect = (item: AtOption | undefined) => {
+    if (!item || item.type !== "file" || !prdEditor.box) return
+    const pos = prdEditor.box.selectionStart ?? draft().length
+    const match = at(draft(), pos)
+    if (!match) return
+    const next = mention(draft(), match.start, match.end, item.path)
+    setDraft(next.text)
+    setDirty(true)
+    setSaveError(undefined)
+    setPopover(null)
+    requestAnimationFrame(() => {
+      if (!prdEditor.box) return
+      prdEditor.box.focus()
+      prdEditor.box.setSelectionRange(next.start, next.end)
+      syncPrdScroll()
+    })
+  }
+  const {
+    flat: atFlat,
+    active: atActive,
+    setActive: setAtActive,
+    onInput: atOnInput,
+    onKeyDown: atOnKeyDown,
+  } = useFilteredList<AtOption>({
+    items: async (query) => {
+      const paths = props.searchFilesAndDirectories ? await props.searchFilesAndDirectories(query).catch(() => []) : []
+      return paths.map((path) => ({
+        type: "file" as const,
+        path,
+        display: path,
+      }))
+    },
+    key: atKey,
+    filterKeys: ["display"],
+    onSelect: handleAtSelect,
+  })
+  const shown = createMemo(() => atFlat().slice(0, 6))
 
   const editorH = createMemo(() => (maximized() ? "calc(95vh - 130px)" : "calc(90vh - 130px)"))
+
+  const placeAtMenu = () => {
+    if (!prdEditor.box) return
+    const box = prdEditor.box
+    const style = window.getComputedStyle(box)
+    const mirror = document.createElement("div")
+    const before = draft().slice(0, box.selectionStart ?? 0)
+    const value = before.length > 0 ? before : " "
+
+    mirror.style.position = "absolute"
+    mirror.style.visibility = "hidden"
+    mirror.style.pointerEvents = "none"
+    mirror.style.whiteSpace = "pre-wrap"
+    mirror.style.wordBreak = "break-word"
+    mirror.style.overflowWrap = "break-word"
+    mirror.style.font = style.font
+    mirror.style.fontFamily = style.fontFamily
+    mirror.style.fontSize = style.fontSize
+    mirror.style.fontWeight = style.fontWeight
+    mirror.style.lineHeight = style.lineHeight
+    mirror.style.letterSpacing = style.letterSpacing
+    mirror.style.padding = style.padding
+    mirror.style.border = style.border
+    mirror.style.boxSizing = style.boxSizing
+    mirror.style.width = `${box.clientWidth}px`
+    mirror.style.maxWidth = `${box.clientWidth}px`
+    mirror.textContent = value
+
+    const mark = document.createElement("span")
+    mark.textContent = "\u200b"
+    mirror.append(mark)
+    box.parentElement?.append(mirror)
+
+    const top = mark.offsetTop - box.scrollTop
+    const left = mark.offsetLeft - box.scrollLeft
+    mirror.remove()
+
+    const line = Number.parseFloat(style.lineHeight) || Number.parseFloat(style.fontSize) * 1.4 || 20
+    const padX = Number.parseFloat(style.paddingLeft) || 0
+    const padY = Number.parseFloat(style.paddingTop) || 0
+    const menuH = prdEditor.menu?.offsetHeight ?? Math.min(320, Math.max(40, atFlat().length * 34 + 16))
+    const below = box.clientHeight - (top + padY + line)
+    const nextTop = below >= Math.min(menuH, 180) ? top + padY + line + 6 : Math.max(8, top + padY - menuH - 6)
+    const menuW = Math.min(prdEditor.menu?.offsetWidth ?? 280, Math.max(120, box.clientWidth - 16))
+    const nextLeft = resolveAtMenuLeft({
+      anchorLeft: left + padX,
+      boxWidth: box.clientWidth,
+      menuWidth: menuW,
+    })
+    const nextMax = Math.max(120, Math.min(320, box.clientHeight - nextTop - 8))
+
+    setMenu({
+      top: nextTop,
+      left: nextLeft,
+      max: nextMax,
+    })
+  }
+
+  const refreshAtMenu = () => {
+    if (!prdEditor.box || !props.searchFilesAndDirectories) return
+    const match = at(draft(), prdEditor.box.selectionStart ?? 0)
+    if (!match) {
+      setPopover(null)
+      return
+    }
+    atOnInput(match.query)
+    setPopover("at")
+    requestAnimationFrame(placeAtMenu)
+  }
+
+  const revealAtActive = () => {
+    const root = prdEditor.menu
+    if (!root) return
+    const key = atActive()
+    if (!key) return
+    const node = root.querySelector<HTMLElement>(`[data-key="${CSS.escape(key)}"]`)
+    node?.scrollIntoView({ block: "nearest" })
+  }
 
   const enterEdit = () => {
     if (!canWrite()) return
@@ -245,7 +380,8 @@ function PrdPreviewDialog(props: {
   }
 
   const cancelEdit = () => {
-    setDraft(props.initialContent ?? "")
+    const next = revertPrdDocumentDraft({ savedContent: savedContent(), draft: draft() })
+    setDraft(next.draft)
     setDirty(false)
     setSaveError(undefined)
     setMode("preview")
@@ -258,6 +394,9 @@ function PrdPreviewDialog(props: {
     setSaveError(undefined)
     try {
       await writeConfigFile(props.prdAbsPath, draft())
+      const next = commitPrdDocumentSave({ savedContent: savedContent(), draft: draft() })
+      setSavedContent(next.savedContent)
+      setDraft(next.draft)
       setDirty(false)
       setMode("preview")
     } catch (err) {
@@ -271,6 +410,7 @@ function PrdPreviewDialog(props: {
     setDraft(event.currentTarget.value)
     setDirty(true)
     setSaveError(undefined)
+    requestAnimationFrame(refreshAtMenu)
   }
 
   const onKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
@@ -284,6 +424,27 @@ function PrdPreviewDialog(props: {
       cancelEdit()
     }
   }
+
+  createEffect(() => {
+    if (popover() !== "at") return
+    atFlat()
+    requestAnimationFrame(placeAtMenu)
+  })
+
+  createEffect(() => {
+    if (popover() !== "at") return
+    atActive()
+    requestAnimationFrame(revealAtActive)
+  })
+
+  createEffect(() => {
+    const onResize = () => {
+      if (popover() !== "at") return
+      placeAtMenu()
+    }
+    window.addEventListener("resize", onResize)
+    onCleanup(() => window.removeEventListener("resize", onResize))
+  })
 
   return (
     <>
@@ -399,6 +560,63 @@ function PrdPreviewDialog(props: {
               >
                 <div
                   ref={(el) => {
+                    prdEditor.menu = el
+                  }}
+                  class="absolute z-20 min-h-10 w-[min(560px,calc(100%-16px))] overflow-auto no-scrollbar rounded-[12px] border border-white/10 p-2 shadow-[var(--shadow-lg-border-base)]"
+                  classList={{ hidden: popover() !== "at" }}
+                  style={{
+                    top: `${menu().top}px`,
+                    left: `${menu().left}px`,
+                    "max-height": `${menu().max}px`,
+                    "background-color":
+                      platform.platform === "desktop"
+                        ? platform.os === "windows"
+                          ? "light-dark(#ffffff, var(--surface-raised-stronger-non-alpha))"
+                          : "light-dark(#ffffff, rgb(12 12 14 / 0.34))"
+                        : "rgb(12 12 14 / 0.34)",
+                    "backdrop-filter":
+                      platform.platform === "desktop" && platform.os === "windows"
+                        ? "none"
+                        : "blur(40px) saturate(150%)",
+                    "-webkit-backdrop-filter":
+                      platform.platform === "desktop" && platform.os === "windows"
+                        ? "none"
+                        : "blur(40px) saturate(150%)",
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                >
+                  <div classList={{ hidden: atFlat().length > 0 }} class="px-2 py-1 text-text-weak">
+                    {language.t("prompt.popover.emptyResults")}
+                  </div>
+                  <For each={shown()}>
+                    {(item) => {
+                      if (item.type !== "file") return null
+                      const key = atKey(item)
+                      const dir = item.path.endsWith("/") ? item.path : getDirectory(item.path)
+                      const file = item.path.endsWith("/") ? "" : getFilename(item.path)
+                      return (
+                        <button
+                          data-key={key}
+                          class="flex w-full items-center gap-x-2 rounded-md px-2 py-0.5"
+                          classList={{ "bg-surface-raised-base-active": atActive() === key }}
+                          onClick={() => handleAtSelect(item)}
+                          onMouseEnter={() => setAtActive(key)}
+                        >
+                          <FileIcon
+                            node={{ path: item.path, type: item.path.endsWith("/") ? "directory" : "file" }}
+                            class="size-4 shrink-0"
+                          />
+                          <div class="min-w-0 flex items-center text-14-regular">
+                            <span class="min-w-0 truncate whitespace-nowrap text-text-weak">{dir}</span>
+                            <span class="whitespace-nowrap text-text-strong">{file}</span>
+                          </div>
+                        </button>
+                      )
+                    }}
+                  </For>
+                </div>
+                <div
+                  ref={(el) => {
                     prdEditor.back = el
                   }}
                   aria-hidden="true"
@@ -424,8 +642,47 @@ function PrdPreviewDialog(props: {
                     height: editorH(),
                   }}
                   onInput={onInput}
-                  onScroll={syncPrdScroll}
-                  onKeyDown={onKeyDown}
+                  onScroll={() => {
+                    syncPrdScroll()
+                    if (popover() === "at") requestAnimationFrame(placeAtMenu)
+                  }}
+                  onClick={refreshAtMenu}
+                  onKeyUp={refreshAtMenu}
+                  onKeyDown={(event) => {
+                    if (popover()) {
+                      if (event.key === "Tab") {
+                        const item = atFlat().find((entry) => atKey(entry) === atActive()) ?? atFlat()[0]
+                        if (item) handleAtSelect(item)
+                        event.preventDefault()
+                        return
+                      }
+
+                      const nav = event.key === "ArrowUp" || event.key === "ArrowDown" || event.key === "Enter"
+                      const ctrl =
+                        event.ctrlKey &&
+                        !event.metaKey &&
+                        !event.altKey &&
+                        !event.shiftKey &&
+                        (event.key === "n" || event.key === "p")
+                      if (nav || ctrl) {
+                        atOnKeyDown(event)
+                        event.preventDefault()
+                        return
+                      }
+
+                      if (event.key === "Escape") {
+                        setPopover(null)
+                        event.preventDefault()
+                        return
+                      }
+                    }
+                    onKeyDown(event)
+                    requestAnimationFrame(refreshAtMenu)
+                  }}
+                  onBlur={() => {
+                    window.setTimeout(() => setPopover(null), 120)
+                  }}
+                  onFocus={refreshAtMenu}
                 />
               </div>
             }
@@ -435,7 +692,7 @@ function PrdPreviewDialog(props: {
                 when={typeof props.initialContent === "string"}
                 fallback={<Empty text={language.t("trellis.tasks.noPrd")} />}
               >
-                <Markdown text={props.initialContent as string} />
+                <Markdown text={savedContent()} />
               </Show>
             </div>
           </Show>
@@ -557,6 +814,11 @@ export function TrellisTasksPanel(props: {
   const open = async (path: string) => {
     const name = getFilename(path)
     const prdAbsPath = path.endsWith("/") ? path + "prd.md" : path + "/prd.md"
+    const searchFilesAndDirectories = async (query: string) => {
+      const client = sdk.createClient({ directory: dir(), throwOnError: true })
+      const result = await client.find.files({ query, dirs: "true" })
+      return result.data ?? []
+    }
     let content: string | undefined
     if (platform.readConfigFile) {
       try {
@@ -581,7 +843,12 @@ export function TrellisTasksPanel(props: {
       }
     }
     dialog.show(() => (
-      <PrdPreviewDialog name={name} prdAbsPath={prdAbsPath} initialContent={content} />
+      <PrdPreviewDialog
+        name={name}
+        prdAbsPath={prdAbsPath}
+        initialContent={content}
+        searchFilesAndDirectories={searchFilesAndDirectories}
+      />
     ))
   }
 

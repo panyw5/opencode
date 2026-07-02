@@ -11,6 +11,7 @@ import { useLanguage } from "@/context/language"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { usePlatform } from "@/context/platform"
 import { useFile } from "@/context/file"
+import { resolveAtMenuLeft } from "@/components/at-menu-position"
 import { paint } from "@/components/prompt-input/expand"
 import { type AtOption } from "@/components/prompt-input/slash-popover"
 import { at, mention, pair } from "@/components/dialog-prompt-editor-input"
@@ -160,7 +161,12 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
     const menuH = ref.menu?.offsetHeight ?? Math.min(320, Math.max(40, atFlat().length * 34 + 16))
     const below = box.clientHeight - (top + padY + line)
     const nextTop = below >= Math.min(menuH, 180) ? top + padY + line + 6 : Math.max(8, top + padY - menuH - 6)
-    const nextLeft = Math.max(8, Math.min(left + padX, box.clientWidth - 280))
+    const menuW = Math.min(ref.menu?.offsetWidth ?? 280, Math.max(120, box.clientWidth - 16))
+    const nextLeft = resolveAtMenuLeft({
+      anchorLeft: left + padX,
+      boxWidth: box.clientWidth,
+      menuWidth: menuW,
+    })
     const nextMax = Math.max(120, Math.min(320, box.clientHeight - nextTop - 8))
 
     setMenu({
