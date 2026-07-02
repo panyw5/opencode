@@ -39,6 +39,10 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
   const platform = usePlatform()
   const desktop = () => platform.platform === "desktop"
   const windows = () => desktop() && platform.os === "windows"
+  const desktopAtBackground = () =>
+    windows()
+      ? "light-dark(#ffffff, var(--surface-raised-stronger-non-alpha))"
+      : "light-dark(#ffffff, rgb(12 12 14 / 0.34))"
 
   return (
     <Show when={props.popover}>
@@ -48,7 +52,12 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                  overflow-auto no-scrollbar flex flex-col p-2 rounded-[12px]
                  border border-white/10 shadow-[var(--shadow-lg-border-base)]"
         style={{
-          "background-color": windows() ? "var(--surface-raised-stronger-non-alpha)" : "rgb(12 12 14 / 0.34)",
+          "background-color":
+            desktop() && props.popover === "at"
+              ? desktopAtBackground()
+              : windows()
+                ? "var(--surface-raised-stronger-non-alpha)"
+                : "rgb(12 12 14 / 0.34)",
           "backdrop-filter": windows() ? "none" : "blur(40px) saturate(150%)",
           "-webkit-backdrop-filter": windows() ? "none" : "blur(40px) saturate(150%)",
         }}

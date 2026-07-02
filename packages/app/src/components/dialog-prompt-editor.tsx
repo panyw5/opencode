@@ -303,8 +303,10 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
                 left: `${menu.left}px`,
                 "max-height": `${menu.max}px`,
                 "background-color":
-                  platform.platform === "desktop" && platform.os === "windows"
-                    ? "var(--surface-raised-stronger-non-alpha)"
+                  platform.platform === "desktop"
+                    ? platform.os === "windows"
+                      ? "light-dark(#ffffff, var(--surface-raised-stronger-non-alpha))"
+                      : "light-dark(#ffffff, rgb(12 12 14 / 0.34))"
                     : "rgb(12 12 14 / 0.34)",
                 "backdrop-filter":
                   platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
