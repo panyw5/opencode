@@ -900,9 +900,6 @@ export function TrellisTasksPanel(props: {
               </Tooltip>
               <div class="text-14-medium text-text-strong">{language.t("trellis.tasks.title")}</div>
             </div>
-            <div class="mt-1 truncate text-12-regular text-text-base">
-              {dir() || language.t("trellis.tasks.noProject")}
-            </div>
           </div>
           <div class="flex shrink-0 items-center gap-1">
             <Tooltip placement="bottom" value={language.t("trellis.tasks.new.button")}>
