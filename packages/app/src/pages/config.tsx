@@ -30,6 +30,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { applyEdits, modify } from "jsonc-parser"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { paint } from "@/components/prompt-input/expand"
+import { pair } from "@/components/dialog-prompt-editor-input"
 import { DialogConnectProvider } from "@/components/dialog-connect-provider"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import {
@@ -1642,13 +1643,16 @@ function MarkdownField(props: {
   editable: boolean
   onInput: (value: string) => void
   paint?: (value: string) => string
+  preview?: boolean
 }) {
   const settings = useSettings()
   const language = useLanguage()
+  const [mode, setMode] = createSignal<"source" | "preview">("source")
   let box: HTMLTextAreaElement | undefined
   let back: HTMLDivElement | undefined
   const html = createMemo(() => (props.paint ?? paint)(props.text))
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
+  const previewMode = createMemo(() => props.preview && mode() === "preview")
 
   const sync = () => {
     if (!box || !back) return
@@ -1656,45 +1660,115 @@ function MarkdownField(props: {
     back.scrollLeft = box.scrollLeft
   }
 
+  const onPairKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
+    if (!props.editable) return
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+    if (event.isComposing || event.keyCode === 229) return
+
+    const next = pair({
+      text: props.text,
+      start: event.currentTarget.selectionStart ?? 0,
+      end: event.currentTarget.selectionEnd ?? 0,
+      key: event.key,
+    })
+    if (!next) return
+    event.preventDefault()
+    props.onInput(next.text)
+    requestAnimationFrame(() => {
+      if (!box) return
+      box.setSelectionRange(next.start, next.end)
+      sync()
+    })
+  }
+
   createEffect(() => {
     props.text
     requestAnimationFrame(sync)
   })
 
+  createEffect(() => {
+    if (!props.preview && mode() !== "source") setMode("source")
+  })
+
   return (
-    <div class="relative h-full min-h-0 overflow-hidden rounded-xl border border-border-weak-base bg-background-base">
-      <div
-        ref={(el) => {
-          back = el
-        }}
-        aria-hidden="true"
-        class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 text-13-mono leading-6 whitespace-pre-wrap break-words"
-        style={{ "font-family": font() }}
-      >
-        <div class="min-h-full w-full" innerHTML={html()} />
-      </div>
-      <Show when={props.busy}>
-        <div class="pointer-events-none absolute left-4 top-3 z-10 text-12-regular text-text-weak">
-          {language.t("config.editor.loadingFile")}
+    <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base">
+      <Show when={props.preview}>
+        <div class="flex shrink-0 items-center justify-end border-b border-border-weak-base px-3 py-2">
+          <div
+            role="group"
+            class="flex items-center rounded-lg border border-border-weak-base bg-background-stronger p-0.5"
+          >
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
+              classList={{
+                "bg-background-base text-text-strong shadow-sm": mode() === "source",
+                "text-text-base hover:text-text-strong": mode() !== "source",
+              }}
+              onClick={() => setMode("source")}
+            >
+              <Icon name="edit" size="small" />
+              {language.t("trellis.tasks.edit")}
+            </button>
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
+              classList={{
+                "bg-background-base text-text-strong shadow-sm": mode() === "preview",
+                "text-text-base hover:text-text-strong": mode() !== "preview",
+              }}
+              onClick={() => setMode("preview")}
+            >
+              <Icon name="eye" size="small" />
+              {language.t("trellis.tasks.preview")}
+            </button>
+          </div>
         </div>
       </Show>
-      <textarea
-        ref={(el) => {
-          box = el
-        }}
-        class="config-scrollbar absolute inset-0 size-full min-h-0 resize-none overflow-auto bg-transparent px-4 py-3 text-13-mono leading-6 focus:outline-none"
-        style={{
-          color: "transparent",
-          "-webkit-text-fill-color": "transparent",
-          "caret-color": "var(--text-strong)",
-          "font-family": font(),
-        }}
-        spellcheck={false}
-        readOnly={!props.editable}
-        value={props.text}
-        onInput={(event) => props.onInput(event.currentTarget.value)}
-        onScroll={sync}
-      />
+      <Show
+        when={previewMode()}
+        fallback={
+          <div class="relative min-h-0 flex-1 overflow-hidden">
+            <div
+              ref={(el) => {
+                back = el
+              }}
+              aria-hidden="true"
+              class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 text-13-mono leading-6 whitespace-pre-wrap break-words"
+              style={{ "font-family": font() }}
+            >
+              <div class="min-h-full w-full" innerHTML={html()} />
+            </div>
+            <Show when={props.busy}>
+              <div class="pointer-events-none absolute left-4 top-3 z-10 text-12-regular text-text-weak">
+                {language.t("config.editor.loadingFile")}
+              </div>
+            </Show>
+            <textarea
+              ref={(el) => {
+                box = el
+              }}
+              class="config-scrollbar absolute inset-0 size-full min-h-0 resize-none overflow-auto bg-transparent px-4 py-3 text-13-mono leading-6 focus:outline-none"
+              style={{
+                color: "transparent",
+                "-webkit-text-fill-color": "transparent",
+                "caret-color": "var(--text-strong)",
+                "font-family": font(),
+              }}
+              spellcheck={false}
+              readOnly={!props.editable}
+              value={props.text}
+              onInput={(event) => props.onInput(event.currentTarget.value)}
+              onScroll={sync}
+              onKeyDown={onPairKeyDown}
+            />
+          </div>
+        }
+      >
+        <div class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4">
+          <Markdown text={props.text} math="full" highlight="defer" class="text-13-regular leading-6" />
+        </div>
+      </Show>
     </div>
   )
 }
@@ -1890,6 +1964,7 @@ function Editor(props: {
                 editable={!!props.item?.editable}
                 onInput={props.onInput}
                 paint={paint}
+                preview
               />
             </Show>
           </div>
@@ -7083,6 +7158,7 @@ function CommandCreator(props: {
           editable={!props.busy}
           onInput={props.onInput}
           paint={paint}
+          preview
         />
       </div>
     </div>
@@ -7152,7 +7228,14 @@ function SkillCreator(props: {
       <div class="grid min-h-0 flex-1 auto-rows-fr gap-4 px-5 py-4 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div class="flex min-h-0 flex-col gap-4">
           <div class="min-h-0 flex-1">
-            <MarkdownField text={props.text} busy={props.busy} editable={true} onInput={props.onInput} paint={paint} />
+            <MarkdownField
+              text={props.text}
+              busy={props.busy}
+              editable={true}
+              onInput={props.onInput}
+              paint={paint}
+              preview
+            />
           </div>
         </div>
         <div class="flex h-full min-h-0 flex-col rounded-xl border border-border-weak-base bg-background-base p-3">
