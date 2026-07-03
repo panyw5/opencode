@@ -1691,12 +1691,12 @@ function MarkdownField(props: {
   })
 
   return (
-    <div class="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base">
+    <div class="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base">
       <Show when={props.preview}>
-        <div class="flex shrink-0 items-center justify-end border-b border-border-weak-base px-3 py-2">
+        <div class="pointer-events-none absolute right-3 top-3 z-20 flex items-center justify-end">
           <div
             role="group"
-            class="flex items-center rounded-lg border border-border-weak-base bg-background-stronger p-0.5"
+            class="pointer-events-auto flex items-center rounded-lg border border-border-weak-base bg-background-stronger/95 p-0.5 shadow-xs-border-base backdrop-blur"
           >
             <button
               type="button"
@@ -1735,7 +1735,10 @@ function MarkdownField(props: {
               }}
               aria-hidden="true"
               class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 text-13-mono leading-6 whitespace-pre-wrap break-words"
-              style={{ "font-family": font() }}
+              style={{
+                "font-family": font(),
+                "padding-right": props.preview ? "11.5rem" : undefined,
+              }}
             >
               <div class="min-h-full w-full" innerHTML={html()} />
             </div>
@@ -1754,6 +1757,7 @@ function MarkdownField(props: {
                 "-webkit-text-fill-color": "transparent",
                 "caret-color": "var(--text-strong)",
                 "font-family": font(),
+                "padding-right": props.preview ? "11.5rem" : undefined,
               }}
               spellcheck={false}
               readOnly={!props.editable}
@@ -1765,7 +1769,12 @@ function MarkdownField(props: {
           </div>
         }
       >
-        <div class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4">
+        <div
+          class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4"
+          style={{
+            "padding-right": props.preview ? "12rem" : undefined,
+          }}
+        >
           <Markdown text={props.text} math="full" highlight="defer" class="text-13-regular leading-6" />
         </div>
       </Show>
