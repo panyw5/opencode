@@ -33,6 +33,7 @@ export function FileMedia(props: {
   media?: FileMediaOptions
   fallback: () => JSX.Element
   openFolder?: () => void
+  openWith?: JSX.Element
   copyPath?: () => void
 }) {
   const i18n = useI18n()
@@ -173,39 +174,44 @@ export function FileMedia(props: {
           ? "ui.fileMedia.kind.audio"
           : "ui.fileMedia.kind.pdf",
     )
-  const notice = (message: string, actions = false) => (
+  const hasActions = () => Boolean(props.openWith || props.openFolder || props.copyPath)
+  const actions = () => (
+    <Show when={hasActions()}>
+      <div class="flex items-center justify-center gap-2">
+        {props.openWith}
+        <Show when={props.openFolder}>
+          {(openFolder) => (
+            <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">
+              <IconButton
+                icon="folder"
+                variant="secondary"
+                class="h-8 w-8 rounded-md"
+                onClick={openFolder()}
+                aria-label={i18n.t("ui.file.openFolder")}
+              />
+            </Tooltip>
+          )}
+        </Show>
+        <Show when={props.copyPath}>
+          {(copyPath) => (
+            <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
+              <IconButton
+                icon="copy"
+                variant="secondary"
+                class="h-8 w-8 rounded-md"
+                onClick={copyPath()}
+                aria-label={i18n.t("ui.file.copyPath")}
+              />
+            </Tooltip>
+          )}
+        </Show>
+      </div>
+    </Show>
+  )
+  const notice = (message: string, showActions = false) => (
     <div class="flex min-h-40 flex-col items-center justify-center gap-3 px-6 py-4 text-center text-text-weak">
       <div>{message}</div>
-      <Show when={actions && (props.openFolder || props.copyPath)}>
-        <div class="flex items-center justify-center gap-2">
-          <Show when={props.openFolder}>
-            {(openFolder) => (
-              <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">
-                <IconButton
-                  icon="folder"
-                  variant="secondary"
-                  class="h-8 w-8 rounded-md"
-                  onClick={openFolder()}
-                  aria-label={i18n.t("ui.file.openFolder")}
-                />
-              </Tooltip>
-            )}
-          </Show>
-          <Show when={props.copyPath}>
-            {(copyPath) => (
-              <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
-                <IconButton
-                  icon="copy"
-                  variant="secondary"
-                  class="h-8 w-8 rounded-md"
-                  onClick={copyPath()}
-                  aria-label={i18n.t("ui.file.copyPath")}
-                />
-              </Tooltip>
-            )}
-          </Show>
-        </div>
-      </Show>
+      <Show when={showActions}>{actions()}</Show>
     </div>
   )
 
@@ -237,13 +243,18 @@ export function FileMedia(props: {
             if (k !== "image" && k !== "audio" && k !== "pdf") return props.fallback()
             if (k === "image") {
               return (
-                <div class="flex justify-center bg-background-stronger px-6 py-4">
-                  <img
-                    src={value()}
-                    alt={cfg()?.path}
-                    class="max-h-[60vh] max-w-full rounded border border-border-weak-base bg-background-base object-contain"
-                    onLoad={onLoad}
-                  />
+                <div class="flex flex-col bg-background-stronger">
+                  <Show when={hasActions()}>
+                    <div class="flex justify-end px-3 py-2">{actions()}</div>
+                  </Show>
+                  <div class="flex justify-center px-6 pb-4">
+                    <img
+                      src={value()}
+                      alt={cfg()?.path}
+                      class="max-h-[60vh] max-w-full rounded border border-border-weak-base bg-background-base object-contain"
+                      onLoad={onLoad}
+                    />
+                  </div>
                 </div>
               )
             }
@@ -251,6 +262,9 @@ export function FileMedia(props: {
             if (k === "pdf") {
               return (
                 <div class="flex h-full min-h-full flex-col bg-background-stronger">
+                  <Show when={hasActions()}>
+                    <div class="flex justify-end px-3 py-2">{actions()}</div>
+                  </Show>
                   {/* PDFs use the full panel height instead of the generic scroll shell used for text files. */}
                   <div class="min-h-0 flex-1 overflow-hidden bg-background-base">
                     <iframe
@@ -268,10 +282,15 @@ export function FileMedia(props: {
             }
 
             return (
-              <div class="flex justify-center bg-background-stronger px-6 py-4">
-                <audio class="w-full max-w-xl" controls preload="metadata" onLoadedMetadata={onLoad}>
-                  <source src={value()} type={audioMime()} />
-                </audio>
+              <div class="flex flex-col bg-background-stronger">
+                <Show when={hasActions()}>
+                  <div class="flex justify-end px-3 py-2">{actions()}</div>
+                </Show>
+                <div class="flex justify-center px-6 pb-4">
+                  <audio class="w-full max-w-xl" controls preload="metadata" onLoadedMetadata={onLoad}>
+                    <source src={value()} type={audioMime()} />
+                  </audio>
+                </div>
               </div>
             )
           }}
@@ -312,6 +331,9 @@ export function FileMedia(props: {
               return i18n.t("ui.fileMedia.binary.description.path", { path })
             })()}
           </div>
+          <Show when={hasActions()}>
+            <div class="pt-1">{actions()}</div>
+          </Show>
         </div>
       </Match>
       <Match when={true}>{props.fallback()}</Match>

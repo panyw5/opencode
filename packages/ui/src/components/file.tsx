@@ -86,6 +86,7 @@ type SharedProps<T> = {
   media?: FileMediaOptions
   search?: FileSearchControl
   openFolder?: () => void
+  openWith?: JSX.Element
   copyPath?: () => void
 }
 
@@ -126,6 +127,7 @@ const sharedKeys = [
   "commentedLines",
   "search",
   "openFolder",
+  "openWith",
   "copyPath",
   "onLineSelected",
   "onLineSelectionEnd",
@@ -971,7 +973,9 @@ function TextViewer<T>(props: TextFileProps<T>) {
   const lines = createMemo(() => fileLines(text()))
   const bytes = createMemo(() => fileBytes(props.file))
   const large = createMemo(() => md() && (bytes() > MARKDOWN_PREVIEW_BYTES || lines() > MARKDOWN_PREVIEW_LINES))
-  const meta = createMemo(() => `${Intl.NumberFormat().format(lines())} lines, ${Intl.NumberFormat().format(bytes())} chars`)
+  const meta = createMemo(
+    () => `${Intl.NumberFormat().format(lines())} lines, ${Intl.NumberFormat().format(bytes())} chars`,
+  )
   const preview = createMemo(() => (large() ? previewText(text()) : ""))
   const linked = () => md() && props.selectedLines?.start != null && props.selectedLines?.end != null
   const svgSrc = createMemo(() => {
@@ -988,6 +992,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
         onPointerDown={(event) => event.stopPropagation()}
       >
         <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+          {props.openWith}
           <Show when={props.copyPath}>
             {(copyPath) => (
               <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
@@ -1030,6 +1035,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+        {props.openWith}
         <Show when={props.copyPath}>
           {(copyPath) => (
             <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
@@ -1388,6 +1394,7 @@ export function File<T>(props: FileProps<T>) {
         media={props.media}
         fallback={() => TextViewer(props)}
         openFolder={props.openFolder}
+        openWith={props.openWith}
         copyPath={props.copyPath}
       />
     )
@@ -1398,6 +1405,7 @@ export function File<T>(props: FileProps<T>) {
       media={props.media}
       fallback={() => DiffViewer(props)}
       openFolder={props.openFolder}
+      openWith={props.openWith}
       copyPath={props.copyPath}
     />
   )
