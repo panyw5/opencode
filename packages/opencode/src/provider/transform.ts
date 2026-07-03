@@ -75,6 +75,63 @@ function normalizeMessages(
     }
     return content
   }
+  const splitToolResultMedia = (messages: ModelMessage[]) => {
+    if (
+      ![
+        "@ai-sdk/openai-compatible",
+        "@ai-sdk/openai",
+        "@ai-sdk/anthropic",
+        "@ai-sdk/google-vertex/anthropic",
+      ].includes(model.api.npm)
+    ) {
+      return messages
+    }
+
+    const result: ModelMessage[] = []
+    for (const msg of messages) {
+      if (msg.role !== "tool" || !Array.isArray(msg.content)) {
+        result.push(msg)
+        continue
+      }
+
+      const followup: Array<{ type: "text"; text: string } | { type: "file"; mediaType: string; data: string }> = []
+      let changed = false
+      const content = msg.content.map((part) => {
+        if (part.type !== "tool-result" || part.output.type !== "content") return part
+
+        const text = part.output.value
+          .filter((item) => item.type === "text")
+          .map((item) => item.text)
+          .join("\n")
+        const media = part.output.value.filter((item) => item.type === "media")
+        if (media.length === 0) return part
+
+        changed = true
+        for (const item of media) {
+          const modality = mimeToModality(item.mediaType)
+          if (!modality) continue
+          followup.push({
+            type: "file",
+            mediaType: item.mediaType,
+            data: item.data.startsWith("data:") ? item.data : `data:${item.mediaType};base64,${item.data}`,
+          })
+        }
+        return {
+          ...part,
+          output: { type: "text" as const, value: text },
+        }
+      })
+
+      result.push(changed ? { ...msg, content } : msg)
+      if (followup.length > 0) {
+        result.push({
+          role: "user",
+          content: [{ type: "text", text: "Attached image(s) from tool result:" }, ...followup],
+        })
+      }
+    }
+    return result
+  }
 
   msgs = msgs.map((msg) => {
     switch (msg.role) {
@@ -233,6 +290,7 @@ function normalizeMessages(
       ]
     })
   }
+  msgs = splitToolResultMedia(msgs)
   if (
     model.providerID === "mistral" ||
     model.api.id.toLowerCase().includes("mistral") ||
@@ -325,7 +383,7 @@ function normalizeMessages(
             ...msg.providerOptions,
             openaiCompatible: {
               ...msg.providerOptions?.openaiCompatible,
-              [field]: reasoningText,
+              [field]: reasoningText || msg.providerOptions?.openaiCompatible?.[field] || reasoningText,
             },
           },
         }
