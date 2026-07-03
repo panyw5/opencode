@@ -1259,7 +1259,7 @@
   gap: 0;
   min-height: 0;
   max-height: var(--question-prompt-max-height, 100dvh);
-  background-color: light-dark(#fff6be, #2a2307);
+  background-color: light-dark(var(--amber-light-3), #2a2307);
   border-radius: 14px;
   padding: 4px;
 
@@ -1713,7 +1713,7 @@
   }
 
   :where([data-dock-surface="shell"]) {
-    background-color: transparent;
+    background-color: inherit;
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }

@@ -350,7 +350,7 @@ html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
   border-radius: var(--radius-2xl);
 }
 
-/* Question tool (dark) — the default light-dark(#fff6be, #2a2307) background
+/* Question tool (dark) — the default light-dark(var(--amber-light-3), #2a2307) background
    produces a deep amber-brown that clashes with Arc's violet-tinged palette.
    Replace with a warm-violet ramp that harmonises with Arc's primary
    (#9B7AE8) and warm purple-gray chrome (#4a3d47). Shifted toward
@@ -494,7 +494,7 @@ html[data-theme="arc"] [data-component="dialog"] [data-slot="dialog-content"] {
     background-color: rgba(255, 255, 255, 0.72);
   }
 
-  /* Question tool — the default light-dark(#fff6be, #2a2307)
+  /* Question tool — the default light-dark(var(--amber-light-3), #2a2307)
      background produces a pale cream-yellow that clashes with Arc's
      violet-tinged palette. Replace with a lavender-to-violet ramp
      that harmonises with Arc's primary (#6B46E5) and dusty-mauve
