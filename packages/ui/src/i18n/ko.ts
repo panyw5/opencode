@@ -138,6 +138,14 @@ export const dict = {
   "ui.message.copied": "복사됨!",
   "ui.message.interrupted": "중단됨",
   "ui.message.queued": "대기 중",
+  "ui.message.injection.hookPrompt": "훅 삽입 프롬프트",
+  "ui.message.injection.commandPrompt": "{{command}} 명령 프롬프트",
+  "ui.message.injection.slashCommandPrompt": "슬래시 명령 프롬프트",
+  "ui.message.injection.prompt": "삽입된 프롬프트",
+  "ui.message.injection.part.one": "{{count}}개 부분",
+  "ui.message.injection.part.other": "{{count}}개 부분",
+  "ui.message.injection.chars": "{{count}}자",
+
   "ui.message.attachment.alt": "첨부 파일",
 
   "ui.patch.action.deleted": "삭제됨",

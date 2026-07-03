@@ -151,6 +151,14 @@ export const dict: Record<string, string> = {
   "ui.message.duration.minutesSeconds": "{{minutes}}хв {{seconds}}с",
   "ui.message.interrupted": "Перервано",
   "ui.message.queued": "У черзі",
+  "ui.message.injection.hookPrompt": "Промпт, доданий hook",
+  "ui.message.injection.commandPrompt": "Промпт команди {{command}}",
+  "ui.message.injection.slashCommandPrompt": "Промпт slash-команди",
+  "ui.message.injection.prompt": "Доданий промпт",
+  "ui.message.injection.part.one": "{{count}} частина",
+  "ui.message.injection.part.other": "{{count}} частин",
+  "ui.message.injection.chars": "{{count}} символів",
+
   "ui.message.attachment.alt": "вкладення",
 
   "ui.patch.action.deleted": "Видалено",

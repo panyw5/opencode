@@ -172,6 +172,14 @@ export const dict: Record<string, string> = {
   "ui.message.queued": "Queued",
   "ui.message.attachment.alt": "attachment",
   "ui.message.showMore": "Show more",
+  "ui.message.injection.hookPrompt": "Hook injected prompt",
+  "ui.message.injection.commandPrompt": "{{command}} command prompt",
+  "ui.message.injection.slashCommandPrompt": "Slash command prompt",
+  "ui.message.injection.prompt": "Injected prompt",
+  "ui.message.injection.part.one": "{{count}} part",
+  "ui.message.injection.part.other": "{{count}} parts",
+  "ui.message.injection.chars": "{{count}} chars",
+
   "ui.message.showLess": "Show less",
 
   "ui.patch.action.deleted": "Deleted",

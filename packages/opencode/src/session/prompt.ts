@@ -769,6 +769,79 @@ export const layer = Layer.effect(
         ...part,
         id: part.id ? PartID.make(part.id) : PartID.ascending(),
       })
+      const hookInjectionMetadata = (metadata?: Record<string, any>) => ({
+        ...(metadata ?? {}),
+        kind: "hook-injection",
+        hook: "chat.message",
+      })
+      const markHookInjectedText = (part: Draft<MessageV2.TextPart>): Draft<MessageV2.TextPart> => ({
+        ...part,
+        synthetic: true,
+        metadata: hookInjectionMetadata(part.metadata),
+      })
+      const injectedTextSegments = (original: string, next: string) => {
+        if (next === original) return { before: "", after: "", replacement: false }
+        if (next.startsWith(original)) return { before: "", after: next.slice(original.length), replacement: false }
+        if (next.endsWith(original)) {
+          return { before: next.slice(0, next.length - original.length), after: "", replacement: false }
+        }
+        const index = original ? next.indexOf(original) : -1
+        if (index >= 0) {
+          return {
+            before: next.slice(0, index),
+            after: next.slice(index + original.length),
+            replacement: false,
+          }
+        }
+        return { before: "", after: next, replacement: true }
+      }
+      const separateHookInjectedText = (
+        before: Draft<MessageV2.Part>[],
+        after: Draft<MessageV2.Part>[],
+      ): Draft<MessageV2.Part>[] => {
+        const originalText = new Map<string, string>()
+        const originalPartIDs = new Set<string>()
+        for (const part of before) {
+          if (part.id) originalPartIDs.add(part.id)
+          if (part.type === "text" && part.id && !part.synthetic) originalText.set(part.id, part.text)
+        }
+
+        const next: Draft<MessageV2.Part>[] = []
+        for (const part of after) {
+          if (part.type !== "text") {
+            next.push(part)
+            continue
+          }
+
+          const original = part.id ? originalText.get(part.id) : undefined
+          if (original !== undefined && part.text !== original) {
+            const { before, after, replacement } = injectedTextSegments(original, part.text)
+            const { id: _id, ...injectedPart } = part
+            if (before) {
+              next.push(
+                markHookInjectedText({
+                  ...injectedPart,
+                  text: before,
+                }),
+              )
+            }
+            next.push({ ...part, text: original, ...(replacement ? { ignored: true } : {}) })
+            if (after) {
+              next.push(
+                markHookInjectedText({
+                  ...injectedPart,
+                  text: after,
+                }),
+              )
+            }
+            continue
+          }
+
+          const addedByHook = !part.synthetic && (!part.id || !originalPartIDs.has(part.id))
+          next.push(addedByHook ? markHookInjectedText(part) : part)
+        }
+        return next
+      }
 
       const referenceContextFromFilePart = Effect.fnUntraced(function* (
         part: Extract<PromptInput["parts"][number], { type: "file" }>,
@@ -1075,6 +1148,7 @@ export const layer = Layer.effect(
         Effect.map((x) => x.flat().map(assign)),
       )
 
+      const beforeChatMessageHook = structuredClone(resolvedParts)
       yield* plugin.trigger(
         "chat.message",
         {
@@ -1086,8 +1160,9 @@ export const layer = Layer.effect(
         },
         { message: info, parts: resolvedParts },
       )
+      const hookSeparatedParts = separateHookInjectedText(beforeChatMessageHook, resolvedParts).map(assign)
 
-      const parts = yield* Effect.forEach(resolvedParts, (part) =>
+      const parts = yield* Effect.forEach(hookSeparatedParts, (part) =>
         part.type === "file" && part.mime.startsWith("image/")
           ? image.normalize(part).pipe(
               Effect.catchIf(
@@ -1633,6 +1708,20 @@ export const layer = Layer.effect(
       }
 
       const templateParts = yield* resolvePromptParts(template)
+      const commandTemplateParts = templateParts.map((part) => {
+        if (part.type !== "text") return part
+        return {
+          ...part,
+          synthetic: true,
+          metadata: {
+            ...(part.metadata ?? {}),
+            kind: "command-injection",
+            command: input.command,
+            source: cmd.source,
+          },
+        }
+      })
+      const commandInvocation = ["/" + input.command, input.arguments.trim()].filter(Boolean).join(" ")
       const isSubtask = (agent.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
       const parts = isSubtask
         ? [
@@ -1645,7 +1734,16 @@ export const layer = Layer.effect(
               prompt: templateParts.find((y) => y.type === "text")?.text ?? "",
             },
           ]
-        : [...templateParts, ...(input.parts ?? [])]
+        : [
+            {
+              type: "text" as const,
+              text: commandInvocation,
+              ignored: true,
+              metadata: { kind: "command-invocation", command: input.command, source: cmd.source },
+            },
+            ...commandTemplateParts,
+            ...(input.parts ?? []),
+          ]
 
       const userAgent = isSubtask ? (input.agent ?? (yield* agents.defaultInfo()).name) : agent.name
       const userModel = isSubtask

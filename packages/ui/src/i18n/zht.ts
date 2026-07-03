@@ -143,6 +143,14 @@ export const dict = {
   "ui.message.copied": "已複製！",
   "ui.message.interrupted": "已中斷",
   "ui.message.queued": "排隊中",
+  "ui.message.injection.hookPrompt": "鉤子注入提示詞",
+  "ui.message.injection.commandPrompt": "{{command}} 命令提示詞",
+  "ui.message.injection.slashCommandPrompt": "Slash 命令提示詞",
+  "ui.message.injection.prompt": "注入提示詞",
+  "ui.message.injection.part.one": "{{count}} 部分",
+  "ui.message.injection.part.other": "{{count}} 部分",
+  "ui.message.injection.chars": "{{count}} 字元",
+
   "ui.message.attachment.alt": "附件",
 
   "ui.patch.action.deleted": "已刪除",

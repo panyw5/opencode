@@ -137,6 +137,14 @@ export const dict = {
   "ui.message.copied": "Скопировано!",
   "ui.message.interrupted": "Прервано",
   "ui.message.queued": "В очереди",
+  "ui.message.injection.hookPrompt": "Промпт, добавленный хуком",
+  "ui.message.injection.commandPrompt": "Промпт команды {{command}}",
+  "ui.message.injection.slashCommandPrompt": "Промпт slash-команды",
+  "ui.message.injection.prompt": "Добавленный промпт",
+  "ui.message.injection.part.one": "{{count}} часть",
+  "ui.message.injection.part.other": "{{count}} частей",
+  "ui.message.injection.chars": "{{count}} символов",
+
   "ui.message.attachment.alt": "вложение",
 
   "ui.patch.action.deleted": "Удалено",

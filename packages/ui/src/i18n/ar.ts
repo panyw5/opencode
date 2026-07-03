@@ -138,6 +138,14 @@ export const dict = {
   "ui.message.copied": "تم النسخ!",
   "ui.message.interrupted": "تمت المقاطعة",
   "ui.message.queued": "في الانتظار",
+  "ui.message.injection.hookPrompt": "موجه محقون من hook",
+  "ui.message.injection.commandPrompt": "موجه الأمر {{command}}",
+  "ui.message.injection.slashCommandPrompt": "موجه أمر slash",
+  "ui.message.injection.prompt": "موجه محقون",
+  "ui.message.injection.part.one": "{{count}} جزء",
+  "ui.message.injection.part.other": "{{count}} أجزاء",
+  "ui.message.injection.chars": "{{count}} حرف",
+
   "ui.message.attachment.alt": "مرفق",
 
   "ui.patch.action.deleted": "محذوف",

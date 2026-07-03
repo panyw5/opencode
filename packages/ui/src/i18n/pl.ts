@@ -137,6 +137,14 @@ export const dict = {
   "ui.message.copied": "Skopiowano!",
   "ui.message.interrupted": "Przerwano",
   "ui.message.queued": "W kolejce",
+  "ui.message.injection.hookPrompt": "Prompt wstrzyknięty przez hook",
+  "ui.message.injection.commandPrompt": "Prompt komendy {{command}}",
+  "ui.message.injection.slashCommandPrompt": "Prompt komendy slash",
+  "ui.message.injection.prompt": "Wstrzyknięty prompt",
+  "ui.message.injection.part.one": "{{count}} część",
+  "ui.message.injection.part.other": "{{count}} części",
+  "ui.message.injection.chars": "{{count}} znaków",
+
   "ui.message.attachment.alt": "załącznik",
 
   "ui.patch.action.deleted": "Usunięto",

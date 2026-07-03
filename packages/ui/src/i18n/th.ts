@@ -139,6 +139,14 @@ export const dict = {
   "ui.message.copied": "คัดลอกแล้ว!",
   "ui.message.interrupted": "ถูกขัดจังหวะ",
   "ui.message.queued": "อยู่ในคิว",
+  "ui.message.injection.hookPrompt": "พรอมป์ที่ hook แทรก",
+  "ui.message.injection.commandPrompt": "พรอมป์คำสั่ง {{command}}",
+  "ui.message.injection.slashCommandPrompt": "พรอมป์คำสั่ง slash",
+  "ui.message.injection.prompt": "พรอมป์ที่แทรก",
+  "ui.message.injection.part.one": "{{count}} ส่วน",
+  "ui.message.injection.part.other": "{{count}} ส่วน",
+  "ui.message.injection.chars": "{{count}} อักขระ",
+
   "ui.message.attachment.alt": "ไฟล์แนบ",
 
   "ui.patch.action.deleted": "ลบ",

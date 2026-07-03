@@ -146,6 +146,14 @@ export const dict = {
   "ui.message.copied": "Kopyalandı",
   "ui.message.interrupted": "Kesildi",
   "ui.message.queued": "Sırada",
+  "ui.message.injection.hookPrompt": "Hook tarafından eklenen prompt",
+  "ui.message.injection.commandPrompt": "{{command}} komut promptu",
+  "ui.message.injection.slashCommandPrompt": "Slash komut promptu",
+  "ui.message.injection.prompt": "Eklenen prompt",
+  "ui.message.injection.part.one": "{{count}} parça",
+  "ui.message.injection.part.other": "{{count}} parça",
+  "ui.message.injection.chars": "{{count}} karakter",
+
   "ui.message.attachment.alt": "ek",
 
   "ui.patch.action.deleted": "Silindi",

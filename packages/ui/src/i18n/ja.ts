@@ -137,6 +137,14 @@ export const dict = {
   "ui.message.copied": "コピーしました！",
   "ui.message.interrupted": "中断",
   "ui.message.queued": "待機中",
+  "ui.message.injection.hookPrompt": "フック注入プロンプト",
+  "ui.message.injection.commandPrompt": "{{command}} コマンドプロンプト",
+  "ui.message.injection.slashCommandPrompt": "スラッシュコマンドプロンプト",
+  "ui.message.injection.prompt": "注入プロンプト",
+  "ui.message.injection.part.one": "{{count}} 部分",
+  "ui.message.injection.part.other": "{{count}} 部分",
+  "ui.message.injection.chars": "{{count}} 文字",
+
   "ui.message.attachment.alt": "添付ファイル",
 
   "ui.patch.action.deleted": "削除済み",

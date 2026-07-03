@@ -32,7 +32,8 @@ export const dict: Record<Keys, string> = {
   "ui.file.preview": "Forhåndsvisning",
   "ui.file.source": "Kilde",
   "ui.file.largePreview.title": "Forhåndsvisning av stor markdown er satt på pause",
-  "ui.file.largePreview.meta": "Åpne kilden for en redaktørlignende visning, eller gjengi full forhåndsvisning for {{size}}.",
+  "ui.file.largePreview.meta":
+    "Åpne kilden for en redaktørlignende visning, eller gjengi full forhåndsvisning for {{size}}.",
   "ui.file.largePreview.render": "Gjengi full forhåndsvisning",
 
   "ui.lineComment.label.prefix": "Kommenter på ",
@@ -147,6 +148,14 @@ export const dict: Record<Keys, string> = {
   "ui.message.copied": "Kopiert!",
   "ui.message.interrupted": "Avbrutt",
   "ui.message.queued": "I kø",
+  "ui.message.injection.hookPrompt": "Prompt satt inn av hook",
+  "ui.message.injection.commandPrompt": "{{command}}-kommandoprompt",
+  "ui.message.injection.slashCommandPrompt": "Slash-kommandoprompt",
+  "ui.message.injection.prompt": "Injisert prompt",
+  "ui.message.injection.part.one": "{{count}} del",
+  "ui.message.injection.part.other": "{{count}} deler",
+  "ui.message.injection.chars": "{{count}} tegn",
+
   "ui.message.attachment.alt": "vedlegg",
 
   "ui.patch.action.deleted": "Slettet",

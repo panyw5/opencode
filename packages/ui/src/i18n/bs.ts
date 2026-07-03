@@ -142,6 +142,14 @@ export const dict = {
   "ui.message.copied": "Kopirano!",
   "ui.message.interrupted": "Prekinuto",
   "ui.message.queued": "U redu",
+  "ui.message.injection.hookPrompt": "Prompt ubačen hookom",
+  "ui.message.injection.commandPrompt": "Prompt komande {{command}}",
+  "ui.message.injection.slashCommandPrompt": "Prompt slash komande",
+  "ui.message.injection.prompt": "Ubačeni prompt",
+  "ui.message.injection.part.one": "{{count}} dio",
+  "ui.message.injection.part.other": "{{count}} dijelova",
+  "ui.message.injection.chars": "{{count}} znakova",
+
   "ui.message.attachment.alt": "prilog",
 
   "ui.patch.action.deleted": "Obrisano",

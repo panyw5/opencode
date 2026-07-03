@@ -614,7 +614,10 @@ function parseGenericAgentToolText(text: string): GenericAgentTextSegment[] {
 
   for (const match of text.matchAll(GENERIC_AGENT_TOOL_PATTERN)) {
     const start = match.index ?? 0
-    const before = text.slice(cursor, start).replace(/\n{3,}/g, "\n\n").trim()
+    const before = text
+      .slice(cursor, start)
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
     if (before) segments.push({ type: "text", text: before })
 
     if (match[1] !== undefined) {
@@ -638,7 +641,10 @@ function parseGenericAgentToolText(text: string): GenericAgentTextSegment[] {
     cursor = start + match[0].length
   }
 
-  const rest = text.slice(cursor).replace(/\n{3,}/g, "\n\n").trim()
+  const rest = text
+    .slice(cursor)
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
   if (rest) segments.push({ type: "text", text: rest })
   return segments
 }
@@ -965,7 +971,9 @@ export function AssistantMessageDisplay(props: {
     }
 
     const parts = orderTextReasoningSegments(
-      props.parts.filter((part) => renderable(part, props.showReasoningSummaries ?? true, props.showCustomHookParts ?? true)),
+      props.parts.filter((part) =>
+        renderable(part, props.showReasoningSummaries ?? true, props.showCustomHookParts ?? true),
+      ),
       (part) => part,
     )
     let start = -1
@@ -1123,7 +1131,6 @@ function ContextToolGroup(props: { parts: ToolPart[]; busy?: boolean }) {
   )
 }
 
-
 function LazyAction(props: { children: JSX.Element; size?: "small" | "normal" }) {
   const [mounted, setMounted] = createSignal(false)
   const mount = () => setMounted(true)
@@ -1161,6 +1168,7 @@ export function UserMessageDisplay(props: {
     busy: undefined as "fork" | "revert" | undefined,
   })
   const [expanded, setExpanded] = createSignal(false)
+  const [injectionExpanded, setInjectionExpanded] = createSignal(false)
   const copied = () => state.copied
   const busy = () => state.busy
 
@@ -1177,21 +1185,66 @@ export function UserMessageDisplay(props: {
   const escapeHtmlTags = (str: string) => {
     // Only escape tags that look like real HTML tags (alphanumeric tag names with optional attributes)
     // This preserves comparison operators like < and > in normal text
-    return str.replace(/<(\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)??)>/g, '&lt;$1&gt;')
+    return str.replace(/<(\/?[a-zA-Z][a-zA-Z0-9-]*(?:\s[^>]*)??)>/g, "&lt;$1&gt;")
   }
 
   // Preserve line breaks by converting them to <br> tags for proper rendering
   const preserveLineBreaks = (str: string) => {
-    return str.replace(/\n/g, '  \n') // Markdown requires 2 spaces before \n for line break
+    return str.replace(/\n/g, "  \n") // Markdown requires 2 spaces before \n for line break
   }
 
   const displayText = createMemo(() => {
     const fullText = text()
-    const textToDisplay = (!isLongMessage() || expanded()) ? fullText : fullText.slice(0, MAX_PREVIEW_LENGTH)
+    const textToDisplay = !isLongMessage() || expanded() ? fullText : fullText.slice(0, MAX_PREVIEW_LENGTH)
     return preserveLineBreaks(escapeHtmlTags(textToDisplay))
   })
 
   const skillTemplatePart = createMemo(() => skillText(props.parts))
+
+  const injectionParts = createMemo(() =>
+    props.parts.filter((part): part is TextPart => {
+      if (part.type !== "text" || !(part as TextPart).synthetic) return false
+      const kind = (part as TextPart).metadata?.kind
+      return kind === "hook-injection" || kind === "command-injection"
+    }),
+  )
+  const injectionText = createMemo(() =>
+    injectionParts()
+      .map((part) => part.text)
+      .join("\n\n"),
+  )
+  const injectionPreview = createMemo(() => {
+    const text = injectionText().trim().replace(/\s+/g, " ")
+    if (text.length <= 180) return text
+    return text.slice(0, 180) + "…"
+  })
+  const injectionCommand = createMemo(() => {
+    const commands = new Set(
+      injectionParts()
+        .filter((part) => part.metadata?.kind === "command-injection")
+        .map((part) => part.metadata?.command)
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    )
+    return commands.size === 1 ? [...commands][0] : undefined
+  })
+  const injectionTitle = createMemo(() => {
+    const kinds = new Set(injectionParts().map((part) => part.metadata?.kind))
+    if (kinds.size === 1 && kinds.has("hook-injection")) return i18n.t("ui.message.injection.hookPrompt")
+    if (kinds.size === 1 && kinds.has("command-injection")) {
+      const command = injectionCommand()
+      return command
+        ? i18n.t("ui.message.injection.commandPrompt", { command: "/" + command })
+        : i18n.t("ui.message.injection.slashCommandPrompt")
+    }
+    return i18n.t("ui.message.injection.prompt")
+  })
+  const injectionSummary = createMemo(() => {
+    const count = injectionParts().length
+    const chars = injectionText().length.toLocaleString()
+    const parts = i18n.t(count === 1 ? "ui.message.injection.part.one" : "ui.message.injection.part.other", { count })
+    const charCount = i18n.t("ui.message.injection.chars", { count: chars })
+    return `${parts} · ${charCount}`
+  })
 
   const files = createMemo(() => (props.parts?.filter((p) => p.type === "file") as FilePart[]) ?? [])
 
@@ -1425,6 +1478,36 @@ export function UserMessageDisplay(props: {
             </div>
           </div>
         </>
+      </Show>
+      <Show when={injectionParts().length > 0}>
+        <div data-slot="user-message-hook-injection">
+          <button
+            data-slot="user-message-hook-injection-trigger"
+            data-expanded={injectionExpanded() ? "true" : undefined}
+            onClick={() => setInjectionExpanded(!injectionExpanded())}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <span data-slot="user-message-hook-injection-title">{injectionTitle()}</span>
+            <span data-slot="user-message-hook-injection-summary">{injectionSummary()}</span>
+          </button>
+          <Show when={!injectionExpanded() && injectionPreview()}>
+            <div data-slot="user-message-hook-injection-preview">{injectionPreview()}</div>
+          </Show>
+          <Show when={injectionExpanded()}>
+            <div data-slot="user-message-hook-injection-content">
+              <Markdown
+                text={preserveLineBreaks(escapeHtmlTags(injectionText()))}
+                cacheKey={`injection:${props.message.id}`}
+                stage={props.markdownStage}
+                onStage={props.onMarkdownStage}
+                eager={props.markdownEager}
+                viewport={props.markdownViewport}
+                highlight={props.markdownHighlight}
+                math={props.markdownMath}
+              />
+            </div>
+          </Show>
+        </div>
       </Show>
       <Show when={skillTemplatePart()}>
         <BasicTool
@@ -1797,7 +1880,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   createEffect(() => {
     const len = displayText().length
     if (len < prev) {
-      console.warn(`[text-part] text rollback msg=${props.message.id} part=${part.id} prev=${prev} next=${len} tail=${clip(displayText())}`)
+      console.warn(
+        `[text-part] text rollback msg=${props.message.id} part=${part.id} prev=${prev} next=${len} tail=${clip(displayText())}`,
+      )
     }
 
     prev = len
@@ -1810,7 +1895,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
     if (!isGenericAgentMessage(props.message)) return []
     return parseGenericAgentToolText(body())
   })
-  const hasGenericAgentToolSegments = createMemo(() => genericAgentSegments().some((segment) => segment.type === "tool"))
+  const hasGenericAgentToolSegments = createMemo(() =>
+    genericAgentSegments().some((segment) => segment.type === "tool"),
+  )
   const plain = createMemo(() => liveText() && end())
   const showCopy = createMemo(() => {
     if (props.message.role !== "assistant") return isLastTextPart()
@@ -2280,7 +2367,13 @@ ToolRegistry.register({
     )
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
     const hasOutput = createMemo(() => typeof props.output === "string" && props.output.trim().length > 0)
-    const outputPreview = createMemo(() => props.output?.trim().split("\n").find((line) => line.trim())?.trim())
+    const outputPreview = createMemo(() =>
+      props.output
+        ?.trim()
+        .split("\n")
+        .find((line) => line.trim())
+        ?.trim(),
+    )
     const type = createMemo(() => {
       const raw = props.input.subagent_type
       if (typeof raw !== "string" || !raw) return undefined
@@ -2313,7 +2406,9 @@ ToolRegistry.register({
           typeof part.text === "string" &&
           part.text.trim().length > 0,
       )
-      const runningTools = toolParts.filter((part) => part.state.status === "pending" || part.state.status === "running")
+      const runningTools = toolParts.filter(
+        (part) => part.state.status === "pending" || part.state.status === "running",
+      )
       const errorTools = toolParts.filter((part) => part.state.status === "error")
       return {
         messages: childMessages().length,

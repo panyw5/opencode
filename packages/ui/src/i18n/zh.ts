@@ -155,6 +155,14 @@ export const dict = {
   "ui.message.queued": "排队中",
   "ui.message.attachment.alt": "附件",
   "ui.message.showMore": "展开更多",
+  "ui.message.injection.hookPrompt": "钩子注入提示词",
+  "ui.message.injection.commandPrompt": "{{command}} 命令提示词",
+  "ui.message.injection.slashCommandPrompt": "Slash 命令提示词",
+  "ui.message.injection.prompt": "注入提示词",
+  "ui.message.injection.part.one": "{{count}} 部分",
+  "ui.message.injection.part.other": "{{count}} 部分",
+  "ui.message.injection.chars": "{{count}} 字符",
+
   "ui.message.showLess": "收起",
 
   "ui.patch.action.deleted": "已删除",
