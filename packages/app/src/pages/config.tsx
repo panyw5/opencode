@@ -15,7 +15,7 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Button, type ButtonProps } from "@opencode-ai/ui/button"
+import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { IconButton } from "@opencode-ai/ui/icon-button"
@@ -1785,16 +1785,18 @@ function MarkdownField(props: {
 function SaveButton(props: {
   label: string
   disabled?: boolean
+  icon?: "save" | "check-small"
   onClick: () => void
-  variant?: ButtonProps["variant"]
 }) {
   return (
     <Button
       size="small"
-      variant={props.variant ?? "secondary"}
-      icon="save"
+      variant="secondary"
+      icon={props.icon ?? "save"}
       onClick={props.onClick}
       disabled={props.disabled}
+      class="config-save-button"
+      data-config-save-state={props.disabled ? "disabled" : "active"}
     >
       {props.label}
     </Button>
@@ -1827,6 +1829,7 @@ function Editor(props: {
   const settings = useSettings()
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
   const source = createMemo(() => sourceKey(props.item?.source))
+  const canSave = createMemo(() => !!props.item?.editable && props.dirty)
 
   return (
     <div class="flex h-full min-h-0 flex-col">
@@ -1889,15 +1892,12 @@ function Editor(props: {
                   </Button>
                 )}
               </Show>
-              <Button
-                size="small"
-                variant="secondary"
+              <SaveButton
                 icon="check-small"
                 onClick={props.onSave}
-                disabled={!props.item?.editable || !props.dirty}
-              >
-                {language.t("common.save")}
-              </Button>
+                disabled={!canSave()}
+                label={language.t("common.save")}
+              />
             </div>
           </div>
           <div class="mt-1 break-all font-mono text-[12px] leading-5 text-text-weak">
@@ -2714,7 +2714,6 @@ function CustomEditor(props: {
               }
               onClick={props.onSave}
               disabled={props.busy || props.form.saving || props.form.deleting}
-              variant="ghost"
             />
           </div>
           <Show when={props.reloading}>
@@ -6856,15 +6855,11 @@ export default function ConfigPage() {
                                 {t("common.cancel")}
                               </Button>
                             </Show>
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              icon="save"
+                            <SaveButton
                               disabled={!state.mcpDirty || state.mcpSaving || (isNew() && !state.mcpNewName.trim())}
                               onClick={() => void saveMcpServer()}
-                            >
-                              {state.mcpSaving ? "..." : t("config.mcp.editor.save")}
-                            </Button>
+                              label={state.mcpSaving ? "..." : t("config.mcp.editor.save")}
+                            />
                           </div>
                         </div>
                         <div class="min-h-0 flex-1 overflow-y-auto px-6 py-6">
@@ -7138,14 +7133,11 @@ function CommandCreator(props: {
           >
             {language.t("common.cancel")}
           </Button>
-          <Button
-            size="small"
-            variant="primary"
+          <SaveButton
             onClick={props.onSave}
             disabled={props.busy || !props.title.trim()}
-          >
-            {props.busy ? language.t("common.loading.ellipsis") : language.t("common.save")}
-          </Button>
+            label={props.busy ? language.t("common.loading.ellipsis") : language.t("common.save")}
+          />
         </div>
         <Show when={props.root}>
           {(root) => (

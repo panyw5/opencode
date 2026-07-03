@@ -66,6 +66,44 @@
     background-color: color-mix(in srgb, var(--text-base) 62%, transparent);
   }
 
+  [data-component="button"].config-save-button[data-config-save-state="active"] {
+    border-color: var(--border-weak-base);
+    background-color: var(--button-primary-base);
+    color: var(--icon-invert-base);
+    box-shadow: var(--shadow-xs-border-base);
+  }
+
+  [data-component="button"].config-save-button[data-config-save-state="active"] [data-slot="icon-svg"] {
+    color: var(--icon-invert-base);
+  }
+
+  [data-component="button"].config-save-button[data-config-save-state="active"]:hover:not(:disabled) {
+    background-color: var(--icon-strong-hover);
+  }
+
+  [data-component="button"].config-save-button[data-config-save-state="active"]:focus-visible:not(:active) {
+    background-color: var(--button-primary-base);
+    box-shadow: var(--shadow-xs-border-focus);
+  }
+
+  [data-component="button"].config-save-button[data-config-save-state="active"]:active:not(:disabled) {
+    background-color: var(--icon-strong-active);
+    box-shadow: none;
+  }
+
+  [data-component="button"].config-save-button[data-config-save-state="disabled"],
+  [data-component="button"].config-save-button:disabled {
+    border-color: light-dark(rgba(0, 0, 0, 0.035), var(--border-disabled));
+    background-color: light-dark(rgba(0, 0, 0, 0.025), var(--surface-disabled));
+    color: light-dark(rgba(0, 0, 0, 0.26), var(--text-weak));
+    box-shadow: none;
+  }
+
+  [data-component="button"].config-save-button[data-config-save-state="disabled"] [data-slot="icon-svg"],
+  [data-component="button"].config-save-button:disabled [data-slot="icon-svg"] {
+    color: light-dark(rgba(0, 0, 0, 0.22), var(--icon-disabled));
+  }
+
   .session-child-agent-scrollbar {
     scrollbar-color: transparent transparent;
     scrollbar-width: thin;
