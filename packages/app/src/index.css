@@ -104,6 +104,57 @@
     color: light-dark(rgba(0, 0, 0, 0.22), var(--icon-disabled));
   }
 
+  .config-editor-mode-toggle {
+    pointer-events: none;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.75rem;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+  }
+
+  .config-editor-mode-toggle__group {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border-weak-base);
+    border-radius: var(--radius-lg);
+    background-color: color-mix(in srgb, var(--background-stronger) 95%, transparent);
+    padding: 2px;
+    box-shadow: var(--shadow-xs-border-base);
+    backdrop-filter: blur(8px);
+  }
+
+  .config-editor-mode-toggle__button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    border-radius: var(--radius-md);
+    padding: 0.25rem 0.625rem;
+    color: var(--text-base);
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+    transition:
+      background-color 160ms ease,
+      color 160ms ease,
+      box-shadow 160ms ease;
+  }
+
+  .config-editor-mode-toggle__button:hover {
+    color: var(--text-strong);
+  }
+
+  .config-editor-mode-toggle__button[data-active="true"] {
+    background-color: var(--background-base);
+    color: var(--text-strong);
+    box-shadow: var(--shadow-xs-border-base);
+  }
+
   .session-child-agent-scrollbar {
     scrollbar-color: transparent transparent;
     scrollbar-width: thin;

@@ -1693,37 +1693,7 @@ function MarkdownField(props: {
   return (
     <div class="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base">
       <Show when={props.preview}>
-        <div class="pointer-events-none absolute right-3 top-3 z-20 flex items-center justify-end">
-          <div
-            role="group"
-            class="pointer-events-auto flex items-center rounded-lg border border-border-weak-base bg-background-stronger/95 p-0.5 shadow-xs-border-base backdrop-blur"
-          >
-            <button
-              type="button"
-              class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
-              classList={{
-                "bg-background-base text-text-strong shadow-sm": mode() === "source",
-                "text-text-base hover:text-text-strong": mode() !== "source",
-              }}
-              onClick={() => setMode("source")}
-            >
-              <Icon name="edit" size="small" />
-              {language.t("trellis.tasks.edit")}
-            </button>
-            <button
-              type="button"
-              class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
-              classList={{
-                "bg-background-base text-text-strong shadow-sm": mode() === "preview",
-                "text-text-base hover:text-text-strong": mode() !== "preview",
-              }}
-              onClick={() => setMode("preview")}
-            >
-              <Icon name="eye" size="small" />
-              {language.t("trellis.tasks.preview")}
-            </button>
-          </div>
-        </div>
+        <ConfigEditorModeToggle mode={mode()} onMode={setMode} />
       </Show>
       <Show
         when={previewMode()}
@@ -1735,10 +1705,7 @@ function MarkdownField(props: {
               }}
               aria-hidden="true"
               class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 text-13-mono leading-6 whitespace-pre-wrap break-words"
-              style={{
-                "font-family": font(),
-                "padding-right": props.preview ? "11.5rem" : undefined,
-              }}
+              style={{ "font-family": font() }}
             >
               <div class="min-h-full w-full" innerHTML={html()} />
             </div>
@@ -1757,7 +1724,6 @@ function MarkdownField(props: {
                 "-webkit-text-fill-color": "transparent",
                 "caret-color": "var(--text-strong)",
                 "font-family": font(),
-                "padding-right": props.preview ? "11.5rem" : undefined,
               }}
               spellcheck={false}
               readOnly={!props.editable}
@@ -1769,15 +1735,44 @@ function MarkdownField(props: {
           </div>
         }
       >
-        <div
-          class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4"
-          style={{
-            "padding-right": props.preview ? "12rem" : undefined,
-          }}
-        >
+        <div class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4">
           <Markdown text={props.text} math="full" highlight="defer" class="text-13-regular leading-6" />
         </div>
       </Show>
+    </div>
+  )
+}
+
+type ConfigEditorMode = "source" | "preview"
+
+function ConfigEditorModeToggle(props: {
+  mode: ConfigEditorMode
+  onMode: (mode: ConfigEditorMode) => void
+}) {
+  const language = useLanguage()
+
+  return (
+    <div class="config-editor-mode-toggle">
+      <div role="group" class="config-editor-mode-toggle__group">
+        <button
+          type="button"
+          class="config-editor-mode-toggle__button"
+          data-active={props.mode === "source" ? "true" : undefined}
+          onClick={() => props.onMode("source")}
+        >
+          <Icon name="edit" size="small" />
+          {language.t("trellis.tasks.edit")}
+        </button>
+        <button
+          type="button"
+          class="config-editor-mode-toggle__button"
+          data-active={props.mode === "preview" ? "true" : undefined}
+          onClick={() => props.onMode("preview")}
+        >
+          <Icon name="eye" size="small" />
+          {language.t("trellis.tasks.preview")}
+        </button>
+      </div>
     </div>
   )
 }
