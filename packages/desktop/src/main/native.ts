@@ -29,6 +29,8 @@ import { getStore } from "./store"
 import type {
   ConfigFile,
   ConfigTreeItem,
+  ExtraAgentId,
+  ExtraAgentInfo,
   ConfigWorkspace,
   GenericagentConfig,
   GenericagentTest,
@@ -544,6 +546,35 @@ export function setHermesConfig(config: HermesConfig) {
   getStore().set(HERMES_CONFIG_KEY, config)
 }
 
+export async function getExtraAgentInfo(
+  id: ExtraAgentId,
+  config?: OpenclawConfig | HermesConfig | GenericagentConfig,
+): Promise<ExtraAgentInfo> {
+  const sourceUrl = extraAgentSourceUrl(id)
+  const info: ExtraAgentInfo = { id, sourceUrl, checkedAt: Date.now() }
+  const errors: string[] = []
+
+  try {
+    const local = await inspectLocalExtraAgent(id, config)
+    Object.assign(info, local)
+  } catch (error) {
+    errors.push(`Local: ${errorMessage(error)}`)
+  }
+
+  try {
+    const upstream = await inspectExtraAgentUpstream(sourceUrl, info.localCommit)
+    Object.assign(info, upstream)
+  } catch (error) {
+    errors.push(`Upstream: ${errorMessage(error)}`)
+  }
+
+  if (info.updateAvailable === undefined && info.localVersion && info.latestVersion) {
+    info.updateAvailable = normalizeVersion(info.localVersion) !== normalizeVersion(info.latestVersion)
+  }
+  if (errors.length) info.error = errors.join("\n")
+  return info
+}
+
 export async function bundledCliPath() {
   const candidates = [
     join(process.resourcesPath, "sidecars", cliName()),
@@ -574,6 +605,148 @@ function distName() {
   if (process.platform === "win32") return process.arch === "arm64" ? "opencode-windows-arm64" : "opencode-windows-x64-baseline"
   if (process.platform === "linux") return process.arch === "arm64" ? "opencode-linux-arm64" : "opencode-linux-x64-baseline"
   return "opencode"
+}
+
+function extraAgentSourceUrl(id: ExtraAgentId) {
+  if (id === "openclaw") return "https://github.com/openclaw/openclaw"
+  if (id === "hermes") return "https://github.com/NousResearch/hermes-agent"
+  return "https://github.com/lsdefine/GenericAgent"
+}
+
+async function inspectLocalExtraAgent(
+  id: ExtraAgentId,
+  config?: OpenclawConfig | HermesConfig | GenericagentConfig,
+): Promise<Partial<ExtraAgentInfo>> {
+  if (id === "openclaw") {
+    const version = await commandVersion(process.platform === "win32" ? ["openclaw.exe", "openclaw"] : ["openclaw"])
+    return version ? { localVersion: version } : {}
+  }
+
+  const localPath =
+    id === "hermes"
+      ? (config as HermesConfig | undefined)?.hermesDir
+      : (config as GenericagentConfig | undefined)?.genericAgentDir
+  if (!localPath?.trim()) return {}
+
+  const root = resolveDesktopPath(localPath)
+  const info = await stat(root).catch(() => undefined)
+  if (!info?.isDirectory()) return { localPath: root }
+
+  registerAllowedRoot(root)
+  const git = await readGitInfo(root)
+  const localVersion = (await readProjectVersion(root)) ?? git.tag
+  return {
+    localPath: root,
+    localVersion,
+    localCommit: git.commit,
+    localBranch: git.branch,
+  }
+}
+
+async function inspectExtraAgentUpstream(
+  sourceUrl: string,
+  localCommit?: string,
+): Promise<Partial<ExtraAgentInfo>> {
+  const repo = githubRepo(sourceUrl)
+  if (!repo) return {}
+
+  const repoData = await githubJson(`https://api.github.com/repos/${repo}`)
+  const latestBranch = readConfigString(repoData, ["default_branch"])
+  const latestCommit = latestBranch ? await githubCommit(repo, latestBranch) : undefined
+  const latestVersion = await githubLatestVersion(repo).catch(() => githubLatestTag(repo).catch(() => undefined))
+  const updateAvailable =
+    localCommit && latestCommit ? !sameCommit(localCommit, latestCommit) : undefined
+
+  return {
+    latestBranch,
+    latestCommit,
+    latestVersion,
+    updateAvailable,
+  }
+}
+
+async function commandVersion(commands: string[]) {
+  for (const command of commands) {
+    const result = await execFileAsync(command, ["--version"], { timeout: 3000, windowsHide: true }).catch(() => undefined)
+    const text = result?.stdout?.trim() || result?.stderr?.trim()
+    if (text) return text.split(/\r?\n/)[0]
+  }
+}
+
+async function readProjectVersion(root: string) {
+  const pkg = parseJsonLike(await readFile(join(root, "package.json"), "utf8").catch(() => ""))
+  if (pkg && typeof pkg === "object") {
+    const version = readConfigString(pkg, ["version"])
+    if (version) return version
+  }
+
+  const pyproject = await readFile(join(root, "pyproject.toml"), "utf8").catch(() => "")
+  const pyVersion = pyproject.match(/^\s*version\s*=\s*["']([^"']+)["']/m)?.[1]
+  if (pyVersion) return pyVersion
+
+  const setup = await readFile(join(root, "setup.py"), "utf8").catch(() => "")
+  return setup.match(/version\s*=\s*["']([^"']+)["']/m)?.[1]
+}
+
+async function readGitInfo(root: string) {
+  const [commit, branch, tag] = await Promise.all([
+    execFileAsync("git", ["rev-parse", "--short=12", "HEAD"], { cwd: root, timeout: 3000, windowsHide: true })
+      .then((result) => result.stdout.trim())
+      .catch(() => undefined),
+    execFileAsync("git", ["branch", "--show-current"], { cwd: root, timeout: 3000, windowsHide: true })
+      .then((result) => result.stdout.trim() || undefined)
+      .catch(() => undefined),
+    execFileAsync("git", ["describe", "--tags", "--abbrev=0"], { cwd: root, timeout: 3000, windowsHide: true })
+      .then((result) => result.stdout.trim() || undefined)
+      .catch(() => undefined),
+  ])
+  return { commit, branch, tag }
+}
+
+async function githubCommit(repo: string, ref: string) {
+  const data = await githubJson(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(ref)}`)
+  return readConfigString(data, ["sha"])
+}
+
+async function githubLatestVersion(repo: string) {
+  const data = await githubJson(`https://api.github.com/repos/${repo}/releases/latest`)
+  return readConfigString(data, ["tag_name", "name"])
+}
+
+async function githubLatestTag(repo: string) {
+  const data = await githubJson(`https://api.github.com/repos/${repo}/tags?per_page=1`)
+  if (!Array.isArray(data)) return
+  return readConfigString(data[0], ["name"])
+}
+
+async function githubJson(url: string) {
+  const res = await fetch(url, {
+    headers: {
+      accept: "application/vnd.github+json",
+      "user-agent": "opencode-desktop",
+    },
+    signal: AbortSignal.timeout(5000),
+  })
+  if (!res.ok) throw new Error(`GitHub returned ${res.status} for ${url}`)
+  return res.json()
+}
+
+function githubRepo(sourceUrl: string) {
+  return sourceUrl.match(/^https:\/\/github\.com\/([^/]+\/[^/]+?)(?:\.git)?\/?$/i)?.[1]
+}
+
+function sameCommit(a: string, b: string) {
+  const left = a.trim().toLowerCase()
+  const right = b.trim().toLowerCase()
+  return left === right || left.startsWith(right) || right.startsWith(left)
+}
+
+function normalizeVersion(value: string) {
+  return value.trim().replace(/^v/i, "")
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
 }
 
 function detectOpenclawFromEnv(): OpenclawConfig | undefined {

@@ -124,6 +124,23 @@ export type HermesTest = {
   logs: string[]
 }
 
+export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
+
+export type ExtraAgentInfo = {
+  id: ExtraAgentId
+  sourceUrl: string
+  localPath?: string
+  localVersion?: string
+  localCommit?: string
+  localBranch?: string
+  latestVersion?: string
+  latestCommit?: string
+  latestBranch?: string
+  updateAvailable?: boolean
+  checkedAt?: number
+  error?: string
+}
+
 export type Platform = {
   /** Platform discriminator */
   platform: "web" | "desktop"
@@ -268,6 +285,12 @@ export type Platform = {
 
   /** Abort a running GenericAgent connection test (desktop only) */
   abortGenericagentTest?(): Promise<boolean>
+
+  /** Inspect installed version and upstream status for an external agent (desktop only) */
+  getExtraAgentInfo?(
+    id: ExtraAgentId,
+    config?: OpenclawConfig | HermesConfig | GenericagentConfig,
+  ): Promise<ExtraAgentInfo>
 
   /** Get the preferred display backend (desktop only) */
   getDisplayBackend?(): Promise<DisplayBackend | null> | DisplayBackend | null

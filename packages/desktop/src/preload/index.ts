@@ -114,6 +114,7 @@ const api: ElectronAPI = {
   testHermesConfig: (config) => ipcRenderer.invoke("test-hermes-config", config),
   abortHermesTest: () => ipcRenderer.invoke("abort-hermes-test"),
   listExtraAgentServers: () => ipcRenderer.invoke("list-extra-agent-servers"),
+  getExtraAgentInfo: (id, config) => ipcRenderer.invoke("get-extra-agent-info", id, config),
   readClipboardImage: () => ipcRenderer.invoke("read-clipboard-image"),
   showNotification: (title, body) => ipcRenderer.send("show-notification", title, body),
   getWindowFocused: () => ipcRenderer.invoke("get-window-focused"),

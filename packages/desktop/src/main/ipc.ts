@@ -39,6 +39,7 @@ import {
   getConfigWorkspace,
   getCustomEditorPath,
   getDefaultEditor,
+  getExtraAgentInfo,
   getGenericagentConfig,
   getHermesConfig,
   getOpenclawConfig,
@@ -300,6 +301,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("test-hermes-config", (_event: IpcMainInvokeEvent, config) => testHermesBridge(config))
   ipcMain.handle("abort-hermes-test", () => abortExtraAgentTest("hermes"))
   ipcMain.handle("list-extra-agent-servers", () => listExtraAgentServers())
+  ipcMain.handle("get-extra-agent-info", (_event: IpcMainInvokeEvent, id, config) => getExtraAgentInfo(id, config))
 
   ipcMain.handle("read-clipboard-image", () => {
     const image = clipboard.readImage()

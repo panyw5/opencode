@@ -151,6 +151,21 @@ export type ExtraAgentServer = {
   password?: string | null
 }
 
+export type ExtraAgentInfo = {
+  id: ExtraAgentId
+  sourceUrl: string
+  localPath?: string
+  localVersion?: string
+  localCommit?: string
+  localBranch?: string
+  latestVersion?: string
+  latestCommit?: string
+  latestBranch?: string
+  updateAvailable?: boolean
+  checkedAt?: number
+  error?: string
+}
+
 export type FatalRendererError = {
   error: string
   url: string
@@ -241,6 +256,10 @@ export type ElectronAPI = {
   testHermesConfig: (config: HermesConfig) => Promise<HermesTest>
   abortHermesTest: () => Promise<boolean>
   listExtraAgentServers: () => Promise<ExtraAgentServer[]>
+  getExtraAgentInfo: (
+    id: ExtraAgentId,
+    config?: OpenclawConfig | HermesConfig | GenericagentConfig,
+  ) => Promise<ExtraAgentInfo>
   readClipboardImage: () => Promise<{ buffer: ArrayBuffer; width: number; height: number } | null>
   showNotification: (title: string, body?: string) => void
   getWindowFocused: () => Promise<boolean>

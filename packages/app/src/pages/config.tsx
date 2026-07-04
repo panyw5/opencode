@@ -52,6 +52,7 @@ import { useLayout } from "@/context/layout"
 import {
   type ConfigTreeItem,
   type ConfigWorkspace,
+  type ExtraAgentInfo,
   type GenericagentConfig,
   type HermesConfig,
   type OpenclawConfig,
@@ -2192,8 +2193,43 @@ function ClawHeader(props: {
   )
 }
 
+function ExtraAgentInfoCard(props: { info?: ExtraAgentInfo; loading?: boolean }) {
+  const language = useLanguage()
+
+  const value = (input?: string) => input?.trim() || language.t("config.claws.info.unknown")
+
+  return (
+    <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="text-13-medium text-text-strong">{language.t("config.claws.info.title")}</div>
+        <Show when={props.loading}>
+          <div class="inline-flex items-center gap-1.5 text-12-regular text-text-weak" title={language.t("config.claws.info.refreshing")}>
+            <Icon name="refresh" size="small" class="animate-spin" />
+            <span>{language.t("config.claws.info.loading")}</span>
+          </div>
+        </Show>
+      </div>
+      <div class="mt-4 grid gap-3 md:grid-cols-2">
+        <InfoCell label={language.t("config.claws.info.localVersion")} value={value(props.info?.localVersion)} />
+        <InfoCell label={language.t("config.claws.info.latestVersion")} value={value(props.info?.latestVersion)} />
+      </div>
+    </div>
+  )
+}
+
+function InfoCell(props: { label: string; value: string }) {
+  return (
+    <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2">
+      <div class="text-10-medium uppercase tracking-[0.08em] text-text-weak">{props.label}</div>
+      <div class="mt-1 break-all font-mono text-12-regular text-text-base">{props.value}</div>
+    </div>
+  )
+}
+
 function ClawEditor(props: {
   item?: ClawItem
+  info?: ExtraAgentInfo
+  infoLoading?: boolean
   form: ReturnType<typeof clawCfg>
   dirty: boolean
   busy: boolean
@@ -2225,6 +2261,10 @@ function ClawEditor(props: {
 
         <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
           <div class="flex w-full flex-col gap-6">
+            <Show when={props.infoLoading || props.info}>
+              <ExtraAgentInfoCard info={props.info} loading={props.infoLoading} />
+            </Show>
+
             <div class="grid gap-4 lg:grid-cols-2">
               <TextField
                 type="text"
@@ -2316,6 +2356,8 @@ function ClawEditor(props: {
 
 function GenericAgentEditor(props: {
   item?: ClawItem
+  info?: ExtraAgentInfo
+  infoLoading?: boolean
   form: ReturnType<typeof gaCfg>
   dirty: boolean
   busy: boolean
@@ -2346,6 +2388,10 @@ function GenericAgentEditor(props: {
 
         <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
           <div class="flex w-full flex-col gap-6">
+            <Show when={props.infoLoading || props.info}>
+              <ExtraAgentInfoCard info={props.info} loading={props.infoLoading} />
+            </Show>
+
             <div class="grid gap-4 lg:grid-cols-2">
               <div class="min-w-0">
                 <div class="mb-1.5 flex min-w-0 items-center justify-between gap-3">
@@ -2461,6 +2507,8 @@ function GenericAgentEditor(props: {
 
 function HermesEditor(props: {
   item?: ClawItem
+  info?: ExtraAgentInfo
+  infoLoading?: boolean
   form: ReturnType<typeof hmCfg>
   dirty: boolean
   busy: boolean
@@ -2491,6 +2539,10 @@ function HermesEditor(props: {
 
         <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
           <div class="flex w-full flex-col gap-6">
+            <Show when={props.infoLoading || props.info}>
+              <ExtraAgentInfoCard info={props.info} loading={props.infoLoading} />
+            </Show>
+
             <div class="grid gap-4 lg:grid-cols-2">
               <div class="min-w-0">
                 <div class="mb-1.5 flex min-w-0 items-center justify-between gap-3">
@@ -4435,6 +4487,28 @@ export default function ConfigPage() {
   )
   const selectedPlugin = createMemo(() => plugins()?.find((item) => item.id === state.pick))
   const selectedClaw = createMemo(() => claws().find((item) => item.id === state.pick))
+  const selectedExtraAgentId = createMemo(() => {
+    if (selectedClaw()?.id === "claw:openclaw") return "openclaw" as const
+    if (selectedClaw()?.id === "claw:hermes") return "hermes" as const
+    if (selectedClaw()?.id === "claw:genericagent") return "genericagent" as const
+  })
+  const selectedExtraAgentConfig = createMemo(() => {
+    const id = selectedExtraAgentId()
+    if (id === "openclaw") return openclaw.latest
+    if (id === "hermes") return hermes.latest
+    if (id === "genericagent") return genericagent.latest
+  })
+  const [extraAgentInfo] = createResource(
+    () => {
+      const id = selectedExtraAgentId()
+      if (state.section !== "claws" || !id || !platform.getExtraAgentInfo) return undefined
+      return { id, config: selectedExtraAgentConfig() }
+    },
+    async (input) => {
+      if (!input) return undefined
+      return platform.getExtraAgentInfo?.(input.id, input.config)
+    },
+  )
   const selectedCustom = createMemo(() =>
     providers().find((item) => item.id === state.pick.replace(/^provider:/, "") && item.custom),
   )
@@ -6697,6 +6771,8 @@ export default function ConfigPage() {
                   fallback={
                     <ClawEditor
                       item={selectedClaw()}
+                      info={extraAgentInfo.latest}
+                      infoLoading={extraAgentInfo.loading}
                       form={state.claw}
                       dirty={clawDirty()}
                       busy={openclaw.loading}
@@ -6713,6 +6789,8 @@ export default function ConfigPage() {
                   <Match when={selectedClaw()?.id === "claw:hermes"}>
                     <HermesEditor
                       item={selectedClaw()}
+                      info={extraAgentInfo.latest}
+                      infoLoading={extraAgentInfo.loading}
                       form={state.hm}
                       dirty={hmDirty()}
                       busy={hermes.loading}
@@ -6727,6 +6805,8 @@ export default function ConfigPage() {
                   <Match when={selectedClaw()?.id === "claw:genericagent"}>
                     <GenericAgentEditor
                       item={selectedClaw()}
+                      info={extraAgentInfo.latest}
+                      infoLoading={extraAgentInfo.loading}
                       form={state.ga}
                       dirty={gaDirty()}
                       busy={genericagent.loading}

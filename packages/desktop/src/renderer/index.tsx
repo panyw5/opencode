@@ -498,6 +498,11 @@ const createPlatform = (refreshExtraAgents?: () => void): Platform => {
 
     abortHermesTest: () => desktopApi.abortHermesTest(),
 
+    getExtraAgentInfo:
+      typeof desktopApi.getExtraAgentInfo === "function"
+        ? (id, config) => desktopApi.getExtraAgentInfo(id, config)
+        : undefined,
+
     async readClipboardImage() {
       const image = await desktopApi.readClipboardImage().catch(() => null)
       if (!image) return null

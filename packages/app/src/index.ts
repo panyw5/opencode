@@ -8,6 +8,8 @@ export {
   type ConfigWorkspace,
   type ConfigWorkspaceFile,
   type DisplayBackend,
+  type ExtraAgentId,
+  type ExtraAgentInfo,
   type Platform,
   PlatformProvider,
 } from "./context/platform"
