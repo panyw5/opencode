@@ -1234,7 +1234,7 @@ export function UserMessageDisplay(props: {
         .map((part) => part.metadata?.hook)
         .filter((value): value is string => typeof value === "string" && value.length > 0),
     )
-    return hooks.size === 1 ? [...hooks][0] : undefined
+    return hooks.size > 0 ? [...hooks].join(", ") : undefined
   })
   const injectionTitle = createMemo(() => {
     const kinds = new Set(injectionParts().map((part) => part.metadata?.kind))
@@ -1253,11 +1253,8 @@ export function UserMessageDisplay(props: {
     return i18n.t("ui.message.injection.prompt")
   })
   const injectionSummary = createMemo(() => {
-    const count = injectionParts().length
     const chars = injectionText().length.toLocaleString()
-    const parts = i18n.t(count === 1 ? "ui.message.injection.part.one" : "ui.message.injection.part.other", { count })
-    const charCount = i18n.t("ui.message.injection.chars", { count: chars })
-    return `${parts} · ${charCount}`
+    return i18n.t("ui.message.injection.chars", { count: chars })
   })
 
   const files = createMemo(() => (props.parts?.filter((p) => p.type === "file") as FilePart[]) ?? [])

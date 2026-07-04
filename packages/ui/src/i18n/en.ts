@@ -173,7 +173,7 @@ export const dict: Record<string, string> = {
   "ui.message.attachment.alt": "attachment",
   "ui.message.showMore": "Show more",
   "ui.message.injection.hookPrompt": "{{hook}} injected prompt",
-  "ui.message.injection.hookPromptFallback": "Hook injected prompt",
+  "ui.message.injection.hookPromptFallback": "SessionStart injected prompt",
   "ui.message.injection.commandPrompt": "{{command}} command prompt",
   "ui.message.injection.slashCommandPrompt": "Slash command prompt",
   "ui.message.injection.prompt": "Injected prompt",
