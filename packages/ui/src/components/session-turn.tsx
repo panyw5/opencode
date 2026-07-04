@@ -90,7 +90,7 @@ function list<T>(value: T[] | undefined | null, fallback: T[]) {
   return fallback
 }
 
-const hidden = new Set(["todowrite"])
+const hidden = new Set(["todowrite", "todoread"])
 
 function text(value: unknown) {
   if (typeof value !== "string") return
@@ -568,7 +568,7 @@ export function SessionTurn(
                     </div>
                   )}
                 </Show>
-                <Show when={assistantList().length > 0}>
+                <Show when={summary().visible > 0}>
                   <div data-slot="session-turn-assistant-content">
                     <AssistantParts
                       messages={assistantList()}
