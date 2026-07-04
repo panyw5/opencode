@@ -518,7 +518,7 @@ function PrdPreviewDialog(props: {
               <IconButton
                 icon={titleCopied() ? "check" : "copy"}
                 variant="ghost"
-                size="small"
+                size="large"
                 aria-label={
                   titleCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyTitle")
                 }
@@ -568,7 +568,7 @@ function PrdPreviewDialog(props: {
               <IconButton
                 icon="folder"
                 variant="ghost"
-                size="small"
+                size="large"
                 aria-label={language.t("trellis.tasks.openFolder")}
                 onClick={() => void platform.openPath!(props.prdAbsPath.replace(/\/prd\.md$/i, ""))}
               />
@@ -585,7 +585,7 @@ function PrdPreviewDialog(props: {
             <IconButton
               icon={maximized() ? "collapse" : "expand"}
               variant="ghost"
-              size="small"
+              size="large"
               aria-label={
                 maximized()
                   ? language.t("trellis.tasks.restore")
@@ -598,7 +598,7 @@ function PrdPreviewDialog(props: {
             <IconButton
               icon="close"
               variant="ghost"
-              size="small"
+              size="large"
               aria-label={language.t("trellis.tasks.close")}
               onClick={() => dialog.close()}
             />
