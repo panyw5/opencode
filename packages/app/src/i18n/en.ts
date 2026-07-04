@@ -362,6 +362,8 @@ export const dict = {
   "prompt.editor.saveAs": "保存为",
   "prompt.editor.extension": "文件扩展名",
   "prompt.editor.preview": "Preview",
+  "prompt.editor.maximize": "Maximize",
+  "prompt.editor.restore": "Restore",
   "prompt.editor.showPreview": "Show preview",
   "prompt.editor.hidePreview": "Hide preview",
   "prompt.editor.discardChanges": "Discard changes",

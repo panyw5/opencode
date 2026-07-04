@@ -3,6 +3,8 @@ import { createEffect, createMemo, createSignal, For, type JSXElement, onCleanup
 import { createStore } from "solid-js/store"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Button } from "@opencode-ai/ui/button"
+import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Markdown } from "@opencode-ai/ui/markdown"
@@ -55,9 +57,13 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
   })
   const [saving, setSaving] = createSignal(false)
   const [saveError, setSaveError] = createSignal<string | undefined>()
+  const [maximized, setMaximized] = createSignal(false)
   const html = createMemo(() => paint(state.text))
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
   const mod = createMemo(() => (platform.os === "macos" ? "⌘" : language.t("common.key.ctrl")))
+  const maximizeLabel = createMemo(() =>
+    maximized() ? language.t("prompt.editor.restore") : language.t("prompt.editor.maximize"),
+  )
   const [popover, setPopover] = createSignal<"at" | null>(null)
   const [menu, setMenu] = createStore({
     top: 12,
@@ -75,7 +81,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
   const fit = () => {
     if (!ref.box) return
     const min = 280
-    const max = Math.max(min, Math.min(620, window.innerHeight - 230))
+    const max = maximized() ? Math.max(min, window.innerHeight - 170) : Math.max(min, Math.min(620, window.innerHeight - 230))
     ref.box.style.height = "0px"
     const next = Math.min(max, Math.max(min, ref.box.scrollHeight))
     ref.box.style.height = ""
@@ -266,7 +272,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
   onCleanup(() => {
     if (closing || !shouldSaveOnClose) return
     shouldSaveOnClose = false
-    props.save(state.text, props.saveExtension ? state.extension : undefined)
+    void props.save(state.text, props.saveExtension ? state.extension : undefined)
   })
 
   return (
@@ -279,9 +285,37 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
       }
       size="x-large"
       transition
+      action={
+        <div class="flex items-center gap-2">
+          <Tooltip placement="bottom" value={maximizeLabel()}>
+            <IconButton
+              icon={maximized() ? "collapse" : "expand"}
+              variant="ghost"
+              size="small"
+              aria-label={maximizeLabel()}
+              onClick={() => setMaximized((value) => !value)}
+            />
+          </Tooltip>
+          <Tooltip placement="bottom" value={language.t("common.close")}>
+            <IconButton
+              icon="close"
+              variant="ghost"
+              size="small"
+              aria-label={language.t("common.close")}
+              onClick={() => dialog.close()}
+            />
+          </Tooltip>
+        </div>
+      }
       containerStyle={{
-        width: state.preview ? "min(calc(100vw - 32px), 1240px)" : "min(calc(100vw - 32px), 960px)",
-        transition: "width 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+        width: maximized()
+          ? "90vw"
+          : state.preview
+            ? "min(calc(100vw - 32px), 1240px)"
+            : "min(calc(100vw - 32px), 960px)",
+        height: maximized() ? "95vh" : undefined,
+        "max-height": maximized() ? "95vh" : undefined,
+        transition: "width 180ms cubic-bezier(0.16, 1, 0.3, 1), height 180ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
       <div class="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
@@ -293,8 +327,8 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
               state.preview,
           }}
           style={{
-            height: `${state.h}px`,
-            "max-height": "min(620px, calc(100dvh - 230px))",
+            height: maximized() ? "calc(95dvh - 170px)" : `${state.h}px`,
+            "max-height": maximized() ? "calc(95dvh - 170px)" : "min(620px, calc(100dvh - 230px))",
           }}
         >
           <div class="relative h-full min-h-0 min-w-0 overflow-hidden">

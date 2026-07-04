@@ -378,6 +378,8 @@ export const dict = {
   "prompt.action.stop": "停止",
   "prompt.editor.title": "编辑提示词",
   "prompt.editor.preview": "预览",
+  "prompt.editor.maximize": "最大化",
+  "prompt.editor.restore": "还原",
   "prompt.editor.showPreview": "显示预览",
   "prompt.editor.hidePreview": "隐藏预览",
   "prompt.editor.discardChanges": "放弃更改",
