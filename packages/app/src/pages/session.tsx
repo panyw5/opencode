@@ -1453,8 +1453,6 @@ export default function Page() {
       return
     }
 
-    const gap = Math.round(root.scrollHeight - root.clientHeight - root.scrollTop)
-    if (Math.abs(gap) > 1) console.debug(`[session] initial bottom settle gap=${gap}`)
     lockBottom(root, "initial-scroll:settle")
     scheduleScrollState(root)
 
