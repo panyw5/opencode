@@ -115,7 +115,7 @@ function NewTrellisTaskDialog(props: {
 
 function TaskCard(props: {
   task: TrellisTask
-  onOpen: (path: string) => void | Promise<void>
+  onOpen: (task: TrellisTask) => void | Promise<void>
   onSetCurrent: (task: TrellisTask) => void | Promise<void>
   onArchive: (task: TrellisTask) => void | Promise<void>
 }): JSX.Element {
@@ -134,7 +134,7 @@ function TaskCard(props: {
     if (event.target !== event.currentTarget) return
     if (event.key !== "Enter" && event.key !== " ") return
     event.preventDefault()
-    void props.onOpen(props.task.path)
+    void props.onOpen(props.task)
   }
 
   const setCurrent: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (event) => {
@@ -159,7 +159,7 @@ function TaskCard(props: {
       tabIndex={0}
       class="group/task w-full rounded-xl border border-border-weak-base bg-background-stronger px-3 py-3 text-left transition-colors hover:bg-surface-base-hover"
       classList={{ "border-border-brand-base bg-surface-interactive-selected/40": props.task.current }}
-      onClick={() => props.onOpen(props.task.path)}
+      onClick={() => props.onOpen(props.task)}
       onKeyDown={onKeyDown}
     >
       <div class="flex items-start gap-3">
@@ -221,6 +221,7 @@ function TaskCard(props: {
 
 function PrdPreviewDialog(props: {
   name: string
+  taskTitle: string
   prdAbsPath: string
   initialContent: string | undefined
   searchFilesAndDirectories?: (query: string) => Promise<string[]>
@@ -238,7 +239,9 @@ function PrdPreviewDialog(props: {
   const [saving, setSaving] = createSignal(false)
   const [saveError, setSaveError] = createSignal<string | undefined>()
   const [maximized, setMaximized] = createSignal(false)
+  const [titleCopied, setTitleCopied] = createSignal(false)
   const [popover, setPopover] = createSignal<"at" | null>(null)
+  let titleCopiedTimer: ReturnType<typeof setTimeout> | undefined
   const [menu, setMenu] = createSignal({
     top: 12,
     left: 12,
@@ -299,6 +302,21 @@ function PrdPreviewDialog(props: {
   const shown = createMemo(() => atFlat().slice(0, 6))
 
   const editorH = createMemo(() => (maximized() ? "calc(95vh - 130px)" : "calc(90vh - 130px)"))
+  const title = createMemo(() => props.taskTitle.trim() || props.name)
+
+  const copyTitle = () => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!clipboard?.writeText) return
+    void clipboard.writeText(title()).then(() => {
+      setTitleCopied(true)
+      if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
+      titleCopiedTimer = setTimeout(() => setTitleCopied(false), 1200)
+    })
+  }
+
+  onCleanup(() => {
+    if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
+  })
 
   const placeAtMenu = () => {
     if (!prdEditor.box) return
@@ -490,7 +508,25 @@ function PrdPreviewDialog(props: {
         `}
       />
       <Dialog
-        title={props.name}
+        title={
+          <div class="flex min-w-0 items-center gap-2">
+            <span class="min-w-0 truncate">{title()}</span>
+            <Tooltip
+              placement="bottom"
+              value={titleCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyTitle")}
+            >
+              <IconButton
+                icon={titleCopied() ? "check" : "copy"}
+                variant="ghost"
+                size="small"
+                aria-label={
+                  titleCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyTitle")
+                }
+                onClick={copyTitle}
+              />
+            </Tooltip>
+          </div>
+        }
         size="x-large"
         data-prd-dialog={props.name}
         data-maximized={maximized() ? "" : undefined}
@@ -837,7 +873,8 @@ export function TrellisTasksPanel(props: {
     dialog.show(() => <NewTrellisTaskDialog onCreate={createTask} searchFilesAndDirectories={searchFilesAndDirectories} />)
   }
 
-  const open = async (path: string) => {
+  const open = async (task: TrellisTask) => {
+    const path = task.path
     const name = getFilename(path)
     const prdAbsPath = path.endsWith("/") ? path + "prd.md" : path + "/prd.md"
     const searchFilesAndDirectories = async (query: string) => {
@@ -871,6 +908,7 @@ export function TrellisTasksPanel(props: {
     dialog.show(() => (
       <PrdPreviewDialog
         name={name}
+        taskTitle={task.title}
         prdAbsPath={prdAbsPath}
         initialContent={content}
         searchFilesAndDirectories={searchFilesAndDirectories}
