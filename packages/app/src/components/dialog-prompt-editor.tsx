@@ -291,7 +291,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
             <IconButton
               icon={maximized() ? "collapse" : "expand"}
               variant="ghost"
-              size="small"
+              size="large"
               aria-label={maximizeLabel()}
               onClick={() => setMaximized((value) => !value)}
             />
@@ -300,7 +300,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
             <IconButton
               icon="close"
               variant="ghost"
-              size="small"
+              size="large"
               aria-label={language.t("common.close")}
               onClick={() => dialog.close()}
             />
