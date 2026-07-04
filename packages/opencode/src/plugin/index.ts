@@ -21,6 +21,8 @@ import { AzureAuthPlugin } from "./azure"
 import { DigitalOceanAuthPlugin } from "./digitalocean"
 import { XaiAuthPlugin } from "./xai"
 import { Effect, Layer, Context, Schema, Stream } from "effect"
+import path from "path"
+import { fileURLToPath } from "url"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { errorMessage } from "@/util/error"
@@ -132,6 +134,110 @@ function legacyPluginID(load: PluginLoader.Loaded, index: number) {
 function readRecord(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object") return
   return value as Record<string, unknown>
+}
+
+function pluginHookDisplayName(pluginID: string) {
+  if (pluginID.startsWith("internal:")) return pluginID.slice("internal:".length)
+  if (pluginID.startsWith("file://")) {
+    try {
+      const file = fileURLToPath(pluginID)
+      return path.basename(file, path.extname(file))
+    } catch {
+      return pluginID
+    }
+  }
+  return pluginID
+}
+
+function cloneChatMessageParts(output: unknown) {
+  const record = readRecord(output)
+  if (!record) return
+  const parts = record.parts
+  if (!Array.isArray(parts)) return
+  return structuredClone(parts) as Record<string, unknown>[]
+}
+
+function hookInjectionMetadata(metadata: unknown, hook: string, options?: { overrideHook?: boolean }) {
+  const current = readRecord(metadata)
+  const next: Record<string, unknown> = { ...current, kind: "hook-injection" }
+  if (!options?.overrideHook && typeof next.hook === "string" && next.hook.trim()) return next
+  next.hook = hook
+  return next
+}
+
+function markHookInjectedText(part: Record<string, unknown>, hook: string, options?: { overrideHook?: boolean }) {
+  return {
+    ...part,
+    synthetic: true,
+    metadata: hookInjectionMetadata(part.metadata, hook, options),
+  }
+}
+
+function injectedTextSegments(original: string, next: string) {
+  if (next === original) return { before: "", after: "", replacement: false }
+  if (next.startsWith(original)) return { before: "", after: next.slice(original.length), replacement: false }
+  if (next.endsWith(original)) {
+    return { before: next.slice(0, next.length - original.length), after: "", replacement: false }
+  }
+  const index = original ? next.indexOf(original) : -1
+  if (index >= 0) {
+    return {
+      before: next.slice(0, index),
+      after: next.slice(index + original.length),
+      replacement: false,
+    }
+  }
+  return { before: "", after: next, replacement: true }
+}
+
+function attributeChatMessageHookParts(before: Record<string, unknown>[] | undefined, output: unknown, hook: string) {
+  if (!before) return
+  const record = readRecord(output)
+  if (!record) return
+  const parts = record.parts
+  if (!Array.isArray(parts)) return
+
+  const originalText = new Map<string, string>()
+  const originalPartIDs = new Set<string>()
+  for (const part of before) {
+    if (typeof part.id === "string") originalPartIDs.add(part.id)
+    if (part.type === "text" && typeof part.id === "string" && typeof part.text === "string") {
+      originalText.set(part.id, part.text)
+    }
+  }
+
+  const next: Record<string, unknown>[] = []
+  for (const [index, raw] of parts.entries()) {
+    const part = readRecord(raw)
+    if (!part || part.type !== "text" || typeof part.text !== "string") {
+      next.push(raw as Record<string, unknown>)
+      continue
+    }
+
+    const id = typeof part.id === "string" ? part.id : undefined
+    const indexed = before[index]
+    const original =
+      id ? originalText.get(id) : indexed?.type === "text" && !indexed.id && typeof indexed.text === "string" ? indexed.text : undefined
+    if (original !== undefined && part.text !== original) {
+      const segments = injectedTextSegments(original, part.text)
+      const { id: _id, ...injectedPart } = part
+      if (segments.before) {
+        next.push(
+          markHookInjectedText({ ...injectedPart, text: segments.before }, hook, { overrideHook: true }),
+        )
+      }
+      next.push({ ...part, text: original, ...(segments.replacement ? { ignored: true } : {}) })
+      if (segments.after) {
+        next.push(markHookInjectedText({ ...injectedPart, text: segments.after }, hook, { overrideHook: true }))
+      }
+      continue
+    }
+
+    const addedByHook = !id || !originalPartIDs.has(id)
+    next.push(addedByHook ? markHookInjectedText(part, hook) : part)
+  }
+
+  record.parts = next
 }
 
 function sessionIDFrom(value: unknown): SessionID | undefined {
@@ -376,7 +482,9 @@ export const layer = Layer.effect(
         if (disabledHookControl(s, { sessionID, plugin: entry.id, hook: name })) continue
         const fn = entry.hooks[name] as any
         if (!fn) continue
+        const beforeParts = name === "chat.message" ? cloneChatMessageParts(output) : undefined
         yield* Effect.promise(async () => fn(input, output))
+        if (name === "chat.message") attributeChatMessageHookParts(beforeParts, output, pluginHookDisplayName(entry.id))
       }
       return output
     })

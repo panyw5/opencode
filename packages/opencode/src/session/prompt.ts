@@ -769,11 +769,14 @@ export const layer = Layer.effect(
         ...part,
         id: part.id ? PartID.make(part.id) : PartID.ascending(),
       })
-      const hookInjectionMetadata = (metadata?: Record<string, any>) => ({
-        ...(metadata ?? {}),
-        kind: "hook-injection",
-        hook: "chat.message",
-      })
+      const hookInjectionMetadata = (metadata?: Record<string, any>) => {
+        const next: Record<string, any> = {
+          ...metadata,
+          kind: "hook-injection",
+        }
+        if (typeof next.hook !== "string" || !next.hook.trim()) delete next.hook
+        return next
+      }
       const markHookInjectedText = (part: Draft<MessageV2.TextPart>): Draft<MessageV2.TextPart> => ({
         ...part,
         synthetic: true,
