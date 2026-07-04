@@ -1227,9 +1227,23 @@ export function UserMessageDisplay(props: {
     )
     return commands.size === 1 ? [...commands][0] : undefined
   })
+  const injectionHook = createMemo(() => {
+    const hooks = new Set(
+      injectionParts()
+        .filter((part) => part.metadata?.kind === "hook-injection")
+        .map((part) => part.metadata?.hook)
+        .filter((value): value is string => typeof value === "string" && value.length > 0),
+    )
+    return hooks.size === 1 ? [...hooks][0] : undefined
+  })
   const injectionTitle = createMemo(() => {
     const kinds = new Set(injectionParts().map((part) => part.metadata?.kind))
-    if (kinds.size === 1 && kinds.has("hook-injection")) return i18n.t("ui.message.injection.hookPrompt")
+    if (kinds.size === 1 && kinds.has("hook-injection")) {
+      const hook = injectionHook()
+      return hook
+        ? i18n.t("ui.message.injection.hookPrompt", { hook })
+        : i18n.t("ui.message.injection.hookPromptFallback")
+    }
     if (kinds.size === 1 && kinds.has("command-injection")) {
       const command = injectionCommand()
       return command
