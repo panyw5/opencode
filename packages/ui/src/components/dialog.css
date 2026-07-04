@@ -153,10 +153,14 @@
 }
 
 [data-component="dialog"][data-transition] [data-slot="dialog-content"] {
-  animation: contentHide 100ms ease-in forwards;
+  animation: contentShow 150ms ease-out;
 
   &[data-expanded] {
     animation: contentShow 150ms ease-out;
+  }
+
+  &[data-closed] {
+    animation: contentHide 100ms ease-in forwards;
   }
 }
 
