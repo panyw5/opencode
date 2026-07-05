@@ -773,6 +773,12 @@ export const dict = {
   "sidebar.group.older": "更早",
   "sidebar.search.placeholder": "搜索会话...",
   "sidebar.sessions.refresh.genericagent": "刷新 GenericAgent 会话",
+  "sidebar.sessions.restart.genericagent": "重启 GenericAgent 连接",
+  "sidebar.sessions.restart.genericagent.short": "重启连接",
+  "sidebar.sessions.restart.genericagent.toast.title": "GenericAgent 连接已重启",
+  "sidebar.sessions.restart.genericagent.unavailable.title": "需要重载桌面端",
+  "sidebar.sessions.restart.genericagent.unavailable.description":
+    "请重启一次 OpenCode Desktop，以加载新的 GenericAgent 重启 API。",
 
   "app.name.desktop": "OpenCode Desktop",
 

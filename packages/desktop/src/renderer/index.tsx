@@ -8,6 +8,7 @@ import {
   handleNotificationClick,
   loadLocaleDict,
   normalizeLocale,
+  type ExtraAgentId,
   type Locale,
   type Platform,
   PlatformProvider,
@@ -127,7 +128,7 @@ function DesktopMemoryRouter(props: BaseRouterProps) {
   return <MemoryRouter {...props} history={history} />
 }
 
-const createPlatform = (refreshExtraAgents?: () => void): Platform => {
+const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): Platform => {
   const os = (() => {
     const ua = navigator.userAgent
     if (ua.includes("Mac")) return "macos"
@@ -467,7 +468,7 @@ const createPlatform = (refreshExtraAgents?: () => void): Platform => {
 
     setOpenclawConfig: async (config) => {
       await desktopApi.setOpenclawConfig(config)
-      refreshExtraAgents?.()
+      await refreshExtraAgents?.()
     },
 
     testOpenclawConfig: (config) => desktopApi.testOpenclawConfig(config),
@@ -480,18 +481,26 @@ const createPlatform = (refreshExtraAgents?: () => void): Platform => {
 
     setGenericagentConfig: async (config) => {
       await desktopApi.setGenericagentConfig(config)
-      refreshExtraAgents?.()
+      await refreshExtraAgents?.()
     },
 
     testGenericagentConfig: (config) => desktopApi.testGenericagentConfig(config),
 
     abortGenericagentTest: () => desktopApi.abortGenericagentTest(),
 
+    restartExtraAgent:
+      typeof desktopApi.restartExtraAgent === "function"
+        ? async (id: ExtraAgentId) => {
+            await desktopApi.restartExtraAgent(id)
+            await refreshExtraAgents?.()
+          }
+        : undefined,
+
     getHermesConfig: () => desktopApi.getHermesConfig(),
 
     setHermesConfig: async (config) => {
       await desktopApi.setHermesConfig(config)
-      refreshExtraAgents?.()
+      await refreshExtraAgents?.()
     },
 
     testHermesConfig: (config) => desktopApi.testHermesConfig(config),
@@ -522,7 +531,14 @@ listenForDeepLinks()
 
 render(() => {
   const [extraAgentVersion, setExtraAgentVersion] = createSignal(0)
-  const platform = createPlatform(() => setExtraAgentVersion((value) => value + 1))
+  let refreshExtraAgents: (() => Promise<ExtraAgentServer[] | undefined>) | undefined
+  const platform = createPlatform(async () => {
+    if (refreshExtraAgents) {
+      await refreshExtraAgents()
+      return
+    }
+    setExtraAgentVersion((value) => value + 1)
+  })
   const [windowConfig] = createResource(() => desktopApi.getWindowConfig().catch(() => ({ updaterEnabled: false })))
   const loadLocale = async () => {
     const current = await platform.storage?.("opencode.global.dat").getItem("language")
@@ -540,7 +556,14 @@ render(() => {
 
   // Fetch sidecar credentials (available immediately, before health check)
   const [sidecar] = createResource(() => desktopApi.awaitInitialization(() => undefined))
-  const [extraAgents] = createResource(extraAgentVersion, () => desktopApi.listExtraAgentServers().catch(() => []))
+  const [extraAgents, extraAgentActions] = createResource(extraAgentVersion, () =>
+    desktopApi.listExtraAgentServers().catch(() => []),
+  )
+  refreshExtraAgents = async () => {
+    const next = extraAgentActions.refetch()
+    if (!next) return extraAgents.latest
+    return Promise.resolve(next)
+  }
   // Runtime extra-agent refreshes should update server state without remounting the app shell.
   const extraAgentsInitialLoading = () => extraAgents.loading && extraAgents.latest === undefined
 

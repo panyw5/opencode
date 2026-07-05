@@ -132,6 +132,7 @@ function createGlobalSync() {
   let active = true
   let projectWritten = false
   let prevServer = server.current?.integration
+  let prevSDKVersion = globalSDK.version
   // A directory is only "isolated" (skip bootstrap/load/event application) when its
   // domain has no registered server to talk to. Visible-domain no longer gates hidden
   // domains; each domain runs in parallel so long as it has an active server.
@@ -674,6 +675,7 @@ function createGlobalSync() {
     on(
       () => globalSDK.version,
       () => {
+        const nextSDKVersion = globalSDK.version
         const nextServer = server.current?.integration
         const prevDomain = prevServer
           ? isExtraAgentIntegration(prevServer)
@@ -683,9 +685,11 @@ function createGlobalSync() {
         const nextDomain = server.domain
         const domainSwitch = prevDomain !== nextDomain
         const serverChanged = prevServer !== nextServer
+        const connectionChanged = prevSDKVersion !== nextSDKVersion
         prevServer = nextServer
+        prevSDKVersion = nextSDKVersion
         const dirs = directoriesInDomain(nextDomain)
-        if (!domainSwitch && serverChanged) {
+        if (!domainSwitch && (serverChanged || connectionChanged)) {
           for (const dir of dirs) {
             booting.delete(dir)
             sessionLoads.delete(dir)
@@ -695,7 +699,7 @@ function createGlobalSync() {
         }
         for (const directory of dirs) {
           if (!managerFor(nextDomain).children[directory]) continue
-          if (!domainSwitch && serverChanged) {
+          if (!domainSwitch && (serverChanged || connectionChanged)) {
             queueFor(nextDomain).clear(directory)
             sdkCache.delete(directory)
             clearSessionPrefetchDirectory(directory)
@@ -704,7 +708,7 @@ function createGlobalSync() {
         }
         setGlobalStore("reload", undefined)
         setVersion((x) => x + 1)
-        if (!domainSwitch && serverChanged) void bootstrap(nextDomain)
+        if (!domainSwitch && (serverChanged || connectionChanged)) void bootstrap(nextDomain)
       },
     ),
   )

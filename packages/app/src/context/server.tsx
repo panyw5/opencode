@@ -137,6 +137,7 @@ export namespace ServerConnection {
   export const key = (conn: Any): Key => {
     switch (conn.type) {
       case "http":
+        if (isExtraAgentIntegration(conn.integration)) return Key.make(`extra-agent:${conn.integration}`)
         return Key.make(conn.http.url)
       case "sidecar": {
         if (conn.variant === "wsl") return Key.make(`wsl:${conn.distro}`)

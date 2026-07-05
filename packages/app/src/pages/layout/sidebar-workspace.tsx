@@ -12,11 +12,13 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { showToast } from "@opencode-ai/ui/toast"
 import { type Session } from "@opencode-ai/sdk/v2/client"
 import { type LocalProject } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
-import { extraAgentByDirectory } from "./extra-agents"
+import { usePlatform } from "@/context/platform"
+import { extraAgentByDirectory, extraAgentDomain } from "./extra-agents"
 import { NewSessionItem, SessionItem, SessionGroupHeader, SessionSearchBar } from "./sidebar-items"
 import {
   isInitialSessionLoad,
@@ -257,6 +259,8 @@ const WorkspaceSessionList = (props: {
   loadMore: () => Promise<void>
   refresh?: () => Promise<void>
   refreshing?: Accessor<boolean>
+  restart?: () => Promise<void>
+  restarting?: Accessor<boolean>
   language: ReturnType<typeof useLanguage>
   sortNow: Accessor<number>
 }): JSX.Element => {
@@ -265,13 +269,13 @@ const WorkspaceSessionList = (props: {
   return (
     <nav class="flex flex-col gap-1 px-3">
       <Show when={!!props.refresh}>
-        <div class="px-2 pb-1">
+        <div class="flex gap-1 px-2 pb-1">
           <Tooltip value={props.language.t("sidebar.sessions.refresh.genericagent")} placement="top">
             <Button
               variant="ghost"
               size="large"
-              class="flex h-8 w-full items-center justify-center rounded-lg border border-border bg-surface-raised-base/35 px-3 text-12-medium text-text-weak transition-colors hover:border-border-strong hover:bg-surface-raised-base-hover hover:text-text"
-              disabled={props.loading()}
+              class="flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-border bg-surface-raised-base/35 px-2 text-12-medium text-text-weak transition-colors hover:border-border-strong hover:bg-surface-raised-base-hover hover:text-text"
+              disabled={props.loading() || props.restarting?.()}
               aria-busy={props.refreshing?.() ? "true" : "false"}
               onClick={(event: MouseEvent) => {
                 event.preventDefault()
@@ -286,6 +290,28 @@ const WorkspaceSessionList = (props: {
               {props.language.t("sidebar.sessions.refresh.genericagent")}
             </Button>
           </Tooltip>
+          <Show when={!!props.restart}>
+            <Tooltip value={props.language.t("sidebar.sessions.restart.genericagent")} placement="top">
+              <Button
+                variant="ghost"
+                size="large"
+                class="flex h-8 min-w-0 flex-1 items-center justify-center gap-1 rounded-lg border border-border bg-surface-raised-base/35 px-2 text-12-medium text-text-weak transition-colors hover:border-border-strong hover:bg-surface-raised-base-hover hover:text-text"
+                disabled={props.loading() || props.refreshing?.() || props.restarting?.()}
+                aria-busy={props.restarting?.() ? "true" : "false"}
+                onClick={(event: MouseEvent) => {
+                  event.preventDefault()
+                  void props.restart?.()
+                }}
+              >
+                <Icon
+                  name="arrow-sync"
+                  size="small"
+                  classList={{ "genericagent-refresh-icon-spin": !!props.restarting?.() }}
+                />
+                {props.language.t("sidebar.sessions.restart.genericagent.short")}
+              </Button>
+            </Tooltip>
+          </Show>
         </div>
       </Show>
       <Show when={props.showNew()}>
@@ -528,8 +554,10 @@ export const LocalWorkspace = (props: {
 }): JSX.Element => {
   const globalSync = useGlobalSync()
   const language = useLanguage()
+  const platform = usePlatform()
   const [searchQuery, setSearchQuery] = createSignal("")
   const [refreshing, setRefreshing] = createSignal(false)
+  const [restarting, setRestarting] = createSignal(false)
   // Project view paginates the merged, sorted session list; per-directory store
   // limits would make worktrees compete and cause rows to appear mid-list later.
   const [visibleLimit, setVisibleLimit] = createSignal(10)
@@ -560,6 +588,35 @@ export const LocalWorkspace = (props: {
       ])
     } finally {
       setRefreshing(false)
+    }
+  }
+  const restart = async () => {
+    if (restarting()) return
+    if (!platform.restartExtraAgent) {
+      showToast({
+        title: language.t("sidebar.sessions.restart.genericagent.unavailable.title"),
+        description: language.t("sidebar.sessions.restart.genericagent.unavailable.description"),
+      })
+      return
+    }
+    setRestarting(true)
+    try {
+      await platform.restartExtraAgent("genericagent")
+      await new Promise((resolve) => window.setTimeout(resolve, 0))
+      await globalSync.provider.refresh(extraAgentDomain("genericagent"))
+      await refresh()
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("sidebar.sessions.restart.genericagent.toast.title"),
+      })
+    } catch (err) {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setRestarting(false)
     }
   }
   const loadMore = async () => {
@@ -603,6 +660,8 @@ export const LocalWorkspace = (props: {
         loadMore={loadMore}
         refresh={extraAgent()?.id === "genericagent" ? refresh : undefined}
         refreshing={refreshing}
+        restart={extraAgent()?.id === "genericagent" ? restart : undefined}
+        restarting={restarting}
         language={language}
         sortNow={props.sortNow}
       />

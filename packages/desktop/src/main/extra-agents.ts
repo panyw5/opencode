@@ -42,6 +42,7 @@ const STOP_TIMEOUT_MS = 4_000
 
 const running = new Map<ExtraAgentId, Runtime>()
 const activeTests = new Map<ExtraAgentId, { cancel: () => void }>()
+const ids = new Set<ExtraAgentId>(["openclaw", "hermes", "genericagent"])
 
 export async function listExtraAgentServers(): Promise<ExtraAgentServer[]> {
   const output: ExtraAgentServer[] = []
@@ -65,6 +66,14 @@ export async function listExtraAgentServers(): Promise<ExtraAgentServer[]> {
 
 export async function reloadExtraAgents() {
   await Promise.all((["openclaw", "hermes", "genericagent"] as const).map((id) => stopExtraAgent(id)))
+}
+
+export async function restartExtraAgent<T extends ExtraAgentId>(id: T) {
+  assertExtraAgentId(id)
+  await stopExtraAgent(id)
+  const config = readConfig(id)
+  if (!config.enabled) return
+  await ensureExtraAgent(id, config)
 }
 
 export async function testOpenclawBridge(config: OpenclawConfig): Promise<OpenclawTest> {
@@ -290,9 +299,14 @@ function freePort() {
 }
 
 function readConfig<T extends ExtraAgentId>(id: T): ConfigById[T] {
+  assertExtraAgentId(id)
   if (id === "openclaw") return getOpenclawConfig() as ConfigById[T]
   if (id === "genericagent") return getGenericagentConfig() as ConfigById[T]
   return getHermesConfig() as ConfigById[T]
+}
+
+function assertExtraAgentId(id: string): asserts id is ExtraAgentId {
+  if (!ids.has(id as ExtraAgentId)) throw new Error(`Unknown extra-agent id "${id}"`)
 }
 
 function bridgeConfig<T extends ExtraAgentId>(id: T, config: ConfigById[T]) {

@@ -20,6 +20,7 @@ import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attach
 import {
   abortExtraAgentTest,
   listExtraAgentServers,
+  restartExtraAgent,
   testGenericagentBridge,
   testHermesBridge,
   testOpenclawBridge,
@@ -301,6 +302,7 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("test-hermes-config", (_event: IpcMainInvokeEvent, config) => testHermesBridge(config))
   ipcMain.handle("abort-hermes-test", () => abortExtraAgentTest("hermes"))
   ipcMain.handle("list-extra-agent-servers", () => listExtraAgentServers())
+  ipcMain.handle("restart-extra-agent", (_event: IpcMainInvokeEvent, id) => restartExtraAgent(id))
   ipcMain.handle("get-extra-agent-info", (_event: IpcMainInvokeEvent, id, config) => getExtraAgentInfo(id, config))
 
   ipcMain.handle("read-clipboard-image", () => {

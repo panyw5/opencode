@@ -29,6 +29,22 @@ describe("resolveServerList", () => {
     expect(ServerConnection.key(list[0]!) as string).toBe("https://server.example.test")
   })
 
+  test("uses stable keys for extra-agent connections across port changes", () => {
+    const first = ServerConnection.key({
+      type: "http",
+      integration: "genericagent",
+      http: { url: "http://127.0.0.1:40101" },
+    })
+    const next = ServerConnection.key({
+      type: "http",
+      integration: "genericagent",
+      http: { url: "http://127.0.0.1:40102" },
+    })
+
+    expect(first as string).toBe("extra-agent:genericagent")
+    expect(next).toBe(first)
+  })
+
   test("keeps persisted credentials when startup has no auth_token", () => {
     const list = resolveServerList({
       stored: [

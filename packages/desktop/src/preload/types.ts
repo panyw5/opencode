@@ -256,6 +256,7 @@ export type ElectronAPI = {
   testHermesConfig: (config: HermesConfig) => Promise<HermesTest>
   abortHermesTest: () => Promise<boolean>
   listExtraAgentServers: () => Promise<ExtraAgentServer[]>
+  restartExtraAgent: (id: ExtraAgentId) => Promise<void>
   getExtraAgentInfo: (
     id: ExtraAgentId,
     config?: OpenclawConfig | HermesConfig | GenericagentConfig,

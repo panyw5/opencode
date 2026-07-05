@@ -885,6 +885,12 @@ export const dict = {
   "sidebar.group.older": "Older",
   "sidebar.search.placeholder": "Search sessions...",
   "sidebar.sessions.refresh.genericagent": "Refresh GenericAgent sessions",
+  "sidebar.sessions.restart.genericagent": "Restart GenericAgent connection",
+  "sidebar.sessions.restart.genericagent.short": "Restart connection",
+  "sidebar.sessions.restart.genericagent.toast.title": "GenericAgent connection restarted",
+  "sidebar.sessions.restart.genericagent.unavailable.title": "Restart requires desktop reload",
+  "sidebar.sessions.restart.genericagent.unavailable.description":
+    "Restart OpenCode Desktop once to load the updated GenericAgent restart API.",
 
   "debugBar.ariaLabel": "Development performance diagnostics",
   "debugBar.na": "n/a",

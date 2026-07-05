@@ -286,6 +286,9 @@ export type Platform = {
   /** Abort a running GenericAgent connection test (desktop only) */
   abortGenericagentTest?(): Promise<boolean>
 
+  /** Restart a running external agent connection (desktop only) */
+  restartExtraAgent?(id: ExtraAgentId): Promise<void>
+
   /** Inspect installed version and upstream status for an external agent (desktop only) */
   getExtraAgentInfo?(
     id: ExtraAgentId,
