@@ -661,6 +661,19 @@ export function renderMathExpressions(html: string, output: MathOutput): string 
     .join("")
 }
 
+export function normalizeCodeLanguage(lang?: string): string {
+  const value = lang?.trim().toLowerCase()
+  if (!value) return "text"
+  const aliases: Record<string, BundledLanguage> = {
+    mathematica: "wolfram",
+    mma: "wolfram",
+    nb: "wolfram",
+    wls: "wolfram",
+  }
+  const normalized = aliases[value] ?? value
+  return normalized in bundledLanguages ? normalized : "text"
+}
+
 async function highlightCodeBlocks(html: string): Promise<string> {
   const codeBlockRegex = /<pre><code(?:\s+class="language-([^"]*)")?>([\s\S]*?)<\/code><\/pre>/g
   const matches = [...html.matchAll(codeBlockRegex)]
@@ -681,10 +694,7 @@ async function highlightCodeBlocks(html: string): Promise<string> {
           const [fullMatch, lang, escapedCode] = match
           const code = unescapeHtmlEntities(escapedCode)
 
-          let language = lang || "text"
-          if (!(language in bundledLanguages)) {
-            language = "text"
-          }
+          const language = normalizeCodeLanguage(lang)
           if (!highlighter.getLoadedLanguages().includes(language)) {
             await highlighter.loadLanguage(language as BundledLanguage)
           }
@@ -731,7 +741,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
               langs: [],
               preferredHighlighter: "shiki-wasm",
             })
-            const value = lang && lang in bundledLanguages ? lang : "text"
+            const value = normalizeCodeLanguage(lang)
             if (!highlighter.getLoadedLanguages().includes(value)) {
               await highlighter.loadLanguage(value as BundledLanguage)
             }

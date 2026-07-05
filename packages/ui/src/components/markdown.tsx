@@ -279,8 +279,25 @@ function createIcon(path: string, slot: string) {
 type CopyButtonPosition = "top" | "bottom"
 
 const copyButtonPositions: CopyButtonPosition[] = ["top", "bottom"]
+const codeCopyButtonSinglePositions: CopyButtonPosition[] = ["bottom"]
+const codeCopyButtonLineThreshold = 15
 const mathCopyButtonTopPositions: CopyButtonPosition[] = ["top"]
 const mathBottomCopyMinHeight = 160
+
+function markdownCodeLineCount(text: string): number {
+  const normalized = text.replace(/\r\n?/g, "\n").replace(/\n$/, "")
+  if (!normalized) return 0
+  return normalized.split("\n").length
+}
+
+export function shouldShowMarkdownCodeTopCopy(text: string): boolean {
+  return markdownCodeLineCount(text) > codeCopyButtonLineThreshold
+}
+
+function codeCopyButtonPositions(block: HTMLPreElement): CopyButtonPosition[] {
+  const text = block.querySelector("code")?.textContent ?? block.textContent ?? ""
+  return shouldShowMarkdownCodeTopCopy(text) ? copyButtonPositions : codeCopyButtonSinglePositions
+}
 
 export function shouldShowMarkdownMathBottomCopy(height: number): boolean {
   return height >= mathBottomCopyMinHeight
@@ -350,17 +367,18 @@ function ensureCopyButtons(parent: Element, labels: CopyLabels, positions: CopyB
 function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
   const parent = block.parentElement
   if (!parent) return
+  const positions = codeCopyButtonPositions(block)
   const wrapped = parent.getAttribute("data-component") === "markdown-code"
   if (!wrapped) {
     const wrapper = document.createElement("div")
     wrapper.setAttribute("data-component", "markdown-code")
     parent.replaceChild(wrapper, block)
     wrapper.appendChild(block)
-    ensureCopyButtons(wrapper, labels)
+    ensureCopyButtons(wrapper, labels, positions)
     return
   }
 
-  ensureCopyButtons(parent, labels)
+  ensureCopyButtons(parent, labels, positions)
 }
 
 function ensureMathWrapper(block: HTMLElement, labels: CopyLabels) {
@@ -476,16 +494,17 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
   const ensureWrapper = (block: HTMLPreElement) => {
     const parent = block.parentElement
     if (!parent) return
+    const positions = codeCopyButtonPositions(block)
     const wrapped = parent.getAttribute("data-component") === "markdown-code"
     if (wrapped) {
-      ensureCopyButtons(parent, labels)
+      ensureCopyButtons(parent, labels, positions)
       return
     }
     const wrapper = document.createElement("div")
     wrapper.setAttribute("data-component", "markdown-code")
     parent.replaceChild(wrapper, block)
     wrapper.appendChild(block)
-    ensureCopyButtons(wrapper, labels)
+    ensureCopyButtons(wrapper, labels, positions)
   }
 
   const markCodeLinks = () => {

@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { Marked } from "marked"
-import { fileLink, findFileLinks, initialMarkdownMathSeen, shouldShowMarkdownMathBottomCopy } from "./markdown"
-import { protectMathExpressions, renderMathExpressions } from "../context/marked"
+import {
+  fileLink,
+  findFileLinks,
+  initialMarkdownMathSeen,
+  shouldShowMarkdownCodeTopCopy,
+  shouldShowMarkdownMathBottomCopy,
+} from "./markdown"
+import { normalizeCodeLanguage, protectMathExpressions, renderMathExpressions } from "../context/marked"
 
 describe("markdown fileLink", () => {
   test("parses relative file paths", () => {
@@ -171,5 +177,30 @@ $$`
     const html = protectMathExpressions("`$E_0[\\substack{-1\\\\ z}]=-1$`")
 
     expect(html).toBe("`$E_0[\\substack{-1\\\\ z}]=-1$`")
+  })
+})
+
+describe("markdown code copy affordance", () => {
+  test("adds top copy affordance only for code blocks longer than 15 lines", () => {
+    const fifteenLines = Array.from({ length: 15 }, (_, index) => `line ${index + 1}`).join("\n")
+    const sixteenLines = Array.from({ length: 16 }, (_, index) => `line ${index + 1}`).join("\n")
+
+    expect(shouldShowMarkdownCodeTopCopy(fifteenLines)).toBe(false)
+    expect(shouldShowMarkdownCodeTopCopy(`${fifteenLines}\n`)).toBe(false)
+    expect(shouldShowMarkdownCodeTopCopy(sixteenLines)).toBe(true)
+  })
+})
+
+describe("markdown code language", () => {
+  test("normalizes Mathematica aliases to Wolfram language", () => {
+    expect(normalizeCodeLanguage("mathematica")).toBe("wolfram")
+    expect(normalizeCodeLanguage("Mathematica")).toBe("wolfram")
+    expect(normalizeCodeLanguage("mma")).toBe("wolfram")
+    expect(normalizeCodeLanguage("wls")).toBe("wolfram")
+    expect(normalizeCodeLanguage("wl")).toBe("wl")
+  })
+
+  test("falls back unsupported code languages to text", () => {
+    expect(normalizeCodeLanguage("not-a-language")).toBe("text")
   })
 })
