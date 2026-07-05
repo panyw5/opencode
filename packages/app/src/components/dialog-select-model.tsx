@@ -14,6 +14,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { DialogSelectProvider } from "./dialog-select-provider"
 import { DialogManageModels } from "./dialog-manage-models"
 import { ModelTooltip } from "./model-tooltip"
+import { modelProviderIconID } from "./model-provider-icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 
@@ -51,51 +52,6 @@ const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
 
 type ModelState = ReturnType<typeof useLocal>["model"]
-
-const MODEL_PROVIDER_ICON_PREFIXES: Record<string, string> = {
-  "ai21": "ai21",
-  "alibaba": "alibaba",
-  "amazon": "amazon-bedrock",
-  "anthropic": "anthropic",
-  "azure": "azure",
-  "cerebras": "cerebras",
-  "claude": "anthropic",
-  "cloudflare": "cloudflare-workers-ai",
-  "cohere": "cohere",
-  "deepseek": "deepseek",
-  "fireworks": "fireworks-ai",
-  "gemini": "google",
-  "github": "github-copilot",
-  "google": "google",
-  "groq": "groq",
-  "huggingface": "huggingface",
-  "llama": "llama",
-  "meta": "llama",
-  "mistral": "mistral",
-  "moonshot": "moonshotai",
-  "nova": "amazon-bedrock",
-  "openai": "openai",
-  "perplexity": "perplexity",
-  "qwen": "alibaba",
-  "xai": "xai",
-}
-
-function modelProviderIconID(item: NonNullable<ReturnType<ModelState["current"]>>): string {
-  const apiID = item.api.id.toLowerCase()
-  const candidates = apiID.replace(/^hf:/, "").split(/[/.:-]/)
-  for (const candidate of candidates) {
-    const mapped = MODEL_PROVIDER_ICON_PREFIXES[candidate]
-    if (mapped) return mapped
-  }
-  if (item.api.npm === "@ai-sdk/anthropic") return "anthropic"
-  if (item.api.npm === "@ai-sdk/openai") return "openai"
-  if (item.api.npm === "@ai-sdk/google") return "google"
-  if (item.api.npm === "@ai-sdk/google-vertex") return "google-vertex"
-  if (item.api.npm === "@ai-sdk/amazon-bedrock") return "amazon-bedrock"
-  if (item.api.npm === "@openrouter/ai-sdk-provider") return "openrouter"
-  if (item.api.npm === "gitlab-ai-provider") return "gitlab"
-  return item.provider.id
-}
 
 const CurrentModelSummary: Component<{ model: ModelState; class?: string }> = (props) => {
   const language = useLanguage()
