@@ -2122,6 +2122,7 @@ export function MessageTimeline(props: {
               <IconButton
                 tabIndex={-1}
                 icon="arrow-left"
+                size="large"
                 variant="ghost"
                 onClick={navigateParent}
                 aria-label={language.t("common.goBack")}
