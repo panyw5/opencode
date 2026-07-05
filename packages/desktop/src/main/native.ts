@@ -650,10 +650,14 @@ async function inspectExtraAgentUpstream(
   const repo = githubRepo(sourceUrl)
   if (!repo) return {}
 
-  const repoData = await githubJson(`https://api.github.com/repos/${repo}`)
-  const latestBranch = readConfigString(repoData, ["default_branch"])
-  const latestCommit = latestBranch ? await githubCommit(repo, latestBranch) : undefined
-  const latestVersion = await githubLatestVersion(repo).catch(() => githubLatestTag(repo).catch(() => undefined))
+  const latestVersion = await githubLatestVersion(repo)
+    .catch(() => githubLatestRelease(repo))
+    .catch(() => githubLatestTag(repo))
+    .catch(() => githubLatestReleaseRedirect(repo))
+    .catch(() => githubLatestReleaseFeed(repo))
+    .catch(() => undefined)
+  const latestBranch = await githubDefaultBranch(repo).catch(() => undefined)
+  const latestCommit = latestBranch ? await githubCommit(repo, latestBranch).catch(() => undefined) : undefined
   const updateAvailable =
     localCommit && latestCommit ? !sameCommit(localCommit, latestCommit) : undefined
 
@@ -708,15 +712,43 @@ async function githubCommit(repo: string, ref: string) {
   return readConfigString(data, ["sha"])
 }
 
+async function githubDefaultBranch(repo: string) {
+  const data = await githubJson(`https://api.github.com/repos/${repo}`)
+  return readConfigString(data, ["default_branch"])
+}
+
 async function githubLatestVersion(repo: string) {
   const data = await githubJson(`https://api.github.com/repos/${repo}/releases/latest`)
   return readConfigString(data, ["tag_name", "name"])
+}
+
+async function githubLatestRelease(repo: string) {
+  const data = await githubJson(`https://api.github.com/repos/${repo}/releases?per_page=1`)
+  if (!Array.isArray(data)) return
+  return readConfigString(data[0], ["tag_name", "name"])
 }
 
 async function githubLatestTag(repo: string) {
   const data = await githubJson(`https://api.github.com/repos/${repo}/tags?per_page=1`)
   if (!Array.isArray(data)) return
   return readConfigString(data[0], ["name"])
+}
+
+async function githubLatestReleaseRedirect(repo: string) {
+  const res = await fetch(`https://github.com/${repo}/releases/latest`, {
+    method: "HEAD",
+    redirect: "manual",
+    signal: AbortSignal.timeout(5000),
+  })
+  const location = res.headers.get("location")
+  return location?.match(/\/releases\/tag\/([^/?#]+)/)?.[1]
+}
+
+async function githubLatestReleaseFeed(repo: string) {
+  const res = await fetch(`https://github.com/${repo}/releases.atom`, { signal: AbortSignal.timeout(5000) })
+  if (!res.ok) throw new Error(`GitHub releases feed returned ${res.status}`)
+  const text = await res.text()
+  return text.match(/<link rel="alternate" type="text\/html" href="https:\/\/github\.com\/[^"]+\/releases\/tag\/([^"]+)"/)?.[1]
 }
 
 async function githubJson(url: string) {
