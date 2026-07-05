@@ -1891,7 +1891,7 @@
     [data-slot="answer-marker"] {
       flex: none;
       color: var(--text-weak);
-      font-size: 12px;
+      font-size: 14px;
       line-height: 1.4;
     }
 
