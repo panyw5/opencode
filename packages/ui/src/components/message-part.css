@@ -1828,14 +1828,77 @@
       color: var(--text-weak);
     }
 
+    [data-slot="question-options-summary"] {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding-top: 2px;
+    }
+
+    [data-slot="question-option-summary"] {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 6px 8px;
+      border: 1px solid color-mix(in oklch, var(--border-weak-base) 42%, transparent);
+      border-radius: 6px;
+      background-color: color-mix(in srgb, var(--background-base) 28%, transparent);
+      color: var(--text-weak);
+    }
+
+    [data-slot="question-option-summary"][data-selected="true"] {
+      border-color: color-mix(in oklch, var(--border-strong-base) 48%, transparent);
+      background-color: color-mix(in srgb, var(--background-stronger) 42%, transparent);
+      color: var(--text-strong);
+    }
+
+    [data-slot="question-option-summary-main"] {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    [data-slot="question-option-summary-label"] {
+      color: inherit;
+    }
+
+    [data-slot="question-option-summary-description"] {
+      color: var(--text-weak);
+      font-size: 12px;
+      line-height: 1.45;
+      opacity: 0.72;
+    }
+
     [data-slot="answer-content"] {
       display: flex;
       flex-direction: column;
       gap: 8px;
+      padding-top: 4px;
+    }
+
+    [data-slot="answer-summary"] {
+      display: flex;
+      align-items: baseline;
+      gap: 7px;
+      width: fit-content;
+      max-width: 100%;
+      padding: 4px 7px;
+      border-radius: 5px;
+      background-color: color-mix(in srgb, var(--background-stronger) 34%, transparent);
+    }
+
+    [data-slot="answer-marker"] {
+      flex: none;
+      color: var(--text-weak);
+      font-size: 12px;
+      line-height: 1.4;
     }
 
     [data-slot="answer-text"] {
-      color: var(--text-strong);
+      color: var(--markdown-code);
+      line-height: 1.45;
+      overflow-wrap: anywhere;
     }
 
     [data-slot="answer-images"] {

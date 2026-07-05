@@ -3056,6 +3056,7 @@ ToolRegistry.register({
               {(q, i) => {
                 const answer = () => answers()[i()] ?? []
                 const textParts = () => answer().filter((part) => typeof part === "string")
+                const selected = (label: string) => textParts().includes(label)
                 const imageParts = () =>
                   answer().filter(
                     (part): part is { type: "image"; url: string; mime: string; filename?: string } =>
@@ -3065,9 +3066,31 @@ ToolRegistry.register({
                 return (
                   <div data-slot="question-answer-item">
                     <div data-slot="question-text">{q.question}</div>
+                    <Show when={q.options?.length}>
+                      <div data-slot="question-options-summary">
+                        <For each={q.options}>
+                          {(option) => (
+                            <div data-slot="question-option-summary" data-selected={selected(option.label)}>
+                              <div data-slot="question-option-summary-main">
+                                <span data-slot="question-option-summary-label">{option.label}</span>
+                                <Show when={selected(option.label)}>
+                                  <Icon name="check" size="small" />
+                                </Show>
+                              </div>
+                              <Show when={option.description}>
+                                <div data-slot="question-option-summary-description">{option.description}</div>
+                              </Show>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    </Show>
                     <div data-slot="answer-content">
                       <Show when={textParts().length > 0}>
-                        <div data-slot="answer-text">{textParts().join(", ")}</div>
+                        <div data-slot="answer-summary">
+                          <span data-slot="answer-marker">❱</span>
+                          <span data-slot="answer-text">{textParts().join(", ")}</span>
+                        </div>
                       </Show>
                       <Show when={imageParts().length > 0}>
                         <div data-slot="answer-images">
