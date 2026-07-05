@@ -230,6 +230,24 @@
     --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
   }
 
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"] {
+    background-color: light-dark(
+      var(--background-stronger),
+      color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent)
+    );
+    transition:
+      background-color 140ms ease-out,
+      color 140ms ease-out;
+  }
+
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
+    background-color: var(--surface-base-hover);
+  }
+
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:active:not(:disabled) {
+    background-color: var(--surface-base-active);
+  }
+
   html[data-theme="aether"] [data-component="sidebar-session"] {
     --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
     --sidebar-session-hover-bg: light-dark(#f1f1f1, #2c2924);
