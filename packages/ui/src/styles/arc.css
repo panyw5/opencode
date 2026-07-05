@@ -350,8 +350,8 @@ html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
   border-radius: var(--radius-2xl);
 }
 
-/* Question tool (dark) — the default light-dark(var(--amber-light-3), #2a2307) background
-   produces a deep amber-brown that clashes with Arc's violet-tinged palette.
+/* Question tool (dark) — the default --question-background uses a translucent
+   stronger background token, which clashes with Arc's violet-tinged palette.
    Replace with a warm-violet ramp that harmonises with Arc's primary
    (#9B7AE8) and warm purple-gray chrome (#4a3d47). Shifted toward
    magenta to avoid reading as blue: #3a2448 → #583060 → #8b4f9e → #c084d0. */

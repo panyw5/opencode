@@ -1347,11 +1347,16 @@
   gap: 0;
   min-height: 0;
   max-height: var(--question-prompt-max-height, 100dvh);
-  background-color: light-dark(var(--amber-light-3), #2a2307);
+  --question-background: light-dark(
+    var(--amber-light-3),
+    color-mix(in srgb, var(--background-stronger) 88%, transparent)
+  );
+  background-color: var(--question-background);
   border-radius: 14px;
   padding: 4px;
 
   [data-slot="question-body"] {
+    background-color: var(--question-background);
     display: flex;
     flex-direction: column;
     gap: 16px;
