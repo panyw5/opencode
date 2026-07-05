@@ -128,23 +128,18 @@ cd opencode
 bun install
 
 # Build the desktop app
-bun run --cwd packages/desktop build
-bun run --cwd packages/desktop tauri build
+bun run --cwd packages/desktop package:mac
 ```
 
 ### Quick macOS build script
 
 ```bash
-# Build and install in one go (macOS)
-bun run --cwd packages/opencode build --single && \
-cp packages/opencode/dist/opencode-darwin-arm64/bin/opencode \
-   packages/desktop/src-tauri/sidecars/opencode-cli-aarch64-apple-darwin && \
-bun run --cwd packages/desktop build && \
-bun run --cwd packages/desktop tauri build && \
-cp -R "packages/desktop/src-tauri/target/release/bundle/macos/OpenCode.app" /Applications/
+# Build and open the output directory (macOS)
+bun run --cwd packages/desktop package:mac && \
+open packages/desktop/dist
 ```
 
-> **Note**: The build script copies the CLI binary into the sidecar directory automatically. See the [build notes](packages/desktop/AGENTS.md) for details.
+> **Note**: The desktop build automatically builds and packages the CLI sidecar. See the [build notes](packages/desktop/AGENTS.md) for details.
 
 ### Development mode
 

@@ -145,23 +145,18 @@ cd opencode
 bun install
 
 # 构建桌面应用
-bun run --cwd packages/desktop build
-bun run --cwd packages/desktop tauri build
+bun run --cwd packages/desktop package:mac
 ```
 
 ### macOS 快速构建脚本
 
 ```bash
-# 一键构建并安装（macOS）
-bun run --cwd packages/opencode build --single && \
-cp packages/opencode/dist/opencode-darwin-arm64/bin/opencode \
-   packages/desktop/src-tauri/sidecars/opencode-cli-aarch64-apple-darwin && \
-bun run --cwd packages/desktop build && \
-bun run --cwd packages/desktop tauri build && \
-cp -R "packages/desktop/src-tauri/target/release/bundle/macos/OpenCode.app" /Applications/
+# 一键构建并打开产物目录（macOS）
+bun run --cwd packages/desktop package:mac && \
+open packages/desktop/dist
 ```
 
-> **注意**：构建脚本会自动将 CLI 二进制文件复制到 sidecar 目录，详见 [构建文档](packages/desktop/AGENTS.md)。
+> **注意**：桌面构建会自动构建并打包 CLI sidecar，详见 [构建文档](packages/desktop/AGENTS.md)。
 
 ### 开发模式
 
