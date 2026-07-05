@@ -64,6 +64,11 @@ html[data-theme="aether"] {
     0 1px 3px 0 light-dark(rgba(193, 95, 60, 0.1), rgba(0, 0, 0, 0.12));
 }
 
+html[data-theme="aether"] [data-component="markdown"] a[data-file-link],
+html[data-theme="aether"] [data-component="markdown"] a[data-file-link]:hover {
+  color: var(--markdown-code);
+}
+
 /* ─── Aether Light Mode: Dock Surface Refinements ─── */
 @media (prefers-color-scheme: light) {
   /* Prompt shell: white card with fine warm border, no dark glassmorphism */
