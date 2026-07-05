@@ -528,7 +528,7 @@
   }
 
   [data-component="quick-assistant-message"] .quick-assistant-markdown :not(pre) > code {
-    color: var(--text-strong);
+    color: var(--markdown-code);
   }
 
   [data-component="button"].prompt-pick,
