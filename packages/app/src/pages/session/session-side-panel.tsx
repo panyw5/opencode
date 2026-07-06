@@ -207,10 +207,13 @@ export function SessionSidePanel(props: {
         class="relative min-w-0 h-full flex shrink-0 overflow-hidden bg-background-base"
         classList={{
           "pointer-events-none": !open(),
-          "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-            !props.size.active() && !props.reviewSnap,
+          "will-change-[width]": !props.size.active() && !props.reviewSnap,
         }}
-        style={{ width: panelWidth() }}
+        style={{
+          width: panelWidth(),
+          transition:
+            props.size.active() || props.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+        }}
       >
         <div class="size-full flex border-l border-border-weaker-base">
           <div
@@ -359,10 +362,12 @@ export function SessionSidePanel(props: {
             class="relative min-w-0 h-full shrink-0 overflow-hidden"
             classList={{
               "pointer-events-none": !fileOpen(),
-              "transition-[width] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-                !props.size.active(),
+              "will-change-[width]": !props.size.active(),
             }}
-            style={{ width: treeWidth() }}
+            style={{
+              width: treeWidth(),
+              transition: props.size.active() ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+            }}
           >
             <div
               class="h-full flex flex-col overflow-hidden group/filetree"

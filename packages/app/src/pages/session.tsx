@@ -2157,11 +2157,12 @@ export default function Page() {
         <div
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
-            "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
-              !size.active() && !ui.reviewSnap,
+            "will-change-[width]": !size.active() && !ui.reviewSnap,
           }}
           style={{
             width: sessionPanelWidth(),
+            transition:
+              size.active() || ui.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
           <div class="flex-1 min-h-0 overflow-hidden">
