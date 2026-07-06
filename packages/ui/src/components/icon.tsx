@@ -36,6 +36,7 @@ const icons = {
   "review-active": `<path d="M18 18V2L2 2L2 18H18Z" fill="currentColor" fill-opacity="0.1"/>
 <path d="M7 14.5H13M7 7.99512H10.0049M10.0049 7.99512H13M10.0049 7.99512V5M10.0049 7.99512V11M18 18V2L2 2L2 18H18Z" stroke="currentColor"/>`,
   expand: `<path d="M4.58301 10.4163V15.4163H9.58301M10.4163 4.58301H15.4163V9.58301" stroke="currentColor" stroke-linecap="square"/>`,
+  "expand-corners": `<path d="M4.58301 7.91634V4.58301H7.91634M12.083 4.58301H15.4163V7.91634M15.4163 12.083V15.4163H12.083M7.91634 15.4163H4.58301V12.083" stroke="currentColor" stroke-width="1.25" stroke-linecap="square"/>`,
   collapse: `<path d="M16.666 8.33398H11.666V3.33398" stroke="currentColor" stroke-linecap="square"/><path d="M8.33398 16.666V11.666H3.33398" stroke="currentColor" stroke-linecap="square"/>`,
   code: `<path d="M8.7513 7.5013L6.2513 10.0013L8.7513 12.5013M11.2513 7.5013L13.7513 10.0013L11.2513 12.5013M2.91797 2.91797H17.0846V17.0846H2.91797V2.91797Z" stroke="currentColor"/>`,
   "code-lines": `<path d="M2.08325 3.75H11.2499M14.5833 3.75H17.9166M2.08325 10L7.08325 10M10.4166 10L17.9166 10M2.08325 16.25L8.74992 16.25M12.0833 16.25L17.9166 16.25" stroke="currentColor" stroke-linecap="square" stroke-linejoin="round"/>`,

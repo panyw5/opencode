@@ -114,10 +114,26 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     if (usage > 0) return "success"
     return "default"
   })
+  const contextUsageLabel = createMemo(() => formatter().percent(context()?.usage ?? 0))
 
   const circle = () => (
     <div class="flex items-center justify-center">
-      <ProgressCircle size={16} strokeWidth={2} percentage={context()?.usage ?? 0} status={status()} />
+      <ProgressCircle
+        size={16}
+        strokeWidth={2}
+        percentage={context()?.usage ?? 0}
+        status={status()}
+        style={{
+          "--progress-circle-background": "light-dark(var(--border-weak-base), rgba(255, 255, 255, 0.22))",
+        }}
+      />
+    </div>
+  )
+
+  const buttonTrigger = () => (
+    <div class="flex items-center gap-1.5">
+      {circle()}
+      <span class="min-w-8 text-12-medium text-text-weak tabular-nums text-left">{contextUsageLabel()}</span>
     </div>
   )
 
@@ -221,10 +237,10 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
             triggerAs={Button}
             triggerProps={{
               variant: "ghost",
-              class: "size-6",
+              class: "h-6 px-1.5",
               "aria-label": language.t("context.usage.view"),
             }}
-            trigger={circle()}
+            trigger={buttonTrigger()}
             class="[&_[data-slot=popover-body]]:p-0 w-[min(380px,calc(100vw-40px))] max-w-[calc(100vw-40px)] bg-transparent border-0 shadow-none rounded-xl"
             style={{ "box-shadow": "none", "background-color": "transparent", "border": "none", "backdrop-filter": "none", "-webkit-backdrop-filter": "none" }}
             gutter={4}

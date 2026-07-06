@@ -2,7 +2,7 @@
   transform: rotate(-90deg);
 
   [data-slot="progress-circle-background"] {
-    stroke: var(--border-weak-base);
+    stroke: var(--progress-circle-background, var(--border-weak-base));
   }
 
   [data-slot="progress-circle-progress"] {

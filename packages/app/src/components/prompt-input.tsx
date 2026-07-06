@@ -2062,7 +2062,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       tabIndex={store.mode === "normal" ? undefined : -1}
                       aria-label={language.t("prompt.action.attachFile")}
                     >
-                      <Icon name="plus" class="size-4.5" />
+                      <Icon name="link" class="size-5" />
                     </Button>
                   </TooltipKeybind>
                   <Show when={platform.createTempMarkdownAttachment}>
@@ -2071,6 +2071,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         data-action="prompt-markdown-attachment"
                         type="button"
                         icon="read"
+                        iconSize="normal"
                         variant="ghost"
                         class="size-9 rounded-full"
                         style={buttons()}
@@ -2086,7 +2087,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       <IconButton
                         data-action="prompt-expand"
                         type="button"
-                        icon="expand"
+                        icon="expand-corners"
+                        iconSize="normal"
                         variant="ghost"
                         class="size-9 rounded-full"
                         style={buttons()}
