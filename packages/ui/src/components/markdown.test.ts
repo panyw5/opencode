@@ -173,6 +173,15 @@ $$`
     expect(html).not.toContain("\\substack")
   })
 
+  test("renders common latex package macros", () => {
+    const html = renderMathExpressions('<p><span data-math-style="inline">\\slashed{p}+\\ket{0}</span></p>', "html")
+
+    expect(html).toContain("katex")
+    expect(html).not.toContain("katex-error")
+    expect(html).not.toContain("\\slashed")
+    expect(html).not.toContain("\\ket")
+  })
+
   test("does not protect inline math inside code", () => {
     const html = protectMathExpressions("`$E_0[\\substack{-1\\\\ z}]=-1$`")
 

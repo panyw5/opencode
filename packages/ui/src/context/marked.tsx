@@ -8,6 +8,27 @@ import { getSharedHighlighter, registerCustomTheme, ThemeRegistrationResolved } 
 
 type MathOutput = "html" | "htmlAndMathml"
 
+const latexPackageMacros = {
+  "\\slashed": "\\mathrlap{\\not{\\phantom{#1}}}#1",
+  "\\ket": "\\left|#1\\right\\rangle",
+  "\\bra": "\\left\\langle#1\\right|",
+  "\\braket": "\\left\\langle#1\\right\\rangle",
+  "\\abs": "\\left|#1\\right|",
+  "\\norm": "\\left\\lVert#1\\right\\rVert",
+  "\\dv": "\\frac{d #1}{d #2}",
+  "\\pdv": "\\frac{\\partial #1}{\\partial #2}",
+} as const
+
+function katexOptions(input: { output: MathOutput; displayMode?: boolean }): katex.KatexOptions {
+  return {
+    displayMode: input.displayMode,
+    output: input.output,
+    throwOnError: false,
+    strict: "ignore",
+    macros: { ...latexPackageMacros },
+  }
+}
+
 const autoLinkBoundaryChars = new Set([
   " ",
   "\t",
@@ -594,11 +615,10 @@ function renderMathInText(text: string, output: MathOutput): string {
       const latex = unescapeHtmlEntities(math)
       const rendered = katex.renderToString(
         displayMode ? stripEquationNumbers(latex) : latex,
-        {
+        katexOptions({
           displayMode,
           output,
-          throwOnError: false,
-        },
+        }),
       )
       return displayMode ? addDisplayMathTex(rendered, latex) : rendered
     } catch {
@@ -787,9 +807,8 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
     const fullParser = new Marked(
       linkRenderer,
       markedKatex({
+        ...katexOptions({ output }),
         output,
-        throwOnError: false,
-        strict: "ignore",
         nonStandard: true,
       }),
       markedShiki({
