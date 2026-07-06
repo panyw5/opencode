@@ -2773,16 +2773,21 @@ export default function Layout(props: ParentProps) {
       <div
         data-component="sidebar-panel"
         classList={{
-          "flex flex-col min-h-0 min-w-0 box-border rounded-tl-[12px] px-3": true,
+          "flex flex-col min-h-0 min-w-0 box-border overflow-hidden rounded-tl-[12px] px-3": true,
           "border border-b-0 border-border-weak-base": !merged(),
           "border-l border-t border-border-weaker-base": merged(),
           "bg-background-base": merged(),
           "bg-background-stronger": !merged(),
           "flex-1 min-w-0": panelProps.mobile,
-          "max-w-full overflow-hidden": panelProps.mobile,
+          "max-w-full": panelProps.mobile,
+          "will-change-[width]": !panelProps.mobile && !state.sizing,
         }}
         style={{
-          width: panelProps.mobile ? undefined : `${panel()}px`,
+          width: panelProps.mobile ? undefined : layout.sidebar.opened() ? `${panel()}px` : "0px",
+          transition:
+            panelProps.mobile || state.sizing
+              ? undefined
+              : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
         <Show
@@ -3341,11 +3346,12 @@ export default function Layout(props: ParentProps) {
                 "absolute inset-0": true,
                 "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": true,
                 "z-20": true,
-                "transition-[left] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[left] motion-reduce:transition-none":
-                  !state.sizing && !onConfigRoute(),
+                "will-change-[left]": !state.sizing && !onConfigRoute(),
               }}
               style={{
                 "--main-left": layout.sidebar.opened() ? `${side()}px` : "4rem",
+                transition:
+                  state.sizing || onConfigRoute() ? undefined : "left 300ms cubic-bezier(0.16, 1, 0.3, 1)",
               }}
             >
               <main
