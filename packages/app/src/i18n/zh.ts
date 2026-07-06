@@ -1346,6 +1346,8 @@ export const dict = {
   "config.skills.market.loading.slow": "仍在加载。可能是网络或 GitHub CDN 较慢。",
   "config.skills.market.empty": "这个仓库里没有找到 `SKILL.md` 文件。",
   "config.skills.market.install": "安装技能",
+  "config.skills.market.installGlobal": "安装到全局",
+  "config.skills.market.installProject": "安装到项目",
   "config.skills.market.installing": "安装中...",
   "config.skills.market.installed": "已安装",
   "config.skills.market.install.success": "技能已安装",

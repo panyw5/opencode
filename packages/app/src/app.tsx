@@ -96,12 +96,7 @@ function ConfigRouteFrame(props: ParentProps) {
 function ConfigLoadingShell() {
   const language = useLanguage()
   const platform = usePlatform()
-  const showClawsSection = () =>
-    !!(
-      (platform.getOpenclawConfig && platform.setOpenclawConfig && platform.testOpenclawConfig) ||
-      (platform.getGenericagentConfig && platform.setGenericagentConfig && platform.testGenericagentConfig) ||
-      (platform.getHermesConfig && platform.setHermesConfig && platform.testHermesConfig)
-    )
+  const showClawsSection = () => platform.platform === "desktop"
 
   return (
     <div class="size-full overflow-hidden bg-background-base">
@@ -119,7 +114,7 @@ function ConfigLoadingShell() {
                   {(section) => (
                     <Show when={section.id !== "claws" || showClawsSection()}>
                       <SectionButton
-                        current={section.id === "agents-md"}
+                        current={false}
                         title={"key" in section ? language.t(section.key) : section.label}
                         icon={section.icon}
                       />
@@ -139,7 +134,7 @@ function ConfigLoadingShell() {
         <div class="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
           <section class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base-active)_72%,transparent),color-mix(in_srgb,var(--surface-base)_88%,transparent))] backdrop-blur xl:w-[400px] xl:border-r xl:border-b-0">
             <div class="px-4 py-4">
-              <div class="text-20-medium text-text-strong">AGENTS.md</div>
+              <div class="text-20-medium text-text-strong">{language.t("config.title")}</div>
             </div>
           </section>
           <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background-base)_92%,var(--surface-base)_8%),var(--background-base))]" />

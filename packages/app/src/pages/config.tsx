@@ -159,6 +159,7 @@ type SkillMarketRepo = {
   description: string
   url: string
   branch?: string
+  path?: string
 }
 
 type SkillMarketItem = {
@@ -172,6 +173,8 @@ type SkillMarketItem = {
   sourceUrl: string
   folder: string
 }
+
+type SkillMarketInstallScope = "global" | "project"
 
 type SkillMarketLoadResult = {
   skills: SkillMarketItem[]
@@ -239,6 +242,15 @@ const SKILL_MARKET_REPOS: SkillMarketRepo[] = [
     repo: "waybarrios/opencode-power-pack",
     description: "Community OpenCode skills, agents, and workflow packages.",
     url: "https://github.com/waybarrios/opencode-power-pack",
+  },
+  {
+    id: "academicforge-claude-science",
+    label: "AcademicForge Claude Science",
+    repo: "HughYau/AcademicForge",
+    branch: "site-first",
+    path: "skills/claude-science",
+    description: "Science and research skills from the AcademicForge Claude Science collection.",
+    url: "https://github.com/HughYau/AcademicForge/tree/site-first/skills/claude-science",
   },
 ]
 
@@ -610,6 +622,11 @@ function cdnPath(path: string) {
   return path.split("/").map(encodeURIComponent).join("/")
 }
 
+function skillMarketRepoPathPrefix(path: string | undefined) {
+  const normalized = path?.trim().replace(/^\/+|\/+$/g, "")
+  return normalized ? `${normalized}/` : ""
+}
+
 async function marketJSON<T>(fetcher: typeof fetch, url: string, signal?: AbortSignal): Promise<T> {
   const resp = await fetcher(url, { signal })
   if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
@@ -622,7 +639,8 @@ async function marketRepoFiles(fetcher: typeof fetch, repo: SkillMarketRepo, sig
 
   for (const branch of branches) {
     try {
-      console.debug("[skill-market] fetch index", { repo: repo.repo, branch })
+      const root = skillMarketRepoPathPrefix(repo.path)
+      console.debug("[skill-market] fetch index", { repo: repo.repo, branch, path: repo.path })
       const data = await marketJSON<{ files?: Array<{ name?: string; type?: string }> }>(
         fetcher,
         `https://data.jsdelivr.com/v1/package/gh/${repo.repo}@${encodeURIComponent(branch)}/flat`,
@@ -635,8 +653,9 @@ async function marketRepoFiles(fetcher: typeof fetch, repo: SkillMarketRepo, sig
           return !!path && (!item?.type || item.type === "file") && /(^|\/)SKILL\.md$/i.test(path)
         })
         .map((path) => path.replace(/^\/+/, ""))
+        .filter((path) => !root || path.startsWith(root))
         .slice(0, SKILL_MARKET_MAX_SKILLS)
-      console.debug("[skill-market] index loaded", { repo: repo.repo, branch, skills: paths.length })
+      console.debug("[skill-market] index loaded", { repo: repo.repo, branch, path: repo.path, skills: paths.length })
       return {
         branch,
         paths,
@@ -2994,6 +3013,13 @@ export default function ConfigPage() {
   const params = useParams()
   const layout = useLayout()
   const [query] = useSearchParams<{ section?: string; pick?: string }>()
+  const initialSection = (() => {
+    const section = query.section
+    if (typeof section !== "string" || !isKnownSection(section)) return "" as Section
+    if (section === "claws" && platform.platform !== "desktop") return "" as Section
+    return section as Section
+  })()
+  const initialPick = initialSection && typeof query.pick === "string" ? query.pick : ""
 
   onMount(() => {
     if (platform.platform !== "desktop") return
@@ -3008,8 +3034,8 @@ export default function ConfigPage() {
   let jumpRun = 0
   let skillsList: HTMLDivElement | undefined
   const [state, setState] = createStore({
-    section: "agents-md" as Section,
-    pick: "",
+    section: initialSection,
+    pick: initialPick,
     doc: "",
     text: "",
     saved: "",
@@ -3332,31 +3358,89 @@ export default function ConfigPage() {
     },
   )
 
-  const [openclaw] = createResource(
-    () => (state.section === "claws" ? state.clawRev : -1),
-    async (rev) => {
-      if (rev === -1) return undefined
-      if (!platform.getOpenclawConfig) return undefined
-      return platform.getOpenclawConfig()
-    },
+  const [openclawConfig, setOpenclawConfigState] = createSignal<OpenclawConfig>()
+  const [openclawLoading, setOpenclawLoading] = createSignal(false)
+  const [genericagentConfig, setGenericagentConfigState] = createSignal<GenericagentConfig>()
+  const [genericagentLoading, setGenericagentLoading] = createSignal(false)
+  const [hermesConfig, setHermesConfigState] = createSignal<HermesConfig>()
+  const [hermesLoading, setHermesLoading] = createSignal(false)
+  let openclawConfigRun = 0
+  let genericagentConfigRun = 0
+  let hermesConfigRun = 0
+
+  createEffect(
+    on(
+      () => [state.section, state.pick, state.clawRev] as const,
+      ([section, pick, rev]) => {
+        if (section !== "claws" || pick !== "claw:openclaw" || !platform.getOpenclawConfig) {
+          openclawConfigRun++
+          setOpenclawLoading(false)
+          return
+        }
+        const run = ++openclawConfigRun
+        setOpenclawLoading(true)
+        void platform
+          .getOpenclawConfig()
+          .then((result) => {
+            if (run !== openclawConfigRun) return
+            setOpenclawConfigState(result)
+          })
+          .finally(() => {
+            if (run !== openclawConfigRun) return
+            setOpenclawLoading(false)
+          })
+      },
+    ),
   )
 
-  const [genericagent] = createResource(
-    () => (state.section === "claws" ? state.gaRev : -1),
-    async (rev) => {
-      if (rev === -1) return undefined
-      if (!platform.getGenericagentConfig) return undefined
-      return platform.getGenericagentConfig()
-    },
+  createEffect(
+    on(
+      () => [state.section, state.pick, state.gaRev] as const,
+      ([section, pick, rev]) => {
+        if (section !== "claws" || pick !== "claw:genericagent" || !platform.getGenericagentConfig) {
+          genericagentConfigRun++
+          setGenericagentLoading(false)
+          return
+        }
+        const run = ++genericagentConfigRun
+        setGenericagentLoading(true)
+        void platform
+          .getGenericagentConfig()
+          .then((result) => {
+            if (run !== genericagentConfigRun) return
+            setGenericagentConfigState(result)
+          })
+          .finally(() => {
+            if (run !== genericagentConfigRun) return
+            setGenericagentLoading(false)
+          })
+      },
+    ),
   )
 
-  const [hermes] = createResource(
-    () => (state.section === "claws" ? state.hmRev : -1),
-    async (rev) => {
-      if (rev === -1) return undefined
-      if (!platform.getHermesConfig) return undefined
-      return platform.getHermesConfig()
-    },
+  createEffect(
+    on(
+      () => [state.section, state.pick, state.hmRev] as const,
+      ([section, pick, rev]) => {
+        if (section !== "claws" || pick !== "claw:hermes" || !platform.getHermesConfig) {
+          hermesConfigRun++
+          setHermesLoading(false)
+          return
+        }
+        const run = ++hermesConfigRun
+        setHermesLoading(true)
+        void platform
+          .getHermesConfig()
+          .then((result) => {
+            if (run !== hermesConfigRun) return
+            setHermesConfigState(result)
+          })
+          .finally(() => {
+            if (run !== hermesConfigRun) return
+            setHermesLoading(false)
+          })
+      },
+    ),
   )
 
   const mainRoot = createMemo(() => globalSync.data.rootByDomain[mainDomain])
@@ -3543,16 +3627,7 @@ export default function ConfigPage() {
     if (!params.dir) return
     navigate(`/${params.dir}/session`)
   }
-  const clawsEnabled = createMemo(
-    () => !!platform.getOpenclawConfig && !!platform.setOpenclawConfig && !!platform.testOpenclawConfig,
-  )
-  const gaPlatformEnabled = createMemo(
-    () => !!platform.getGenericagentConfig && !!platform.setGenericagentConfig && !!platform.testGenericagentConfig,
-  )
-  const hmPlatformEnabled = createMemo(
-    () => !!platform.getHermesConfig && !!platform.setHermesConfig && !!platform.testHermesConfig,
-  )
-  const clawsSectionEnabled = createMemo(() => clawsEnabled() || gaPlatformEnabled() || hmPlatformEnabled())
+  const clawsSectionEnabled = createMemo(() => platform.platform === "desktop")
   const querySection = createMemo<Section | undefined>(() => {
     const value = query.section
     if (typeof value === "string" && isKnownSection(value)) {
@@ -4096,12 +4171,21 @@ export default function ConfigPage() {
   const skillClaude = createMemo(() => skillDocs().filter((item) => item.group === "claude"))
   const skillProject = createMemo(() => skillDocs().filter((item) => item.group === "project"))
   const skillExternal = createMemo(() => skillDocs().filter((item) => item.group === "external"))
-  const installedSkillFolders = createMemo(() => {
+  const installedGlobalSkillFolders = createMemo(() => {
     const folders = new Set<string>()
     const add = (location: string) => folders.add(name(dir(local(location))).toLowerCase())
-    for (const item of rawSkills.latest ?? []) add(item.location)
     for (const item of diskOpenCode.latest ?? []) add(item.location)
-    for (const item of diskClaude.latest ?? []) add(item.location)
+    return folders
+  })
+  const installedProjectSkillFolders = createMemo(() => {
+    const folders = new Set<string>()
+    const projectRoot = mainPath().directory
+    if (!projectRoot) return folders
+    const base = `${norm(projectRoot)}/.opencode/skills/`
+    const add = (location: string) => {
+      const next = norm(local(location))
+      if (next.startsWith(base)) folders.add(name(dir(next)).toLowerCase())
+    }
     for (const item of diskProject.latest ?? []) add(item.location)
     return folders
   })
@@ -4320,44 +4404,40 @@ export default function ConfigPage() {
   })
 
   const claws = createMemo<ClawItem[]>(() => {
-    const list: ClawItem[] = []
-    if (clawsEnabled()) {
-      const cfg = openclaw.latest
-      const agent = extraAgentById("openclaw")
-      list.push({
-        id: "claw:openclaw",
-        label: agent?.label ?? "OpenClaw",
-        note: t("config.claws.note.openclaw"),
-        meta: cfg?.url?.trim() || "ws://127.0.0.1:18789",
-        sourceUrl: agent?.sourceUrl ?? "",
-        enabled: cfg?.enabled ?? false,
-      })
-    }
-    if (hmPlatformEnabled()) {
-      const cfg = hermes.latest
-      const agent = extraAgentById("hermes")
-      list.push({
-        id: "claw:hermes",
-        label: agent?.label ?? "Hermes",
-        note: t("config.claws.note.hermes"),
-        meta: cfg?.hermesDir?.trim() || "/path/to/hermes-agent",
-        sourceUrl: agent?.sourceUrl ?? "",
-        enabled: cfg?.enabled ?? false,
-      })
-    }
-    if (gaPlatformEnabled()) {
-      const cfg = genericagent.latest
-      const agent = extraAgentById("genericagent")
-      list.push({
+    if (platform.platform !== "desktop") return []
+    return extraAgents.map((agent) => {
+      if (agent.id === "openclaw") {
+        const cfg = openclawConfig()
+        return {
+          id: "claw:openclaw",
+          label: agent.label,
+          note: t("config.claws.note.openclaw"),
+          meta: cfg?.url?.trim() || "ws://127.0.0.1:18789",
+          sourceUrl: agent.sourceUrl,
+          enabled: cfg?.enabled ?? false,
+        }
+      }
+      if (agent.id === "hermes") {
+        const cfg = hermesConfig()
+        return {
+          id: "claw:hermes",
+          label: agent.label,
+          note: t("config.claws.note.hermes"),
+          meta: cfg?.hermesDir?.trim() || "/path/to/hermes-agent",
+          sourceUrl: agent.sourceUrl,
+          enabled: cfg?.enabled ?? false,
+        }
+      }
+      const cfg = genericagentConfig()
+      return {
         id: "claw:genericagent",
-        label: agent?.label ?? "GenericAgent",
+        label: agent.label,
         note: t("config.claws.note.genericagent"),
         meta: cfg?.genericAgentDir?.trim() || "/path/to/GenericAgent",
-        sourceUrl: agent?.sourceUrl ?? "",
+        sourceUrl: agent.sourceUrl,
         enabled: cfg?.enabled ?? false,
-      })
-    }
-    return list
+      }
+    })
   })
 
   const pluginDocs = createMemo<DocItem[]>(() =>
@@ -4494,27 +4574,54 @@ export default function ConfigPage() {
   })
   const selectedExtraAgentConfig = createMemo(() => {
     const id = selectedExtraAgentId()
-    if (id === "openclaw") return openclaw.latest
-    if (id === "hermes") return hermes.latest
-    if (id === "genericagent") return genericagent.latest
+    if (id === "openclaw") return openclawConfig()
+    if (id === "hermes") return hermesConfig()
+    if (id === "genericagent") return genericagentConfig()
   })
-  const [extraAgentInfo] = createResource(
-    () => {
-      const id = selectedExtraAgentId()
-      if (state.section !== "claws" || !id || !platform.getExtraAgentInfo) return undefined
-      return { id, config: selectedExtraAgentConfig() }
-    },
-    async (input) => {
-      if (!input) return undefined
-      return platform.getExtraAgentInfo?.(input.id, input.config)
-    },
+  const selectedExtraAgentConfigReady = createMemo(() => {
+    const id = selectedExtraAgentId()
+    if (!id) return false
+    if (id === "openclaw") return !platform.getOpenclawConfig || (!!openclawConfig() && !openclawLoading())
+    if (id === "hermes") return !platform.getHermesConfig || (!!hermesConfig() && !hermesLoading())
+    if (id === "genericagent") return !platform.getGenericagentConfig || (!!genericagentConfig() && !genericagentLoading())
+    return false
+  })
+  const [extraAgentInfoState, setExtraAgentInfoState] = createSignal<ExtraAgentInfo>()
+  const [extraAgentInfoLoading, setExtraAgentInfoLoading] = createSignal(false)
+  let extraAgentInfoRun = 0
+
+  createEffect(
+    on(
+      () => [state.section, selectedExtraAgentId(), selectedExtraAgentConfigReady(), selectedExtraAgentConfig()] as const,
+      ([section, id, ready, config]) => {
+        if (section !== "claws" || !id || !platform.getExtraAgentInfo || !ready) {
+          extraAgentInfoRun++
+          setExtraAgentInfoLoading(false)
+          setExtraAgentInfoState(undefined)
+          return
+        }
+        const run = ++extraAgentInfoRun
+        setExtraAgentInfoState(undefined)
+        setExtraAgentInfoLoading(true)
+        void platform
+          .getExtraAgentInfo(id, config)
+          .then((result) => {
+            if (run !== extraAgentInfoRun) return
+            setExtraAgentInfoState(result)
+          })
+          .finally(() => {
+            if (run !== extraAgentInfoRun) return
+            setExtraAgentInfoLoading(false)
+          })
+      },
+    ),
   )
   const selectedCustom = createMemo(() =>
     providers().find((item) => item.id === state.pick.replace(/^provider:/, "") && item.custom),
   )
   const dirty = createMemo(() => !!currentDoc() && state.doc === state.pick && state.text !== state.saved)
   const clawDirty = createMemo(() => {
-    const cfg = openclaw.latest
+    const cfg = openclawConfig()
     if (!cfg || state.section !== "claws") return false
     return (
       state.claw.enabled !== (cfg.enabled ?? false) ||
@@ -4524,7 +4631,7 @@ export default function ConfigPage() {
   })
 
   const gaDirty = createMemo(() => {
-    const cfg = genericagent.latest
+    const cfg = genericagentConfig()
     if (!cfg || state.section !== "claws") return false
     return (
       state.ga.enabled !== (cfg.enabled ?? false) ||
@@ -4534,7 +4641,7 @@ export default function ConfigPage() {
   })
 
   const hmDirty = createMemo(() => {
-    const cfg = hermes.latest
+    const cfg = hermesConfig()
     if (!cfg || state.section !== "claws") return false
     return (
       state.hm.enabled !== (cfg.enabled ?? false) ||
@@ -4640,7 +4747,7 @@ export default function ConfigPage() {
 
   createEffect(
     on(
-      () => openclaw(),
+      () => openclawConfig(),
       (item) => {
         if (!item) return
         setState("claw", clawCfg(item))
@@ -4650,7 +4757,7 @@ export default function ConfigPage() {
 
   createEffect(
     on(
-      () => genericagent(),
+      () => genericagentConfig(),
       (item) => {
         if (!item) return
         setState("ga", gaCfg(item))
@@ -4660,7 +4767,7 @@ export default function ConfigPage() {
 
   createEffect(
     on(
-      () => hermes(),
+      () => hermesConfig(),
       (item) => {
         if (!item) return
         setState("hm", hmCfg(item))
@@ -4672,11 +4779,12 @@ export default function ConfigPage() {
     const section = querySection()
     const pick = query.pick
     if (!section) return
-    if (section === "claws" && !clawsSectionEnabled()) return
+    if (section === "claws" && platform.platform !== "desktop") return
     batch(() => {
       setState("section", section)
       if (section === "skills") setState("skillPanel", "editor")
       if (typeof pick === "string") setState("pick", pick)
+      else if (section === "claws") setState("pick", "")
     })
   })
 
@@ -4689,6 +4797,7 @@ export default function ConfigPage() {
   }
 
   function picks(section: Section) {
+    if (!section) return []
     if (section === "agents-md") return agentsMd().map((item) => item.id)
     if (section === "providers") {
       const list = providerVisible().map((item) => `provider:${item.id}`)
@@ -4717,6 +4826,14 @@ export default function ConfigPage() {
 
   async function jump(section: Section) {
     const run = ++jumpRun
+    if (section === "claws") {
+      batch(() => {
+        setState("section", section)
+        setState("pick", "")
+        setState({ doc: "", text: "", saved: "", busy: false })
+      })
+      return
+    }
     const list = picks(section)
     const next = list[0] ?? ""
     if (list.includes(state.pick)) {
@@ -4748,6 +4865,14 @@ export default function ConfigPage() {
     void open(item)
   }
 
+  function selectClaw(id: string) {
+    batch(() => {
+      setState("section", "claws")
+      setState("pick", id)
+      setState({ doc: "", text: "", saved: "", busy: false })
+    })
+  }
+
   createEffect(
     on(
       () => [
@@ -4762,7 +4887,9 @@ export default function ConfigPage() {
         plugins()?.length ?? 0,
       ],
       () => {
+        if (!state.section) return
         if (state.section === "skills" && state.skillPanel === "market") return
+        if (state.section === "claws") return
         const list = picks(state.section)
         if (list.includes(state.pick)) return
         if (list.length === 0 && (agentWait() || skillWait() || pluginWait())) {
@@ -4776,19 +4903,6 @@ export default function ConfigPage() {
           setState({ doc: "", text: "", saved: "", busy: false })
           return
         }
-        void open(item)
-      },
-    ),
-  )
-
-  createEffect(
-    on(
-      () => [state.section, agentsMd().at(0)?.id] as const,
-      ([section, id]) => {
-        if (section !== "agents-md" || !id) return
-        if (state.doc === id || state.pick === id) return
-        const item = docs().get(id)
-        if (!item) return
         void open(item)
       },
     ),
@@ -5634,14 +5748,16 @@ export default function ConfigPage() {
     })
   }
 
-  async function installMarketSkill(item: SkillMarketItem) {
-    const root = space()?.skillsRoot
+  async function installMarketSkill(item: SkillMarketItem, scope: SkillMarketInstallScope) {
+    const projectRoot = mainPath().directory
+    const root = scope === "project" ? (projectRoot ? join(projectRoot, ".opencode", "skills") : "") : space()?.skillsRoot
     if (!root || !platform.createConfigFile) {
       showToast({ title: t("common.requestFailed"), description: t("config.error.globalConfigUnavailable") })
       return
     }
     const path = join(root, item.folder, "SKILL.md")
-    setState("skillMarketInstalling", item.id)
+    const isProject = scope === "project"
+    setState("skillMarketInstalling", `${scope}:${item.id}`)
     await platform
       .createConfigFile(path, item.content)
       .then(async () => {
@@ -5658,10 +5774,12 @@ export default function ConfigPage() {
           label: meta.name,
           path,
           editable: true,
-          source: "opencode",
+          source: isProject ? "project" : "opencode",
           note: meta.description,
           warn: meta.warn,
-          group: "opencode",
+          group: isProject ? "project" : "opencode",
+          root: isProject ? projectRoot : undefined,
+          project: isProject ? mcpProjectName() : undefined,
         })
       })
       .catch((err: unknown) => {
@@ -6300,7 +6418,7 @@ export default function ConfigPage() {
                               title={item.label}
                               note={item.note}
                               meta={item.meta}
-                              onClick={() => setState("pick", item.id)}
+                              onClick={() => selectClaw(item.id)}
                               extra={
                                 <span
                                   class="rounded-full border px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]"
@@ -6767,58 +6885,63 @@ export default function ConfigPage() {
               </Match>
 
               <Match when={state.section === "claws" && clawsSectionEnabled()}>
-                <Switch
-                  fallback={
-                    <ClawEditor
-                      item={selectedClaw()}
-                      info={extraAgentInfo.latest}
-                      infoLoading={extraAgentInfo.loading}
-                      form={state.claw}
-                      dirty={clawDirty()}
-                      busy={openclaw.loading}
-                      canTest={!!platform.testOpenclawConfig}
-                      canDetect={!!platform.detectOpenclawConfig}
-                      onChange={setClaw}
-                      onSave={() => void saveClaw()}
-                      onTest={() => void testClaw()}
-                      onDetect={() => void detectClaw()}
-                      onAbort={platform.abortOpenclawTest ? () => void abortClaw() : undefined}
-                    />
-                  }
+                <Show
+                  when={selectedClaw()}
+                  fallback={<div class="px-5 py-10 text-13-regular text-text-weak">{t("config.claws.empty")}</div>}
                 >
-                  <Match when={selectedClaw()?.id === "claw:hermes"}>
-                    <HermesEditor
-                      item={selectedClaw()}
-                      info={extraAgentInfo.latest}
-                      infoLoading={extraAgentInfo.loading}
-                      form={state.hm}
-                      dirty={hmDirty()}
-                      busy={hermes.loading}
-                      canTest={!!platform.testHermesConfig}
-                      onChange={setHm}
-                      onChooseDir={chooseHermesDir}
-                      onSave={() => void saveHm()}
-                      onTest={() => void testHm()}
-                      onAbort={platform.abortHermesTest ? () => void abortHm() : undefined}
-                    />
-                  </Match>
-                  <Match when={selectedClaw()?.id === "claw:genericagent"}>
-                    <GenericAgentEditor
-                      item={selectedClaw()}
-                      info={extraAgentInfo.latest}
-                      infoLoading={extraAgentInfo.loading}
-                      form={state.ga}
-                      dirty={gaDirty()}
-                      busy={genericagent.loading}
-                      canTest={!!platform.testGenericagentConfig}
-                      onChange={setGa}
-                      onChooseDir={chooseGenericAgentDir}
-                      onSave={() => void saveGa()}
-                      onTest={() => void testGa()}
-                      onAbort={platform.abortGenericagentTest ? () => void abortGa() : undefined}
-                    />
-                  </Match>
-                </Switch>
+                  <Switch
+                    fallback={
+                      <ClawEditor
+                        item={selectedClaw()}
+                        info={extraAgentInfoState()}
+                        infoLoading={extraAgentInfoLoading()}
+                        form={state.claw}
+                        dirty={clawDirty()}
+                        busy={openclawLoading()}
+                        canTest={!!platform.testOpenclawConfig}
+                        canDetect={!!platform.detectOpenclawConfig}
+                        onChange={setClaw}
+                        onSave={() => void saveClaw()}
+                        onTest={() => void testClaw()}
+                        onDetect={() => void detectClaw()}
+                        onAbort={platform.abortOpenclawTest ? () => void abortClaw() : undefined}
+                      />
+                    }
+                  >
+                    <Match when={selectedClaw()?.id === "claw:hermes"}>
+                      <HermesEditor
+                        item={selectedClaw()}
+                        info={extraAgentInfoState()}
+                        infoLoading={extraAgentInfoLoading()}
+                        form={state.hm}
+                        dirty={hmDirty()}
+                        busy={hermesLoading()}
+                        canTest={!!platform.testHermesConfig}
+                        onChange={setHm}
+                        onChooseDir={chooseHermesDir}
+                        onSave={() => void saveHm()}
+                        onTest={() => void testHm()}
+                        onAbort={platform.abortHermesTest ? () => void abortHm() : undefined}
+                      />
+                    </Match>
+                    <Match when={selectedClaw()?.id === "claw:genericagent"}>
+                      <GenericAgentEditor
+                        item={selectedClaw()}
+                        info={extraAgentInfoState()}
+                        infoLoading={extraAgentInfoLoading()}
+                        form={state.ga}
+                        dirty={gaDirty()}
+                        busy={genericagentLoading()}
+                        canTest={!!platform.testGenericagentConfig}
+                        onChange={setGa}
+                        onChooseDir={chooseGenericAgentDir}
+                        onSave={() => void saveGa()}
+                        onTest={() => void testGa()}
+                        onAbort={platform.abortGenericagentTest ? () => void abortGa() : undefined}
+                      />
+                    </Match>
+                  </Switch>
+                </Show>
               </Match>
 
               <Match when={state.section === "plugins"}>
@@ -7062,12 +7185,14 @@ export default function ConfigPage() {
                           loadMeta={marketLoadMeta()}
                           error={marketSkills().error}
                           installing={state.skillMarketInstalling}
-                          installed={installedSkillFolders()}
-                          root={space()?.skillsRoot}
+                          installedGlobal={installedGlobalSkillFolders()}
+                          installedProject={installedProjectSkillFolders()}
+                          globalRoot={space()?.skillsRoot}
+                          projectRoot={mainPath().directory}
                           customValue={state.skillMarketCustomInput}
                           customError={state.skillMarketCustomError}
                           onSelect={selectSkillMarketRepo}
-                          onInstall={(item) => void installMarketSkill(item)}
+                          onInstall={(item, scope) => void installMarketSkill(item, scope)}
                           onReload={loadSelectedMarketRepo}
                           onCustomInput={setCustomSkillMarketInput}
                           onCustomSubmit={loadCustomSkillMarketRepo}
@@ -7380,12 +7505,14 @@ function SkillMarket(props: {
   loadMeta?: SkillMarketLoadMeta
   error?: unknown
   installing: string
-  installed: Set<string>
-  root?: string
+  installedGlobal: Set<string>
+  installedProject: Set<string>
+  globalRoot?: string
+  projectRoot?: string
   customValue: string
   customError: string
   onSelect: (id: string) => void
-  onInstall: (item: SkillMarketItem) => void
+  onInstall: (item: SkillMarketItem, scope: SkillMarketInstallScope) => void
   onReload: () => void
   onCustomInput: (value: string) => void
   onCustomSubmit: () => void
@@ -7399,11 +7526,24 @@ function SkillMarket(props: {
     if (!err) return ""
     return err instanceof Error ? err.message : String(err)
   }
-  const installed = (item: SkillMarketItem) => props.installed.has(item.folder.toLowerCase())
+  const installed = (item: SkillMarketItem, scope: SkillMarketInstallScope) =>
+    (scope === "global" ? props.installedGlobal : props.installedProject).has(item.folder.toLowerCase())
+  const busy = (item: SkillMarketItem, scope: SkillMarketInstallScope) => props.installing === `${scope}:${item.id}`
   const marketDescription = () => {
-    const root = props.root?.trim()
+    const root = props.globalRoot?.trim()
     if (!root) return language.t("config.skills.market.description")
     return language.t("config.skills.market.descriptionWithRoot", { root })
+  }
+  const installLabel = (item: SkillMarketItem, scope: SkillMarketInstallScope) => {
+    if (busy(item, scope)) return language.t("config.skills.market.installing")
+    if (installed(item, scope)) return language.t("config.skills.market.installed")
+    return scope === "global"
+      ? language.t("config.skills.market.installGlobal")
+      : language.t("config.skills.market.installProject")
+  }
+  const installDisabled = (item: SkillMarketItem, scope: SkillMarketInstallScope) => {
+    const root = scope === "global" ? props.globalRoot : props.projectRoot
+    return !root || !!props.installing || installed(item, scope)
   }
   const openDetail = (item: SkillMarketItem) => {
     const repo = props.repos.find((entry) => entry.repo === item.repo)
@@ -7448,14 +7588,18 @@ function SkillMarket(props: {
               <Button
                 size="small"
                 variant="secondary"
-                disabled={!props.root || !!props.installing || installed(item)}
-                onClick={() => props.onInstall(item)}
+                disabled={installDisabled(item, "global")}
+                onClick={() => props.onInstall(item, "global")}
               >
-                {props.installing === item.id
-                  ? language.t("config.skills.market.installing")
-                  : installed(item)
-                    ? language.t("config.skills.market.installed")
-                    : language.t("config.skills.market.install")}
+                {installLabel(item, "global")}
+              </Button>
+              <Button
+                size="small"
+                variant="secondary"
+                disabled={installDisabled(item, "project")}
+                onClick={() => props.onInstall(item, "project")}
+              >
+                {installLabel(item, "project")}
               </Button>
             </div>
           </div>
@@ -7616,8 +7760,7 @@ function SkillMarket(props: {
                   <div class="grid gap-3 lg:grid-cols-2">
                     <For each={props.skills}>
                       {(item) => {
-                        const isInstalled = () => installed(item)
-                        const busy = () => props.installing === item.id
+                        const isInstalled = () => installed(item, "global") || installed(item, "project")
                         return (
                           <div
                             class="flex min-h-[180px] flex-col rounded-xl border border-border-weak-base bg-background-base p-4 transition-colors hover:border-border-strong hover:bg-surface-base-hover"
@@ -7644,22 +7787,32 @@ function SkillMarket(props: {
                             <div class="mt-3 break-all font-mono text-[11px] leading-5 text-text-weak">{item.path}</div>
                             <div class="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
                               <div class="text-[11px] text-text-weak">{item.repoLabel}</div>
-                              <Button
-                                size="small"
-                                variant="secondary"
-                                disabled={!props.root || !!props.installing || isInstalled()}
-                                onClick={(event: MouseEvent) => {
-                                  event.preventDefault()
-                                  event.stopPropagation()
-                                  props.onInstall(item)
-                                }}
-                              >
-                                {busy()
-                                  ? language.t("config.skills.market.installing")
-                                  : isInstalled()
-                                    ? language.t("config.skills.market.installed")
-                                    : language.t("config.skills.market.install")}
-                              </Button>
+                              <div class="flex flex-wrap items-center justify-end gap-2">
+                                <Button
+                                  size="small"
+                                  variant="secondary"
+                                  disabled={installDisabled(item, "global")}
+                                  onClick={(event: MouseEvent) => {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    props.onInstall(item, "global")
+                                  }}
+                                >
+                                  {installLabel(item, "global")}
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="secondary"
+                                  disabled={installDisabled(item, "project")}
+                                  onClick={(event: MouseEvent) => {
+                                    event.preventDefault()
+                                    event.stopPropagation()
+                                    props.onInstall(item, "project")
+                                  }}
+                                >
+                                  {installLabel(item, "project")}
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         )

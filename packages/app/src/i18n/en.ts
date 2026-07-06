@@ -1393,6 +1393,8 @@ export const dict = {
   "config.skills.market.loading.slow": "Still loading. The network or GitHub CDN may be slow.",
   "config.skills.market.empty": "No `SKILL.md` files were found in this repository.",
   "config.skills.market.install": "Install skill",
+  "config.skills.market.installGlobal": "Install globally",
+  "config.skills.market.installProject": "Install to project",
   "config.skills.market.installing": "Installing...",
   "config.skills.market.installed": "Installed",
   "config.skills.market.install.success": "Skill installed",
