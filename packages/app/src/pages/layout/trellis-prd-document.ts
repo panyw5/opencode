@@ -20,13 +20,6 @@ export function commitPrdDocumentSave(state: PrdDocumentState): PrdDocumentState
   }
 }
 
-export function revertPrdDocumentDraft(state: PrdDocumentState): PrdDocumentState {
-  return {
-    ...state,
-    draft: state.savedContent,
-  }
-}
-
 export function applyPrdDocumentPairEdit(input: {
   text: string
   start: number

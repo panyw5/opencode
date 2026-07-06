@@ -30,6 +30,8 @@ type DialogPromptEditorProps = {
   saveLabel?: string
   savingLabel?: string
   searchFilesAndDirectories?: (query: string) => Promise<string[]>
+  onTextChange?: (value: string) => void
+  onDiscard?: () => void
   saveExtension?: {
     defaultValue: string
   }
@@ -111,6 +113,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
   }
 
   const discard = () => {
+    props.onDiscard?.()
     closing = true
     shouldSaveOnClose = false
     dialog.close()
@@ -189,6 +192,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
     if (!match) return
     const next = mention(state.text, match.start, match.end, item.path)
     setState("text", next.text)
+    props.onTextChange?.(next.text)
     setPopover(null)
     requestAnimationFrame(() => {
       if (!ref.box) return
@@ -406,6 +410,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
               placeholder=""
               onInput={(event) => {
                 setState("text", event.currentTarget.value)
+                props.onTextChange?.(event.currentTarget.value)
                 refreshAt()
               }}
               onScroll={() => {
@@ -454,6 +459,7 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
                 if (!next) return
                 event.preventDefault()
                 setState("text", next.text)
+                props.onTextChange?.(next.text)
                 setPopover(null)
                 requestAnimationFrame(() => {
                   if (!ref.box) return

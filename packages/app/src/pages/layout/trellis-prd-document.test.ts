@@ -3,7 +3,6 @@ import {
   applyPrdDocumentPairEdit,
   commitPrdDocumentSave,
   createPrdDocumentState,
-  revertPrdDocumentDraft,
 } from "./trellis-prd-document"
 
 describe("trellis prd document", () => {
@@ -18,19 +17,14 @@ describe("trellis prd document", () => {
     expect(saved.draft).toBe("# New\n")
   })
 
-  test("cancel restores the latest saved content instead of the original load", () => {
-    const saved = commitPrdDocumentSave({
+  test("autosave promotes the latest draft so preview uses durable content", () => {
+    const autosaved = commitPrdDocumentSave({
       ...createPrdDocumentState("# Old\n"),
-      draft: "# Saved once\n",
+      draft: "# Autosaved edit\n",
     })
 
-    const reverted = revertPrdDocumentDraft({
-      ...saved,
-      draft: "# Unsaved edit\n",
-    })
-
-    expect(reverted.savedContent).toBe("# Saved once\n")
-    expect(reverted.draft).toBe("# Saved once\n")
+    expect(autosaved.savedContent).toBe("# Autosaved edit\n")
+    expect(autosaved.draft).toBe("# Autosaved edit\n")
   })
 
   test("auto-pairs common brackets and quotes in PRD edits", () => {

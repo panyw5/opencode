@@ -8,6 +8,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+import { checksum } from "@opencode-ai/core/util/encode"
 import { useLanguage } from "@/context/language"
 import { usePlatform, type TrellisTask } from "@/context/platform"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -22,7 +23,6 @@ import {
   applyPrdDocumentPairEdit,
   commitPrdDocumentSave,
   createPrdDocumentState,
-  revertPrdDocumentDraft,
 } from "./trellis-prd-document"
 
 const labelStatus = (status: string) =>
@@ -60,13 +60,65 @@ const progressColor = (task: TrellisTask): string => {
   return "text-icon-base"
 }
 
+const PRD_AUTOSAVE_DELAY = 700
+
+type NewTrellisTaskDraft = {
+  name: string
+  content: string
+}
+
+const newTrellisTaskDraftKey = (directory: string) =>
+  `opencode.trellis.new-task-draft:${checksum(directory) ?? "default"}`
+
+function readNewTrellisTaskDraft(directory: string): NewTrellisTaskDraft {
+  if (typeof localStorage === "undefined") return { name: "", content: "" }
+  try {
+    const raw = localStorage.getItem(newTrellisTaskDraftKey(directory))
+    if (!raw) return { name: "", content: "" }
+    const parsed = JSON.parse(raw) as Partial<NewTrellisTaskDraft>
+    return {
+      name: typeof parsed.name === "string" ? parsed.name : "",
+      content: typeof parsed.content === "string" ? parsed.content : "",
+    }
+  } catch {
+    return { name: "", content: "" }
+  }
+}
+
+function writeNewTrellisTaskDraft(directory: string, draft: NewTrellisTaskDraft) {
+  if (typeof localStorage === "undefined") return
+  try {
+    localStorage.setItem(newTrellisTaskDraftKey(directory), JSON.stringify(draft))
+  } catch {
+  }
+}
+
+function removeNewTrellisTaskDraft(directory: string) {
+  if (typeof localStorage === "undefined") return
+  try {
+    localStorage.removeItem(newTrellisTaskDraftKey(directory))
+  } catch {
+  }
+}
+
 function NewTrellisTaskDialog(props: {
+  directory: string
   onCreate: (name: string, content: string) => Promise<void>
   searchFilesAndDirectories: (query: string) => Promise<string[]>
 }): JSX.Element {
   const language = useLanguage()
-  const [name, setName] = createSignal("")
+  const initialDraft = readNewTrellisTaskDraft(props.directory)
+  const [name, setName] = createSignal(initialDraft.name)
+  const [content, setContent] = createSignal(initialDraft.content)
   const [nameError, setNameError] = createSignal<string | undefined>()
+
+  const persistDraft = (next: Partial<NewTrellisTaskDraft>) => {
+    const draft = {
+      name: next.name ?? name(),
+      content: next.content ?? content(),
+    }
+    writeNewTrellisTaskDraft(props.directory, draft)
+  }
 
   const save = async (content: string) => {
     const title = name().trim()
@@ -77,17 +129,23 @@ function NewTrellisTaskDialog(props: {
     }
     setNameError(undefined)
     await props.onCreate(title, content)
+    removeNewTrellisTaskDraft(props.directory)
   }
 
   return (
     <DialogPromptEditor
-      text=""
+      text={initialDraft.content}
       placeholder={language.t("trellis.tasks.new.prdPlaceholder")}
       title={language.t("trellis.tasks.new.title")}
       description={language.t("trellis.tasks.new.description")}
       saveOnClose={false}
       saveLabel={language.t("trellis.tasks.new.save")}
       searchFilesAndDirectories={props.searchFilesAndDirectories}
+      onTextChange={(value) => {
+        setContent(value)
+        persistDraft({ content: value })
+      }}
+      onDiscard={() => removeNewTrellisTaskDraft(props.directory)}
       save={save}
       before={
         <label class="flex shrink-0 flex-col gap-2">
@@ -100,7 +158,9 @@ function NewTrellisTaskDialog(props: {
             classList={{ "border-border-critical-base": !!nameError() }}
             placeholder={language.t("trellis.tasks.new.namePlaceholder")}
             onInput={(event) => {
-              setName(event.currentTarget.value)
+              const value = event.currentTarget.value
+              setName(value)
+              persistDraft({ name: value })
               if (nameError()) setNameError(undefined)
             }}
           />
@@ -247,6 +307,10 @@ function PrdPreviewDialog(props: {
     left: 12,
     max: 320,
   })
+  let autosaveTimer: ReturnType<typeof setTimeout> | undefined
+  let pendingWrites = 0
+  let disposed = false
+  let writeQueue = Promise.resolve()
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
   const html = createMemo(() => paint(draft()))
   const prdEditor = {
@@ -269,9 +333,7 @@ function PrdPreviewDialog(props: {
     const match = at(draft(), pos)
     if (!match) return
     const next = mention(draft(), match.start, match.end, item.path)
-    setDraft(next.text)
-    setDirty(true)
-    setSaveError(undefined)
+    updateDraft(next.text)
     setPopover(null)
     requestAnimationFrame(() => {
       if (!prdEditor.box) return
@@ -316,6 +378,92 @@ function PrdPreviewDialog(props: {
 
   onCleanup(() => {
     if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
+  })
+
+  const clearAutosave = () => {
+    if (!autosaveTimer) return
+    clearTimeout(autosaveTimer)
+    autosaveTimer = undefined
+  }
+
+  const persistContent = async (content: string, options: { preview?: boolean; silent?: boolean } = {}) => {
+    if (!canWrite()) return false
+    clearAutosave()
+    const writeConfigFile = platform.writeConfigFile!
+    const updateUi = !options.silent && !disposed
+    if (updateUi) {
+      pendingWrites += 1
+      setSaving(true)
+      setSaveError(undefined)
+    }
+    const queued = writeQueue.catch(() => undefined).then(() => writeConfigFile(props.prdAbsPath, content))
+    writeQueue = queued.catch(() => undefined)
+    try {
+      await queued
+      if (!options.silent && !disposed) {
+        const next = commitPrdDocumentSave({ savedContent: savedContent(), draft: content })
+        setSavedContent(next.savedContent)
+        if (draft() === content) {
+          setDraft(next.draft)
+          setDirty(false)
+        }
+        if (options.preview) setMode("preview")
+      }
+      return true
+    } catch (err) {
+      if (!options.silent && !disposed) {
+        setSaveError(errorMessage(err, language.t("trellis.tasks.saveFailed")))
+      }
+      return false
+    } finally {
+      if (updateUi) {
+        pendingWrites = Math.max(0, pendingWrites - 1)
+        if (pendingWrites === 0) setSaving(false)
+      }
+    }
+  }
+
+  const scheduleAutosave = () => {
+    if (!canWrite()) return
+    clearAutosave()
+    autosaveTimer = setTimeout(() => {
+      autosaveTimer = undefined
+      void persistContent(draft())
+    }, PRD_AUTOSAVE_DELAY)
+  }
+
+  const updateDraft = (next: string) => {
+    setDraft(next)
+    const nextDirty = next !== savedContent()
+    setDirty(nextDirty)
+    setSaveError(undefined)
+    if (nextDirty) scheduleAutosave()
+    else clearAutosave()
+  }
+
+  const saveAndPreview = async () => {
+    if (!dirty() && draft() === savedContent()) {
+      setSaveError(undefined)
+      setMode("preview")
+      return true
+    }
+    return persistContent(draft(), { preview: true })
+  }
+
+  const closeDialog = async () => {
+    if (mode() === "edit" && (dirty() || draft() !== savedContent())) {
+      const saved = await persistContent(draft())
+      if (!saved) return
+    }
+    dialog.close()
+  }
+
+  onCleanup(() => {
+    clearAutosave()
+    const latestDraft = draft()
+    const latestSaved = savedContent()
+    disposed = true
+    if (latestDraft !== latestSaved) void persistContent(latestDraft, { silent: true })
   })
 
   const placeAtMenu = () => {
@@ -402,49 +550,25 @@ function PrdPreviewDialog(props: {
     setMode("edit")
   }
 
-  const cancelEdit = () => {
-    const next = revertPrdDocumentDraft({ savedContent: savedContent(), draft: draft() })
-    setDraft(next.draft)
-    setDirty(false)
-    setSaveError(undefined)
-    setMode("preview")
-  }
-
   const save = async () => {
     if (!canWrite() || saving()) return
-    const writeConfigFile = platform.writeConfigFile!
-    setSaving(true)
-    setSaveError(undefined)
-    try {
-      await writeConfigFile(props.prdAbsPath, draft())
-      const next = commitPrdDocumentSave({ savedContent: savedContent(), draft: draft() })
-      setSavedContent(next.savedContent)
-      setDraft(next.draft)
-      setDirty(false)
-      setMode("preview")
-    } catch (err) {
-      setSaveError(errorMessage(err, language.t("trellis.tasks.saveFailed")))
-    } finally {
-      setSaving(false)
-    }
+    await saveAndPreview()
   }
 
   const onInput: JSX.EventHandlerUnion<HTMLTextAreaElement, Event> = (event) => {
-    setDraft(event.currentTarget.value)
-    setDirty(true)
-    setSaveError(undefined)
+    updateDraft(event.currentTarget.value)
     requestAnimationFrame(refreshAtMenu)
   }
 
   const onKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
     if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === "Enter") {
       event.preventDefault()
-      if (dirty() && !saving()) void save()
+      if (!saving()) void save()
       return
     }
     if (event.key === "Escape" && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
       event.preventDefault()
-      cancelEdit()
+      void saveAndPreview()
       return
     }
 
@@ -456,9 +580,7 @@ function PrdPreviewDialog(props: {
     })
     if (next) {
       event.preventDefault()
-      setDraft(next.text)
-      setDirty(true)
-      setSaveError(undefined)
+      updateDraft(next.text)
       setPopover(null)
       requestAnimationFrame(() => {
         if (!prdEditor.box) return
@@ -544,7 +666,7 @@ function PrdPreviewDialog(props: {
                   "bg-background-base text-text-strong shadow-sm": mode() === "preview",
                   "text-text-base hover:text-text-strong": mode() !== "preview",
                 }}
-                onClick={() => setMode("preview")}
+                onClick={() => void saveAndPreview()}
               >
                 <Icon name="eye" size="small" />
                 {language.t("trellis.tasks.preview")}
@@ -600,7 +722,7 @@ function PrdPreviewDialog(props: {
               variant="ghost"
               size="large"
               aria-label={language.t("trellis.tasks.close")}
-              onClick={() => dialog.close()}
+              onClick={() => void closeDialog()}
             />
           </Tooltip>
         </div>
@@ -772,16 +894,24 @@ function PrdPreviewDialog(props: {
               <span>{language.t("trellis.tasks.save")}</span>
               <span class="mx-1 text-text-subtle">·</span>
               <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">Esc</span>
-              <span>{language.t("trellis.tasks.cancel")}</span>
+              <span>{language.t("trellis.tasks.saveAndPreview")}</span>
+              <span class="mx-1 text-text-subtle">·</span>
+              <span>
+                {saving()
+                  ? language.t("trellis.tasks.autosaving")
+                  : dirty()
+                    ? language.t("trellis.tasks.autosavePending")
+                    : language.t("trellis.tasks.autosaved")}
+              </span>
             </div>
             <div class="flex items-center gap-2">
               <button
                 type="button"
                 class="rounded-md border border-border-weak-base bg-background-base px-3 py-1.5 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={saving() || !dirty()}
-                onClick={cancelEdit}
+                disabled={saving()}
+                onClick={() => void saveAndPreview()}
               >
-                {language.t("trellis.tasks.cancel")}
+                {language.t("trellis.tasks.preview")}
               </button>
               <button
                 type="button"
@@ -870,7 +1000,9 @@ export function TrellisTasksPanel(props: {
       const result = await client.find.files({ query, dirs: "true" })
       return result.data ?? []
     }
-    dialog.show(() => <NewTrellisTaskDialog onCreate={createTask} searchFilesAndDirectories={searchFilesAndDirectories} />)
+    dialog.show(() => (
+      <NewTrellisTaskDialog directory={dir()} onCreate={createTask} searchFilesAndDirectories={searchFilesAndDirectories} />
+    ))
   }
 
   const open = async (task: TrellisTask) => {
