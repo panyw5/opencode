@@ -206,6 +206,40 @@ export default function Layout(props: ParentProps) {
   const onConfigRoute = createMemo(() => /\/config(?:\/|$)/.test(location.pathname))
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
   const tasksPanelActive = createMemo(() => store.sidebarPanel === "tasks")
+  const [pendingSessionSelection, setPendingSessionSelection] = createSignal<
+    { directory: string; id: string } | undefined
+  >()
+  let pendingSessionSelectionTimer: ReturnType<typeof setTimeout> | undefined
+  const sessionRouteMatches = (directory: string, id: string) =>
+    params.id === id && workspaceKey(routeDir()) === workspaceKey(directory)
+
+  function clearPendingSessionSelection() {
+    setPendingSessionSelection(undefined)
+    if (pendingSessionSelectionTimer === undefined) return
+    clearTimeout(pendingSessionSelectionTimer)
+    pendingSessionSelectionTimer = undefined
+  }
+
+  function selectSession(session: Session) {
+    if (sessionRouteMatches(session.directory, session.id)) {
+      clearPendingSessionSelection()
+      return
+    }
+    setPendingSessionSelection({ directory: session.directory, id: session.id })
+    if (pendingSessionSelectionTimer !== undefined) clearTimeout(pendingSessionSelectionTimer)
+    pendingSessionSelectionTimer = setTimeout(() => {
+      pendingSessionSelectionTimer = undefined
+      setPendingSessionSelection(undefined)
+    }, 3000)
+  }
+
+  onCleanup(clearPendingSessionSelection)
+  createEffect(() => {
+    const pending = pendingSessionSelection()
+    if (!pending) return
+    if (!sessionRouteMatches(pending.directory, pending.id)) return
+    clearPendingSessionSelection()
+  })
   createEffect(
     on(
       () => [pageReady(), location.pathname] as const,
@@ -762,6 +796,7 @@ export default function Layout(props: ParentProps) {
   })
 
   const projectContentLoading = createMemo(() => {
+    if (pendingSessionSelection()) return true
     const pending = switching()
     if (!pending) return false
     const project = currentProject()
@@ -1683,6 +1718,7 @@ export default function Layout(props: ParentProps) {
 
   function navigateToSession(session: Session | undefined) {
     if (!session) return
+    selectSession(session)
     setSwitching(undefined)
     navigateWithSidebarReset(`/${base64Encode(session.directory)}/session/${session.id}`)
   }
@@ -2653,9 +2689,11 @@ export default function Layout(props: ParentProps) {
   const workspaceSidebarCtx: WorkspaceSidebarContext = {
     currentDir: routeDir,
     navList: currentSessions,
+    pendingSessionSelection,
     sidebarExpanded,
     sidebarReduced,
     nav: () => state.nav,
+    selectSession,
     prefetchSession,
     archiveSession,
     workspaceName,
@@ -3356,7 +3394,9 @@ export default function Layout(props: ParentProps) {
             >
               <main
                 classList={{
-                  "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base bg-background-base xl:border-l xl:rounded-tl-[12px]": true,
+                  "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base xl:border-l xl:rounded-tl-[12px]": true,
+                  "bg-background-base": !onSessionRoute(),
+                  "bg-background-stronger": onSessionRoute(),
                   "overflow-y-hidden": onConfigRoute(),
                 }}
               >
@@ -3366,7 +3406,7 @@ export default function Layout(props: ParentProps) {
                     fallback={
                       <div
                         data-component="project-content-loading"
-                        class="size-full flex items-center justify-center text-14-regular text-text-weak"
+                        class="size-full flex items-center justify-center bg-background-stronger text-14-regular text-text-weak"
                       >
                         <div class="flex items-center gap-2 rounded-lg border border-border-weak-base bg-surface-raised-base/40 px-3 py-2">
                           <Spinner class="size-4" />

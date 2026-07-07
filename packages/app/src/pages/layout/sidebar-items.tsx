@@ -135,9 +135,16 @@ export type SessionItemProps = {
   dense?: boolean
   reduced?: boolean
   sidebarExpanded: Accessor<boolean>
+  pendingSelection: Accessor<{ directory: string; id: string } | undefined>
+  selectSession: (session: Session) => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
 }
+
+const isPlainPrimaryMouse = (event: MouseEvent) =>
+  event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
+
+const isPlainPrimaryPointer = (event: PointerEvent) => event.isPrimary && isPlainPrimaryMouse(event)
 
 const SessionRow = (props: {
   session: Session
@@ -150,6 +157,7 @@ const SessionRow = (props: {
   hasError: Accessor<boolean>
   unseenCount: Accessor<number>
   sidebarOpened: Accessor<boolean>
+  select: () => void
   warmHover: () => void
   warmPress: () => void
   warmFocus: () => void
@@ -160,9 +168,13 @@ const SessionRow = (props: {
   <A
     href={`/${base64Encode(props.session.directory)}/session/${props.session.id}`}
     class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
-    onPointerDown={props.warmPress}
+    onPointerDown={(event) => {
+      if (isPlainPrimaryPointer(event)) props.select()
+      props.warmPress()
+    }}
     onFocus={props.warmFocus}
-    onClick={() => {
+    onClick={(event) => {
+      if (isPlainPrimaryMouse(event)) props.select()
       if (props.sidebarOpened()) return
     }}
   >
@@ -226,6 +238,12 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     return working(status, sessionStore.message[props.session.id])
   })
   const isActive = createMemo(() => props.session.id === params.id)
+  const isSelected = createMemo(() => {
+    if (isActive()) return true
+    const pending = props.pendingSelection()
+    if (!pending) return false
+    return pending.id === props.session.id && workspaceKey(pending.directory) === workspaceKey(props.session.directory)
+  })
   const detail = createMemo(() => {
     if (!props.root) return
     return workspaceKey(props.session.directory) !== workspaceKey(props.root)
@@ -329,13 +347,14 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       session={props.session}
       mobile={props.mobile}
       dense={props.dense}
-      active={isActive()}
+      active={isSelected()}
       tint={tint}
       isWorking={isWorking}
       hasPermissions={hasPermissions}
       hasError={hasError}
       unseenCount={unseenCount}
       sidebarOpened={layout.sidebar.opened}
+      select={() => props.selectSession(props.session)}
       warmHover={() => undefined}
       warmPress={() => warm(2, "high")}
       warmFocus={() => warm(2, "high")}
@@ -349,7 +368,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     <div
       data-session-id={props.session.id}
       data-component="sidebar-session"
-      data-active={isActive() ? "true" : "false"}
+      data-active={isSelected() ? "true" : "false"}
       classList={{
         "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-4 pr-3 border border-transparent": true,
         "transition-[background-color,border-color,box-shadow]": !props.reduced,

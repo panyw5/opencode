@@ -2168,7 +2168,7 @@ export default function Page() {
           <div class="flex-1 min-h-0 overflow-hidden">
             <Switch>
               <Match when={params.id}>
-                <Show when={messagesReady()}>
+                <Show when={messagesReady()} fallback={<div class="size-full bg-background-stronger" />}>
                   <MessageTimeline
                     mobileChanges={mobileChanges()}
                     mobileFallback={reviewContent({
@@ -2300,7 +2300,7 @@ export default function Page() {
                 "opacity-0 pointer-events-none": sessionRenderOverlayStatus() === "hiding",
               }}
               style={{
-                background: "var(--background-base)",
+                background: "var(--background-stronger)",
               }}
             >
               <div class="flex items-center gap-2 rounded-full border border-border-weak-base bg-background-stronger px-3 py-2 text-12-medium text-text-weak shadow-sm">

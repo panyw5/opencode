@@ -43,9 +43,11 @@ type InlineEditorComponent = (props: {
 export type WorkspaceSidebarContext = {
   currentDir: Accessor<string>
   navList: Accessor<Session[]>
+  pendingSessionSelection: Accessor<{ directory: string; id: string } | undefined>
   sidebarExpanded: Accessor<boolean>
   sidebarReduced: Accessor<boolean>
   nav: Accessor<HTMLElement | undefined>
+  selectSession: (session: Session) => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
   workspaceName: (directory: string, projectId?: string, branch?: string) => string | undefined
@@ -354,6 +356,8 @@ const WorkspaceSessionList = (props: {
                 mobile={props.mobile}
                 reduced={props.ctx.sidebarReduced()}
                 sidebarExpanded={props.ctx.sidebarExpanded}
+                pendingSelection={props.ctx.pendingSessionSelection}
+                selectSession={props.ctx.selectSession}
                 prefetchSession={props.ctx.prefetchSession}
                 archiveSession={props.ctx.archiveSession}
               />
