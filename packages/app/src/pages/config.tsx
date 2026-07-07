@@ -1299,6 +1299,24 @@ function SkillListButton(props: {
   )
 }
 
+function ConfigSearchBox(props: {
+  value: string
+  placeholder: string
+  onInput: (value: string) => void
+}) {
+  return (
+    <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
+      <input
+        type="text"
+        value={props.value}
+        placeholder={props.placeholder}
+        class="w-full bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak"
+        onInput={(event) => props.onInput(event.currentTarget.value)}
+      />
+    </div>
+  )
+}
+
 function PluginListButton(props: {
   active: boolean
   title: string
@@ -3070,6 +3088,9 @@ export default function ConfigPage() {
     text: "",
     saved: "",
     query: "",
+    agentQuery: "",
+    commandQuery: "",
+    pluginQuery: "",
     providerBusy: "",
     providerOffCollapsed: true,
     customID: "",
@@ -3995,6 +4016,7 @@ export default function ConfigPage() {
         content: item.prompt ?? "No prompt content is available for this runtime agent.",
       }))
   })
+  const loadedMap = createMemo(() => new Map((loaded.latest ?? ([] as Agent[])).map((item) => [item.name, item] as const)))
 
   const agents = createMemo<DocItem[]>(() => {
     const seen = new Set<string>()
@@ -4008,9 +4030,14 @@ export default function ConfigPage() {
       .sort((a, b) => (a.group ?? "").localeCompare(b.group ?? "") || a.label.localeCompare(b.label))
   })
 
-  const agentOpenCode = createMemo(() => agents().filter((item) => item.group === "opencode"))
-  const agentProject = createMemo(() => agents().filter((item) => item.group === "project"))
-  const agentPlugin = createMemo(() => agents().filter((item) => item.group === "plugin"))
+  const agentMatches = (item: DocItem) =>
+    skillSearchMatch(
+      [item.label, loadedMap().get(item.label)?.description, item.note, item.path, item.project, item.origin, item.source],
+      state.agentQuery,
+    )
+  const agentOpenCode = createMemo(() => agents().filter((item) => item.group === "opencode" && agentMatches(item)))
+  const agentProject = createMemo(() => agents().filter((item) => item.group === "project" && agentMatches(item)))
+  const agentPlugin = createMemo(() => agents().filter((item) => item.group === "plugin" && agentMatches(item)))
 
   const projectAgentGroups = createMemo(() => {
     const items = agentProject()
@@ -4139,8 +4166,14 @@ export default function ConfigPage() {
   )
 
   const commandDocs = createMemo(() => [...(diskGlobalCmds.latest ?? []), ...(diskProjectCmds.latest ?? [])])
-  const commandGlobal = createMemo(() => (diskGlobalCmds.latest ?? []).filter((item) => item.group === "global"))
-  const commandProject = createMemo(() => (diskProjectCmds.latest ?? []).filter((item) => item.group === "project"))
+  const commandMatches = (item: DocItem) =>
+    skillSearchMatch([item.label, item.note, item.path, item.project, item.root, item.source], state.commandQuery)
+  const commandGlobal = createMemo(() =>
+    (diskGlobalCmds.latest ?? []).filter((item) => item.group === "global" && commandMatches(item)),
+  )
+  const commandProject = createMemo(() =>
+    (diskProjectCmds.latest ?? []).filter((item) => item.group === "project" && commandMatches(item)),
+  )
 
   const projectCommands = createMemo(() => {
     const map = new Map<string, { label: string; path?: string; items: DocItem[] }>()
@@ -4159,7 +4192,7 @@ export default function ConfigPage() {
         items: [item],
       })
     }
-    if (state.pick === COMMAND_NEW && state.cmdCreateProjectRoot) {
+    if (state.pick === COMMAND_NEW && state.cmdCreateProjectRoot && skillSearchMatch([state.cmdTitle], state.commandQuery)) {
       const key = state.cmdCreateProjectRoot
       const safeName = commandSafeName(state.cmdTitle)
       const label = safeName || state.cmdTitle.trim() || t("config.commands.create.action")
@@ -4275,8 +4308,6 @@ export default function ConfigPage() {
 
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
   })
-
-  const loadedMap = createMemo(() => new Map((loaded.latest ?? ([] as Agent[])).map((item) => [item.name, item] as const)))
 
   const scanPlugins = async (root: string, extra: PluginSource): Promise<PluginItem[]> => {
     if (!platform.listConfigDirectory) return []
@@ -4419,8 +4450,10 @@ export default function ConfigPage() {
     return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name))
   })
 
-  const pluginGlobal = createMemo(() => (plugins() ?? []).filter((item) => item.group !== "project"))
-  const pluginProject = createMemo(() => (plugins() ?? []).filter((item) => item.group === "project"))
+  const pluginMatches = (item: PluginItem) =>
+    skillSearchMatch([item.label, item.name, item.path, item.spec, item.project, item.origin, item.root], state.pluginQuery)
+  const pluginGlobal = createMemo(() => (plugins() ?? []).filter((item) => item.group !== "project" && pluginMatches(item)))
+  const pluginProject = createMemo(() => (plugins() ?? []).filter((item) => item.group === "project" && pluginMatches(item)))
   const projectPlugins = createMemo(() => {
     const map = new Map<string, { label: string; path?: string; items: PluginItem[] }>()
 
@@ -6344,6 +6377,12 @@ export default function ConfigPage() {
                         fallback={<Wait text={`${t("common.loading")}${t("common.loading.ellipsis")}`} />}
                       >
                         <div class="flex flex-col gap-3">
+                          <ConfigSearchBox
+                            value={state.agentQuery}
+                            placeholder={t("common.search.placeholder")}
+                            onInput={(value) => setState("agentQuery", value)}
+                          />
+
                           <Show when={agentOpenCode().length > 0}>
                             <div class="flex flex-col gap-2">
                               <div class="flex items-center justify-between gap-3 px-1">
@@ -6558,6 +6597,12 @@ export default function ConfigPage() {
                         fallback={<Wait text={`${t("common.loading")}${t("common.loading.ellipsis")}`} />}
                       >
                         <div class="flex flex-col gap-3">
+                          <ConfigSearchBox
+                            value={state.commandQuery}
+                            placeholder={t("common.search.placeholder")}
+                            onInput={(value) => setState("commandQuery", value)}
+                          />
+
                           <Show when={commandGlobal().length > 0}>
                             <div class="flex flex-col gap-2">
                               <div class="flex items-center justify-between gap-3 px-1">
@@ -6793,6 +6838,12 @@ export default function ConfigPage() {
 
                     <Match when={state.section === "plugins"}>
                       <div class="flex flex-col gap-3">
+                        <ConfigSearchBox
+                          value={state.pluginQuery}
+                          placeholder={t("common.search.placeholder")}
+                          onInput={(value) => setState("pluginQuery", value)}
+                        />
+
                         <Show when={pluginGlobal().length > 0}>
                           <div class="flex flex-col gap-2">
                             <div class="flex items-center justify-between gap-3 px-1">
