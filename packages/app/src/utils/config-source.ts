@@ -3,9 +3,10 @@ import type { Project } from "@opencode-ai/sdk/v2/client"
 export type ConfigSourceScope = "global" | "project" | "external"
 export type ConfigSourceKind = "skill" | "plugin"
 export type ConfigSourceOrigin = ".agents" | ".opencode" | ".claude" | "skill" | "plugin"
+type ProjectSource = Pick<Project, "worktree" | "name"> & { sandboxes?: string[] }
 
 export type ProjectOwner = {
-  item: Project
+  item: ProjectSource
   root: string
   label: string
 }
@@ -53,7 +54,7 @@ export function isInsidePath(value: string, root?: string) {
   return current === base || current.startsWith(base + "/")
 }
 
-export function findProjectOwner(value: string, projects: Project[]): ProjectOwner | undefined {
+export function findProjectOwner(value: string, projects: ProjectSource[]): ProjectOwner | undefined {
   return projects
     .flatMap((item) =>
       [item.worktree, ...(item.sandboxes ?? [])]
@@ -115,8 +116,8 @@ function isGlobalOpenCodePlugin(value: string) {
 
 export function classifySkillSource(
   value: string,
-  projects: Project[],
-  input: { opencodeRoot?: string; claudeRoot?: string } = {},
+  projects: ProjectSource[],
+  input: { opencodeRoot?: string; claudeRoot?: string; allowPathFallback?: boolean } = {},
 ): ConfigSource {
   if (isInsidePath(value, input.opencodeRoot)) return { scope: "global", group: "opencode", origin: ".opencode" }
   if (isInsidePath(value, input.claudeRoot)) return { scope: "global", group: "claude", origin: ".claude" }
@@ -124,22 +125,30 @@ export function classifySkillSource(
   if (owner) {
     return { scope: "project", group: "project", project: owner.label, root: owner.item.worktree, origin: sourceOrigin(value, "skill"), owner }
   }
-  const fallback = sourceByPath(value, ["skill", "skills"])
-  if (fallback && fallback.origin !== ".claude") {
-    return { scope: "project", group: "project", project: fallback.project, root: fallback.root, origin: fallback.origin }
+  if (input.allowPathFallback !== false) {
+    const fallback = sourceByPath(value, ["skill", "skills"])
+    if (fallback && fallback.origin !== ".claude") {
+      return { scope: "project", group: "project", project: fallback.project, root: fallback.root, origin: fallback.origin }
+    }
   }
   const origin = sourceOrigin(value, "skill")
   return { scope: "global", group: origin === ".claude" ? "claude" : "external", origin }
 }
 
-export function classifyPluginSource(value: string, projects: Project[]): ConfigSource {
+export function classifyPluginSource(
+  value: string,
+  projects: ProjectSource[],
+  input: { allowPathFallback?: boolean } = {},
+): ConfigSource {
   const owner = findProjectOwner(value, projects)
   if (owner) {
     return { scope: "project", group: "project", project: owner.label, root: owner.item.worktree, origin: sourceOrigin(value, "plugin"), owner }
   }
-  const fallback = sourceByPath(value, ["plugin", "plugins"])
-  if (fallback && !isGlobalOpenCodePlugin(value)) {
-    return { scope: "project", group: "project", project: fallback.project, root: fallback.root, origin: fallback.origin }
+  if (input.allowPathFallback !== false) {
+    const fallback = sourceByPath(value, ["plugin", "plugins"])
+    if (fallback && !isGlobalOpenCodePlugin(value)) {
+      return { scope: "project", group: "project", project: fallback.project, root: fallback.root, origin: fallback.origin }
+    }
   }
   return { scope: "global", group: "global", project: isGlobalOpenCodePlugin(value) ? "global" : undefined, origin: sourceOrigin(value, "plugin") }
 }

@@ -1398,6 +1398,7 @@ export const dict = {
   "config.skills.market.installing": "Installing...",
   "config.skills.market.installed": "Installed",
   "config.skills.market.install.success": "Skill installed",
+  "config.skills.market.projects": "Projects",
   "config.mcp.title": "MCP Servers",
   "config.mcp.header": "Manage Model Context Protocol server connections and status.",
   "config.mcp.empty": "No MCP servers configured.",

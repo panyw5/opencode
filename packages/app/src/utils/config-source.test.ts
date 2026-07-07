@@ -42,6 +42,16 @@ describe("config source classification", () => {
     })
   })
 
+  test("can restrict project plugins to the provided project list", () => {
+    expect(
+      classifyPluginSource("file:///Users/me/other/.agents/plugins/foo.ts", projects, { allowPathFallback: false }),
+    ).toMatchObject({
+      scope: "global",
+      group: "global",
+      origin: ".agents",
+    })
+  })
+
   test("classifies project skills across supported origins", () => {
     expect(classifySkillSource("file:///Users/me/math-physics/.claude/skills/review/SKILL.md", projects)).toMatchObject({
       scope: "project",
@@ -63,6 +73,18 @@ describe("config source classification", () => {
       project: "Math and Physics",
       root: "/Users/me/math-physics",
       origin: ".opencode",
+    })
+  })
+
+  test("can restrict project skills to the provided project list", () => {
+    expect(
+      classifySkillSource("file:///Users/me/other/.agents/skills/review/SKILL.md", projects, {
+        allowPathFallback: false,
+      }),
+    ).toMatchObject({
+      scope: "global",
+      group: "external",
+      origin: ".agents",
     })
   })
 

@@ -18,6 +18,7 @@ import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 import { Markdown } from "@opencode-ai/ui/markdown"
@@ -48,7 +49,7 @@ import {
 import { FetchProviderModels } from "@/components/fetch-provider-models"
 import { Link } from "@/components/link"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
+import { useLayout, type LocalProject } from "@/context/layout"
 import {
   type ConfigTreeItem,
   type ConfigWorkspace,
@@ -66,7 +67,7 @@ import { normalizeProviderList } from "@/context/global-sync/utils"
 import { providerDisplaySdk } from "./config-provider-display"
 import { SectionButton } from "./config-section-button"
 import { ServerConnection, useServer } from "@/context/server"
-import { extraAgentById, extraAgents, isExtraAgentDirectory, mainDomain } from "@/pages/layout/extra-agents"
+import { extraAgentById, extraAgents, mainDomain } from "@/pages/layout/extra-agents"
 import {
   basename,
   classifyPluginSource,
@@ -75,7 +76,7 @@ import {
   localPath,
   normalizePath,
 } from "@/utils/config-source"
-import type { Agent, Config, Project, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 
 const CORE_SECTIONS = ["agents-md", "providers", "agents", "skills", "plugins", "mcp", "commands", "claws"] as const
 type CoreSection = (typeof CORE_SECTIONS)[number]
@@ -175,6 +176,12 @@ type SkillMarketItem = {
 }
 
 type SkillMarketInstallScope = "global" | "project"
+
+type SkillMarketProjectTarget = {
+  label: string
+  root: string
+  installed: Set<string>
+}
 
 type SkillMarketLoadResult = {
   skills: SkillMarketItem[]
@@ -345,7 +352,7 @@ function file(path: string) {
   return isFilePath(path)
 }
 
-function projectRoots(item: Project) {
+function projectRoots(item: { worktree: string; sandboxes?: string[] }) {
   return Array.from(new Set([item.worktree, ...(item.sandboxes ?? [])].filter((root) => file(root))))
 }
 
@@ -1074,6 +1081,29 @@ function fuzzy(text: string, query: string) {
     if (i === b.length) return true
   }
   return a.includes(b)
+}
+
+function skillSearchMatchField(value: string, term: string) {
+  const text = value.toLowerCase()
+  if (text.includes(term)) return true
+
+  const words = text.split(/[^a-z0-9]+/).filter(Boolean)
+  if (words.some((word) => word.startsWith(term))) return true
+
+  const acronym = words.map((word) => word[0]).join("")
+  return acronym.startsWith(term)
+}
+
+function skillSearchMatch(fields: Array<string | undefined>, query: string) {
+  const terms = query
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+  if (terms.length === 0) return true
+
+  const values = fields.filter((field): field is string => !!field?.trim())
+  return terms.every((term) => values.some((value) => skillSearchMatchField(value, term)))
 }
 
 function sectionIcon(section: Section): IconProps["name"] {
@@ -3059,6 +3089,7 @@ export default function ConfigPage() {
     skillSaving: false,
     skillPanel: "editor" as "editor" | "market",
     skillMarketRepo: SKILL_MARKET_REPOS[0]?.id ?? "",
+    skillQuery: "",
     skillMarketCustomInput: "",
     skillMarketCustomError: "",
     skillMarketCustomRepos: loadStoredSkillMarketRepos(),
@@ -3448,7 +3479,7 @@ export default function ConfigPage() {
   const mainConfig = createMemo(() => mainRoot()?.config ?? globalSync.data.config)
 
   const space = createMemo<ConfigWorkspace | undefined>(() => {
-    const data = workspace() as ConfigWorkspace | undefined
+    const data = workspace.latest as ConfigWorkspace | undefined
     const root = mainPath().config
     if (!data && !root) return
     if (!root) return data
@@ -3634,18 +3665,17 @@ export default function ConfigPage() {
       return value as Section
     }
   })
-  const opened = createMemo(() =>
-    Object.values(globalSync.data.projectByDomain)
-      .flat()
-      .filter((item): item is Project => !!item && file(item.worktree))
-      .filter((item) => !isExtraAgentDirectory(item.worktree))
+  const opened = createMemo<LocalProject[]>(() =>
+    layout.projects
+      .list()
+      .filter((item) => file(item.worktree))
       .sort((a, b) => (a.name ?? name(a.worktree)).localeCompare(b.name ?? name(b.worktree))),
   )
   const openedKey = createMemo(() =>
     opened()
       .map((item) =>
         [item.id, item.name ?? "", item.worktree, ...(item.sandboxes ?? [])]
-          .map((part) => part.replace(/\x1f|\x1e/g, ""))
+          .map((part) => (part ?? "").replace(/\x1f|\x1e/g, ""))
           .join("\x1f"),
       )
       .join("\x1e"),
@@ -3681,7 +3711,11 @@ export default function ConfigPage() {
     const root = local(space()?.skillsRoot ?? "")
     const claude = mainPath().home ? join(mainPath().home, ".claude", "skills") : undefined
     return (rawSkills.latest ?? []).map((item) => {
-      const source = classifySkillSource(item.location, opened(), { opencodeRoot: root, claudeRoot: claude })
+      const source = classifySkillSource(item.location, opened(), {
+        opencodeRoot: root,
+        claudeRoot: claude,
+        allowPathFallback: false,
+      })
       const group: SkillGroup = source.group === "global" ? "external" : source.group
       return {
         ...item,
@@ -4088,16 +4122,12 @@ export default function ConfigPage() {
     async ([, dir]) => (dir ? scanCommandFolders(dir, { group: "global", root: dir }) : []),
   )
   const [diskProjectCmds] = createResource(
-    () => [state.commandRev, openedKey(), mainPath().directory] as const,
-    async ([, , currentDir]) => {
+    () => [state.commandRev, openedKey()] as const,
+    async () => {
       const list = untrack(opened)
       const projects = new Map<string, { root: string; label: string }>()
       for (const item of list) {
         projects.set(norm(item.worktree), { root: item.worktree, label: item.name ?? name(item.worktree) })
-      }
-      if (currentDir && file(currentDir)) {
-        const key = norm(currentDir)
-        if (!projects.has(key)) projects.set(key, { root: currentDir, label: name(currentDir) })
       }
       return Promise.all(
         Array.from(projects.values()).map(async (item) => {
@@ -4108,9 +4138,9 @@ export default function ConfigPage() {
     },
   )
 
-  const commandDocs = createMemo(() => [...(diskGlobalCmds() ?? []), ...(diskProjectCmds() ?? [])])
-  const commandGlobal = createMemo(() => (diskGlobalCmds() ?? []).filter((item) => item.group === "global"))
-  const commandProject = createMemo(() => (diskProjectCmds() ?? []).filter((item) => item.group === "project"))
+  const commandDocs = createMemo(() => [...(diskGlobalCmds.latest ?? []), ...(diskProjectCmds.latest ?? [])])
+  const commandGlobal = createMemo(() => (diskGlobalCmds.latest ?? []).filter((item) => item.group === "global"))
+  const commandProject = createMemo(() => (diskProjectCmds.latest ?? []).filter((item) => item.group === "project"))
 
   const projectCommands = createMemo(() => {
     const map = new Map<string, { label: string; path?: string; items: DocItem[] }>()
@@ -4167,28 +4197,38 @@ export default function ConfigPage() {
       commandDocs().length === 0,
   )
 
-  const skillOpenCode = createMemo(() => skillDocs().filter((item) => item.group === "opencode"))
-  const skillClaude = createMemo(() => skillDocs().filter((item) => item.group === "claude"))
-  const skillProject = createMemo(() => skillDocs().filter((item) => item.group === "project"))
-  const skillExternal = createMemo(() => skillDocs().filter((item) => item.group === "external"))
+  const skillQueryText = createMemo(() => state.skillQuery.trim())
+  const skillMatches = (item: DocItem) => {
+    const query = skillQueryText()
+    if (!query) return true
+    return skillSearchMatch([item.label, item.note, item.path, item.project, item.origin, item.source], query)
+  }
+  const skillOpenCode = createMemo(() => skillDocs().filter((item) => item.group === "opencode" && skillMatches(item)))
+  const skillClaude = createMemo(() => skillDocs().filter((item) => item.group === "claude" && skillMatches(item)))
+  const skillProject = createMemo(() => skillDocs().filter((item) => item.group === "project" && skillMatches(item)))
+  const skillExternal = createMemo(() => skillDocs().filter((item) => item.group === "external" && skillMatches(item)))
   const installedGlobalSkillFolders = createMemo(() => {
     const folders = new Set<string>()
     const add = (location: string) => folders.add(name(dir(local(location))).toLowerCase())
     for (const item of diskOpenCode.latest ?? []) add(item.location)
     return folders
   })
-  const installedProjectSkillFolders = createMemo(() => {
-    const folders = new Set<string>()
-    const projectRoot = mainPath().directory
-    if (!projectRoot) return folders
-    const base = `${norm(projectRoot)}/.opencode/skills/`
-    const add = (location: string) => {
-      const next = norm(local(location))
-      if (next.startsWith(base)) folders.add(name(dir(next)).toLowerCase())
-    }
-    for (const item of diskProject.latest ?? []) add(item.location)
-    return folders
-  })
+  const skillMarketProjectTargets = createMemo<SkillMarketProjectTarget[]>(() =>
+    opened().map((project) => {
+      const root = project.worktree
+      const base = `${norm(root)}/.opencode/skills/`
+      const installed = new Set<string>()
+      for (const item of diskProject.latest ?? []) {
+        const next = norm(local(item.location))
+        if (next.startsWith(base)) installed.add(name(dir(next)).toLowerCase())
+      }
+      return {
+        label: project.name ?? name(root),
+        root,
+        installed,
+      }
+    }),
+  )
   const projectSkills = createMemo(() => {
     const map = new Map<string, { label: string; path?: string; items: DocItem[] }>()
 
@@ -4236,7 +4276,7 @@ export default function ConfigPage() {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
   })
 
-  const loadedMap = createMemo(() => new Map((loaded() ?? ([] as Agent[])).map((item) => [item.name, item] as const)))
+  const loadedMap = createMemo(() => new Map((loaded.latest ?? ([] as Agent[])).map((item) => [item.name, item] as const)))
 
   const scanPlugins = async (root: string, extra: PluginSource): Promise<PluginItem[]> => {
     if (!platform.listConfigDirectory) return []
@@ -4359,7 +4399,7 @@ export default function ConfigPage() {
         continue
       }
 
-      const project = classifyPluginSource(spec, opened())
+      const project = classifyPluginSource(spec, opened(), { allowPathFallback: false })
 
       map.set(key, {
         id: `plugin:${key}`,
@@ -5748,16 +5788,15 @@ export default function ConfigPage() {
     })
   }
 
-  async function installMarketSkill(item: SkillMarketItem, scope: SkillMarketInstallScope) {
-    const projectRoot = mainPath().directory
-    const root = scope === "project" ? (projectRoot ? join(projectRoot, ".opencode", "skills") : "") : space()?.skillsRoot
+  async function installMarketSkill(item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) {
+    const root = scope === "project" ? (target ? join(target.root, ".opencode", "skills") : "") : space()?.skillsRoot
     if (!root || !platform.createConfigFile) {
       showToast({ title: t("common.requestFailed"), description: t("config.error.globalConfigUnavailable") })
       return
     }
     const path = join(root, item.folder, "SKILL.md")
     const isProject = scope === "project"
-    setState("skillMarketInstalling", `${scope}:${item.id}`)
+    setState("skillMarketInstalling", `${scope}:${isProject ? `${target?.root ?? ""}:` : ""}${item.id}`)
     await platform
       .createConfigFile(path, item.content)
       .then(async () => {
@@ -5778,8 +5817,8 @@ export default function ConfigPage() {
           note: meta.description,
           warn: meta.warn,
           group: isProject ? "project" : "opencode",
-          root: isProject ? projectRoot : undefined,
-          project: isProject ? mcpProjectName() : undefined,
+          root: isProject ? target?.root : undefined,
+          project: isProject ? target?.label : undefined,
         })
       })
       .catch((err: unknown) => {
@@ -6171,15 +6210,6 @@ export default function ConfigPage() {
                         disabled={!space()?.skillsRoot || !platform.createConfigFile}
                       >
                         {t("config.skills.create.action")}
-                      </Button>
-                      <Button
-                        size="small"
-                        variant="ghost"
-                        icon="fork"
-                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover"
-                        onClick={openSkillMarket}
-                      >
-                        {t("config.skills.market.action")}
                       </Button>
                     </div>
                   </Match>
@@ -6605,6 +6635,24 @@ export default function ConfigPage() {
                         fallback={<Wait text={`${t("common.loading")}${t("common.loading.ellipsis")}`} />}
                       >
                         <div class="flex flex-col gap-3">
+                          <div class="flex flex-col gap-2">
+                            <SkillListButton
+                              active={state.skillPanel === "market"}
+                              title={t("config.skills.market.action")}
+                              note={t("config.skills.market.description")}
+                              onClick={openSkillMarket}
+                            />
+                            <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
+                              <input
+                                type="text"
+                                value={state.skillQuery}
+                                placeholder={t("common.search.placeholder")}
+                                class="w-full bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak"
+                                onInput={(event) => setState("skillQuery", event.currentTarget.value)}
+                              />
+                            </div>
+                          </div>
+
                           <Show when={skillOpenCode().length > 0}>
                             <div class="flex flex-col gap-2">
                               <div class="flex items-center justify-between gap-3 px-1">
@@ -7186,13 +7234,12 @@ export default function ConfigPage() {
                           error={marketSkills().error}
                           installing={state.skillMarketInstalling}
                           installedGlobal={installedGlobalSkillFolders()}
-                          installedProject={installedProjectSkillFolders()}
+                          projectTargets={skillMarketProjectTargets()}
                           globalRoot={space()?.skillsRoot}
-                          projectRoot={mainPath().directory}
                           customValue={state.skillMarketCustomInput}
                           customError={state.skillMarketCustomError}
                           onSelect={selectSkillMarketRepo}
-                          onInstall={(item, scope) => void installMarketSkill(item, scope)}
+                          onInstall={(item, scope, target) => void installMarketSkill(item, scope, target)}
                           onReload={loadSelectedMarketRepo}
                           onCustomInput={setCustomSkillMarketInput}
                           onCustomSubmit={loadCustomSkillMarketRepo}
@@ -7497,6 +7544,65 @@ function SkillMarketLoading(props: { meta?: SkillMarketLoadMeta }) {
   )
 }
 
+function SkillMarketProjectInstallMenu(props: {
+  item: SkillMarketItem
+  targets: SkillMarketProjectTarget[]
+  installing: string
+  installed: (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) => boolean
+  busy: (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) => boolean
+  onInstall: (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) => void
+}) {
+  const language = useLanguage()
+  const [open, setOpen] = createSignal(false)
+  const anyProjectBusy = () => props.installing.startsWith("project:") && props.installing.endsWith(props.item.id)
+  const allProjectsInstalled = () =>
+    props.targets.length > 0 && props.targets.every((target) => props.installed(props.item, "project", target))
+  const label = () => {
+    if (anyProjectBusy()) return language.t("config.skills.market.installing")
+    if (allProjectsInstalled()) return language.t("config.skills.market.installed")
+    return language.t("config.skills.market.installProject")
+  }
+  return (
+    <DropdownMenu open={open()} onOpenChange={setOpen} placement="right-start" gutter={6}>
+      <DropdownMenu.Trigger
+        as={Button}
+        size="small"
+        variant="secondary"
+        disabled={props.targets.length === 0 || !!props.installing || allProjectsInstalled()}
+      >
+        {label()}
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content class="min-w-64">
+          <DropdownMenu.Group>
+            <DropdownMenu.GroupLabel>{language.t("config.skills.market.projects")}</DropdownMenu.GroupLabel>
+            <For each={props.targets}>
+              {(target) => (
+                <DropdownMenu.Item
+                  disabled={!!props.installing || props.installed(props.item, "project", target)}
+                  onSelect={() => {
+                    props.onInstall(props.item, "project", target)
+                    setOpen(false)
+                  }}
+                >
+                  <DropdownMenu.ItemLabel>{target.label}</DropdownMenu.ItemLabel>
+                  <DropdownMenu.ItemDescription>
+                    {props.busy(props.item, "project", target)
+                      ? language.t("config.skills.market.installing")
+                      : props.installed(props.item, "project", target)
+                        ? language.t("config.skills.market.installed")
+                        : target.root}
+                  </DropdownMenu.ItemDescription>
+                </DropdownMenu.Item>
+              )}
+            </For>
+          </DropdownMenu.Group>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
+  )
+}
+
 function SkillMarket(props: {
   repos: SkillMarketRepo[]
   selected: string
@@ -7506,13 +7612,12 @@ function SkillMarket(props: {
   error?: unknown
   installing: string
   installedGlobal: Set<string>
-  installedProject: Set<string>
+  projectTargets: SkillMarketProjectTarget[]
   globalRoot?: string
-  projectRoot?: string
   customValue: string
   customError: string
   onSelect: (id: string) => void
-  onInstall: (item: SkillMarketItem, scope: SkillMarketInstallScope) => void
+  onInstall: (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) => void
   onReload: () => void
   onCustomInput: (value: string) => void
   onCustomSubmit: () => void
@@ -7526,24 +7631,31 @@ function SkillMarket(props: {
     if (!err) return ""
     return err instanceof Error ? err.message : String(err)
   }
-  const installed = (item: SkillMarketItem, scope: SkillMarketInstallScope) =>
-    (scope === "global" ? props.installedGlobal : props.installedProject).has(item.folder.toLowerCase())
-  const busy = (item: SkillMarketItem, scope: SkillMarketInstallScope) => props.installing === `${scope}:${item.id}`
+  const installed = (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) => {
+    const folder = item.folder.toLowerCase()
+    if (scope === "global") return props.installedGlobal.has(folder)
+    if (target) return target.installed.has(folder)
+    return props.projectTargets.some((project) => project.installed.has(folder))
+  }
+  const installKey = (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) =>
+    `${scope}:${scope === "project" ? `${target?.root ?? ""}:` : ""}${item.id}`
+  const busy = (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) =>
+    props.installing === installKey(item, scope, target)
   const marketDescription = () => {
     const root = props.globalRoot?.trim()
     if (!root) return language.t("config.skills.market.description")
     return language.t("config.skills.market.descriptionWithRoot", { root })
   }
-  const installLabel = (item: SkillMarketItem, scope: SkillMarketInstallScope) => {
-    if (busy(item, scope)) return language.t("config.skills.market.installing")
-    if (installed(item, scope)) return language.t("config.skills.market.installed")
+  const installLabel = (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) => {
+    if (busy(item, scope, target)) return language.t("config.skills.market.installing")
+    if (installed(item, scope, target)) return language.t("config.skills.market.installed")
     return scope === "global"
       ? language.t("config.skills.market.installGlobal")
       : language.t("config.skills.market.installProject")
   }
-  const installDisabled = (item: SkillMarketItem, scope: SkillMarketInstallScope) => {
-    const root = scope === "global" ? props.globalRoot : props.projectRoot
-    return !root || !!props.installing || installed(item, scope)
+  const installDisabled = (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) => {
+    const available = scope === "global" ? !!props.globalRoot : !!target
+    return !available || !!props.installing || installed(item, scope, target)
   }
   const openDetail = (item: SkillMarketItem) => {
     const repo = props.repos.find((entry) => entry.repo === item.repo)
@@ -7593,14 +7705,14 @@ function SkillMarket(props: {
               >
                 {installLabel(item, "global")}
               </Button>
-              <Button
-                size="small"
-                variant="secondary"
-                disabled={installDisabled(item, "project")}
-                onClick={() => props.onInstall(item, "project")}
-              >
-                {installLabel(item, "project")}
-              </Button>
+              <SkillMarketProjectInstallMenu
+                item={item}
+                targets={props.projectTargets}
+                installing={props.installing}
+                installed={installed}
+                busy={busy}
+                onInstall={props.onInstall}
+              />
             </div>
           </div>
         </Dialog>
@@ -7800,18 +7912,19 @@ function SkillMarket(props: {
                                 >
                                   {installLabel(item, "global")}
                                 </Button>
-                                <Button
-                                  size="small"
-                                  variant="secondary"
-                                  disabled={installDisabled(item, "project")}
-                                  onClick={(event: MouseEvent) => {
-                                    event.preventDefault()
-                                    event.stopPropagation()
-                                    props.onInstall(item, "project")
-                                  }}
+                                <div
+                                  onClick={(event) => event.stopPropagation()}
+                                  onKeyDown={(event) => event.stopPropagation()}
                                 >
-                                  {installLabel(item, "project")}
-                                </Button>
+                                  <SkillMarketProjectInstallMenu
+                                    item={item}
+                                    targets={props.projectTargets}
+                                    installing={props.installing}
+                                    installed={installed}
+                                    busy={busy}
+                                    onInstall={props.onInstall}
+                                  />
+                                </div>
                               </div>
                             </div>
                           </div>

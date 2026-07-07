@@ -1351,6 +1351,7 @@ export const dict = {
   "config.skills.market.installing": "安装中...",
   "config.skills.market.installed": "已安装",
   "config.skills.market.install.success": "技能已安装",
+  "config.skills.market.projects": "项目",
   "config.mcp.title": "MCP 服务器",
   "config.mcp.header": "管理 Model Context Protocol 服务器连接和状态。",
   "config.mcp.empty": "未配置 MCP 服务器。",
