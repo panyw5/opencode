@@ -243,6 +243,7 @@ export function SessionSidePanel(props: {
                     >
                       <Show when={contextOpen()}>
                         <Tabs.Trigger
+                          class="session-file-tab-trigger"
                           value="context"
                           closeButton={
                             <TooltipKeybind

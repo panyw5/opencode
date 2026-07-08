@@ -229,6 +229,53 @@
         }
       }
 
+      &.session-file-tab-trigger:has([data-slot="tabs-trigger-close-button"]) {
+        padding-left: 10px;
+        padding-right: 8px;
+      }
+
+      [data-slot="tabs-trigger-close-button"][data-hidden="true"] {
+        opacity: 0;
+        pointer-events: none;
+        transform: scale(0.94);
+        transition:
+          opacity 120ms ease,
+          transform 120ms ease;
+
+        [data-component="icon-button"] {
+          border-radius: 5px;
+          color: var(--icon-base);
+          transition:
+            background-color 120ms ease,
+            box-shadow 120ms ease,
+            color 120ms ease,
+            transform 80ms ease;
+
+          [data-slot="icon-svg"] {
+            color: currentColor;
+          }
+
+          &:is(:hover, :focus-visible):not(:disabled) {
+            color: var(--icon-strong-base);
+            background-color: light-dark(#ffffff, rgba(255, 255, 255, 0.14));
+            box-shadow: var(--shadow-xs-border-base);
+          }
+
+          &:active:not(:disabled) {
+            color: var(--icon-strong-base);
+            background-color: var(--surface-base-active);
+            box-shadow: var(--shadow-xs-border-base);
+            transform: scale(0.9);
+          }
+        }
+      }
+
+      &:is(:hover, :focus-within) [data-slot="tabs-trigger-close-button"][data-hidden="true"] {
+        opacity: 1;
+        pointer-events: auto;
+        transform: scale(1);
+      }
+
       &:has([data-selected]) {
         color: var(--text-strong);
         background-color: var(--surface-base-active);
