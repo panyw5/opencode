@@ -3069,19 +3069,57 @@ ToolRegistry.register({
                     <Show when={q.options?.length}>
                       <div data-slot="question-options-summary">
                         <For each={q.options}>
-                          {(option) => (
-                            <div data-slot="question-option-summary" data-selected={selected(option.label)}>
-                              <div data-slot="question-option-summary-main">
-                                <span data-slot="question-option-summary-label">{option.label}</span>
-                                <Show when={selected(option.label)}>
-                                  <Icon name="check" size="small" />
+                          {(option) => {
+                            const [copied, setCopied] = createSignal(false)
+                            let copiedTimeout: ReturnType<typeof setTimeout> | undefined
+                            const copyText = () =>
+                              option.description ? `${option.label}\n${option.description}` : option.label
+                            const copyOption = async (event: MouseEvent) => {
+                              event.stopPropagation()
+                              const value = copyText()
+                              if (!value) return
+                              await navigator.clipboard.writeText(value)
+                              setCopied(true)
+                              if (copiedTimeout) clearTimeout(copiedTimeout)
+                              copiedTimeout = setTimeout(() => setCopied(false), 2000)
+                            }
+                            onCleanup(() => {
+                              if (copiedTimeout) clearTimeout(copiedTimeout)
+                            })
+
+                            return (
+                              <div data-slot="question-option-summary" data-selected={selected(option.label)}>
+                                <div data-slot="question-option-summary-main">
+                                  <span data-slot="question-option-summary-title">
+                                    <span data-slot="question-option-summary-label">{option.label}</span>
+                                    <Show when={selected(option.label)}>
+                                      <Icon name="check" size="small" />
+                                    </Show>
+                                  </span>
+                                  <span data-slot="question-option-summary-actions">
+                                    <Tooltip
+                                      value={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                                      placement="top"
+                                      gutter={4}
+                                      lazyMount
+                                    >
+                                      <IconButton
+                                        icon={copied() ? "check" : "copy"}
+                                        size="small"
+                                        variant="secondary"
+                                        onMouseDown={(event) => event.preventDefault()}
+                                        onClick={copyOption}
+                                        aria-label={copied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                                      />
+                                    </Tooltip>
+                                  </span>
+                                </div>
+                                <Show when={option.description}>
+                                  <div data-slot="question-option-summary-description">{option.description}</div>
                                 </Show>
                               </div>
-                              <Show when={option.description}>
-                                <div data-slot="question-option-summary-description">{option.description}</div>
-                              </Show>
-                            </div>
-                          )}
+                            )
+                          }}
                         </For>
                       </div>
                     </Show>
