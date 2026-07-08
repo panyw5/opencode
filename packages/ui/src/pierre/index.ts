@@ -1,6 +1,13 @@
-import { DiffLineAnnotation, FileContents, FileDiffOptions, type SelectedLineRange } from "@pierre/diffs"
+import { DiffLineAnnotation, extendFileFormatMap, FileContents, FileDiffOptions, type SelectedLineRange } from "@pierre/diffs"
 import { ComponentProps } from "solid-js"
 import { lineCommentStyles } from "../components/line-comment-styles"
+
+extendFileFormatMap({
+  wl: "wolfram",
+  wls: "wolfram",
+  nb: "wolfram",
+  mma: "wolfram",
+})
 
 export type DiffProps<T = {}> = FileDiffOptions<T> & {
   before: FileContents
@@ -173,7 +180,7 @@ export function createDefaultOptions<T>(style: FileDiffOptions<T>["diffStyle"]) 
     hunkSeparators: "line-info-basic",
     lineDiffType: style === "split" ? "word-alt" : "none",
     maxLineDiffLength: 1000,
-    maxLineLengthForHighlighting: 1000,
+    tokenizeMaxLineLength: 1000,
     disableFileHeader: true,
     unsafeCSS,
   } as const

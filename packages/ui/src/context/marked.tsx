@@ -177,6 +177,18 @@ registerCustomTheme("OpenCode", () => {
         },
       },
       {
+        scope: ["entity.name.function.wolfram", "variable.function.wolfram"],
+        settings: {
+          foreground: "var(--syntax-type)",
+        },
+      },
+      {
+        scope: ["support.function.builtin.wolfram", "support.function.experimental.wolfram"],
+        settings: {
+          foreground: "var(--syntax-primitive)",
+        },
+      },
+      {
         scope: ["support.class.component"],
         settings: {
           foreground: "var(--syntax-type)",
@@ -198,6 +210,22 @@ registerCustomTheme("OpenCode", () => {
         ],
         settings: {
           foreground: "var(--syntax-operator)",
+        },
+      },
+      {
+        scope: [
+          "keyword.operator.wolfram",
+          "keyword.operator.assignment.wolfram",
+          "keyword.operator.arithmetic.wolfram",
+        ],
+        settings: {
+          foreground: "var(--syntax-keyword)",
+        },
+      },
+      {
+        scope: "keyword.operator.Blank.wolfram",
+        settings: {
+          foreground: "var(--syntax-property)",
         },
       },
       {
@@ -309,6 +337,18 @@ registerCustomTheme("OpenCode", () => {
         },
       },
       {
+        scope: [
+          "constant.language.wolfram",
+          "constant.numeric.wolfram",
+          "donothighlight.constant.character.escape",
+          "donothighlight.constant.character.escape.wolfram",
+          "donothighlight.constant.character.escape.undocumented",
+        ],
+        settings: {
+          foreground: "var(--syntax-constant)",
+        },
+      },
+      {
         scope: "support.variable",
         settings: {
           foreground: "var(--syntax-variable)",
@@ -324,6 +364,29 @@ registerCustomTheme("OpenCode", () => {
         scope: "punctuation.definition.list.begin.markdown",
         settings: {
           foreground: "var(--syntax-punctuation)",
+        },
+      },
+      {
+        scope: [
+          "punctuation.section.brackets.wolfram",
+          "punctuation.section.brackets.begin.wolfram",
+          "punctuation.section.brackets.end.wolfram",
+          "punctuation.section.braces.wolfram",
+          "punctuation.section.braces.begin.wolfram",
+          "punctuation.section.braces.end.wolfram",
+          "punctuation.section.parens.wolfram",
+          "punctuation.section.parens.begin.wolfram",
+          "punctuation.section.parens.end.wolfram",
+          "punctuation.separator",
+        ],
+        settings: {
+          foreground: "var(--syntax-info)",
+        },
+      },
+      {
+        scope: "symbol.unrecognized.wolfram",
+        settings: {
+          foreground: "var(--syntax-variable)",
         },
       },
       {
@@ -688,6 +751,7 @@ export function normalizeCodeLanguage(lang?: string): string {
     mathematica: "wolfram",
     mma: "wolfram",
     nb: "wolfram",
+    wl: "wolfram",
     wls: "wolfram",
   }
   const normalized = aliases[value] ?? value

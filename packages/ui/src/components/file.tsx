@@ -54,6 +54,7 @@ import { createLineNumberSelectionBridge, restoreShadowTextSelection } from "../
 import { acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
 import { getWorkerPool } from "../pierre/worker"
 import { Button } from "./button"
+import { codeFileLanguage } from "./file-language"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
 import { IconButton } from "./icon-button"
@@ -159,6 +160,14 @@ function fileBytes(file: FileContents) {
 
 function markdownFile(name: string) {
   return /\.(md|markdown|mdx)$/i.test(name)
+}
+
+function sourceFile(file: FileContents, contents: string): FileContents {
+  return {
+    ...file,
+    contents,
+    lang: file.lang ?? codeFileLanguage(file.name),
+  }
 }
 
 function fileLines(text: string) {
@@ -938,7 +947,7 @@ function SourceViewer<T>(props: SourceProps<T>) {
       draw: (value) => {
         const contents = text()
         value.render({
-          file: typeof local.file.contents === "string" ? local.file : { ...local.file, contents },
+          file: sourceFile(local.file, contents),
           lineAnnotations: [],
           containerWrapper: viewer.container,
         })

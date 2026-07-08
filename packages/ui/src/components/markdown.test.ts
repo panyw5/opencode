@@ -206,7 +206,7 @@ describe("markdown code language", () => {
     expect(normalizeCodeLanguage("Mathematica")).toBe("wolfram")
     expect(normalizeCodeLanguage("mma")).toBe("wolfram")
     expect(normalizeCodeLanguage("wls")).toBe("wolfram")
-    expect(normalizeCodeLanguage("wl")).toBe("wl")
+    expect(normalizeCodeLanguage("wl")).toBe("wolfram")
   })
 
   test("falls back unsupported code languages to text", () => {
