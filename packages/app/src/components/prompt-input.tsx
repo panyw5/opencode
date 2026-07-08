@@ -2120,7 +2120,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       <IconButton
                         data-action="prompt-markdown-attachment"
                         type="button"
-                        icon="read"
+                        icon="sticky-note"
                         iconSize="normal"
                         variant="ghost"
                         class="size-9 rounded-full"
