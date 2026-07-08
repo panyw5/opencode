@@ -4,7 +4,7 @@ export const todoState = (input: {
   live: boolean
 }): "hide" | "clear" | "open" | "close" => {
   if (input.count === 0) return "hide"
-  if (!input.live) return "clear"
   if (!input.done) return "open"
+  if (!input.live) return "clear"
   return "close"
 }

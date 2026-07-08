@@ -142,8 +142,8 @@ describe("todoState", () => {
     expect(todoState({ count: 2, done: true, live: true })).toBe("close")
   })
 
-  test("clears stale todos when the turn ends", () => {
-    expect(todoState({ count: 2, done: false, live: false })).toBe("clear")
+  test("keeps incomplete todos open when the turn ends", () => {
+    expect(todoState({ count: 2, done: false, live: false })).toBe("open")
   })
 
   test("clears completed todos when the session is no longer live", () => {
