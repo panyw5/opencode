@@ -90,7 +90,13 @@ interface PromptInputProps {
   onSubmitted?: () => void
 }
 
-const EXAMPLES = [
+const BASE_PLACEHOLDER_SUGGESTIONS = [
+  "prompt.suggestion.greeting.1",
+  "prompt.suggestion.greeting.2",
+  "prompt.suggestion.hint.expandEditor",
+  "prompt.suggestion.hint.dragDrop",
+  "prompt.suggestion.hint.mentions",
+  "prompt.suggestion.hint.outputShape",
   "prompt.example.1",
   "prompt.example.2",
   "prompt.example.3",
@@ -117,6 +123,8 @@ const EXAMPLES = [
   "prompt.example.24",
   "prompt.example.25",
 ] as const
+
+const TEMP_ATTACHMENT_PLACEHOLDER_SUGGESTIONS = ["prompt.suggestion.hint.tempAttachment"] as const
 
 const NON_EMPTY_TEXT = /[^\s\u200B]/
 const promptTooltipDelay = 350
@@ -399,6 +407,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const platform = usePlatform()
   const server = useServer()
   const win = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
+  const placeholderSuggestions = createMemo(() =>
+    platform.createTempMarkdownAttachment
+      ? [...TEMP_ATTACHMENT_PLACEHOLDER_SUGGESTIONS, ...BASE_PLACEHOLDER_SUGGESTIONS]
+      : BASE_PLACEHOLDER_SUGGESTIONS,
+  )
   const { params, tabs, view } = useSessionLayout()
   const extraAgentIntegration = createMemo(() => extraAgentByDirectory(sdk.directory)?.id ?? server.current?.integration)
   const extraAgentCaps = createMemo(() => extraAgentCapabilities(extraAgentIntegration()))
@@ -575,7 +588,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     popover: null,
     historyIndex: -1,
     savedPrompt: null as PromptHistoryEntry | null,
-    placeholder: Math.floor(Math.random() * EXAMPLES.length),
+    placeholder: Math.floor(Math.random() * placeholderSuggestions().length),
     draggingType: null,
     mode: "normal",
     applyingHistory: false,
@@ -658,16 +671,51 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
   })
 
-  const suggest = createMemo(() => !hasUserPrompt() && !submit())
+  const suggest = createMemo(() => !prompt.dirty() && !submit())
   const read = createMemo(() => prefs.read)
 
   const placeholder = createMemo(() =>
     promptPlaceholder({
       mode: store.mode,
       commentCount: commentCount(),
-      example: suggest() ? language.t(EXAMPLES[store.placeholder]) : "",
+      suggestion: suggest() ? language.t(placeholderSuggestions()[store.placeholder] ?? placeholderSuggestions()[0]) : "",
       suggest: suggest(),
       t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
+    }),
+  )
+  const [animatedPlaceholder, setAnimatedPlaceholder] = createSignal("")
+  const [placeholderTyping, setPlaceholderTyping] = createSignal(false)
+
+  createEffect(
+    on(placeholder, (next) => {
+      if (!next) {
+        setAnimatedPlaceholder("")
+        setPlaceholderTyping(false)
+        return
+      }
+      if (!suggest() || typeof window === "undefined") {
+        setAnimatedPlaceholder(next)
+        setPlaceholderTyping(false)
+        return
+      }
+
+      const chars = Array.from(next)
+      const stepMs = Math.max(18, Math.min(42, Math.floor(900 / Math.max(chars.length, 1))))
+      let index = 0
+      setAnimatedPlaceholder("")
+      setPlaceholderTyping(true)
+      const interval = window.setInterval(() => {
+        index += 1
+        setAnimatedPlaceholder(chars.slice(0, index).join(""))
+        if (index >= chars.length) {
+          setPlaceholderTyping(false)
+          window.clearInterval(interval)
+        }
+      }, stepMs)
+      onCleanup(() => {
+        setPlaceholderTyping(false)
+        window.clearInterval(interval)
+      })
     }),
   )
 
@@ -918,11 +966,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   createEffect(() => {
-    params.id
-    if (params.id) return
     if (!suggest()) return
     const interval = setInterval(() => {
-      setStore("placeholder", (prev) => (prev + 1) % EXAMPLES.length)
+      setStore("placeholder", (prev) => (prev + 1) % placeholderSuggestions().length)
     }, 6500)
     onCleanup(() => clearInterval(interval))
   })
@@ -2011,14 +2057,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 }}
                 style={{ "padding-bottom": space }}
               />
-              <Show when={!prompt.dirty()}>
-                <div
-                  class="absolute top-0 inset-x-0 pl-4 pr-4 pt-3 text-14-regular text-text-weak pointer-events-none whitespace-nowrap truncate"
-                  classList={{ "font-mono!": store.mode === "shell" }}
-                  style={{ "padding-bottom": space }}
-                >
-                  {placeholder()}
-                </div>
+              <Show keyed when={!prompt.dirty() ? placeholder() : undefined}>
+                {(text) => (
+                  <div
+                    data-slot="prompt-placeholder"
+                    data-typing={placeholderTyping() || undefined}
+                    class="absolute top-0 inset-x-0 pl-4 pr-4 pt-3 text-14-regular pointer-events-none whitespace-nowrap truncate"
+                    classList={{ "font-mono!": store.mode === "shell" }}
+                    style={{ "padding-bottom": space }}
+                  >
+                    <span data-slot="prompt-placeholder-text">{animatedPlaceholder() || "\u00A0"}</span>
+                  </div>
+                )}
               </Show>
             </div>
 

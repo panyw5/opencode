@@ -420,6 +420,36 @@
       0 4px 10px rgba(0, 0, 0, 0.08);
   }
 
+  [data-component="prompt-input"] + [data-slot="prompt-placeholder"] {
+    color: color-mix(in srgb, var(--text-weaker) 72%, transparent);
+    opacity: 0.86;
+  }
+
+  html[data-platform="desktop"] [data-component="prompt-input"] + [data-slot="prompt-placeholder"] {
+    color: light-dark(rgba(0, 0, 0, 0.28), rgba(255, 255, 255, 0.24));
+  }
+
+  [data-slot="prompt-placeholder-text"] {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    vertical-align: top;
+    white-space: nowrap;
+    animation: prompt-placeholder-soft-in 180ms ease-out both;
+  }
+
+  [data-slot="prompt-placeholder"][data-typing] [data-slot="prompt-placeholder-text"]::after {
+    content: "";
+    display: inline-block;
+    width: 1px;
+    height: 1.08em;
+    margin-left: 2px;
+    vertical-align: -0.14em;
+    background: currentColor;
+    opacity: 0.7;
+    animation: prompt-placeholder-caret 720ms step-end infinite;
+  }
+
   html[data-platform="desktop"] [data-component="user-message"] [data-slot="user-message-text"] {
     background: light-dark(var(--apple-light-alpha-3), color-mix(in oklch, var(--surface-weak) 78%, #d4ee77));
   }
@@ -737,6 +767,36 @@
     100% {
       transform: scale(2);
       opacity: 0;
+    }
+  }
+
+  @keyframes prompt-placeholder-soft-in {
+    from {
+      opacity: 0;
+      transform: translateY(3px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes prompt-placeholder-caret {
+    0% {
+      opacity: 0.7;
+    }
+
+    50%,
+    100% {
+      opacity: 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-slot="prompt-placeholder-text"],
+    [data-slot="prompt-placeholder-text"]::after {
+      animation: none;
     }
   }
 }

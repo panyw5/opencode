@@ -2,13 +2,14 @@ import { describe, expect, test } from "bun:test"
 import { promptPlaceholder } from "./placeholder"
 
 describe("promptPlaceholder", () => {
-  const t = (key: string, params?: Record<string, string>) => `${key}${params?.example ? `:${params.example}` : ""}`
+  const t = (key: string, params?: Record<string, string>) =>
+    `${key}${params?.suggestion ? `:${params.suggestion}` : ""}`
 
   test("returns shell placeholder in shell mode", () => {
     const value = promptPlaceholder({
       mode: "shell",
       commentCount: 0,
-      example: "example",
+      suggestion: "example",
       suggest: true,
       t,
     })
@@ -16,30 +17,30 @@ describe("promptPlaceholder", () => {
   })
 
   test("returns summarize placeholders for comment context", () => {
-    expect(promptPlaceholder({ mode: "normal", commentCount: 1, example: "example", suggest: true, t })).toBe(
+    expect(promptPlaceholder({ mode: "normal", commentCount: 1, suggestion: "example", suggest: true, t })).toBe(
       "prompt.placeholder.summarizeComment",
     )
-    expect(promptPlaceholder({ mode: "normal", commentCount: 2, example: "example", suggest: true, t })).toBe(
+    expect(promptPlaceholder({ mode: "normal", commentCount: 2, suggestion: "example", suggest: true, t })).toBe(
       "prompt.placeholder.summarizeComments",
     )
   })
 
-  test("returns default placeholder with example when suggestions enabled", () => {
+  test("returns default placeholder with suggestion when suggestions enabled", () => {
     const value = promptPlaceholder({
       mode: "normal",
       commentCount: 0,
-      example: "translated-example",
+      suggestion: "translated-suggestion",
       suggest: true,
       t,
     })
-    expect(value).toBe("prompt.placeholder.normal:translated-example")
+    expect(value).toBe("prompt.placeholder.normal:translated-suggestion")
   })
 
   test("returns simple placeholder when suggestions disabled", () => {
     const value = promptPlaceholder({
       mode: "normal",
       commentCount: 0,
-      example: "translated-example",
+      suggestion: "translated-suggestion",
       suggest: false,
       t,
     })
