@@ -35,6 +35,7 @@ export function FileMedia(props: {
   openFolder?: () => void
   openWith?: JSX.Element
   copyPath?: () => void
+  copyContent?: () => void
 }) {
   const i18n = useI18n()
   const cfg = () => props.media
@@ -174,11 +175,24 @@ export function FileMedia(props: {
           ? "ui.fileMedia.kind.audio"
           : "ui.fileMedia.kind.pdf",
     )
-  const hasActions = () => Boolean(props.openWith || props.openFolder || props.copyPath)
+  const hasActions = () => Boolean(props.openWith || props.openFolder || props.copyPath || props.copyContent)
   const actions = () => (
     <Show when={hasActions()}>
       <div class="flex items-center justify-center gap-2">
         {props.openWith}
+        <Show when={props.copyContent}>
+          {(copyContent) => (
+            <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
+              <IconButton
+                icon="copy-content"
+                variant="secondary"
+                class="h-8 w-8 rounded-md"
+                onClick={copyContent()}
+                aria-label={i18n.t("ui.file.copyContent")}
+              />
+            </Tooltip>
+          )}
+        </Show>
         <Show when={props.openFolder}>
           {(openFolder) => (
             <Tooltip value={i18n.t("ui.file.openFolder")} placement="bottom">

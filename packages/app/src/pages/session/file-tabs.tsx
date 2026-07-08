@@ -290,6 +290,35 @@ export function FileTabContent(props: { tab: string }) {
       },
     )
   }
+  const copyContent = () => {
+    const target = path()
+    const text = state()?.content?.type === "text" ? contents() : undefined
+    if (!target || text === undefined) return
+
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!clipboard?.writeText) {
+      showToast({ variant: "error", title: language.t("common.requestFailed") })
+      return
+    }
+
+    void clipboard.writeText(text).then(
+      () => {
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("session.share.copy.copied"),
+          description: target,
+        })
+      },
+      (err: unknown) => {
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      },
+    )
+  }
   const selectedLines = createMemo<SelectedLineRange | null>(() => {
     const p = path()
     if (!p) return null
@@ -629,6 +658,7 @@ export function FileTabContent(props: { tab: string }) {
           onLoad: queueRestore,
         }}
         copyPath={copyPath}
+        copyContent={state()?.content?.type === "text" ? copyContent : undefined}
         openWith={openWithAction}
         openFolder={
           platform.openInFinder

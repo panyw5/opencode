@@ -31,6 +31,7 @@ export const dict: Record<string, string> = {
   "ui.fileMedia.binary.description.default": "Binary content",
   "ui.file.preview": "Preview",
   "ui.file.source": "Source",
+  "ui.file.copyContent": "Copy file content",
   "ui.file.copyPath": "Copy file path",
   "ui.file.openFolder": "Open containing folder",
   "ui.file.largePreview.title": "Large markdown preview is paused",

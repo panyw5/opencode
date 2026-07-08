@@ -89,6 +89,7 @@ type SharedProps<T> = {
   openFolder?: () => void
   openWith?: JSX.Element
   copyPath?: () => void
+  copyContent?: () => void
 }
 
 export type FileSearchHandle = {
@@ -130,6 +131,7 @@ const sharedKeys = [
   "openFolder",
   "openWith",
   "copyPath",
+  "copyContent",
   "onLineSelected",
   "onLineSelectionEnd",
   "onLineNumberSelectionEnd",
@@ -1002,6 +1004,19 @@ function TextViewer<T>(props: TextFileProps<T>) {
       >
         <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
           {props.openWith}
+          <Show when={props.copyContent}>
+            {(copyContent) => (
+              <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
+                <IconButton
+                  icon="copy-content"
+                  variant="ghost"
+                  class="h-8 w-8 rounded-md"
+                  onClick={copyContent()}
+                  aria-label={i18n.t("ui.file.copyContent")}
+                />
+              </Tooltip>
+            )}
+          </Show>
           <Show when={props.copyPath}>
             {(copyPath) => (
               <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
@@ -1045,6 +1060,19 @@ function TextViewer<T>(props: TextFileProps<T>) {
     >
       <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
         {props.openWith}
+        <Show when={props.copyContent}>
+          {(copyContent) => (
+            <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
+              <IconButton
+                icon="copy-content"
+                variant="ghost"
+                class="h-8 w-8 rounded-md"
+                onClick={copyContent()}
+                aria-label={i18n.t("ui.file.copyContent")}
+              />
+            </Tooltip>
+          )}
+        </Show>
         <Show when={props.copyPath}>
           {(copyPath) => (
             <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
@@ -1405,6 +1433,7 @@ export function File<T>(props: FileProps<T>) {
         openFolder={props.openFolder}
         openWith={props.openWith}
         copyPath={props.copyPath}
+        copyContent={props.copyContent}
       />
     )
   }
@@ -1416,6 +1445,7 @@ export function File<T>(props: FileProps<T>) {
       openFolder={props.openFolder}
       openWith={props.openWith}
       copyPath={props.copyPath}
+      copyContent={props.copyContent}
     />
   )
 }
