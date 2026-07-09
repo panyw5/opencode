@@ -62,28 +62,29 @@ export const Event = {
 type Row = typeof ProjectTable.$inferSelect
 
 export function fromRow(row: Row): Info {
-  const icon =
-    row.icon_url || row.icon_url_override || row.icon_color
-      ? {
-          url: row.icon_url ?? undefined,
-          override: row.icon_url_override ?? undefined,
-          color: row.icon_color ?? undefined,
-        }
-      : undefined
-  return {
+  const result: Info = {
     id: row.id,
     worktree: row.worktree,
-    vcs: row.vcs ? Schema.decodeUnknownSync(ProjectVcs)(row.vcs) : undefined,
-    name: row.name ?? undefined,
-    icon,
     time: {
       created: row.time_created,
       updated: row.time_updated,
-      initialized: row.time_initialized ?? undefined,
     },
     sandboxes: row.sandboxes,
-    commands: row.commands ?? undefined,
   }
+
+  if (row.vcs) result.vcs = Schema.decodeUnknownSync(ProjectVcs)(row.vcs)
+  if (row.name !== null) result.name = row.name
+  if (row.commands !== null) result.commands = row.commands
+  if (row.time_initialized !== null) result.time.initialized = row.time_initialized
+
+  if (row.icon_url || row.icon_url_override || row.icon_color) {
+    result.icon = {}
+    if (row.icon_url !== null) result.icon.url = row.icon_url
+    if (row.icon_url_override !== null) result.icon.override = row.icon_url_override
+    if (row.icon_color !== null) result.icon.color = row.icon_color
+  }
+
+  return result
 }
 
 export const UpdateInput = Schema.Struct({

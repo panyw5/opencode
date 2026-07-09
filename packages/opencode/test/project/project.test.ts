@@ -7,7 +7,7 @@ import path from "path"
 import { tmpdirScoped } from "../fixture/fixture"
 import { GlobalBus } from "../../src/bus/global"
 import { ProjectID } from "../../src/project/schema"
-import { Cause, Effect, Exit, Layer, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -101,6 +101,30 @@ function waitForProjectIcon(id: ProjectID, attempts = 50): Effect.Effect<Project
 }
 
 describe("Project.fromDirectory", () => {
+  test("fromRow omits nullable optional fields for HTTP response encoding", () => {
+    const project = Project.fromRow({
+      id: ProjectID.global,
+      worktree: "/",
+      vcs: null,
+      name: null,
+      icon_url: null,
+      icon_url_override: null,
+      icon_color: null,
+      time_created: 1,
+      time_updated: 2,
+      time_initialized: null,
+      sandboxes: [],
+      commands: null,
+    })
+
+    expect("vcs" in project).toBe(false)
+    expect("name" in project).toBe(false)
+    expect("icon" in project).toBe(false)
+    expect("commands" in project).toBe(false)
+    expect("initialized" in project.time).toBe(false)
+    expect(Schema.decodeUnknownSync(Project.Info)(project)).toEqual(project)
+  })
+
   it.live("should handle git repository with no commits", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped()
