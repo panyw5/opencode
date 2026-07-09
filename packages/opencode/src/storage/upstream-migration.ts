@@ -21,24 +21,30 @@ type Migration = {
   up: (db: MigrationClient) => void
 }
 
-function rawAll(db: MigrationClient, sql: string) {
+function rawAll(db: MigrationClient, sql: string, ...params: unknown[]) {
   const client = db.$client
   if (typeof client.query === "function")
-    return (client.query(sql) as RawSQLiteStatement).all() as Record<string, unknown>[]
+    return (client.query(sql) as RawSQLiteStatement).all(...params) as Record<string, unknown>[]
   if (typeof client.prepare === "function")
-    return (client.prepare(sql) as RawSQLiteStatement).all() as Record<string, unknown>[]
+    return (client.prepare(sql) as RawSQLiteStatement).all(...params) as Record<string, unknown>[]
   throw new Error("SQLite client does not support raw all queries")
 }
 
+function quoteIdentifier(identifier: string) {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) throw new Error(`Unsafe SQLite identifier: ${identifier}`)
+  return `"${identifier}"`
+}
+
+function quoteString(value: string) {
+  return `'${value.replaceAll("'", "''")}'`
+}
+
 function hasTable(db: MigrationClient, table: string) {
-  return (
-    rawAll(db, `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${JSON.stringify(table)} LIMIT 1`)
-      .length > 0
-  )
+  return rawAll(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1", table).length > 0
 }
 
 function columns(db: MigrationClient, table: string) {
-  return rawAll(db, `PRAGMA table_info(${JSON.stringify(table)})`).map((column) => String(column.name))
+  return rawAll(db, `PRAGMA table_info(${quoteIdentifier(table)})`).map((column) => String(column.name))
 }
 
 function hasColumn(db: MigrationClient, table: string, column: string) {
@@ -267,9 +273,7 @@ function runMigration(db: MigrationClient, migration: Migration) {
   db.run("BEGIN IMMEDIATE")
   try {
     migration.up(db)
-    db.run(
-      `INSERT OR IGNORE INTO migration (id, time_completed) VALUES (${JSON.stringify(migration.id)}, ${Date.now()})`,
-    )
+    db.run(`INSERT OR IGNORE INTO migration (id, time_completed) VALUES (${quoteString(migration.id)}, ${Date.now()})`)
     db.run("COMMIT")
   } catch (err) {
     try {
