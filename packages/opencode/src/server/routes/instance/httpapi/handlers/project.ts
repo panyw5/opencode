@@ -1,22 +1,73 @@
 import * as InstanceState from "@/effect/instance-state"
 import { Project } from "@/project/project"
 import { ProjectID } from "@/project/schema"
-import { Effect } from "effect"
+import * as Log from "@opencode-ai/core/util/log"
+import { Effect, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ProjectNotFoundError } from "../errors"
 import { markInstanceForReload } from "../lifecycle"
+
+const log = Log.create({ service: "project.http" })
+
+function errorDetails(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    }
+  }
+  return {
+    name: typeof error,
+    message: String(error),
+  }
+}
+
+function projectSummary(item: Project.Info | undefined) {
+  if (!item) return undefined
+  return {
+    id: item.id,
+    worktree: item.worktree,
+    keys: Object.keys(item),
+    timeKeys: Object.keys(item.time),
+    sandboxes: item.sandboxes.length,
+  }
+}
 
 export const projectHandlers = HttpApiBuilder.group(InstanceHttpApi, "project", (handlers) =>
   Effect.gen(function* () {
     const svc = yield* Project.Service
 
     const list = Effect.fn("ProjectHttpApi.list")(function* () {
-      return yield* svc.list()
+      const result = yield* svc.list()
+      try {
+        Schema.decodeUnknownSync(Schema.Array(Project.Info))(result)
+        Schema.encodeUnknownSync(Schema.Array(Project.Info))(result)
+      } catch (error) {
+        log.error("project.list response schema failed", {
+          count: result.length,
+          first: projectSummary(result[0]),
+          error: errorDetails(error),
+        })
+        throw error
+      }
+      return result
     })
 
     const current = Effect.fn("ProjectHttpApi.current")(function* () {
-      return (yield* InstanceState.context).project
+      const result = (yield* InstanceState.context).project
+      try {
+        Schema.decodeUnknownSync(Project.Info)(result)
+        Schema.encodeUnknownSync(Project.Info)(result)
+      } catch (error) {
+        log.error("project.current response schema failed", {
+          project: projectSummary(result),
+          error: errorDetails(error),
+        })
+        throw error
+      }
+      return result
     })
 
     const initGit = Effect.fn("ProjectHttpApi.initGit")(function* () {

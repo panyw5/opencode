@@ -16,6 +16,7 @@ import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@opencode-ai/core/util/error"
+import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -39,6 +40,8 @@ import {
 import { PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
+const log = Log.create({ service: "session.http" })
+
 function promptAsyncErrorDetails(cause: Cause.Cause<unknown>): Record<string, unknown> {
   const error = Cause.squash(cause)
   return {
@@ -54,6 +57,34 @@ const tryParseJson = (text: string) =>
     try: () => JSON.parse(text) as unknown,
     catch: () => new HttpApiError.BadRequest({}),
   })
+
+function errorDetails(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    }
+  }
+  return {
+    name: typeof error,
+    message: String(error),
+  }
+}
+
+function sessionSummary(item: Session.Info | undefined) {
+  if (!item) return undefined
+  return {
+    id: item.id,
+    projectID: item.projectID,
+    directory: item.directory,
+    path: item.path,
+    parentID: item.parentID,
+    workspaceID: item.workspaceID,
+    keys: Object.keys(item),
+    timeKeys: Object.keys(item.time),
+  }
+}
 
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
@@ -73,7 +104,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const scope = yield* Scope.Scope
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
-      return yield* session.list({
+      const result = yield* session.list({
         directory: ctx.query.scope === "project" ? undefined : ctx.query.directory,
         scope: ctx.query.scope,
         path: ctx.query.path,
@@ -83,6 +114,19 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         limit: ctx.query.limit,
         archived: ctx.query.archived,
       })
+      try {
+        Schema.decodeUnknownSync(Schema.Array(Session.Info))(result)
+        Schema.encodeUnknownSync(Schema.Array(Session.Info))(result)
+      } catch (error) {
+        log.error("session.list response schema failed", {
+          query: ctx.query,
+          count: result.length,
+          first: sessionSummary(result[0]),
+          error: errorDetails(error),
+        })
+        throw error
+      }
+      return result
     })
 
     const status = Effect.fn("SessionHttpApi.status")(function* () {
