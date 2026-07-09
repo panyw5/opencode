@@ -80,36 +80,13 @@ export function isDefaultTitle(title: string) {
 type SessionRow = typeof SessionTable.$inferSelect
 
 export function fromRow(row: SessionRow): Info {
-  const summary =
-    row.summary_additions !== null || row.summary_deletions !== null || row.summary_files !== null
-      ? {
-          additions: row.summary_additions ?? 0,
-          deletions: row.summary_deletions ?? 0,
-          files: row.summary_files ?? 0,
-          diffs: row.summary_diffs ?? undefined,
-        }
-      : undefined
-  const share = row.share_url ? { url: row.share_url } : undefined
-  const revert = row.revert ?? undefined
-  return {
+  const result: Info = {
     id: row.id,
     slug: row.slug,
     projectID: row.project_id,
-    workspaceID: row.workspace_id ?? undefined,
     directory: row.directory,
-    path: row.path ?? undefined,
-    parentID: row.parent_id ?? undefined,
     title: row.title,
-    agent: row.agent ?? undefined,
-    model: row.model
-      ? {
-          id: ModelID.make(row.model.id),
-          providerID: ProviderID.make(row.model.providerID),
-          variant: row.model.variant,
-        }
-      : undefined,
     version: row.version,
-    summary,
     cost: row.cost,
     tokens: {
       input: row.tokens_input,
@@ -120,16 +97,40 @@ export function fromRow(row: SessionRow): Info {
         write: row.tokens_cache_write,
       },
     },
-    share,
-    revert,
-    permission: row.permission ? [...row.permission] : undefined,
     time: {
       created: row.time_created,
       updated: row.time_updated,
-      compacting: row.time_compacting ?? undefined,
-      archived: row.time_archived ?? undefined,
     },
   }
+
+  if (row.workspace_id !== null) result.workspaceID = row.workspace_id
+  if (row.path !== null) result.path = row.path
+  if (row.parent_id !== null) result.parentID = row.parent_id
+  if (row.agent !== null) result.agent = row.agent
+  if (row.share_url) result.share = { url: row.share_url }
+  if (row.revert !== null) result.revert = row.revert
+  if (row.permission !== null) result.permission = [...row.permission]
+  if (row.time_compacting !== null) result.time.compacting = row.time_compacting
+  if (row.time_archived !== null) result.time.archived = row.time_archived
+
+  if (row.model !== null) {
+    result.model = {
+      id: ModelID.make(row.model.id),
+      providerID: ProviderID.make(row.model.providerID),
+    }
+    if (row.model.variant !== undefined) result.model.variant = row.model.variant
+  }
+
+  if (row.summary_additions !== null || row.summary_deletions !== null || row.summary_files !== null) {
+    result.summary = {
+      additions: row.summary_additions ?? 0,
+      deletions: row.summary_deletions ?? 0,
+      files: row.summary_files ?? 0,
+    }
+    if (row.summary_diffs !== null) result.summary.diffs = row.summary_diffs
+  }
+
+  return result
 }
 
 export function toRow(info: Info) {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
 
-import { Session } from "@/session/session"
+import { Session, fromRow } from "@/session/session"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionStatus } from "../../src/session/status"
@@ -93,6 +93,50 @@ describe("Session.Info", () => {
       time: { created: 1, updated: 2 },
     }
     expect(decode(input)).toEqual(input)
+  })
+
+  test("fromRow omits nullable optional fields for HTTP response encoding", () => {
+    const info = fromRow({
+      id: sessionID,
+      project_id: projectID,
+      workspace_id: null,
+      parent_id: null,
+      slug: "legacy-row",
+      directory: "/tmp/proj",
+      path: null,
+      title: "Legacy row",
+      version: "local",
+      share_url: null,
+      summary_additions: null,
+      summary_deletions: null,
+      summary_files: null,
+      summary_diffs: null,
+      metadata: null,
+      cost: 0,
+      tokens_input: 0,
+      tokens_output: 0,
+      tokens_reasoning: 0,
+      tokens_cache_read: 0,
+      tokens_cache_write: 0,
+      revert: null,
+      permission: null,
+      agent: null,
+      model: null,
+      time_created: 1,
+      time_updated: 2,
+      time_compacting: null,
+      time_archived: null,
+    })
+
+    expect("workspaceID" in info).toBe(false)
+    expect("path" in info).toBe(false)
+    expect("parentID" in info).toBe(false)
+    expect("agent" in info).toBe(false)
+    expect("model" in info).toBe(false)
+    expect("permission" in info).toBe(false)
+    expect("revert" in info).toBe(false)
+    expect("compacting" in info.time).toBe(false)
+    expect(decode(info)).toEqual(info)
   })
 
   test("rejects unbranded session id", () => {

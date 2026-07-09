@@ -82,37 +82,37 @@ export namespace Session {
   type SessionRow = typeof SessionTable.$inferSelect
 
   export function fromRow(row: SessionRow): Info {
-    const summary =
-      row.summary_additions !== null || row.summary_deletions !== null || row.summary_files !== null
-        ? {
-            additions: row.summary_additions ?? 0,
-            deletions: row.summary_deletions ?? 0,
-            files: row.summary_files ?? 0,
-            diffs: Array.isArray(row.summary_diffs) ? row.summary_diffs : undefined,
-          }
-        : undefined
-    const share = row.share_url ? { url: row.share_url } : undefined
-    const revert = row.revert ?? undefined
-    return {
+    const result: Info = {
       id: row.id,
       slug: row.slug,
       projectID: row.project_id,
-      workspaceID: row.workspace_id ?? undefined,
       directory: row.directory,
-      parentID: row.parent_id ?? undefined,
       title: row.title,
       version: row.version,
-      summary,
-      share,
-      revert,
-      permission: row.permission ?? undefined,
       time: {
         created: row.time_created,
         updated: row.time_updated,
-        compacting: row.time_compacting ?? undefined,
-        archived: row.time_archived ?? undefined,
       },
     }
+
+    if (row.workspace_id !== null) result.workspaceID = row.workspace_id
+    if (row.parent_id !== null) result.parentID = row.parent_id
+    if (row.share_url) result.share = { url: row.share_url }
+    if (row.revert !== null) result.revert = row.revert
+    if (row.permission !== null) result.permission = row.permission
+    if (row.time_compacting !== null) result.time.compacting = row.time_compacting
+    if (row.time_archived !== null) result.time.archived = row.time_archived
+
+    if (row.summary_additions !== null || row.summary_deletions !== null || row.summary_files !== null) {
+      result.summary = {
+        additions: row.summary_additions ?? 0,
+        deletions: row.summary_deletions ?? 0,
+        files: row.summary_files ?? 0,
+      }
+      if (Array.isArray(row.summary_diffs)) result.summary.diffs = row.summary_diffs
+    }
+
+    return result
   }
 
   export function toRow(info: Info) {
