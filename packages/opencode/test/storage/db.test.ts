@@ -8,6 +8,7 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import { Global } from "@opencode-ai/core/global"
 import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
+import * as UpstreamMigration from "../../src/storage/upstream-migration"
 import { it } from "../lib/effect"
 
 let Database: typeof import("../../src/storage/db").Database
@@ -122,6 +123,67 @@ describe("Database.Client schema repair", () => {
 })
 
 describe("Database.Client upstream migration path", () => {
+  it.effect("uses SQLite-compatible quoting for upstream migration bridge", () =>
+    Effect.sync(() => {
+      const tables = new Set(["session", "__drizzle_migrations"])
+      const columns = new Map([
+        [
+          "session",
+          ["id", "project_id", "slug", "directory", "path", "title", "version", "time_created", "time_updated"],
+        ],
+      ])
+      const completed = new Set<string>()
+      const runs: Array<{ sql: string; params: unknown[] }> = []
+      const all = (sql: string, ...params: unknown[]) => {
+        if (/name = "/.test(sql)) throw new Error("Node sqlite treated double-quoted table name as an identifier")
+        if (sql === "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1") {
+          expect(params).toHaveLength(1)
+          return tables.has(String(params[0])) ? [{ name: params[0] }] : []
+        }
+        if (sql === "SELECT id FROM migration") return Array.from(completed, (id) => ({ id }))
+
+        const pragma = /^PRAGMA table_info\("([A-Za-z_][A-Za-z0-9_]*)"\)$/.exec(sql)
+        if (pragma) return (columns.get(pragma[1]!) ?? []).map((name) => ({ name }))
+
+        throw new Error(`Unexpected SQL: ${sql}`)
+      }
+      const db = {
+        run(sql: string, ...params: unknown[]) {
+          if (/VALUES \("/.test(sql)) throw new Error("Migration id was interpolated as a double-quoted literal")
+          runs.push({ sql, params })
+          if (sql.startsWith("CREATE TABLE IF NOT EXISTS migration")) tables.add("migration")
+          if (sql.includes("INSERT OR IGNORE INTO migration") && sql.includes("SELECT name,")) {
+            expect(sql).not.toContain("SELECT name, ?")
+            expect(sql).toMatch(/SELECT name, \d+/)
+            completed.add("20260211171708_add_project_commands")
+          }
+          if (sql.startsWith("ALTER TABLE session ADD metadata")) columns.get("session")?.push("metadata")
+          if (sql.includes("CREATE TABLE session_input")) tables.add("session_input")
+          if (sql.includes("CREATE TABLE session_context_epoch")) tables.add("session_context_epoch")
+          if (sql.startsWith("INSERT OR IGNORE INTO migration") && /VALUES \('[^']+', \d+\)/.test(sql)) {
+            const id = /VALUES \('([^']+)'/.exec(sql)?.[1]
+            expect(id).toEqual(expect.any(String))
+            if (!id) throw new Error(`Missing migration id in SQL: ${sql}`)
+            completed.add(id)
+          }
+        },
+        $client: {
+          prepare(sql: string) {
+            return {
+              all: (...params: unknown[]) => all(sql, ...params),
+            }
+          },
+        },
+      }
+
+      UpstreamMigration.apply(db, "/tmp/opencode.db")
+
+      expect(runs.some((run) => /VALUES \('[^']+', \d+\)/.test(run.sql))).toBe(true)
+      expect(completed).toContain("20260511173437_session-metadata")
+      expect(completed).toContain("20260622202450_simplify_session_input")
+    }),
+  )
+
   it.effect("seeds upstream migration journal from drizzle and preserves canonical rows", () =>
     Effect.sync(() => {
       const dir = mkdtempSync(path.join(tmpdir(), "opencode-upstream-migration-"))
