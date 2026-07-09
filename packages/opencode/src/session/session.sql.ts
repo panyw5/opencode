@@ -2,6 +2,7 @@ import { sqliteTable, text, integer, index, primaryKey, real, uniqueIndex } from
 import { ProjectTable } from "../project/project.sql"
 import type { MessageV2 } from "./message-v2"
 import type { SessionMessage } from "@opencode-ai/core/session-message"
+import type { Prompt } from "@opencode-ai/core/session-prompt"
 import type { Snapshot } from "../snapshot"
 import type { Permission } from "../permission"
 import type { ProjectID } from "../project/schema"
@@ -12,6 +13,7 @@ import { Timestamps } from "../storage/schema.sql"
 type PartData = Omit<MessageV2.Part, "id" | "sessionID" | "messageID">
 type InfoData<T extends MessageV2.Info = MessageV2.Info> = T extends unknown ? Omit<T, "id" | "sessionID"> : never
 type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
+type SessionInputDelivery = "queued" | "accepted" | "rejected"
 
 export const SessionTable = sqliteTable(
   "session",
@@ -33,6 +35,7 @@ export const SessionTable = sqliteTable(
     summary_deletions: integer(),
     summary_files: integer(),
     summary_diffs: text({ mode: "json" }).$type<Snapshot.FileDiff[]>(),
+    metadata: text({ mode: "json" }).$type<Record<string, unknown>>(),
     cost: real().notNull().default(0),
     tokens_input: integer().notNull().default(0),
     tokens_output: integer().notNull().default(0),
@@ -145,6 +148,44 @@ export const SessionMessageTable = sqliteTable(
     index("session_message_time_created_idx").on(table.time_created),
   ],
 )
+
+export const SessionInputTable = sqliteTable(
+  "session_input",
+  {
+    id: text().$type<SessionMessage.ID>().primaryKey(),
+    session_id: text()
+      .$type<SessionID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    prompt: text({ mode: "json" }).notNull().$type<Prompt>(),
+    delivery: text().$type<SessionInputDelivery>().notNull(),
+    admitted_seq: integer().notNull(),
+    promoted_seq: integer(),
+    time_created: integer()
+      .notNull()
+      .$default(() => Date.now()),
+  },
+  (table) => [
+    index("session_input_session_pending_delivery_seq_idx").on(
+      table.session_id,
+      table.promoted_seq,
+      table.delivery,
+      table.admitted_seq,
+    ),
+    uniqueIndex("session_input_session_admitted_seq_idx").on(table.session_id, table.admitted_seq),
+    uniqueIndex("session_input_session_promoted_seq_idx").on(table.session_id, table.promoted_seq),
+  ],
+)
+
+export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
+  session_id: text()
+    .$type<SessionID>()
+    .primaryKey()
+    .references(() => SessionTable.id, { onDelete: "cascade" }),
+  baseline: text().notNull(),
+  snapshot: text({ mode: "json" }).notNull().$type<Record<string, unknown>>(),
+  baseline_seq: integer().notNull(),
+})
 
 export const PermissionTable = sqliteTable("permission", {
   project_id: text()

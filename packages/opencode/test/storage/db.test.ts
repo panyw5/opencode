@@ -95,12 +95,14 @@ describe("Database.Client schema repair", () => {
         Flag.OPENCODE_DB = dbPath
         Database.Client({ disableChannelDb: true, skipMigrations: true })
 
-        const rows = Database.Client()
-          .$client.query("SELECT id, seq FROM session_message ORDER BY seq")
-          .all() as { id: string; seq: number }[]
-        const indexes = Database.Client()
-          .$client.query("PRAGMA index_list(session_message)")
-          .all() as { name: string; unique: number }[]
+        const rows = Database.Client().$client.query("SELECT id, seq FROM session_message ORDER BY seq").all() as {
+          id: string
+          seq: number
+        }[]
+        const indexes = Database.Client().$client.query("PRAGMA index_list(session_message)").all() as {
+          name: string
+          unique: number
+        }[]
 
         expect(rows).toEqual([
           { id: "earlier", seq: 0 },
@@ -113,6 +115,175 @@ describe("Database.Client schema repair", () => {
       } finally {
         Database.close()
         Flag.OPENCODE_DB = previous
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }),
+  )
+})
+
+describe("Database.Client upstream migration path", () => {
+  it.effect("seeds upstream migration journal from drizzle and preserves canonical rows", () =>
+    Effect.sync(() => {
+      const dir = mkdtempSync(path.join(tmpdir(), "opencode-upstream-migration-"))
+      const dbPath = path.join(dir, "opencode.db")
+      const previousDb = Flag.OPENCODE_DB
+
+      try {
+        const sqlite = new BunDatabase(dbPath, { create: true })
+        sqlite.run(`
+          CREATE TABLE __drizzle_migrations (
+            id SERIAL PRIMARY KEY,
+            hash text NOT NULL,
+            created_at numeric,
+            name text,
+            applied_at text
+          )
+        `)
+        sqlite.run(`
+          INSERT INTO __drizzle_migrations (hash, created_at, name, applied_at)
+          VALUES ('hash', 1770830228000, '20260211171708_add_project_commands', NULL)
+        `)
+        sqlite.run(`
+          CREATE TABLE project (
+            id text PRIMARY KEY,
+            worktree text NOT NULL,
+            sandboxes text NOT NULL
+          )
+        `)
+        sqlite.run(`
+          CREATE TABLE session (
+            id text PRIMARY KEY,
+            project_id text NOT NULL,
+            parent_id text,
+            slug text NOT NULL,
+            directory text NOT NULL,
+            path text,
+            title text NOT NULL,
+            version text NOT NULL,
+            time_created integer NOT NULL,
+            time_updated integer NOT NULL
+          )
+        `)
+        sqlite.run(`
+          CREATE TABLE message (
+            id text PRIMARY KEY,
+            session_id text NOT NULL,
+            time_created integer NOT NULL,
+            time_updated integer NOT NULL,
+            data text NOT NULL
+          )
+        `)
+        sqlite.run(`
+          CREATE TABLE part (
+            id text PRIMARY KEY,
+            message_id text NOT NULL,
+            session_id text NOT NULL,
+            time_created integer NOT NULL,
+            time_updated integer NOT NULL,
+            data text NOT NULL
+          )
+        `)
+        sqlite.run(`
+          CREATE TABLE todo (
+            session_id text NOT NULL,
+            content text NOT NULL,
+            status text NOT NULL,
+            priority text NOT NULL,
+            position integer NOT NULL,
+            time_created integer NOT NULL,
+            time_updated integer NOT NULL,
+            PRIMARY KEY(session_id, position)
+          )
+        `)
+        sqlite.run(`
+          INSERT INTO project (id, worktree, sandboxes)
+          VALUES ('project', 'C:' || char(92) || 'Users' || char(92) || 'Ada' || char(92) || 'repo', '[]')
+        `)
+        sqlite.run(`
+          INSERT INTO session (
+            id, project_id, slug, directory, path, title, version, time_created, time_updated
+          )
+          VALUES (
+            'session',
+            'project',
+            'slug',
+            'C:' || char(92) || 'Users' || char(92) || 'Ada' || char(92) || 'repo',
+            'src' || char(92) || 'index.ts',
+            'Title',
+            '1',
+            1,
+            2
+          )
+        `)
+        sqlite.run("INSERT INTO message VALUES ('message', 'session', 3, 4, '{}')")
+        sqlite.run("INSERT INTO part VALUES ('part', 'message', 'session', 5, 6, '{}')")
+        sqlite.run("INSERT INTO todo VALUES ('session', 'todo', 'pending', 'high', 0, 7, 8)")
+        sqlite.close()
+
+        Flag.OPENCODE_DB = dbPath
+
+        Database.Client({ disableChannelDb: true, skipMigrations: true })
+        Database.close()
+        Database.Client({ disableChannelDb: true, skipMigrations: true })
+
+        const rows = Database.Client().$client.query("SELECT id FROM migration ORDER BY id").all() as { id: string }[]
+        const sessionColumns = Database.Client().$client.query("PRAGMA table_info(session)").all() as { name: string }[]
+        const sessionInputColumns = Database.Client().$client.query("PRAGMA table_info(session_input)").all() as {
+          name: string
+        }[]
+        const contextColumns = Database.Client().$client.query("PRAGMA table_info(session_context_epoch)").all() as {
+          name: string
+        }[]
+        const counts = Database.Client()
+          .$client.query(
+            `
+            SELECT
+              (SELECT count(*) FROM session) AS session_count,
+              (SELECT count(*) FROM message) AS message_count,
+              (SELECT count(*) FROM part) AS part_count,
+              (SELECT count(*) FROM todo) AS todo_count
+          `,
+          )
+          .all()[0] as Record<string, number>
+        const paths = Database.Client()
+          .$client.query(
+            "SELECT project.worktree, session.directory, session.path FROM session JOIN project ON project.id = session.project_id",
+          )
+          .all()[0] as { worktree: string; directory: string; path: string }
+
+        expect(rows.map((row) => row.id)).toContain("20260211171708_add_project_commands")
+        expect(rows.map((row) => row.id)).toContain("20260511173437_session-metadata")
+        expect(rows.map((row) => row.id)).toContain("20260601010001_normalize_storage_paths")
+        expect(sessionColumns.map((column) => column.name)).toContain("metadata")
+        expect(sessionInputColumns.map((column) => column.name)).toEqual([
+          "id",
+          "session_id",
+          "prompt",
+          "delivery",
+          "admitted_seq",
+          "promoted_seq",
+          "time_created",
+        ])
+        expect(contextColumns.map((column) => column.name)).toEqual([
+          "session_id",
+          "baseline",
+          "snapshot",
+          "baseline_seq",
+        ])
+        expect(counts).toEqual({
+          session_count: 1,
+          message_count: 1,
+          part_count: 1,
+          todo_count: 1,
+        })
+        expect(paths).toEqual({
+          worktree: "C:/Users/Ada/repo",
+          directory: "C:/Users/Ada/repo",
+          path: "src/index.ts",
+        })
+      } finally {
+        Database.close()
+        Flag.OPENCODE_DB = previousDb
         rmSync(dir, { recursive: true, force: true })
       }
     }),

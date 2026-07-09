@@ -14,6 +14,7 @@ import { InstallationChannel } from "@opencode-ai/core/installation/version"
 import { EffectBridge } from "@/effect/bridge"
 import { init } from "#db"
 import { Effect, Schema } from "effect"
+import * as UpstreamMigration from "./upstream-migration"
 
 declare const OPENCODE_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
 
@@ -263,6 +264,7 @@ export const Client = Object.assign(
       }
       applyMigrations(db, entries)
     }
+    UpstreamMigration.apply(db, dbPath)
     repairSessionMessageSchema(db)
     repairPermissionSchema(db)
 
