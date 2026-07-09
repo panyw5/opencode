@@ -299,19 +299,20 @@ export const layer: Layer.Layer<
         : {
             id: data.id,
             worktree: data.worktree,
-            vcs: data.vcs,
             sandboxes: [] as string[],
             time: { created: Date.now(), updated: Date.now() },
           }
+      if (data.vcs) existing.vcs = data.vcs
 
       if (flags.experimentalIconDiscovery) yield* discover(existing).pipe(Effect.ignore, Effect.forkIn(scope))
 
       const result: Info = {
         ...existing,
         worktree: data.worktree,
-        vcs: data.vcs,
         time: { ...existing.time, updated: Date.now() },
       }
+      if (data.vcs) result.vcs = data.vcs
+      else delete result.vcs
       if (data.sandbox !== result.worktree && !result.sandboxes.includes(data.sandbox))
         result.sandboxes.push(data.sandbox)
       result.sandboxes = yield* Effect.forEach(

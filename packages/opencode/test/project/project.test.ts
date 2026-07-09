@@ -167,6 +167,8 @@ it.live("uses global project for non-git directory", () =>
     expect(b.id).toBe(a.id)
     expect(a.worktree).toBe("/")
     expect(a.vcs).toBeUndefined()
+    expect("vcs" in a).toBe(false)
+    expect(Schema.encodeUnknownSync(Project.Info)(a)).toEqual(a)
   }),
 )
 
