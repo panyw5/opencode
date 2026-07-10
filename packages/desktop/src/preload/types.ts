@@ -8,7 +8,9 @@ export type ServerReadyData = {
   password: string | null
 }
 
-export type SqliteMigrationProgress = { type: "InProgress"; value: number } | { type: "Done" }
+export type SqliteMigrationProgress =
+  | { type: "InProgress"; value: number; message?: string }
+  | { type: "Done"; message?: string }
 
 export type WslConfig = { enabled: boolean }
 

@@ -10,13 +10,14 @@ import type { InitStep, SqliteMigrationProgress } from "../preload/types"
 import { api } from "./api"
 
 const root = document.getElementById("root")!
-const lines = ["Just a moment...", "Migrating your database", "This may take a couple of minutes"]
-const delays = [3000, 9000]
+const fallbackMessages = ["Preparing local database", "Applying database migrations", "This may take a couple of minutes"]
+const fallbackDelays = [3000, 9000]
 
 render(() => {
   const [step, setStep] = createSignal<InitStep | null>(null)
   const [line, setLine] = createSignal(0)
   const [percent, setPercent] = createSignal(0)
+  const [message, setMessage] = createSignal("Just a moment...")
 
   const phase = createMemo(() => step()?.phase)
 
@@ -25,15 +26,19 @@ render(() => {
     return Math.max(25, Math.min(100, percent()))
   })
 
-  api.awaitInitialization((next) => setStep(next as InitStep)).catch(() => undefined)
+  api
+    .awaitInitialization((next) => setStep(next as InitStep))
+    .then(() => setStep({ phase: "done" }))
+    .catch(() => undefined)
 
   onMount(() => {
     setLine(0)
     setPercent(0)
 
-    const timers = delays.map((ms, i) => setTimeout(() => setLine(i + 1), ms))
+    const timers = fallbackDelays.map((ms, i) => setTimeout(() => setLine(i + 1), ms))
 
     const listener = api.onSqliteMigrationProgress((progress: SqliteMigrationProgress) => {
+      if (progress.message) setMessage(progress.message)
       if (progress.type === "InProgress") setPercent(Math.max(0, Math.min(100, progress.value)))
       if (progress.type === "Done") {
         setPercent(100)
@@ -56,7 +61,7 @@ render(() => {
 
   const status = createMemo(() => {
     if (phase() === "done") return "All done"
-    if (phase() === "sqlite_waiting") return lines[line()]
+    if (phase() === "sqlite_waiting") return message() === "Just a moment..." ? fallbackMessages[line()] : message()
     return "Just a moment..."
   })
 

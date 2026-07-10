@@ -41,6 +41,7 @@ import {
   setDockIcon,
 } from "./windows"
 import { migrate } from "./migrate"
+import { getStore } from "./store"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater, getUpdaterController } from "./updater"
 import { Deferred, Effect, Fiber } from "effect"
 
@@ -56,6 +57,7 @@ const APP_IDS: Record<string, string> = {
 }
 const TEST_ONBOARDING = process.env.OPENCODE_TEST_ONBOARDING === "1"
 const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
+const DATABASE_UPGRADE_PROMPT_KEY = "databaseUpgradePrompt.20260710"
 
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
@@ -321,7 +323,8 @@ const main = Effect.gen(function* () {
 
     const xdg = process.env.XDG_DATA_HOME
     const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".local", "share")
-    return !existsSync(join(base, "opencode", "opencode.db"))
+    if (!existsSync(join(base, "opencode", "opencode.db"))) return true
+    return getStore().get(DATABASE_UPGRADE_PROMPT_KEY) !== true
   })()
   let overlay: BrowserWindow | null = null
   let didStartupWindowBlur = false
@@ -417,6 +420,17 @@ const main = Effect.gen(function* () {
     return queueBackendReload("manual reload")
   }
 
+  if (needsMigration) {
+    setInitStep({ phase: "sqlite_waiting" })
+    overlay = createLoadingWindow()
+    overlay.on("blur", () => {
+      didStartupWindowBlur = true
+    })
+    overlay.on("focus", () => {
+      didStartupWindowBlur = false
+    })
+  }
+
   const loadingTask = yield* Effect.gen(function* () {
     yield* Effect.promise(() => startSidecar("startup", needsMigration)).pipe(
       Effect.timeout("30 seconds"),
@@ -429,26 +443,8 @@ const main = Effect.gen(function* () {
     )
   }).pipe(forwardInitializationFailure(serverReady), Effect.forkChild)
 
-  if (needsMigration) {
-    const show = yield* loadingTask.pipe(
-      Fiber.await,
-      Effect.timeout("1 second"),
-      Effect.as(false),
-      Effect.catch(() => Effect.succeed(true)),
-    )
-    if (show) {
-      overlay = createLoadingWindow()
-      overlay.on("blur", () => {
-        didStartupWindowBlur = true
-      })
-      overlay.on("focus", () => {
-        didStartupWindowBlur = false
-      })
-      yield* Effect.sleep("1 second")
-    }
-  }
-
   yield* Fiber.await(loadingTask)
+  if (needsMigration) getStore().set(DATABASE_UPGRADE_PROMPT_KEY, true)
   setInitStep({ phase: "done" })
   wslController.initialize()
 
