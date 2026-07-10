@@ -77,6 +77,7 @@ import {
   normalizePath,
 } from "@/utils/config-source"
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+import { configAgentDisplayItems, configuredAgentsFromJsonc } from "./config-agent-display"
 
 const CORE_SECTIONS = ["agents-md", "providers", "agents", "skills", "plugins", "mcp", "commands", "claws"] as const
 type CoreSection = (typeof CORE_SECTIONS)[number]
@@ -87,7 +88,23 @@ function isKnownSection(value: string): boolean {
   return extraAgents.some((agent) => agent.configSection === value)
 }
 
-type SkillGroup = "opencode" | "claude" | "project" | "external" | "plugin" | "global"
+type SkillGroup = "opencode" | "claude" | "project" | "external" | "plugin" | "global" | "builtin" | "config"
+
+type JsoncAgentForm = {
+  model: string
+  variant: string
+  temperature: string
+  topP: string
+  description: string
+  prompt: string
+  mode: "" | "subagent" | "primary" | "all"
+  hidden: boolean
+  disable: boolean
+  color: string
+  steps: string
+  permission: string
+  options: string
+}
 
 type DocItem = {
   id: string
@@ -979,6 +996,140 @@ function patchText(input: string, path: (string | number)[], value: unknown) {
       },
     }),
   )
+}
+
+function jsoncAgentForm(input: NonNullable<Config["agent"]>[string] | undefined): JsoncAgentForm {
+  const prettyJson = (value: unknown) => (value && typeof value === "object" ? JSON.stringify(value, null, 2) : "")
+  return {
+    model: typeof input?.model === "string" ? input.model : "",
+    variant: typeof input?.variant === "string" ? input.variant : "",
+    temperature: typeof input?.temperature === "number" ? String(input.temperature) : "",
+    topP: typeof input?.top_p === "number" ? String(input.top_p) : "",
+    description: typeof input?.description === "string" ? input.description : "",
+    prompt: typeof input?.prompt === "string" ? input.prompt : "",
+    mode: input?.mode === "subagent" || input?.mode === "primary" || input?.mode === "all" ? input.mode : "",
+    hidden: input?.hidden === true,
+    disable: input?.disable === true,
+    color: typeof input?.color === "string" ? input.color : "",
+    steps: typeof input?.steps === "number" ? String(input.steps) : "",
+    permission: prettyJson(input?.permission),
+    options: prettyJson(input?.options),
+  }
+}
+
+function jsoncObjectField(label: string, value: string): Record<string, unknown> | undefined {
+  if (!value.trim()) return
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error(`${label} must be valid JSON.`)
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${label} must be a JSON object.`)
+  return parsed as Record<string, unknown>
+}
+
+function JsoncAgentEditor(props: {
+  name: string
+  config?: NonNullable<Config["agent"]>[string]
+  busy?: boolean
+  onSave: (form: JsoncAgentForm) => Promise<void>
+}) {
+  const language = useLanguage()
+  const [form, setForm] = createStore(jsoncAgentForm(props.config))
+  const [saving, setSaving] = createSignal(false)
+  const [error, setError] = createSignal("")
+
+  createEffect(
+    on(
+      () => [props.name, props.config] as const,
+      ([, config]) => {
+        setForm(jsoncAgentForm(config))
+        setError("")
+      },
+      { defer: false },
+    ),
+  )
+
+  async function save() {
+    setSaving(true)
+    setError("")
+    try {
+      await props.onSave(form)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div class="flex h-full min-h-0 flex-col">
+      <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border-weak-base px-5 py-4">
+        <div>
+          <div class="flex items-center gap-2">
+            <div class="text-20-medium text-text-strong">{props.name}</div>
+            <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 font-mono text-[10px] text-text-weak">
+              opencode.jsonc
+            </span>
+          </div>
+          <div class="mt-1 text-12-regular text-text-weak">{language.t("config.agents.jsonc.description")}</div>
+        </div>
+        <SaveButton label={saving() ? language.t("config.agents.jsonc.saving") : language.t("common.save")} onClick={() => void save()} disabled={saving() || props.busy} />
+      </div>
+      <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-5">
+        <div class="mx-auto flex max-w-[920px] flex-col gap-6">
+          <Show when={error()}>{(message) => <div class="text-12-regular text-text-danger-base">{message()}</div>}</Show>
+          <div class="grid gap-4 md:grid-cols-2">
+            <TextField label={language.t("config.agents.field.model")} placeholder="provider/model" value={form.model} onChange={(value) => setForm("model", value)} />
+            <TextField label={language.t("config.agents.field.variant")} value={form.variant} onChange={(value) => setForm("variant", value)} />
+            <TextField label={language.t("config.agents.field.temperature")} inputmode="decimal" value={form.temperature} onChange={(value) => setForm("temperature", value)} />
+            <TextField label={language.t("config.agents.field.topP")} inputmode="decimal" value={form.topP} onChange={(value) => setForm("topP", value)} />
+            <TextField label={language.t("config.agents.field.color")} placeholder="primary or #FF5733" value={form.color} onChange={(value) => setForm("color", value)} />
+            <TextField label={language.t("config.agents.field.steps")} inputmode="numeric" value={form.steps} onChange={(value) => setForm("steps", value)} />
+            <TextField label={language.t("config.agents.field.description")} value={form.description} onChange={(value) => setForm("description", value)} />
+            <div class="flex flex-col gap-2">
+              <label class="text-12-medium text-text-weak">{language.t("config.agents.field.mode")}</label>
+              <Select
+                options={["", "primary", "subagent", "all"] as const}
+                current={(["", "primary", "subagent", "all"] as const).find((value) => value === form.mode)}
+                onSelect={(value) => setForm("mode", value ?? "")}
+                variant="secondary"
+                size="large"
+                triggerStyle={{ width: "100%", "justify-content": "space-between", transform: "none" }}
+              >
+                {(value) => <span>{value || language.t("config.agents.field.default")}</span>}
+              </Select>
+            </div>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2">
+            <Toggle checked={form.hidden} onChange={(value) => setForm("hidden", value)}>{language.t("config.agents.field.hidden")}</Toggle>
+            <Toggle checked={form.disable} onChange={(value) => setForm("disable", value)}>{language.t("config.agents.field.disabled")}</Toggle>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-12-medium text-text-weak">{language.t("config.agents.field.prompt")}</label>
+            <textarea class="min-h-40 rounded-xl border border-border-weak-base bg-background-base p-3 text-13-regular text-text-base outline-none" value={form.prompt} onInput={(event) => setForm("prompt", event.currentTarget.value)} />
+          </div>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div class="flex flex-col gap-2"><label class="text-12-medium text-text-weak">{language.t("config.agents.field.permission")}</label><textarea class="min-h-36 rounded-xl border border-border-weak-base bg-background-base p-3 font-mono text-12-regular text-text-base outline-none" value={form.permission} onInput={(event) => setForm("permission", event.currentTarget.value)} /></div>
+            <div class="flex flex-col gap-2"><label class="text-12-medium text-text-weak">{language.t("config.agents.field.options")}</label><textarea class="min-h-36 rounded-xl border border-border-weak-base bg-background-base p-3 font-mono text-12-regular text-text-base outline-none" value={form.options} onInput={(event) => setForm("options", event.currentTarget.value)} /></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+async function loadConfigFileAgents(
+  platform: Pick<ReturnType<typeof usePlatform>, "listConfigFiles" | "readConfigFile">,
+) {
+  if (!platform.listConfigFiles || !platform.readConfigFile) return
+  const files = await platform.listConfigFiles(null)
+  const file = files.find(
+    (item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc",
+  )
+  if (!file?.exists) return
+  return configuredAgentsFromJsonc((await platform.readConfigFile(file.path)) ?? "")
 }
 
 function providerCfg(input: ProviderCfg | undefined): CustomState {
@@ -3408,6 +3559,25 @@ export default function ConfigPage() {
     },
   )
 
+  const [configFileAgents, setConfigFileAgents] = createSignal<Config["agent"]>()
+  let configFileAgentsRun = 0
+  createEffect(
+    on(
+      () => state.agentRev,
+      () => {
+        const run = ++configFileAgentsRun
+        void loadConfigFileAgents(platform)
+          .then((agents) => {
+            if (run === configFileAgentsRun) setConfigFileAgents(agents)
+          })
+          .catch(() => {
+            if (run === configFileAgentsRun) setConfigFileAgents(undefined)
+          })
+      },
+      { defer: false },
+    ),
+  )
+
   const [openclawConfig, setOpenclawConfigState] = createSignal<OpenclawConfig>()
   const [openclawLoading, setOpenclawLoading] = createSignal(false)
   const [genericagentConfig, setGenericagentConfigState] = createSignal<GenericagentConfig>()
@@ -4000,19 +4170,26 @@ export default function ConfigPage() {
     const names = new Set(
       [...globalAgents(), ...(diskAgents.latest ?? []), ...(pluginAgents.latest ?? [])].map((item) => item.label),
     )
-    return (loaded.latest ?? [])
-      .filter((item) => !item.native && !item.hidden && !names.has(item.name))
-      .map((item) => ({
+    return configAgentDisplayItems({
+      runtime: loaded.latest ?? [],
+      configured: { ...cfg().agent, ...configFileAgents() },
+      definedNames: names,
+    }).map((item) => {
+      const local = item.origin !== "runtime"
+      return {
         id: `agent-runtime:${item.name}`,
         label: item.name,
-        path: `runtime:${item.name}`,
+        path: item.origin === "config" ? `config:agent.${item.name}` : `runtime:${item.name}`,
         editable: false,
-        source: "external",
-        group: "plugin" as const,
-        origin: "runtime",
+        source: local ? "opencode" : "external",
+        group:
+          item.origin === "built-in" ? ("builtin" as const) : item.origin === "config" ? ("config" as const) : local ? ("opencode" as const) : ("plugin" as const),
+        origin:
+          item.origin === "built-in" ? "built-in" : item.origin === "config" ? "opencode.jsonc" : "runtime",
         note: item.description,
         content: item.prompt ?? "No prompt content is available for this runtime agent.",
-      }))
+      }
+    })
   })
   const loadedMap = createMemo(() => new Map((loaded.latest ?? ([] as Agent[])).map((item) => [item.name, item] as const)))
 
@@ -4034,6 +4211,8 @@ export default function ConfigPage() {
       state.agentQuery,
     )
   const agentOpenCode = createMemo(() => agents().filter((item) => item.group === "opencode" && agentMatches(item)))
+  const agentBuiltIn = createMemo(() => agents().filter((item) => item.group === "builtin" && agentMatches(item)))
+  const agentConfig = createMemo(() => agents().filter((item) => item.group === "config" && agentMatches(item)))
   const agentProject = createMemo(() => agents().filter((item) => item.group === "project" && agentMatches(item)))
   const agentPlugin = createMemo(() => agents().filter((item) => item.group === "plugin" && agentMatches(item)))
 
@@ -4632,6 +4811,11 @@ export default function ConfigPage() {
   })
   const currentPlugin = createMemo(() => plugins()?.find((item) => item.id === state.doc))
   const currentAgent = createMemo(() => agents().find((item) => item.id === state.doc))
+  const currentJsoncAgent = createMemo(() => {
+    const item = currentAgent()
+    if (!item?.path.startsWith("config:agent.")) return
+    return item.path.slice("config:agent.".length)
+  })
   const currentSkill = createMemo(() => skillDocs().find((item) => item.id === state.doc))
   const selectedProvider = createMemo(() =>
     providers().find((item) => item.id === state.pick.replace(/^provider:/, "")),
@@ -5061,6 +5245,42 @@ export default function ConfigPage() {
         })
       })
       .finally(() => setState("reloadingBackend", false))
+  }
+
+  async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
+    const files = await platform.listConfigFiles?.(null)
+    const file = files?.find((item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc")
+    if (!file?.path || !platform.readConfigFile || !platform.writeConfigFile) throw new Error(t("config.error.globalConfigUnavailable"))
+
+    const number = (label: string, value: string) => {
+      if (!value.trim()) return undefined
+      const parsed = Number(value)
+      if (!Number.isFinite(parsed)) throw new Error(`${label} must be a finite number.`)
+      return parsed
+    }
+    const steps = number("Steps", form.steps)
+    if (steps !== undefined && (!Number.isInteger(steps) || steps <= 0)) throw new Error("Steps must be a positive integer.")
+
+    const fields: Record<string, unknown> = {
+      model: form.model.trim() || undefined,
+      variant: form.variant.trim() || undefined,
+      temperature: number("Temperature", form.temperature),
+      top_p: number("Top P", form.topP),
+      description: form.description.trim() || undefined,
+      prompt: form.prompt.trim() || undefined,
+      mode: form.mode || undefined,
+      hidden: form.hidden || undefined,
+      disable: form.disable || undefined,
+      color: form.color.trim() || undefined,
+      steps,
+      permission: jsoncObjectField("Permission", form.permission),
+      options: jsoncObjectField("Options", form.options),
+    }
+    let text = (await platform.readConfigFile(file.path)) ?? "{}"
+    for (const [key, value] of Object.entries(fields)) text = patchText(text, ["agent", name, key], value)
+    await platform.writeConfigFile(file.path, text)
+    setConfigFileAgents(configuredAgentsFromJsonc(text))
+    showToast({ variant: "success", title: t("common.save"), description: name })
   }
 
   function validateClaw(required = state.claw.enabled) {
@@ -6381,11 +6601,35 @@ export default function ConfigPage() {
                             onInput={(value) => setState("agentQuery", value)}
                           />
 
+                          <Show when={agentBuiltIn().length > 0}>
+                            <div class="flex flex-col gap-2">
+                              <div class="flex items-center justify-between gap-3 px-1">
+                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">{t("config.agents.group.builtin")}</div>
+                                <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                                  {agentBuiltIn().length}
+                                </div>
+                              </div>
+                              <div class="flex flex-col gap-2.5">
+                                <For each={agentBuiltIn()}>
+                                  {(item) => (
+                                    <PluginListButton
+                                      active={state.pick === item.id}
+                                      title={item.label}
+                                      note={loadedMap().get(item.label)?.description || item.note}
+                                      meta={item.path}
+                                      onClick={() => void open(item)}
+                                    />
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          </Show>
+
                           <Show when={agentOpenCode().length > 0}>
                             <div class="flex flex-col gap-2">
                               <div class="flex items-center justify-between gap-3 px-1">
                                 <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                                  {t("config.skills.group.opencode")}
+                                  {t("config.agents.group.global")}
                                 </div>
                                 <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
                                   {agentOpenCode().length}
@@ -6399,6 +6643,30 @@ export default function ConfigPage() {
                                       title={item.label}
                                       note={loadedMap().get(item.label)?.description || item.note}
                                       meta={short(item.path, space()?.agentsRoot)}
+                                      onClick={() => void open(item)}
+                                    />
+                                  )}
+                                </For>
+                              </div>
+                            </div>
+                          </Show>
+
+                          <Show when={agentConfig().length > 0}>
+                            <div class="flex flex-col gap-2">
+                              <div class="flex items-center justify-between gap-3 px-1">
+                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">{t("config.agents.group.jsonc")}</div>
+                                <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                                  {agentConfig().length}
+                                </div>
+                              </div>
+                              <div class="flex flex-col gap-2.5">
+                                <For each={agentConfig()}>
+                                  {(item) => (
+                                    <PluginListButton
+                                      active={state.pick === item.id}
+                                      title={item.label}
+                                      note={loadedMap().get(item.label)?.description || item.note}
+                                      meta={t("config.agents.jsonc.listNote")}
                                       onClick={() => void open(item)}
                                     />
                                   )}
@@ -7341,27 +7609,41 @@ export default function ConfigPage() {
                   when={!agentWait()}
                   fallback={<Wait text={`${t("common.loading")}${t("common.loading.ellipsis")}`} />}
                 >
-                  <Editor
-                    item={currentDoc()}
-                    text={state.text}
-                    dirty={dirty()}
-                    busy={state.busy}
-                    reloading={state.reloadingBackend}
-                    onInput={(value) => setState("text", value)}
-                    onSave={() => void save()}
-                    onReload={() => void reload()}
-                    onOpenFolder={file(currentDoc()?.path ?? "") ? openFolder : undefined}
-                    onCopyPath={file(currentDoc()?.path ?? "") ? copyPath : undefined}
-                    extra={
-                      <Show when={currentAgent()}>
-                        <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                          {agentModeLabel(loadedMap().get(currentAgent()!.label)?.mode)}
-                        </span>
-                      </Show>
+                  <Show
+                    when={currentJsoncAgent()}
+                    fallback={
+                      <Editor
+                        item={currentDoc()}
+                        text={state.text}
+                        dirty={dirty()}
+                        busy={state.busy}
+                        reloading={state.reloadingBackend}
+                        onInput={(value) => setState("text", value)}
+                        onSave={() => void save()}
+                        onReload={() => void reload()}
+                        onOpenFolder={file(currentDoc()?.path ?? "") ? openFolder : undefined}
+                        onCopyPath={file(currentDoc()?.path ?? "") ? copyPath : undefined}
+                        extra={
+                          <Show when={currentAgent()}>
+                            <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                              {agentModeLabel(loadedMap().get(currentAgent()!.label)?.mode)}
+                            </span>
+                          </Show>
+                        }
+                        empty={t("config.agents.empty")}
+                        markdown
+                      />
                     }
-                    empty={t("config.agents.empty")}
-                    markdown
-                  />
+                  >
+                    {(name) => (
+                      <JsoncAgentEditor
+                        name={name()}
+                        config={configFileAgents()?.[name()]}
+                        busy={state.reloadingBackend}
+                        onSave={(form) => saveJsoncAgent(name(), form)}
+                      />
+                    )}
+                  </Show>
                 </Show>
               </Match>
 
