@@ -187,6 +187,31 @@ $$`
 
     expect(html).toBe("`$E_0[\\substack{-1\\\\ z}]=-1$`")
   })
+
+  test("escapes pipes in protected math so GFM tables keep cell boundaries", async () => {
+    const markdown = `| 对象 | 性质 |
+|------|------|
+| 阶与次数 | $\\|G\\| = \\prod_{i=1}^n d_i$ |
+| 自由性 | $\\mathbb{C}[V]$ 作为 $\\mathbb{C}[V]^G$-模是自由的，秩为 $\\|G\\|$ |
+| 集合 | 次数 $\\{d_i\\}$ 唯一 |`
+
+    const protectedMarkdown = protectMathExpressions(markdown)
+
+    expect(protectedMarkdown).toContain("&#124;")
+    expect(protectedMarkdown).toContain('data-opencode-math-tex="&#92;&#124;G&#92;&#124; = &#92;prod_{i=1}^n d_i"')
+    expect(protectedMarkdown).not.toMatch(/data-opencode-math-tex="[^"]*\|/)
+
+    const marked = new Marked()
+    const parsed = await marked.parse(protectedMarkdown)
+    const html = renderMathExpressions(parsed, "html")
+
+    expect(parsed).toContain("<table>")
+    expect(parsed).toContain("<td>")
+    expect(parsed).not.toContain("&lt;span data-opencode-math-style")
+    expect(parsed.match(/<tr>/g)?.length).toBe(4)
+    expect(html).toContain("katex")
+    expect(html).not.toContain("katex-error")
+  })
 })
 
 describe("markdown code copy affordance", () => {

@@ -593,7 +593,7 @@ function touch(key: string, value: Entry) {
 }
 
 function cacheMode(input: { highlight?: "full" | "defer"; chunked?: boolean; math?: "full" | "defer" }) {
-  return ["math-protect-v4", input.highlight ?? "full", input.math ?? "full", input.chunked ? "chunked" : "plain"].join(
+  return ["math-protect-v5", input.highlight ?? "full", input.math ?? "full", input.chunked ? "chunked" : "plain"].join(
     ":",
   )
 }

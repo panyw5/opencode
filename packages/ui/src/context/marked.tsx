@@ -533,6 +533,7 @@ function unescapeHtmlEntities(text: string): string {
     .replace(/&quot;/g, '"')
     .replace(/&#92;/g, "\\")
     .replace(/&#39;/g, "'")
+    .replace(/&#124;/g, "|")
 }
 
 function stripEquationNumbers(math: string): string {
@@ -558,6 +559,7 @@ function escapeMathHtml(input: string): string {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;")
+    .replace(/\|/g, "&#124;")
 }
 
 function mathPlaceholder(math: string, style: "display" | "inline") {
