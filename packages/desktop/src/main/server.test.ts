@@ -149,12 +149,15 @@ describe("spawnLocalServer", () => {
     })
 
     await Bun.sleep(40)
-    child.emitMessage({ type: "sqlite", progress: { type: "InProgress", value: 50 } })
+    child.emitMessage({
+      type: "sqlite",
+      progress: { type: "InProgress", value: 50, message: "Applying database migrations" },
+    })
     await Bun.sleep(130)
     child.emitMessage({ type: "ready" })
     const result = await started
 
-    expect(progress).toEqual([{ type: "InProgress", value: 50 }])
+    expect(progress).toEqual([{ type: "InProgress", value: 50, message: "Applying database migrations" }])
     expect(result.listener).toBeDefined()
     expect(child.killed).toBe(false)
   })

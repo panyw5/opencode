@@ -1,6 +1,7 @@
 import * as http from "node:http"
 import * as tls from "node:tls"
 import { Effect, Layer } from "effect"
+import type { SqliteMigrationProgress } from "../preload/types"
 
 type NodeTlsWithSystemCertificates = typeof tls & {
   getCACertificates: (type: "default" | "system") => string[]
@@ -20,7 +21,7 @@ type StopCommand = { type: "stop" }
 type SidecarCommand = StartCommand | StopCommand
 
 type SidecarMessage =
-  | { type: "sqlite"; progress: { type: "InProgress"; value: number } | { type: "Done" } }
+  | { type: "sqlite"; progress: SqliteMigrationProgress }
   | { type: "ready" }
   | { type: "stopped" }
   | { type: "error"; error: { message: string; stack?: string } }
@@ -66,9 +67,20 @@ async function start(command: StartCommand) {
     await Log.init({ level: "WARN" })
 
     if (command.needsMigration) {
-      parentPort.postMessage({ type: "sqlite", progress: { type: "InProgress", value: 0 } })
+      parentPort.postMessage({
+        type: "sqlite",
+        progress: { type: "InProgress", value: 15, message: "Preparing local database" },
+      })
+      parentPort.postMessage({
+        type: "sqlite",
+        progress: { type: "InProgress", value: 45, message: "Applying database migrations" },
+      })
       await Effect.runPromise(Effect.scoped(Layer.build(Database.defaultLayer)))
-      parentPort.postMessage({ type: "sqlite", progress: { type: "Done" } })
+      parentPort.postMessage({
+        type: "sqlite",
+        progress: { type: "InProgress", value: 85, message: "Finalizing database upgrade" },
+      })
+      parentPort.postMessage({ type: "sqlite", progress: { type: "Done", message: "All done" } })
     }
 
     listener = await Server.listen({
