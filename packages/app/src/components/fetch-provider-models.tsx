@@ -12,6 +12,8 @@ type Props = {
   headers: Array<{ key: string; value: string }>
   existingModelIDs: Set<string>
   onAdd: (id: string, name: string) => void
+  /** Optional heading shown on the same row, left of the fetch button */
+  title?: string
 }
 
 export function FetchProviderModels(props: Props) {
@@ -85,16 +87,19 @@ export function FetchProviderModels(props: Props) {
   return (
     <div class="flex flex-col gap-2">
       <div class="flex items-center gap-2 flex-wrap">
+        <Show when={props.title}>
+          <div class="text-14-medium text-text-strong">{props.title}</div>
+        </Show>
         <Button
           type="button"
-          size="small"
-          variant="ghost"
+          size="large"
+          variant="primary"
           icon={fetching() ? undefined : "arrow-sync"}
           onClick={() => void fetchModels()}
           disabled={!canFetch() || fetching()}
         >
           <Show when={fetching()}>
-            <Spinner class="size-3" />
+            <Spinner class="size-3.5" />
           </Show>
           {fetching() ? "获取中..." : "获取模型"}
         </Button>

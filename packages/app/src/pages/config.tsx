@@ -2907,10 +2907,8 @@ function CustomEditor(props: {
 
             <div class="rounded-xl border border-border-weak-base bg-background-base p-4">
               <div class="mb-3">
-                <div class="text-13-medium text-text-strong">{language.t("config.custom.models.title")}</div>
-              </div>
-              <div class="mb-3">
                 <FetchProviderModels
+                  title={language.t("config.custom.models.title")}
                   baseURL={props.form.baseURL}
                   apiKey={props.form.apiKey}
                   headers={props.form.headers}

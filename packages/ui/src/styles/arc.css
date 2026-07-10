@@ -578,9 +578,15 @@ html[data-theme="arc"] [data-component="dialog"] [data-slot="list-item"][data-ac
 
 /* ───────────────────────────────────────────────────────────── */
 /* Buttons — micro lift on hover, snap-back on press             */
+/* primary: no y-shift on hover (shadow only); secondary lifts   */
 /* ───────────────────────────────────────────────────────────── */
 
-html[data-theme="arc"] [data-component="button"][data-variant="primary"]:hover:not(:disabled),
+html[data-theme="arc"] [data-component="button"][data-variant="primary"]:hover:not(:disabled) {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.12),
+    0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
 html[data-theme="arc"] [data-component="button"][data-variant="secondary"]:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow:
