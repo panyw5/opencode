@@ -916,7 +916,9 @@ export function MessageTimeline(props: {
     })
   }
 
-  const [renderOverlayStatus, setRenderOverlayStatus] = createSignal<SessionRenderOverlayStatus>("hidden")
+  const [renderOverlayStatus, setRenderOverlayStatus] = createSignal<SessionRenderOverlayStatus>(
+    sessionID() ? "showing" : "hidden",
+  )
   let renderOverlayStartedAt = 0
   let renderOverlayToken = 0
   let renderOverlayFrame: number | undefined
@@ -983,6 +985,9 @@ export function MessageTimeline(props: {
     const root = viewport
     const content = contentRef
     if (!root || !content) return false
+    // Session entry hides the scroller until bottom scroll is settled. Releasing
+    // the overlay while it is still hidden paints an empty stronger panel.
+    if (root.style.visibility === "hidden") return false
     return visibleMarkdownRenderReady({
       viewport: root,
       content,
@@ -1020,7 +1025,8 @@ export function MessageTimeline(props: {
         setRenderOverlayStatus("hidden")
         return
       }
-      if (prevID === undefined || newID === prevID) return
+      // Cover first mount and subsequent id changes until content is ready.
+      if (newID === prevID) return
       showRenderOverlay()
     }),
   )
@@ -1594,7 +1600,8 @@ export function MessageTimeline(props: {
     if (layoutFrame !== undefined) cancelAnimationFrame(layoutFrame)
     if (blank !== undefined) cancelAnimationFrame(blank)
     clearRenderOverlayTimers()
-    props.onRenderOverlayStatusChange?.("hidden")
+    // Keep parent overlay covered across remounts. Clearing to "hidden" here
+    // opens a one-frame gap after messagesReady flips true again.
     for (const release of pendingShrinkReleaseById.values()) clearTimeout(release)
     pendingShrinkReleaseById.clear()
   })
@@ -2542,14 +2549,15 @@ export function MessageTimeline(props: {
             data-slot="session-render-overlay"
             aria-live="polite"
             aria-busy={renderOverlayStatus() === "showing" ? "true" : "false"}
-            class="absolute left-0 right-0 bottom-0 z-[70] flex items-center justify-center transition-opacity duration-200 ease-out"
+            class="absolute left-0 right-0 bottom-0 z-[70] flex items-center justify-center"
             classList={{
               "opacity-100 pointer-events-auto": renderOverlayStatus() === "showing",
-              "opacity-0 pointer-events-none": renderOverlayStatus() === "hiding",
+              "opacity-0 pointer-events-none transition-opacity duration-200 ease-out":
+                renderOverlayStatus() === "hiding",
             }}
             style={{
               top: showHeader() ? "64px" : "0px",
-              background: "var(--background-base)",
+              background: "var(--background-stronger)",
             }}
           >
             <div class="flex items-center gap-2 rounded-full border border-border-weak-base bg-background-stronger px-3 py-2 text-12-medium text-text-weak shadow-sm">

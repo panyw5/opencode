@@ -152,7 +152,8 @@ export default function Page() {
     reviewSnap: false,
     scrollGesture: 0,
     mode: "live" as ScrollMode,
-    renderOverlayStatus: "hidden" as SessionRenderOverlayStatus,
+    // Keep the first paint covered while timeline scroll settles.
+    renderOverlayStatus: (params.id ? "showing" : "hidden") as SessionRenderOverlayStatus,
     scroll: {
       overflow: false,
       bottom: true,
@@ -842,6 +843,18 @@ export default function Page() {
         setUi("pendingMessage", undefined)
       },
       { defer: true },
+    ),
+  )
+
+  // Must run during the same reactive turn as params.id change — deferred
+  // effects paint one empty frame with the previous "hidden" overlay state.
+  createComputed(
+    on(
+      () => params.id,
+      (id, prev) => {
+        if (!id || id === prev) return
+        setUi("renderOverlayStatus", "showing")
+      },
     ),
   )
 
@@ -2124,7 +2137,7 @@ export default function Page() {
       ref={(el) => {
         root = el
       }}
-      class="relative bg-background-base size-full overflow-hidden flex flex-col"
+      class="relative bg-background-stronger size-full overflow-hidden flex flex-col"
     >
       <SessionHeader />
       <div class="flex-1 min-h-0 flex flex-col md:flex-row">
@@ -2294,10 +2307,11 @@ export default function Page() {
               data-slot="session-render-overlay"
               aria-live="polite"
               aria-busy={sessionRenderOverlayStatus() === "showing" ? "true" : "false"}
-              class="absolute inset-0 z-[70] flex items-center justify-center transition-opacity duration-200 ease-out"
+              class="absolute inset-0 z-[70] flex items-center justify-center"
               classList={{
                 "opacity-100 pointer-events-auto": sessionRenderOverlayStatus() === "showing",
-                "opacity-0 pointer-events-none": sessionRenderOverlayStatus() === "hiding",
+                "opacity-0 pointer-events-none transition-opacity duration-200 ease-out":
+                  sessionRenderOverlayStatus() === "hiding",
               }}
               style={{
                 background: "var(--background-stronger)",

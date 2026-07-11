@@ -796,7 +796,8 @@ export default function Layout(props: ParentProps) {
   })
 
   const projectContentLoading = createMemo(() => {
-    if (pendingSessionSelection()) return true
+    // Session selection pending is only for sidebar highlight. Using it here
+    // unmounts the session page, which paints a blank frame before remount.
     const pending = switching()
     if (!pending) return false
     const project = currentProject()
