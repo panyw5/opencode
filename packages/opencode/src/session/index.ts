@@ -902,13 +902,4 @@ export namespace Session {
       })
     },
   )
-
-  export const generateTitle = fn(
-    z.object({
-      sessionID: SessionID.zod,
-    }),
-    async (input) => {
-      return SessionPrompt.generateTitle(input)
-    },
-  )
 }

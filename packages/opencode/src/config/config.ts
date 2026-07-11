@@ -370,6 +370,8 @@ function writableGlobal(info: Info) {
   const next = writable(info)
   // When a user changes config from a value back to default in the Desktop app, we don't want to leave a blank `"shell": "",` key
   if ("shell" in next && next.shell === "") return { ...next, shell: undefined }
+  // Empty string clears small_model the same way (JSON cannot express undefined deletes over the wire).
+  if ("small_model" in next && next.small_model === "") return { ...next, small_model: undefined }
   return next
 }
 

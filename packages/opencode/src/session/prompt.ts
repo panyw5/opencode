@@ -263,41 +263,95 @@ export const layer = Layer.effect(
 
       const ag = yield* agents.get("title")
       if (!ag) return
-      const mdl = ag.model
-        ? yield* provider.getModel(ag.model.providerID, ag.model.modelID)
-        : ((yield* provider.getSmallModel(input.providerID)) ??
-          (yield* provider.getModel(input.providerID, input.modelID)))
-      const msgs = onlySubtasks
-        ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-        : yield* MessageV2.toModelMessagesEffect(context, mdl)
-      const text = yield* llm
-        .stream({
-          agent: ag,
-          user: firstInfo,
-          system: [],
-          small: true,
-          tools: {},
-          model: mdl,
-          sessionID: input.session.id,
-          retries: 2,
-          messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
-        })
-        .pipe(
-          Stream.filter(LLMEvent.is.textDelta),
-          Stream.map((e) => e.text),
-          Stream.mkString,
-          Effect.orDie,
+
+      // Prefer models that already work for chat. getSmallModel alone can pick a
+      // catalog entry that the upstream API does not actually serve (e.g.
+      // axonhub/gpt-5-nano → model not found), so try candidates in order.
+      // Prefer models that already work for chat. getSmallModel alone can pick a
+      // catalog entry that the upstream API does not actually serve (e.g.
+      // axonhub/gpt-5-nano → model not found), so try candidates in order.
+      const candidates: Provider.Model[] = []
+
+      const add = (model?: Provider.Model) => {
+        if (!model) return
+        if (candidates.some((item) => item.providerID === model.providerID && item.id === model.id)) return
+        candidates.push(model)
+      }
+      const optionalModel = (providerID: ProviderID, modelID: ModelID) =>
+        provider.getModel(providerID, modelID).pipe(
+          Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)),
         )
-      const cleaned = text
-        .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
-        .split("\n")
-        .map((line) => line.trim())
-        .find((line) => line.length > 0)
-      if (!cleaned) return
-      const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
-      yield* sessions
-        .setTitle({ sessionID: input.session.id, title: t })
-        .pipe(Effect.catchCause((cause) => elog.error("failed to generate title", { error: Cause.squash(cause) })))
+
+      if (ag.model) add(yield* optionalModel(ag.model.providerID, ag.model.modelID))
+      add(yield* provider.getSmallModel(input.providerID))
+      add(yield* optionalModel(input.providerID, input.modelID))
+
+      if (candidates.length === 0) {
+        yield* elog.warn("ensureTitle no model candidates", {
+          sessionID: input.session.id,
+          providerID: input.providerID,
+          modelID: input.modelID,
+        })
+        return
+      }
+
+      for (const mdl of candidates) {
+        const attempt = yield* Effect.gen(function* () {
+          const msgs = onlySubtasks
+            ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
+            : yield* MessageV2.toModelMessagesEffect(context, mdl)
+          const text = yield* llm
+            .stream({
+              agent: ag,
+              user: firstInfo,
+              system: [],
+              small: true,
+              tools: {},
+              model: mdl,
+              sessionID: input.session.id,
+              retries: 1,
+              messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
+            })
+            .pipe(
+              Stream.filter(LLMEvent.is.textDelta),
+              Stream.map((e) => e.text),
+              Stream.mkString,
+            )
+          const cleaned = text
+            .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
+            .split("\n")
+            .map((line) => line.trim())
+            .find((line) => line.length > 0)
+          if (!cleaned) {
+            yield* elog.warn("ensureTitle empty output", {
+              sessionID: input.session.id,
+              providerID: mdl.providerID,
+              modelID: mdl.id,
+            })
+            return false
+          }
+          const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
+          yield* sessions.setTitle({ sessionID: input.session.id, title: t })
+          return true
+        }).pipe(
+          Effect.catchCause((cause) =>
+            elog
+              .warn("ensureTitle attempt failed", {
+                sessionID: input.session.id,
+                providerID: mdl.providerID,
+                modelID: mdl.id,
+                error: Cause.squash(cause),
+              })
+              .pipe(Effect.as(false)),
+          ),
+        )
+        if (attempt) return
+      }
+
+      yield* elog.error("ensureTitle all candidates failed", {
+        sessionID: input.session.id,
+        candidates: candidates.map((m) => `${m.providerID}/${m.id}`),
+      })
     })
 
     const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {

@@ -1126,6 +1126,12 @@ export const dict = {
     "Choose the model used by the quick assistant. Auto uses the best available default.",
   "settings.assistant.model.option.disabled": "Disabled",
   "settings.assistant.model.option.auto": "Auto",
+  "settings.assistant.smallModel.title": "Title / light model",
+  "settings.assistant.smallModel.description":
+    "Model used for session titles and other light tasks. Auto picks a cheaper model from the current provider when available.",
+  "settings.assistant.smallModel.option.auto": "Auto",
+  "settings.assistant.smallModel.toast.saved": "Light model updated",
+  "settings.assistant.smallModel.toast.failed": "Failed to update light model",
   "settings.agents.title": "Agents",
   "settings.agents.description": "Agent settings will be configurable here.",
   "settings.commands.title": "Commands",

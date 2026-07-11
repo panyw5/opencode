@@ -987,6 +987,12 @@ export const dict = {
   "settings.assistant.model.description": "选择快捷助手使用的模型。自动会回退到当前可用的默认模型。",
   "settings.assistant.model.option.disabled": "禁用",
   "settings.assistant.model.option.auto": "自动",
+  "settings.assistant.smallModel.title": "标题/轻量模型",
+  "settings.assistant.smallModel.description":
+    "用于会话标题等轻量任务。自动会在当前提供商中优先选择更便宜的模型（若可用）。",
+  "settings.assistant.smallModel.option.auto": "自动",
+  "settings.assistant.smallModel.toast.saved": "轻量模型已更新",
+  "settings.assistant.smallModel.toast.failed": "更新轻量模型失败",
 
   "settings.agents.title": "智能体",
   "settings.agents.description": "智能体设置将在此处可配置。",
