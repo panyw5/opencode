@@ -52,4 +52,15 @@ describe("prompt-input expand", () => {
     expect(html).toContain("var(--syntax-string)")
     expect(html).toContain("&lt;tag&gt;")
   })
+
+  test("paint keeps inline LaTex with underscores in one highlighted token", () => {
+    const html = paint("For Virasoro $L_{n \\ge 1}\\psi\\rangle$ and affine $J_{n \\ge 1}\\psi\\rangle$.")
+    const math = html.match(/<span style="color:var\(--syntax-string\)">(.*?)<\/span>/g) ?? []
+
+    expect(math).toEqual([
+      '<span style="color:var(--syntax-string)">$L_{n \\ge 1}\\psi\\rangle$</span>',
+      '<span style="color:var(--syntax-string)">$J_{n \\ge 1}\\psi\\rangle$</span>',
+    ])
+    expect(html).not.toContain("var(--syntax-operator)")
+  })
 })

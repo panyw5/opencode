@@ -7,6 +7,7 @@ const tone = {
   list: "var(--syntax-keyword)",
   head: "var(--syntax-type)",
   code: "var(--syntax-string)",
+  math: "var(--syntax-string)",
   link: "var(--syntax-property)",
   emph: "var(--syntax-operator)",
   fence: "var(--syntax-keyword)",
@@ -70,7 +71,7 @@ function row(value: string, code: boolean) {
 
 function mark(value: string) {
   const rule =
-    /(!?\[[^\]]*\]\([^)]+\))|(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~)|(https?:\/\/[^\s<>()`"]+)/g
+    /(!?\[[^\]]*\]\([^)]+\))|(`[^`]+`)|(\$(?:\\.|[^$\\\n])+\$)|(\*\*[^*]+\*\*|__[^_]+__|\*[^*\n]+\*|_[^_\n]+_|~~[^~\n]+~~)|(https?:\/\/[^\s<>()`"]+)/g
 
   let at = 0
   let out = ""
@@ -79,7 +80,7 @@ function mark(value: string) {
     const idx = match.index ?? 0
     if (idx > at) out += esc(value.slice(at, idx))
     const part = match[0]
-    const color = match[1] ? tone.link : match[2] ? tone.code : match[3] ? tone.emph : tone.link
+    const color = match[1] ? tone.link : match[2] ? tone.code : match[3] ? tone.math : match[4] ? tone.emph : tone.link
     out += span(part, color)
     at = idx + part.length
   }
