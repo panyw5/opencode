@@ -627,6 +627,9 @@ function PrdPreviewDialog(props: {
             height: 95vh !important;
             max-height: 95vh !important;
           }
+          [data-component="dialog"][data-prd-dialog="${props.name}"] [data-slot="dialog-content"] {
+            overflow: hidden !important;
+          }
         `}
       />
       <Dialog
@@ -871,7 +874,10 @@ function PrdPreviewDialog(props: {
               </div>
             }
           >
-            <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <div
+              class="min-h-0 flex-1 overflow-y-auto px-5 py-4"
+              style={{ transform: "translateZ(0)" }}
+            >
               <Show
                 when={typeof props.initialContent === "string"}
                 fallback={<Empty text={language.t("trellis.tasks.noPrd")} />}

@@ -44,6 +44,9 @@
       min-height: 280px;
       overflow: auto;
       pointer-events: auto;
+      transform: translateZ(0);
+      isolation: isolate;
+      backface-visibility: hidden;
 
       /* Hide scrollbar */
       scrollbar-width: none;
@@ -189,20 +192,20 @@ html[data-platform="desktop"][data-os="windows"] [data-component="dialog"] [data
 @keyframes contentShow {
   from {
     opacity: 0;
-    transform: scale(0.98);
+    transform: translateZ(0) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateZ(0) scale(1);
   }
 }
 @keyframes contentHide {
   from {
     opacity: 1;
-    transform: scale(1);
+    transform: translateZ(0) scale(1);
   }
   to {
     opacity: 0;
-    transform: scale(0.98);
+    transform: translateZ(0) scale(0.98);
   }
 }
