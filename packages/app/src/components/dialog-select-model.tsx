@@ -3,7 +3,8 @@ import { Component, ComponentProps, createMemo, getOwner, JSX, runWithOwner, Sho
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { popularProviders } from "@/hooks/use-providers"
+import { popularProviders, useProviders } from "@/hooks/use-providers"
+import { compareProviderGroups } from "./provider-order"
 import { Button } from "@opencode-ai/ui/button"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tag } from "@opencode-ai/ui/tag"
@@ -103,6 +104,8 @@ const ModelList: Component<{
   const owner = getOwner()
   const model = props.model ?? useLocal().model
   const language = useLanguage()
+  const providers = useProviders()
+  const providerOrder = createMemo(() => providers.order())
 
   const models = createMemo(() =>
     model
@@ -126,9 +129,7 @@ const ModelList: Component<{
       sortGroupsBy={(a, b) => {
         const aProvider = a.items[0].provider.id
         const bProvider = b.items[0].provider.id
-        if (popularProviders.includes(aProvider) && !popularProviders.includes(bProvider)) return -1
-        if (!popularProviders.includes(aProvider) && popularProviders.includes(bProvider)) return 1
-        return popularProviders.indexOf(aProvider) - popularProviders.indexOf(bProvider)
+        return compareProviderGroups(providerOrder(), aProvider, bProvider, popularProviders)
       }}
       itemWrapper={
         props.tooltip === false

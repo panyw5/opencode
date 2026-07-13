@@ -3,6 +3,7 @@ import { mainDomain } from "@/pages/layout/extra-agents"
 import { decode64 } from "@/utils/base64"
 import { useParams } from "@solidjs/router"
 import { createMemo } from "solid-js"
+import type { Config } from "@opencode-ai/sdk/v2/client"
 
 export const popularProviders = [
   "opencode",
@@ -16,11 +17,19 @@ export const popularProviders = [
 ]
 const popularProviderSet = new Set(popularProviders)
 
-function providerAccessors(providers: () => ReturnType<typeof useGlobalSync>["data"]["provider"]) {
+function providerOrderFromConfig(config: Config | undefined) {
+  return Object.keys(config?.provider ?? {})
+}
+
+function providerAccessors(
+  providers: () => ReturnType<typeof useGlobalSync>["data"]["provider"],
+  config: () => Config | undefined,
+) {
   return {
     data: providers,
     all: () => providers().all,
     default: () => providers().default,
+    order: () => providerOrderFromConfig(config()),
     popular: () => providers().all.filter((p) => popularProviderSet.has(p.id)),
     connected: () => {
       const connected = new Set(providers().connected)
@@ -46,11 +55,19 @@ export function useProviders() {
     }
     return globalSync.data.provider
   }
-  return providerAccessors(providers)
+  const config = () => {
+    if (dir()) {
+      const [projectStore] = globalSync.child(dir())
+      if (Object.keys(projectStore.config).length > 0) return projectStore.config
+    }
+    return globalSync.data.config
+  }
+  return providerAccessors(providers, config)
 }
 
 export function useMainProviders() {
   const globalSync = useGlobalSync()
   const providers = () => globalSync.data.rootByDomain[mainDomain]?.provider ?? globalSync.data.provider
-  return providerAccessors(providers)
+  const config = () => globalSync.data.rootByDomain[mainDomain]?.config ?? globalSync.data.config
+  return providerAccessors(providers, config)
 }
