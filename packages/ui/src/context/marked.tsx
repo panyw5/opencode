@@ -594,15 +594,28 @@ function escapedDollar(text: string, at: number) {
   return slash % 2 === 1
 }
 
+function htmlTagEnd(text: string, at: number) {
+  if (text[at] !== "<") return
+  const next = text[at + 1]
+  if (!next) return
+  if (next === "/") {
+    if (!/[A-Za-z]/.test(text[at + 2] ?? "")) return
+  } else if (next !== "!" && next !== "?" && !/[A-Za-z]/.test(next)) {
+    return
+  }
+  const close = text.indexOf(">", at + 1)
+  if (close === -1) return
+  return close
+}
+
 function rawInlineMathEnd(text: string, from: number) {
   for (let i = from; i < text.length; i++) {
-    const ch = text[i]
-    if (ch === "<") {
-      const close = text.indexOf(">", i + 1)
-      if (close === -1) return
-      i = close
+    const tag = htmlTagEnd(text, i)
+    if (tag !== undefined) {
+      i = tag
       continue
     }
+    const ch = text[i]
     if (ch !== "$" || escapedDollar(text, i)) continue
     if (text[i + 1] === "$") {
       i++
@@ -636,13 +649,12 @@ function protectInlineMath(text: string) {
       continue
     }
 
-    const ch = text[i]
-    if (ch === "<") {
-      const close = text.indexOf(">", i + 1)
-      if (close === -1) break
-      i = close
+    const tag = htmlTagEnd(text, i)
+    if (tag !== undefined) {
+      i = tag
       continue
     }
+    const ch = text[i]
     if (ch !== "$" || escapedDollar(text, i)) continue
     if (text[i + 1] === "$") {
       const end = text.indexOf("$$", i + 2)

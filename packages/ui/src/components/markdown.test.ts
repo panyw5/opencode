@@ -188,6 +188,33 @@ $$`
     expect(html).toBe("`$E_0[\\substack{-1\\\\ z}]=-1$`")
   })
 
+  test("protects inline math that contains comparison less-than", () => {
+    const markdown = `- 若 $C \\cdot C<0$：一推开就立刻离开。
+
+$$
+\\mathbb P^2
+$$`
+
+    const html = protectMathExpressions(markdown)
+
+    expect(html).toContain('data-opencode-math-style="inline"')
+    expect(html).toContain('data-opencode-math-tex="C &#92;cdot C&lt;0"')
+    expect(html).toContain('data-opencode-math-style="display"')
+    expect(html).not.toContain("$C")
+    expect(html).not.toContain("$$")
+  })
+
+  test("still skips real HTML tags while scanning inline math", () => {
+    const markdown = `前置 <span class="x">tag</span> 与 $a+b$ 共存`
+
+    const html = protectMathExpressions(markdown)
+
+    expect(html).toContain('<span class="x">tag</span>')
+    expect(html).toContain('data-opencode-math-style="inline"')
+    expect(html).toContain('data-opencode-math-tex="a+b"')
+    expect(html).not.toContain("$a+b$")
+  })
+
   test("escapes pipes in protected math so GFM tables keep cell boundaries", async () => {
     const markdown = `| 对象 | 性质 |
 |------|------|
