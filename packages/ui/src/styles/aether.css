@@ -140,6 +140,40 @@ html[data-theme="aether"] [data-component="markdown"] a[data-file-link]:hover {
     border: 1px solid #3D3830;
     border-radius: 10px;
   }
+
+  /* Question options — default picked state uses --surface-interactive-base
+     (cold blue from palette.interactive #4385BE), which clashes with Aether's
+     warm clay paper identity. Shift focus/picked to terracotta primary
+     (#D97757) so selection reads as warm ink on warm paper. */
+  html[data-theme="aether"] [data-component="dock-prompt"][data-kind="question"] {
+    [data-slot="question-option"]:hover:not([data-picked="true"]) {
+      background-color: rgba(217, 119, 87, 0.08);
+    }
+
+    [data-slot="question-option"][data-focused="true"]:not([data-picked="true"]) {
+      background-color: rgba(217, 119, 87, 0.14);
+      border-color: rgba(217, 119, 87, 0.4);
+    }
+
+    [data-slot="question-option"][data-picked="true"] {
+      background-color: rgba(217, 119, 87, 0.2);
+      border-color: rgba(217, 119, 87, 0.45);
+      box-shadow: none;
+    }
+
+    [data-slot="question-option-box"][data-picked="true"] {
+      border-color: #d97757;
+      background-color: #d97757;
+
+      [data-component="icon"] {
+        color: #1a1714;
+      }
+
+      [data-slot="question-option-radio-dot"] {
+        background-color: #1a1714;
+      }
+    }
+  }
 }
 
 /* ─── Aether Micro Transitions ─── */
