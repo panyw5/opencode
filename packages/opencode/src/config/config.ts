@@ -31,6 +31,14 @@ import { ConfigLayout } from "./layout"
 import { ConfigLSP } from "./lsp"
 import { ConfigManaged } from "./managed"
 import { ConfigChannels } from "./channels"
+import {
+  channelsFilePath,
+  mainConfigCandidates,
+  parseChannelsText,
+  serializeChannels,
+  stripChannelsKey,
+  type ChannelsMap,
+} from "./channels-file"
 import { ConfigMCP } from "./mcp"
 import { ConfigModelID } from "./model-id"
 import { ConfigParse } from "./parse"
@@ -233,7 +241,7 @@ export const Info = Schema.Struct({
   ).annotate({ description: "MCP (Model Context Protocol) server configurations" }),
   channels: Schema.optional(Schema.Record(Schema.String, ConfigChannels.Info)).annotate({
     description:
-      "IM message channel configurations (feishu, discord, ...). Config-only for now; adapters connect later.",
+      "IM message channel configurations (feishu, discord, ...). Persisted in {config}/channels.json (not opencode.jsonc) so official OpenCode CLI is not broken by an unknown top-level key. Still exposed on global.config for the API/UI.",
   }),
   formatter: Schema.optional(ConfigFormatter.Info).annotate({
     description:
@@ -377,6 +385,11 @@ function writableGlobal(info: Info) {
   if ("shell" in next && next.shell === "") return { ...next, shell: undefined }
   // Empty string clears small_model the same way (JSON cannot express undefined deletes over the wire).
   if ("small_model" in next && next.small_model === "") return { ...next, small_model: undefined }
+  // IM channels are stored in channels.json — never write them into opencode.jsonc.
+  if ("channels" in next) {
+    const { channels: _channels, ...rest } = next
+    return rest
+  }
   return next
 }
 
@@ -448,6 +461,36 @@ export const layer = Layer.effect(
       return yield* loadConfig(text, { path: filepath }, env)
     })
 
+    const loadChannelsFile = Effect.fnUntraced(function* () {
+      const file = channelsFilePath()
+      const text = yield* readConfigFile(file)
+      if (!text) return {} as ChannelsMap
+      try {
+        return parseChannelsText(text, file)
+      } catch (error) {
+        log.error("failed to parse channels.json", { path: file, error: String(error) })
+        return {} as ChannelsMap
+      }
+    })
+
+    const writeChannelsFile = Effect.fnUntraced(function* (channels: ChannelsMap) {
+      const file = channelsFilePath()
+      const body = serializeChannels(channels)
+      yield* fs.writeWithDirs(file, body).pipe(Effect.orDie)
+    })
+
+    /** Drop legacy top-level `channels` from opencode.json(c) / config.json so official CLI works. */
+    const stripLegacyChannelsFromMainConfigs = Effect.fnUntraced(function* () {
+      for (const file of mainConfigCandidates()) {
+        const text = yield* readConfigFile(file)
+        if (!text) continue
+        const next = stripChannelsKey(text)
+        if (next === text) continue
+        yield* fs.writeFileString(file, next).pipe(Effect.catch(() => Effect.void))
+        log.info("migrated channels out of main config", { path: file })
+      }
+    })
+
     const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
       let result: Info = {}
       // Seed the default global config with the schema for editor completion, but avoid writing when the user
@@ -478,6 +521,25 @@ export const layer = Layer.effect(
             })
             .catch(() => {}),
         )
+      }
+
+      // IM channels: prefer dedicated channels.json; migrate legacy top-level key out of main config.
+      const legacyChannels = result.channels
+      let channels = yield* loadChannelsFile()
+      const hasLegacy = legacyChannels && isRecord(legacyChannels) && Object.keys(legacyChannels).length > 0
+      const hasFile = Object.keys(channels).length > 0
+      if (hasLegacy && !hasFile) {
+        channels = legacyChannels as ChannelsMap
+        yield* writeChannelsFile(channels).pipe(Effect.catch(() => Effect.void))
+      }
+      if (hasLegacy) {
+        yield* stripLegacyChannelsFromMainConfigs()
+      }
+      if (Object.keys(channels).length > 0) {
+        result = { ...result, channels: channels as Info["channels"] }
+      } else {
+        const { channels: _drop, ...rest } = result
+        result = rest
       }
 
       return result
@@ -843,58 +905,66 @@ export const layer = Layer.effect(
     const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
       const file = globalConfigFile()
       const before = (yield* readConfigFile(file)) ?? "{}"
+      // Capture channels before writableGlobal strips them (they go to channels.json).
+      const channelsPatch = config.channels
+      const channelsTouched = "channels" in config
       const patch = writableGlobal(config)
 
       let next: Info
       let changed: boolean
       if (!file.endsWith(".jsonc")) {
         const existing = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
-        const merged = mergeDeep(writable(existing), patch)
-        const serialized = JSON.stringify(merged, null, 2)
+        const { channels: _legacy, ...existingMain } = existing
+        const merged = mergeDeep(writable(existingMain), patch)
+        // Never persist channels on the main config file.
+        const { channels: _drop, ...mainOnly } = merged as Info
+        const serialized = JSON.stringify(mainOnly, null, 2)
         changed = serialized !== before
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
-        next = merged
+        next = mainOnly
       } else {
-        const updated = patchJsonc(before, patch)
+        let updated = patchJsonc(before, patch)
+        // Ensure any legacy top-level channels key is removed from the main file.
+        updated = stripChannelsKey(updated)
         next = ConfigParse.schema(Info, ConfigParse.jsonc(updated, file), file)
+        const { channels: _drop, ...mainOnly } = next
+        next = mainOnly
         changed = updated !== before
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
 
-      // Re-apply channel entries from the patch onto `next` so optional fields
-      // (e.g. model) never disappear from the API response even if a nested
-      // decode path drops them. Also rewrite file when the restored object is richer.
-      if (patch.channels && isRecord(patch.channels)) {
-        const channels: Record<string, (typeof next.channels extends infer C ? NonNullable<C> : never)[string]> = {
-          ...(next.channels ?? {}),
-        } as never
-        for (const [name, entry] of Object.entries(patch.channels)) {
-          if (!entry || typeof entry !== "object") continue
-          channels[name] = { ...(channels[name] as object | undefined), ...(entry as object) } as never
+      // Also scrub sibling main config files if they still carry legacy channels.
+      yield* stripLegacyChannelsFromMainConfigs()
+
+      // Full-replace channels map in channels.json when the client sends `channels`.
+      // UI always posts the complete map (add/edit/delete), so replace not deep-merge.
+      let channelsChanged = false
+      if (channelsTouched) {
+        const channels = (channelsPatch ?? {}) as ChannelsMap
+        const prevText = (yield* readConfigFile(channelsFilePath())) ?? ""
+        let prev: ChannelsMap = {}
+        try {
+          if (prevText.trim()) prev = parseChannelsText(prevText, channelsFilePath())
+        } catch {
+          prev = {}
         }
-        next = { ...next, channels }
-        // Ensure on-disk JSONC has the restored fields (model, etc.).
-        if (file.endsWith(".jsonc")) {
-          const withChannels = patchJsonc(before, { channels: patch.channels })
-          if (withChannels !== before) {
-            yield* fs.writeFileString(file, withChannels).pipe(Effect.orDie)
-            changed = true
-            next = ConfigParse.schema(Info, ConfigParse.jsonc(withChannels, file), file)
-            // Merge patch channels again after re-parse
-            const remerged = { ...(next.channels ?? {}) } as Record<string, unknown>
-            for (const [name, entry] of Object.entries(patch.channels)) {
-              if (!entry || typeof entry !== "object") continue
-              remerged[name] = { ...(remerged[name] as object | undefined), ...(entry as object) }
-            }
-            next = { ...next, channels: remerged as typeof next.channels }
-          }
+        channelsChanged = JSON.stringify(prev) !== JSON.stringify(channels)
+        if (channelsChanged) yield* writeChannelsFile(channels)
+        next = { ...next, channels: channels as Info["channels"] }
+      } else {
+        // Preserve existing channels in the returned info (main file no longer holds them).
+        const existingChannels = yield* loadChannelsFile()
+        if (Object.keys(existingChannels).length > 0) {
+          next = { ...next, channels: existingChannels as Info["channels"] }
         }
       }
+
+      changed = changed || channelsChanged
 
       yield* invalidate()
 
       // Restart IM channel runtimes when channel config changes (best-effort).
-      if (changed && next.channels !== undefined) {
+      if (channelsChanged && next.channels !== undefined) {
         yield* Effect.promise(async () => {
           try {
             const { startChannels } = await import("@/channel")

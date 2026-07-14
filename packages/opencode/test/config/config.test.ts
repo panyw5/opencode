@@ -333,6 +333,100 @@ test("updates global config and omits empty shell key in jsonc", async () => {
   }
 })
 
+test("persists channels to channels.json not opencode.jsonc", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.jsonc"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          model: "test/model",
+        }),
+      )
+    },
+  })
+
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = tmp.path
+  await clear(true)
+
+  try {
+    const info = await saveGlobal({
+      channels: {
+        "work-feishu": {
+          type: "feishu",
+          appId: "cli_test",
+          appSecret: "secret",
+          enabled: true,
+        },
+      },
+    })
+
+    expect(info.channels?.["work-feishu"]?.type).toBe("feishu")
+
+    const main = await Filesystem.readText(path.join(tmp.path, "opencode.jsonc"))
+    expect(main).not.toContain('"channels"')
+    expect(main).toContain('"model"')
+
+    const channelsFile = await Filesystem.readJson<{
+      "work-feishu"?: { type: string; appId: string }
+    }>(path.join(tmp.path, "channels.json"))
+    expect(channelsFile["work-feishu"]?.type).toBe("feishu")
+    expect(channelsFile["work-feishu"]?.appId).toBe("cli_test")
+  } finally {
+    ;(Global.Path as { config: string }).config = prev
+    await clear(true)
+  }
+})
+
+test("migrates legacy channels from opencode.jsonc into channels.json", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.jsonc"),
+        JSON.stringify({
+          $schema: "https://opencode.ai/config.json",
+          model: "test/model",
+          channels: {
+            legacy: {
+              type: "discord",
+              botToken: "tok",
+              enabled: true,
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = tmp.path
+  await clear(true)
+
+  try {
+    await withTestInstance({
+      directory: tmp.path,
+      fn: async (ctx) => {
+        const cfg = await load(ctx)
+        expect(cfg.channels?.legacy?.type).toBe("discord")
+      },
+    })
+
+    const main = await Filesystem.readText(path.join(tmp.path, "opencode.jsonc"))
+    expect(main).not.toContain('"channels"')
+    expect(main).toContain('"model"')
+
+    const channelsFile = await Filesystem.readJson<{
+      legacy?: { type: string; botToken: string }
+    }>(path.join(tmp.path, "channels.json"))
+    expect(channelsFile.legacy?.type).toBe("discord")
+    expect(channelsFile.legacy?.botToken).toBe("tok")
+  } finally {
+    ;(Global.Path as { config: string }).config = prev
+    await clear(true)
+  }
+})
+
 it.instance(
   "loads formatter boolean config",
   Effect.gen(function* () {
