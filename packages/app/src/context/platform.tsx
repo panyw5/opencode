@@ -124,6 +124,40 @@ export type HermesTest = {
   logs: string[]
 }
 
+export type CodexConfig = {
+  enabled: boolean
+  binaryPath?: string
+  configHome?: string
+}
+
+export type CodexTest = {
+  ok: boolean
+  logs: string[]
+}
+
+export type CodexInfo = {
+  sourceUrl: string
+  installed: boolean
+  binaryPath?: string
+  version?: string
+  configHome?: string
+  configPath?: string
+  configExists?: boolean
+  model?: string
+  modelProvider?: string
+  modelReasoningEffort?: string
+  modelContextWindow?: string
+  modelAutoCompactTokenLimit?: string
+  providerName?: string
+  providerBaseUrl?: string
+  providerWireApi?: string
+  sandboxMode?: string
+  approvalPolicy?: string
+  trustedProjectCount?: number
+  checkedAt?: number
+  error?: string
+}
+
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
 
 export type ExtraAgentInfo = {
@@ -273,6 +307,18 @@ export type Platform = {
 
   /** Abort a running Hermes connection test (desktop only) */
   abortHermesTest?(): Promise<boolean>
+
+  /** Get the configured Codex CLI integration (desktop only) */
+  getCodexConfig?(): Promise<CodexConfig>
+
+  /** Set the configured Codex CLI integration (desktop only) */
+  setCodexConfig?(config: CodexConfig): Promise<void> | void
+
+  /** Probe local Codex CLI install and config.toml (desktop only) */
+  testCodexConfig?(config: CodexConfig): Promise<CodexTest>
+
+  /** Inspect Codex install/version/model/config.toml (desktop only) */
+  getCodexInfo?(config?: CodexConfig): Promise<CodexInfo>
 
   /** Get the configured GenericAgent integration (desktop only) */
   getGenericagentConfig?(): Promise<GenericagentConfig>

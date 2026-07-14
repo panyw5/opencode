@@ -15,7 +15,7 @@ Use with form controls or confirmation buttons in the footer.
 - Question and permission layouts (data attributes).
 
 ### Behavior
-- Pure layout component; behavior handled by parent.
+- Collapse/expand animates content and footer height via WAAPI.
 
 ### Accessibility
 - Ensure header and footer content provide clear context and actions.

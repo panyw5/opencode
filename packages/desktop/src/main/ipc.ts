@@ -42,6 +42,7 @@ import {
   getDefaultEditor,
   getExtraAgentInfo,
   getGenericagentConfig,
+  getCodexConfig,
   getHermesConfig,
   getOpenclawConfig,
   installCli,
@@ -55,12 +56,14 @@ import {
   setCustomEditorPath,
   setDefaultEditor,
   setGenericagentConfig,
+  setCodexConfig,
   setHermesConfig,
   setOpenclawConfig,
   setTrellisCurrentTask,
   writeConfigFile,
   createTrellisTask,
 } from "./native"
+import { getCodexInfo, testCodexConfig } from "./codex-status"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -301,6 +304,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("set-hermes-config", (_event: IpcMainInvokeEvent, config) => setHermesConfig(config))
   ipcMain.handle("test-hermes-config", (_event: IpcMainInvokeEvent, config) => testHermesBridge(config))
   ipcMain.handle("abort-hermes-test", () => abortExtraAgentTest("hermes"))
+  ipcMain.handle("get-codex-config", () => getCodexConfig())
+  ipcMain.handle("set-codex-config", (_event: IpcMainInvokeEvent, config) => setCodexConfig(config))
+  ipcMain.handle("test-codex-config", (_event: IpcMainInvokeEvent, config) => testCodexConfig(config))
+  ipcMain.handle("get-codex-info", (_event: IpcMainInvokeEvent, config) => getCodexInfo(config))
   ipcMain.handle("list-extra-agent-servers", () => listExtraAgentServers())
   ipcMain.handle("restart-extra-agent", (_event: IpcMainInvokeEvent, id) => restartExtraAgent(id))
   ipcMain.handle("get-extra-agent-info", (_event: IpcMainInvokeEvent, id, config) => getExtraAgentInfo(id, config))

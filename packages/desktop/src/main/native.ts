@@ -19,6 +19,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { promisify } from "node:util"
 import { app, shell } from "electron"
 import {
+  CODEX_CONFIG_KEY,
   CUSTOM_EDITOR_PATH_KEY,
   DEFAULT_EDITOR_KEY,
   GENERICAGENT_CONFIG_KEY,
@@ -32,6 +33,7 @@ import type {
   ExtraAgentId,
   ExtraAgentInfo,
   ConfigWorkspace,
+  CodexConfig,
   GenericagentConfig,
   GenericagentTest,
   HermesConfig,
@@ -544,6 +546,14 @@ export function getHermesConfig(): HermesConfig {
 
 export function setHermesConfig(config: HermesConfig) {
   getStore().set(HERMES_CONFIG_KEY, config)
+}
+
+export function getCodexConfig(): CodexConfig {
+  return parseStoreObject<CodexConfig>(CODEX_CONFIG_KEY, { enabled: true })
+}
+
+export function setCodexConfig(config: CodexConfig) {
+  getStore().set(CODEX_CONFIG_KEY, config)
 }
 
 export async function getExtraAgentInfo(

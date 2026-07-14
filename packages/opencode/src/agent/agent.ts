@@ -191,6 +191,7 @@ export const layer = Layer.effect(
                 bash: "allow",
                 webfetch: "allow",
                 websearch: "allow",
+                codex_consult: "allow",
                 read: "allow",
                 external_directory: readonlyExternalDirectory,
               }),

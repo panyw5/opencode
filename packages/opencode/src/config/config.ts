@@ -30,6 +30,7 @@ import { ConfigFormatter } from "./formatter"
 import { ConfigLayout } from "./layout"
 import { ConfigLSP } from "./lsp"
 import { ConfigManaged } from "./managed"
+import { ConfigChannels } from "./channels"
 import { ConfigMCP } from "./mcp"
 import { ConfigModelID } from "./model-id"
 import { ConfigParse } from "./parse"
@@ -230,6 +231,10 @@ export const Info = Schema.Struct({
       ]),
     ),
   ).annotate({ description: "MCP (Model Context Protocol) server configurations" }),
+  channels: Schema.optional(Schema.Record(Schema.String, ConfigChannels.Info)).annotate({
+    description:
+      "IM message channel configurations (feishu, discord, ...). Config-only for now; adapters connect later.",
+  }),
   formatter: Schema.optional(ConfigFormatter.Info).annotate({
     description:
       "Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",

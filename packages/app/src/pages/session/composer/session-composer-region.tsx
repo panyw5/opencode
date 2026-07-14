@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -19,6 +19,66 @@ import type { SessionComposerState } from "@/pages/session/composer/session-comp
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
+import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
+
+function ComposerDockExit(props: { active: boolean; children: JSX.Element }) {
+  const [store, setStore] = createStore({
+    height: 0,
+    body: undefined as HTMLDivElement | undefined,
+  })
+  const progress = useSpring(() => (props.active ? 1 : 0), { visualDuration: 0.28, bounce: 0 })
+  const value = createMemo(() => Math.max(0, Math.min(1, progress())))
+  const visible = createMemo(() => props.active || value() > 0.001)
+  const maxHeight = createMemo(() => {
+    if (props.active && store.height <= 0) return "none"
+    return `${Math.max(0, store.height * value())}px`
+  })
+
+  createEffect(() => {
+    const el = store.body
+    if (!el) return
+    let raf: number | undefined
+    const update = () => {
+      if (raf !== undefined) cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        raf = undefined
+        const next = el.getBoundingClientRect().height
+        if (next > 0) setStore("height", next)
+      })
+    }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    onCleanup(() => {
+      observer.disconnect()
+      if (raf === undefined) return
+      cancelAnimationFrame(raf)
+    })
+  })
+
+  return (
+    <Show when={visible()}>
+      <div
+        style={{
+          overflow: props.active && value() > 0.98 ? "visible" : "hidden",
+          "max-height": maxHeight(),
+          opacity: `${value()}`,
+          "pointer-events": props.active ? "auto" : "none",
+        }}
+      >
+        <div
+          ref={(el) => {
+            setStore("body", el)
+            const next = el.getBoundingClientRect().height
+            if (next > 0) setStore("height", next)
+          }}
+        >
+          {props.children}
+        </div>
+      </div>
+    </Show>
+  )
+}
 
 function formatChildAgentTime(value: number, locale: string): string | undefined {
   if (!Number.isFinite(value) || value <= 0) return
@@ -234,8 +294,20 @@ export function SessionComposerRegion(props: {
     height: 320,
     body: undefined as HTMLDivElement | undefined,
   })
+  const [heldQuestion, setHeldQuestion] = createSignal<QuestionRequest | undefined>()
+  const [heldPermission, setHeldPermission] = createSignal<PermissionRequest | undefined>()
   let timer: number | undefined
   let frame: number | undefined
+
+  createEffect(() => {
+    const next = props.state.questionRequest()
+    if (next) setHeldQuestion(() => next)
+  })
+
+  createEffect(() => {
+    const next = props.state.permissionRequest()
+    if (next) setHeldPermission(() => next)
+  })
 
   const clear = () => {
     if (timer !== undefined) {
@@ -329,17 +401,15 @@ export function SessionComposerRegion(props: {
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
         }}
       >
-        <Show when={props.state.questionRequest()} keyed>
-          {(request) => (
-            <div>
-              <SessionQuestionDock request={request} onSubmit={props.onResponseSubmit} />
-            </div>
-          )}
-        </Show>
+        <ComposerDockExit active={!!props.state.questionRequest()}>
+          <Show when={heldQuestion()} keyed>
+            {(request) => <SessionQuestionDock request={request} onSubmit={props.onResponseSubmit} />}
+          </Show>
+        </ComposerDockExit>
 
-        <Show when={props.state.permissionRequest()} keyed>
-          {(request) => (
-            <div>
+        <ComposerDockExit active={!!props.state.permissionRequest()}>
+          <Show when={heldPermission()} keyed>
+            {(request) => (
               <SessionPermissionDock
                 request={request}
                 responding={props.state.permissionResponding()}
@@ -348,9 +418,9 @@ export function SessionComposerRegion(props: {
                   props.state.decide(response)
                 }}
               />
-            </div>
-          )}
-        </Show>
+            )}
+          </Show>
+        </ComposerDockExit>
 
         <Show when={!props.state.blocked()}>
           <Show

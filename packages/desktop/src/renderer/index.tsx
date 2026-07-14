@@ -507,6 +507,26 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     abortHermesTest: () => desktopApi.abortHermesTest(),
 
+    getCodexConfig:
+      typeof desktopApi.getCodexConfig === "function" ? () => desktopApi.getCodexConfig() : undefined,
+
+    setCodexConfig:
+      typeof desktopApi.setCodexConfig === "function"
+        ? async (config) => {
+            await desktopApi.setCodexConfig(config)
+          }
+        : undefined,
+
+    testCodexConfig:
+      typeof desktopApi.testCodexConfig === "function"
+        ? (config) => desktopApi.testCodexConfig(config)
+        : undefined,
+
+    getCodexInfo:
+      typeof desktopApi.getCodexInfo === "function"
+        ? (config) => desktopApi.getCodexInfo(config)
+        : undefined,
+
     getExtraAgentInfo:
       typeof desktopApi.getExtraAgentInfo === "function"
         ? (id, config) => desktopApi.getExtraAgentInfo(id, config)

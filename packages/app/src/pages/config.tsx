@@ -53,6 +53,8 @@ import { useLayout, type LocalProject } from "@/context/layout"
 import {
   type ConfigTreeItem,
   type ConfigWorkspace,
+  type CodexConfig,
+  type CodexInfo,
   type ExtraAgentInfo,
   type GenericagentConfig,
   type HermesConfig,
@@ -78,8 +80,15 @@ import {
 } from "@/utils/config-source"
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc } from "./config-agent-display"
+import {
+  CHANNEL_PLATFORMS,
+  channelPick,
+  ConfigChannelsDetail,
+  parseChannelPick,
+  useChannelMiddleItems,
+} from "./config-channels"
 
-const CORE_SECTIONS = ["agents-md", "providers", "agents", "skills", "plugins", "mcp", "commands", "claws"] as const
+const CORE_SECTIONS = ["agents-md", "providers", "agents", "skills", "plugins", "mcp", "commands", "channels", "claws"] as const
 type CoreSection = (typeof CORE_SECTIONS)[number]
 type Section = CoreSection | (string & {})
 
@@ -1222,6 +1231,19 @@ function hmCfg(input?: HermesConfig) {
   }
 }
 
+function codexCfg(input?: CodexConfig) {
+  return {
+    enabled: input?.enabled ?? true,
+    binaryPath: input?.binaryPath ?? "",
+    configHome: input?.configHome ?? "",
+    saving: false,
+    testing: false,
+    err: {} as Record<string, string>,
+    test: undefined as undefined | { ok: boolean; logs: string[] },
+    run: 0,
+  }
+}
+
 function fuzzy(text: string, query: string) {
   const a = text.toLowerCase()
   const b = query.trim().toLowerCase()
@@ -1265,6 +1287,7 @@ function sectionIcon(section: Section): IconProps["name"] {
   if (section === "plugins") return "code"
   if (section === "mcp") return "mcp"
   if (section === "commands") return "terminal"
+  if (section === "channels") return "speech-bubble"
   const agent = extraAgents.find((item) => item.configSection === section)
   if (agent) return agent.icon
   return "openclaw"
@@ -2723,6 +2746,215 @@ function GenericAgentEditor(props: {
   )
 }
 
+function CodexInfoCard(props: { info?: CodexInfo; loading?: boolean }) {
+  const language = useLanguage()
+  const value = (input?: string | number | boolean) => {
+    if (input === undefined || input === null || input === "") return language.t("config.claws.info.unknown")
+    return String(input)
+  }
+  const install = () => {
+    if (props.loading && !props.info) return language.t("config.claws.info.loading")
+    if (!props.info) return language.t("config.claws.info.unknown")
+    return props.info.installed
+      ? language.t("config.claws.codex.install.installed")
+      : language.t("config.claws.codex.install.missing")
+  }
+
+  return (
+    <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="text-13-medium text-text-strong">{language.t("config.claws.codex.info.title")}</div>
+        <Show when={props.loading}>
+          <div
+            class="inline-flex items-center gap-1.5 text-12-regular text-text-weak"
+            title={language.t("config.claws.info.refreshing")}
+          >
+            <Icon name="refresh" size="small" class="animate-spin" />
+            <span>{language.t("config.claws.info.loading")}</span>
+          </div>
+        </Show>
+      </div>
+      <div class="mt-4 grid gap-3 md:grid-cols-2">
+        <InfoCell label={language.t("config.claws.codex.info.install")} value={install()} />
+        <InfoCell label={language.t("config.claws.codex.info.version")} value={value(props.info?.version)} />
+        <InfoCell label={language.t("config.claws.codex.info.binary")} value={value(props.info?.binaryPath)} />
+        <InfoCell label={language.t("config.claws.codex.info.model")} value={value(props.info?.model)} />
+        <InfoCell
+          label={language.t("config.claws.codex.info.modelProvider")}
+          value={value(props.info?.modelProvider)}
+        />
+        <InfoCell
+          label={language.t("config.claws.codex.info.reasoning")}
+          value={value(props.info?.modelReasoningEffort)}
+        />
+        <InfoCell
+          label={language.t("config.claws.codex.info.contextWindow")}
+          value={value(props.info?.modelContextWindow)}
+        />
+        <InfoCell
+          label={language.t("config.claws.codex.info.compactLimit")}
+          value={value(props.info?.modelAutoCompactTokenLimit)}
+        />
+        <InfoCell label={language.t("config.claws.codex.info.providerName")} value={value(props.info?.providerName)} />
+        <InfoCell
+          label={language.t("config.claws.codex.info.providerBaseUrl")}
+          value={value(props.info?.providerBaseUrl)}
+        />
+        <InfoCell label={language.t("config.claws.codex.info.wireApi")} value={value(props.info?.providerWireApi)} />
+        <InfoCell label={language.t("config.claws.codex.info.sandbox")} value={value(props.info?.sandboxMode)} />
+        <InfoCell label={language.t("config.claws.codex.info.approval")} value={value(props.info?.approvalPolicy)} />
+        <InfoCell
+          label={language.t("config.claws.codex.info.trustedProjects")}
+          value={value(props.info?.trustedProjectCount)}
+        />
+        <InfoCell label={language.t("config.claws.codex.info.configHome")} value={value(props.info?.configHome)} />
+        <InfoCell
+          label={language.t("config.claws.codex.info.configPath")}
+          value={
+            props.info?.configPath
+              ? `${props.info.configPath}${props.info.configExists === false ? ` (${language.t("config.claws.codex.info.configMissing")})` : ""}`
+              : language.t("config.claws.info.unknown")
+          }
+        />
+      </div>
+      <Show when={props.info?.error}>
+        {(error) => <div class="mt-3 text-12-regular text-text-danger-base">{error()}</div>}
+      </Show>
+    </div>
+  )
+}
+
+function CodexEditor(props: {
+  item?: ClawItem
+  info?: CodexInfo
+  infoLoading?: boolean
+  form: ReturnType<typeof codexCfg>
+  dirty: boolean
+  busy: boolean
+  canTest: boolean
+  onChange: (key: "enabled" | "binaryPath" | "configHome", value: string | boolean) => void
+  onSave: () => void
+  onTest: () => void
+  onRefresh: () => void
+}) {
+  const language = useLanguage()
+  const settings = useSettings()
+
+  return (
+    <div class="flex h-full min-h-0 flex-col">
+      <Show
+        when={props.item}
+        fallback={<div class="px-4 py-10 text-13-regular text-text-weak">{language.t("config.claws.empty")}</div>}
+      >
+        <ClawHeader
+          item={props.item}
+          enabled={props.form.enabled}
+          busy={props.busy}
+          saving={props.form.saving}
+          testing={props.form.testing}
+          onEnabled={(value) => props.onChange("enabled", value)}
+        />
+
+        <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
+          <div class="flex w-full flex-col gap-6">
+            <Show when={props.infoLoading || props.info}>
+              <CodexInfoCard info={props.info} loading={props.infoLoading} />
+            </Show>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+              <TextField
+                type="text"
+                label={language.t("config.claws.field.codexBinary")}
+                description={language.t("config.claws.field.codexBinaryDescription")}
+                placeholder={language.t("config.claws.field.codexBinaryPlaceholder")}
+                value={props.form.binaryPath}
+                disabled={props.busy || props.form.saving || props.form.testing}
+                onChange={(value) => props.onChange("binaryPath", value)}
+              />
+              <TextField
+                type="text"
+                label={language.t("config.claws.field.codexHome")}
+                description={language.t("config.claws.field.codexHomeDescription")}
+                placeholder={language.t("config.claws.field.codexHomePlaceholder")}
+                value={props.form.configHome}
+                disabled={props.busy || props.form.saving || props.form.testing}
+                onChange={(value) => props.onChange("configHome", value)}
+              />
+            </div>
+
+            <div class="flex w-full flex-wrap items-center justify-end gap-2">
+              <Button
+                size="small"
+                variant="secondary"
+                icon="refresh"
+                disabled={props.busy || props.form.saving || props.form.testing || props.infoLoading}
+                onClick={props.onRefresh}
+              >
+                {language.t("config.claws.action.refreshInfo")}
+              </Button>
+              <ClawFormActions
+                dirty={props.dirty}
+                busy={props.busy}
+                canTest={props.canTest}
+                saving={props.form.saving}
+                testing={props.form.testing}
+                onSave={props.onSave}
+                onTest={props.onTest}
+              />
+            </div>
+
+            <Show when={props.form.testing || !!props.form.test}>
+              <div class="rounded-2xl border border-border-weak-base bg-surface-base p-5">
+                <div class="text-13-medium text-text-strong">{language.t("config.claws.debug.title")}</div>
+                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.claws.debug.description")}</div>
+                <div class="mt-4 rounded-xl border border-border-weak-base bg-background-base px-4 py-3">
+                  <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                    {language.t("config.claws.debug.status")}
+                  </div>
+                  <Show
+                    when={props.form.testing}
+                    fallback={
+                      <div
+                        class="mt-2 text-13-medium"
+                        classList={{
+                          "text-text-success": !!props.form.test?.ok,
+                          "text-text-danger-base": !props.form.test?.ok,
+                        }}
+                      >
+                        {props.form.test?.ok
+                          ? language.t("config.claws.status.success")
+                          : language.t("config.claws.status.failed")}
+                      </div>
+                    }
+                  >
+                    <div class="mt-2 inline-flex items-center gap-2 text-13-medium text-text-base">
+                      <Spinner class="size-4" />
+                      <span>{language.t("config.claws.status.testing")}</span>
+                    </div>
+                  </Show>
+                </div>
+                <div class="mt-4 rounded-xl border border-border-weak-base bg-background-base px-4 py-3">
+                  <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                    {language.t("config.claws.debug.logs")}
+                  </div>
+                  <pre
+                    class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-12-regular text-text-weak"
+                    style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
+                  >
+                    {props.form.testing
+                      ? language.t("config.claws.logs.testingCodex")
+                      : props.form.test?.logs.join("\n") || ""}
+                  </pre>
+                </div>
+              </div>
+            </Show>
+          </div>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 function HermesEditor(props: {
   item?: ClawItem
   info?: ExtraAgentInfo
@@ -3248,6 +3480,7 @@ export default function ConfigPage() {
     claw: clawCfg(),
     ga: gaCfg(),
     hm: hmCfg(),
+    codex: codexCfg(),
     skillTitle: "",
     skillErr: "",
     skillPath: "",
@@ -3273,6 +3506,7 @@ export default function ConfigPage() {
     clawRev: 0,
     gaRev: 0,
     hmRev: 0,
+    codexRev: 0,
     mcpRev: 0,
     commandRev: 0,
     cmdTitle: "",
@@ -3290,7 +3524,11 @@ export default function ConfigPage() {
     mcpBusy: "",
   })
 
-  function bump(...list: Array<"workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "mcpRev" | "commandRev">) {
+  function bump(
+    ...list: Array<
+      "workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "codexRev" | "mcpRev" | "commandRev"
+    >
+  ) {
     list.forEach((key) => setState(key, (value) => value + 1))
   }
 
@@ -3346,6 +3584,8 @@ export default function ConfigPage() {
   const mcpProjectName = createMemo(() => sync.data.project || name(sync.data.path?.directory ?? ""))
   const mcpProjectOpen = () => !state.treeClosed["mcp-project"]
   const toggleMcpProject = () => setState("treeClosed", "mcp-project", (v) => !v)
+  const channelMiddleItems = useChannelMiddleItems(() => state.pick)
+  const selectedChannelPlatform = createMemo(() => parseChannelPick(state.pick))
 
   const selectedMcpName = createMemo(() => {
     if (state.pick === MCP_NEW) return undefined
@@ -3584,9 +3824,15 @@ export default function ConfigPage() {
   const [genericagentLoading, setGenericagentLoading] = createSignal(false)
   const [hermesConfig, setHermesConfigState] = createSignal<HermesConfig>()
   const [hermesLoading, setHermesLoading] = createSignal(false)
+  const [codexConfig, setCodexConfigState] = createSignal<CodexConfig>()
+  const [codexLoading, setCodexLoading] = createSignal(false)
+  const [codexInfoState, setCodexInfoState] = createSignal<CodexInfo>()
+  const [codexInfoLoading, setCodexInfoLoading] = createSignal(false)
   let openclawConfigRun = 0
   let genericagentConfigRun = 0
   let hermesConfigRun = 0
+  let codexConfigRun = 0
+  let codexInfoRun = 0
 
   createEffect(
     on(
@@ -3658,6 +3904,57 @@ export default function ConfigPage() {
           .finally(() => {
             if (run !== hermesConfigRun) return
             setHermesLoading(false)
+          })
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [state.section, state.pick, state.codexRev] as const,
+      ([section, pick]) => {
+        if (section !== "claws" || pick !== "claw:codex" || !platform.getCodexConfig) {
+          codexConfigRun++
+          setCodexLoading(false)
+          return
+        }
+        const run = ++codexConfigRun
+        setCodexLoading(true)
+        void platform
+          .getCodexConfig()
+          .then((result) => {
+            if (run !== codexConfigRun) return
+            setCodexConfigState(result)
+          })
+          .finally(() => {
+            if (run !== codexConfigRun) return
+            setCodexLoading(false)
+          })
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [state.section, state.pick, state.codexRev, codexConfig(), codexLoading()] as const,
+      ([section, pick, , cfg, loading]) => {
+        if (section !== "claws" || pick !== "claw:codex" || !platform.getCodexInfo || loading || !cfg) {
+          codexInfoRun++
+          setCodexInfoLoading(false)
+          if (pick !== "claw:codex") setCodexInfoState(undefined)
+          return
+        }
+        const run = ++codexInfoRun
+        setCodexInfoLoading(true)
+        void platform
+          .getCodexInfo(cfg)
+          .then((result) => {
+            if (run !== codexInfoRun) return
+            setCodexInfoState(result)
+          })
+          .finally(() => {
+            if (run !== codexInfoRun) return
+            setCodexInfoLoading(false)
           })
       },
     ),
@@ -4655,7 +4952,7 @@ export default function ConfigPage() {
 
   const claws = createMemo<ClawItem[]>(() => {
     if (platform.platform !== "desktop") return []
-    return extraAgents.map((agent) => {
+    const items = extraAgents.map((agent) => {
       if (agent.id === "openclaw") {
         const cfg = openclawConfig()
         return {
@@ -4688,6 +4985,19 @@ export default function ConfigPage() {
         enabled: cfg?.enabled ?? false,
       }
     })
+    if (platform.getCodexConfig) {
+      const cfg = codexConfig()
+      const info = codexInfoState()
+      items.push({
+        id: "claw:codex",
+        label: "Codex",
+        note: t("config.claws.note.codex"),
+        meta: info?.model?.trim() || info?.version?.trim() || cfg?.binaryPath?.trim() || "codex CLI",
+        sourceUrl: "https://github.com/openai/codex",
+        enabled: cfg?.enabled ?? true,
+      })
+    }
+    return items
   })
 
   const pluginDocs = createMemo<DocItem[]>(() =>
@@ -4895,6 +5205,16 @@ export default function ConfigPage() {
     )
   })
 
+  const codexDirty = createMemo(() => {
+    const cfg = codexConfig()
+    if (!cfg || state.section !== "claws") return false
+    return (
+      state.codex.enabled !== (cfg.enabled ?? true) ||
+      state.codex.binaryPath.trim() !== (cfg.binaryPath?.trim() ?? "") ||
+      state.codex.configHome.trim() !== (cfg.configHome?.trim() ?? "")
+    )
+  })
+
   const hmDirty = createMemo(() => {
     const cfg = hermesConfig()
     if (!cfg || state.section !== "claws") return false
@@ -5030,6 +5350,16 @@ export default function ConfigPage() {
     ),
   )
 
+  createEffect(
+    on(
+      () => codexConfig(),
+      (item) => {
+        if (!item) return
+        setState("codex", codexCfg(item))
+      },
+    ),
+  )
+
   createEffect(() => {
     const section = querySection()
     const pick = query.pick
@@ -5075,6 +5405,9 @@ export default function ConfigPage() {
     if (section === "mcp") {
       const list = [...mcpGlobal(), ...mcpProject()].map((s) => `mcp:${s.name}`)
       return state.pick === MCP_NEW ? [MCP_NEW, ...list] : list
+    }
+    if (section === "channels") {
+      return CHANNEL_PLATFORMS.map((p) => channelPick(p))
     }
     return (plugins() ?? []).map((item) => item.id)
   }
@@ -5644,6 +5977,93 @@ export default function ConfigPage() {
     setState("hm", key, value)
     if (key === "hermesDir") setState("hm", "err", "hermesDir", "")
     setState("hm", "test", undefined)
+  }
+
+  function codexInput(): CodexConfig {
+    return {
+      enabled: state.codex.enabled,
+      binaryPath: state.codex.binaryPath.trim() || undefined,
+      configHome: state.codex.configHome.trim() || undefined,
+    }
+  }
+
+  async function saveCodex() {
+    if (!platform.setCodexConfig) return
+    const cfg = codexInput()
+    setState("codex", "saving", true)
+    setState("codex", "test", undefined)
+    await Promise.resolve(platform.setCodexConfig(cfg))
+      .then(async () => {
+        bump("codexRev")
+        showToast({ variant: "success", title: t("common.save"), description: "Codex" })
+      })
+      .catch((err: unknown) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+      .finally(() => setState("codex", "saving", false))
+  }
+
+  async function testCodex() {
+    if (!platform.testCodexConfig) return
+    const cfg = codexInput()
+    const run = state.codex.run + 1
+    setState("codex", "run", run)
+    setState("codex", "testing", true)
+    setState("codex", "test", undefined)
+    await platform
+      .testCodexConfig(cfg)
+      .then((item) => {
+        if (state.codex.run !== run) return
+        setState("codex", "test", { ok: item.ok, logs: item.logs })
+        if (platform.getCodexInfo) {
+          void platform.getCodexInfo(cfg).then((info) => {
+            if (state.codex.run !== run) return
+            setCodexInfoState(info)
+          })
+        }
+        showToast({
+          variant: item.ok ? "success" : "error",
+          icon: item.ok ? "circle-check" : undefined,
+          title: t("config.claws.action.test"),
+          description: item.ok
+            ? t("config.claws.codex.test.success")
+            : (item.logs[item.logs.length - 1] ?? t("common.requestFailed")),
+        })
+      })
+      .catch((err: unknown) => {
+        if (state.codex.run !== run) return
+        const message = err instanceof Error ? err.message : String(err)
+        setState("codex", "test", { ok: false, logs: [message] })
+        showToast({ title: language.t("common.requestFailed"), description: message })
+      })
+      .finally(() => {
+        if (state.codex.run !== run) return
+        setState("codex", "testing", false)
+      })
+  }
+
+  function setCodex(key: "enabled" | "binaryPath" | "configHome", value: string | boolean) {
+    setState("codex", key, value)
+    setState("codex", "test", undefined)
+  }
+
+  function refreshCodexInfo() {
+    if (!platform.getCodexInfo) return
+    const run = ++codexInfoRun
+    setCodexInfoLoading(true)
+    void platform
+      .getCodexInfo(codexInput())
+      .then((result) => {
+        if (run !== codexInfoRun) return
+        setCodexInfoState(result)
+      })
+      .finally(() => {
+        if (run !== codexInfoRun) return
+        setCodexInfoLoading(false)
+      })
   }
 
   function chooseHermesDir() {
@@ -6354,6 +6774,12 @@ export default function ConfigPage() {
                   icon={sectionIcon("commands")}
                   onClick={() => jump("commands")}
                 />
+                <SectionButton
+                  current={state.section === "channels"}
+                  title={t("config.channels.title")}
+                  icon={sectionIcon("channels")}
+                  onClick={() => jump("channels")}
+                />
                 {clawsSectionEnabled() && (
                   <SectionButton
                     current={state.section === "claws"}
@@ -6433,6 +6859,10 @@ export default function ConfigPage() {
                         {t("config.mcp.add")}
                       </Button>
                     </div>
+                  </Match>
+                  <Match when={state.section === "channels"}>
+                    <div class="text-20-medium text-text-strong">{t("config.channels.title")}</div>
+                    <div class="mt-1 text-12-regular text-text-weak">{t("config.channels.header")}</div>
                   </Match>
                   <Match when={state.section === "commands"}>
                     <div class="text-20-medium text-text-strong">{t("config.commands.title")}</div>
@@ -6855,6 +7285,22 @@ export default function ConfigPage() {
                           </Show>
                         </div>
                       </Show>
+                    </Match>
+
+                    <Match when={state.section === "channels"}>
+                      <div class="flex flex-col gap-2.5">
+                        <For each={channelMiddleItems()}>
+                          {(item) => (
+                            <PluginListButton
+                              active={item.active}
+                              title={item.title}
+                              note={item.note}
+                              meta={item.count > 0 ? String(item.count) : undefined}
+                              onClick={() => setState("pick", item.pick)}
+                            />
+                          )}
+                        </For>
+                      </div>
                     </Match>
 
                     <Match when={state.section === "commands"}>
@@ -7289,6 +7735,21 @@ export default function ConfigPage() {
                         onAbort={platform.abortHermesTest ? () => void abortHm() : undefined}
                       />
                     </Match>
+                    <Match when={selectedClaw()?.id === "claw:codex"}>
+                      <CodexEditor
+                        item={selectedClaw()}
+                        info={codexInfoState()}
+                        infoLoading={codexInfoLoading()}
+                        form={state.codex}
+                        dirty={codexDirty()}
+                        busy={codexLoading()}
+                        canTest={!!platform.testCodexConfig}
+                        onChange={setCodex}
+                        onSave={() => void saveCodex()}
+                        onTest={() => void testCodex()}
+                        onRefresh={refreshCodexInfo}
+                      />
+                    </Match>
                     <Match when={selectedClaw()?.id === "claw:genericagent"}>
                       <GenericAgentEditor
                         item={selectedClaw()}
@@ -7497,6 +7958,23 @@ export default function ConfigPage() {
                     );
                   }}
                 </Show>
+              </Match>
+
+              <Match when={state.section === "channels"}>
+                <Switch
+                  fallback={
+                    <div class="flex h-full items-center justify-center px-4 py-10">
+                      <div class="text-13-regular text-text-weak">{t("config.channels.editor.select")}</div>
+                    </div>
+                  }
+                >
+                  <Match when={selectedChannelPlatform() === "feishu"}>
+                    <ConfigChannelsDetail platform="feishu" />
+                  </Match>
+                  <Match when={selectedChannelPlatform() === "discord"}>
+                    <ConfigChannelsDetail platform="discord" />
+                  </Match>
+                </Switch>
               </Match>
 
               <Match when={state.section === "commands"}>

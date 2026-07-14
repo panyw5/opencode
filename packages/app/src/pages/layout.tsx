@@ -21,7 +21,7 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon, type IconName } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
@@ -149,6 +149,8 @@ export default function Layout(props: ParentProps) {
       workspaceExpanded: {} as Record<string, boolean>,
       gettingStartedDismissed: false,
       sidebarPanel: "project" as "project" | "tasks",
+      /** Active IM channel name (from config.channels) when browsing channel sessions. */
+      activeImChannel: undefined as string | undefined,
     }),
   )
 
@@ -254,7 +256,12 @@ export default function Layout(props: ParentProps) {
   const canConfigureExtraAgents = createMemo(
     () =>
       platform.platform === "desktop" &&
-      !!(platform.getOpenclawConfig || platform.getHermesConfig || platform.getGenericagentConfig),
+      !!(
+        platform.getOpenclawConfig ||
+        platform.getHermesConfig ||
+        platform.getGenericagentConfig ||
+        platform.getCodexConfig
+      ),
   )
   const availableThemeEntries = createMemo(() => theme.ids().map((id) => [id, theme.themes()[id]] as const))
   const colorSchemeOrder: ColorScheme[] = ["system", "light", "dark"]
@@ -1582,6 +1589,35 @@ export default function Layout(props: ParentProps) {
     if (!params.dir) return
     setStore("sidebarPanel", "tasks")
     layout.sidebar.open()
+  }
+
+  function openImChannel(name: string) {
+    const entry = globalSync.data.config.channels?.[name]
+    if (!entry || entry.enabled === false) {
+      showToast({
+        title: language.t("sidebar.im.toast.unavailable"),
+        description: language.t("sidebar.im.toast.configure"),
+        actions: [
+          {
+            label: language.t("config.channels.title"),
+            onClick: () => openConfig("channels", entry?.type === "discord" ? "channels:discord" : "channels:feishu"),
+          },
+        ],
+      })
+      return
+    }
+    batch(() => {
+      setStore("activeImChannel", name)
+      setStore("sidebarPanel", "project")
+      layout.sidebar.open()
+    })
+    const model = entry.model?.trim()
+    showToast({
+      title: language.t("sidebar.im.toast.opened", { name }),
+      description: model
+        ? language.t("sidebar.im.toast.opened.model", { model })
+        : language.t("sidebar.im.toast.opened.runtime"),
+    })
   }
 
   function openExtraAgent(id: Parameters<typeof extraAgentDir>[0]) {
@@ -3198,6 +3234,26 @@ export default function Layout(props: ParentProps) {
           }
         })
       }
+      imChannels={() => {
+        const cfg = globalSync.data.config.channels ?? {}
+        return Object.entries(cfg)
+          .filter(([, entry]) => entry.enabled !== false)
+          .map(([name, entry]) => ({
+            id: name,
+            label: () => name,
+            meta: () =>
+              entry.type === "feishu"
+                ? language.t("sidebar.im.meta.feishu")
+                : language.t("sidebar.im.meta.discord"),
+            active: () => store.activeImChannel === name,
+            available: () => true,
+            icon: "speech-bubble" as IconName,
+            onOpen: () => openImChannel(name),
+          }))
+          .sort((a, b) => a.id.localeCompare(b.id))
+      }}
+      imChannelsLabel={() => language.t("sidebar.im.title")}
+      onOpenImChannelsConfig={() => openConfig("channels")}
       configLabel={() => "Config"}
       configActive={onConfigRoute}
       onOpenConfig={openConfig}

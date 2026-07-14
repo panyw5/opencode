@@ -144,6 +144,42 @@ export type HermesTest = {
   logs: string[]
 }
 
+export type CodexConfig = {
+  enabled: boolean
+  /** Optional absolute path or name for the `codex` binary. */
+  binaryPath?: string
+  /** Optional CODEX_HOME override (defaults to ~/.codex). */
+  configHome?: string
+}
+
+export type CodexTest = {
+  ok: boolean
+  logs: string[]
+}
+
+export type CodexInfo = {
+  sourceUrl: string
+  installed: boolean
+  binaryPath?: string
+  version?: string
+  configHome?: string
+  configPath?: string
+  configExists?: boolean
+  model?: string
+  modelProvider?: string
+  modelReasoningEffort?: string
+  modelContextWindow?: string
+  modelAutoCompactTokenLimit?: string
+  providerName?: string
+  providerBaseUrl?: string
+  providerWireApi?: string
+  sandboxMode?: string
+  approvalPolicy?: string
+  trustedProjectCount?: number
+  checkedAt?: number
+  error?: string
+}
+
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
 
 export type ExtraAgentServer = {
@@ -257,6 +293,10 @@ export type ElectronAPI = {
   setHermesConfig: (config: HermesConfig) => Promise<void>
   testHermesConfig: (config: HermesConfig) => Promise<HermesTest>
   abortHermesTest: () => Promise<boolean>
+  getCodexConfig: () => Promise<CodexConfig>
+  setCodexConfig: (config: CodexConfig) => Promise<void>
+  testCodexConfig: (config: CodexConfig) => Promise<CodexTest>
+  getCodexInfo: (config?: CodexConfig) => Promise<CodexInfo>
   listExtraAgentServers: () => Promise<ExtraAgentServer[]>
   restartExtraAgent: (id: ExtraAgentId) => Promise<void>
   getExtraAgentInfo: (

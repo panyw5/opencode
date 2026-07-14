@@ -1128,6 +1128,29 @@ export type ProviderConfig = {
   }
 }
 
+export type ChannelFeishuConfig = {
+  type: "feishu"
+  appId: string
+  appSecret: string
+  allowedUsers?: Array<string>
+  enabled?: boolean
+  domain?: "feishu" | "lark"
+  /** provider/model used for IM replies on this channel */
+  model?: string
+}
+
+export type ChannelDiscordConfig = {
+  type: "discord"
+  botToken: string
+  allowedUsers?: Array<string>
+  proxy?: string
+  enabled?: boolean
+  /** provider/model used for IM replies on this channel */
+  model?: string
+}
+
+export type ChannelConfig = ChannelFeishuConfig | ChannelDiscordConfig
+
 export type McpLocalConfig = {
   /**
    * Type of MCP server connection
@@ -1258,6 +1281,12 @@ export type Config = {
       | {
           enabled: boolean
         }
+  }
+  /**
+   * IM message channel configurations (feishu, discord, ...). Config-only for now; adapters connect later.
+   */
+  channels?: {
+    [key: string]: ChannelConfig
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.

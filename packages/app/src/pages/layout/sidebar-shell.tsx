@@ -25,6 +25,16 @@ export type SidebarExtraAgent = {
   onOpen: () => void
 }
 
+export type SidebarImChannel = {
+  id: string
+  label: Accessor<string>
+  meta?: Accessor<string | undefined>
+  active?: Accessor<boolean>
+  available?: Accessor<boolean>
+  icon: IconName
+  onOpen: () => void
+}
+
 export const SidebarContent = (props: {
   mobile?: boolean
   opened: Accessor<boolean>
@@ -38,6 +48,9 @@ export const SidebarContent = (props: {
   onOpenProject: () => void
   renderProjectOverlay: () => JSX.Element
   extraAgents: Accessor<SidebarExtraAgent[]>
+  imChannels?: Accessor<SidebarImChannel[]>
+  imChannelsLabel?: Accessor<string>
+  onOpenImChannelsConfig?: () => void
   configLabel: Accessor<string>
   configActive: Accessor<boolean>
   onOpenConfig: () => void
@@ -56,7 +69,12 @@ export const SidebarContent = (props: {
   const [menuOpen, setMenuOpen] = createSignal(false)
   let closeTimer: number | undefined
 
+  // IM channels menu state
+  const [imMenuOpen, setImMenuOpen] = createSignal(false)
+  let imCloseTimer: number | undefined
+
   const activeAgent = createMemo(() => props.extraAgents().find((agent) => agent.active?.()))
+  const activeImChannel = createMemo(() => props.imChannels?.().find((ch) => ch.active?.()))
   // GeneralAgent is the framework shell entry. The rail always shows a stable
   // framework icon; which backend is active is a domain-internal detail revealed
   // by the popover selector below.
@@ -76,9 +94,26 @@ export const SidebarContent = (props: {
     }, 200)
   }
 
+  const handleImMenuMouseEnter = () => {
+    if (imCloseTimer) {
+      clearTimeout(imCloseTimer)
+      imCloseTimer = undefined
+    }
+    setImMenuOpen(true)
+  }
+
+  const handleImMenuMouseLeave = () => {
+    imCloseTimer = window.setTimeout(() => {
+      setImMenuOpen(false)
+    }, 200)
+  }
+
   onCleanup(() => {
     if (closeTimer) {
       clearTimeout(closeTimer)
+    }
+    if (imCloseTimer) {
+      clearTimeout(imCloseTimer)
     }
   })
 
@@ -191,6 +226,73 @@ export const SidebarContent = (props: {
                     </button>
                   )}
                 </For>
+              </div>
+            </Popover>
+          </Show>
+          <Show when={(props.imChannels?.().length ?? 0) > 0 || !!props.onOpenImChannelsConfig}>
+            <Popover
+              open={imMenuOpen()}
+              onOpenChange={setImMenuOpen}
+              placement={placement()}
+              trigger={
+                <div onMouseEnter={handleImMenuMouseEnter} onMouseLeave={handleImMenuMouseLeave}>
+                  <Tooltip placement={placement()} value={props.imChannelsLabel?.() ?? "IM"}>
+                    <IconButton
+                      icon="speech-bubble"
+                      variant="ghost"
+                      size="large"
+                      classList={{ "bg-surface-base-active": !!activeImChannel() }}
+                      aria-label={props.imChannelsLabel?.() ?? "IM"}
+                    />
+                  </Tooltip>
+                </div>
+              }
+            >
+              <div
+                class="flex flex-col gap-1 p-2 min-w-[180px]"
+                onMouseEnter={handleImMenuMouseEnter}
+                onMouseLeave={handleImMenuMouseLeave}
+              >
+                <Show
+                  when={(props.imChannels?.().length ?? 0) > 0}
+                  fallback={
+                    <button
+                      class="flex items-center gap-2 px-3 py-2 rounded-md text-text-weak hover:bg-surface-base-hover transition-colors text-left"
+                      onClick={() => {
+                        props.onOpenImChannelsConfig?.()
+                        setImMenuOpen(false)
+                      }}
+                    >
+                      <Icon name="plus-small" class="size-5 shrink-0" />
+                      <span class="text-14-regular">{props.imChannelsLabel?.() ?? "Channels"}</span>
+                    </button>
+                  }
+                >
+                  <For each={props.imChannels?.() ?? []}>
+                    {(ch) => (
+                      <button
+                        class="flex items-center gap-2 px-3 py-2 rounded-md text-text-base hover:bg-surface-base-hover transition-colors"
+                        classList={{
+                          "bg-surface-base-active": !!ch.active?.(),
+                          "opacity-50 cursor-not-allowed hover:bg-transparent": ch.available?.() === false,
+                        }}
+                        disabled={ch.available?.() === false}
+                        onClick={() => {
+                          ch.onOpen()
+                          setImMenuOpen(false)
+                        }}
+                      >
+                        <Icon name={ch.icon} class="size-5 shrink-0" />
+                        <span class="text-14-regular flex-1 text-left min-w-0">
+                          <span class="block truncate">{ch.label()}</span>
+                          <Show when={ch.meta?.()}>
+                            <span class="block truncate text-11-regular text-text-weaker">{ch.meta!()}</span>
+                          </Show>
+                        </span>
+                      </button>
+                    )}
+                  </For>
+                </Show>
               </div>
             </Popover>
           </Show>

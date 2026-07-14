@@ -1,0 +1,21 @@
+- Consult Codex CLI as an external read-only advisor (second opinion / review / analysis)
+- Spawns a one-shot Codex agent turn via the local `codex` CLI (same substrate as `@openai/codex-sdk`)
+- Always runs with sandbox `read-only` — Codex cannot write to the workspace
+- Use when you want an independent Codex judgment without making it the primary executor
+
+When to use:
+  - Architecture review, alternative approach, risk analysis
+  - Second opinion on a plan, bug diagnosis, or design trade-off
+  - Code review style feedback before you implement or after you draft a plan
+
+When NOT to use:
+  - Simple file reads/searches you can do with read/grep/glob
+  - Tasks that require writing code (you implement; Codex only advises)
+  - When the user did not ask for external consultation and local tools suffice
+
+Usage notes:
+  - Provide a self-contained prompt: goal, relevant absolute paths, constraints, and desired output format
+  - Codex starts cold — it cannot see this conversation unless you put the context in `prompt`
+  - Defaults to the current project directory; optional `working_directory` overrides cwd
+  - Requires a working local Codex install (`codex` on PATH) and authenticated credentials
+  - Long-running: prefer concise scoped questions over "review the entire monorepo"
