@@ -971,11 +971,188 @@
 }
 
 [data-component="tool-action"] {
-  width: 24px;
-  height: 24px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+[data-component="codex-session-dialog"] {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+  padding: 0 16px 16px;
+}
+
+[data-component="codex-session-dialog"] [data-slot="codex-session-body"] {
+  flex: 1 1 auto;
+}
+
+[data-slot="codex-session-meta"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+[data-slot="codex-session-chip"] {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-weak-base);
+  background: var(--surface-base);
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.4;
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+}
+
+[data-slot="codex-session-chip"][data-active="true"] {
+  color: var(--text-base);
+  border-color: var(--border-strong-base, var(--border-weak-base));
+}
+
+[data-slot="codex-session-body"] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px 8px;
+}
+
+[data-slot="codex-session-empty"] {
+  color: var(--text-weak);
+  font-size: 13px;
+  padding: 16px 4px;
+}
+
+[data-slot="codex-chat-row"] {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 100%;
+}
+
+[data-slot="codex-chat-row"][data-role="user"] {
+  flex-direction: row-reverse;
+}
+
+[data-slot="codex-chat-row"][data-role="system"] {
+  padding-left: 36px;
+}
+
+[data-slot="codex-chat-avatar"] {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid var(--border-weak-base);
+  background: var(--surface-base);
+  color: var(--text-weak);
+}
+
+[data-slot="codex-chat-avatar"][data-role="user"] {
+  background: color-mix(in srgb, var(--icon-info-base, #3b82f6) 18%, var(--surface-base));
+  border-color: color-mix(in srgb, var(--icon-info-base, #3b82f6) 35%, var(--border-weak-base));
+  color: var(--icon-info-base, #3b82f6);
+}
+
+[data-slot="codex-chat-avatar"][data-role="assistant"] {
+  background: color-mix(in srgb, var(--icon-success-base, #22c55e) 16%, var(--surface-base));
+  border-color: color-mix(in srgb, var(--icon-success-base, #22c55e) 35%, var(--border-weak-base));
+  color: var(--icon-success-base, #16a34a);
+}
+
+[data-slot="codex-chat-bubble"] {
+  min-width: 0;
+  max-width: min(100%, 860px);
+  border-radius: 14px;
+  border: 1px solid var(--border-weak-base);
+  background: var(--background-base);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-slot="codex-chat-bubble"][data-role="user"] {
+  background: color-mix(in srgb, var(--icon-info-base, #3b82f6) 10%, var(--surface-base));
+  border-color: color-mix(in srgb, var(--icon-info-base, #3b82f6) 28%, var(--border-weak-base));
+}
+
+[data-slot="codex-chat-bubble"][data-role="assistant"] {
+  background: color-mix(in srgb, var(--icon-success-base, #22c55e) 8%, var(--surface-base));
+  border-color: color-mix(in srgb, var(--icon-success-base, #22c55e) 24%, var(--border-weak-base));
+}
+
+[data-slot="codex-chat-bubble"][data-role="system"] {
+  max-width: 100%;
+  background: var(--surface-base);
+  opacity: 0.95;
+}
+
+[data-slot="codex-chat-label"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-weak);
+  text-transform: uppercase;
+}
+
+[data-slot="codex-chat-streaming"],
+[data-slot="codex-chat-status"] {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-weak);
+}
+
+[data-slot="codex-chat-streaming"] {
+  color: var(--icon-success-base, #16a34a);
+}
+
+[data-slot="codex-chat-text"] {
+  min-width: 0;
+  color: var(--text-base);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+[data-slot="codex-chat-pre"] {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+[data-slot="codex-chat-waiting"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-weak);
+  font-size: 13px;
+}
+
+[data-slot="codex-chat-row"][data-streaming="true"] [data-slot="codex-chat-bubble"][data-role="assistant"] {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--icon-success-base, #22c55e) 25%, transparent);
 }
 
 [data-component="exa-tool-output"] {

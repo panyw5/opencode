@@ -14,6 +14,9 @@ const log = Log.create({ service: "tool.codex_consult" })
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000
 const MAX_TIMEOUT_MS = 30 * 60 * 1000
 const MIN_TIMEOUT_MS = 30 * 1000
+const METADATA_THROTTLE_MS = 120
+const MAX_TRANSCRIPT_ITEMS = 80
+const MAX_TRANSCRIPT_TEXT = 8_000
 
 export const Parameters = Schema.Struct({
   prompt: Schema.String.annotate({
@@ -38,6 +41,28 @@ export type CodexExecBuildInput = {
   prompt: string
   workingDirectory: string
   model?: string
+}
+
+export type CodexTranscriptItem = {
+  id: string
+  kind: "message" | "command" | "reasoning" | "file_change" | "web_search" | "todo" | "error" | "status" | "mcp"
+  title?: string
+  text?: string
+  status?: string
+}
+
+export type CodexLiveState = {
+  threadId?: string
+  usage?: {
+    input_tokens: number
+    cached_input_tokens: number
+    output_tokens: number
+    reasoning_output_tokens: number
+  }
+  error?: string
+  agentMessages: string[]
+  transcript: CodexTranscriptItem[]
+  preview?: string
 }
 
 /** Build argv for a read-only one-shot `codex exec` (shared with tests). */
@@ -74,86 +99,237 @@ export function buildCodexExecArgs(input: CodexExecBuildInput): string[] {
 export type CodexJsonlParseResult = {
   finalResponse: string
   threadId?: string
-  usage?: {
-    input_tokens: number
-    cached_input_tokens: number
-    output_tokens: number
-    reasoning_output_tokens: number
-  }
+  usage?: CodexLiveState["usage"]
   error?: string
   agentMessages: string[]
+  transcript: CodexTranscriptItem[]
+  preview?: string
 }
 
-/** Parse `codex exec --json` JSONL stdout into a final advisor response. */
-export function parseCodexJsonl(stdout: string): CodexJsonlParseResult {
-  const agentMessages: string[] = []
-  let threadId: string | undefined
-  let usage: CodexJsonlParseResult["usage"]
-  let error: string | undefined
+export function createCodexLiveState(): CodexLiveState {
+  return { agentMessages: [], transcript: [] }
+}
 
-  for (const raw of stdout.split(/\r?\n/)) {
-    const line = raw.trim()
-    if (!line) continue
-    let event: unknown
-    try {
-      event = JSON.parse(line)
-    } catch {
-      continue
+/** Apply one `codex exec --json` JSONL event into live state (for streaming + final parse). */
+export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boolean {
+  const line = rawLine.trim()
+  if (!line) return false
+  let event: unknown
+  try {
+    event = JSON.parse(line)
+  } catch {
+    return false
+  }
+  if (!event || typeof event !== "object") return false
+  const e = event as Record<string, unknown>
+  const type = typeof e.type === "string" ? e.type : ""
+  let changed = false
+
+  if (type === "thread.started" && typeof e.thread_id === "string") {
+    if (state.threadId !== e.thread_id) {
+      state.threadId = e.thread_id
+      upsertTranscript(state, {
+        id: `thread:${e.thread_id}`,
+        kind: "status",
+        title: "Thread started",
+        text: e.thread_id,
+      })
+      changed = true
     }
-    if (!event || typeof event !== "object") continue
-    const e = event as Record<string, unknown>
-    const type = typeof e.type === "string" ? e.type : ""
+    return changed
+  }
 
-    if (type === "thread.started" && typeof e.thread_id === "string") {
-      threadId = e.thread_id
-      continue
+  if (type === "turn.started") {
+    upsertTranscript(state, {
+      id: `turn-start:${state.transcript.length}`,
+      kind: "status",
+      title: "Turn started",
+    })
+    return true
+  }
+
+  if (type === "turn.completed" && e.usage && typeof e.usage === "object") {
+    const u = e.usage as Record<string, unknown>
+    state.usage = {
+      input_tokens: num(u.input_tokens),
+      cached_input_tokens: num(u.cached_input_tokens),
+      output_tokens: num(u.output_tokens),
+      reasoning_output_tokens: num(u.reasoning_output_tokens),
+    }
+    upsertTranscript(state, {
+      id: `turn-complete:${state.transcript.length}`,
+      kind: "status",
+      title: "Turn completed",
+      text: `in=${state.usage.input_tokens} out=${state.usage.output_tokens}`,
+    })
+    return true
+  }
+
+  if (type === "turn.failed") {
+    const err = e.error
+    if (err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string") {
+      state.error = (err as { message: string }).message
+    } else if (typeof err === "string") {
+      state.error = err
+    } else {
+      state.error = "Codex turn failed"
+    }
+    upsertTranscript(state, {
+      id: `turn-failed:${state.transcript.length}`,
+      kind: "error",
+      title: "Turn failed",
+      text: state.error,
+    })
+    return true
+  }
+
+  if (type === "item.completed" || type === "item.updated" || type === "item.started") {
+    const item = e.item
+    if (!item || typeof item !== "object") return false
+    const it = item as Record<string, unknown>
+    const id = typeof it.id === "string" && it.id ? it.id : `item:${state.transcript.length}`
+    const itemType = typeof it.type === "string" ? it.type : ""
+
+    if (itemType === "agent_message" && typeof it.text === "string" && it.text.trim()) {
+      if (!state.agentMessages.includes(it.text)) state.agentMessages.push(it.text)
+      state.preview = it.text
+      upsertTranscript(state, {
+        id,
+        kind: "message",
+        title: "Assistant",
+        text: clip(it.text, MAX_TRANSCRIPT_TEXT),
+        status: type === "item.started" ? "running" : "completed",
+      })
+      return true
     }
 
-    if (type === "turn.completed" && e.usage && typeof e.usage === "object") {
-      const u = e.usage as Record<string, unknown>
-      usage = {
-        input_tokens: num(u.input_tokens),
-        cached_input_tokens: num(u.cached_input_tokens),
-        output_tokens: num(u.output_tokens),
-        reasoning_output_tokens: num(u.reasoning_output_tokens),
-      }
-      continue
+    if (itemType === "reasoning" && typeof it.text === "string" && it.text.trim()) {
+      upsertTranscript(state, {
+        id,
+        kind: "reasoning",
+        title: "Reasoning",
+        text: clip(it.text, MAX_TRANSCRIPT_TEXT),
+        status: type === "item.started" ? "running" : "completed",
+      })
+      return true
     }
 
-    if (type === "turn.failed") {
-      const err = e.error
-      if (err && typeof err === "object" && typeof (err as { message?: unknown }).message === "string") {
-        error = (err as { message: string }).message
-      } else if (typeof err === "string") {
-        error = err
-      } else {
-        error = "Codex turn failed"
-      }
-      continue
+    if (itemType === "command_execution") {
+      const command = typeof it.command === "string" ? it.command : "command"
+      const output = typeof it.aggregated_output === "string" ? it.aggregated_output : ""
+      const status = typeof it.status === "string" ? it.status : type === "item.started" ? "running" : "completed"
+      upsertTranscript(state, {
+        id,
+        kind: "command",
+        title: command,
+        text: clip(output, MAX_TRANSCRIPT_TEXT),
+        status,
+      })
+      return true
     }
 
-    if (type === "item.completed" || type === "item.updated" || type === "item.started") {
-      const item = e.item
-      if (!item || typeof item !== "object") continue
-      const it = item as Record<string, unknown>
-      if (it.type === "agent_message" && typeof it.text === "string" && it.text.trim()) {
-        // Prefer the last non-empty agent_message as finalResponse; keep distinct texts.
-        if (!agentMessages.includes(it.text)) {
-          agentMessages.push(it.text)
-        }
-      }
-      if (it.type === "error" && typeof it.message === "string" && it.message.trim()) {
-        error = it.message
-      }
+    if (itemType === "file_change") {
+      const status = typeof it.status === "string" ? it.status : "completed"
+      const changes = Array.isArray(it.changes) ? it.changes : []
+      const summary = changes
+        .map((change) => {
+          if (!change || typeof change !== "object") return ""
+          const c = change as Record<string, unknown>
+          return `${String(c.kind ?? "update")} ${String(c.path ?? "")}`.trim()
+        })
+        .filter(Boolean)
+        .join("\n")
+      upsertTranscript(state, {
+        id,
+        kind: "file_change",
+        title: "File changes",
+        text: clip(summary || status, MAX_TRANSCRIPT_TEXT),
+        status,
+      })
+      return true
+    }
+
+    if (itemType === "web_search") {
+      const query = typeof it.query === "string" ? it.query : "web search"
+      upsertTranscript(state, {
+        id,
+        kind: "web_search",
+        title: "Web search",
+        text: query,
+        status: type === "item.started" ? "running" : "completed",
+      })
+      return true
+    }
+
+    if (itemType === "todo_list") {
+      const items = Array.isArray(it.items) ? it.items : []
+      const text = items
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return ""
+          const t = entry as Record<string, unknown>
+          const done = t.completed === true ? "[x]" : "[ ]"
+          return `${done} ${String(t.text ?? "")}`.trim()
+        })
+        .filter(Boolean)
+        .join("\n")
+      upsertTranscript(state, {
+        id,
+        kind: "todo",
+        title: "Todo",
+        text: clip(text, MAX_TRANSCRIPT_TEXT),
+      })
+      return true
+    }
+
+    if (itemType === "mcp_tool_call") {
+      const server = typeof it.server === "string" ? it.server : "mcp"
+      const tool = typeof it.tool === "string" ? it.tool : "tool"
+      const status = typeof it.status === "string" ? it.status : type === "item.started" ? "running" : "completed"
+      const err =
+        it.error && typeof it.error === "object" && typeof (it.error as { message?: unknown }).message === "string"
+          ? (it.error as { message: string }).message
+          : undefined
+      upsertTranscript(state, {
+        id,
+        kind: "mcp",
+        title: `${server}/${tool}`,
+        text: err,
+        status,
+      })
+      return true
+    }
+
+    if (itemType === "error" && typeof it.message === "string" && it.message.trim()) {
+      state.error = it.message
+      upsertTranscript(state, {
+        id,
+        kind: "error",
+        title: "Error",
+        text: it.message,
+      })
+      return true
     }
   }
 
-  const finalResponse = agentMessages.at(-1)?.trim() ?? ""
-  return { finalResponse, threadId, usage, error, agentMessages }
+  return changed
 }
 
-function num(value: unknown): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0
+/** Parse full `codex exec --json` JSONL stdout. */
+export function parseCodexJsonl(stdout: string): CodexJsonlParseResult {
+  const state = createCodexLiveState()
+  for (const raw of stdout.split(/\r?\n/)) {
+    applyCodexJsonlLine(state, raw)
+  }
+  const finalResponse = state.agentMessages.at(-1)?.trim() ?? ""
+  return {
+    finalResponse,
+    threadId: state.threadId,
+    usage: state.usage,
+    error: state.error,
+    agentMessages: state.agentMessages,
+    transcript: state.transcript,
+    preview: state.preview ?? finalResponse,
+  }
 }
 
 export function resolveTimeoutMs(value: number | undefined): number {
@@ -210,16 +386,34 @@ export const CodexConsultTool = Tool.define(
             model: params.model,
           })
 
-          yield* ctx.metadata({
-            title: "Consulting Codex (read-only)",
-            metadata: {
-              bin,
-              working_directory: workingDirectory,
-              model: params.model,
-              timeout_ms: timeoutMs,
-              sandbox: "read-only",
-            },
-          })
+          const live = createCodexLiveState()
+          let lastMetaAt = 0
+
+          const publishMetadata = (force = false) =>
+            Effect.gen(function* () {
+              const now = Date.now()
+              if (!force && now - lastMetaAt < METADATA_THROTTLE_MS) return
+              lastMetaAt = now
+              yield* ctx.metadata({
+                title: live.preview
+                  ? `Codex: ${clip(live.preview, 80).replace(/\s+/g, " ")}`
+                  : "Consulting Codex (read-only)",
+                metadata: {
+                  bin,
+                  working_directory: workingDirectory,
+                  model: params.model,
+                  timeout_ms: timeoutMs,
+                  sandbox: "read-only",
+                  prompt,
+                  thread_id: live.threadId,
+                  preview: live.preview,
+                  transcript: live.transcript.slice(),
+                  usage: live.usage,
+                },
+              })
+            })
+
+          yield* publishMetadata(true)
 
           log.info("starting codex consult", {
             bin,
@@ -240,11 +434,20 @@ export const CodexConsultTool = Tool.define(
 
               let stdout = ""
               let stderr = ""
+              let lineBuffer = ""
 
               yield* Effect.forkScoped(
                 Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
-                  Effect.sync(() => {
+                  Effect.gen(function* () {
                     stdout += chunk
+                    lineBuffer += chunk
+                    const parts = lineBuffer.split(/\r?\n/)
+                    lineBuffer = parts.pop() ?? ""
+                    let dirty = false
+                    for (const part of parts) {
+                      if (applyCodexJsonlLine(live, part)) dirty = true
+                    }
+                    if (dirty) yield* publishMetadata()
                   }),
                 ),
               )
@@ -278,33 +481,50 @@ export const CodexConsultTool = Tool.define(
                 yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
               }
 
+              // Flush trailing partial line if any complete JSON remains.
+              if (lineBuffer.trim()) applyCodexJsonlLine(live, lineBuffer)
+
               return { exit, stdout, stderr }
             }),
           ).pipe(Effect.orDie)
 
           if (result.exit.kind === "abort") {
+            upsertTranscript(live, {
+              id: `aborted:${Date.now()}`,
+              kind: "status",
+              title: "Stopped",
+              text: "Codex consultation was aborted",
+            })
+            yield* publishMetadata(true)
             throw new Error("Codex consultation was aborted")
           }
           if (result.exit.kind === "timeout") {
             throw new Error(`Codex consultation timed out after ${timeoutMs}ms`)
           }
 
+          // Prefer streamed state; re-parse full stdout as a safety net.
           const parsed = parseCodexJsonl(result.stdout)
           const exitCode = result.exit.code
+          const threadId = live.threadId ?? parsed.threadId
+          const usage = live.usage ?? parsed.usage
+          const error = live.error ?? parsed.error
+          const transcript = live.transcript.length ? live.transcript : parsed.transcript
+          const finalResponse =
+            (live.agentMessages.at(-1) ?? parsed.finalResponse)?.trim() || parsed.finalResponse
 
-          if (parsed.error && !parsed.finalResponse) {
-            throw new Error(`Codex failed: ${parsed.error}`)
+          if (error && !finalResponse) {
+            throw new Error(`Codex failed: ${error}`)
           }
 
-          if (exitCode !== 0 && !parsed.finalResponse) {
-            const detail = (parsed.error || result.stderr || result.stdout).trim().slice(0, 4000)
+          if (exitCode !== 0 && !finalResponse) {
+            const detail = (error || result.stderr || result.stdout).trim().slice(0, 4000)
             throw new Error(
               `Codex exited with code ${exitCode}${detail ? `: ${detail}` : ""}. Ensure \`codex\` is authenticated and the custom provider (if any) is reachable.`,
             )
           }
 
           const body =
-            parsed.finalResponse ||
+            finalResponse ||
             // Fallback: non-JSON noise or plain text mode
             stripAnsi(result.stdout).trim() ||
             stripAnsi(result.stderr).trim()
@@ -317,10 +537,10 @@ export const CodexConsultTool = Tool.define(
             "<codex_consult>",
             `sandbox: read-only`,
             `working_directory: ${workingDirectory}`,
-            parsed.threadId ? `thread_id: ${parsed.threadId}` : undefined,
+            threadId ? `thread_id: ${threadId}` : undefined,
             params.model ? `model: ${params.model}` : undefined,
-            parsed.usage
-              ? `tokens: in=${parsed.usage.input_tokens} out=${parsed.usage.output_tokens} reasoning=${parsed.usage.reasoning_output_tokens}`
+            usage
+              ? `tokens: in=${usage.input_tokens} out=${usage.output_tokens} reasoning=${usage.reasoning_output_tokens}`
               : undefined,
             "</codex_consult>",
           ]
@@ -333,16 +553,31 @@ export const CodexConsultTool = Tool.define(
             metadata: {
               sandbox: "read-only" as const,
               working_directory: workingDirectory,
-              thread_id: parsed.threadId,
+              prompt,
+              thread_id: threadId,
               model: params.model,
-              usage: parsed.usage,
+              usage,
               exit_code: exitCode,
+              preview: body,
+              transcript,
             },
           }
         }),
     }
   }),
 )
+
+function upsertTranscript(state: CodexLiveState, item: CodexTranscriptItem) {
+  const idx = state.transcript.findIndex((entry) => entry.id === item.id)
+  if (idx >= 0) {
+    state.transcript[idx] = { ...state.transcript[idx], ...item }
+  } else {
+    state.transcript.push(item)
+    if (state.transcript.length > MAX_TRANSCRIPT_ITEMS) {
+      state.transcript.splice(0, state.transcript.length - MAX_TRANSCRIPT_ITEMS)
+    }
+  }
+}
 
 function resolveWorkingDirectory(input: string | undefined, projectDirectory: string): string {
   if (!input?.trim()) return projectDirectory
@@ -352,4 +587,13 @@ function resolveWorkingDirectory(input: string | undefined, projectDirectory: st
 
 function stripAnsi(text: string): string {
   return text.replace(/\u001b\[[0-9;]*m/g, "")
+}
+
+function clip(text: string, max: number): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}…`
+}
+
+function num(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0
 }

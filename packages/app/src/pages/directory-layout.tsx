@@ -7,7 +7,7 @@ import { Portal } from "solid-js/web"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
 import { LocalProvider } from "@/context/local"
-import { SDKProvider } from "@/context/sdk"
+import { SDKProvider, useSDK } from "@/context/sdk"
 import { SkillsProvider } from "@/context/skills"
 import { SyncProvider, useSync } from "@/context/sync"
 import { decode64 } from "@/utils/base64"
@@ -17,6 +17,7 @@ function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
   const location = useLocation()
   const navigate = useNavigate()
   const sync = useSync()
+  const sdk = useSDK()
   const slug = createMemo(() => base64Encode(props.directory))
 
   createEffect(() => {
@@ -32,6 +33,9 @@ function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
       directory={props.directory}
       onNavigateToSession={(sessionID: string) => navigate(`/${slug()}/session/${sessionID}`)}
       onSessionHref={(sessionID: string) => `/${slug()}/session/${sessionID}`}
+      onAbortSession={(sessionID: string) => {
+        void sdk.client.session.abort({ sessionID }).catch(() => undefined)
+      }}
     >
       <LocalProvider>{props.children}</LocalProvider>
     </DataProvider>

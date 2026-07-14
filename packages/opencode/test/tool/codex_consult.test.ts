@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import {
+  applyCodexJsonlLine,
   buildCodexExecArgs,
+  createCodexLiveState,
   parseCodexJsonl,
   resolveTimeoutMs,
   Parameters,
@@ -96,6 +98,35 @@ describe("tool.codex_consult helpers", () => {
     const parsed = parseCodexJsonl(stdout)
     expect(parsed.threadId).toBe("t1")
     expect(parsed.finalResponse).toBe("")
+  })
+
+  test("applyCodexJsonlLine builds a live transcript stream", () => {
+    const state = createCodexLiveState()
+    expect(
+      applyCodexJsonlLine(state, JSON.stringify({ type: "thread.started", thread_id: "thr_1" })),
+    ).toBe(true)
+    expect(
+      applyCodexJsonlLine(
+        state,
+        JSON.stringify({
+          type: "item.completed",
+          item: { id: "cmd1", type: "command_execution", command: "ls", aggregated_output: "a", status: "completed" },
+        }),
+      ),
+    ).toBe(true)
+    expect(
+      applyCodexJsonlLine(
+        state,
+        JSON.stringify({
+          type: "item.completed",
+          item: { id: "m1", type: "agent_message", text: "done" },
+        }),
+      ),
+    ).toBe(true)
+    expect(state.threadId).toBe("thr_1")
+    expect(state.preview).toBe("done")
+    expect(state.transcript.some((item) => item.kind === "command" && item.title === "ls")).toBe(true)
+    expect(state.transcript.some((item) => item.kind === "message" && item.text === "done")).toBe(true)
   })
 
   test("resolveTimeoutMs clamps bounds", () => {
