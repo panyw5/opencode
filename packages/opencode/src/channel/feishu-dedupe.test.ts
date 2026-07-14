@@ -94,4 +94,27 @@ describe("feishu helpers", () => {
       }),
     ).toBe("2026年7月14日\n星期二")
   })
+
+  test("aggregates multi-step assistant text after last user message", () => {
+    const { aggregateTurnText } = __test
+    const rows = [
+      { info: { role: "user" }, parts: [{ type: "text", text: "今天有什么新闻？" }] },
+      {
+        info: { role: "assistant" },
+        parts: [{ type: "tool" }, { type: "step-finish" }],
+      },
+      {
+        info: { role: "assistant" },
+        parts: [{ type: "text", text: "## 📰 今日新闻速递\n- 头条A\n- 头条B" }],
+      },
+      {
+        info: { role: "assistant" },
+        parts: [{ type: "text", text: "以上是今天的主要新闻。你对哪条感兴趣？" }],
+      },
+    ]
+    const text = aggregateTurnText(rows)
+    expect(text).toContain("今日新闻速递")
+    expect(text).toContain("头条A")
+    expect(text).toContain("以上是今天的主要新闻")
+  })
 })

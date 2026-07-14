@@ -15,7 +15,9 @@ import {
   errorMessage,
   expandHomePath,
   filterImChannelSessions,
+  findImChannelByDirectory,
   hasProjectPermissions,
+  imChannelProject,
   isInitialSessionLoad,
   latestProjectSession,
   latestRootSession,
@@ -149,6 +151,54 @@ describe("layout workspace helpers", () => {
     expect(resolveChannelDirectory("work-feishu", "/abs/path", configDir, "/Users/me")).toBe(
       "/abs/path",
     )
+  })
+
+  test("maps a work directory back to an IM channel (independent domain)", () => {
+    const configDir = "/Users/me/.config/opencode"
+    const home = "/Users/me"
+    const channels = {
+      "work-feishu": { type: "feishu" as const },
+      "custom-bot": { type: "discord" as const, directory: "~/bots/discord" },
+      disabled: { type: "feishu" as const, enabled: false },
+    }
+    expect(
+      findImChannelByDirectory(
+        "/Users/me/.config/opencode/channels/work-feishu",
+        channels,
+        configDir,
+        home,
+      ),
+    ).toEqual({
+      name: "work-feishu",
+      type: "feishu",
+      directory: "/Users/me/.config/opencode/channels/work-feishu",
+    })
+    expect(findImChannelByDirectory("/Users/me/bots/discord", channels, configDir, home)).toEqual({
+      name: "custom-bot",
+      type: "discord",
+      directory: "/Users/me/bots/discord",
+    })
+    expect(
+      findImChannelByDirectory(
+        "/Users/me/.config/opencode/channels/disabled",
+        channels,
+        configDir,
+        home,
+      ),
+    ).toBeUndefined()
+    expect(findImChannelByDirectory("/some/project", channels, configDir, home)).toBeUndefined()
+  })
+
+  test("builds a virtual project for an IM channel session domain", () => {
+    const project = imChannelProject("work-feishu", "/Users/me/.config/opencode/channels/work-feishu")
+    expect(project).toEqual({
+      id: "im:work-feishu",
+      worktree: "/Users/me/.config/opencode/channels/work-feishu",
+      name: "work-feishu",
+      expanded: true,
+      vcs: undefined,
+      sandboxes: [],
+    })
   })
 
   test("normalizes trailing slash in workspace key", () => {

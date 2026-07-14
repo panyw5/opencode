@@ -21,7 +21,6 @@ import { usePlatform } from "@/context/platform"
 import { extraAgentByDirectory, extraAgentDomain } from "./extra-agents"
 import { NewSessionItem, SessionItem, SessionGroupHeader, SessionSearchBar } from "./sidebar-items"
 import {
-  filterImChannelSessions,
   isInitialSessionLoad,
   sessionGroupBoundaries,
   sortedProjectSessions,
@@ -49,10 +48,6 @@ export type WorkspaceSidebarContext = {
   sidebarExpanded: Accessor<boolean>
   sidebarReduced: Accessor<boolean>
   nav: Accessor<HTMLElement | undefined>
-  /** When set, session list is filtered to IM channel sessions (`[im:name]` title prefix). */
-  activeImChannel?: Accessor<string | undefined>
-  /** Exit IM channel filter and show the normal project session list. */
-  clearActiveImChannel?: () => void
   selectSession: (session: Session) => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
@@ -416,9 +411,7 @@ export const SortableWorkspace = (props: {
     pendingRename: false,
   })
   const slug = createMemo(() => base64Encode(props.directory))
-  const allSessions = createMemo(() =>
-    filterImChannelSessions(sortedRootSessions(workspaceStore, props.sortNow()), props.ctx.activeImChannel?.()),
-  )
+  const allSessions = createMemo(() => sortedRootSessions(workspaceStore, props.sortNow()))
   const sessions = createMemo(() => allSessions().slice(0, visibleLimit()))
   const local = createMemo(() => props.directory === props.project.worktree)
   const active = createMemo(() => workspaceKey(props.ctx.currentDir()) === workspaceKey(props.directory))
@@ -430,11 +423,7 @@ export const SortableWorkspace = (props: {
   const open = createMemo(() => props.ctx.workspaceExpanded(props.directory, local()))
   const boot = createMemo(() => open() || active())
   const count = createMemo(() => sessions().length)
-  const hasMore = createMemo(() => {
-    // When filtering IM channel sessions, use filtered length (sessionTotal is unfiltered).
-    if (props.ctx.activeImChannel?.()) return allSessions().length > visibleLimit()
-    return workspaceStore.sessionTotal > visibleLimit()
-  })
+  const hasMore = createMemo(() => workspaceStore.sessionTotal > visibleLimit())
   const busy = createMemo(() => props.ctx.isBusy(props.directory))
   const wasBusy = createMemo((prev) => prev || busy(), false)
   const loading = createMemo(() => open() && workspaceStore.sessions === "loading" && count() === 0 && !wasBusy())
@@ -563,9 +552,10 @@ export const SortableWorkspace = (props: {
 }
 
 /**
- * Dedicated IM channel session panel (replaces project session list while an
- * IM channel is active). Sessions live in the channel's own working directory
- * (config.directory / {path.config}/channels/{name}), not under OpenCode projects.
+ * First-class IM channel session panel.
+ * Same role as an extra-agent / project session list: occupies its own domain
+ * when the route directory is the channel work folder. Not a nested filter
+ * under OpenCode project sessions.
  */
 export const ImChannelSidebar = (props: {
   ctx: WorkspaceSidebarContext
@@ -595,7 +585,6 @@ export const ImChannelSidebar = (props: {
     const s = childStore()
     if (!dir || !s) return []
     console.debug(`[im-sidebar] channel=${props.channel()} directory=${dir} sessions=${s.session.length}`)
-    // Work dir is channel-owned: list all sessions in that directory.
     return sortedRootSessions(s, props.sortNow())
   })
 
@@ -639,21 +628,17 @@ export const ImChannelSidebar = (props: {
 
   return (
     <div class="flex h-full min-h-0 flex-col">
-      <div class="shrink-0 px-1 py-2">
-        <div class="flex items-start gap-1 py-1 pl-1 pr-0">
-          <IconButton
-            icon="arrow-left"
-            variant="ghost"
-            size="small"
-            class="mt-0.5 shrink-0"
-            aria-label={language.t("sidebar.im.filter.clear")}
-            onClick={() => props.ctx.clearActiveImChannel?.()}
-          />
-          <div class="min-w-0 flex-1">
+      <div class="shrink-0 pl-1 py-1">
+        <div class="flex items-start justify-between gap-2 py-2 pl-2 pr-0">
+          <div class="flex min-w-0 flex-col">
             <div class="truncate text-14-medium text-text-strong">{props.channel()}</div>
             <div class="truncate text-12-regular text-text-weak">{props.channelMeta()}</div>
             <Show when={directory()}>
-              {(dir) => <div class="truncate font-mono text-11-regular text-text-weaker">{dir()}</div>}
+              {(dir) => (
+                <div class="truncate font-mono text-12-regular text-text-weak">
+                  {dir().replace(/^\/Users\/[^/]+/, "~").replace(/^\/home\/[^/]+/, "~")}
+                </div>
+              )}
             </Show>
           </div>
           <Icon name="speech-bubble" class="mt-1 size-5 shrink-0 text-icon-base" />
@@ -674,7 +659,7 @@ export const ImChannelSidebar = (props: {
         </Show>
         <Show when={!loading() && rawSessions().length === 0}>
           <div class="mx-3 mb-2 rounded-lg px-2 py-3 text-12-regular text-text-weak">
-            {language.t("sidebar.im.filter.empty")}
+            {language.t("sidebar.im.empty")}
           </div>
         </Show>
         <WorkspaceSessionList
@@ -715,14 +700,10 @@ export const LocalWorkspace = (props: {
   const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
   const stores = createMemo(() => dirs().map((directory) => globalSync.child(directory, { bootstrap: false })))
   const slug = createMemo(() => base64Encode(props.project.worktree))
-  const imChannel = createMemo(() => props.ctx.activeImChannel?.())
   const allSessions = createMemo(() =>
-    filterImChannelSessions(
-      sortedProjectSessions(
-        stores().map((item) => item[0]),
-        props.sortNow(),
-      ),
-      imChannel(),
+    sortedProjectSessions(
+      stores().map((item) => item[0]),
+      props.sortNow(),
     ),
   )
   const sessions = createMemo(() => {
@@ -733,8 +714,6 @@ export const LocalWorkspace = (props: {
   const loading = createMemo(() => isInitialSessionLoad(stores().map((item) => item[0])))
   const hasMore = createMemo(() => {
     if (searchQuery()) return false
-    // IM filter: sessionTotal is unfiltered store count and would show a false "load more".
-    if (imChannel()) return allSessions().length > visibleLimit()
     return stores().reduce((sum, item) => sum + item[0].sessionTotal, 0) > visibleLimit()
   })
   const issue = createMemo(() => stores().map((item) => item[0].session_error).find(Boolean))
@@ -802,26 +781,6 @@ export const LocalWorkspace = (props: {
       ref={(el) => props.ctx.setScrollContainerRef(el, props.mobile)}
       class="size-full flex flex-col py-2 overflow-y-auto no-scrollbar [overflow-anchor:none]"
     >
-      <Show when={imChannel()}>
-        {(channel) => (
-          <div class="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-border-weak-base bg-surface-base px-2.5 py-1.5">
-            <Icon name="speech-bubble" class="size-4 shrink-0 text-icon-base" />
-            <div class="min-w-0 flex-1">
-              <div class="truncate text-12-medium text-text-strong">{channel()}</div>
-              <div class="truncate text-11-regular text-text-weaker">{language.t("sidebar.im.filter.hint")}</div>
-            </div>
-            <Show when={props.ctx.clearActiveImChannel}>
-              <IconButton
-                icon="close"
-                variant="ghost"
-                size="small"
-                aria-label={language.t("sidebar.im.filter.clear")}
-                onClick={() => props.ctx.clearActiveImChannel?.()}
-              />
-            </Show>
-          </div>
-        )}
-      </Show>
       <Show when={allSessions().length > 3}>
         <SessionSearchBar
           value={searchQuery}
@@ -829,11 +788,6 @@ export const LocalWorkspace = (props: {
           placeholder={language.t("sidebar.search.placeholder")}
           reduced={props.ctx.sidebarReduced()}
         />
-      </Show>
-      <Show when={!!imChannel() && !loading() && allSessions().length === 0}>
-        <div class="mx-3 mb-2 rounded-lg px-2 py-3 text-12-regular text-text-weak">
-          {language.t("sidebar.im.filter.empty")}
-        </div>
       </Show>
       <WorkspaceSessionList
         slug={slug}

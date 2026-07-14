@@ -356,7 +356,12 @@ async function handleMessage(input: {
     return
   }
 
-  const reply = extractAssistantText(result.data)
+  // session.prompt returns only the *final* assistant message. Multi-step runs
+  // (e.g. webfetch → news body → closing question) put the bulk of text in
+  // intermediate assistant messages. Reload recent messages and join all
+  // assistant text parts after the latest user message.
+  const reply =
+    (await collectTurnAssistantText(input.sdk, sessionId)) || extractAssistantText(result.data)
   if (reply.trim()) {
     await replyText(input.client, chatId, reply, messageId)
     log.info("feishu reply sent", {
@@ -379,7 +384,7 @@ async function handleMessage(input: {
 function extractAssistantText(data: unknown): string {
   if (!data || typeof data !== "object") return ""
   const obj = data as {
-    info?: { content?: string; role?: string }
+    info?: { content?: string; role?: string; role_?: string }
     parts?: Array<{ type?: string; text?: string; content?: string }>
     role?: string
     content?: string
@@ -393,6 +398,59 @@ function extractAssistantText(data: unknown): string {
     .map((p) => (typeof p.text === "string" ? p.text : p.content) || "")
     .join("\n")
     .trim()
+}
+
+type MessageRow = {
+  info?: { role?: string; id?: string }
+  role?: string
+  parts?: Array<{ type?: string; text?: string; content?: string }>
+}
+
+/**
+ * Aggregate every assistant text part after the most recent user message.
+ * This captures intermediate step output that session.prompt does not return.
+ */
+async function collectTurnAssistantText(sdk: OpencodeClient, sessionId: string): Promise<string> {
+  try {
+    const listed = await sdk.session.messages({ sessionID: sessionId, limit: 40 })
+    if (listed.error || !listed.data) {
+      log.warn("feishu failed to load messages for reply aggregate", {
+        sessionId,
+        error: formatClientError(listed.error),
+      })
+      return ""
+    }
+    const rows = normalizeMessageList(listed.data)
+    // Walk from end: collect assistant texts until we hit the latest user message.
+    const chunks: string[] = []
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i]
+      const role = row.info?.role ?? row.role
+      if (role === "user") break
+      if (role !== "assistant") continue
+      const text = extractAssistantText(row)
+      if (text) chunks.push(text)
+    }
+    // chunks were collected newest→oldest; reverse to chronological order.
+    return chunks.reverse().join("\n\n").trim()
+  } catch (err) {
+    log.warn("feishu collectTurnAssistantText failed", {
+      sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    })
+    return ""
+  }
+}
+
+function normalizeMessageList(data: unknown): MessageRow[] {
+  if (Array.isArray(data)) return data as MessageRow[]
+  if (data && typeof data === "object") {
+    const obj = data as { data?: unknown; items?: unknown; messages?: unknown }
+    if (Array.isArray(obj.data)) return obj.data as MessageRow[]
+    if (Array.isArray(obj.items)) return obj.items as MessageRow[]
+    if (Array.isArray(obj.messages)) return obj.messages as MessageRow[]
+  }
+  return []
 }
 
 async function replyText(client: Lark.Client, chatId: string, text: string, replyTo?: string) {
@@ -435,4 +493,18 @@ export const __test = {
   extractAssistantText,
   extractText,
   parseModel,
+  normalizeMessageList,
+  /** Aggregate assistant text parts after the last user message (same logic as collectTurn). */
+  aggregateTurnText(rows: MessageRow[]): string {
+    const chunks: string[] = []
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const row = rows[i]
+      const role = row.info?.role ?? row.role
+      if (role === "user") break
+      if (role !== "assistant") continue
+      const text = extractAssistantText(row)
+      if (text) chunks.push(text)
+    }
+    return chunks.reverse().join("\n\n").trim()
+  },
 }

@@ -171,6 +171,65 @@ export function resolveChannelDirectory(
   return defaultChannelDirectory(channelName, configDir)
 }
 
+export type ImChannelConfigEntry = {
+  type: string
+  directory?: string
+  enabled?: boolean
+}
+
+export type ImChannelMatch = {
+  name: string
+  type: string
+  directory: string
+}
+
+/**
+ * Map a route/work directory back to an IM channel config entry.
+ * Used so channel session lists are first-class domains (like extra agents),
+ * not filters nested under OpenCode project lists.
+ */
+export function findImChannelByDirectory(
+  directory: string | undefined,
+  channels: Record<string, ImChannelConfigEntry | undefined> | undefined | null,
+  configDir: string,
+  home: string,
+): ImChannelMatch | undefined {
+  if (!directory || !channels) return undefined
+  const key = workspaceKey(directory)
+  if (!key) return undefined
+  for (const [name, entry] of Object.entries(channels)) {
+    if (!entry || entry.enabled === false) continue
+    const dir = resolveChannelDirectory(name, entry.directory, configDir, home)
+    if (workspaceKey(dir) === key) {
+      return { name, type: entry.type, directory: dir }
+    }
+  }
+  return undefined
+}
+
+/**
+ * Virtual LocalProject for an IM channel work directory.
+ * Mirrors extraAgentProject so resolveProject / sidebar treat the channel as
+ * its own session list domain.
+ */
+export function imChannelProject(name: string, directory: string): {
+  id: string
+  worktree: string
+  name: string
+  expanded: true
+  vcs: undefined
+  sandboxes: []
+} {
+  return {
+    id: `im:${name}`,
+    worktree: directory,
+    name,
+    expanded: true,
+    vcs: undefined,
+    sandboxes: [],
+  }
+}
+
 export const latestRootSession = (stores: SessionStore[], now: number) =>
   sortedProjectSessions(stores, now)[0]
 

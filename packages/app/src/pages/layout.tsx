@@ -81,7 +81,8 @@ import {
   displayName,
   effectiveWorkspaceOrder,
   errorMessage,
-  filterImChannelSessions,
+  findImChannelByDirectory,
+  imChannelProject,
   isInitialSessionLoad,
   latestProjectSession,
   latestRootSession,
@@ -152,8 +153,6 @@ export default function Layout(props: ParentProps) {
       workspaceExpanded: {} as Record<string, boolean>,
       gettingStartedDismissed: false,
       sidebarPanel: "project" as "project" | "tasks",
-      /** Active IM channel name (from config.channels) when browsing channel sessions. */
-      activeImChannel: undefined as string | undefined,
     }),
   )
 
@@ -674,6 +673,22 @@ export default function Layout(props: ParentProps) {
       }
     }
 
+    // IM channels are independent session domains (like extra agents), not
+    // nested filters under OpenCode project lists.
+    const im = findImChannelByDirectory(
+      directory,
+      globalSync.data.config.channels,
+      globalSync.data.path.config || "",
+      globalSync.data.path.home || "",
+    )
+    if (im) {
+      return {
+        extra: im.directory,
+        project: imChannelProject(im.name, im.directory),
+        root: im.directory,
+      }
+    }
+
     const projects = layout.projects.list()
     const owner = projectOwner(directory, projects)
     if (owner) return { project: owner.project, root: owner.root }
@@ -691,6 +706,16 @@ export default function Layout(props: ParentProps) {
       root,
     }
   }
+
+  /** Active IM channel when the route directory is a channel work folder. */
+  const activeImChannel = createMemo(() =>
+    findImChannelByDirectory(
+      routeDir(),
+      globalSync.data.config.channels,
+      globalSync.data.path.config || "",
+      globalSync.data.path.home || "",
+    ),
+  )
 
   const currentProject = createMemo(() => {
     const active = resolveProject(routeDir())
@@ -789,21 +814,19 @@ export default function Layout(props: ParentProps) {
     const dirs = !workspaceSetting() && project ? workspaceIds(project) : visibleSessionDirs()
     if (dirs.length === 0) return [] as Session[]
 
-    let result: Session[]
     if (!workspaceSetting()) {
-      result = sortedProjectSessions(
+      return sortedProjectSessions(
         dirs.map((dir) => globalSync.child(dir, { bootstrap: false })[0]),
         now,
       )
-    } else {
-      result = []
-      for (const dir of dirs) {
-        const [dirStore] = globalSync.child(dir, { bootstrap: false })
-        const dirSessions = sortedRootSessions(dirStore, now)
-        result.push(...dirSessions)
-      }
     }
-    return filterImChannelSessions(result, store.activeImChannel)
+    const result: Session[] = []
+    for (const dir of dirs) {
+      const [dirStore] = globalSync.child(dir, { bootstrap: false })
+      const dirSessions = sortedRootSessions(dirStore, now)
+      result.push(...dirSessions)
+    }
+    return result
   })
 
   const projectContentLoading = createMemo(() => {
@@ -1602,13 +1625,18 @@ export default function Layout(props: ParentProps) {
     return resolveChannelDirectory(name, entry?.directory, configDir, home)
   }
 
-  function collectImChannelSessions(name: string, directory: string): Session[] {
+  function collectImChannelSessions(directory: string): Session[] {
     const [child] = globalSync.child(directory, { bootstrap: false })
     return sortedRootSessions(child, Date.now())
   }
 
+  /**
+   * Open an IM channel as its own session-list domain (same pattern as
+   * GenericAgent / extra agents). Does not nest under any OpenCode project.
+   */
   function openImChannel(name: string) {
-    console.debug(`[layout] openImChannel name=${name} current=${store.activeImChannel ?? "none"}`)
+    const current = activeImChannel()?.name
+    console.debug(`[layout] openImChannel name=${name} current=${current ?? "none"}`)
     const entry = globalSync.data.config.channels?.[name]
     if (!entry || entry.enabled === false) {
       console.debug(`[layout] openImChannel unavailable name=${name} enabled=${entry?.enabled}`)
@@ -1624,29 +1652,25 @@ export default function Layout(props: ParentProps) {
       })
       return
     }
-    // Clicking the same channel again exits IM view and restores the project list.
-    if (store.activeImChannel === name) {
-      console.debug(`[layout] openImChannel toggle-off name=${name}`)
-      batch(() => {
-        setStore("activeImChannel", undefined)
-        setStore("sidebarPanel", "project")
-        layout.sidebar.open()
-      })
+
+    const dir = channelWorkDirectory(name, entry)
+    // Already on this channel domain — no-op (like openExtraAgent).
+    if (workspaceKey(routeDir()) === workspaceKey(dir) && onSessionRoute()) {
+      console.debug(`[layout] openImChannel already active name=${name} directory=${dir}`)
+      setStore("sidebarPanel", "project")
+      layout.sidebar.open()
       return
     }
+
     batch(() => {
-      setStore("activeImChannel", name)
       setStore("sidebarPanel", "project")
       layout.sidebar.open()
     })
 
-    const dir = channelWorkDirectory(name, entry)
     console.debug(`[layout] openImChannel workdir=${dir}`)
-    // Prefetch sessions for this channel directory only (does not load project dirs).
     void globalSync.project.loadSessions(dir, { silent: true })
 
-    // Switch the main content to the channel workdir (not an OpenCode project).
-    const imSessions = collectImChannelSessions(name, dir)
+    const imSessions = collectImChannelSessions(dir)
     const viewingIm = imSessions.some((session) => sessionRouteMatches(session.directory, session.id))
     if (viewingIm) {
       console.debug(`[layout] openImChannel already viewing im session name=${name}`)
@@ -1668,10 +1692,6 @@ export default function Layout(props: ParentProps) {
         ? language.t("sidebar.im.toast.opened.model", { model })
         : language.t("sidebar.im.toast.opened.runtime"),
     })
-  }
-
-  function clearActiveImChannel() {
-    setStore("activeImChannel", undefined)
   }
 
   function openExtraAgent(id: Parameters<typeof extraAgentDir>[0]) {
@@ -2784,8 +2804,6 @@ export default function Layout(props: ParentProps) {
     sidebarExpanded,
     sidebarReduced,
     nav: () => state.nav,
-    activeImChannel: () => store.activeImChannel,
-    clearActiveImChannel,
     selectSession,
     prefetchSession,
     archiveSession,
@@ -2922,7 +2940,7 @@ export default function Layout(props: ParentProps) {
         }}
       >
         <Show
-          when={store.activeImChannel}
+          when={activeImChannel()}
           fallback={
             <Show
               when={project()}
@@ -3232,19 +3250,13 @@ export default function Layout(props: ParentProps) {
         >
           <ImChannelSidebar
             ctx={workspaceSidebarCtx}
-            channel={() => store.activeImChannel!}
+            channel={() => activeImChannel()!.name}
             channelMeta={() => {
-              const name = store.activeImChannel
-              const entry = name ? globalSync.data.config.channels?.[name] : undefined
-              if (entry?.type === "discord") return language.t("sidebar.im.meta.discord")
+              const match = activeImChannel()
+              if (match?.type === "discord") return language.t("sidebar.im.meta.discord")
               return language.t("sidebar.im.meta.feishu")
             }}
-            directory={() => {
-              const name = store.activeImChannel
-              if (!name) return ""
-              const entry = globalSync.data.config.channels?.[name]
-              return channelWorkDirectory(name, entry)
-            }}
+            directory={() => activeImChannel()?.directory ?? ""}
             sortNow={sortNow}
             mobile={panelProps.mobile}
           />
@@ -3254,7 +3266,7 @@ export default function Layout(props: ParentProps) {
           class="shrink-0 px-3 py-3"
           classList={{
             hidden:
-              !!store.activeImChannel ||
+              !!activeImChannel() ||
               store.gettingStartedDismissed ||
               !(providers.all().length > 0 && providers.paid().length === 0),
           }}
@@ -3319,20 +3331,26 @@ export default function Layout(props: ParentProps) {
       }
       imChannels={() => {
         const cfg = globalSync.data.config.channels ?? {}
+        const home = globalSync.data.path.home || ""
+        const configDir = globalSync.data.path.config || ""
         return Object.entries(cfg)
           .filter(([, entry]) => entry.enabled !== false)
-          .map(([name, entry]) => ({
-            id: name,
-            label: () => name,
-            meta: () =>
-              entry.type === "feishu"
-                ? language.t("sidebar.im.meta.feishu")
-                : language.t("sidebar.im.meta.discord"),
-            active: () => store.activeImChannel === name,
-            available: () => true,
-            icon: "speech-bubble" as IconName,
-            onOpen: () => openImChannel(name),
-          }))
+          .map(([name, entry]) => {
+            const dir = resolveChannelDirectory(name, entry.directory, configDir, home)
+            return {
+              id: name,
+              label: () => name,
+              meta: () =>
+                entry.type === "feishu"
+                  ? language.t("sidebar.im.meta.feishu")
+                  : language.t("sidebar.im.meta.discord"),
+              // Active when route is this channel's work directory (independent domain).
+              active: () => workspaceKey(routeDir()) === workspaceKey(dir),
+              available: () => true,
+              icon: "speech-bubble" as IconName,
+              onOpen: () => openImChannel(name),
+            }
+          })
           .sort((a, b) => a.id.localeCompare(b.id))
       }}
       imChannelsLabel={() => language.t("sidebar.im.title")}
