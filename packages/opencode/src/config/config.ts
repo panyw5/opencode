@@ -861,7 +861,57 @@ export const layer = Layer.effect(
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
 
+      // Re-apply channel entries from the patch onto `next` so optional fields
+      // (e.g. model) never disappear from the API response even if a nested
+      // decode path drops them. Also rewrite file when the restored object is richer.
+      if (patch.channels && isRecord(patch.channels)) {
+        const channels: Record<string, (typeof next.channels extends infer C ? NonNullable<C> : never)[string]> = {
+          ...(next.channels ?? {}),
+        } as never
+        for (const [name, entry] of Object.entries(patch.channels)) {
+          if (!entry || typeof entry !== "object") continue
+          channels[name] = { ...(channels[name] as object | undefined), ...(entry as object) } as never
+        }
+        next = { ...next, channels }
+        // Ensure on-disk JSONC has the restored fields (model, etc.).
+        if (file.endsWith(".jsonc")) {
+          const withChannels = patchJsonc(before, { channels: patch.channels })
+          if (withChannels !== before) {
+            yield* fs.writeFileString(file, withChannels).pipe(Effect.orDie)
+            changed = true
+            next = ConfigParse.schema(Info, ConfigParse.jsonc(withChannels, file), file)
+            // Merge patch channels again after re-parse
+            const remerged = { ...(next.channels ?? {}) } as Record<string, unknown>
+            for (const [name, entry] of Object.entries(patch.channels)) {
+              if (!entry || typeof entry !== "object") continue
+              remerged[name] = { ...(remerged[name] as object | undefined), ...(entry as object) }
+            }
+            next = { ...next, channels: remerged as typeof next.channels }
+          }
+        }
+      }
+
       yield* invalidate()
+
+      // Restart IM channel runtimes when channel config changes (best-effort).
+      if (changed && next.channels !== undefined) {
+        yield* Effect.promise(async () => {
+          try {
+            const { startChannels } = await import("@/channel")
+            const { url: serverUrl } = await import("@/server/server")
+            // Server may not be listening yet; listen() will start channels.
+            if (!serverUrl) return
+            await startChannels({
+              baseUrl: serverUrl.origin,
+              directory: process.cwd(),
+              channels: next.channels as never,
+            })
+          } catch {
+            // ignore restart failures during config write
+          }
+        }).pipe(Effect.catch(() => Effect.void))
+      }
+
       return { info: next, changed }
     })
 

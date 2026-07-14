@@ -743,10 +743,25 @@ function createGlobalSync() {
     const domain = currentDomain()
     const refreshProviderState = options?.refreshProviders ?? configAffectsProviders(config)
     setRoot(domain, "reload", "pending")
+    // Capture channels we intend to write so we can re-apply after response/SSE.
+    const writtenChannels = config.channels
     return runtime(domain)
       .client.global.config.update({ config })
       .then(async (result) => {
-        const next = result.data!
+        let next = result.data!
+        // Server response / OpenAPI encode can drop newly-added nested fields
+        // (or race with global.config.updated). Prefer the client's write for channels.
+        if (writtenChannels) {
+          const merged: NonNullable<Config["channels"]> = { ...(next.channels ?? {}) }
+          for (const [name, entry] of Object.entries(writtenChannels)) {
+            merged[name] = { ...(next.channels?.[name] as object | undefined), ...entry } as NonNullable<
+              Config["channels"]
+            >[string]
+          }
+          // Deletions: if client sent a map missing keys that existed only as a full replace
+          // of the channels object, use writtenChannels as the authority when it is a full map.
+          next = { ...next, channels: { ...writtenChannels, ...merged, ...writtenChannels } }
+        }
         updateGlobalConfig(domain, next)
         if (refreshProviderState) {
           await refreshProviders(domain)

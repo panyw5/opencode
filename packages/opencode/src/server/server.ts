@@ -74,12 +74,42 @@ export let url: URL
 
 export async function listen(opts: ListenOptions): Promise<Listener> {
   const listener = await Effect.runPromise(listenEffect(opts))
+  // Start IM channel runtimes (Feishu WS, …) against this server URL.
+  void startChannelRuntimes(listener.url).catch((err) => {
+    log.warn("channel runtime start failed", { error: err })
+  })
   return {
     hostname: listener.hostname,
     port: listener.port,
     url: listener.url,
-    stop: (close?: boolean) => Effect.runPromiseExit(listener.stop(close)).then(() => undefined),
+    stop: async (close?: boolean) => {
+      try {
+        const { stopChannels } = await import("@/channel")
+        await stopChannels()
+      } catch {
+        // ignore
+      }
+      await Effect.runPromiseExit(listener.stop(close)).then(() => undefined)
+    },
   }
+}
+
+async function startChannelRuntimes(url: URL) {
+  const { startChannels } = await import("@/channel")
+  const { Config } = await import("@/config/config")
+  const cfg = await Effect.runPromise(
+    Effect.gen(function* () {
+      const config = yield* Config.Service
+      return yield* config.getGlobal()
+    }).pipe(Effect.provide(Config.defaultLayer)),
+  )
+  const channels = cfg.channels
+  if (!channels || Object.keys(channels).length === 0) return
+  await startChannels({
+    baseUrl: url.origin,
+    directory: process.cwd(),
+    channels: channels as never,
+  })
 }
 
 const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unknown> = Effect.fn("Server.listen")(

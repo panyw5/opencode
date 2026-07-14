@@ -1494,7 +1494,8 @@ export const dict = {
   "config.channels.platform.discord.detail":
     "Add a Discord bot token. Enable Message Content Intent in the Discord developer portal.",
   "config.channels.existing.title": "Configured channels",
-  "config.channels.existing.empty": "No channels of this type yet.",
+  "config.channels.existing.count": "{{count}} saved",
+  "config.channels.existing.empty": "No channels of this type yet. Add one below — credentials are stored in global opencode.jsonc.",
   "config.channels.add.title": "Add channel",
   "config.channels.add.action": "Save channel",
   "config.channels.editor.delete": "Delete",
@@ -1510,8 +1511,10 @@ export const dict = {
   "config.channels.field.model": "Conversation model",
   "config.channels.field.model.hint": "Model used when replying on this IM channel. Auto uses the default model.",
   "config.channels.field.model.auto": "Auto (default model)",
+  "config.channels.field.model.empty": "No connected models yet. Connect a provider first, then pick a model here.",
   "config.channels.toast.added": "Channel added",
   "config.channels.toast.removed": "Channel removed",
+  "config.channels.toast.modelSaved": "Conversation model updated",
   "config.channels.toast.error": "Failed to update channel",
   "config.channels.error.duplicateName": "A channel with this name already exists",
   "config.channels.note.runtime":

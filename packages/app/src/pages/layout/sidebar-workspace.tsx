@@ -47,6 +47,8 @@ export type WorkspaceSidebarContext = {
   sidebarExpanded: Accessor<boolean>
   sidebarReduced: Accessor<boolean>
   nav: Accessor<HTMLElement | undefined>
+  /** When set, session list is filtered to IM channel sessions (`[im:name]` title prefix). */
+  activeImChannel?: Accessor<string | undefined>
   selectSession: (session: Session) => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
@@ -410,7 +412,13 @@ export const SortableWorkspace = (props: {
     pendingRename: false,
   })
   const slug = createMemo(() => base64Encode(props.directory))
-  const allSessions = createMemo(() => sortedRootSessions(workspaceStore, props.sortNow()))
+  const allSessions = createMemo(() => {
+    const list = sortedRootSessions(workspaceStore, props.sortNow())
+    const channel = props.ctx.activeImChannel?.()
+    if (!channel) return list
+    const prefix = `[im:${channel}]`
+    return list.filter((session) => session.title?.startsWith(prefix))
+  })
   const sessions = createMemo(() => allSessions().slice(0, visibleLimit()))
   const local = createMemo(() => props.directory === props.project.worktree)
   const active = createMemo(() => workspaceKey(props.ctx.currentDir()) === workspaceKey(props.directory))

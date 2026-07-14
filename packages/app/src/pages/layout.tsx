@@ -2730,6 +2730,7 @@ export default function Layout(props: ParentProps) {
     sidebarExpanded,
     sidebarReduced,
     nav: () => state.nav,
+    activeImChannel: () => store.activeImChannel,
     selectSession,
     prefetchSession,
     archiveSession,

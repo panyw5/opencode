@@ -97,6 +97,7 @@
     "@effect/opentelemetry": "catalog:",
     "@effect/platform-node": "catalog:",
     "@gitlab/opencode-gitlab-auth": "1.3.3",
+    "@larksuiteoapi/node-sdk": "1.55.0",
     "@lydell/node-pty": "catalog:",
     "@modelcontextprotocol/sdk": "1.27.1",
     "@octokit/graphql": "9.0.2",
