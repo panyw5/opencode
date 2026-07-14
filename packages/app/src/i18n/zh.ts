@@ -1500,9 +1500,6 @@ export const dict = {
   "sidebar.im.empty": "该通道尚无会话。在飞书/Discord 中给机器人发消息后会出现在此。",
   "sidebar.im.toast.unavailable": "通道不可用",
   "sidebar.im.toast.configure": "请在 Config → 消息通道 中启用或配置该通道。",
-  "sidebar.im.toast.opened": "IM 通道：{{name}}",
-  "sidebar.im.toast.opened.model": "模型：{{model}}。已打开独立会话列表。",
-  "sidebar.im.toast.opened.runtime": "未设置模型（使用默认）。已打开独立会话列表。",
 
   "config.commands.title": "命令",
   "config.commands.header": "创建和管理智能体的斜杠命令。",

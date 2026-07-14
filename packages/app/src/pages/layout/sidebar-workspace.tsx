@@ -584,16 +584,17 @@ export const ImChannelSidebar = (props: {
     const dir = directory()
     const s = childStore()
     if (!dir || !s) return []
-    console.debug(`[im-sidebar] channel=${props.channel()} directory=${dir} sessions=${s.session.length}`)
+    const channel = props.channel() || "?"
+    console.debug(`[im-sidebar] channel=${channel} directory=${dir} sessions=${s.session.length}`)
     return sortedRootSessions(s, props.sortNow())
   })
 
   const displaySessions = createMemo(() => {
-    const channel = props.channel()
+    const channel = props.channel() || ""
     const query = searchQuery().toLowerCase().trim()
     let list = rawSessions().map((session) => ({
       ...session,
-      title: stripImChannelTitle(session.title, channel),
+      title: channel ? stripImChannelTitle(session.title, channel) : (session.title ?? ""),
     }))
     if (query) list = list.filter((item) => item.title?.toLowerCase().includes(query))
     return list.slice(0, visibleLimit())

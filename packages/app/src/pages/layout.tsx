@@ -1685,13 +1685,6 @@ export default function Layout(props: ParentProps) {
     }
 
     console.debug(`[layout] openImChannel opened name=${name} type=${entry.type} imCount=${imSessions.length}`)
-    const model = entry.model?.trim()
-    showToast({
-      title: language.t("sidebar.im.toast.opened", { name }),
-      description: model
-        ? language.t("sidebar.im.toast.opened.model", { model })
-        : language.t("sidebar.im.toast.opened.runtime"),
-    })
   }
 
   function openExtraAgent(id: Parameters<typeof extraAgentDir>[0]) {
@@ -3248,18 +3241,21 @@ export default function Layout(props: ParentProps) {
             </Show>
           }
         >
-          <ImChannelSidebar
-            ctx={workspaceSidebarCtx}
-            channel={() => activeImChannel()!.name}
-            channelMeta={() => {
-              const match = activeImChannel()
-              if (match?.type === "discord") return language.t("sidebar.im.meta.discord")
-              return language.t("sidebar.im.meta.feishu")
-            }}
-            directory={() => activeImChannel()?.directory ?? ""}
-            sortNow={sortNow}
-            mobile={panelProps.mobile}
-          />
+          {(match) => (
+            <ImChannelSidebar
+              ctx={workspaceSidebarCtx}
+              // Use Show's keyed match accessor — never re-read activeImChannel()
+              // with `!`, which throws when the memo goes undefined mid-update.
+              channel={() => match().name}
+              channelMeta={() => {
+                if (match().type === "discord") return language.t("sidebar.im.meta.discord")
+                return language.t("sidebar.im.meta.feishu")
+              }}
+              directory={() => match().directory}
+              sortNow={sortNow}
+              mobile={panelProps.mobile}
+            />
+          )}
         </Show>
 
         <div
