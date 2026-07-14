@@ -105,9 +105,10 @@ async function startChannelRuntimes(url: URL) {
   )
   const channels = cfg.channels
   if (!channels || Object.keys(channels).length === 0) return
+  // Per-channel work directories come from config.directory
+  // (default ~/.config/opencode/channels/{name}). Not process.cwd() / projects.
   await startChannels({
     baseUrl: url.origin,
-    directory: process.cwd(),
     channels: channels as never,
   })
 }

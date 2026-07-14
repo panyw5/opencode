@@ -2,6 +2,7 @@ import path from "path"
 import * as Log from "@opencode-ai/core/util/log"
 import { Global } from "@opencode-ai/core/global"
 import { startFeishuChannel, type FeishuChannelConfig } from "./feishu"
+import { ensureChannelDirectory, resolveChannelDirectory } from "./directory"
 
 export type ChannelConfig =
   | FeishuChannelConfig
@@ -12,6 +13,8 @@ export type ChannelConfig =
       proxy?: string
       enabled?: boolean
       model?: string
+      /** Working directory for this channel's sessions (decoupled from projects). */
+      directory?: string
     }
 
 const log = Log.create({ service: "channel.manager" })
@@ -23,7 +26,10 @@ let startedFor: string | undefined
 
 export type ChannelManagerStartOptions = {
   baseUrl: string
-  /** Project directory used for session.create / prompt (x-opencode-directory). */
+  /**
+   * @deprecated Prefer per-channel `config.directory`. Kept as a last-resort
+   * fallback when a channel has no directory of its own.
+   */
   directory?: string
   channels?: Record<string, ChannelConfig>
 }
@@ -31,12 +37,12 @@ export type ChannelManagerStartOptions = {
 /**
  * Start (or restart) IM channel runtimes for enabled configs.
  * Currently supports Feishu websocket long-connection.
+ * Each channel uses its own working directory (not OpenCode projects).
  */
 export async function startChannels(opts: ChannelManagerStartOptions): Promise<void> {
   await stopChannels()
 
   const channels = opts.channels ?? {}
-  const directory = opts.directory || process.cwd()
   const baseUrl = opts.baseUrl.replace(/\/$/, "")
   startedFor = baseUrl
 
@@ -48,6 +54,8 @@ export async function startChannels(opts: ChannelManagerStartOptions): Promise<v
         continue
       }
       try {
+        const directory = resolveChannelDirectory(name, config.directory ?? opts.directory)
+        await ensureChannelDirectory(directory)
         const handle = startFeishuChannel({
           name,
           config,
@@ -61,14 +69,17 @@ export async function startChannels(opts: ChannelManagerStartOptions): Promise<v
       continue
     }
     if (config.type === "discord") {
-      log.info("discord channel runtime not implemented yet", { name })
+      log.info("discord channel runtime not implemented yet", {
+        name,
+        directory: resolveChannelDirectory(name, config.directory ?? opts.directory),
+      })
     }
   }
 
   log.info("channel manager started", {
     baseUrl,
-    directory,
     count: handles.length,
+    hasAuth: !!process.env["OPENCODE_SERVER_PASSWORD"],
     stateDir: path.join(Global.Path.state, "channel-sessions.json"),
   })
 }

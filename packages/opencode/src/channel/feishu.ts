@@ -1,7 +1,8 @@
 import * as Lark from "@larksuiteoapi/node-sdk"
 import * as Log from "@opencode-ai/core/util/log"
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2"
-import { loadMap, saveMap, sessionKey, titlePrefix } from "./mapping"
+import * as ServerAuth from "@/server/auth"
+import { loadMap, mappedEntry, resolveMappedSession, saveMap, sessionKey, titlePrefix } from "./mapping"
 
 export type FeishuChannelConfig = {
   type: "feishu"
@@ -11,9 +12,14 @@ export type FeishuChannelConfig = {
   enabled?: boolean
   domain?: "feishu" | "lark"
   model?: string
+  /** Working directory for this channel's sessions (decoupled from projects). */
+  directory?: string
 }
 
 const log = Log.create({ service: "channel.feishu" })
+
+/** Max remembered Feishu message_ids (at-least-once redelivery guard). */
+const SEEN_MESSAGE_LIMIT = 2000
 
 export type FeishuRuntimeOptions = {
   name: string
@@ -81,10 +87,56 @@ function allowed(openId: string | undefined, allowedUsers: string[] | undefined)
   return allowedUsers.includes(openId)
 }
 
+/**
+ * In-process dedupe for Feishu message_id (at-least-once delivery).
+ * claim() returns false if this id was already claimed/processed.
+ */
+function createMessageDedupe(limit = SEEN_MESSAGE_LIMIT) {
+  const order: string[] = []
+  const seen = new Set<string>()
+
+  return {
+    claim(id: string): boolean {
+      if (seen.has(id)) return false
+      seen.add(id)
+      order.push(id)
+      while (order.length > limit) {
+        const old = order.shift()
+        if (old) seen.delete(old)
+      }
+      return true
+    },
+    has(id: string): boolean {
+      return seen.has(id)
+    },
+  }
+}
+
+/**
+ * Serialize async work per chat so concurrent event redeliveries cannot
+ * run multiple prompts/replies for the same conversation at once.
+ */
+function createChatQueue() {
+  const tails = new Map<string, Promise<void>>()
+
+  return {
+    enqueue(key: string, task: () => Promise<void>): Promise<void> {
+      const prev = tails.get(key) ?? Promise.resolve()
+      const next = prev.then(task, task).finally(() => {
+        if (tails.get(key) === next) tails.delete(key)
+      })
+      tails.set(key, next)
+      return next
+    },
+  }
+}
+
 export function startFeishuChannel(opts: FeishuRuntimeOptions): StopHandle {
   const { name, config, baseUrl, directory } = opts
   const domain = resolveDomain(config.domain)
   let stopped = false
+  const dedupe = createMessageDedupe()
+  const chatQueue = createChatQueue()
 
   const client = new Lark.Client({
     appId: config.appId,
@@ -93,24 +145,54 @@ export function startFeishuChannel(opts: FeishuRuntimeOptions): StopHandle {
     domain,
   })
 
+  // Desktop server requires Basic auth (OPENCODE_SERVER_PASSWORD). Without this,
+  // session.create/prompt return empty 401 bodies and Feishu never gets a reply.
+  // Prefer process.env at call time (Flag is snapshotted at import and may be empty).
+  const authHeaders =
+    ServerAuth.headers({
+      username: process.env["OPENCODE_SERVER_USERNAME"] || "opencode",
+      password: process.env["OPENCODE_SERVER_PASSWORD"] || undefined,
+    }) ?? ServerAuth.headers()
   const sdk: OpencodeClient = createOpencodeClient({
     baseUrl,
     directory,
+    ...(authHeaders ? { headers: authHeaders } : {}),
   })
 
   const dispatcher = new Lark.EventDispatcher({}).register({
     "im.message.receive_v1": async (data) => {
       if (stopped) return
+      const event = data as FeishuMessageEvent
+      const messageId = event.message?.message_id
+      const chatId = event.message?.chat_id
+
+      // Drop exact redeliveries immediately (before any async work).
+      if (messageId) {
+        if (!dedupe.claim(messageId)) {
+          log.info("feishu duplicate message ignored", { channel: name, messageId })
+          return
+        }
+      }
+
+      const queueKey = chatId ? `${name}::${chatId}` : `${name}::unknown`
       try {
-        await handleMessage({
-          name,
-          config,
-          client,
-          sdk,
-          data: data as FeishuMessageEvent,
+        await chatQueue.enqueue(queueKey, async () => {
+          if (stopped) return
+          await handleMessage({
+            name,
+            config,
+            client,
+            sdk,
+            directory,
+            data: event,
+          })
         })
       } catch (err) {
-        log.error("feishu message handler failed", { channel: name, error: err })
+        log.error("feishu message handler failed", {
+          channel: name,
+          messageId,
+          error: err instanceof Error ? err.message : String(err),
+        })
       }
     },
   })
@@ -126,7 +208,13 @@ export function startFeishuChannel(opts: FeishuRuntimeOptions): StopHandle {
     log.error("feishu websocket failed to start", { channel: name, error: err })
   })
 
-  log.info("feishu channel started", { channel: name, domain: config.domain ?? "feishu" })
+  log.info("feishu channel started", {
+    channel: name,
+    domain: config.domain ?? "feishu",
+    directory,
+    baseUrl,
+    hasAuth: !!authHeaders,
+  })
 
   return {
     stop: () => {
@@ -163,16 +251,30 @@ type FeishuMessageEvent = {
   }
 }
 
+function formatClientError(error: unknown): string {
+  if (error == null) return "unknown error"
+  if (typeof error === "string") return error
+  if (error instanceof Error) return error.message
+  try {
+    const text = JSON.stringify(error)
+    return text === "{}" ? "empty error body (often HTTP 401 — check server auth)" : text
+  } catch {
+    return String(error)
+  }
+}
+
 async function handleMessage(input: {
   name: string
   config: FeishuChannelConfig
   client: Lark.Client
   sdk: OpencodeClient
+  directory: string
   data: FeishuMessageEvent
 }) {
   const msg = input.data.message
   const sender = input.data.sender
   if (!msg?.chat_id || !msg.content || !msg.message_type) return
+  // Bot / app messages must never re-enter the handler (reply loop).
   if (sender?.sender_type === "app") return
 
   const openId = sender?.sender_id?.open_id
@@ -187,61 +289,117 @@ async function handleMessage(input: {
     return
   }
 
+  const messageId = msg.message_id
+  log.info("feishu message received", {
+    channel: input.name,
+    messageId,
+    chatId: msg.chat_id,
+    type: msg.message_type,
+    textLen: text.length,
+    directory: input.directory,
+  })
+
   const chatId = msg.chat_id
   const threadId = msg.thread_id || msg.root_id
   const key = sessionKey({ channelName: input.name, chatId, threadId })
 
   const map = await loadMap()
-  let sessionId = map.sessions[key]
+  let sessionId = resolveMappedSession(map.sessions[key], input.directory)
 
   if (!sessionId) {
     const title = `${titlePrefix(input.name)} ${chatId.slice(0, 12)}`
     const created = await input.sdk.session.create({ title })
     if (created.error || !created.data?.id) {
+      const detail = formatClientError(created.error)
       log.error("failed to create session for feishu message", {
         channel: input.name,
-        error: created.error,
+        messageId,
+        error: detail,
       })
+      await replyText(input.client, chatId, `抱歉，创建会话失败：${detail}`, messageId)
       return
     }
     sessionId = created.data.id
-    map.sessions[key] = sessionId
+    map.sessions[key] = mappedEntry(sessionId, input.directory)
     await saveMap(map)
-    log.info("created session for feishu chat", { channel: input.name, sessionId, chatId })
+    log.info("created session for feishu chat", {
+      channel: input.name,
+      sessionId,
+      chatId,
+      messageId,
+      directory: input.directory,
+    })
   }
 
   const model = parseModel(input.config.model)
+  // IM has no desktop UI for interactive tools. `question` otherwise hangs the
+  // prompt forever and Feishu never receives a reply (observed in production).
+  // Do NOT abort here: abort-on-every-message + event redelivery caused multi-replies.
   const result = await input.sdk.session.prompt({
     sessionID: sessionId,
     parts: [{ type: "text", text }],
+    tools: {
+      question: false,
+    },
     ...(model ? { model } : {}),
   })
 
   if (result.error) {
-    log.error("feishu prompt failed", { channel: input.name, sessionId, error: result.error })
-    await replyText(input.client, chatId, "抱歉，处理消息时出错了。", msg.message_id)
+    const detail = formatClientError(result.error)
+    log.error("feishu prompt failed", {
+      channel: input.name,
+      sessionId,
+      messageId,
+      error: detail,
+    })
+    await replyText(input.client, chatId, `抱歉，处理消息时出错了：${detail}`, messageId)
     return
   }
 
-  const data = result.data as {
-    parts?: Array<{ type?: string; text?: string }>
-    info?: { content?: string }
-  }
-  const reply =
-    data?.info?.content ||
-    data?.parts
-      ?.filter((p) => p.type === "text" && p.text)
-      .map((p) => p.text)
-      .join("\n") ||
-    ""
-
+  const reply = extractAssistantText(result.data)
   if (reply.trim()) {
-    await replyText(input.client, chatId, reply, msg.message_id)
+    await replyText(input.client, chatId, reply, messageId)
+    log.info("feishu reply sent", {
+      channel: input.name,
+      sessionId,
+      messageId,
+      replyLen: reply.length,
+    })
+  } else {
+    log.warn("feishu prompt returned empty reply", {
+      channel: input.name,
+      sessionId,
+      messageId,
+    })
+    await replyText(input.client, chatId, "（模型没有返回文本内容）", messageId)
   }
 }
 
+/** Pull plain text from a session.prompt response (assistant message + parts). */
+function extractAssistantText(data: unknown): string {
+  if (!data || typeof data !== "object") return ""
+  const obj = data as {
+    info?: { content?: string; role?: string }
+    parts?: Array<{ type?: string; text?: string; content?: string }>
+    role?: string
+    content?: string
+  }
+  if (typeof obj.info?.content === "string" && obj.info.content.trim()) return obj.info.content
+  if (typeof obj.content === "string" && obj.content.trim()) return obj.content
+  const parts = obj.parts
+  if (!Array.isArray(parts)) return ""
+  return parts
+    .filter((p) => p && p.type === "text" && (typeof p.text === "string" || typeof p.content === "string"))
+    .map((p) => (typeof p.text === "string" ? p.text : p.content) || "")
+    .join("\n")
+    .trim()
+}
+
 async function replyText(client: Lark.Client, chatId: string, text: string, replyTo?: string) {
-  const content = JSON.stringify({ text })
+  // Feishu text messages are capped; keep a safe margin.
+  const maxLen = 4000
+  const body = text.length > maxLen ? `${text.slice(0, maxLen - 20)}\n…(已截断)` : text
+  const content = JSON.stringify({ text: body })
   try {
     if (replyTo) {
       await client.im.message.reply({
@@ -262,6 +420,19 @@ async function replyText(client: Lark.Client, chatId: string, text: string, repl
       },
     })
   } catch (err) {
-    log.error("feishu reply failed", { chatId, error: err })
+    log.error("feishu reply failed", {
+      chatId,
+      replyTo,
+      error: err instanceof Error ? err.message : String(err),
+    })
   }
+}
+
+/** Exported for unit tests. */
+export const __test = {
+  createMessageDedupe,
+  createChatQueue,
+  extractAssistantText,
+  extractText,
+  parseModel,
 }

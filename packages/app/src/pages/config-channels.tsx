@@ -29,6 +29,7 @@ import {
   type FeishuDomain,
   type FeishuRegistrationSession,
 } from "@/lib/feishu-app-registration"
+import { defaultChannelDirectory } from "@/pages/layout/helpers"
 
 export type ChannelPlatform = "feishu" | "discord"
 
@@ -130,15 +131,17 @@ export function useChannelRows(platform: () => ChannelPlatform | undefined) {
     // Touch top-level config so Solid tracks replacement of the whole config object.
     const config = globalSync.data.config
     const cfg = config.channels ?? {}
+    const configDir = globalSync.data.path.config || "~/.config/opencode"
     return Object.entries(cfg)
       .filter(([, entry]) => entry?.type === p)
       .map(([name, entry]) => {
-        const summary =
+        const cred =
           entry.type === "feishu" ? entry.appId || "(no app id)" : maskSecret(entry.botToken)
+        const dir = entry.directory?.trim() || defaultChannelDirectory(name, configDir)
         return {
           name,
           enabled: entry.enabled !== false,
-          summary,
+          summary: `${cred} · ${dir}`,
           model: entry.model,
           config: entry,
         }
@@ -207,6 +210,8 @@ export const ConfigChannelsDetail: Component<{
     proxy: "",
     allowedUsers: "",
     model: "" as string,
+    /** Working folder for this channel (decoupled from OpenCode projects). */
+    directory: "",
     mode: "manual" as "qr" | "manual",
   })
   const [saving, setSaving] = createSignal(false)
@@ -242,6 +247,7 @@ export const ConfigChannelsDetail: Component<{
           proxy: "",
           allowedUsers: "",
           model: "",
+          directory: "",
           // Default to manual so existing credentials are easier to re-enter;
           // user can still switch to QR.
           mode: "manual",
@@ -366,6 +372,10 @@ export const ConfigChannelsDetail: Component<{
     setSaving(true)
     try {
       let config: ChannelConfig
+      // Default: {path.config}/channels/{name} — same family as quick-assistant.
+      const configDir = globalSync.data.path.config || "~/.config/opencode"
+      const directory =
+        form.directory.trim() || defaultChannelDirectory(name, configDir)
       if (props.platform === "feishu") {
         const feishu: ChannelFeishuConfig = {
           type: "feishu",
@@ -373,6 +383,7 @@ export const ConfigChannelsDetail: Component<{
           appSecret: form.appSecret.trim(),
           enabled: form.enabled,
           domain: form.domain,
+          directory,
         }
         const users = parseUserList(form.allowedUsers)
         if (users) feishu.allowedUsers = users
@@ -384,6 +395,7 @@ export const ConfigChannelsDetail: Component<{
           type: "discord",
           botToken: form.botToken.trim(),
           enabled: form.enabled,
+          directory,
         }
         const users = parseUserList(form.allowedUsers)
         if (users) discord.allowedUsers = users
@@ -406,6 +418,7 @@ export const ConfigChannelsDetail: Component<{
       setForm("name", "")
       setForm("model", "")
       setForm("allowedUsers", "")
+      setForm("directory", "")
       if (props.platform === "feishu") {
         setForm("appId", "")
         setForm("appSecret", "")
@@ -594,6 +607,24 @@ export const ConfigChannelsDetail: Component<{
                               )}
                             </Show>
 
+                            <TextField
+                              label={language.t("config.channels.field.directory")}
+                              description={language.t("config.channels.field.directory.hint")}
+                              value={
+                                row.config.directory ??
+                                defaultChannelDirectory(
+                                  row.name,
+                                  globalSync.data.path.config || "~/.config/opencode",
+                                )
+                              }
+                              onChange={(v) => {
+                                const configDir = globalSync.data.path.config || "~/.config/opencode"
+                                void patchChannel(row.name, {
+                                  directory: (v ?? "").trim() || defaultChannelDirectory(row.name, configDir),
+                                })
+                              }}
+                            />
+
                             <div class="flex flex-col gap-1">
                               <span class="text-12-medium text-text-base">
                                 {language.t("config.channels.field.model")}
@@ -636,6 +667,17 @@ export const ConfigChannelsDetail: Component<{
               placeholder={props.platform === "feishu" ? "work-feishu" : "my-discord"}
               value={form.name}
               onChange={(v) => setForm("name", v ?? "")}
+            />
+
+            <TextField
+              label={language.t("config.channels.field.directory")}
+              description={language.t("config.channels.field.directory.hint")}
+              placeholder={defaultChannelDirectory(
+                form.name.trim() || "channel-name",
+                globalSync.data.path.config || "~/.config/opencode",
+              )}
+              value={form.directory}
+              onChange={(v) => setForm("directory", v ?? "")}
             />
 
             <Switch>

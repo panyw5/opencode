@@ -1137,6 +1137,12 @@ export type ChannelFeishuConfig = {
   domain?: "feishu" | "lark"
   /** provider/model used for IM replies on this channel */
   model?: string
+  /**
+   * Working directory for this channel's sessions and tools.
+   * Decoupled from OpenCode projects. Defaults to {config}/channels/{name}
+   * (e.g. ~/.config/opencode/channels/work-feishu).
+   */
+  directory?: string
 }
 
 export type ChannelDiscordConfig = {
@@ -1147,6 +1153,12 @@ export type ChannelDiscordConfig = {
   enabled?: boolean
   /** provider/model used for IM replies on this channel */
   model?: string
+  /**
+   * Working directory for this channel's sessions and tools.
+   * Decoupled from OpenCode projects. Defaults to {config}/channels/{name}
+   * (e.g. ~/.config/opencode/channels/work-feishu).
+   */
+  directory?: string
 }
 
 export type ChannelConfig = ChannelFeishuConfig | ChannelDiscordConfig

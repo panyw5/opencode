@@ -903,7 +903,6 @@ export const layer = Layer.effect(
             if (!serverUrl) return
             await startChannels({
               baseUrl: serverUrl.origin,
-              directory: process.cwd(),
               channels: next.channels as never,
             })
           } catch {

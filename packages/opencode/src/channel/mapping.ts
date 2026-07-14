@@ -5,9 +5,18 @@ import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "channel.mapping" })
 
+export type ChannelSessionEntry = {
+  sessionId: string
+  /** Work directory the session was created under (channel-owned). */
+  directory: string
+}
+
 export type ChannelSessionMap = {
-  /** key: `${channelName}::${chatId}[::${threadId}]` → sessionId */
-  sessions: Record<string, string>
+  /**
+   * key: `${channelName}::${chatId}[::${threadId}]`
+   * value: sessionId (legacy string) or { sessionId, directory }
+   */
+  sessions: Record<string, string | ChannelSessionEntry>
 }
 
 function mapPath() {
@@ -48,4 +57,27 @@ export function sessionKey(input: {
 
 export function titlePrefix(channelName: string): string {
   return `[im:${channelName}]`
+}
+
+/**
+ * Resolve a mapping entry for the current channel work directory.
+ * Legacy string values (sessionId only) are treated as mismatched when a
+ * directory is required — caller should create a new session.
+ */
+export function resolveMappedSession(
+  entry: string | ChannelSessionEntry | undefined,
+  directory: string,
+): string | undefined {
+  if (!entry) return undefined
+  if (typeof entry === "string") {
+    // Legacy: no directory recorded — only reuse if we cannot compare (caller may pass "").
+    if (!directory) return entry
+    return undefined
+  }
+  if (entry.directory === directory) return entry.sessionId
+  return undefined
+}
+
+export function mappedEntry(sessionId: string, directory: string): ChannelSessionEntry {
+  return { sessionId, directory }
 }

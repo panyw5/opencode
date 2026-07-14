@@ -1504,6 +1504,9 @@ export const dict = {
   "config.channels.field.appSecret": "App Secret",
   "config.channels.field.botToken": "Bot Token",
   "config.channels.field.proxy": "Proxy (optional)",
+  "config.channels.field.directory": "Work folder",
+  "config.channels.field.directory.hint":
+    "Dedicated working directory for this channel's sessions and agent tools. Not an OpenCode project. Leave empty to use ~/.config/opencode/channels/{name} (same family as quick-assistant). Supports ~.",
   "config.channels.field.allowedUsers": "Allowed users (optional)",
   "config.channels.field.allowedUsers.hint":
     "One ID per line or comma-separated. Leave empty or use * for unrestricted access.",
@@ -1540,12 +1543,15 @@ export const dict = {
   "sidebar.im.title": "IM Channels",
   "sidebar.im.meta.feishu": "Feishu",
   "sidebar.im.meta.discord": "Discord",
+  "sidebar.im.filter.hint": "Sessions from this channel's work folder",
+  "sidebar.im.filter.clear": "Exit IM channel view",
+  "sidebar.im.filter.empty":
+    "No sessions in this channel's work folder yet. Message the bot on Feishu/Discord and they will appear here.",
   "sidebar.im.toast.unavailable": "Channel unavailable",
   "sidebar.im.toast.configure": "Enable or configure this channel in Config → Channels.",
   "sidebar.im.toast.opened": "IM channel: {{name}}",
-  "sidebar.im.toast.opened.model": "Model: {{model}}. Session list for this channel will appear here when the IM adapter connects.",
-  "sidebar.im.toast.opened.runtime":
-    "No model set (using default). Session list for this channel will appear here when the IM adapter connects.",
+  "sidebar.im.toast.opened.model": "Model: {{model}}. Sidebar now shows this channel's sessions.",
+  "sidebar.im.toast.opened.runtime": "No model set (using default). Sidebar now shows this channel's sessions.",
   "config.commands.title": "Commands",
   "config.commands.header": "Create and manage slash commands for agents.",
   "config.commands.empty": "No custom commands configured.",

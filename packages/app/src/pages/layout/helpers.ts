@@ -108,6 +108,69 @@ export const sortedRootSessions = (store: SessionStore, now: number) => roots(st
 
 export const sortedProjectSessions = (stores: SessionStore[], now: number) => stores.flatMap(roots).sort(sortSessions(now))
 
+/** Filter sessions belonging to an IM channel (`title` prefix `[im:{name}]`). */
+export function filterImChannelSessions(list: Session[], channel: string | undefined | null): Session[] {
+  if (!channel) return list
+  const prefix = `[im:${channel}]`
+  return list.filter((session) => session.title?.startsWith(prefix))
+}
+
+/** Display title without the internal `[im:name]` marker. */
+export function stripImChannelTitle(title: string | undefined, channel: string): string {
+  if (!title) return ""
+  const prefix = `[im:${channel}]`
+  if (!title.startsWith(prefix)) return title
+  const rest = title.slice(prefix.length).trimStart()
+  return rest || title
+}
+
+/** Sanitize channel name for default work-folder segment (mirrors server). */
+export function sanitizeChannelName(name: string): string {
+  const cleaned = name.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")
+  return cleaned || "channel"
+}
+
+/**
+ * Expand `~` against home. Frontend-safe (no Node path module).
+ * Absolute paths returned as-is.
+ */
+export function expandHomePath(input: string, home: string): string {
+  const raw = input.trim()
+  if (!raw) return raw
+  if (raw === "~") return home
+  if (raw.startsWith("~/") || raw.startsWith("~\\")) {
+    const rest = raw.slice(2).replace(/\\/g, "/")
+    const base = home.replace(/[\\/]+$/, "")
+    return `${base}/${rest}`
+  }
+  return raw
+}
+
+/**
+ * Default IM work folder: `{configDir}/channels/{channelName}`
+ * (same family as quick-assistant under path.config).
+ * Must stay in sync with `packages/opencode/src/channel/directory.ts`.
+ */
+export function defaultChannelDirectory(channelName: string, configDir: string): string {
+  const base = configDir.replace(/[\\/]+$/, "")
+  return `${base}/channels/${sanitizeChannelName(channelName)}`
+}
+
+/**
+ * Resolve a channel's work directory from config.
+ * Prefer explicit `directory`; otherwise `{configDir}/channels/{name}`.
+ */
+export function resolveChannelDirectory(
+  channelName: string,
+  directory: string | undefined | null,
+  configDir: string,
+  home: string,
+): string {
+  const explicit = directory?.trim()
+  if (explicit) return expandHomePath(explicit, home)
+  return defaultChannelDirectory(channelName, configDir)
+}
+
 export const latestRootSession = (stores: SessionStore[], now: number) =>
   sortedProjectSessions(stores, now)[0]
 

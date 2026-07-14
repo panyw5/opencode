@@ -9,16 +9,21 @@ import {
 import { type PermissionRequest, type Session } from "@opencode-ai/sdk/v2/client"
 import {
   canonicalWorkspaceDir,
+  defaultChannelDirectory,
   displayName,
   effectiveWorkspaceOrder,
   errorMessage,
+  expandHomePath,
+  filterImChannelSessions,
   hasProjectPermissions,
   isInitialSessionLoad,
   latestProjectSession,
   latestRootSession,
   projectOwner,
+  resolveChannelDirectory,
   sessionByOneBasedIndex,
   sortedProjectSessions,
+  stripImChannelTitle,
   latestWorkspaceSession,
   waitForMatch,
   workspaceKey,
@@ -112,6 +117,40 @@ describe("layout deep links", () => {
 })
 
 describe("layout workspace helpers", () => {
+  test("filters IM channel sessions by title prefix", () => {
+    const list = [
+      session({ id: "s1", directory: "/p", title: "[im:feishu-bot] abc" }),
+      session({ id: "s2", directory: "/p", title: "normal session" }),
+      session({ id: "s3", directory: "/p", title: "[im:other] xyz" }),
+    ]
+    expect(filterImChannelSessions(list, undefined).map((s) => s.id)).toEqual(["s1", "s2", "s3"])
+    expect(filterImChannelSessions(list, "feishu-bot").map((s) => s.id)).toEqual(["s1"])
+    expect(filterImChannelSessions(list, "missing")).toEqual([])
+  })
+
+  test("strips IM channel title prefix for display", () => {
+    expect(stripImChannelTitle("[im:cc] oc_abc123", "cc")).toBe("oc_abc123")
+    expect(stripImChannelTitle("normal", "cc")).toBe("normal")
+    expect(stripImChannelTitle("[im:cc]", "cc")).toBe("[im:cc]")
+  })
+
+  test("resolves per-channel work directory under opencode config", () => {
+    const configDir = "/Users/me/.config/opencode"
+    expect(defaultChannelDirectory("work-feishu", configDir)).toBe(
+      "/Users/me/.config/opencode/channels/work-feishu",
+    )
+    expect(expandHomePath("~/bots/feishu", "/Users/me")).toBe("/Users/me/bots/feishu")
+    expect(resolveChannelDirectory("work-feishu", undefined, configDir, "/Users/me")).toBe(
+      "/Users/me/.config/opencode/channels/work-feishu",
+    )
+    expect(resolveChannelDirectory("work-feishu", "~/custom", configDir, "/Users/me")).toBe(
+      "/Users/me/custom",
+    )
+    expect(resolveChannelDirectory("work-feishu", "/abs/path", configDir, "/Users/me")).toBe(
+      "/abs/path",
+    )
+  })
+
   test("normalizes trailing slash in workspace key", () => {
     expect(workspaceKey("/tmp/demo///")).toBe("/tmp/demo")
     expect(workspaceKey("C:\\tmp\\demo\\\\")).toBe("C:/tmp/demo")
