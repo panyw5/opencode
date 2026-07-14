@@ -2,6 +2,12 @@ import * as Lark from "@larksuiteoapi/node-sdk"
 import * as Log from "@opencode-ai/core/util/log"
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2"
 import * as ServerAuth from "@/server/auth"
+import {
+  FeishuTaskCard,
+  finalTextFromMessages,
+  stepsFromMessages,
+  type MessageRowLike,
+} from "./feishu-card"
 import { loadMap, mappedEntry, resolveMappedSession, saveMap, sessionKey, titlePrefix } from "./mapping"
 
 export type FeishuChannelConfig = {
@@ -331,18 +337,45 @@ async function handleMessage(input: {
     })
   }
 
+  // Progressive Feishu task card (GenericAgent-style): collapsible turns + final answer.
+  const card = new FeishuTaskCard({
+    client: input.client,
+    chatId,
+    replyTo: messageId,
+  })
+  await card.start()
+
+  const poll = startStepPoller({
+    sdk: input.sdk,
+    sessionId,
+    card,
+  })
+
   const model = parseModel(input.config.model)
   // IM has no desktop UI for interactive tools. `question` otherwise hangs the
   // prompt forever and Feishu never receives a reply (observed in production).
   // Do NOT abort here: abort-on-every-message + event redelivery caused multi-replies.
-  const result = await input.sdk.session.prompt({
-    sessionID: sessionId,
-    parts: [{ type: "text", text }],
-    tools: {
-      question: false,
-    },
-    ...(model ? { model } : {}),
-  })
+  let result: Awaited<ReturnType<OpencodeClient["session"]["prompt"]>>
+  try {
+    result = await input.sdk.session.prompt({
+      sessionID: sessionId,
+      parts: [{ type: "text", text }],
+      tools: {
+        question: false,
+      },
+      ...(model ? { model } : {}),
+    })
+  } catch (err) {
+    poll.stop()
+    const detail = err instanceof Error ? err.message : String(err)
+    log.error("feishu prompt threw", { channel: input.name, sessionId, messageId, error: detail })
+    await card.fail(`处理消息时出错了：${detail}`)
+    return
+  }
+
+  poll.stop()
+  // Final snapshot after prompt returns (ensure last step is visible).
+  await poll.flush()
 
   if (result.error) {
     const detail = formatClientError(result.error)
@@ -352,23 +385,22 @@ async function handleMessage(input: {
       messageId,
       error: detail,
     })
-    await replyText(input.client, chatId, `抱歉，处理消息时出错了：${detail}`, messageId)
+    await card.fail(`处理消息时出错了：${detail}`)
     return
   }
 
-  // session.prompt returns only the *final* assistant message. Multi-step runs
-  // (e.g. webfetch → news body → closing question) put the bulk of text in
-  // intermediate assistant messages. Reload recent messages and join all
-  // assistant text parts after the latest user message.
+  // session.prompt returns only the *final* assistant message. Aggregate all
+  // assistant text parts in this turn for the card's final section.
   const reply =
     (await collectTurnAssistantText(input.sdk, sessionId)) || extractAssistantText(result.data)
   if (reply.trim()) {
-    await replyText(input.client, chatId, reply, messageId)
-    log.info("feishu reply sent", {
+    await card.done(reply)
+    log.info("feishu reply card done", {
       channel: input.name,
       sessionId,
       messageId,
       replyLen: reply.length,
+      cardMessageId: card.messageId,
     })
   } else {
     log.warn("feishu prompt returned empty reply", {
@@ -376,8 +408,60 @@ async function handleMessage(input: {
       sessionId,
       messageId,
     })
-    await replyText(input.client, chatId, "（模型没有返回文本内容）", messageId)
+    await card.done("（模型没有返回文本内容）")
   }
+}
+
+/** Poll session messages while prompt runs; push new turns to the Feishu card. */
+function startStepPoller(input: {
+  sdk: OpencodeClient
+  sessionId: string
+  card: FeishuTaskCard
+  intervalMs?: number
+}) {
+  let stopped = false
+  let inflight: Promise<void> | undefined
+  const intervalMs = input.intervalMs ?? 1200
+
+  const tick = async () => {
+    if (stopped) return
+    try {
+      const rows = await loadSessionMessages(input.sdk, input.sessionId)
+      if (stopped || !rows.length) return
+      const steps = stepsFromMessages(rows)
+      if (steps.length) await input.card.syncSteps(steps)
+    } catch (err) {
+      log.warn("feishu step poll failed", {
+        sessionId: input.sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  const timer = setInterval(() => {
+    if (stopped) return
+    if (inflight) return
+    inflight = tick().finally(() => {
+      inflight = undefined
+    })
+  }, intervalMs)
+
+  return {
+    stop() {
+      stopped = true
+      clearInterval(timer)
+    },
+    async flush() {
+      await (inflight ?? Promise.resolve())
+      await tick()
+    },
+  }
+}
+
+async function loadSessionMessages(sdk: OpencodeClient, sessionId: string): Promise<MessageRowLike[]> {
+  const listed = await sdk.session.messages({ sessionID: sessionId, limit: 50 })
+  if (listed.error || !listed.data) return []
+  return normalizeMessageList(listed.data) as MessageRowLike[]
 }
 
 /** Pull plain text from a session.prompt response (assistant message + parts). */
@@ -412,27 +496,9 @@ type MessageRow = {
  */
 async function collectTurnAssistantText(sdk: OpencodeClient, sessionId: string): Promise<string> {
   try {
-    const listed = await sdk.session.messages({ sessionID: sessionId, limit: 40 })
-    if (listed.error || !listed.data) {
-      log.warn("feishu failed to load messages for reply aggregate", {
-        sessionId,
-        error: formatClientError(listed.error),
-      })
-      return ""
-    }
-    const rows = normalizeMessageList(listed.data)
-    // Walk from end: collect assistant texts until we hit the latest user message.
-    const chunks: string[] = []
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const row = rows[i]
-      const role = row.info?.role ?? row.role
-      if (role === "user") break
-      if (role !== "assistant") continue
-      const text = extractAssistantText(row)
-      if (text) chunks.push(text)
-    }
-    // chunks were collected newest→oldest; reverse to chronological order.
-    return chunks.reverse().join("\n\n").trim()
+    const rows = await loadSessionMessages(sdk, sessionId)
+    if (!rows.length) return ""
+    return finalTextFromMessages(rows)
   } catch (err) {
     log.warn("feishu collectTurnAssistantText failed", {
       sessionId,
@@ -496,15 +562,6 @@ export const __test = {
   normalizeMessageList,
   /** Aggregate assistant text parts after the last user message (same logic as collectTurn). */
   aggregateTurnText(rows: MessageRow[]): string {
-    const chunks: string[] = []
-    for (let i = rows.length - 1; i >= 0; i--) {
-      const row = rows[i]
-      const role = row.info?.role ?? row.role
-      if (role === "user") break
-      if (role !== "assistant") continue
-      const text = extractAssistantText(row)
-      if (text) chunks.push(text)
-    }
-    return chunks.reverse().join("\n\n").trim()
+    return finalTextFromMessages(rows as MessageRowLike[])
   },
 }
