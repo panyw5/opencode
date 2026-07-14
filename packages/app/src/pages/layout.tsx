@@ -3337,13 +3337,14 @@ export default function Layout(props: ParentProps) {
           .filter(([, entry]) => entry.enabled !== false)
           .map(([name, entry]) => {
             const dir = resolveChannelDirectory(name, entry.directory, configDir, home)
+            const platform =
+              entry.type === "feishu"
+                ? language.t("sidebar.im.meta.feishu")
+                : language.t("sidebar.im.meta.discord")
             return {
               id: name,
-              label: () => name,
-              meta: () =>
-                entry.type === "feishu"
-                  ? language.t("sidebar.im.meta.feishu")
-                  : language.t("sidebar.im.meta.discord"),
+              // Platform first, then channel name: e.g. "飞书 | cc"
+              label: () => `${platform} | ${name}`,
               // Active when route is this channel's work directory (independent domain).
               active: () => workspaceKey(routeDir()) === workspaceKey(dir),
               available: () => true,
