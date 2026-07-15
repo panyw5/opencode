@@ -39,6 +39,10 @@ export const backgroundShellHandlers = HttpApiBuilder.group(InstanceHttpApi, "ba
       return info
     })
 
-    return handlers.handle("list", list).handle("create", create).handle("background", background).handle("stop", stop)
+    return handlers
+      .handle("list", list)
+      .handle("create", create)
+      .handle("background", background)
+      .handle("stop", stop)
   }),
 )

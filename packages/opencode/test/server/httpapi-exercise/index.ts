@@ -384,6 +384,51 @@ const scenarios: Scenario[] = [
     .mutating()
     .at((ctx) => ({ path: route("/mcp/{name}/disconnect", { name: "httpapi-missing" }), headers: ctx.headers() }))
     .json(404, object, "status"),
+  http.protected.get("/background-shell", "background-shell.list").json(200, array),
+  http.protected
+    .post("/background-shell", "background-shell.create")
+    .mutating()
+    .seeded((ctx) => ctx.session())
+    .at((ctx) => ({
+      path: "/background-shell",
+      headers: ctx.headers(),
+      body: {
+        sessionID: ctx.state.id,
+        command: "printf httpapi-background-shell",
+        description: "HTTP API background shell",
+      },
+    }))
+    .json(
+      200,
+      (body, ctx) => {
+        object(body)
+        check(body.sessionID === ctx.state.id, "background shell create should return requested session")
+        check(body.command === "printf httpapi-background-shell", "background shell create should return command")
+        check(body.status === "running", "background shell create should start running")
+      },
+      "status",
+    ),
+  http.protected
+    .post("/background-shell/{id}/background", "background-shell.background")
+    .at((ctx) => ({
+      path: route("/background-shell/{id}/background", { id: "job_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .delete("/background-shell/{id}", "background-shell.stop")
+    .mutating()
+    .at((ctx) => ({
+      path: route("/background-shell/{id}", { id: "job_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(
+      200,
+      (body) => {
+        check(body === false, "background shell stop should return false for a missing shell")
+      },
+      "status",
+    ),
   http.protected.get("/pty/shells", "pty.shells").json(200, array),
   http.protected.get("/pty", "pty.list").json(200, array),
   http.protected

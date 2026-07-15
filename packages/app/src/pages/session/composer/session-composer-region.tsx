@@ -1,7 +1,8 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
@@ -10,6 +11,8 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
+import { useServer } from "@/context/server"
+import { domainFromDirectory } from "@/pages/layout/extra-agents"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
 import {
@@ -105,6 +108,7 @@ function SessionBackgroundShellMenu(props: {
   entries: BackgroundShellInfo[]
   loading: boolean
   onRefresh: () => void
+  onOpen: (entry: BackgroundShellInfo) => void
 }) {
   const language = useLanguage()
   const [open, setOpen] = createSignal(false)
@@ -163,7 +167,11 @@ function SessionBackgroundShellMenu(props: {
                       : entry.status
 
                   return (
-                    <DropdownMenu.Item class="min-w-0" closeOnSelect={false}>
+                    <DropdownMenu.Item
+                      class="min-w-0"
+                      onSelect={() => props.onOpen(entry)}
+                      data-testid="session-background-shell-menu-item"
+                    >
                       <div class="min-w-0 flex flex-col gap-1">
                         <DropdownMenu.ItemLabel class="truncate text-13-medium text-text-strong">
                           {entry.description || entry.command}
@@ -186,6 +194,100 @@ function SessionBackgroundShellMenu(props: {
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu>
+  )
+}
+
+function SessionBackgroundShellDialog(props: {
+  entry: BackgroundShellInfo
+  load: (id: string) => Promise<BackgroundShellInfo>
+}) {
+  const [current, setCurrent] = createSignal(props.entry)
+  const [loading, setLoading] = createSignal(false)
+  const [error, setError] = createSignal<string | undefined>()
+  let request = 0
+
+  const currentID = createMemo(() => current().id)
+  const currentStatus = createMemo(() => current().status)
+  const title = createMemo(() => current().description || current().command)
+  const output = createMemo(() => current().outputTail || "(no output)")
+  const status = createMemo(() => {
+    const entry = current()
+    if (entry.status === "error" && typeof entry.exitCode === "number") return `error ${entry.exitCode}`
+    return entry.status
+  })
+
+  const refresh = async (quiet = false, id = currentID()) => {
+    const active = ++request
+    if (!quiet) setLoading(true)
+    setError(undefined)
+    try {
+      const next = await props.load(id)
+      if (active === request) setCurrent(next)
+    } catch (e) {
+      if (active !== request) return
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      if (active === request) setLoading(false)
+    }
+  }
+
+  onMount(() => {
+    void refresh()
+  })
+
+  createEffect(() => {
+    const id = currentID()
+    if (currentStatus() !== "running") return
+    const timer = window.setInterval(() => {
+      void refresh(true, id)
+    }, 2_000)
+    onCleanup(() => window.clearInterval(timer))
+  })
+
+  return (
+    <Dialog title="背景 shell 输出" size="large" class="max-h-[min(720px,calc(100dvh-64px))]">
+      <div class="flex min-h-0 flex-col gap-3 px-4 pb-4">
+        <div class="rounded-lg border border-border-weak-base bg-surface-raised-base px-3 py-2">
+          <div class="flex min-w-0 items-start justify-between gap-3">
+            <div class="min-w-0">
+              <div class="truncate text-13-medium text-text-strong">{title()}</div>
+              <div class="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-11-regular text-text-weak">
+                <span class={`font-medium ${backgroundShellStatusClass(currentStatus())}`}>{status()}</span>
+                <span>{current().id}</span>
+                <span class="truncate">{current().cwd}</span>
+              </div>
+            </div>
+            <Button
+              variant="ghost"
+              size="small"
+              class="h-7 shrink-0 rounded-md px-2"
+              disabled={loading()}
+              onClick={() => void refresh()}
+            >
+              {loading() ? "刷新中" : "刷新"}
+            </Button>
+          </div>
+          <div class="mt-2 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-11-regular text-text-weak">
+            {current().command}
+          </div>
+        </div>
+
+        <Show when={error()}>
+          {(message) => (
+            <div class="rounded-md border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
+              {message()}
+            </div>
+          )}
+        </Show>
+
+        <pre
+          class="max-h-[52dvh] min-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border-weak-base bg-background-base p-3 font-mono text-12-regular leading-5 text-text-base"
+          data-testid="session-background-shell-output"
+        >
+          {output()}
+        </pre>
+      </div>
+    </Dialog>
   )
 }
 
@@ -392,6 +494,7 @@ export function SessionComposerRegion(props: {
   const dialog = useDialog()
   const sdk = useSDK()
   const platform = usePlatform()
+  const server = useServer()
   const route = useSessionKey()
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
@@ -492,7 +595,12 @@ export function SessionComposerRegion(props: {
     }
     const request = ++backgroundRequest
     setBackgroundShellsLoading(true)
-    void listBackgroundShells({ sdk, platform, sessionID })
+    void listBackgroundShells({
+      sdk,
+      platform,
+      auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+      sessionID,
+    })
       .then((items) => {
         if (request !== backgroundRequest) return
         setBackgroundShells(items)
@@ -504,6 +612,25 @@ export function SessionComposerRegion(props: {
       .finally(() => {
         if (request === backgroundRequest) setBackgroundShellsLoading(false)
       })
+  }
+
+  const loadBackgroundShell = async (id: string) => {
+    const sessionID = route.params.id
+    if (!sessionID) throw new Error("Background shell session is not available")
+    const items = await listBackgroundShells({
+      sdk,
+      platform,
+      auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+      sessionID,
+    })
+    const info = items.find((item) => item.id === id)
+    if (!info) throw new Error("Background shell not found")
+    setBackgroundShells(items)
+    return info
+  }
+
+  const openBackgroundShell = (entry: BackgroundShellInfo) => {
+    dialog.show(() => <SessionBackgroundShellDialog entry={entry} load={loadBackgroundShell} />)
   }
 
   createEffect(() => {
@@ -624,6 +751,7 @@ export function SessionComposerRegion(props: {
                       entries={backgroundShells()}
                       loading={backgroundShellsLoading()}
                       onRefresh={refreshBackgroundShells}
+                      onOpen={openBackgroundShell}
                     />
                   </Show>
                 </div>

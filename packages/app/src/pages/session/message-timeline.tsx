@@ -32,9 +32,11 @@ import { useSessionKey, useSessionLayout } from "@/pages/session/session-layout"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { domainFromDirectory } from "@/pages/layout/extra-agents"
 import {
   itemStyle,
   timelineHeightCacheEnabled,
@@ -406,6 +408,7 @@ export function MessageTimeline(props: {
   const { params, sessionKey } = useSessionKey()
   const { tabs, view } = useSessionLayout()
   const platform = usePlatform()
+  const server = useServer()
   const file = useFile()
   let viewport: HTMLDivElement | undefined
   let windowFrame: number | undefined
@@ -449,7 +452,12 @@ export function MessageTimeline(props: {
       })
       return
     }
-    await setBackgroundShell({ sdk, platform, id: input.jobId })
+    await setBackgroundShell({
+      sdk,
+      platform,
+      auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+      id: input.jobId,
+    })
       .then(() => {
         showToast({
           title: "已设为背景 shell",
