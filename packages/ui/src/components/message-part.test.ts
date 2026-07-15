@@ -5,6 +5,8 @@ import {
   isTaskResume,
   resolveTaskChildSessionId,
   taskSessionIndex,
+  taskSessionNeighbors,
+  taskSessionSiblings,
   withTaskSessionIndex,
 } from "./message-task-session"
 import { skillText } from "./message-skill"
@@ -240,6 +242,45 @@ describe("message-part taskSessionIndex", () => {
     })
     expect(first).toBe(2)
     expect(resume).toBe(first)
+  })
+
+  test("finds adjacent sibling sessions using the canonical creation order", () => {
+    const unordered = [
+      session({ id: "ses_b", parentID: "ses_parent", title: "second", created: 20 }),
+      session({ id: "ses_elsewhere", parentID: "ses_other", title: "other", created: 5 }),
+      session({ id: "ses_c", parentID: "ses_parent", title: "third", created: 30 }),
+      session({ id: "ses_a", parentID: "ses_parent", title: "first", created: 10 }),
+    ]
+
+    expect(taskSessionSiblings({ parentSessionId: "ses_parent", sessions: unordered }).map((item) => item.id)).toEqual([
+      "ses_a",
+      "ses_b",
+      "ses_c",
+    ])
+    expect(
+      taskSessionNeighbors({
+        childSessionId: "ses_b",
+        parentSessionId: "ses_parent",
+        sessions: unordered,
+      }),
+    ).toMatchObject({ previous: { id: "ses_a" }, next: { id: "ses_c" } })
+  })
+
+  test("leaves navigation disabled at sibling boundaries", () => {
+    expect(
+      taskSessionNeighbors({
+        childSessionId: "ses_a",
+        parentSessionId: "ses_parent",
+        sessions,
+      }),
+    ).toEqual({ previous: undefined, next: sessions[1] })
+    expect(
+      taskSessionNeighbors({
+        childSessionId: "ses_b",
+        parentSessionId: "ses_parent",
+        sessions,
+      }),
+    ).toEqual({ previous: sessions[0], next: undefined })
   })
 
   test("prefixes agent titles with the stable session index", () => {

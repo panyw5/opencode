@@ -52,6 +52,32 @@ export function resolveTaskChildSessionId(input: {
   return candidates.toSorted((a, b) => Math.abs(a.time.created - start) - Math.abs(b.time.created - start))[0]?.id
 }
 
+export function taskSessionSiblings(input: { parentSessionId?: string; sessions?: readonly Session[] }): Session[] {
+  const parentSessionId = text(input.parentSessionId)
+  if (!parentSessionId) return []
+
+  return (input.sessions ?? [])
+    .filter((session) => session.parentID === parentSessionId && !session.time.archived)
+    .toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+}
+
+export function taskSessionNeighbors(input: {
+  childSessionId?: string
+  parentSessionId?: string
+  sessions?: readonly Session[]
+}): { previous?: Session; next?: Session } | undefined {
+  const childSessionId = text(input.childSessionId)
+  if (!childSessionId) return
+
+  const siblings = taskSessionSiblings(input)
+  const index = siblings.findIndex((session) => session.id === childSessionId)
+  if (index < 0) return
+  return {
+    previous: siblings[index - 1],
+    next: siblings[index + 1],
+  }
+}
+
 /** 1-based index of a child subagent session among siblings of the same parent. */
 export function taskSessionIndex(input: {
   childSessionId?: string
@@ -62,9 +88,7 @@ export function taskSessionIndex(input: {
   const parentSessionId = text(input.parentSessionId)
   if (!childSessionId || !parentSessionId) return undefined
 
-  const siblings = (input.sessions ?? [])
-    .filter((session) => session.parentID === parentSessionId && !session.time.archived)
-    .toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+  const siblings = taskSessionSiblings(input)
 
   const index = siblings.findIndex((session) => session.id === childSessionId)
   if (index < 0) return undefined

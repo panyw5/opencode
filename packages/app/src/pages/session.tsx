@@ -26,6 +26,7 @@ import { Tabs } from "@opencode-ai/ui/tabs"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { Button } from "@opencode-ai/ui/button"
+import { taskSessionNeighbors } from "@opencode-ai/ui/message-task-session"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
@@ -308,6 +309,58 @@ export default function Page() {
       },
     ),
   )
+  const [apiSiblingSessions, setApiSiblingSessions] = createSignal<Session[]>([])
+  createEffect(
+    on(
+      () => info()?.parentID,
+      (parentID) => {
+        setApiSiblingSessions([])
+        if (!parentID) return
+
+        let cancelled = false
+        void sdk.client.session.children({ sessionID: parentID }).then(
+          (result) => {
+            if (cancelled) return
+            const siblings = result.data ?? []
+            setApiSiblingSessions(siblings)
+          },
+          () => {
+            if (cancelled) return
+            setApiSiblingSessions([])
+          },
+        )
+        onCleanup(() => {
+          cancelled = true
+        })
+      },
+    ),
+  )
+  const subagentNavigation = createMemo(() => {
+    const sessionID = params.id
+    const parentSessionID = info()?.parentID
+    if (!sessionID || !parentSessionID) return
+
+    const byID = new Map<string, Session>()
+    for (const session of sync.data.session) {
+      if (session.parentID !== parentSessionID) continue
+      byID.set(session.id, session)
+    }
+    for (const session of apiSiblingSessions()) {
+      byID.set(session.id, session)
+    }
+
+    const neighbors = taskSessionNeighbors({
+      childSessionId: sessionID,
+      parentSessionId: parentSessionID,
+      sessions: [...byID.values()],
+    })
+    if (!neighbors) return
+    return {
+      previous: neighbors.previous?.id,
+      next: neighbors.next?.id,
+      onNavigate: openSubagentSession,
+    }
+  })
   const childAgentSessions = createMemo(() => {
     const id = params.id
     if (!id) return []
@@ -1090,6 +1143,11 @@ export default function Page() {
     const dir = params.dir
     if (!dir) return
     navigate(`/${dir}/session/${entry.sessionID}`)
+  }
+  function openSubagentSession(sessionID: string): void {
+    const dir = params.dir
+    if (!dir) return
+    navigate(`/${dir}/session/${sessionID}`)
   }
 
   useSessionCommands({
@@ -2297,6 +2355,7 @@ export default function Page() {
             }
             childAgents={childAgentEntries()}
             onOpenChildAgent={openChildAgent}
+            subagentNavigation={subagentNavigation()}
             setPromptDockRef={(el) => {
               promptDock = el
             }}

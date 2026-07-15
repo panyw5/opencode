@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -487,6 +488,11 @@ export function SessionComposerRegion(props: {
   }
   childAgents?: SessionChildAgentEntry[]
   onOpenChildAgent?: (entry: SessionChildAgentEntry) => void
+  subagentNavigation?: {
+    previous?: string
+    next?: string
+    onNavigate: (sessionID: string) => void
+  }
   setPromptDockRef: (el: HTMLDivElement) => void
 }) {
   const prompt = usePrompt()
@@ -824,6 +830,36 @@ export function SessionComposerRegion(props: {
                   onSend={props.followup!.onSend}
                   onEdit={props.followup!.onEdit}
                 />
+              </Show>
+              <Show when={platform.platform === "desktop" && props.subagentNavigation} keyed>
+                {(navigation) => (
+                  <div class="mb-1 flex justify-center" data-testid="subagent-session-navigation">
+                    <div class="flex items-center gap-0.5 rounded-lg border border-border-weak-base bg-background-stronger p-0.5 shadow-sm">
+                      <IconButton
+                        icon="arrow-left"
+                        size="small"
+                        variant="ghost"
+                        class="rounded-md text-text-weak hover:text-text-strong disabled:pointer-events-none disabled:opacity-40"
+                        disabled={!navigation.previous}
+                        aria-label={language.t("command.session.previous")}
+                        onClick={() => {
+                          if (navigation.previous) navigation.onNavigate(navigation.previous)
+                        }}
+                      />
+                      <IconButton
+                        icon="arrow-right"
+                        size="small"
+                        variant="ghost"
+                        class="rounded-md text-text-weak hover:text-text-strong disabled:pointer-events-none disabled:opacity-40"
+                        disabled={!navigation.next}
+                        aria-label={language.t("command.session.next")}
+                        onClick={() => {
+                          if (navigation.next) navigation.onNavigate(navigation.next)
+                        }}
+                      />
+                    </div>
+                  </div>
+                )}
               </Show>
               <PromptInput
                 ref={props.inputRef}
