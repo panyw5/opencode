@@ -636,8 +636,11 @@
 
   [data-component="markdown"] {
     margin-top: 5px;
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings, normal);
+    font-variation-settings: var(--font-family-mono--font-variation-settings, normal);
     font-style: normal;
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-large);
     color: var(--text-weak);
 
     strong,
@@ -657,7 +660,7 @@
 }
 
 [data-component="reasoning-part"][data-mode="preview"] {
-  max-height: calc(var(--line-height-large, 1.6) * 3 * var(--font-size-base, 14px) + 4px);
+  max-height: calc(var(--line-height-large, 1.6) * 3 * var(--font-size-large, 16px) + 4px);
   overflow: hidden;
   position: relative;
 
@@ -676,8 +679,11 @@
     margin-top: 5px;
     white-space: pre-wrap;
     word-break: break-word;
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings, normal);
+    font-variation-settings: var(--font-family-mono--font-variation-settings, normal);
     font-style: normal;
-    font-size: var(--font-size-base);
+    font-size: var(--font-size-large);
     line-height: var(--line-height-large);
     color: var(--text-weak);
   }
