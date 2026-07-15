@@ -54,6 +54,7 @@ import { apps, editor, getOpenPlan, manager, type OpenApp, type OS } from "@/com
 import { playPendingQuestionFlip } from "./composer/session-question-flip"
 import { sessionQuestionRequest } from "./composer/session-request-tree"
 import { active, working } from "./session-working"
+import { setBackgroundShell } from "./background-shell-api"
 
 type MessageComment = {
   path: string
@@ -428,6 +429,42 @@ export function MessageTimeline(props: {
   const stageById = new Map<string, MarkdownStage>()
   const pendingShrinkById = new Map<string, PendingShrink>()
   const pendingShrinkReleaseById = new Map<string, ReturnType<typeof setTimeout>>()
+
+  const setShellAsBackground = async (input: {
+    sessionID: string
+    messageID?: string
+    callID?: string
+    jobId?: string
+    command: string
+    cwd?: string
+    description?: string
+  }) => {
+    const targetSessionID = input.sessionID || sessionID()
+    if (!targetSessionID) return
+    if (!input.jobId) {
+      showToast({
+        title: "无法设为背景 shell",
+        description: "该命令不是可监督的 shell 任务。",
+        variant: "error",
+      })
+      return
+    }
+    await setBackgroundShell({ sdk, platform, id: input.jobId })
+      .then(() => {
+        showToast({
+          title: "已设为背景 shell",
+          description: input.description ?? input.command,
+          variant: "success",
+        })
+      })
+      .catch((err) => {
+        showToast({
+          title: "设置背景 shell 失败",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "error",
+        })
+      })
+  }
   let recentQuestion: RecentQuestionState | undefined
   let seq = 0
   let skipped = 0
@@ -2835,6 +2872,7 @@ export function MessageTimeline(props: {
             prev.set(key, next)
             saveStage(item.messageID, next, "part")
           }}
+          onBackgroundShell={setShellAsBackground}
           classes={{
             root: "min-w-0 w-full relative",
             content: "flex flex-col justify-between !overflow-visible",

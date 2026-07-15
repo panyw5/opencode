@@ -94,13 +94,21 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Pty
 export const Event = {
   Created: BusEvent.define("pty.created", Schema.Struct({ info: Info })),
   Updated: BusEvent.define("pty.updated", Schema.Struct({ info: Info })),
-  Exited: BusEvent.define("pty.exited", Schema.Struct({ id: PtyID, exitCode: NonNegativeInt })),
+  Exited: BusEvent.define(
+    "pty.exited",
+    Schema.Struct({
+      id: PtyID,
+      exitCode: NonNegativeInt,
+      output: Schema.optional(Schema.String),
+    }),
+  ),
   Deleted: BusEvent.define("pty.deleted", Schema.Struct({ id: PtyID })),
 }
 
 export interface Interface {
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: PtyID) => Effect.Effect<Info, NotFoundError>
+  readonly snapshot: (id: PtyID) => Effect.Effect<{ info: Info; output: string; cursor: number }, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info>
   readonly update: (id: PtyID, input: UpdateInput) => Effect.Effect<Info, NotFoundError>
   readonly remove: (id: PtyID) => Effect.Effect<void, NotFoundError>
@@ -181,14 +189,23 @@ export const layer = Layer.effect(
       return (yield* requireSession(id)).info
     })
 
+    const snapshot = Effect.fn("Pty.snapshot")(function* (id: PtyID) {
+      const session = yield* requireSession(id)
+      return {
+        info: session.info,
+        output: session.buffer,
+        cursor: session.cursor,
+      }
+    })
+
     const create = Effect.fn("Pty.create")(function* (input: CreateInput) {
       const s = yield* InstanceState.get(state)
       const bridge = yield* EffectBridge.make()
       const cfg = yield* config.get()
       const id = PtyID.ascending()
       const command = input.command || Shell.preferred(cfg.shell)
-      const args = input.args || []
-      if (Shell.login(command)) {
+      const args = input.args ? [...input.args] : []
+      if (!input.args && Shell.login(command)) {
         args.push("-l")
       }
 
@@ -265,7 +282,7 @@ export const layer = Layer.effect(
         if (session.info.status === "exited") return
         log.info("session exited", { id, exitCode })
         session.info.status = "exited"
-        bridge.fork(bus.publish(Event.Exited, { id, exitCode }))
+        bridge.fork(bus.publish(Event.Exited, { id, exitCode, output: session.buffer }))
         bridge.fork(remove(id))
       })
       yield* bus.publish(Event.Created, { info })
@@ -360,7 +377,7 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, get, create, update, remove, resize, write, connect })
+    return Service.of({ list, get, snapshot, create, update, remove, resize, write, connect })
   }),
 )
 

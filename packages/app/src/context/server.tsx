@@ -175,12 +175,14 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       store.lastProject && typeof store.lastProject === "object" && !Array.isArray(store.lastProject)
         ? store.lastProject
         : {}
+    const propServers = () => (Array.isArray(props.servers) ? props.servers : [])
 
     const allServers = createMemo((): Array<ServerConnection.Any> => {
-      const sidecar = (props.servers ?? []).find((item) => item.type === "sidecar" && item.variant === "base")
+      const provided = propServers()
+      const sidecar = provided.find((item) => item.type === "sidecar" && item.variant === "base")
       const legacy = store.currentSidecarUrl
       const servers = [
-        ...(props.servers ?? []),
+        ...provided,
         ...storedList().flatMap((value) => {
           if (isPersistedLoopbackHttpServer(value)) {
             return []
@@ -257,7 +259,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     }
 
     function originFor(key: ServerConnection.Key) {
-      const conn = allServers().find((item) => ServerConnection.key(item) === key)
+      const conn = (allServers() ?? []).find((item) => ServerConnection.key(item) === key)
       if (isExtraAgentIntegration(conn?.integration)) return conn.integration
       return projectsKey(key)
     }
@@ -294,9 +296,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     const check = (conn: ServerConnection.Any) => checkServerHealth(conn.http).then((x) => x.healthy)
 
-    const current: Accessor<ServerConnection.Any | undefined> = createMemo(
-      () => allServers().find((s) => ServerConnection.key(s) === state.active) ?? allServers()[0],
-    )
+    const current: Accessor<ServerConnection.Any | undefined> = createMemo(() => {
+      const servers = allServers() ?? []
+      return servers.find((s) => ServerConnection.key(s) === state.active) ?? servers[0]
+    })
     const domain = createMemo(() => domainFromIntegration(current()?.integration))
 
     const polls = new Map<ServerConnection.Key, { url: string; domain: DomainId; stop: () => void }>()
@@ -314,7 +317,7 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     })
 
     createEffect(() => {
-      const servers = allServers()
+      const servers = allServers() ?? []
       const byKey = new Map<ServerConnection.Key, { conn: ServerConnection.Any; domain: DomainId }>()
       for (const conn of servers) {
         const key = ServerConnection.key(conn)

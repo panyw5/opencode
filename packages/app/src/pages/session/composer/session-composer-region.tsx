@@ -7,9 +7,15 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { PromptInput } from "@/components/prompt-input"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
+import { useSDK } from "@/context/sdk"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
+import {
+  listBackgroundShells,
+  type BackgroundShellInfo,
+} from "@/pages/session/background-shell-api"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionSkippedQuestionsDialog } from "@/pages/session/composer/session-skipped-questions-dialog"
@@ -86,6 +92,101 @@ function formatChildAgentTime(value: number, locale: string): string | undefined
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value))
+}
+
+function backgroundShellStatusClass(value: string): string {
+  if (value === "completed") return "text-icon-success-base"
+  if (value === "running") return "text-icon-warning-base"
+  if (value === "stopped") return "text-text-weak"
+  return "text-icon-critical-base"
+}
+
+function SessionBackgroundShellMenu(props: {
+  entries: BackgroundShellInfo[]
+  loading: boolean
+  onRefresh: () => void
+}) {
+  const language = useLanguage()
+  const [open, setOpen] = createSignal(false)
+
+  createEffect(() => {
+    if (open()) props.onRefresh()
+  })
+
+  return (
+    <DropdownMenu open={open()} onOpenChange={setOpen} gutter={6} placement="top-start">
+      <DropdownMenu.Trigger
+        as={Button}
+        variant="ghost"
+        size="small"
+        icon="console"
+        class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
+        aria-label="查看背景shell"
+        data-testid="session-background-shell-menu-trigger"
+      >
+        <span>查看背景shell</span>
+        <Show when={props.entries.length > 0}>
+          <span class="text-11-medium text-text-weak">({props.entries.length})</span>
+        </Show>
+        <Icon name="chevron-down" size="small" class="text-icon-weak" />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          class="session-child-agent-scrollbar w-[420px] max-w-[calc(100vw-32px)]"
+          style={{
+            "max-height": "min(520px, calc(100dvh - 160px))",
+            "overflow-y": "auto",
+            "overscroll-behavior": "contain",
+            "scrollbar-gutter": "stable",
+          }}
+        >
+          <DropdownMenu.Group>
+            <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+              背景 shell
+            </DropdownMenu.GroupLabel>
+            <Show
+              when={props.entries.length > 0}
+              fallback={
+                <DropdownMenu.Item disabled>
+                  <DropdownMenu.ItemLabel class="text-13-regular text-text-weak">
+                    {props.loading ? language.t("prompt.loading") : "本会话暂无背景 shell"}
+                  </DropdownMenu.ItemLabel>
+                </DropdownMenu.Item>
+              }
+            >
+              <For each={props.entries}>
+                {(entry) => {
+                  const time = () => formatChildAgentTime(entry.endedAt ?? entry.startedAt, language.intl())
+                  const status = () =>
+                    entry.status === "error" && typeof entry.exitCode === "number"
+                      ? `error ${entry.exitCode}`
+                      : entry.status
+
+                  return (
+                    <DropdownMenu.Item class="min-w-0" closeOnSelect={false}>
+                      <div class="min-w-0 flex flex-col gap-1">
+                        <DropdownMenu.ItemLabel class="truncate text-13-medium text-text-strong">
+                          {entry.description || entry.command}
+                        </DropdownMenu.ItemLabel>
+                        <DropdownMenu.ItemDescription class="truncate text-11-regular text-text-weak">
+                          <span class={`font-medium ${backgroundShellStatusClass(entry.status)}`}>{status()}</span>
+                          <span> - </span>
+                          <span>{time()}</span>
+                          <span> - </span>
+                          <span>{entry.id}</span>
+                        </DropdownMenu.ItemDescription>
+                        <div class="truncate font-mono text-11-regular text-text-weak">{entry.command}</div>
+                      </div>
+                    </DropdownMenu.Item>
+                  )
+                }}
+              </For>
+            </Show>
+          </DropdownMenu.Group>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
+  )
 }
 
 function SessionChildAgentMenu(props: {
@@ -289,6 +390,8 @@ export function SessionComposerRegion(props: {
   const prompt = usePrompt()
   const language = useLanguage()
   const dialog = useDialog()
+  const sdk = useSDK()
+  const platform = usePlatform()
   const route = useSessionKey()
 
   const handoffPrompt = createMemo(() => getSessionHandoff(route.sessionKey())?.prompt)
@@ -317,8 +420,11 @@ export function SessionComposerRegion(props: {
   })
   const [heldQuestion, setHeldQuestion] = createSignal<QuestionRequest | undefined>()
   const [heldPermission, setHeldPermission] = createSignal<PermissionRequest | undefined>()
+  const [backgroundShells, setBackgroundShells] = createSignal<BackgroundShellInfo[]>([])
+  const [backgroundShellsLoading, setBackgroundShellsLoading] = createSignal(false)
   let timer: number | undefined
   let frame: number | undefined
+  let backgroundRequest = 0
 
   createEffect(() => {
     const next = props.state.questionRequest()
@@ -375,8 +481,49 @@ export function SessionComposerRegion(props: {
     return { entries: props.childAgents ?? [], onOpen }
   })
   const showPromptToolbar = createMemo(
-    () => (childAgentMenu()?.entries.length ?? 0) > 0 || skippedQuestionCount() > 0,
+    () => !!route.params.id || (childAgentMenu()?.entries.length ?? 0) > 0 || skippedQuestionCount() > 0,
   )
+
+  const refreshBackgroundShells = () => {
+    const sessionID = route.params.id
+    if (!sessionID) {
+      setBackgroundShells([])
+      return
+    }
+    const request = ++backgroundRequest
+    setBackgroundShellsLoading(true)
+    void listBackgroundShells({ sdk, platform, sessionID })
+      .then((items) => {
+        if (request !== backgroundRequest) return
+        setBackgroundShells(items)
+      })
+      .catch(() => {
+        if (request !== backgroundRequest) return
+        setBackgroundShells([])
+      })
+      .finally(() => {
+        if (request === backgroundRequest) setBackgroundShellsLoading(false)
+      })
+  }
+
+  createEffect(() => {
+    route.params.id
+    sdk.directory
+    refreshBackgroundShells()
+  })
+
+  createEffect(() => {
+    const handler = () => refreshBackgroundShells()
+    const event = sdk.event as any
+    const offCreated = event.on("background.shell.created", handler)
+    const offUpdated = event.on("background.shell.updated", handler)
+    const offExited = event.on("background.shell.exited", handler)
+    onCleanup(() => {
+      offCreated?.()
+      offUpdated?.()
+      offExited?.()
+    })
+  })
 
   const openSkippedQuestions = () => {
     dialog.show(() => (
@@ -468,9 +615,16 @@ export function SessionComposerRegion(props: {
           >
             <Show when={showPromptToolbar()}>
               <div class="mb-2 flex items-center gap-2">
-                <div class="min-w-0 flex-1">
+                <div class="min-w-0 flex flex-1 items-center gap-2">
                   <Show when={childAgentMenu()} keyed>
                     {(menu) => <SessionChildAgentMenu entries={menu.entries} onOpen={menu.onOpen} />}
+                  </Show>
+                  <Show when={route.params.id}>
+                    <SessionBackgroundShellMenu
+                      entries={backgroundShells()}
+                      loading={backgroundShellsLoading()}
+                      onRefresh={refreshBackgroundShells}
+                    />
                   </Show>
                 </div>
                 <Show when={skippedQuestionCount() > 0}>

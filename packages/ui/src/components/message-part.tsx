@@ -254,6 +254,15 @@ export interface MessageProps {
   markdownMath?: "full" | "defer"
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
+  onBackgroundShell?: (input: {
+    sessionID: string
+    messageID?: string
+    callID?: string
+    jobId?: string
+    command: string
+    cwd?: string
+    description?: string
+  }) => Promise<void> | void
 }
 
 export type SessionAction = (input: { sessionID: string; messageID: string }) => Promise<void> | void
@@ -277,6 +286,7 @@ export interface MessagePartProps {
   markdownMath?: "full" | "defer"
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
+  onBackgroundShell?: MessageProps["onBackgroundShell"]
 }
 
 export type PartComponent = Component<MessagePartProps>
@@ -726,6 +736,7 @@ export function AssistantParts(props: {
   markdownMath?: "full" | "defer"
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
+  onBackgroundShell?: MessageProps["onBackgroundShell"]
 }) {
   const data = useData()
   const emptyParts: PartType[] = []
@@ -817,6 +828,7 @@ export function AssistantParts(props: {
                   markdownMath={props.markdownMath}
                   markdownStage={props.markdownStage}
                   onMarkdownStage={props.onMarkdownStage}
+                  onBackgroundShell={props.onBackgroundShell}
                 />
               )}
             </Show>
@@ -937,6 +949,7 @@ export function Message(props: MessageProps) {
             markdownMath={props.markdownMath}
             markdownStage={props.markdownStage}
             onMarkdownStage={props.onMarkdownStage}
+            onBackgroundShell={props.onBackgroundShell}
           />
         )}
       </Match>
@@ -954,6 +967,7 @@ export function Message(props: MessageProps) {
             markdownMath={props.markdownMath}
             markdownStage={props.markdownStage}
             onMarkdownStage={props.onMarkdownStage}
+            onBackgroundShell={props.onBackgroundShell}
           />
         )}
       </Match>
@@ -973,6 +987,7 @@ export function AssistantMessageDisplay(props: {
   markdownMath?: "full" | "defer"
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
+  onBackgroundShell?: MessageProps["onBackgroundShell"]
 }) {
   const grouped = createMemo(() => {
     const keys: string[] = []
@@ -1050,6 +1065,7 @@ export function AssistantMessageDisplay(props: {
                   markdownMath={props.markdownMath}
                   markdownStage={props.markdownStage}
                   onMarkdownStage={props.onMarkdownStage}
+                  onBackgroundShell={props.onBackgroundShell}
                 />
               )}
             </Show>
@@ -1171,6 +1187,7 @@ export function UserMessageDisplay(props: {
   markdownMath?: "full" | "defer"
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
+  onBackgroundShell?: MessageProps["onBackgroundShell"]
 }) {
   const data = useData()
   const dialog = useDialog()
@@ -1565,6 +1582,7 @@ export function UserMessageDisplay(props: {
                 markdownMath={props.markdownMath}
                 markdownStage={props.markdownStage}
                 onMarkdownStage={props.onMarkdownStage}
+                onBackgroundShell={props.onBackgroundShell}
               />
             )}
           </For>
@@ -1593,6 +1611,7 @@ export function Part(props: MessagePartProps) {
         markdownMath={props.markdownMath}
         markdownStage={props.markdownStage}
         onMarkdownStage={props.onMarkdownStage}
+        onBackgroundShell={props.onBackgroundShell}
       />
     </Show>
   )
@@ -1614,6 +1633,7 @@ export interface ToolProps {
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
   questionHandoff?: QuestionHandoff
+  onBackgroundShell?: MessageProps["onBackgroundShell"]
 }
 
 export type ToolComponent = Component<ToolProps>
@@ -1780,6 +1800,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               markdownStage={props.markdownStage}
               onMarkdownStage={props.onMarkdownStage}
               questionHandoff={questionHandoff()}
+              onBackgroundShell={props.onBackgroundShell}
             />
           </Match>
         </Switch>
@@ -2152,6 +2173,7 @@ function ShellTool(props: ToolProps & { title: string }) {
     return line() ? `$ ${line()}${out ? "\n\n" + out : ""}` : out
   })
   const [copied, setCopied] = createSignal(false)
+  const [backgrounding, setBackgrounding] = createSignal(false)
 
   const handleCopy = async () => {
     const value = body()
@@ -2159,6 +2181,32 @@ function ShellTool(props: ToolProps & { title: string }) {
     await navigator.clipboard.writeText(value)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const canBackground = createMemo(
+    () => props.tool === "bash" && running() && !hook() && !!line() && typeof props.metadata.jobId === "string",
+  )
+
+  const handleBackground = async (event: MouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!canBackground() || backgrounding()) return
+    const command = line()
+    if (!command) return
+    setBackgrounding(true)
+    try {
+      await props.onBackgroundShell?.({
+        sessionID: props.part?.sessionID ?? "",
+        messageID: props.part?.messageID,
+        callID: props.part?.callID,
+        jobId: typeof props.metadata.jobId === "string" ? props.metadata.jobId : undefined,
+        command,
+        cwd: typeof props.input.workdir === "string" ? props.input.workdir : undefined,
+        description: text(props.input.description) ?? text(props.metadata.description),
+      })
+    } finally {
+      setBackgrounding(false)
+    }
   }
 
   return (
@@ -2189,6 +2237,19 @@ function ShellTool(props: ToolProps & { title: string }) {
               </span>
             </Show>
           </div>
+          <Show when={canBackground()}>
+            <div data-component="tool-action">
+              <button
+                type="button"
+                class="h-6 rounded-md border border-border-weak-base px-2 text-11-medium text-text-weak hover:text-text-strong disabled:opacity-60"
+                disabled={backgrounding()}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleBackground}
+              >
+                {backgrounding() ? "设置中" : "设为背景 shell"}
+              </button>
+            </div>
+          </Show>
         </div>
       }
     >

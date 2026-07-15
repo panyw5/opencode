@@ -36,6 +36,7 @@ import { SessionStatus } from "./status"
 import { LLM } from "./llm"
 import { Shell } from "@/shell/shell"
 import { ShellID } from "@/tool/shell/id"
+import { BackgroundShell } from "@/background/shell"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
@@ -62,6 +63,7 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { Question } from "@/question"
 import { LLMEvent } from "@opencode-ai/llm"
+import { TuiEvent } from "@/cli/cmd/tui/event"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1680,6 +1682,93 @@ export const layer = Layer.effect(
       return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
     })
 
+    const backgroundShellMessage = (info: BackgroundShell.Info) => {
+      const state = info.status === "completed" ? "completed" : "error"
+      const tag = state === "completed" ? "background_shell_result" : "background_shell_error"
+      const title =
+        state === "completed"
+          ? `Background shell completed: ${info.description ?? info.command}`
+          : `Background shell failed: ${info.description ?? info.command}`
+      return [
+        title,
+        `background_shell_id: ${info.id}`,
+        `pty_id: ${info.ptyID}`,
+        `state: ${state}`,
+        `exit_code: ${info.exitCode ?? ""}`,
+        `command: ${info.command}`,
+        `cwd: ${info.cwd}`,
+        "",
+        `<${tag}>`,
+        info.outputTail?.trim() || "(no output)",
+        `</${tag}>`,
+      ].join("\n")
+    }
+
+    const resumeWhenIdle: (input: {
+      sessionID: SessionID
+      userID: MessageID
+      state: "completed" | "error"
+      description: string
+    }) => Effect.Effect<void> = Effect.fn("SessionPrompt.resumeBackgroundShellWhenIdle")(function* (input) {
+      const latest = yield* sessions.findMessage(input.sessionID, (item) => item.info.role === "user").pipe(Effect.orDie)
+      if (Option.isNone(latest)) return
+      if (latest.value.info.id !== input.userID) return
+      const activeAssistant = yield* sessions
+        .findMessage(
+          input.sessionID,
+          (item) => item.info.role === "assistant" && typeof item.info.time.completed !== "number",
+        )
+        .pipe(Effect.orDie)
+      if ((yield* status.get(input.sessionID)).type !== "idle" || Option.isSome(activeAssistant)) {
+        yield* Effect.sleep("300 millis")
+        return yield* resumeWhenIdle(input)
+      }
+      yield* bus.publish(TuiEvent.ToastShow, {
+        title: input.state === "completed" ? "Background shell complete" : "Background shell failed",
+        message:
+          input.state === "completed"
+            ? `Background shell "${input.description}" finished. Resuming the main thread.`
+            : `Background shell "${input.description}" failed. Resuming the main thread.`,
+        variant: input.state === "completed" ? "success" : "error",
+        duration: 5000,
+      })
+      yield* loop({ sessionID: input.sessionID }).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+    })
+
+    const injectBackgroundShellExit = Effect.fn("SessionPrompt.injectBackgroundShellExit")(function* (
+      info: BackgroundShell.Info,
+    ) {
+      if (!info.background) return
+      if (info.status === "stopped") return
+      const parent = yield* sessions.get(info.sessionID).pipe(Effect.option)
+      if (Option.isNone(parent)) return
+      const message = yield* prompt({
+        sessionID: info.sessionID,
+        noReply: true,
+        agent: parent.value.agent,
+        parts: [
+          {
+            type: "text",
+            synthetic: true,
+            text: backgroundShellMessage(info),
+          },
+        ],
+      })
+      const state = info.status === "completed" ? "completed" : "error"
+      yield* resumeWhenIdle({
+        sessionID: info.sessionID,
+        userID: message.info.id,
+        state,
+        description: info.description ?? info.command,
+      }).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+    })
+
+    const backgroundShellEvents = yield* bus.subscribe(BackgroundShell.Event.Exited)
+    yield* Stream.runForEach(backgroundShellEvents, (event) => injectBackgroundShellExit(event.properties.info)).pipe(
+      Effect.ignore,
+      Effect.forkIn(scope),
+    )
+
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
@@ -1872,6 +1961,7 @@ export const defaultLayer = Layer.suspend(() =>
         LLM.defaultLayer,
         Reference.defaultLayer,
         Question.defaultLayer,
+        BackgroundShell.defaultLayer,
         Bus.layer,
         CrossSpawnSpawner.defaultLayer,
         RuntimeFlags.defaultLayer,

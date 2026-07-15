@@ -197,6 +197,7 @@ export function SessionTurn(
     markdownMath?: "full" | "defer"
     markdownStage?: MarkdownStage
     onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
+    onBackgroundShell?: import("./message-part").MessageProps["onBackgroundShell"]
     active?: boolean
     status?: SessionStatus
     onUserInteracted?: () => void
@@ -544,6 +545,7 @@ export function SessionTurn(
                     markdownMath={props.markdownMath}
                     markdownStage={props.markdownStage}
                     onMarkdownStage={props.onMarkdownStage}
+                    onBackgroundShell={props.onBackgroundShell}
                   />
                 </div>
                 <Show when={divider()}>
@@ -564,6 +566,7 @@ export function SessionTurn(
                         markdownMath={props.markdownMath}
                         markdownStage={props.markdownStage}
                         onMarkdownStage={props.onMarkdownStage}
+                        onBackgroundShell={props.onBackgroundShell}
                       />
                     </div>
                   )}
@@ -586,6 +589,7 @@ export function SessionTurn(
                       markdownMath={props.markdownMath}
                       markdownStage={props.markdownStage}
                       onMarkdownStage={props.onMarkdownStage}
+                      onBackgroundShell={props.onBackgroundShell}
                     />
                   </div>
                 </Show>

@@ -15,6 +15,7 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Shell } from "@/shell/shell"
 import { ShellID } from "./shell/id"
+import { BackgroundShell } from "@/background/shell"
 
 import * as Truncate from "./truncate"
 import { Plugin } from "@/plugin"
@@ -340,6 +341,7 @@ export const ShellTool = Tool.define(
     const trunc = yield* Truncate.Service
     const plugin = yield* Plugin.Service
     const flags = yield* RuntimeFlags.Service
+    const backgroundShell = yield* BackgroundShell.Service
     const defaultTimeout = flags.bashDefaultTimeoutMs ?? 2 * 60 * 1000
 
     const cygpath = Effect.fn("ShellTool.cygpath")(function* (shell: string, text: string) {
@@ -418,6 +420,148 @@ export const ShellTool = Tool.define(
       return {
         ...process.env,
         ...extra.env,
+      }
+    })
+
+    function backgroundOutput(info: BackgroundShell.Info) {
+      return [
+        `background_shell_id: ${info.id}`,
+        `pty_id: ${info.ptyID}`,
+        "state: running",
+        "",
+        "<background_shell>",
+        "Background shell started. Continue other work; OpenCode will notify you when it completes or fails.",
+        "</background_shell>",
+      ].join("\n")
+    }
+
+    function sentToBackgroundOutput(info: BackgroundShell.Info) {
+      return [
+        `background_shell_id: ${info.id}`,
+        `pty_id: ${info.ptyID}`,
+        "state: running",
+        "",
+        "<background_shell>",
+        "Shell command is now running in the background. Continue other work; OpenCode will notify you when it completes or fails.",
+        "</background_shell>",
+      ].join("\n")
+    }
+
+    function metadata(info: BackgroundShell.Info, description: string, output: string) {
+      return {
+        output,
+        exit: info.exitCode ?? null,
+        description,
+        truncated: false,
+        background: info.background,
+        jobId: info.id,
+        ptyId: info.ptyID,
+        status: info.status,
+      }
+    }
+
+    function cleanEnv(env: NodeJS.ProcessEnv) {
+      return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
+    }
+
+    const runSupervised = Effect.fn("ShellTool.runSupervised")(function* (
+      input: {
+        command: string
+        cwd: string
+        env: NodeJS.ProcessEnv
+        timeout: number
+        description: string
+        background: boolean
+      },
+      ctx: Tool.Context,
+    ) {
+      let latest = yield* backgroundShell.create({
+        sessionID: ctx.sessionID,
+        messageID: ctx.messageID,
+        callID: ctx.callID,
+        command: input.command,
+        cwd: input.cwd,
+        description: input.description,
+        env: cleanEnv(input.env),
+        background: input.background,
+      })
+
+      const update = Effect.fn("ShellTool.updateSupervisedMetadata")(function* (info: BackgroundShell.Info) {
+        latest = info
+        yield* ctx.metadata({
+          title: input.description,
+          metadata: metadata(info, input.description, info.outputTail ?? ""),
+        })
+      })
+
+      yield* update(latest)
+
+      if (input.background) {
+        const output = backgroundOutput(latest)
+        return {
+          title: input.description,
+          metadata: metadata(latest, input.description, output),
+          output,
+        }
+      }
+
+      const poll: Effect.Effect<void> = Effect.gen(function* () {
+        while (true) {
+          yield* Effect.sleep("300 millis")
+          const info = yield* backgroundShell.get(latest.id)
+          if (info) yield* update(info)
+        }
+      })
+
+      const abort = Effect.callback<void>((resume) => {
+        if (ctx.abort.aborted) return resume(Effect.void)
+        const handler = () => resume(Effect.void)
+        ctx.abort.addEventListener("abort", handler, { once: true })
+        return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
+      })
+
+      const result = yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* Effect.forkScoped(poll)
+          return yield* Effect.raceAll([
+            backgroundShell.wait(latest.id).pipe(Effect.map((value) => ({ kind: "wait" as const, value }))),
+            abort.pipe(Effect.map(() => ({ kind: "abort" as const }))),
+            Effect.sleep(`${input.timeout + 100} millis`).pipe(Effect.map(() => ({ kind: "timeout" as const }))),
+          ])
+        }),
+      )
+
+      if (result.kind === "abort" || result.kind === "timeout") {
+        const stopped = yield* backgroundShell.stop(latest.id)
+        if (stopped) latest = stopped
+        const note =
+          result.kind === "abort"
+            ? "User aborted the command"
+            : `shell tool terminated command after exceeding timeout ${input.timeout} ms. If this command is expected to take longer, run it with background=true or send it to background before the timeout.`
+        const output = `${latest.outputTail || "(no output)"}\n\n<shell_metadata>\n${note}\n</shell_metadata>`
+        return {
+          title: input.description,
+          metadata: metadata(latest, input.description, output),
+          output,
+        }
+      }
+
+      if (result.value.backgrounded) {
+        latest = result.value.info ?? latest
+        const output = sentToBackgroundOutput(latest)
+        return {
+          title: input.description,
+          metadata: metadata(latest, input.description, output),
+          output,
+        }
+      }
+
+      latest = result.value.info ?? latest
+      const output = latest.outputTail || "(no output)"
+      return {
+        title: input.description,
+        metadata: metadata(latest, input.description, output),
+        output,
       }
     })
 
@@ -618,6 +762,7 @@ export const ShellTool = Tool.define(
               }
               const timeout = params.timeout ?? defaultTimeout
               const ps = Shell.ps(shell)
+              const env = yield* shellEnv(ctx, cwd)
               yield* Effect.scoped(
                 Effect.gen(function* () {
                   const tree = yield* Effect.acquireRelease(parse(params.command, ps), (tree) =>
@@ -629,14 +774,14 @@ export const ShellTool = Tool.define(
                 }),
               )
 
-              return yield* run(
+              return yield* runSupervised(
                 {
-                  shell,
                   command: params.command,
                   cwd,
-                  env: yield* shellEnv(ctx, cwd),
+                  env,
                   timeout,
                   description: params.description,
+                  background: params.background === true,
                 },
                 ctx,
               )
