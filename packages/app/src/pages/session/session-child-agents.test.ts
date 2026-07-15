@@ -48,6 +48,7 @@ const task = (input: {
   agent: string
   started: number
   background?: boolean
+  taskID?: string
 }) =>
   ({
     id: input.id,
@@ -61,6 +62,7 @@ const task = (input: {
       input: {
         description: input.description,
         subagent_type: input.agent,
+        ...(input.taskID ? { task_id: input.taskID } : {}),
       },
       output: "",
       title: input.description,
@@ -114,7 +116,9 @@ describe("collectSessionChildAgentEntries", () => {
     })
 
     expect(entries.map((entry) => entry.sessionID)).toEqual(["ses_early", "ses_late"])
-    expect(entries.map((entry) => entry.title)).toEqual(["Early child", "Late child"])
+    expect(entries.map((entry) => entry.title)).toEqual(["#1 Early child", "#2 Late child"])
+    expect(entries.map((entry) => entry.index)).toEqual([1, 2])
+    expect(entries.map((entry) => entry.resume)).toEqual([false, false])
   })
 
   test("adds direct child sessions that are not present in loaded tool parts", () => {
@@ -131,10 +135,12 @@ describe("collectSessionChildAgentEntries", () => {
       {
         id: "session:ses_child",
         sessionID: "ses_child",
-        title: "Only child",
+        title: "#1 Only child",
         agent: "general",
         created: 50,
         usage: "not used",
+        index: 1,
+        resume: false,
       },
     ])
   })
@@ -164,6 +170,52 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries[0]?.id).toBe("tool:msg_1:prt_1:ses_child")
     expect(entries[0]?.status).toBe("completed")
     expect(entries[0]?.usage).toBeUndefined()
+    expect(entries[0]?.title).toBe("#1 Inspect bug")
+    expect(entries[0]?.resume).toBe(false)
+  })
+
+  test("marks resumed task calls with the same session number and 续跑", () => {
+    const messages = [
+      assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 }),
+      assistant({ id: "msg_2", sessionID: "ses_parent", created: 20 }),
+    ]
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages,
+      parts: {
+        msg_1: [
+          task({
+            id: "prt_1",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "计算 flavored 指标",
+            agent: "trellis-implement",
+            started: 25,
+          }),
+        ],
+        msg_2: [
+          task({
+            id: "prt_2",
+            sessionID: "ses_parent",
+            messageID: "msg_2",
+            childID: "ses_child",
+            description: "继续 flavored 计算",
+            agent: "trellis-implement",
+            started: 40,
+            taskID: "ses_child",
+          }),
+        ],
+      },
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", title: "计算 flavored 指标", created: 25 })],
+    })
+
+    expect(entries.map((entry) => entry.title)).toEqual([
+      "#1 计算 flavored 指标",
+      "#1 续跑 计算 flavored 指标",
+    ])
+    expect(entries.map((entry) => entry.resume)).toEqual([false, true])
+    expect(entries.map((entry) => entry.index)).toEqual([1, 1])
   })
 
   test("uses the task description as the title when the child session is not loaded", () => {
@@ -190,6 +242,8 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries[0]?.title).toBe("inspect bug")
     expect(entries[0]?.agent).toBe("Coder - Implementation Agent")
     expect(entries[0]?.status).toBe("completed")
+    expect(entries[0]?.index).toBeUndefined()
+    expect(entries[0]?.resume).toBe(false)
   })
 
   test("does not mark background task children completed without loaded child messages", () => {
@@ -265,10 +319,12 @@ describe("collectSessionChildAgentEntries", () => {
       {
         id: "session:ses_child",
         sessionID: "ses_child",
-        title: "Active child",
+        title: "#1 Active child",
         agent: "general",
         created: 50,
         status: "running",
+        index: 1,
+        resume: false,
       },
     ])
   })
@@ -360,10 +416,12 @@ describe("collectSessionChildAgentEntries", () => {
       {
         id: "session:ses_child",
         sessionID: "ses_child",
-        title: "Failed child",
+        title: "#1 Failed child",
         agent: "general",
         created: 50,
         status: "error",
+        index: 1,
+        resume: false,
       },
     ])
   })

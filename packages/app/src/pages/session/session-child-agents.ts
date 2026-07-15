@@ -1,4 +1,5 @@
 import type { Message, Part, Session, SessionStatus, ToolPart } from "@opencode-ai/sdk/v2/client"
+import { taskSessionBadge, taskSessionIndex } from "@opencode-ai/ui/message-task-session"
 import { working } from "./session-working"
 
 type SessionChildAgentStatus = Exclude<ToolPart["state"]["status"], "pending">
@@ -13,6 +14,8 @@ export type SessionChildAgentEntry = {
   created: number
   status?: SessionChildAgentStatus
   usage?: SessionChildAgentUsage
+  index?: number
+  resume?: boolean
 }
 
 type StatusForOptions = {
@@ -71,6 +74,7 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
   const sessionByID = new Map(childSessions.map((session) => [session.id, session] as const))
   const entries: Array<SessionChildAgentEntry & { order: number }> = []
   let order = 0
+  const seenSessionIDs = new Set<string>()
   const statusFor = (sessionID: string, options: StatusForOptions = {}): SessionChildAgentStatus | undefined => {
     const messages = input.messagesBySession?.[sessionID]
     const last = messages?.at(-1)
@@ -81,6 +85,16 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
     }
     if (options.toolStatus === "running" || options.toolStatus === "error") return options.toolStatus
     if (options.toolStatus === "completed" && options.background !== true) return "completed"
+  }
+  const indexFor = (sessionID: string): number | undefined =>
+    taskSessionIndex({
+      childSessionId: sessionID,
+      parentSessionId: input.sessionID,
+      sessions: input.sessions,
+    })
+  const displayTitle = (title: string, sessionID: string, resume?: boolean): string => {
+    const badge = taskSessionBadge(indexFor(sessionID), resume)
+    return badge ? `${badge} ${title}` : title
   }
 
   for (const message of input.messages) {
@@ -95,11 +109,14 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
       const description = text(part.state.input.description) ?? stateTitle(part.state)
       const agent = text(part.state.input.subagent_type) ?? text(part.state.input.agent)
       const session = sessionByID.get(sessionID)
+      const resume = text(part.state.input.task_id) !== undefined || seenSessionIDs.has(sessionID)
+      seenSessionIDs.add(sessionID)
+      const baseTitle = sessionTitle(session, description, agent)
 
       entries.push({
         id: `tool:${part.messageID}:${part.id}:${sessionID}`,
         sessionID,
-        title: sessionTitle(session, description, agent),
+        title: displayTitle(baseTitle, sessionID, resume),
         agent: agent ?? text(session?.agent),
         description,
         created: stateStart(part.state) ?? session?.time.created ?? message.time.created,
@@ -107,6 +124,8 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
           toolStatus: part.state.status === "pending" ? undefined : part.state.status,
           background: metadata?.background === true,
         }),
+        index: indexFor(sessionID),
+        resume,
         order,
       })
       order += 1
@@ -117,14 +136,17 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
   for (const session of childSessions) {
     if (sessionIDs.has(session.id)) continue
     const status = statusFor(session.id)
+    const baseTitle = sessionTitle(session, undefined, text(session.agent))
     entries.push({
       id: `session:${session.id}`,
       sessionID: session.id,
-      title: sessionTitle(session, undefined, text(session.agent)),
+      title: displayTitle(baseTitle, session.id),
       agent: text(session.agent),
       created: session.time.created,
       status,
       usage: status === "running" || status === "error" ? undefined : "not used",
+      index: indexFor(session.id),
+      resume: false,
       order,
     })
     order += 1

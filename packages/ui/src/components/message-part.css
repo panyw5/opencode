@@ -734,6 +734,21 @@
   }
 }
 
+[data-slot="task-session-badge"] {
+  color: var(--text-info-base);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.35em;
+}
+
+[data-slot="task-session-badge"][data-resume="true"] {
+  color: var(--text-warning-base);
+}
+
+[data-slot="task-session-agent"] {
+  color: inherit;
+}
+
 [data-slot="subagent-task-stat"] {
   flex-shrink: 0;
   min-width: 0;

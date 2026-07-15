@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { AssistantMessage, Part, ReasoningPart, Session, TextPart, ToolPart } from "@opencode-ai/sdk/v2"
 import { groupParts, reasoningPartStreaming } from "./message-part-order"
-import { resolveTaskChildSessionId } from "./message-task-session"
+import {
+  isTaskResume,
+  resolveTaskChildSessionId,
+  taskSessionIndex,
+  withTaskSessionIndex,
+} from "./message-task-session"
 import { skillText } from "./message-skill"
 import { activeStreamingAssistantMessageID, hold, streamsplit } from "./message-part-stream"
 
@@ -195,6 +200,54 @@ describe("message-part resolveTaskChildSessionId", () => {
         ],
       }),
     ).toBe("ses_child")
+  })
+})
+
+describe("message-part taskSessionIndex", () => {
+  const sessions = [
+    session({ id: "ses_a", parentID: "ses_parent", title: "first", created: 10 }),
+    session({ id: "ses_b", parentID: "ses_parent", title: "second", created: 20 }),
+    session({ id: "ses_other", parentID: "ses_elsewhere", title: "other", created: 15 }),
+  ]
+
+  test("numbers child sessions by creation order under the same parent", () => {
+    expect(
+      taskSessionIndex({
+        childSessionId: "ses_a",
+        parentSessionId: "ses_parent",
+        sessions,
+      }),
+    ).toBe(1)
+    expect(
+      taskSessionIndex({
+        childSessionId: "ses_b",
+        parentSessionId: "ses_parent",
+        sessions,
+      }),
+    ).toBe(2)
+  })
+
+  test("keeps the same number for every resume of the same child session", () => {
+    const first = taskSessionIndex({
+      childSessionId: "ses_b",
+      parentSessionId: "ses_parent",
+      sessions,
+    })
+    const resume = taskSessionIndex({
+      childSessionId: "ses_b",
+      parentSessionId: "ses_parent",
+      sessions,
+    })
+    expect(first).toBe(2)
+    expect(resume).toBe(first)
+  })
+
+  test("prefixes agent titles with the stable session index", () => {
+    expect(withTaskSessionIndex("Trellis-implement", 1)).toBe("#1 Trellis-implement")
+    expect(withTaskSessionIndex("Trellis-implement", 3, { resume: true })).toBe("#3 续跑 Trellis-implement")
+    expect(withTaskSessionIndex("Trellis-implement", undefined)).toBe("Trellis-implement")
+    expect(isTaskResume({ task_id: "ses_child" })).toBe(true)
+    expect(isTaskResume({ description: "fresh" })).toBe(false)
   })
 })
 

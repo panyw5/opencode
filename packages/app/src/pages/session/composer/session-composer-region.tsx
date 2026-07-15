@@ -96,8 +96,15 @@ function SessionChildAgentMenu(props: {
   let contentRef: HTMLDivElement | undefined
   let scrollTimer: number | undefined
   const [scrolling, setScrolling] = createSignal(false)
+  const badge = (entry: SessionChildAgentEntry): string | undefined => {
+    if (entry.index === undefined) return undefined
+    return entry.resume ? `#${entry.index} 续跑` : `#${entry.index}`
+  }
   const title = (entry: SessionChildAgentEntry): string => {
-    const cleaned = entry.title.replace(/\s+\(@[^)]*\s+subagent\)$/i, "").trim()
+    const cleaned = entry.title
+      .replace(/^\s*#\d+(?:\s+续跑)?\s+/u, "")
+      .replace(/\s+\(@[^)]*\s+subagent\)$/i, "")
+      .trim()
     return cleaned || entry.title
   }
   const agent = (entry: SessionChildAgentEntry): string | undefined => {
@@ -181,6 +188,7 @@ function SessionChildAgentMenu(props: {
               </DropdownMenu.GroupLabel>
               <For each={props.entries}>
                 {(entry) => {
+                  const itemBadge = () => badge(entry)
                   const itemAgent = () => agent(entry)
                   const itemStatus = () => status(entry)
                   const itemTime = () => formatChildAgentTime(entry.created, language.intl())
@@ -194,6 +202,19 @@ function SessionChildAgentMenu(props: {
                     >
                       <div class="min-w-0 flex flex-col gap-0.5">
                         <DropdownMenu.ItemLabel class="truncate text-13-medium text-text-strong">
+                          <Show when={itemBadge()}>
+                            {(mark) => (
+                              <span
+                                class={
+                                  entry.resume
+                                    ? "mr-1 font-semibold text-text-warning-base"
+                                    : "mr-1 font-semibold text-text-info-base"
+                                }
+                              >
+                                {mark()}
+                              </span>
+                            )}
+                          </Show>
                           {title(entry)}
                         </DropdownMenu.ItemLabel>
                         <DropdownMenu.ItemDescription class="truncate text-11-regular text-text-weak">

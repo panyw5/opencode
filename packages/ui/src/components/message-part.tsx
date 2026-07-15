@@ -67,7 +67,12 @@ import {
   type PartGroup,
 } from "./message-part-order"
 import { activeStreamingAssistantMessageID } from "./message-part-stream"
-import { resolveTaskChildSessionId } from "./message-task-session"
+import {
+  isTaskResume,
+  resolveTaskChildSessionId,
+  taskSessionBadge,
+  taskSessionIndex,
+} from "./message-task-session"
 export type { PartGroup } from "./message-part-order"
 
 type ProviderSummary = {
@@ -2397,7 +2402,16 @@ ToolRegistry.register({
       if (typeof raw !== "string" || !raw) return undefined
       return raw[0]!.toUpperCase() + raw.slice(1)
     })
-    const title = createMemo(() => agentTitle(i18n, type()))
+    const sessionIndex = createMemo(() =>
+      taskSessionIndex({
+        childSessionId: childSessionId(),
+        parentSessionId: props.part?.sessionID,
+        sessions: data.store.session,
+      }),
+    )
+    const resume = createMemo(() => isTaskResume(props.input as Record<string, unknown>))
+    const badge = createMemo(() => taskSessionBadge(sessionIndex(), resume()))
+    const agentName = createMemo(() => agentTitle(i18n, type()))
     const subtitle = createMemo(() => {
       const value = props.input.description
       if (typeof value === "string" && value) return value
@@ -2492,8 +2506,15 @@ ToolRegistry.register({
       <div data-slot="basic-tool-tool-info-structured">
         <div data-slot="basic-tool-tool-info-main">
           <span data-slot="basic-tool-tool-title" class="capitalize agent-title">
-            <Show when={pending()} fallback={title()}>
-              <TextShimmer text={title()} />
+            <Show when={badge()}>
+              {(mark) => (
+                <span data-slot="task-session-badge" data-resume={resume() ? "true" : undefined}>
+                  {mark()}
+                </span>
+              )}
+            </Show>
+            <Show when={pending()} fallback={<span data-slot="task-session-agent">{agentName()}</span>}>
+              <TextShimmer text={agentName()} />
             </Show>
           </span>
           <Show when={subtitle()}>
