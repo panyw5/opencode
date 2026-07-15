@@ -72,6 +72,7 @@ type Active = {
 
 type State = {
   shells: Map<string, Active>
+  subscribed: boolean
 }
 
 export type WaitResult = {
@@ -113,7 +114,7 @@ export const layer = Layer.effect(
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("BackgroundShell.state")(function* () {
-        return { shells: new Map() }
+        return { shells: new Map(), subscribed: false }
       }),
     )
 
@@ -136,7 +137,35 @@ export const layer = Layer.effect(
       if (info.status !== "running") yield* bus.publish(Event.Exited, { info })
     })
 
+    const onPtyExited = Effect.fn("BackgroundShell.onPtyExited")(function* (event: {
+      properties: Schema.Schema.Type<(typeof Pty.Event.Exited)["properties"]>
+    }) {
+      const s = yield* InstanceState.get(state)
+      const match = Array.from(s.shells.values()).find((item) => item.info.ptyID === event.properties.id)
+      if (!match || match.info.status !== "running") return
+      const next = {
+        ...match.info,
+        status: event.properties.exitCode === 0 ? ("completed" as const) : ("error" as const),
+        exitCode: event.properties.exitCode,
+        endedAt: Date.now(),
+        outputTail: tail(event.properties.output),
+      }
+      log.info("background shell exited", { id: next.id, exitCode: next.exitCode })
+      match.info = next
+      yield* Deferred.succeed(match.done, copy(next)).pipe(Effect.ignore)
+      yield* publishUpdate(match)
+    })
+
+    const ensureSubscribed = Effect.fn("BackgroundShell.ensureSubscribed")(function* () {
+      const s = yield* InstanceState.get(state)
+      if (s.subscribed) return
+      s.subscribed = true
+      const stream = yield* Scope.provide(scope)(bus.subscribe(Pty.Event.Exited))
+      yield* Stream.runForEach(stream, onPtyExited).pipe(Effect.ignore, Effect.forkIn(scope))
+    })
+
     const list: Interface["list"] = Effect.fn("BackgroundShell.list")(function* (input) {
+      yield* ensureSubscribed()
       const s = yield* InstanceState.get(state)
       const items = Array.from(s.shells.values()).filter(
         (item) => item.info.background && (!input?.sessionID || item.info.sessionID === input.sessionID),
@@ -147,12 +176,14 @@ export const layer = Layer.effect(
     })
 
     const get: Interface["get"] = Effect.fn("BackgroundShell.get")(function* (id) {
+      yield* ensureSubscribed()
       const active = (yield* InstanceState.get(state)).shells.get(id)
       if (!active) return
       return copy(yield* refresh(active))
     })
 
     const create: Interface["create"] = Effect.fn("BackgroundShell.create")(function* (input) {
+      yield* ensureSubscribed()
       const ctx = yield* InstanceState.context
       const cfg = yield* config.get()
       const sh = Shell.acceptable(cfg.shell)
@@ -192,6 +223,7 @@ export const layer = Layer.effect(
     })
 
     const setBackground: Interface["setBackground"] = Effect.fn("BackgroundShell.setBackground")(function* (id) {
+      yield* ensureSubscribed()
       const active = (yield* InstanceState.get(state)).shells.get(id)
       if (!active) return
       if (active.info.background || active.info.status !== "running") return copy(active.info)
@@ -208,6 +240,7 @@ export const layer = Layer.effect(
     })
 
     const wait: Interface["wait"] = Effect.fn("BackgroundShell.wait")(function* (id) {
+      yield* ensureSubscribed()
       const active = (yield* InstanceState.get(state)).shells.get(id)
       if (!active) return { backgrounded: false }
       if (active.info.status !== "running") return { info: copy(active.info), backgrounded: false }
@@ -219,6 +252,7 @@ export const layer = Layer.effect(
     })
 
     const stop: Interface["stop"] = Effect.fn("BackgroundShell.stop")(function* (id) {
+      yield* ensureSubscribed()
       const s = yield* InstanceState.get(state)
       const active = s.shells.get(id)
       if (!active) return
@@ -236,27 +270,6 @@ export const layer = Layer.effect(
       }
       return copy(active.info)
     })
-
-    const stream = yield* bus.subscribe(Pty.Event.Exited)
-    yield* Stream.runForEach(
-      stream,
-      Effect.fn("BackgroundShell.onPtyExited")(function* (event) {
-        const s = yield* InstanceState.get(state)
-        const match = Array.from(s.shells.values()).find((item) => item.info.ptyID === event.properties.id)
-        if (!match || match.info.status !== "running") return
-        const next = {
-          ...match.info,
-          status: event.properties.exitCode === 0 ? ("completed" as const) : ("error" as const),
-          exitCode: event.properties.exitCode,
-          endedAt: Date.now(),
-          outputTail: tail(event.properties.output),
-        }
-        log.info("background shell exited", { id: next.id, exitCode: next.exitCode })
-        match.info = next
-        yield* Deferred.succeed(match.done, copy(next)).pipe(Effect.ignore)
-        yield* publishUpdate(match)
-      }),
-    ).pipe(Effect.ignore, Effect.forkIn(scope))
 
     return Service.of({ list, get, create, setBackground, wait, stop })
   }),
