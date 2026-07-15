@@ -635,7 +635,13 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
             <span data-slot="question-option-main">
               <span data-slot="option-label">{language.t("ui.messagePart.option.typeOwnAnswer")}</span>
               <textarea
-                ref={(el) => setTimeout(() => el.focus(), 0)}
+                ref={(el) =>
+                  setTimeout(() => {
+                    el.focus()
+                    el.style.height = "auto"
+                    el.style.height = `${el.scrollHeight}px`
+                  }, 0)
+                }
                 data-slot="question-custom-input"
                 placeholder={language.t("ui.question.custom.placeholder")}
                 value={input()}
@@ -654,6 +660,8 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 }}
                 onInput={(e) => {
                   customUpdate(e.currentTarget.value)
+                  e.currentTarget.style.height = "auto"
+                  e.currentTarget.style.height = `${e.currentTarget.scrollHeight}px`
                 }}
               />
               <PromptImageAttachments

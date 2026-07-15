@@ -1912,7 +1912,7 @@
     color: light-dark(#6f6f6f, var(--amber-darkalpha-10));
     min-width: 0;
     overflow-wrap: anywhere;
-    white-space: normal;
+    white-space: pre-wrap;
   }
 
   [data-slot="question-custom"] {

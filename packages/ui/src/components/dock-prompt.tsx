@@ -4,20 +4,53 @@ import { DockShell, DockTray } from "./dock-surface"
 
 const DURATION_MS = 280
 const EASING = "cubic-bezier(0.22, 1, 0.36, 1)"
+const panelGeneration = new WeakMap<HTMLElement, number>()
+
+function clearPanelAnimations(el: HTMLElement) {
+  for (const animation of el.getAnimations()) animation.cancel()
+}
+
+function settlePanel(el: HTMLElement, open: boolean) {
+  clearPanelAnimations(el)
+  if (open) {
+    el.style.height = "auto"
+    el.style.opacity = "1"
+    el.style.overflow = "visible"
+    el.style.pointerEvents = "auto"
+    return
+  }
+  el.style.height = "0px"
+  el.style.opacity = "0"
+  el.style.overflow = "hidden"
+  el.style.pointerEvents = "none"
+}
 
 function animatePanel(el: HTMLElement | undefined, open: boolean) {
   if (!el) return
 
-  for (const animation of el.getAnimations()) animation.cancel()
+  const generation = (panelGeneration.get(el) ?? 0) + 1
+  panelGeneration.set(el, generation)
+  clearPanelAnimations(el)
 
   el.style.overflow = "hidden"
   el.style.pointerEvents = open ? "auto" : "none"
 
+  const finish = (animation: Animation, nextOpen: boolean) => {
+    void animation.finished
+      .then(() => {
+        if (!el.isConnected || panelGeneration.get(el) !== generation) return
+        try {
+          animation.commitStyles()
+        } catch {}
+        settlePanel(el, nextOpen)
+      })
+      .catch(() => undefined)
+  }
+
   if (!open) {
     const start = Math.max(el.getBoundingClientRect().height, el.scrollHeight)
     if (start <= 0) {
-      el.style.height = "0px"
-      el.style.opacity = "0"
+      settlePanel(el, false)
       return
     }
     el.style.height = `${start}px`
@@ -30,20 +63,15 @@ function animatePanel(el: HTMLElement | undefined, open: boolean) {
       ],
       { duration: DURATION_MS, easing: EASING, fill: "forwards" },
     )
-    void animation.finished
-      .then(() => {
-        if (!el.isConnected) return
-        el.style.height = "0px"
-        el.style.opacity = "0"
-      })
-      .catch(() => undefined)
+    finish(animation, false)
     return
   }
 
-  el.style.height = "0px"
+  el.style.height = "auto"
   el.style.opacity = "0"
-  void el.offsetHeight
   const end = Math.max(el.scrollHeight, 1)
+  el.style.height = "0px"
+  void el.offsetHeight
   const animation = el.animate(
     [
       { height: "0px", opacity: 0 },
@@ -51,14 +79,7 @@ function animatePanel(el: HTMLElement | undefined, open: boolean) {
     ],
     { duration: DURATION_MS, easing: EASING, fill: "forwards" },
   )
-  void animation.finished
-    .then(() => {
-      if (!el.isConnected) return
-      el.style.height = "auto"
-      el.style.opacity = "1"
-      el.style.overflow = "visible"
-    })
-    .catch(() => undefined)
+  finish(animation, true)
 }
 
 export function DockPrompt(props: {
