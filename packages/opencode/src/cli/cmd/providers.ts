@@ -10,7 +10,6 @@ import path from "path"
 import os from "os"
 import { Config } from "@/config/config"
 import { Global } from "@opencode-ai/core/global"
-import { Plugin } from "../../plugin"
 import type { Hooks } from "@opencode-ai/plugin"
 import { Process } from "@/util/process"
 import { errorMessage } from "@/util/error"
@@ -349,11 +348,10 @@ export const ProvidersLoginCommand = effectCmd({
     }
 
     const cfgSvc = yield* Config.Service
-    const pluginSvc = yield* Plugin.Service
     const modelsDev = yield* ModelsDev.Service
     yield* Effect.ignore(modelsDev.refresh(true))
 
-    const config = yield* cfgSvc.get()
+    const config = yield* cfgSvc.getGlobal()
 
     const disabled = new Set(config.disabled_providers ?? [])
     const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
@@ -363,7 +361,8 @@ export const ProvidersLoginCommand = effectCmd({
     for (const [key, value] of Object.entries(allProviders)) {
       if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) providers[key] = value
     }
-    const hooks = yield* pluginSvc.list()
+    // This command is instance-free, so project/plugin hooks are not loaded here.
+    const hooks: Hooks[] = []
 
     const priority: Record<string, number> = {
       opencode: 0,

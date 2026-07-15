@@ -60,6 +60,18 @@ import { BackgroundShell } from "@/background/shell"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 
+// For CLI/server entrypoints that intentionally run without a project InstanceRef.
+// Keep this layer free of services that perform InstanceState/Bus work at startup.
+export const NoInstanceLayer = Layer.mergeAll(
+  Npm.defaultLayer,
+  AppFileSystem.defaultLayer,
+  Auth.defaultLayer,
+  Account.defaultLayer,
+  Config.defaultLayer,
+  ModelsDev.defaultLayer,
+  RuntimeFlags.defaultLayer,
+).pipe(Layer.provideMerge(Observability.layer))
+
 export const AppLayer = Layer.mergeAll(
   Npm.defaultLayer,
   AppFileSystem.defaultLayer,
@@ -118,12 +130,33 @@ export const AppLayer = Layer.mergeAll(
   DataMigration.defaultLayer,
 ).pipe(Layer.provideMerge(InstanceLayer.layer), Layer.provideMerge(Observability.layer))
 
+const noInstanceRt = ManagedRuntime.make(NoInstanceLayer, { memoMap })
 const rt = ManagedRuntime.make(AppLayer, { memoMap })
 type Runtime = Pick<typeof rt, "runSync" | "runPromise" | "runPromiseExit" | "runFork" | "runCallback" | "dispose">
 
 /** Services provided by AppRuntime — i.e. what an Effect run via AppRuntime.runPromise can yield. */
 export type AppServices = ManagedRuntime.ManagedRuntime.Services<typeof rt>
+export type NoInstanceServices = ManagedRuntime.ManagedRuntime.Services<typeof noInstanceRt>
 const wrap = (effect: Parameters<typeof rt.runSync>[0]) => attach(effect as never) as never
+
+export const NoInstanceRuntime: Runtime = {
+  runSync(effect) {
+    return noInstanceRt.runSync(wrap(effect))
+  },
+  runPromise(effect, options) {
+    return noInstanceRt.runPromise(wrap(effect), options)
+  },
+  runPromiseExit(effect, options) {
+    return noInstanceRt.runPromiseExit(wrap(effect), options)
+  },
+  runFork(effect) {
+    return noInstanceRt.runFork(wrap(effect))
+  },
+  runCallback(effect) {
+    return noInstanceRt.runCallback(wrap(effect))
+  },
+  dispose: () => noInstanceRt.dispose(),
+}
 
 export const AppRuntime: Runtime = {
   runSync(effect) {

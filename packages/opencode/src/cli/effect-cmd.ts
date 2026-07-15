@@ -1,6 +1,6 @@
 import type { Argv } from "yargs"
 import { Effect, Schema } from "effect"
-import { AppRuntime, type AppServices } from "@/effect/app-runtime"
+import { AppRuntime, NoInstanceRuntime, type AppServices, type NoInstanceServices } from "@/effect/app-runtime"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceRef } from "@/effect/instance-ref"
 import { cmd, type WithDoubleDash } from "./cmd/cmd"
@@ -18,7 +18,7 @@ export class CliError extends Schema.TaggedErrorClass<CliError>()("CliError", {
 
 export const fail = (message: string, exitCode = 1) => Effect.fail(new CliError({ message, exitCode }))
 
-interface EffectCmdOpts<Args, A> {
+interface EffectCmdBase<Args> {
   command: string | readonly string[]
   aliases?: string | readonly string[]
   describe: string | false
@@ -47,7 +47,11 @@ interface EffectCmdOpts<Args, A> {
   instance?: boolean | ((args: Args) => boolean)
   /** Defaults to process.cwd(). Override for commands that take a directory positional. */
   directory?: (args: Args) => string
-  handler: (args: WithDoubleDash<Args>) => Effect.Effect<A, CliError, AppServices | InstanceStore.Service>
+}
+
+type EffectCmdOpts<Args, A, R> = EffectCmdBase<Args> & {
+  instance?: boolean | ((args: Args) => boolean)
+  handler: (args: WithDoubleDash<Args>) => Effect.Effect<A, CliError, R>
 }
 
 /**
@@ -67,7 +71,24 @@ interface EffectCmdOpts<Args, A> {
  * `effectCmd`, swapping the underlying `cmd()` factory for effect/cli's
  * `Command.make(...)` won't touch any handler bodies.
  */
-export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
+export function effectCmd<Args, A>(
+  opts: EffectCmdBase<Args> & {
+    instance: false
+    handler: (args: WithDoubleDash<Args>) => Effect.Effect<A, CliError, NoInstanceServices>
+  },
+): ReturnType<typeof cmd<{}, Args>>
+export function effectCmd<Args, A>(
+  opts: EffectCmdBase<Args> & {
+    instance?: true | ((args: Args) => boolean)
+    handler: (
+      args: WithDoubleDash<Args>,
+    ) => Effect.Effect<A, CliError, AppServices | NoInstanceServices | InstanceStore.Service>
+  },
+): ReturnType<typeof cmd<{}, Args>>
+export function effectCmd<Args, A>(
+  opts: EffectCmdOpts<Args, A, AppServices | NoInstanceServices | InstanceStore.Service>,
+) {
+  return (
   cmd<{}, Args>({
     command: opts.command,
     aliases: opts.aliases,
@@ -78,7 +99,7 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
       const args = rawArgs as unknown as WithDoubleDash<Args>
       const useInstance = typeof opts.instance === "function" ? opts.instance(args) : opts.instance !== false
       if (!useInstance) {
-        await AppRuntime.runPromise(opts.handler(args))
+        await NoInstanceRuntime.runPromise(opts.handler(args) as Effect.Effect<A, CliError, NoInstanceServices>)
         return
       }
       const directory = opts.directory?.(args) ?? process.cwd()
@@ -92,3 +113,5 @@ export const effectCmd = <Args, A>(opts: EffectCmdOpts<Args, A>) =>
       }
     },
   })
+  )
+}
