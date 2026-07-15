@@ -1354,6 +1354,7 @@ export const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
+      yield* ensureBackgroundShellSubscription()
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       if (session.time.archived) {
         yield* elog.warn("prompt called on archived session — returning last assistant", {
@@ -1679,6 +1680,7 @@ export const layer = Layer.effect(
     const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
       input: LoopInput,
     ) {
+      yield* ensureBackgroundShellSubscription()
       return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
     })
 
@@ -1763,20 +1765,29 @@ export const layer = Layer.effect(
       }).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
     })
 
-    const backgroundShellEvents = yield* bus.subscribe(BackgroundShell.Event.Exited)
-    yield* Stream.runForEach(backgroundShellEvents, (event) => injectBackgroundShellExit(event.properties.info)).pipe(
-      Effect.ignore,
-      Effect.forkIn(scope),
-    )
+    const backgroundShellSubscriptions = new Set<string>()
+    const ensureBackgroundShellSubscription = Effect.fn("SessionPrompt.ensureBackgroundShellSubscription")(function* () {
+      const ctx = yield* InstanceState.context
+      if (backgroundShellSubscriptions.has(ctx.directory)) return
+      backgroundShellSubscriptions.add(ctx.directory)
+      const backgroundShellEvents = yield* Scope.provide(scope)(bus.subscribe(BackgroundShell.Event.Exited))
+      yield* Stream.runForEach(backgroundShellEvents, (event) => injectBackgroundShellExit(event.properties.info)).pipe(
+        Effect.ignore,
+        Effect.ensuring(Effect.sync(() => backgroundShellSubscriptions.delete(ctx.directory))),
+        Effect.forkIn(scope),
+      )
+    })
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
+      yield* ensureBackgroundShellSubscription()
       const ready = yield* Latch.make()
       return yield* state.startShell(input.sessionID, lastAssistant(input.sessionID), shellImpl(input, ready), ready)
     })
 
     const command = Effect.fn("SessionPrompt.command")(function* (input: CommandInput) {
+      yield* ensureBackgroundShellSubscription()
       yield* elog.info("command", { sessionID: input.sessionID, command: input.command, agent: input.agent })
       const cmd = yield* commands.get(input.command)
       if (!cmd) {
