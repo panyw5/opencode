@@ -674,30 +674,18 @@ html[data-theme="arc"] [data-action="project-switch"] [data-component="avatar"] 
   color: #ffffff;
 }
 
-/* Unloaded projects: replace the per-project rail-hue tile with a
-   neutral gray placeholder so the user can tell at a glance which
+/* Unloaded projects: replace the per-project rail-hue tile with the
+   stronger background surface so the user can tell at a glance which
    projects haven't synced yet. The :has() selector reads the
    `data-loaded="false"` attribute that ProjectIcon writes on its
    wrapper while `globalSync.loaded(dir)` is still false. */
 html[data-theme="arc"] [data-action="project-switch"]:has([data-loaded="false"]) {
-  background: #6c6772 !important;
-}
-
-html[data-platform="desktop"][data-theme="arc"][data-color-scheme="light"]
-  [data-action="project-switch"]:has([data-loaded="false"]) {
   background: var(--background-stronger) !important;
 }
 
-/* Mute the letter on the gray placeholder so it reads as "pending"
-   rather than "active". Pure white on gray competes with the colored
-   loaded tiles for visual weight; a 60%-opacity white sits back. */
+/* Mute the letter on the placeholder so it reads as "pending"
+   rather than "active" while retaining contrast on the surface. */
 html[data-theme="arc"] [data-action="project-switch"]:has([data-loaded="false"]) [data-component="avatar"] {
-  color: rgba(255, 255, 255, 0.55);
-}
-
-html[data-platform="desktop"][data-theme="arc"][data-color-scheme="light"]
-  [data-action="project-switch"]:has([data-loaded="false"])
-  [data-component="avatar"] {
   color: var(--text-weak);
 }
 
