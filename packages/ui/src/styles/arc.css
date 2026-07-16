@@ -20,12 +20,10 @@
 
 /* ─── Dark mode (default) ─── */
 html[data-theme="arc"] {
-  /* Canvas: unified with sidebar-card-bg so the rounded top-right corner
-     of the sidebar doesn't expose a mismatched darker canvas color
-     through the gap. Same approach as the light-mode fix: only the
-     main content pane reads as a distinct surface "floating" on the
-     chrome. */
-  --canvas-base: #4a3d47;
+  /* Canvas: the main pane's top-left corner exposes this surface. Match
+     it to the conversation list, while the nav container handles its
+     separate titlebar-colored top-left cutout. */
+  --canvas-base: var(--color-border-weaker-base);
   --canvas-padding: 8px;
   --canvas-gap: 8px;
 
@@ -57,15 +55,9 @@ html[data-theme="arc"] {
 /* ─── Light mode ─── */
 @media (prefers-color-scheme: light) {
   html[data-theme="arc"] {
-    /* Canvas: unified with the sidebar mauve. The titlebar, the wedge
-       exposed by the sidebar's rounded right edge, the area above the
-       main pane's rounded top-left, and the rail/panel themselves are
-       all the same dusty mauve — matches Arc Browser's seamless chrome,
-       where only the main content pane reads as a distinct lighter
-       surface "floating" on the chrome. (Previously #ebe6f2 cream-violet,
-       which read as a contrasting backdrop and bled white-ish through
-       the rounded-corner gaps via the app-root's bg-background-base.) */
-    --canvas-base: #756b7e;
+    /* Keep the main pane's rounded-corner reveal aligned with the
+       conversation-list surface in light mode. */
+    --canvas-base: var(--color-border-weaker-base);
 
     /* Sidebar card background — Arc Browser's signature dusty mauve.
        Deliberately mid-tone (not light) so it reads as a distinct
@@ -252,16 +244,12 @@ html[data-theme="arc"] [data-component="sidebar-rail"] {
   border: none;
 }
 
-/* Session sidebar nav — same treatment, sits to the right of rail.
-   We deliberately drop the 1px hard `var(--border-weak-base)` right shadow
-   that other themes use as a vertical divider: on the rounded top-right
-   corner, that 1px shadow follows the curve and reads as a thin pale
-   halo against the dusty mauve canvas (the "white border" along the
-   curve). Sidebar mauve vs. main pane white already provides plenty of
-   visual separation without an explicit divider line. */
+/* Session sidebar nav — its background is exposed through the rounded
+   top-left edge of the inner panel, so it must match the titlebar rather
+   than the sidebar surface. */
 html[data-theme="arc"] [data-component="sidebar-nav-desktop"],
 html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
-  background-color: var(--sidebar-card-bg);
+  background-color: var(--border-strong-base);
   border-top-right-radius: var(--radius-xl);
   border-bottom-right-radius: var(--radius-xl);
   box-shadow: none;
