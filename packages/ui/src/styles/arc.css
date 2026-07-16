@@ -53,89 +53,49 @@ html[data-theme="arc"] {
 }
 
 /* ─── Light mode ─── */
-@media (prefers-color-scheme: light) {
-  html[data-theme="arc"] {
-    /* Keep the main pane's rounded-corner reveal aligned with the
-       conversation-list surface in light mode. */
-    --canvas-base: var(--color-border-weaker-base);
+html[data-theme="arc"][data-color-scheme="light"] {
+  /* Keep the main pane's rounded-corner reveal aligned with the
+     conversation-list surface in light mode. */
+  --canvas-base: var(--color-border-weaker-base);
 
-    /* Sidebar card background — Arc Browser's signature dusty mauve.
-       Deliberately mid-tone (not light) so it reads as a distinct
-       "panel identity" against the white main pane, mirroring the
-       dark-sidebar / light-main contrast Arc is known for. */
-    --sidebar-card-bg: #756b7e;
+  /* Sidebar card background — Arc Browser's signature dusty mauve.
+     Deliberately mid-tone (not light) so it reads as a distinct
+     "panel identity" against the white main pane, mirroring the
+     dark-sidebar / light-main contrast Arc is known for. */
+  --sidebar-card-bg: #756b7e;
 
-    /* Dock-prompt shell background — soft opaque white-violet */
-    --dock-shell-bg: color-mix(in srgb, #ffffff 84%, transparent);
+  /* Dock-prompt shell background — soft opaque white-violet */
+  --dock-shell-bg: color-mix(in srgb, #ffffff 84%, transparent);
 
-    /* Floating card elevation (subtle violet-tinged warm shadow) */
-    --card-elevation:
-      0 0 0 0.5px rgba(107, 70, 229, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(107, 70, 229, 0.08);
+  /* Floating card elevation (subtle violet-tinged warm shadow) */
+  --card-elevation:
+    0 0 0 0.5px rgba(107, 70, 229, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(107, 70, 229, 0.08);
 
-    /* Per-project rail hues — flat mid-saturated tones (no gradient).
-       The previous low-saturation cream pastels had too little
-       lightness/saturation contrast against #756B7E and all blurred
-       into "various washed creams". A flat fill (instead of a top-to-
-       bottom gradient) reads cleaner: the tile becomes a single
-       confident color block, and the white letter on top has the
-       best possible contrast across the whole face. */
-    --rail-hue-1: #7889b5; /* indigo */
-    --rail-hue-2: #87a886; /* sage */
-    --rail-hue-3: #c98ead; /* rose */
-    --rail-hue-4: #c5ad75; /* sand */
-    --rail-hue-5: #7caab5; /* sea */
-    --rail-hue-6: #a691c1; /* lavender */
-  }
+  /* Per-project rail hues — flat mid-saturated tones (no gradient).
+     The previous low-saturation cream pastels had too little
+     lightness/saturation contrast against #756B7E and all blurred
+     into "various washed creams". A flat fill (instead of a top-to-
+     bottom gradient) reads cleaner: the tile becomes a single
+     confident color block, and the white letter on top has the
+     best possible contrast across the whole face. */
+  --rail-hue-1: #7889b5; /* indigo */
+  --rail-hue-2: #87a886; /* sage */
+  --rail-hue-3: #c98ead; /* rose */
+  --rail-hue-4: #c5ad75; /* sand */
+  --rail-hue-5: #7caab5; /* sea */
+  --rail-hue-6: #a691c1; /* lavender */
+}
 
-  /* Within the dusty-mauve sidebar AND the canvas-tinted titlebar,
-     set high-contrast text/icon colors.
-
-     Why titlebar joins this group: arc.css makes the titlebar background
-     transparent (see "Titlebar sinks into the canvas" rule below), so the
-     header sits visually on top of the same #756B7E mauve canvas as the
-     sidebar. Without the override, ghost buttons in the titlebar inherit
-     the theme's --icon-base (#847CA0 lavender-gray), which contrasts the
-     mauve canvas at only 1.29:1 — well below WCAG's 3:1 minimum for
-     interactive icons. Inheriting the sidebar's lighter token bumps the
-     ratio to 4+ and unifies the chrome (titlebar reads as "the same
-     panel" as the sidebar, mirroring Arc Browser's seamless top chrome).
-
-     Two-pronged approach because Tailwind v4 captures --color-* tokens
-     at the @theme (root) level and inherits the resulting *static* value
-     into descendants — overriding the upstream --text-* alone won't
-     reach utilities like text-text-strong. So we override BOTH:
-       1. The raw --text-* / --icon-* tokens, so component CSS that
-          consumes them directly (Button, IconButton) gets the contrast.
-       2. The --color-text-* / --color-icon-* aliases at the same scope,
-          so Tailwind utilities (text-text-strong, text-icon-weak, …)
-          resolve against the local override instead of the inherited
-          root-resolved value. */
-  html[data-theme="arc"] [data-component="sidebar-rail"],
-  html[data-theme="arc"] [data-component="sidebar-nav-desktop"],
-  html[data-theme="arc"] [data-component="sidebar-nav-mobile"],
-  html[data-theme="arc"] [data-component="sidebar-panel"],
-  html[data-theme="arc"] [data-component="titlebar"] {
-    --text-strong: #fbf6fb;
-    --text-base: #ece3ee;
-    --text-weak: #bcb0bf;
-    --icon-base: #ece3ee;
-    --icon-strong-base: #fbf6fb;
-    --icon-weak-base: #bcb0bf;
-
-    --color-text-strong: var(--text-strong);
-    --color-text-base: var(--text-base);
-    --color-text-weak: var(--text-weak);
-    --color-icon-base: var(--icon-base);
-    --color-icon-strong-base: var(--icon-strong-base);
-    --color-icon-weak-base: var(--icon-weak-base);
-
-    /* Tailwind also exposes plain text-icon-weak / text-icon-base as
-       utilities that compile to color: var(--color-icon-...). The
-       icon-* aliases are mirrored in @theme as --color-icon-weak etc.
-       (no -base suffix). Cover both shapes. */
-    --color-icon-weak: var(--icon-weak-base);
-
-    /* Mirror the session row hover bg onto the surface-base-hover /
+/* Keep Arc's sidebar surface treatment local. Text and icon tokens are not
+   overridden here: the conversation list uses the normal light-theme
+   semantic colors, while control interaction colors are scoped to buttons
+   below. This prevents chrome styling from changing session-title contrast. */
+html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-rail"],
+html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-nav-desktop"],
+html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-nav-mobile"],
+html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-panel"],
+html[data-theme="arc"][data-color-scheme="light"] [data-component="titlebar"] {
+  /* Mirror the session row hover bg onto the surface-base-hover /
        surface-raised-base-hover tokens, scoped to the sidebar. Without
        this, the ghost buttons inside the panel (new-session, bell-off,
        archive, workspace-trigger, load-more) hover-fill with the theme
@@ -146,14 +106,14 @@ html[data-theme="arc"] {
        icon-button.css via raw var()) and --color-surface-* (consumed
        by Tailwind utilities like hover:bg-surface-raised-base-hover)
        are overridden so it doesn't matter which path the button took. */
-    --surface-base-hover: #8b8294;
-    --color-surface-base-hover: #8b8294;
-    --surface-raised-base-hover: #8b8294;
-    --color-surface-raised-base-hover: #8b8294;
-    --surface-base-active: #7d7589;
-    --color-surface-base-active: #7d7589;
-    --surface-raised-base-active: #7d7589;
-    --color-surface-raised-base-active: #7d7589;
+  --surface-base-hover: #8b8294;
+  --color-surface-base-hover: #8b8294;
+  --surface-raised-base-hover: #8b8294;
+  --color-surface-raised-base-hover: #8b8294;
+  --surface-base-active: #7d7589;
+  --color-surface-base-active: #7d7589;
+  --surface-raised-base-active: #7d7589;
+  --color-surface-raised-base-active: #7d7589;
 
     /* Task cards inside the tasks panel: their bg/border tokens must
        resolve to semi-transparent whites so cards layer visibly on
@@ -169,36 +129,35 @@ html[data-theme="arc"] {
        the sidebar. (The titlebar block below sets a weaker 0.06
        value; this 0.10 wins for sidebar-panel descendants because
        specificity is equal but source order is later.) */
-    --background-base: rgba(255, 255, 255, 0.06);
-    --color-background-base: rgba(255, 255, 255, 0.06);
-    --background-stronger: rgba(255, 255, 255, 0.1);
-    --color-background-stronger: rgba(255, 255, 255, 0.1);
-    --surface-raised-base: rgba(255, 255, 255, 0.1);
-    --color-surface-raised-base: rgba(255, 255, 255, 0.1);
-    --surface-info-base: rgba(255, 255, 255, 0.18);
-    --color-surface-info-base: rgba(255, 255, 255, 0.18);
-    --border-weak-base: rgba(255, 255, 255, 0.14);
-    --color-border-weak-base: rgba(255, 255, 255, 0.14);
-  }
+  --background-base: rgba(255, 255, 255, 0.06);
+  --color-background-base: rgba(255, 255, 255, 0.06);
+  --background-stronger: rgba(255, 255, 255, 0.1);
+  --color-background-stronger: rgba(255, 255, 255, 0.1);
+  --surface-raised-base: rgba(255, 255, 255, 0.1);
+  --color-surface-raised-base: rgba(255, 255, 255, 0.1);
+  --surface-info-base: rgba(255, 255, 255, 0.18);
+  --color-surface-info-base: rgba(255, 255, 255, 0.18);
+  --border-weak-base: rgba(255, 255, 255, 0.14);
+  --color-border-weak-base: rgba(255, 255, 255, 0.14);
+}
 
-  html[data-theme="arc"] [data-component="titlebar"] {
-    --surface-raised-base: rgba(255, 255, 255, 0.06);
-    --color-surface-raised-base: rgba(255, 255, 255, 0.06);
-    --border-weak-base: transparent;
-    --color-border-weak-base: transparent;
-  }
+html[data-theme="arc"][data-color-scheme="light"] [data-component="titlebar"] {
+  --surface-raised-base: rgba(255, 255, 255, 0.06);
+  --color-surface-raised-base: rgba(255, 255, 255, 0.06);
+  --border-weak-base: transparent;
+  --color-border-weak-base: transparent;
+}
 
-  /* SidebarPanel: remove the light border separator (drew a hard line
+/* SidebarPanel: remove the light border separator (drew a hard line
      between rail and panel since both are now the same mauve color).
      Drop the panel's top-left radius entirely — the panel sits flush
      against the rail (same color), so any inward radius here just cuts
      a wedge of canvas-color through the unified sidebar surface. The
      outer wrapper [data-component="sidebar-nav-desktop"] still rounds
      the visible right edge against the canvas. */
-  html[data-theme="arc"] [data-component="sidebar-panel"] {
-    border: none !important;
-    border-top-left-radius: 0 !important;
-  }
+html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-panel"] {
+  border: none !important;
+  border-top-left-radius: 0 !important;
 }
 
 /* ───────────────────────────────────────────────────────────── */
@@ -286,11 +245,11 @@ html[data-theme="arc"] main {
    brighter sidebar surface. Scope-override with lighter values so
    secondary text and icons remain legible. Two-pronged: raw --token +
    --color-* alias, same as the light-mode sidebar overrides above. */
-html[data-theme="arc"] [data-component="sidebar-rail"],
-html[data-theme="arc"] [data-component="sidebar-nav-desktop"],
-html[data-theme="arc"] [data-component="sidebar-nav-mobile"],
-html[data-theme="arc"] [data-component="sidebar-panel"],
-html[data-theme="arc"] [data-component="titlebar"] {
+html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-rail"],
+html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-nav-desktop"],
+html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-nav-mobile"],
+html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-panel"],
+html[data-theme="arc"][data-color-scheme="dark"] [data-component="titlebar"] {
   --text-weak: #b5a8be;
   --color-text-weak: #b5a8be;
   --icon-weak-base: #b5a8be;
@@ -316,11 +275,59 @@ html[data-theme="arc"] [data-component="titlebar"] {
   --color-border-weak-base: rgba(255, 255, 255, 0.1);
 }
 
-html[data-theme="arc"] [data-component="titlebar"] {
+html[data-theme="arc"][data-color-scheme="dark"] [data-component="titlebar"] {
   --surface-raised-base: rgba(255, 255, 255, 0.04);
   --color-surface-raised-base: rgba(255, 255, 255, 0.04);
   --border-weak-base: transparent;
   --color-border-weak-base: transparent;
+}
+
+/* The app color scheme can differ from the OS preference. Scope the light
+   interaction palette to buttons so a dark system setting cannot make Arc's
+   light-mode controls inherit the sidebar's dark hover tokens. */
+html[data-theme="arc"][data-color-scheme="light"] :is(button, [data-component="button"], [data-component="icon-button"]) {
+  --surface-base-hover: #f0ecf2;
+  --color-surface-base-hover: #f0ecf2;
+  --surface-raised-base-hover: #f0ecf2;
+  --color-surface-raised-base-hover: #f0ecf2;
+  --surface-base-active: #e5dfe8;
+  --color-surface-base-active: #e5dfe8;
+  --surface-raised-base-active: #e5dfe8;
+  --color-surface-raised-base-active: #e5dfe8;
+  --button-secondary-hover: #f0ecf2;
+  --color-button-secondary-hover: #f0ecf2;
+  --button-ghost-hover: #f0ecf2;
+  --color-button-ghost-hover: #f0ecf2;
+  --button-ghost-hover2: #e5dfe8;
+  --color-button-ghost-hover2: #e5dfe8;
+  --icon-strong-hover: #302936;
+  --icon-strong-active: #241f29;
+}
+
+html[data-theme="arc"][data-color-scheme="light"]
+  :is([data-component="sidebar-rail"], [data-component="sidebar-nav-desktop"], [data-component="sidebar-nav-mobile"], [data-component="sidebar-panel"], [data-component="titlebar"])
+  :is(button, [data-component="button"], [data-component="icon-button"]) {
+  --surface-base-hover: #9f96a7;
+  --color-surface-base-hover: #9f96a7;
+  --surface-raised-base-hover: #9f96a7;
+  --color-surface-raised-base-hover: #9f96a7;
+  --surface-base-active: #918898;
+  --color-surface-base-active: #918898;
+  --surface-raised-base-active: #918898;
+  --color-surface-raised-base-active: #918898;
+  --button-secondary-hover: #9f96a7;
+  --color-button-secondary-hover: #9f96a7;
+  --button-ghost-hover: #9f96a7;
+  --color-button-ghost-hover: #9f96a7;
+  --button-ghost-hover2: #918898;
+  --color-button-ghost-hover2: #918898;
+}
+
+/* Task cards are clickable containers rather than buttons. Do not let them
+   inherit the sidebar button hover token, which is intentionally darker for
+   compact chrome controls. */
+html[data-theme="arc"][data-color-scheme="light"] [data-component="trellis-task-item"]:hover {
+  background-color: #e5dfe8;
 }
 
 /* Dock-prompt: sync radius with cards + override hardcoded translucent dark
@@ -470,10 +477,26 @@ html[data-theme="arc"] [data-component="select-content"] {
 }
 
 /* Tooltip — match the same softness, smaller radius proportional */
-html[data-theme="arc"] [data-component="tooltip-content"] {
+html[data-theme="arc"] [data-component="tooltip"] {
   border-radius: var(--radius-lg);
   backdrop-filter: blur(40px) saturate(180%);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
+}
+
+html[data-theme="arc"][data-color-scheme="light"] [data-component="tooltip"] {
+  background-color: #f7f3f8;
+  background: #f7f3f8;
+  border-color: #ddd4e0;
+  color: #3e3542;
+}
+
+/* Project names use a bespoke Portal label rather than Tooltip. Its
+   Tailwind background resolves to the default dark float token, so it
+   needs the same explicit light floating surface. */
+html[data-theme="arc"][data-color-scheme="light"] [data-component="project-rail-label"] {
+  background-color: #f7f3f8;
+  border-color: #ddd4e0;
+  color: #3e3542;
 }
 
 /* Dialog (command palette / settings dialogs) — even bigger,
@@ -490,11 +513,8 @@ html[data-theme="arc"] [data-component="dialog"] [data-slot="dialog-content"] {
     0 6px 14px -10px rgba(0, 0, 0, 0.35);
 }
 
-@media (prefers-color-scheme: light) {
-  html[data-theme="arc"] [data-component="dialog"] [data-slot="dialog-content"] {
-    background-color: rgba(255, 255, 255, 0.72);
-  }
-
+html[data-theme="arc"][data-color-scheme="light"] [data-component="dialog"] [data-slot="dialog-content"] {
+  background-color: rgba(255, 255, 255, 0.72);
 }
 
 /* Dialog overlay — gentle backdrop blur to push focus on the dialog */

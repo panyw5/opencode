@@ -346,7 +346,7 @@
   --avatar-text-lime: #5d770d;
   --text-stronger: #171717;
 
-  @media (prefers-color-scheme: dark) {
+  &[data-color-scheme="dark"] {
     color-scheme: dark;
     --text-mix-blend-mode: plus-lighter;
 

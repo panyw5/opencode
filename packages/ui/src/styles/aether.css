@@ -15,19 +15,15 @@ html[data-theme="aether"]::after {
 }
 
 /* Light mode: subtle paper grain */
-@media (prefers-color-scheme: light) {
-  html[data-theme="aether"]::after {
-    opacity: 0.02;
-    mix-blend-mode: multiply;
-  }
+html[data-theme="aether"][data-color-scheme="light"]::after {
+  opacity: 0.02;
+  mix-blend-mode: multiply;
 }
 
 /* Dark mode: soft grain for materiality */
-@media (prefers-color-scheme: dark) {
-  html[data-theme="aether"]::after {
-    opacity: 0.04;
-    mix-blend-mode: soft-light;
-  }
+html[data-theme="aether"][data-color-scheme="dark"]::after {
+  opacity: 0.04;
+  mix-blend-mode: soft-light;
 }
 
 /* ─── Warm Shadow System ─── */
@@ -119,34 +115,32 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="tray"] {
 }
 
 /* Question options — keep Aether's dark selection state warm. */
-@media (prefers-color-scheme: dark) {
-  html[data-theme="aether"] [data-component="dock-prompt"][data-kind="question"] {
-    [data-slot="question-option"]:hover:not([data-picked="true"]) {
-      background-color: rgba(217, 119, 87, 0.08);
+html[data-theme="aether"][data-color-scheme="dark"] [data-component="dock-prompt"][data-kind="question"] {
+  [data-slot="question-option"]:hover:not([data-picked="true"]) {
+    background-color: rgba(217, 119, 87, 0.08);
+  }
+
+  [data-slot="question-option"][data-focused="true"]:not([data-picked="true"]) {
+    background-color: rgba(217, 119, 87, 0.14);
+    border-color: rgba(217, 119, 87, 0.4);
+  }
+
+  [data-slot="question-option"][data-picked="true"] {
+    background-color: rgba(217, 119, 87, 0.2);
+    border-color: rgba(217, 119, 87, 0.45);
+    box-shadow: none;
+  }
+
+  [data-slot="question-option-box"][data-picked="true"] {
+    border-color: #d97757;
+    background-color: #d97757;
+
+    [data-component="icon"] {
+      color: #1a1714;
     }
 
-    [data-slot="question-option"][data-focused="true"]:not([data-picked="true"]) {
-      background-color: rgba(217, 119, 87, 0.14);
-      border-color: rgba(217, 119, 87, 0.4);
-    }
-
-    [data-slot="question-option"][data-picked="true"] {
-      background-color: rgba(217, 119, 87, 0.2);
-      border-color: rgba(217, 119, 87, 0.45);
-      box-shadow: none;
-    }
-
-    [data-slot="question-option-box"][data-picked="true"] {
-      border-color: #d97757;
-      background-color: #d97757;
-
-      [data-component="icon"] {
-        color: #1a1714;
-      }
-
-      [data-slot="question-option-radio-dot"] {
-        background-color: #1a1714;
-      }
+    [data-slot="question-option-radio-dot"] {
+      background-color: #1a1714;
     }
   }
 }

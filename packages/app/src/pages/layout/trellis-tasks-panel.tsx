@@ -215,6 +215,7 @@ function TaskCard(props: {
 
   return (
     <div
+      data-component="trellis-task-item"
       role="button"
       tabIndex={0}
       class="group/task w-full rounded-xl border border-border-weak-base bg-background-stronger px-3 py-3 text-left transition-colors hover:bg-surface-base-hover"
@@ -1068,8 +1069,8 @@ export function TrellisTasksPanel(props: {
                 <IconButton
                   icon="arrow-left"
                   variant="ghost"
-                  size="small"
-                  class="-ml-1 rounded-md"
+                  size="large"
+                  class="-ml-1 rounded-lg"
                   aria-label={language.t("trellis.tasks.back")}
                   onClick={props.onBack}
                 />
