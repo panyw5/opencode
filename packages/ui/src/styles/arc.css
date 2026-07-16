@@ -286,41 +286,41 @@ html[data-theme="arc"][data-color-scheme="dark"] [data-component="titlebar"] {
    interaction palette to buttons so a dark system setting cannot make Arc's
    light-mode controls inherit the sidebar's dark hover tokens. */
 html[data-theme="arc"][data-color-scheme="light"] :is(button, [data-component="button"], [data-component="icon-button"]) {
-  --surface-base-hover: #f0ecf2;
-  --color-surface-base-hover: #f0ecf2;
-  --surface-raised-base-hover: #f0ecf2;
-  --color-surface-raised-base-hover: #f0ecf2;
-  --surface-base-active: #e5dfe8;
-  --color-surface-base-active: #e5dfe8;
-  --surface-raised-base-active: #e5dfe8;
-  --color-surface-raised-base-active: #e5dfe8;
-  --button-secondary-hover: #f0ecf2;
-  --color-button-secondary-hover: #f0ecf2;
-  --button-ghost-hover: #f0ecf2;
-  --color-button-ghost-hover: #f0ecf2;
-  --button-ghost-hover2: #e5dfe8;
-  --color-button-ghost-hover2: #e5dfe8;
-  --icon-strong-hover: #302936;
-  --icon-strong-active: #241f29;
+  --surface-base-hover: #f5f2f6;
+  --color-surface-base-hover: #f5f2f6;
+  --surface-raised-base-hover: #f5f2f6;
+  --color-surface-raised-base-hover: #f5f2f6;
+  --surface-base-active: #efebf1;
+  --color-surface-base-active: #efebf1;
+  --surface-raised-base-active: #efebf1;
+  --color-surface-raised-base-active: #efebf1;
+  --button-secondary-hover: #f5f2f6;
+  --color-button-secondary-hover: #f5f2f6;
+  --button-ghost-hover: #f5f2f6;
+  --color-button-ghost-hover: #f5f2f6;
+  --button-ghost-hover2: #efebf1;
+  --color-button-ghost-hover2: #efebf1;
+  --icon-strong-hover: #3d3544;
+  --icon-strong-active: #342d3b;
 }
 
 html[data-theme="arc"][data-color-scheme="light"]
   :is([data-component="sidebar-rail"], [data-component="sidebar-nav-desktop"], [data-component="sidebar-nav-mobile"], [data-component="sidebar-panel"], [data-component="titlebar"])
   :is(button, [data-component="button"], [data-component="icon-button"]) {
-  --surface-base-hover: #9f96a7;
-  --color-surface-base-hover: #9f96a7;
-  --surface-raised-base-hover: #9f96a7;
-  --color-surface-raised-base-hover: #9f96a7;
-  --surface-base-active: #918898;
-  --color-surface-base-active: #918898;
-  --surface-raised-base-active: #918898;
-  --color-surface-raised-base-active: #918898;
-  --button-secondary-hover: #9f96a7;
-  --color-button-secondary-hover: #9f96a7;
-  --button-ghost-hover: #9f96a7;
-  --color-button-ghost-hover: #9f96a7;
-  --button-ghost-hover2: #918898;
-  --color-button-ghost-hover2: #918898;
+  --surface-base-hover: #aaa2b1;
+  --color-surface-base-hover: #aaa2b1;
+  --surface-raised-base-hover: #aaa2b1;
+  --color-surface-raised-base-hover: #aaa2b1;
+  --surface-base-active: #9f96a7;
+  --color-surface-base-active: #9f96a7;
+  --surface-raised-base-active: #9f96a7;
+  --color-surface-raised-base-active: #9f96a7;
+  --button-secondary-hover: #aaa2b1;
+  --color-button-secondary-hover: #aaa2b1;
+  --button-ghost-hover: #aaa2b1;
+  --color-button-ghost-hover: #aaa2b1;
+  --button-ghost-hover2: #9f96a7;
+  --color-button-ghost-hover2: #9f96a7;
 }
 
 /* Task cards are clickable containers rather than buttons. Do not let them
