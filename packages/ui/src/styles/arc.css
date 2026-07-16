@@ -684,9 +684,10 @@ html[data-theme="arc"] [data-action="project-switch"]:has([data-loaded="false"])
 }
 
 /* Mute the letter on the placeholder so it reads as "pending"
-   rather than "active" while retaining contrast on the surface. */
+   rather than "active". Pure white competes with the colored
+   loaded tiles for visual weight; a 60%-opacity white sits back. */
 html[data-theme="arc"] [data-action="project-switch"]:has([data-loaded="false"]) [data-component="avatar"] {
-  color: var(--text-weak);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 /* Hover (not selected): subtle scale + soft drop, no ring. The 1.12
