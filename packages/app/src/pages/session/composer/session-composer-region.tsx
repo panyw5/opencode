@@ -1,7 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
-import { IconButton } from "@opencode-ai/ui/icon-button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -16,10 +15,7 @@ import { useServer } from "@/context/server"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
-import {
-  listBackgroundShells,
-  type BackgroundShellInfo,
-} from "@/pages/session/background-shell-api"
+import { listBackgroundShells, type BackgroundShellInfo } from "@/pages/session/background-shell-api"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionSkippedQuestionsDialog } from "@/pages/session/composer/session-skipped-questions-dialog"
@@ -91,11 +87,21 @@ function ComposerDockExit(props: { active: boolean; children: JSX.Element }) {
 }
 
 function formatChildAgentTime(value: number, locale: string): string | undefined {
-  if (!Number.isFinite(value) || value <= 0) return
+  if (!Number.isFinite(value) || value <= 0) return undefined
   return new Intl.DateTimeFormat(locale, {
     hour: "2-digit",
     minute: "2-digit",
   }).format(new Date(value))
+}
+
+type BackgroundShellEventName = "background.shell.created" | "background.shell.updated" | "background.shell.exited"
+
+type BackgroundShellEventSource = {
+  on(type: BackgroundShellEventName, handler: () => void): VoidFunction
+}
+
+function isBackgroundShellEventSource(value: unknown): value is BackgroundShellEventSource {
+  return typeof value === "object" && value !== null && "on" in value && typeof value.on === "function"
 }
 
 function backgroundShellStatusClass(value: string): string {
@@ -312,7 +318,10 @@ function SessionChildAgentMenu(props: {
     return cleaned || entry.title
   }
   const agent = (entry: SessionChildAgentEntry): string | undefined => {
-    const value = entry.agent?.replace(/^@/, "").split(/\s+-\s+/)[0]?.trim()
+    const value = entry.agent
+      ?.replace(/^@/, "")
+      .split(/\s+-\s+/)[0]
+      ?.trim()
     return value ? `@${value}` : undefined
   }
   const status = (entry: SessionChildAgentEntry): string | undefined => entry.usage ?? entry.status
@@ -422,9 +431,7 @@ function SessionChildAgentMenu(props: {
                           {title(entry)}
                         </DropdownMenu.ItemLabel>
                         <DropdownMenu.ItemDescription class="truncate text-11-regular text-text-weak">
-                          <Show when={itemAgent()}>
-                            {(value) => <span>{value()}</span>}
-                          </Show>
+                          <Show when={itemAgent()}>{(value) => <span>{value()}</span>}</Show>
                           <Show when={itemStatus()}>
                             {(value) => (
                               <>
@@ -491,6 +498,8 @@ export function SessionComposerRegion(props: {
   subagentNavigation?: {
     previous?: string
     next?: string
+    earlierCount: number
+    laterCount: number
     onNavigate: (sessionID: string) => void
   }
   setPromptDockRef: (el: HTMLDivElement) => void
@@ -586,12 +595,16 @@ export function SessionComposerRegion(props: {
   const skippedQuestionCount = createMemo(() => props.state.skippedQuestionRequests().length)
   const childAgentMenu = createMemo(() => {
     const onOpen = props.onOpenChildAgent
-    if (!onOpen) return
+    if (!onOpen) return undefined
     return { entries: props.childAgents ?? [], onOpen }
   })
   const showPromptToolbar = createMemo(
     () => !!route.params.id || (childAgentMenu()?.entries.length ?? 0) > 0 || skippedQuestionCount() > 0,
   )
+  const visibleSubagentNavigation = createMemo(() => {
+    if (platform.platform !== "desktop") return undefined
+    return props.subagentNavigation
+  })
 
   const refreshBackgroundShells = () => {
     const sessionID = route.params.id
@@ -647,7 +660,8 @@ export function SessionComposerRegion(props: {
 
   createEffect(() => {
     const handler = () => refreshBackgroundShells()
-    const event = sdk.event as any
+    const event = sdk.event
+    if (!isBackgroundShellEventSource(event)) return
     const offCreated = event.on("background.shell.created", handler)
     const offUpdated = event.on("background.shell.updated", handler)
     const offExited = event.on("background.shell.exited", handler)
@@ -747,8 +761,20 @@ export function SessionComposerRegion(props: {
             }
           >
             <Show when={showPromptToolbar()}>
-              <div class="mb-2 flex items-center gap-2">
-                <div class="min-w-0 flex flex-1 items-center gap-2">
+              <div
+                classList={{
+                  "mb-2 min-h-7 items-center gap-2": true,
+                  "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]": !!visibleSubagentNavigation(),
+                  flex: !visibleSubagentNavigation(),
+                }}
+              >
+                <div
+                  classList={{
+                    "min-w-0 flex items-center gap-2": true,
+                    "flex-1": !visibleSubagentNavigation(),
+                    "overflow-hidden": !!visibleSubagentNavigation(),
+                  }}
+                >
                   <Show when={childAgentMenu()} keyed>
                     {(menu) => <SessionChildAgentMenu entries={menu.entries} onOpen={menu.onOpen} />}
                   </Show>
@@ -761,20 +787,63 @@ export function SessionComposerRegion(props: {
                     />
                   </Show>
                 </div>
-                <Show when={skippedQuestionCount() > 0}>
-                  <Button
-                    variant="ghost"
-                    size="small"
-                    class="h-7 shrink-0 rounded-md px-2 text-text-weak hover:text-text-strong"
-                    onClick={openSkippedQuestions}
+                <Show when={visibleSubagentNavigation()} keyed>
+                  {(navigation) => (
+                    <div class="flex justify-center" data-testid="subagent-session-navigation">
+                      <div class="flex items-center gap-0.5 rounded-lg border border-border-weak-base bg-background-stronger px-1 py-0.5 shadow-sm">
+                        <Button
+                          size="small"
+                          variant="ghost"
+                          class="rounded-md font-mono text-11-medium tabular-nums text-text-weak hover:text-text-strong disabled:pointer-events-none disabled:opacity-40"
+                          disabled={!navigation.previous}
+                          aria-label={language.t("command.session.previous")}
+                          onClick={() => {
+                            if (navigation.previous) navigation.onNavigate(navigation.previous)
+                          }}
+                        >
+                          <Icon name="arrow-left" size="small" />
+                          <span class="min-w-4 text-center">{navigation.earlierCount}</span>
+                        </Button>
+                        <Button
+                          size="small"
+                          variant="ghost"
+                          class="rounded-md font-mono text-11-medium tabular-nums text-text-weak hover:text-text-strong disabled:pointer-events-none disabled:opacity-40"
+                          disabled={!navigation.next}
+                          aria-label={language.t("command.session.next")}
+                          onClick={() => {
+                            if (navigation.next) navigation.onNavigate(navigation.next)
+                          }}
+                        >
+                          <span class="min-w-4 text-center">{navigation.laterCount}</span>
+                          <Icon name="arrow-right" size="small" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </Show>
+                <Show when={!!visibleSubagentNavigation() || skippedQuestionCount() > 0}>
+                  <div
+                    classList={{
+                      "min-w-0 flex justify-end": true,
+                      "flex-1": !visibleSubagentNavigation(),
+                    }}
                   >
-                    {language.t(
-                      props.state.skippedQuestionSessionEnded()
-                        ? "session.question.skipped.ended.button"
-                        : "session.question.skipped.button",
-                      { count: skippedQuestionCount() },
-                    )}
-                  </Button>
+                    <Show when={skippedQuestionCount() > 0}>
+                      <Button
+                        variant="ghost"
+                        size="small"
+                        class="h-7 shrink-0 rounded-md px-2 text-text-weak hover:text-text-strong"
+                        onClick={openSkippedQuestions}
+                      >
+                        {language.t(
+                          props.state.skippedQuestionSessionEnded()
+                            ? "session.question.skipped.ended.button"
+                            : "session.question.skipped.button",
+                          { count: skippedQuestionCount() },
+                        )}
+                      </Button>
+                    </Show>
+                  </div>
                 </Show>
               </div>
             </Show>
@@ -823,42 +892,14 @@ export function SessionComposerRegion(props: {
                 "margin-top": `${-lift()}px`,
               }}
             >
-              <Show when={props.followup?.items.length}>
-                <SessionFollowupDock
-                  items={props.followup!.items}
-                  sending={props.followup!.sending}
-                  onSend={props.followup!.onSend}
-                  onEdit={props.followup!.onEdit}
-                />
-              </Show>
-              <Show when={platform.platform === "desktop" && props.subagentNavigation} keyed>
-                {(navigation) => (
-                  <div class="mb-1 flex justify-center" data-testid="subagent-session-navigation">
-                    <div class="flex items-center gap-0.5 rounded-lg border border-border-weak-base bg-background-stronger p-0.5 shadow-sm">
-                      <IconButton
-                        icon="arrow-left"
-                        size="small"
-                        variant="ghost"
-                        class="rounded-md text-text-weak hover:text-text-strong disabled:pointer-events-none disabled:opacity-40"
-                        disabled={!navigation.previous}
-                        aria-label={language.t("command.session.previous")}
-                        onClick={() => {
-                          if (navigation.previous) navigation.onNavigate(navigation.previous)
-                        }}
-                      />
-                      <IconButton
-                        icon="arrow-right"
-                        size="small"
-                        variant="ghost"
-                        class="rounded-md text-text-weak hover:text-text-strong disabled:pointer-events-none disabled:opacity-40"
-                        disabled={!navigation.next}
-                        aria-label={language.t("command.session.next")}
-                        onClick={() => {
-                          if (navigation.next) navigation.onNavigate(navigation.next)
-                        }}
-                      />
-                    </div>
-                  </div>
+              <Show when={props.followup?.items.length ? props.followup : undefined}>
+                {(followup) => (
+                  <SessionFollowupDock
+                    items={followup().items}
+                    sending={followup().sending}
+                    onSend={followup().onSend}
+                    onEdit={followup().onEdit}
+                  />
                 )}
               </Show>
               <PromptInput

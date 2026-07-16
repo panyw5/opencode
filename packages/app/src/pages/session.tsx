@@ -26,7 +26,7 @@ import { Tabs } from "@opencode-ai/ui/tabs"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
 import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { Button } from "@opencode-ai/ui/button"
-import { taskSessionNeighbors } from "@opencode-ai/ui/message-task-session"
+import { taskSessionSiblings } from "@opencode-ai/ui/message-task-session"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
@@ -338,7 +338,7 @@ export default function Page() {
   const subagentNavigation = createMemo(() => {
     const sessionID = params.id
     const parentSessionID = info()?.parentID
-    if (!sessionID || !parentSessionID) return
+    if (!sessionID || !parentSessionID) return undefined
 
     const byID = new Map<string, Session>()
     for (const session of sync.data.session) {
@@ -349,15 +349,17 @@ export default function Page() {
       byID.set(session.id, session)
     }
 
-    const neighbors = taskSessionNeighbors({
-      childSessionId: sessionID,
+    const siblings = taskSessionSiblings({
       parentSessionId: parentSessionID,
       sessions: [...byID.values()],
     })
-    if (!neighbors) return
+    const index = siblings.findIndex((session) => session.id === sessionID)
+    if (index < 0) return undefined
     return {
-      previous: neighbors.previous?.id,
-      next: neighbors.next?.id,
+      previous: siblings[index - 1]?.id,
+      next: siblings[index + 1]?.id,
+      earlierCount: index,
+      laterCount: Math.max(0, siblings.length - index - 1),
       onNavigate: openSubagentSession,
     }
   })
