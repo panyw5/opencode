@@ -225,9 +225,9 @@ html[data-theme="arc"] [data-component="app-root"] {
   background-color: var(--canvas-base);
 }
 
-/* Titlebar sinks into the canvas — no horizontal slab cutting the view */
+/* Titlebar uses the stronger border token to separate the window chrome. */
 html[data-theme="arc"] [data-component="titlebar"] {
-  background-color: transparent;
+  background-color: var(--border-strong-base);
 }
 
 /* Legacy 1px hairline that other themes draw across the area to the right
@@ -247,7 +247,7 @@ html[data-theme="arc"] [data-component="layout-top-divider"] {
    own right edges or it cuts a wedge of canvas color where it abuts the
    conversation panel (both are the same --sidebar-card-bg). */
 html[data-theme="arc"] [data-component="sidebar-rail"] {
-  background-color: var(--sidebar-card-bg);
+  background-color: var(--border-strong-base);
   box-shadow: none;
   border: none;
 }
@@ -277,7 +277,7 @@ html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
    Tailwind class; !important guards against utility-layer ordering
    surprises. */
 html[data-theme="arc"] [data-component="sidebar-panel"] {
-  background-color: var(--sidebar-card-bg) !important;
+  background-color: var(--color-border-weaker-base) !important;
   border: none !important;
 }
 
@@ -350,39 +350,52 @@ html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
   border-radius: var(--radius-2xl);
 }
 
-/* Question tool (dark) — the default --question-background uses a translucent
-   stronger background token, which clashes with Arc's violet-tinged palette.
-   Replace with a warm-violet ramp that harmonises with Arc's primary
-   (#9B7AE8) and warm purple-gray chrome (#4a3d47). Shifted toward
-   magenta to avoid reading as blue: #3a2448 → #583060 → #8b4f9e → #c084d0. */
+/* Question tool — keep the outer shell and dock surfaces on the same
+   theme-driven background. Light mode is overridden explicitly below because
+   the body/footer elements also carry generic dock-surface selectors. */
 html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
-  background-color: #3a2448;
+  --question-background: #3a2448;
+  background-color: var(--question-background);
+
+  [data-slot="question-body"][data-dock-surface="shell"] {
+    background-color: var(--question-background);
+  }
 
   [data-slot="option-description"] {
-    color: #c084d0;
+    color: light-dark(#5b21b6, #c084d0);
   }
 
   [data-slot="question-option"]:hover:not([data-picked="true"]) {
-    background-color: rgba(255, 255, 255, 0.06);
+    background-color: light-dark(var(--color-surface-raised-base-hover), rgba(255, 255, 255, 0.06));
   }
 
   [data-slot="question-option"][data-focused="true"]:not([data-picked="true"]) {
-    background-color: rgba(192, 132, 208, 0.15);
-    border-color: rgba(192, 132, 208, 0.4);
+    background-color: light-dark(#ddd6fe, rgba(192, 132, 208, 0.15));
+    border-color: light-dark(#a78bfa, rgba(192, 132, 208, 0.4));
   }
 
   [data-slot="question-option"][data-picked="true"] {
-    background-color: rgba(192, 132, 208, 0.22);
-    border-color: rgba(192, 132, 208, 0.5);
+    background-color: light-dark(#c4b5fd, rgba(192, 132, 208, 0.22));
+    border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
   }
 
   [data-slot="question-option-box"][data-picked="true"] {
-    border-color: #c084d0;
-    background-color: #c084d0;
+    border-color: light-dark(#8b5cf6, #c084d0);
+    background-color: light-dark(#8b5cf6, #c084d0);
 
     [data-component="icon"] {
-      color: #3a2448;
+      color: light-dark(#ffffff, #3a2448);
     }
+  }
+}
+
+html[data-theme="arc"][data-color-scheme="light"] [data-component="dock-prompt"][data-kind="question"] {
+  --question-background: var(--background-base);
+  background-color: var(--background-base);
+
+  [data-slot="question-body"][data-dock-surface="shell"],
+  [data-slot="question-footer"][data-dock-surface="tray"] {
+    background-color: var(--background-base);
   }
 }
 
@@ -494,30 +507,6 @@ html[data-theme="arc"] [data-component="dialog"] [data-slot="dialog-content"] {
     background-color: rgba(255, 255, 255, 0.72);
   }
 
-  /* Question tool — the default light-dark(var(--amber-light-3), #2a2307)
-     background produces a pale cream-yellow that clashes with Arc's
-     violet-tinged palette. Replace with a lavender-to-violet ramp
-     that harmonises with Arc's primary (#6B46E5) and dusty-mauve
-     chrome (#756b7e), while giving dark text a WCAG-passing contrast
-     ratio. Palette inspired by the "Purple Dream" scale:
-     #EDE9FE → #C4B5FD → #A78BFA → #8B5CF6 → #7C3AED. */
-  html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
-    background-color: #ede9fe;
-
-    [data-slot="option-description"] {
-      color: #5b21b6;
-    }
-
-    [data-slot="question-option"][data-focused="true"]:not([data-picked="true"]) {
-      background-color: #ddd6fe;
-      border-color: #a78bfa;
-    }
-
-    [data-slot="question-option"][data-picked="true"] {
-      background-color: #c4b5fd;
-      border-color: #8b5cf6;
-    }
-  }
 }
 
 /* Dialog overlay — gentle backdrop blur to push focus on the dialog */
