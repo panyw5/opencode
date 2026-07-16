@@ -683,11 +683,22 @@ html[data-theme="arc"] [data-action="project-switch"]:has([data-loaded="false"])
   background: #6c6772 !important;
 }
 
+html[data-platform="desktop"][data-theme="arc"][data-color-scheme="light"]
+  [data-action="project-switch"]:has([data-loaded="false"]) {
+  background: var(--background-stronger) !important;
+}
+
 /* Mute the letter on the gray placeholder so it reads as "pending"
    rather than "active". Pure white on gray competes with the colored
    loaded tiles for visual weight; a 60%-opacity white sits back. */
 html[data-theme="arc"] [data-action="project-switch"]:has([data-loaded="false"]) [data-component="avatar"] {
   color: rgba(255, 255, 255, 0.55);
+}
+
+html[data-platform="desktop"][data-theme="arc"][data-color-scheme="light"]
+  [data-action="project-switch"]:has([data-loaded="false"])
+  [data-component="avatar"] {
+  color: var(--text-weak);
 }
 
 /* Hover (not selected): subtle scale + soft drop, no ring. The 1.12
