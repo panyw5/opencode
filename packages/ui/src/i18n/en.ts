@@ -131,6 +131,7 @@ export const dict: Record<string, string> = {
   "ui.tool.shell": "Shell",
   "ui.tool.shell.running": "Running",
   "ui.tool.shell.ran": "Ran",
+  "ui.tool.shell.backgroundRunning": "Running in background",
   "ui.tool.patch": "Patch",
   "ui.tool.todos": "To-dos",
   "ui.tool.todos.read": "Read to-dos",

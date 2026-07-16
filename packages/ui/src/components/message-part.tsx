@@ -2161,6 +2161,9 @@ ToolRegistry.register({
 function ShellTool(props: ToolProps & { title: string }) {
   const i18n = useI18n()
   const running = createMemo(() => props.status === "pending" || props.status === "running")
+  const backgroundRunning = createMemo(
+    () => props.metadata.background === true && props.metadata.status === "running",
+  )
   const hook = createMemo(() => hookName(props.input ?? {}, props.metadata ?? {}))
   const type = createMemo(() => hookType(props.input ?? {}, props.metadata ?? {}))
   const line = createMemo(() => cmd(props.input ?? {}, props.metadata ?? {}) ?? "")
@@ -2235,6 +2238,9 @@ function ShellTool(props: ToolProps & { title: string }) {
                   doneText={i18n.t("ui.tool.shell.ran")}
                 />
               </span>
+            </Show>
+            <Show when={backgroundRunning() && !hook()}>
+              <span data-slot="basic-tool-tool-arg">{i18n.t("ui.tool.shell.backgroundRunning")}</span>
             </Show>
           </div>
           <Show when={canBackground()}>
