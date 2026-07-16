@@ -228,6 +228,10 @@ html[data-theme="arc"] [data-component="sidebar-panel"] {
   border: none !important;
 }
 
+html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-panel"] {
+  background-color: var(--color-border-base) !important;
+}
+
 /* Main pane — the largest floating card, fully rounded top-left corner */
 html[data-theme="arc"] main {
   background-color: var(--surface-raised-base);
