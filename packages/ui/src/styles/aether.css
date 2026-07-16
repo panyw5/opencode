@@ -69,82 +69,57 @@ html[data-theme="aether"] [data-component="markdown"] a[data-file-link]:hover {
   color: var(--markdown-code);
 }
 
-/* ─── Aether Light Mode: Dock Surface Refinements ─── */
-@media (prefers-color-scheme: light) {
-  /* Prompt shell: white card with fine warm border, no dark glassmorphism */
-  html[data-theme="aether"] [data-dock-surface="shell"] {
-    background-color: #FFFFFF;
-    border: 1px solid #DDD6C8;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    box-shadow:
-      0 0 0 0.5px rgba(193, 95, 60, 0.06),
-      0 2px 8px -2px rgba(193, 95, 60, 0.08),
-      0 4px 16px -4px rgba(193, 95, 60, 0.06);
-    border-radius: 16px;
-  }
-
-  /* Tray: matching warm border and cream background */
-  html[data-theme="aether"] [data-dock-surface="tray"] {
-    background-color: #FAF9F5;
-    border: 1px solid #E8E2D8;
-    border-radius: 16px;
-  }
-
-  html[data-theme="aether"] [data-dock-surface="tray"][data-dock-attach="top"] {
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-  }
-
-  /* Tool call cards: neutral light gray instead of warm-tinted inset */
-  html[data-theme="aether"] [data-component="collapsible"].tool-collapsible {
-    background-color: #F7F6F4;
-    border: 1px solid #E8E5E0;
-    border-radius: 10px;
-  }
+/* Dock surfaces follow the app's active color scheme, which can differ from the OS preference. */
+html[data-theme="aether"] [data-component="collapsible"].tool-collapsible {
+  background-color: #FDF1EB;
+  border: 1px solid #F0CFC1;
+  border-radius: 10px;
 }
 
-/* ─── Aether Dark Mode: Dock Surface Refinements ─── */
+html[data-theme="aether"] [data-dock-surface="shell"] {
+  background-color: #FFFFFF !important;
+  border: 1px solid #DDD6C8;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow:
+    0 0 0 0.5px rgba(193, 95, 60, 0.06),
+    0 2px 8px -2px rgba(193, 95, 60, 0.08),
+    0 4px 16px -4px rgba(193, 95, 60, 0.06);
+  border-radius: 16px;
+}
+
+html[data-theme="aether"] [data-dock-surface="tray"] {
+  background-color: #FAF9F5;
+  border: 1px solid #E8E2D8;
+  border-radius: 16px;
+}
+
+html[data-theme="aether"] [data-dock-surface="tray"][data-dock-attach="top"] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+html[data-theme="aether"][data-color-scheme="dark"] [data-component="collapsible"].tool-collapsible {
+  background-color: #25221E;
+  border-color: #3D3830;
+}
+
+html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="shell"] {
+  background-color: #1E1B18 !important;
+  border-color: #3D3830;
+  box-shadow:
+    0 0 0 0.5px rgba(193, 95, 60, 0.08),
+    0 2px 8px -2px rgba(0, 0, 0, 0.18),
+    0 4px 16px -4px rgba(0, 0, 0, 0.14);
+}
+
+html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="tray"] {
+  background-color: #1A1815;
+  border-color: #3D3830;
+}
+
+/* Question options — keep Aether's dark selection state warm. */
 @media (prefers-color-scheme: dark) {
-  /* Prompt shell: deep warm card matching Aether's warm paper identity.
-     Without this, the dark-mode Dock falls back to the base theme's
-     translucent glass (#1c1c1c / rgb(12 12 14 / 0.34)), which clashes
-     with Aether's clay-tinted shadow system and reads as cold/muddy. */
-  html[data-theme="aether"] [data-dock-surface="shell"] {
-    background-color: #1E1B18;
-    border: 1px solid #3D3830;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    box-shadow:
-      0 0 0 0.5px rgba(193, 95, 60, 0.08),
-      0 2px 8px -2px rgba(0, 0, 0, 0.18),
-      0 4px 16px -4px rgba(0, 0, 0, 0.14);
-    border-radius: 16px;
-  }
-
-  /* Tray: matching warm dark border and deep warm background */
-  html[data-theme="aether"] [data-dock-surface="tray"] {
-    background-color: #1A1815;
-    border: 1px solid #3D3830;
-    border-radius: 16px;
-  }
-
-  html[data-theme="aether"] [data-dock-surface="tray"][data-dock-attach="top"] {
-    border-top-left-radius: 0;
-    border-top-right-radius: 0;
-  }
-
-  /* Tool call cards: warm dark tint consistent with the Dock palette */
-  html[data-theme="aether"] [data-component="collapsible"].tool-collapsible {
-    background-color: #25221E;
-    border: 1px solid #3D3830;
-    border-radius: 10px;
-  }
-
-  /* Question options — default picked state uses --surface-interactive-base
-     (cold blue from palette.interactive #4385BE), which clashes with Aether's
-     warm clay paper identity. Shift focus/picked to terracotta primary
-     (#D97757) so selection reads as warm ink on warm paper. */
   html[data-theme="aether"] [data-component="dock-prompt"][data-kind="question"] {
     [data-slot="question-option"]:hover:not([data-picked="true"]) {
       background-color: rgba(217, 119, 87, 0.08);

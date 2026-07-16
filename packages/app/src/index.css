@@ -250,11 +250,11 @@
 
   html[data-theme="aether"] [data-component="sidebar-session"] {
     --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
-    --sidebar-session-hover-bg: light-dark(#f1f1f1, #2c2924);
-    --sidebar-session-hover-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.14));
-    --sidebar-session-active-bg-top: light-dark(#f1f1f1, rgb(65, 65, 65));
-    --sidebar-session-active-bg-bottom: light-dark(#eeeeee, rgb(65, 65, 65));
-    --sidebar-session-active-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.2));
+    --sidebar-session-hover-bg: light-dark(#F8E4D8, #2c2924);
+    --sidebar-session-hover-border: light-dark(#E9BDA8, rgba(201, 138, 109, 0.14));
+    --sidebar-session-active-bg-top: light-dark(#F3D4C4, rgb(65, 65, 65));
+    --sidebar-session-active-bg-bottom: light-dark(#EBC5B2, rgb(65, 65, 65));
+    --sidebar-session-active-border: light-dark(#DFA58C, rgba(201, 138, 109, 0.2));
     --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
   }
 
@@ -307,7 +307,7 @@
 
   html[data-theme="aether"] [data-component="sidebar-session"][data-active="true"]:hover,
   html[data-theme="aether"] [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
-    background: light-dark(#f1f1f1, rgb(65, 65, 65));
+    background: light-dark(#E9BDA8, rgb(65, 65, 65));
   }
 
   /* Arc: stronger overlay on active+hover */
