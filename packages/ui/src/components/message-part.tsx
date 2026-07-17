@@ -1242,6 +1242,11 @@ export function UserMessageDisplay(props: {
       .map((part) => part.text)
       .join("\n\n"),
   )
+  // The server can deliver injected text before the local pending placeholder is cleared.
+  // Once any injected text exists, prefer the completed summary over the transient status.
+  const injectionPending = createMemo(
+    () => injectionText().trim().length === 0 && injectionParts().some((part) => part.metadata?.pending === true),
+  )
   const injectionPreview = createMemo(() => {
     const text = injectionText().trim().replace(/\s+/g, " ")
     if (text.length <= 180) return text
@@ -1528,7 +1533,9 @@ export function UserMessageDisplay(props: {
             onMouseDown={(e) => e.preventDefault()}
           >
             <span data-slot="user-message-hook-injection-title">{injectionTitle()}</span>
-            <span data-slot="user-message-hook-injection-summary">{injectionSummary()}</span>
+            <span data-slot="user-message-hook-injection-summary">
+              {injectionPending() ? i18n.t("ui.message.injection.injecting") : injectionSummary()}
+            </span>
           </button>
           <Show when={!injectionExpanded() && injectionPreview()}>
             <div data-slot="user-message-hook-injection-preview">{injectionPreview()}</div>

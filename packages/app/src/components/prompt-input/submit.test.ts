@@ -504,6 +504,10 @@ describe("prompt submit worktree selection", () => {
   test("treats command send as delivered when message appears after request failure", async () => {
     messagePages["/repo/main"] = [{ info: { id: "message-1" } }]
     const err = new Error("Load failed")
+    const commandOptimistic: Array<{
+      parts: Array<{ text: string; synthetic?: boolean; metadata?: Record<string, unknown> }>
+    }> = []
+    const commandOptimisticCompleted: string[] = []
     const client = {
       session: {
         command: async () => {
@@ -520,6 +524,13 @@ describe("prompt submit worktree selection", () => {
       } as never,
       sync: {
         data: { command: [{ name: "foo" }] },
+        session: {
+          optimistic: {
+            add: (input: (typeof commandOptimistic)[number]) => commandOptimistic.push(input),
+            complete: (input: { messageID: string }) => commandOptimisticCompleted.push(input.messageID),
+            remove: () => undefined,
+          },
+        },
       } as never,
       draft: {
         sessionID: "session-1",
@@ -535,6 +546,15 @@ describe("prompt submit worktree selection", () => {
     expect(ok).toBe(true)
     expect(toasts).toEqual([])
     expect(sentCommands).toEqual([])
+    expect(commandOptimistic).toMatchObject([
+      {
+        parts: [
+          { text: "/foo" },
+          { text: "", synthetic: true, metadata: { kind: "command-injection", pending: true } },
+        ],
+      },
+    ])
+    expect(commandOptimisticCompleted).toEqual(["message-1"])
   })
 
   test("abort still reaches the backend when a local pending prompt exists", async () => {

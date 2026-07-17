@@ -1,4 +1,4 @@
-import type { Message, Session } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useNavigate, useParams } from "@solidjs/router"
@@ -78,6 +78,75 @@ const draftText = (prompt: Prompt) => prompt.map((part) => ("content" in part ? 
 
 const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttachmentPart => part.type === "image")
 
+function addOptimisticCommandMessage(input: {
+  sync: ReturnType<typeof useSync>
+  directory: string
+  sessionID: string
+  messageID: string
+  command: string
+  arguments: string
+  source?: string
+  agent: string
+  model: { providerID: string; modelID: string }
+  variant?: string
+}) {
+  const invocation = ["/" + input.command, input.arguments.trim()].filter(Boolean).join(" ")
+  const message: Message = {
+    id: input.messageID,
+    sessionID: input.sessionID,
+    role: "user",
+    time: { created: Date.now() },
+    agent: input.agent,
+    model: input.model,
+    variant: input.variant,
+  }
+  const parts: Part[] = [
+    {
+      id: Identifier.ascending("part"),
+      sessionID: input.sessionID,
+      messageID: input.messageID,
+      type: "text",
+      text: invocation,
+      ignored: true,
+      metadata: { kind: "command-invocation", command: input.command, source: input.source },
+    },
+    {
+      id: Identifier.ascending("part"),
+      sessionID: input.sessionID,
+      messageID: input.messageID,
+      type: "text",
+      text: "",
+      synthetic: true,
+      metadata: { kind: "command-injection", command: input.command, source: input.source, pending: true },
+    },
+  ]
+
+  input.sync.session.optimistic.add({
+    directory: input.directory,
+    sessionID: input.sessionID,
+    message,
+    parts,
+  })
+}
+
+function completeOptimisticCommandMessage(input: {
+  sync: ReturnType<typeof useSync>
+  directory: string
+  sessionID: string
+  messageID: string
+}) {
+  input.sync.session.optimistic.complete(input)
+}
+
+function removeOptimisticCommandMessage(input: {
+  sync: ReturnType<typeof useSync>
+  directory: string
+  sessionID: string
+  messageID: string
+}) {
+  input.sync.session.optimistic.remove(input)
+}
+
 const submitMeasureSummary = () =>
   performance
     .getEntriesByType("measure")
@@ -108,12 +177,31 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 
   const [head, ...tail] = text.split(" ")
   const cmd = head?.startsWith("/") ? head.slice(1) : undefined
-  if (cmd && input.sync.data.command.find((item) => item.name === cmd)) {
+  const customCommand = cmd && input.sync.data.command.find((item) => item.name === cmd)
+  if (cmd && customCommand) {
     const messageID = input.messageID ?? Identifier.ascending("message")
     setBusy()
+    addOptimisticCommandMessage({
+      sync: input.sync,
+      directory: input.draft.sessionDirectory,
+      sessionID: input.draft.sessionID,
+      messageID,
+      command: cmd,
+      arguments: tail.join(" "),
+      source: customCommand.source,
+      agent: input.draft.agent,
+      model: input.draft.model,
+      variant: input.draft.variant,
+    })
     try {
       if (!(await wait())) {
         setIdle()
+        removeOptimisticCommandMessage({
+          sync: input.sync,
+          directory: input.draft.sessionDirectory,
+          sessionID: input.draft.sessionID,
+          messageID,
+        })
         return false
       }
 
@@ -133,10 +221,30 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
           filename: attachment.filename,
         })),
       })
+      completeOptimisticCommandMessage({
+        sync: input.sync,
+        directory: input.draft.sessionDirectory,
+        sessionID: input.draft.sessionID,
+        messageID,
+      })
       return true
     } catch (err) {
-      if (await delivered(input.client, input.draft.sessionID, messageID)) return true
+      if (await delivered(input.client, input.draft.sessionID, messageID)) {
+        completeOptimisticCommandMessage({
+          sync: input.sync,
+          directory: input.draft.sessionDirectory,
+          sessionID: input.draft.sessionID,
+          messageID,
+        })
+        return true
+      }
       setIdle()
+      removeOptimisticCommandMessage({
+        sync: input.sync,
+        directory: input.draft.sessionDirectory,
+        sessionID: input.draft.sessionID,
+        messageID,
+      })
       throw err
     }
   }
@@ -637,6 +745,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const customCommand = sync.data.command.find((c) => c.name === commandName)
       if (customCommand) {
         const messageID = Identifier.ascending("message")
+        addOptimisticCommandMessage({
+          sync,
+          directory: sessionDirectory,
+          sessionID: session.id,
+          messageID,
+          command: commandName,
+          arguments: args.join(" "),
+          source: customCommand.source,
+          agent,
+          model,
+          variant,
+        })
         clearInput()
         client.session
           .command({
@@ -655,8 +775,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
               filename: attachment.filename,
             })),
           })
+          .then(() => {
+            completeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
+          })
           .catch(async (err) => {
-            if (await delivered(client, session.id, messageID)) return
+            if (await delivered(client, session.id, messageID)) {
+              completeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
+              return
+            }
+            removeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
             showToast({
               title: language.t("prompt.toast.commandSendFailed.title"),
               description: formatServerError(err, language.t, language.t("common.requestFailed")),

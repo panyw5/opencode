@@ -173,6 +173,7 @@ export const dict = {
   "ui.message.injection.commandPrompt": "{{command}} 命令提示词",
   "ui.message.injection.slashCommandPrompt": "Slash 命令提示词",
   "ui.message.injection.prompt": "注入提示词",
+  "ui.message.injection.injecting": "正在注入命令提示词...",
   "ui.message.injection.part.one": "{{count}} 部分",
   "ui.message.injection.part.other": "{{count}} 部分",
   "ui.message.injection.chars": "{{count}} 字符",

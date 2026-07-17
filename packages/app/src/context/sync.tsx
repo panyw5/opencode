@@ -478,6 +478,22 @@ const initialMessagePageSize = 80
             setOptimistic(directory, input.sessionID, { message: input.message, parts: input.parts })
             setOptimisticAdd(setStore as (...args: unknown[]) => void, input)
           },
+          complete(input: { directory?: string; sessionID: string; messageID: string }) {
+            const directory = input.directory ?? sdk.directory
+            const [, setStore] = target(input.directory)
+            clearOptimistic(directory, input.sessionID, input.messageID)
+            setStore("part", input.messageID, (parts: Part[]) =>
+              parts.filter(
+                (part) =>
+                  !(
+                    part.type === "text" &&
+                    part.synthetic &&
+                    part.metadata?.kind === "command-injection" &&
+                    part.metadata.pending === true
+                  ),
+              ),
+            )
+          },
           remove(input: { directory?: string; sessionID: string; messageID: string }) {
             const directory = input.directory ?? sdk.directory
             const [, setStore] = target(input.directory)
