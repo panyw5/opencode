@@ -333,6 +333,48 @@ test("updates global config and omits empty shell key in jsonc", async () => {
   }
 })
 
+test("replaces the MCP map in global JSONC config", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.jsonc"),
+        `{
+  // Preserve this comment while replacing the MCP servers.
+  "model": "test/model",
+  "mcp": {
+    "remove-me": { "type": "remote", "url": "https://remove.example/mcp" },
+    "keep-me": { "type": "remote", "url": "https://keep.example/mcp" }
+  }
+}`,
+      )
+    },
+  })
+
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = tmp.path
+  await clear(true)
+
+  try {
+    await saveGlobal({
+      mcp: {
+        "keep-me": { type: "remote", url: "https://keep.example/mcp" },
+      },
+    })
+
+    const file = path.join(tmp.path, "opencode.jsonc")
+    const writtenConfig = await Filesystem.readText(file)
+    const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(writtenConfig, file), file)
+    expect(writtenConfig).toContain("Preserve this comment")
+    expect(parsed.model).toBe("test/model")
+    expect(parsed.mcp).toEqual({
+      "keep-me": { type: "remote", url: "https://keep.example/mcp" },
+    })
+  } finally {
+    ;(Global.Path as { config: string }).config = prev
+    await clear(true)
+  }
+})
+
 test("persists channels to channels.json not opencode.jsonc", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {
@@ -938,6 +980,37 @@ it.instance("updates config and writes to file", () =>
       Filesystem.readJson<{ model: string }>(path.join(test.directory, "config.json")),
     )
     expect(writtenConfig.model).toBe("updated/model")
+  }),
+)
+
+it.instance("replaces the MCP map when updating project config", () =>
+  Effect.gen(function* () {
+    const test = yield* TestInstance
+    yield* writeTextEffect(
+      path.join(test.directory, "config.json"),
+      JSON.stringify({
+        model: "test/model",
+        mcp: {
+          "remove-me": { type: "remote", url: "https://remove.example/mcp" },
+          "keep-me": { type: "remote", url: "https://keep.example/mcp" },
+        },
+      }),
+    )
+    yield* Config.Service.use((svc) =>
+      svc.update({
+        mcp: {
+          "keep-me": { type: "remote", url: "https://keep.example/mcp" },
+        },
+      }),
+    )
+
+    const writtenConfig = yield* Effect.promise(() =>
+      Filesystem.readJson<{ model: string; mcp: Record<string, unknown> }>(path.join(test.directory, "config.json")),
+    )
+    expect(writtenConfig.model).toBe("test/model")
+    expect(writtenConfig.mcp).toEqual({
+      "keep-me": { type: "remote", url: "https://keep.example/mcp" },
+    })
   }),
 )
 

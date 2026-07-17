@@ -3522,6 +3522,7 @@ export default function ConfigPage() {
     mcpSaving: false,
     mcpDirty: false,
     mcpBusy: "",
+    mcpGlobalDeleting: {} as Record<string, boolean>,
   })
 
   function bump(
@@ -3558,7 +3559,7 @@ export default function ConfigPage() {
     const dirMcp = sync.data.mcp ?? {}
     const globalNames = new Set(Object.keys(globalCfg))
     const items = Object.keys(mergedCfg)
-      .filter((name_) => !globalNames.has(name_))
+      .filter((name_) => !globalNames.has(name_) && !state.mcpGlobalDeleting[name_])
       .map((name_) => {
         const entry = mergedCfg[name_] as Record<string, unknown> | undefined
         const status = dirMcp[name_]?.status ?? "disabled"
@@ -3730,7 +3731,18 @@ export default function ConfigPage() {
       const result = await client.config.update({ config })
       targetStore[1]("config", result.data ?? config)
     } else {
-      await globalSync.updateConfig({ mcp: next as never })
+      setState("mcpGlobalDeleting", n, true)
+      try {
+        await globalSync.updateConfig({ mcp: next as never })
+        const directory = sync.data.path?.directory
+        if (directory) {
+          const client = globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
+          const result = await client.config.get()
+          if (result.data) globalSync.child(directory, { bootstrap: false })[1]("config", result.data)
+        }
+      } finally {
+        setState("mcpGlobalDeleting", n, false)
+      }
     }
     setState("pick", "")
     bump("mcpRev")

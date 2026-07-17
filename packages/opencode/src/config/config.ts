@@ -374,6 +374,13 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
   return Object.entries(patch).reduce((result, [key, value]) => patchJsonc(result, value, [...path, key]), input)
 }
 
+/** MCP editors submit the complete server map, so its absence is a deletion rather than a merge omission. */
+function mergeWritableConfig(existing: Info, patch: Info): Info {
+  const merged = mergeDeep(writable(existing), writable(patch)) as Info
+  if ("mcp" in patch) merged.mcp = patch.mcp
+  return merged
+}
+
 function writable(info: Info) {
   const { plugin_origins: _plugin_origins, ...next } = info
   return next
@@ -893,7 +900,7 @@ export const layer = Layer.effect(
       const file = path.join(dir, "config.json")
       const existing = yield* loadFile(file)
       yield* fs
-        .writeFileString(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
+        .writeFileString(file, JSON.stringify(mergeWritableConfig(existing, config), null, 2))
         .pipe(Effect.orDie)
     })
 
@@ -915,7 +922,7 @@ export const layer = Layer.effect(
       if (!file.endsWith(".jsonc")) {
         const existing = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
         const { channels: _legacy, ...existingMain } = existing
-        const merged = mergeDeep(writable(existingMain), patch)
+        const merged = mergeWritableConfig(existingMain, patch)
         // Never persist channels on the main config file.
         const { channels: _drop, ...mainOnly } = merged as Info
         const serialized = JSON.stringify(mainOnly, null, 2)
@@ -923,7 +930,17 @@ export const layer = Layer.effect(
         if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
         next = mainOnly
       } else {
-        let updated = patchJsonc(before, patch)
+        const { mcp: mcpPatch, ...restPatch } = patch
+        let updated = patchJsonc(before, restPatch)
+        if ("mcp" in patch) {
+          const edits = modify(updated, ["mcp"], mcpPatch, {
+            formattingOptions: {
+              insertSpaces: true,
+              tabSize: 2,
+            },
+          })
+          updated = applyEdits(updated, edits)
+        }
         // Ensure any legacy top-level channels key is removed from the main file.
         updated = stripChannelsKey(updated)
         next = ConfigParse.schema(Info, ConfigParse.jsonc(updated, file), file)
