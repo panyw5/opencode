@@ -1949,7 +1949,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const hasGenericAgentToolSegments = createMemo(() =>
     genericAgentSegments().some((segment) => segment.type === "tool"),
   )
-  const plain = createMemo(() => liveText() && end())
+  const liveMarkdown = createMemo(() => liveText() && end())
   const showCopy = createMemo(() => {
     if (props.message.role !== "assistant") return isLastTextPart()
     if (props.showAssistantCopyPartID === null) return false
@@ -1975,12 +1975,11 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
             fallback={
               <Markdown
                 text={body()}
-                cacheKey={plain() ? `${part.id}:stream` : part.id}
+                cacheKey={liveMarkdown() ? `${part.id}:stream` : part.id}
                 stage={props.markdownStage}
                 onStage={props.onMarkdownStage}
-                plain={plain()}
-                streaming={plain()}
-                instant={liveText()}
+                streaming={liveMarkdown()}
+                instant={liveMarkdown()}
                 eager={props.markdownEager}
                 viewport={props.markdownViewport}
                 highlight={props.markdownHighlight}

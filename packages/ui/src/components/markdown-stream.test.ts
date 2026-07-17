@@ -7,6 +7,24 @@ describe("markdown stream", () => {
     expect(stream("say `code", true)).toEqual([{ raw: "say `code", src: "say `code`", mode: "live" }])
   })
 
+  test("waits for the closing display math delimiter", () => {
+    expect(stream("Result:\n\n$$\\frac{1}{2}", true)).toEqual([
+      { raw: "Result:\n\n$$\\frac{1}{2}", src: "Result:\n\n$$\\frac{1}{2}", mode: "live" },
+    ])
+    expect(stream("Result:\n\n$$\\frac{1}{2}$$", true)).toEqual([
+      { raw: "Result:\n\n$$\\frac{1}{2}$$", src: "Result:\n\n$$\\frac{1}{2}$$", mode: "live" },
+    ])
+  })
+
+  test("ignores display math delimiters in code and escapes", () => {
+    expect(stream("`$$` and \\$$ plus **bold", true)).toEqual([
+      { raw: "`$$` and \\$$ plus **bold", src: "`$$` and \\$$ plus **bold**", mode: "live" },
+    ])
+    const fenced = stream("```txt\n$$\n```\n\n**bold", true)
+    expect(fenced[0]?.src.trimEnd()).toBe("```txt\n$$\n```\n\n**bold**")
+    expect(fenced[0]?.src).not.toContain("$$$$")
+  })
+
   test("keeps incomplete links non-clickable until they finish", () => {
     expect(stream("see [docs](https://example.com/gu", true)).toEqual([
       { raw: "see [docs](https://example.com/gu", src: "see docs", mode: "live" },

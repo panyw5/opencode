@@ -3,6 +3,7 @@ import { useI18n } from "../context/i18n"
 import DOMPurify from "dompurify"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
+import { stream as streamMarkdown } from "./markdown-stream"
 import {
   ComponentProps,
   createEffect,
@@ -37,6 +38,23 @@ export function initialMarkdownMathSeen(input: {
 }
 
 type MarkedApi = ReturnType<typeof useMarked>
+
+export function prepareMarkdownSource(markdown: string, streaming: boolean) {
+  const normalized = normalize(markdown)
+  if (!streaming) return normalized
+  return streamMarkdown(normalized, true)
+    .map((block) => block.src)
+    .join("")
+}
+
+export function upgradeStreamingMath(
+  html: string,
+  input: { mode: "full" | "fast" | "lite" | "plain"; math: "full" | "defer" },
+  renderMath?: (html: string) => string,
+) {
+  if (input.mode !== "fast" || input.math !== "full" || !renderMath) return html
+  return renderMath(html)
+}
 
 const max = 200
 const cache = new Map<string, Entry>()
@@ -870,11 +888,12 @@ export function Markdown(
   const src = createMemo(() => {
     if (!ready()) return
     const markdown = local.text
-    const normalized = normalize(markdown)
+    const normalized = prepareMarkdownSource(markdown, !!local.streaming)
     const hash = checksum(normalized)
     const cache = cacheMode({ highlight: local.highlight, chunked: local.chunked, math: mathMode() })
     const current = mode()
     const key = hash ? `${cache}:${current}:${hash}` : undefined
+    const math: "full" | "defer" = mathReady() ? "full" : "defer"
     return {
       markdown,
       normalized,
@@ -885,7 +904,7 @@ export function Markdown(
       streaming: !!local.streaming,
       highlight: local.highlight,
       chunked: local.chunked,
-      math: mathReady() ? "full" : "defer",
+      math,
     }
   })
 
@@ -924,7 +943,7 @@ export function Markdown(
 
       const PARSE_TIMEOUT_MS = 8_000
       const time = performance.now()
-      const renderPromise =
+      let renderPromise =
         input.mode === "plain"
           ? fallback(input.normalized)
           : await (
@@ -939,6 +958,8 @@ export function Markdown(
               console.error("markdown render failed", err)
               return fallback(input.normalized)
             })
+
+      renderPromise = upgradeStreamingMath(renderPromise, input, marked.renderMath)
 
       let rendered: string
       if (input.mode === "plain") {

@@ -4,8 +4,10 @@ import {
   fileLink,
   findFileLinks,
   initialMarkdownMathSeen,
+  prepareMarkdownSource,
   shouldShowMarkdownCodeTopCopy,
   shouldShowMarkdownMathBottomCopy,
+  upgradeStreamingMath,
 } from "./markdown"
 import { normalizeCodeLanguage, protectMathExpressions, renderMathExpressions } from "../context/marked"
 
@@ -88,6 +90,24 @@ describe("markdown fileLink", () => {
 })
 
 describe("markdown math", () => {
+  test("heals incomplete streaming markdown before fast parsing", () => {
+    expect(prepareMarkdownSource("hello **world", true)).toBe("hello **world**")
+    expect(prepareMarkdownSource("$$\\frac{1}{2}", true)).toBe("$$\\frac{1}{2}")
+    expect(prepareMarkdownSource("$$\\frac{1}{2}$$", true)).toBe("$$\\frac{1}{2}$$")
+    expect(prepareMarkdownSource("hello **world", false)).toBe("hello **world")
+  })
+
+  test("upgrades math during fast streaming renders", () => {
+    const source = protectMathExpressions("Result: $x^2$")
+    const parsed = `<p>${source}</p>`
+    const html = upgradeStreamingMath(parsed, { mode: "fast", math: "full" }, (value) =>
+      renderMathExpressions(value, "html"),
+    )
+
+    expect(html).toContain("katex")
+    expect(upgradeStreamingMath(parsed, { mode: "fast", math: "defer" }, () => "changed")).toBe(parsed)
+  })
+
   test("treats mounted structure stage as math-ready", () => {
     expect(initialMarkdownMathSeen({ stage: "structure" })).toBe(true)
     expect(initialMarkdownMathSeen({ stage: "full" })).toBe(true)

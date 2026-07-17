@@ -22,8 +22,55 @@ function open(raw: string) {
   return !new RegExp(`^[\\t ]{0,3}${char}{${size},}[\\t ]*$`).test(last)
 }
 
+function openDisplayMath(text: string) {
+  let math = false
+  let codeSpan = 0
+  let fenceChar = ""
+  let fenceSize = 0
+
+  for (const line of text.split(/\r?\n/)) {
+    const fence = codeSpan === 0 && !math ? line.match(/^[ \t]{0,3}(`{3,}|~{3,})/)?.[1] : undefined
+    if (fence) {
+      if (!fenceChar) {
+        fenceChar = fence[0]!
+        fenceSize = fence.length
+      } else if (fence[0] === fenceChar && fence.length >= fenceSize) {
+        fenceChar = ""
+        fenceSize = 0
+      }
+      continue
+    }
+    if (fenceChar) continue
+
+    for (let i = 0; i < line.length; i++) {
+      if (line[i] === "\\") {
+        i++
+        continue
+      }
+      if (line[i] === "`") {
+        let size = 1
+        while (line[i + size] === "`") size++
+        if (codeSpan === 0) codeSpan = size
+        else if (codeSpan === size) codeSpan = 0
+        i += size - 1
+        continue
+      }
+      if (codeSpan !== 0 || line[i] !== "$" || line[i + 1] !== "$") continue
+      math = !math
+      i++
+    }
+  }
+
+  return math
+}
+
 function heal(text: string) {
-  return remend(text, { linkMode: "text-only" })
+  if (openDisplayMath(text)) return text
+  const healed = remend(text, { linkMode: "text-only" })
+  if (!healed.startsWith(text)) return healed
+  const suffix = healed.slice(text.length)
+  if (!suffix.endsWith("$$")) return healed
+  return text + suffix.slice(0, -2)
 }
 
 export function stream(text: string, live: boolean) {
