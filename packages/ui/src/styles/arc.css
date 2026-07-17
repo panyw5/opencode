@@ -353,7 +353,7 @@ html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
    theme-driven background. Light mode is overridden explicitly below because
    the body/footer elements also carry generic dock-surface selectors. */
 html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
-  --question-background: #3a2448;
+  --question-background: var(--background-stronger);
   background-color: var(--question-background);
 
   [data-slot="question-body"][data-dock-surface="shell"] {
