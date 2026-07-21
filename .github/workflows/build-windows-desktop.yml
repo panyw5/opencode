@@ -67,9 +67,10 @@ jobs:
           $smokeRoot = Join-Path $env:RUNNER_TEMP "OpenCode Smoke"
           $installRoot = Join-Path $smokeRoot "Install"
           $projectRoot = Join-Path $smokeRoot "Project With Spaces"
-          $appData = Join-Path $smokeRoot "AppData"
-          $localAppData = Join-Path $smokeRoot "LocalAppData"
-          $userData = Join-Path $appData "ai.opencode.desktop"
+          # Electron resolves appData before application code can override it,
+          # so test the real Windows per-user location instead of a child-only
+          # APPDATA override that may be ignored by the packaged executable.
+          $userData = Join-Path $env:APPDATA "ai.opencode.desktop"
           $database = Join-Path $userData "data/opencode/opencode.db"
 
           function Stop-OpenCodeProcess([System.Diagnostics.Process] $Process) {
@@ -99,7 +100,8 @@ jobs:
           }
 
           Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
-          New-Item -ItemType Directory -Force -Path $projectRoot, $appData, $localAppData | Out-Null
+          Remove-Item -LiteralPath $userData -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $projectRoot | Out-Null
           Set-Content -LiteralPath (Join-Path $projectRoot "README.md") -Value "Windows desktop smoke project"
 
           $installProcess = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$installRoot") -Wait -PassThru
@@ -108,12 +110,6 @@ jobs:
           $executable = Join-Path $installRoot "OpenCode.exe"
           if (-not (Test-Path -LiteralPath $executable)) { throw "Installed OpenCode executable was not found at $executable." }
 
-          $previousAppData = $env:APPDATA
-          $previousLocalAppData = $env:LOCALAPPDATA
-          $previousChannel = $env:OPENCODE_CHANNEL
-          $env:APPDATA = $appData
-          $env:LOCALAPPDATA = $localAppData
-          $env:OPENCODE_CHANNEL = "prod"
           $first = $null
           $second = $null
           try {
@@ -133,13 +129,11 @@ jobs:
           } finally {
             Stop-OpenCodeProcess $second
             Stop-OpenCodeProcess $first
-            $env:APPDATA = $previousAppData
-            $env:LOCALAPPDATA = $previousLocalAppData
-            $env:OPENCODE_CHANNEL = $previousChannel
           }
         shell: pwsh
 
       - name: Upload Windows Installer
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: opencode-desktop-windows-x64
