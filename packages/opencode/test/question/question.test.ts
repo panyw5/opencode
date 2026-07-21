@@ -12,6 +12,7 @@ import { ModelID, ProviderID } from "../../src/provider/schema"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Bus } from "../../src/bus"
+import { ScheduledTaskUnattended } from "../../src/scheduled-task/unattended"
 
 const it = testEffect(
   Layer.mergeAll(Question.layer.pipe(Layer.provideMerge(Bus.layer)), CrossSpawnSpawner.defaultLayer),
@@ -51,6 +52,28 @@ const rejectEffect = Effect.fn("QuestionTest.reject")(function* (id: QuestionID)
 afterEach(async () => {
   await disposeAllInstances()
 })
+
+it.instance(
+  "unattended scheduled tasks reject interactive questions immediately",
+  () =>
+    Effect.gen(function* () {
+      const exit = yield* askEffect({
+        sessionID: SessionID.make("ses_scheduled"),
+        questions: [
+          {
+            question: "Choose an option",
+            header: "Choice",
+            options: [{ label: "One", description: "First option" }],
+          },
+        ],
+      }).pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, true), Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(Question.RejectedError)
+      expect(yield* listEffect).toEqual([])
+    }),
+  { git: true },
+)
 
 /** Reject all pending questions so dangling Deferred fibers don't hang the test. */
 const rejectAll = Effect.gen(function* () {

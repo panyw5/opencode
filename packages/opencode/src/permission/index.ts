@@ -13,6 +13,7 @@ import { Deferred, Effect, Layer, Schema, Context } from "effect"
 import os from "os"
 import { PermissionV2 } from "@opencode-ai/core/permission"
 import { PermissionID } from "./schema"
+import { ScheduledTaskUnattended } from "@/scheduled-task/unattended"
 
 const log = Log.create({ service: "permission" })
 
@@ -170,18 +171,25 @@ export const layer = Layer.effect(
 
     const ask = Effect.fn("Permission.ask")(function* (input: AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
+      const unattended = yield* ScheduledTaskUnattended.ContextRef
       const { ruleset, ...request } = input
       let needsAsk = false
 
       for (const pattern of request.patterns) {
         const rule = evaluate(request.permission, pattern, ruleset, approved)
         log.info("evaluated", { permission: request.permission, pattern, action: rule })
+        if (unattended && request.permission === "external_directory") {
+          return yield* new DeniedError({
+            ruleset: [{ permission: request.permission, pattern, action: "deny" }],
+          })
+        }
         if (rule.action === "deny") {
           return yield* new DeniedError({
             ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
           })
         }
         if (rule.action === "allow") continue
+        if (unattended) continue
         needsAsk = true
       }
 

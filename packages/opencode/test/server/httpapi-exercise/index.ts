@@ -163,6 +163,75 @@ const scenarios: Scenario[] = [
     .status(400),
   http.protected.get("/config/providers", "config.providers").json(),
   http.protected.get("/project", "project.list").json(200, array, "status"),
+  http.protected
+    .get("/scheduled-task", "scheduledTask.list")
+    .at((ctx) => ({ path: "/scheduled-task", headers: ctx.headers() }))
+    .json(200, array, "status"),
+  http.protected
+    .post("/scheduled-task", "scheduledTask.create")
+    .mutating()
+    .seeded((ctx) => ctx.project())
+    .at((ctx) => ({
+      path: "/scheduled-task",
+      headers: ctx.headers(),
+      body: {
+        projectID: ctx.state.id,
+        projectName: "HTTP API Project",
+        directory: ctx.directory,
+        name: "HTTP API scheduled task",
+        prompt: "Check the workspace",
+        schedule: { kind: "at", at: Date.now() + 86_400_000 },
+        executionMode: "new_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test" },
+        enabled: false,
+        unattended: true,
+      },
+    }))
+    .json(
+      200,
+      (body) => {
+        object(body)
+        check(body.unattended === true, "scheduled task creation should require unattended mode")
+      },
+      "status",
+    ),
+  http.protected
+    .get("/scheduled-task/{taskID}", "scheduledTask.get")
+    .at((ctx) => ({
+      path: route("/scheduled-task/{taskID}", { taskID: "task_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .patch("/scheduled-task/{taskID}", "scheduledTask.update")
+    .at((ctx) => ({
+      path: route("/scheduled-task/{taskID}", { taskID: "task_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { name: "Updated" },
+    }))
+    .status(404),
+  http.protected
+    .delete("/scheduled-task/{taskID}", "scheduledTask.remove")
+    .at((ctx) => ({
+      path: route("/scheduled-task/{taskID}", { taskID: "task_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .get("/scheduled-task/{taskID}/run", "scheduledTask.runs")
+    .at((ctx) => ({
+      path: route("/scheduled-task/{taskID}/run", { taskID: "task_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .json(404, object, "status"),
+  http.protected
+    .post("/scheduled-task/{taskID}/run-now", "scheduledTask.runNow")
+    .at((ctx) => ({
+      path: route("/scheduled-task/{taskID}/run-now", { taskID: "task_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
   http.protected.get("/project/current", "project.current").json(
     200,
     (body, ctx) => {

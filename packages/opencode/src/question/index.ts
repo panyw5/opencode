@@ -8,6 +8,7 @@ import { MessageV2 } from "@/session/message-v2"
 import { SessionStatus } from "@/session/status"
 import * as Log from "@opencode-ai/core/util/log"
 import { QuestionID } from "./schema"
+import { ScheduledTaskUnattended } from "@/scheduled-task/unattended"
 
 const log = Log.create({ service: "question" })
 
@@ -644,6 +645,7 @@ export const layer = Layer.effect(
       questions: ReadonlyArray<Info>
       tool?: Tool
     }) {
+      if (yield* ScheduledTaskUnattended.ContextRef) return yield* new RejectedError()
       const pending = (yield* InstanceState.get(state)).pending
       const id = QuestionID.ascending()
       log.info("asking", { id, questions: input.questions.length })

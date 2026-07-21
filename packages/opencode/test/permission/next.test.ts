@@ -10,6 +10,7 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { MessageID, SessionID } from "../../src/session/schema"
+import { ScheduledTaskUnattended } from "../../src/scheduled-task/unattended"
 
 const bus = Bus.layer
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
@@ -608,6 +609,43 @@ it.instance(
       expect(yield* waitForPending(1)).toHaveLength(1)
       yield* rejectAll()
       yield* Fiber.await(fiber)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "ask - unattended mode allows workspace-local ask without persisting approval",
+  () =>
+    Effect.gen(function* () {
+      yield* ask({
+        sessionID: SessionID.make("session_scheduled"),
+        permission: "bash",
+        patterns: ["git status"],
+        metadata: {},
+        always: [],
+        ruleset: [{ permission: "bash", pattern: "*", action: "ask" }],
+      }).pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, true))
+      expect(yield* list()).toEqual([])
+    }),
+  { git: true },
+)
+
+it.instance(
+  "ask - unattended mode always denies external directory access",
+  () =>
+    Effect.gen(function* () {
+      const err = yield* fail(
+        ask({
+          sessionID: SessionID.make("session_scheduled"),
+          permission: "external_directory",
+          patterns: ["/tmp/outside"],
+          metadata: {},
+          always: [],
+          ruleset: [{ permission: "external_directory", pattern: "*", action: "allow" }],
+        }).pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, true)),
+      )
+      expect(err).toBeInstanceOf(Permission.DeniedError)
+      expect(yield* list()).toEqual([])
     }),
   { git: true },
 )
