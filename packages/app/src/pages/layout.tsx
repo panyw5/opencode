@@ -123,6 +123,7 @@ import {
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
 import { TrellisTasksPanel } from "./layout/trellis-tasks-panel"
+import { ScheduledTasksPanel } from "./layout/scheduled-tasks-panel"
 
 const QUICK_ASSISTANT_DIR = "quick-assistant"
 
@@ -152,12 +153,13 @@ export default function Layout(props: ParentProps) {
       workspaceBranchName: {} as Record<string, Record<string, string>>,
       workspaceExpanded: {} as Record<string, boolean>,
       gettingStartedDismissed: false,
-      sidebarPanel: "project" as "project" | "tasks",
+      sidebarPanel: "project" as "project" | "tasks" | "scheduled",
     }),
   )
 
   const pageReady = createMemo(() => ready())
   let booted = false
+  let preserveSidebarPanelOnRouteChange = false
 
   let scrollContainerRef: HTMLDivElement | undefined
   let dialogRun = 0
@@ -210,6 +212,7 @@ export default function Layout(props: ParentProps) {
   const onConfigRoute = createMemo(() => /\/config(?:\/|$)/.test(location.pathname))
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
   const tasksPanelActive = createMemo(() => store.sidebarPanel === "tasks")
+  const scheduledPanelActive = createMemo(() => store.sidebarPanel === "scheduled")
   const [pendingSessionSelection, setPendingSessionSelection] = createSignal<
     { directory: string; id: string } | undefined
   >()
@@ -249,8 +252,12 @@ export default function Layout(props: ParentProps) {
       () => [pageReady(), location.pathname] as const,
       ([isReady, pathname]) => {
         if (!isReady) return
-        if (!/\/(?:config|session)(?:\/|$)/.test(pathname)) return
-        if (untrack(() => store.sidebarPanel) !== "tasks") return
+        if (!/\/(?:config|scheduled|session)(?:\/|$)/.test(pathname)) return
+        if (untrack(() => store.sidebarPanel) === "project") return
+        if (preserveSidebarPanelOnRouteChange) {
+          preserveSidebarPanelOnRouteChange = false
+          return
+        }
         setStore("sidebarPanel", "project")
       },
     ),
@@ -1615,6 +1622,32 @@ export default function Layout(props: ParentProps) {
   function openTasksPanel() {
     if (!params.dir) return
     setStore("sidebarPanel", "tasks")
+    layout.sidebar.open()
+  }
+
+  function openScheduledPanel() {
+    if (!params.dir) return
+
+    if (onSessionRoute()) {
+      setStore("sidebarPanel", "scheduled")
+      layout.sidebar.open()
+      return
+    }
+
+    const root = sidebarProject()?.root ?? activeProjectRoot(routeDir())
+    const session = cachedProjectSession(root)
+    preserveSidebarPanelOnRouteChange = true
+    batch(() => {
+      setStore("sidebarPanel", "scheduled")
+      if (session) {
+        selectSession(session)
+        setSwitching(undefined)
+        navigate(`/${base64Encode(session.directory)}/session/${session.id}`)
+        return
+      }
+      setSwitching(root)
+      navigate(`/${base64Encode(root)}/session`)
+    })
     layout.sidebar.open()
   }
 
@@ -3079,7 +3112,7 @@ export default function Layout(props: ParentProps) {
                 fallback={
                   <>
                     <div class="shrink-0 py-4 px-3">
-                      <div class="grid grid-cols-4 gap-2">
+                      <div class="grid grid-cols-5 gap-2">
                         <Tooltip placement="bottom" value={language.t("command.session.new")}>
                           <IconButton
                             icon="new-session"
@@ -3102,6 +3135,16 @@ export default function Layout(props: ParentProps) {
                             class="sidebar-action-button h-10 w-full rounded-xl"
                             aria-label={language.t("trellis.tasks.title")}
                             onClick={openTasksPanel}
+                          />
+                        </Tooltip>
+                        <Tooltip placement="bottom" value={language.t("scheduled.title")}>
+                          <IconButton
+                            icon="clock"
+                            variant="ghost"
+                            size="large"
+                            class="sidebar-action-button h-10 w-full rounded-xl"
+                            aria-label={language.t("scheduled.title")}
+                            onClick={openScheduledPanel}
                           />
                         </Tooltip>
                         <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
@@ -3144,7 +3187,7 @@ export default function Layout(props: ParentProps) {
               >
                 <>
                   <div class="shrink-0 py-4 px-3">
-                    <div class="grid grid-cols-4 gap-2">
+                    <div class="grid grid-cols-5 gap-2">
                       <Tooltip placement="bottom" value={language.t("workspace.new")}>
                         <IconButton
                           icon="plus-small"
@@ -3167,6 +3210,16 @@ export default function Layout(props: ParentProps) {
                           class="sidebar-action-button h-10 w-full rounded-xl"
                           aria-label={language.t("trellis.tasks.title")}
                           onClick={openTasksPanel}
+                        />
+                      </Tooltip>
+                      <Tooltip placement="bottom" value={language.t("scheduled.title")}>
+                        <IconButton
+                          icon="clock"
+                          variant="ghost"
+                          size="large"
+                          class="sidebar-action-button h-10 w-full rounded-xl"
+                          aria-label={language.t("scheduled.title")}
+                          onClick={openScheduledPanel}
                         />
                       </Tooltip>
                       <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
@@ -3361,7 +3414,15 @@ export default function Layout(props: ParentProps) {
       helpLabel={() => language.t("sidebar.help")}
       onOpenHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}
       renderPanel={() =>
-        tasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
+        scheduledPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
+          <ScheduledTasksPanel
+            projectID={() => sidebarProject()?.id ?? ""}
+            directory={() => sidebarProject()?.root ?? routeDir()}
+            width={panel}
+            mobile={mobile}
+            onBack={() => setStore("sidebarPanel", "project")}
+          />
+        ) : tasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <TrellisTasksPanel
             directory={() => sidebarProject()?.root ?? routeDir()}
             width={panel}

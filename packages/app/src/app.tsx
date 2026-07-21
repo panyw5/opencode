@@ -57,6 +57,7 @@ import { useCheckServerHealth } from "./utils/server-health"
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
 const Config = lazy(() => import("@/pages/config"))
+const Scheduled = lazy(() => import("@/pages/scheduled"))
 const Loading = () => <div class="size-full" />
 
 const CONFIG_FALLBACK_SECTIONS = [
@@ -450,9 +451,11 @@ function ServerScopedApp(props: ParentProps<{ disableHealthCheck?: boolean | Acc
               root={(routerProps) => <RouterRoot appChildren={props.children}>{routerProps.children}</RouterRoot>}
             >
               <Route path="/" component={HomeRoute} />
+              <Route path="/scheduled" component={Scheduled} />
               <Route path="/:dir" component={DirectoryLayout}>
                 <Route path="/" component={SessionIndexRoute} />
                 <Route path="/session/:id?" component={SessionRoute} />
+                <Route path="/scheduled" component={Scheduled} />
                 <Route path="/config" component={ConfigRoute} />
               </Route>
             </Dynamic>
