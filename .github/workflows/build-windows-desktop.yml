@@ -100,8 +100,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $projectRoot, $appData, $localAppData | Out-Null
           Set-Content -LiteralPath (Join-Path $projectRoot "README.md") -Value "Windows desktop smoke project"
 
-          & $installer /S "/D=$installRoot"
-          if ($LASTEXITCODE -ne 0) { throw "NSIS installation failed with exit code $LASTEXITCODE." }
+          $installProcess = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$installRoot") -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) { throw "NSIS installation failed with exit code $($installProcess.ExitCode)." }
 
           $executable = Join-Path $installRoot "OpenCode.exe"
           if (-not (Test-Path -LiteralPath $executable)) { throw "Installed OpenCode executable was not found at $executable." }
