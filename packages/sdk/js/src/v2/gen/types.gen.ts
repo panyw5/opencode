@@ -812,6 +812,84 @@ export type Prompt = {
   references?: Array<PromptReferenceAttachment>
 }
 
+export type ScheduledTaskSchedule =
+  | { kind: "at"; at: number }
+  | { kind: "every"; interval: number }
+  | { kind: "cron"; expression: string; timezone?: string }
+
+export type ScheduledTask = {
+  id: string
+  projectID: string
+  projectName?: string
+  directory: string
+  name: string
+  prompt: string
+  schedule: ScheduledTaskSchedule
+  executionMode: "new_session" | "existing_session"
+  sessionID?: string
+  agent: string
+  model: { providerID: string; modelID: string; variant?: string }
+  enabled: boolean
+  unattended: true
+  nextRunAt?: number
+  lastRunAt?: number
+  lastStatus?: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
+  lastError?: string
+  time: { created: number; updated: number }
+}
+
+export type ScheduledTaskRun = {
+  id: string
+  taskID: string
+  scheduledAt: number
+  status: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
+  attempt: number
+  sessionID?: string
+  error?: string
+  time: { created: number; started?: number; finished?: number }
+}
+
+export type ScheduledTaskCreateInput = {
+  projectID: string
+  projectName?: string
+  directory: string
+  name: string
+  prompt: string
+  schedule: ScheduledTaskSchedule
+  executionMode?: "new_session" | "existing_session"
+  sessionID?: string
+  agent: string
+  model: { providerID: string; modelID: string; variant?: string }
+  enabled?: boolean
+  unattended: true
+}
+
+export type ScheduledTaskUpdateInput = {
+  name?: string
+  prompt?: string
+  schedule?: ScheduledTaskSchedule
+  executionMode?: "new_session" | "existing_session"
+  sessionID?: string | null
+  agent?: string
+  model?: { providerID: string; modelID: string; variant?: string }
+  enabled?: boolean
+}
+
+export type ScheduledTaskListErrors = { 400: EffectHttpApiErrorBadRequest }
+export type ScheduledTaskListResponses = { 200: Array<ScheduledTask> }
+export type ScheduledTaskCreateErrors = { 400: EffectHttpApiErrorBadRequest | InvalidRequestError }
+export type ScheduledTaskCreateResponses = { 200: ScheduledTask }
+export type ScheduledTaskGetErrors = { 400: EffectHttpApiErrorBadRequest; 404: NotFoundError }
+export type ScheduledTaskGetResponses = { 200: ScheduledTask }
+export type ScheduledTaskUpdateErrors = { 400: EffectHttpApiErrorBadRequest | InvalidRequestError; 404: NotFoundError }
+export type ScheduledTaskUpdateResponses = { 200: ScheduledTask }
+export type ScheduledTaskRemoveErrors = { 400: EffectHttpApiErrorBadRequest; 404: NotFoundError }
+export type ScheduledTaskRemoveResponses = { 200: boolean }
+export type ScheduledTaskRunsErrors = { 400: EffectHttpApiErrorBadRequest; 404: NotFoundError }
+export type ScheduledTaskRunsResponses = { 200: Array<ScheduledTaskRun> }
+export type ScheduledTaskRunNowErrors = { 400: EffectHttpApiErrorBadRequest; 404: NotFoundError }
+export type ScheduledTaskRunNowResponses = { 200: ScheduledTaskRun }
+
 export type GlobalEvent = {
   directory: string
   project?: string

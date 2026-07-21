@@ -160,6 +160,22 @@ import type {
   QuestionRejectResponses,
   QuestionReplyErrors,
   QuestionReplyResponses,
+  ScheduledTaskCreateErrors,
+  ScheduledTaskCreateInput,
+  ScheduledTaskCreateResponses,
+  ScheduledTaskGetErrors,
+  ScheduledTaskGetResponses,
+  ScheduledTaskListErrors,
+  ScheduledTaskListResponses,
+  ScheduledTaskRemoveErrors,
+  ScheduledTaskRemoveResponses,
+  ScheduledTaskRunNowErrors,
+  ScheduledTaskRunNowResponses,
+  ScheduledTaskRunsErrors,
+  ScheduledTaskRunsResponses,
+  ScheduledTaskUpdateErrors,
+  ScheduledTaskUpdateInput,
+  ScheduledTaskUpdateResponses,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -543,10 +559,12 @@ export class Config extends HeyApiClient {
    * Invalidate cached global configuration and reload it from disk.
    */
   public refresh<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).post<GlobalConfigRefreshResponses, GlobalConfigRefreshErrors, ThrowOnError>({
-      url: "/global/config/refresh",
-      ...options,
-    })
+    return (options?.client ?? this.client).post<GlobalConfigRefreshResponses, GlobalConfigRefreshErrors, ThrowOnError>(
+      {
+        url: "/global/config/refresh",
+        ...options,
+      },
+    )
   }
 }
 
@@ -4206,6 +4224,136 @@ export class History extends HeyApiClient {
   }
 }
 
+export class ScheduledTask extends HeyApiClient {
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: { projectID?: string; enabled?: "true" | "false" },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "projectID" },
+            { in: "query", key: "enabled" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ScheduledTaskListResponses, ScheduledTaskListErrors, ThrowOnError>({
+      url: "/scheduled-task",
+      ...options,
+      ...params,
+    })
+  }
+
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: { scheduledTaskCreateInput?: ScheduledTaskCreateInput },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "scheduledTaskCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<ScheduledTaskCreateResponses, ScheduledTaskCreateErrors, ThrowOnError>(
+      {
+        url: "/scheduled-task",
+        ...options,
+        ...params,
+        headers: { "Content-Type": "application/json", ...options?.headers, ...params.headers },
+      },
+    )
+  }
+
+  public get<ThrowOnError extends boolean = false>(
+    parameters: { taskID: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
+    return (options?.client ?? this.client).get<ScheduledTaskGetResponses, ScheduledTaskGetErrors, ThrowOnError>({
+      url: "/scheduled-task/{taskID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  public update<ThrowOnError extends boolean = false>(
+    parameters: { taskID: string; scheduledTaskUpdateInput?: ScheduledTaskUpdateInput },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "taskID" },
+            { key: "scheduledTaskUpdateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      ScheduledTaskUpdateResponses,
+      ScheduledTaskUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/scheduled-task/{taskID}",
+      ...options,
+      ...params,
+      headers: { "Content-Type": "application/json", ...options?.headers, ...params.headers },
+    })
+  }
+
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: { taskID: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
+    return (options?.client ?? this.client).delete<
+      ScheduledTaskRemoveResponses,
+      ScheduledTaskRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/scheduled-task/{taskID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  public runs<ThrowOnError extends boolean = false>(
+    parameters: { taskID: string; limit?: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "taskID" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ScheduledTaskRunsResponses, ScheduledTaskRunsErrors, ThrowOnError>({
+      url: "/scheduled-task/{taskID}/run",
+      ...options,
+      ...params,
+    })
+  }
+
+  public runNow<ThrowOnError extends boolean = false>(
+    parameters: { taskID: string },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
+    return (options?.client ?? this.client).post<ScheduledTaskRunNowResponses, ScheduledTaskRunNowErrors, ThrowOnError>(
+      {
+        url: "/scheduled-task/{taskID}/run-now",
+        ...options,
+        ...params,
+      },
+    )
+  }
+}
+
 export class Sync extends HeyApiClient {
   /**
    * Start workspace sync
@@ -5227,6 +5375,11 @@ export class OpencodeClient extends HeyApiClient {
   private _part?: Part
   get part(): Part {
     return (this._part ??= new Part({ client: this.client }))
+  }
+
+  private _scheduledTask?: ScheduledTask
+  get scheduledTask(): ScheduledTask {
+    return (this._scheduledTask ??= new ScheduledTask({ client: this.client }))
   }
 
   private _sync?: Sync
