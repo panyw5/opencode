@@ -24,6 +24,7 @@ import pkg from "../../package.json"
 import { findInPage } from "../find-in-page"
 import { desktopApi } from "./api"
 import { initI18n, t } from "./i18n"
+import { convertWslPath } from "./wsl/path"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@opencode-ai/ui/theme"
@@ -153,9 +154,11 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
   const handleWslPicker = async <T extends string | string[]>(result: T | null): Promise<T | null> => {
     if (!result || !(await isWslEnabled())) return result
     if (Array.isArray(result)) {
-      return Promise.all(result.map((path) => desktopApi.wslPath(path, "linux").catch(() => path))) as any
+      return Promise.all(
+        result.map((path) => convertWslPath({ path, mode: "linux", convert: desktopApi.wslPath })),
+      ) as any
     }
-    return desktopApi.wslPath(result, "linux").catch(() => result) as any
+    return convertWslPath({ path: result, mode: "linux", convert: desktopApi.wslPath }) as any
   }
 
   const runDesktopMenuAction: Platform["runDesktopMenuAction"] = (action) => {
@@ -247,8 +250,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
         const resolvedApp = app ? await desktopApi.resolveAppPath(app).catch(() => null) : null
         const resolvedPath = await (async () => {
           if (await isWslEnabled()) {
-            const converted = await desktopApi.wslPath(path, "windows").catch(() => null)
-            if (converted) return converted
+            return convertWslPath({ path, mode: "windows", convert: desktopApi.wslPath })
           }
           return path
         })()

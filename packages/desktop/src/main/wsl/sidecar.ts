@@ -5,6 +5,7 @@ import { app } from "electron"
 import { checkHealth } from "../server"
 import { type WslCommandLine, resolveWslOpencode, shellEscape, wslArgs } from "./runtime"
 import { pollWslHealth } from "./startup"
+import { startWithPortRetry } from "../startup-retry"
 
 export type WslSidecar = {
   listener: { stop: () => void; onExit: (cb: (code: number | null, signal: NodeJS.Signals | null) => void) => void }
@@ -20,7 +21,19 @@ export async function spawnWslSidecar(
   const opencode = await resolveWslOpencode(distro)
   if (!opencode) throw new Error(`OpenCode is not installed in ${distro}`)
 
-  const port = await allocatePort()
+  return startWithPortRetry({
+    component: `WSL sidecar for ${distro}`,
+    allocatePort,
+    start: (port) => spawnWslSidecarOnPort(distro, opencode, port, opts),
+  })
+}
+
+async function spawnWslSidecarOnPort(
+  distro: string,
+  opencode: string,
+  port: number,
+  opts: { onLine?: (line: WslCommandLine) => void; healthTimeoutMs?: number },
+): Promise<WslSidecar> {
   const password = randomUUID()
   const username = "opencode"
   const script = [

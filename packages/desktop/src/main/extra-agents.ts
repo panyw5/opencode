@@ -13,6 +13,9 @@ import type {
 } from "../preload/types"
 import { write as writeLog } from "./logging"
 import { bundledCliPath, getGenericagentConfig, getHermesConfig, getOpenclawConfig } from "./native"
+import { terminateProcessTree } from "./process-tree"
+import { desktopXdgEnv } from "./server-env"
+import { startWithPortRetry } from "./startup-retry"
 
 type ConfigById = {
   openclaw: OpenclawConfig
@@ -147,9 +150,23 @@ async function testExtraAgent<T extends ExtraAgentId>(id: T, config: ConfigById[
 
 async function startBridge<T extends ExtraAgentId>(id: T, config: ConfigById[T], mode: "runtime" | "test") {
   const cli = await bundledCliPath()
-  const port = await freePort()
-  const url = `http://${HOSTNAME}:${port}`
   const payload = bridgeConfig(id, config)
+  return startWithPortRetry({
+    component: `${displayName(id)} bridge`,
+    allocatePort: freePort,
+    start: (port) => startBridgeOnPort(id, config, mode, cli, payload, port),
+  })
+}
+
+async function startBridgeOnPort<T extends ExtraAgentId>(
+  id: T,
+  config: ConfigById[T],
+  mode: "runtime" | "test",
+  cli: string,
+  payload: Record<string, string | undefined>,
+  port: number,
+) {
+  const url = `http://${HOSTNAME}:${port}`
   const child = spawn(
     cli,
     [
@@ -173,6 +190,12 @@ async function startBridge<T extends ExtraAgentId>(id: T, config: ConfigById[T],
   )
 
   let exited = false
+  const recentOutput: string[] = []
+  const recordOutput = (stream: "stdout" | "stderr", message: string) => {
+    if (!message) return
+    recentOutput.push(`[${stream}] ${message}`)
+    if (recentOutput.length > 12) recentOutput.shift()
+  }
   const exit = new Promise<number | null>((resolve) => {
     child.once("exit", (code) => {
       exited = true
@@ -182,10 +205,12 @@ async function startBridge<T extends ExtraAgentId>(id: T, config: ConfigById[T],
 
   child.stdout.on("data", (chunk: Buffer) => {
     const message = chunk.toString("utf8").trimEnd()
+    recordOutput("stdout", message)
     if (message) writeLog("extra-agent", "stdout", { id, mode, message })
   })
   child.stderr.on("data", (chunk: Buffer) => {
     const message = chunk.toString("utf8").trimEnd()
+    recordOutput("stderr", message)
     if (message) writeLog("extra-agent", "stderr", { id, mode, message }, "warn")
   })
   child.on("error", (error) => {
@@ -199,7 +224,7 @@ async function startBridge<T extends ExtraAgentId>(id: T, config: ConfigById[T],
 
   const stop = async () => {
     if (exited) return
-    child.kill("SIGTERM")
+    await terminateProcessTree(child)
     await Promise.race([
       exit.then(() => undefined),
       delay(STOP_TIMEOUT_MS).then(() => {
@@ -212,7 +237,8 @@ async function startBridge<T extends ExtraAgentId>(id: T, config: ConfigById[T],
     await waitForPort(HOSTNAME, port, exit)
   } catch (error) {
     await stop()
-    throw error
+    const suffix = recentOutput.length ? `\n${recentOutput.join("\n")}` : ""
+    throw new Error(`${serializeError(error).message}${suffix}`, { cause: error })
   }
 
   return {
@@ -348,9 +374,9 @@ function createBridgeEnv(): Record<string, string> {
   delete env.OPENCODE_SERVER_PASSWORD
   delete env.OPENCODE_SERVER_USERNAME
   if (process.platform === "linux") delete env.LD_PRELOAD
+  Object.assign(env, desktopXdgEnv({ userDataPath: app.getPath("userData"), env }))
   env.OPENCODE_CLIENT = "desktop"
   env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
-  env.XDG_STATE_HOME = env.XDG_STATE_HOME ?? app.getPath("userData")
   return env
 }
 

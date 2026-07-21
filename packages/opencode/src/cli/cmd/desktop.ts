@@ -5,7 +5,11 @@ import { spawn } from "child_process"
 
 const APP_PATHS = {
   darwin: ["/Applications/OpenCode.app", `${process.env.HOME}/Applications/OpenCode.app`],
-  win32: [`${process.env.LOCALAPPDATA}\\OpenCode\\OpenCode.exe`, `${process.env.PROGRAMFILES}\\OpenCode\\OpenCode.exe`],
+  win32: [
+    `${process.env.LOCALAPPDATA}\\Programs\\OpenCode\\OpenCode.exe`,
+    `${process.env.LOCALAPPDATA}\\OpenCode\\OpenCode.exe`,
+    `${process.env.PROGRAMFILES}\\OpenCode\\OpenCode.exe`,
+  ],
   linux: ["/usr/bin/opencode-desktop", "/opt/OpenCode/opencode-desktop"],
 }
 
@@ -25,7 +29,7 @@ function openDesktopApp(appPath: string, directory: string) {
   if (platform === "darwin") {
     spawn("open", ["-a", appPath, directory], { detached: true, stdio: "ignore" }).unref()
   } else if (platform === "win32") {
-    spawn(appPath, [directory], { detached: true, stdio: "ignore", shell: true }).unref()
+    spawn(appPath, [directory], { detached: true, stdio: "ignore" }).unref()
   } else {
     spawn(appPath, [directory], { detached: true, stdio: "ignore" }).unref()
   }

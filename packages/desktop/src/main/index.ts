@@ -29,6 +29,7 @@ import {
   spawnLocalServer,
   type SidecarListener,
 } from "./server"
+import { sidecarDataHome } from "./server-env"
 import { createWslServersController, type WslServersController } from "./wsl/servers"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { registerWslIpcHandlers } from "./wsl/ipc"
@@ -321,8 +322,7 @@ const main = Effect.gen(function* () {
   const needsMigration = ((): boolean => {
     if (process.env.OPENCODE_DB === ":memory:") return false
 
-    const xdg = process.env.XDG_DATA_HOME
-    const base = xdg && xdg.length > 0 ? xdg : join(homedir(), ".local", "share")
+    const base = sidecarDataHome({ userDataPath: app.getPath("userData") })
     if (!existsSync(join(base, "opencode", "opencode.db"))) return true
     return getStore().get(DATABASE_UPGRADE_PROMPT_KEY) !== true
   })()

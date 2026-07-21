@@ -2,6 +2,7 @@ import * as http from "node:http"
 import * as tls from "node:tls"
 import { Effect, Layer } from "effect"
 import type { SqliteMigrationProgress } from "../preload/types"
+import { desktopXdgEnv } from "./server-env"
 
 type NodeTlsWithSystemCertificates = typeof tls & {
   getCACertificates: (type: "default" | "system") => string[]
@@ -109,10 +110,10 @@ async function stop() {
 
 function prepareSidecarEnv(password: string, userDataPath: string) {
   Object.assign(process.env, {
+    ...desktopXdgEnv({ userDataPath }),
     OPENCODE_SERVER_USERNAME: "opencode",
     OPENCODE_SERVER_PASSWORD: password,
     OPENCODE_DISABLE_CHANNEL_DB: "true",
-    XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
 }
 

@@ -4,7 +4,6 @@ import { constants as fsConstants } from "node:fs"
 import {
   access,
   chmod,
-  copyFile,
   mkdir,
   readFile,
   readdir,
@@ -45,6 +44,7 @@ import type {
   TrellisTaskList,
 } from "../preload/types"
 import { resolveDesktopPath, tempMarkdownAttachmentPath, trellisTaskFolderName } from "./native-path"
+import { deployCli } from "./cli-deploy"
 
 const execFileAsync = promisify(execFile)
 const TEXT_FILE_LIMIT = 2 * 1024 * 1024
@@ -90,7 +90,7 @@ export async function installCli() {
   const targetDir = process.platform === "win32" ? join(homedir(), "AppData", "Local", "opencode", "bin") : join(homedir(), ".local", "bin")
   const target = join(targetDir, process.platform === "win32" ? "opencode.exe" : "opencode")
   await mkdir(targetDir, { recursive: true })
-  await copyFile(source, target)
+  await deployCli({ source, target })
   if (process.platform !== "win32") await chmod(target, 0o755)
   return target
 }

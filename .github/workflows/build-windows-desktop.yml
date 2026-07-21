@@ -19,6 +19,8 @@ jobs:
       APP_VERSION: ${{ inputs.version != '' && inputs.version || github.ref_name }}
       OPENCODE_CHANNEL: prod
       RUST_TARGET: x86_64-pc-windows-msvc
+      # GitHub-hosted Windows runners are x64. Windows arm64 desktop builds and
+      # runtime smoke tests require a Windows arm64 self-hosted release runner.
     steps:
       - uses: actions/checkout@v4
 
@@ -45,6 +47,7 @@ jobs:
       - name: Build Desktop App
         run: |
           cd packages/desktop
+          bun test
           bun run package:win
 
           $version = $env:APP_VERSION -replace '^v', ''
@@ -56,6 +59,83 @@ jobs:
           }
           Rename-Item -Path $installer.FullName -NewName "OpenCode_${version}_x64-setup.exe" -Force
           ./../../script/sign-windows.ps1 "dist/OpenCode_${version}_x64-setup.exe"
+        shell: pwsh
+
+      - name: Smoke test installed desktop app
+        run: |
+          $version = $env:APP_VERSION -replace '^v', ''
+          $installer = Join-Path $PWD "packages/desktop/dist/OpenCode_${version}_x64-setup.exe"
+          $smokeRoot = Join-Path $env:RUNNER_TEMP "OpenCode Smoke"
+          $installRoot = Join-Path $smokeRoot "Install"
+          $projectRoot = Join-Path $smokeRoot "Project With Spaces"
+          $appData = Join-Path $smokeRoot "AppData"
+          $localAppData = Join-Path $smokeRoot "LocalAppData"
+          $userData = Join-Path $appData "ai.opencode.desktop"
+          $database = Join-Path $userData "data/opencode/opencode.db"
+
+          function Stop-OpenCodeProcess([System.Diagnostics.Process] $Process) {
+            if ($Process -and -not $Process.HasExited) {
+              & taskkill /PID $Process.Id /T /F *> $null
+              $Process.WaitForExit(15000)
+            }
+          }
+
+          function Wait-ForOpenCodeHealth([System.Diagnostics.Process] $Process) {
+            for ($attempt = 0; $attempt -lt 90; $attempt++) {
+              if ($Process.HasExited) {
+                throw "OpenCode exited before its local sidecar was ready (exit code $($Process.ExitCode))."
+              }
+
+              $ready = Get-ChildItem -Path (Join-Path $userData "logs") -Filter "main.log" -Recurse -ErrorAction SilentlyContinue |
+                Select-String -SimpleMatch "server ready" -Quiet
+              if ((Test-Path -LiteralPath $database) -and $ready) {
+                return
+              }
+              Start-Sleep -Seconds 1
+            }
+
+            throw "OpenCode did not create its sidecar database and report server readiness within 90 seconds."
+          }
+
+          Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $projectRoot, $appData, $localAppData | Out-Null
+          Set-Content -LiteralPath (Join-Path $projectRoot "README.md") -Value "Windows desktop smoke project"
+
+          & $installer /S "/D=$installRoot"
+          if ($LASTEXITCODE -ne 0) { throw "NSIS installation failed with exit code $LASTEXITCODE." }
+
+          $executable = Join-Path $installRoot "OpenCode.exe"
+          if (-not (Test-Path -LiteralPath $executable)) { throw "Installed OpenCode executable was not found at $executable." }
+
+          $previousAppData = $env:APPDATA
+          $previousLocalAppData = $env:LOCALAPPDATA
+          $previousChannel = $env:OPENCODE_CHANNEL
+          $env:APPDATA = $appData
+          $env:LOCALAPPDATA = $localAppData
+          $env:OPENCODE_CHANNEL = "prod"
+          $first = $null
+          $second = $null
+          try {
+            $first = Start-Process -FilePath $executable -ArgumentList @($projectRoot) -PassThru
+            Wait-ForOpenCodeHealth $first
+            Stop-OpenCodeProcess $first
+
+            if (-not (Test-Path -LiteralPath $database)) { throw "OpenCode sidecar database was removed after the first shutdown." }
+            $firstDatabaseWrite = (Get-Item -LiteralPath $database).LastWriteTimeUtc
+
+            $second = Start-Process -FilePath $executable -ArgumentList @($projectRoot) -PassThru
+            Wait-ForOpenCodeHealth $second
+            if (-not (Test-Path -LiteralPath $database)) { throw "OpenCode did not preserve the user-data database after restart." }
+            if ((Get-Item -LiteralPath $database).LastWriteTimeUtc -lt $firstDatabaseWrite) {
+              throw "OpenCode user-data database timestamp moved backwards after restart."
+            }
+          } finally {
+            Stop-OpenCodeProcess $second
+            Stop-OpenCodeProcess $first
+            $env:APPDATA = $previousAppData
+            $env:LOCALAPPDATA = $previousLocalAppData
+            $env:OPENCODE_CHANNEL = $previousChannel
+          }
         shell: pwsh
 
       - name: Upload Windows Installer

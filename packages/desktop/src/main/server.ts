@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
-import { createSidecarEnv, sidecarDefaultCwd } from "./server-env"
+import { createSidecarEnv, desktopXdgEnv, sidecarDefaultCwd } from "./server-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import type { SqliteMigrationProgress } from "../preload/types"
@@ -95,10 +95,10 @@ export function preferAppEnv(userDataPath: string) {
   const shell = process.platform === "win32" ? null : getUserShell()
   Object.assign(process.env, {
     ...(shell ? loadShellEnv(shell) : null),
+    ...desktopXdgEnv({ userDataPath }),
     OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "desktop",
-    XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? userDataPath,
   })
 }
 
@@ -253,7 +253,7 @@ export const spawnLocalServer = createSpawnLocalServer({
   forkSidecar: (sidecar, cwd) =>
     utilityProcess.fork(sidecar, [], {
       cwd,
-      env: createSidecarEnv({ cwd }),
+      env: createSidecarEnv({ cwd, userDataPath: app.getPath("userData") }),
       serviceName: SIDECAR_SERVICE_NAME,
       stdio: "pipe",
     }),
