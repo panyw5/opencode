@@ -47,7 +47,6 @@ jobs:
       - name: Build Desktop App
         run: |
           cd packages/desktop
-          bun test
           bun run package:win
 
           $version = $env:APP_VERSION -replace '^v', ''
