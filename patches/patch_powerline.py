@@ -46,7 +46,7 @@ if len(sys.argv) < 2:
     sys.exit(1)
 
 path = sys.argv[1]
-with open(path, "r") as f:
+with open(path, "r", encoding="utf-8") as f:
     src = f.read()
 
 PAD_MARKER = f"/* opencode-pad {CELL_PAD_TOP}/{CELL_PAD_BOTTOM} */"
@@ -256,7 +256,7 @@ if "renderPowerlineGlyph" not in src:
     lines.insert(target_line + 4, "      return;\n")
     lines.insert(target_line + 5, "    }\n")
 
-with open(path, "w") as f:
+with open(path, "w", encoding="utf-8") as f:
     f.writelines(lines)
 
 print("done")
