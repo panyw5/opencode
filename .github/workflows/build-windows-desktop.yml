@@ -86,14 +86,16 @@ jobs:
               }
 
               $ready = Get-ChildItem -Path (Join-Path $userData "logs") -Filter "main.log" -Recurse -ErrorAction SilentlyContinue |
-                Select-String -SimpleMatch "server ready" -Quiet
+                Select-String -SimpleMatch "loading task finished" -Quiet
               if ((Test-Path -LiteralPath $database) -and $ready) {
                 return
               }
               Start-Sleep -Seconds 1
             }
 
-            throw "OpenCode did not create its sidecar database and report server readiness within 90 seconds."
+            $logs = Get-ChildItem -Path (Join-Path $userData "logs") -Filter "*.log" -Recurse -ErrorAction SilentlyContinue |
+              ForEach-Object { "`n--- $($_.FullName) ---`n$(Get-Content -LiteralPath $_.FullName -Tail 80 -ErrorAction SilentlyContinue)" }
+            throw "OpenCode did not create its sidecar database and finish local-server startup within 90 seconds.$logs"
           }
 
           Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
