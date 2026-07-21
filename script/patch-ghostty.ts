@@ -30,4 +30,8 @@ if (result.error) {
   process.exit(0)
 }
 
-process.exit(result.status ?? 0)
+if (result.status !== 0) {
+  console.warn(`[patch-ghostty] optional visual patch failed with exit code ${result.status}; continuing without it`)
+}
+
+process.exit(0)
