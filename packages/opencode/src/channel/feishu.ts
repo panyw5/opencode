@@ -377,7 +377,7 @@ async function handleMessage(input: {
   // Final snapshot after prompt returns (ensure last step is visible).
   await poll.flush()
 
-  if (result.error) {
+  if ("error" in result && result.error) {
     const detail = formatClientError(result.error)
     log.error("feishu prompt failed", {
       channel: input.name,
