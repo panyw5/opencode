@@ -23,6 +23,8 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { decode64 } from "@/utils/base64"
+import { CronExpressionField } from "@/components/cron-expression-field"
+import { TimezoneSelectField } from "@/components/timezone-select-field"
 import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
@@ -38,9 +40,14 @@ type ModelOption = {
 
 const formatDate = (value?: number) => (value ? new Date(value).toLocaleString() : "-")
 
-function scheduleLabel(schedule: ScheduledTaskSchedule) {
+function scheduleLabel(
+  schedule: ScheduledTaskSchedule,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   if (schedule.kind === "at") return formatDate(schedule.at)
-  if (schedule.kind === "every") return `Every ${Math.round(schedule.interval / 60_000)} min`
+  if (schedule.kind === "every") {
+    return t("scheduled.schedule.every.interval", { count: Math.round(schedule.interval / 60_000) })
+  }
   return `${schedule.expression}${schedule.timezone ? ` · ${schedule.timezone}` : ""}`
 }
 
@@ -429,12 +436,17 @@ export default function Scheduled() {
                     >
                       <div class="flex w-full items-center gap-2">
                         <span class="min-w-0 flex-1 truncate text-14-medium text-text-strong">{task.name}</span>
-                        <span class={`text-11-medium ${statusTone(task.lastStatus)}`}>{task.lastStatus ?? "-"}</span>
                       </div>
                       <div class="truncate text-11-regular text-text-weak">{task.projectName || task.directory}</div>
                       <div class="flex items-center justify-between gap-2 text-11-regular text-text-weaker">
-                        <span class="truncate">{scheduleLabel(task.schedule)}</span>
-                        <span>{task.enabled ? formatDate(task.nextRunAt) : language.t("scheduled.disabled")}</span>
+                        <span class="truncate">{scheduleLabel(task.schedule, language.t)}</span>
+                        <span class="shrink-0">
+                          {task.lastRunAt
+                            ? `${language.t("scheduled.lastRun")} ${formatDate(task.lastRunAt)}`
+                            : task.enabled
+                              ? `${language.t("scheduled.nextRun")} ${formatDate(task.nextRunAt)}`
+                              : language.t("scheduled.disabled")}
+                        </span>
                       </div>
                     </button>
                   )}
@@ -483,7 +495,9 @@ export default function Scheduled() {
                       </div>
                       <div>
                         <div class="text-11-medium text-text-weaker">{language.t("scheduled.schedule")}</div>
-                        <div class="mt-1 text-13-regular text-text-strong">{scheduleLabel(task().schedule)}</div>
+                        <div class="mt-1 text-13-regular text-text-strong">
+                          {scheduleLabel(task().schedule, language.t)}
+                        </div>
                       </div>
                       <div>
                         <div class="text-11-medium text-text-weaker">{language.t("scheduled.model")}</div>
@@ -682,15 +696,18 @@ export default function Scheduled() {
                   </div>
                 </Show>
                 <Show when={state.scheduleKind === "cron"}>
-                  <div>
-                    <TextField
+                  <div class="md:col-span-2">
+                    <CronExpressionField
                       label={language.t("scheduled.cron")}
+                      meaningLabel={language.t("scheduled.cron.meaning")}
                       value={state.cron}
+                      timezone={state.timezone}
+                      locale={language.locale()}
                       onChange={(value) => setState("cron", value)}
                     />
                   </div>
                   <div>
-                    <TextField
+                    <TimezoneSelectField
                       label={language.t("scheduled.timezone")}
                       value={state.timezone}
                       onChange={(value) => setState("timezone", value)}

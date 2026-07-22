@@ -6,11 +6,13 @@ import { InstanceStore } from "@/project/instance-store"
 import { ProviderID, ModelID } from "@/provider/schema"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
+import { SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Context, Effect, Fiber, Layer, Schema, Scope } from "effect"
 import { ScheduledTaskRepository } from "./repository"
 import { CreateInput, Info, NotFoundError, Run, ScheduledTaskID, ScheduledTaskRunID, UpdateInput } from "./schema"
+import { markScheduledSessionTitle } from "./title"
 import { ScheduledTaskUnattended } from "./unattended"
 
 const log = Log.create({ service: "scheduled-task" })
@@ -96,6 +98,14 @@ export const layer = Layer.effect(
       if (run) yield* emitRun(task, run)
     })
 
+    const ensureScheduledTitle = Effect.fn("ScheduledTask.ensureScheduledTitle")(function* (sessionID: SessionID) {
+      const session = yield* sessions.get(sessionID).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
+      if (!session) return
+      const marked = markScheduledSessionTitle(session.title)
+      if (marked === session.title) return
+      yield* sessions.setTitle({ sessionID, title: marked })
+    })
+
     const executePrompt = Effect.fn("ScheduledTask.executePrompt")(function* (task: Info, run: Run) {
       return yield* instances.provide(
         { directory: task.directory },
@@ -106,7 +116,7 @@ export const layer = Layer.effect(
             if (!sessionID) {
               if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
               const session = yield* sessions.create({
-                title: task.name,
+                title: markScheduledSessionTitle(task.name),
                 agent: task.agent,
                 model: {
                   id: ModelID.make(task.model.modelID),
@@ -137,7 +147,7 @@ export const layer = Layer.effect(
           } else {
             if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
             const session = yield* sessions.create({
-              title: `${task.name} · ${new Date(run.scheduledAt).toLocaleString()}`,
+              title: markScheduledSessionTitle(`${task.name} · ${new Date(run.scheduledAt).toLocaleString()}`),
               agent: task.agent,
               model: {
                 id: ModelID.make(task.model.modelID),
@@ -147,6 +157,10 @@ export const layer = Layer.effect(
             })
             sessionID = session.id
           }
+
+          // Mark any session written by a scheduled task (including user-owned
+          // existing sessions) so the sidebar can show a clock affordance.
+          yield* ensureScheduledTitle(sessionID)
 
           // Notify clients as soon as the target session is known so an open
           // session view can refresh before/while the prompt streams.

@@ -19,7 +19,13 @@ import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { working } from "../session/session-working"
-import { hasProjectPermissions, isInitialSessionLoad, workspaceKey } from "./helpers"
+import {
+  hasProjectPermissions,
+  isInitialSessionLoad,
+  isScheduledSessionTitle,
+  stripScheduledSessionTitle,
+  workspaceKey,
+} from "./helpers"
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
 
@@ -164,57 +170,69 @@ const SessionRow = (props: {
   cancelHoverPrefetch: () => void
   detail?: Accessor<boolean | undefined>
   reduced?: boolean
-}): JSX.Element => (
-  <A
-    href={`/${base64Encode(props.session.directory)}/session/${props.session.id}`}
-    class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
-    onPointerDown={(event) => {
-      if (isPlainPrimaryPointer(event)) props.select()
-      props.warmPress()
-    }}
-    onFocus={props.warmFocus}
-    onClick={(event) => {
-      if (isPlainPrimaryMouse(event)) props.select()
-      if (props.sidebarOpened()) return
-    }}
-  >
-    <div class="flex items-center gap-1 w-full">
-      <Show when={props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0}>
-        <div
-          class="shrink-0 size-6 flex items-center justify-center"
-          style={{
-            color: props.active ? "var(--sidebar-session-accent)" : (props.tint() ?? "var(--icon-interactive-base)"),
+}): JSX.Element => {
+  const scheduled = isScheduledSessionTitle(props.session.title)
+  const displayTitle = stripScheduledSessionTitle(props.session.title)
+  return (
+    <A
+      href={`/${base64Encode(props.session.directory)}/session/${props.session.id}`}
+      class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
+      onPointerDown={(event) => {
+        if (isPlainPrimaryPointer(event)) props.select()
+        props.warmPress()
+      }}
+      onFocus={props.warmFocus}
+      onClick={(event) => {
+        if (isPlainPrimaryMouse(event)) props.select()
+        if (props.sidebarOpened()) return
+      }}
+    >
+      <div class="flex items-center gap-1 w-full">
+        <Show when={props.isWorking() || props.hasPermissions() || props.hasError() || props.unseenCount() > 0}>
+          <div
+            class="shrink-0 size-6 flex items-center justify-center"
+            style={{
+              color: props.active ? "var(--sidebar-session-accent)" : (props.tint() ?? "var(--icon-interactive-base)"),
+            }}
+          >
+            <Switch>
+              <Match when={props.isWorking()}>
+                <Spinner class="size-[15px]" />
+              </Match>
+              <Match when={props.hasPermissions()}>
+                <div class="size-1.5 rounded-full bg-surface-warning-strong" />
+              </Match>
+              <Match when={props.hasError()}>
+                <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
+              </Match>
+              <Match when={props.unseenCount() > 0}>
+                <div class="size-1.5 rounded-full bg-text-interactive-base" />
+              </Match>
+            </Switch>
+          </div>
+        </Show>
+        <Show when={scheduled}>
+          <Icon
+            name="clock"
+            size="small"
+            class="shrink-0 text-icon-weak"
+            style={props.active ? { color: "var(--sidebar-session-accent)" } : undefined}
+          />
+        </Show>
+        <span
+          classList={{
+            "text-16-medium grow-1 min-w-0 overflow-hidden text-ellipsis truncate": true,
+            "transition-colors": !props.reduced,
+            "text-text-base": !props.active,
           }}
+          style={props.active ? { color: "var(--sidebar-session-accent)" } : undefined}
         >
-          <Switch>
-            <Match when={props.isWorking()}>
-              <Spinner class="size-[15px]" />
-            </Match>
-            <Match when={props.hasPermissions()}>
-              <div class="size-1.5 rounded-full bg-surface-warning-strong" />
-            </Match>
-            <Match when={props.hasError()}>
-              <div class="size-1.5 rounded-full bg-text-diff-delete-base" />
-            </Match>
-            <Match when={props.unseenCount() > 0}>
-              <div class="size-1.5 rounded-full bg-text-interactive-base" />
-            </Match>
-          </Switch>
-        </div>
-      </Show>
-      <span
-        classList={{
-          "text-16-medium grow-1 min-w-0 overflow-hidden text-ellipsis truncate": true,
-          "transition-colors": !props.reduced,
-          "text-text-base": !props.active,
-        }}
-        style={props.active ? { color: "var(--sidebar-session-accent)" } : undefined}
-      >
-        {props.session.title}
-      </span>
-    </div>
-  </A>
-)
+          {displayTitle}
+        </span>
+      </div>
+    </A>
+  )
+}
 
 export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const params = useParams()
@@ -378,7 +396,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         <Show
           when={!tooltip()}
           fallback={
-            <Tooltip placement={props.mobile ? "bottom" : "right"} value={props.session.title} gutter={10}>
+            <Tooltip
+              placement={props.mobile ? "bottom" : "right"}
+              value={stripScheduledSessionTitle(props.session.title)}
+              gutter={10}
+            >
               {item}
             </Tooltip>
           }

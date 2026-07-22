@@ -91,6 +91,7 @@ import {
   sessionByOneBasedIndex,
   sortedProjectSessions,
   sortedRootSessions,
+  stripScheduledSessionTitle,
   waitForMatch,
   workspaceKey,
 } from "./layout/helpers"
@@ -2447,7 +2448,9 @@ export default function Layout(props: ParentProps) {
                   return (
                     <div class="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-surface-raised-base-hover">
                       <button class="flex-1 min-w-0 text-left" onClick={() => open(session)}>
-                        <div class="text-14-regular text-text-strong truncate">{session.title}</div>
+                        <div class="text-14-regular text-text-strong truncate">
+                          {stripScheduledSessionTitle(session.title)}
+                        </div>
                         <div class="text-12-regular text-text-weak truncate">{label(session)}</div>
                       </button>
                       <div class="flex items-center gap-1 shrink-0">

@@ -594,6 +594,8 @@ export const ImChannelSidebar = (props: {
     const query = searchQuery().toLowerCase().trim()
     let list = rawSessions().map((session) => ({
       ...session,
+      // Keep the raw title so SessionItem can detect the scheduled marker and
+      // show a clock; only strip IM channel markers for channel-scoped lists.
       title: channel ? stripImChannelTitle(session.title, channel) : (session.title ?? ""),
     }))
     if (query) list = list.filter((item) => item.title?.toLowerCase().includes(query))

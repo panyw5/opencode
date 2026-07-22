@@ -18,6 +18,8 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, For, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { CronExpressionField } from "@/components/cron-expression-field"
+import { TimezoneSelectField } from "@/components/timezone-select-field"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -27,9 +29,14 @@ import { useModels } from "@/context/models"
 
 const formatDate = (value?: number) => (value ? new Date(value).toLocaleString() : "-")
 
-function scheduleLabel(schedule: ScheduledTaskSchedule) {
+function scheduleLabel(
+  schedule: ScheduledTaskSchedule,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+) {
   if (schedule.kind === "at") return formatDate(schedule.at)
-  if (schedule.kind === "every") return `${Math.round(schedule.interval / 60_000)} min`
+  if (schedule.kind === "every") {
+    return t("scheduled.schedule.every.interval", { count: Math.round(schedule.interval / 60_000) })
+  }
   return `${schedule.expression}${schedule.timezone ? ` · ${schedule.timezone}` : ""}`
 }
 
@@ -44,6 +51,9 @@ function ScheduledTaskCard(props: {
   task: ScheduledTask
   enabledLabel: string
   disabledLabel: string
+  lastRunLabel: string
+  nextRunLabel: string
+  t: (key: string, vars?: Record<string, string | number>) => string
   onOpen: () => void
 }): JSX.Element {
   return (
@@ -52,24 +62,29 @@ function ScheduledTaskCard(props: {
       class="flex min-h-24 w-full flex-col gap-2 rounded-lg border border-border-weak-base bg-surface-raised-base px-3 py-3 text-left shadow-xs-border-base transition-colors hover:bg-surface-raised-base-hover"
       onClick={props.onOpen}
     >
-      <div class="flex w-full items-start gap-2">
-        <div class="flex size-7 shrink-0 items-center justify-center rounded-md bg-surface-base">
-          <Icon name="clock" size="small" class="text-icon-base" />
+      <div class="flex w-full items-stretch gap-2.5">
+        <div class="flex w-9 shrink-0 items-center justify-center self-stretch rounded-lg bg-surface-base">
+          <Icon name="clock" size="normal" class="text-icon-base" />
         </div>
         <div class="min-w-0 flex-1">
           <div class="truncate text-13-medium text-text-strong">{props.task.name}</div>
-          <div class="mt-0.5 truncate text-11-regular text-text-weak">{scheduleLabel(props.task.schedule)}</div>
+          <div class="mt-0.5 truncate text-11-regular text-text-weak">
+            {scheduleLabel(props.task.schedule, props.t)}
+          </div>
         </div>
-        <span class={`shrink-0 text-11-medium ${statusTone(props.task.lastStatus)}`}>
-          {props.task.lastStatus ?? "-"}
-        </span>
       </div>
       <div class="line-clamp-2 text-12-regular text-text-base">{props.task.prompt}</div>
       <Show when={props.task.lastError}>
         <div class="line-clamp-2 text-11-regular text-text-danger">{props.task.lastError}</div>
       </Show>
       <div class="flex w-full items-center justify-between gap-2 text-11-regular text-text-weaker">
-        <span class="truncate">{props.task.enabled ? formatDate(props.task.nextRunAt) : "-"}</span>
+        <span class="min-w-0 truncate">
+          {props.task.lastRunAt
+            ? `${props.lastRunLabel} ${formatDate(props.task.lastRunAt)}`
+            : props.task.enabled
+              ? `${props.nextRunLabel} ${formatDate(props.task.nextRunAt)}`
+              : "-"}
+        </span>
         <span class="shrink-0">{props.task.enabled ? props.enabledLabel : props.disabledLabel}</span>
       </div>
     </button>
@@ -209,7 +224,10 @@ function ScheduledTaskDetailDialog(props: {
                 {language.t("scheduled.schedule")}
               </div>
               <div class="grid gap-3 sm:grid-cols-2">
-                <Detail label={language.t("scheduled.schedule")} value={scheduleLabel(state.task.schedule)} />
+                <Detail
+                  label={language.t("scheduled.schedule")}
+                  value={scheduleLabel(state.task.schedule, language.t)}
+                />
                 <Detail label={language.t("scheduled.nextRun")} value={formatDate(state.task.nextRunAt)} />
                 <Detail
                   label={language.t("scheduled.model")}
@@ -550,7 +568,10 @@ function ScheduledTaskFormDialog(props: {
       }
       size="x-large"
       transition
-      containerStyle={{ height: "min(calc(100vh - 32px), 720px)" }}
+      containerStyle={{
+        width: "min(calc(100vw - 32px), 1120px)",
+        height: "min(calc(100vh - 32px), 860px)",
+      }}
     >
       <form onSubmit={save} class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4">
         <div class="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]">
@@ -661,12 +682,15 @@ function ScheduledTaskFormDialog(props: {
                   />
                 </Show>
                 <Show when={state.scheduleKind === "cron"}>
-                  <TextField
+                  <CronExpressionField
                     label={language.t("scheduled.cron")}
+                    meaningLabel={language.t("scheduled.cron.meaning")}
                     value={state.cron}
+                    timezone={state.timezone}
+                    locale={language.locale()}
                     onChange={(value) => setState("cron", value)}
                   />
-                  <TextField
+                  <TimezoneSelectField
                     label={language.t("scheduled.timezone")}
                     value={state.timezone}
                     onChange={(value) => setState("timezone", value)}
@@ -864,6 +888,9 @@ export function ScheduledTasksPanel(props: {
                       task={task}
                       enabledLabel={language.t("scheduled.enabled")}
                       disabledLabel={language.t("scheduled.disabled")}
+                      lastRunLabel={language.t("scheduled.lastRun")}
+                      nextRunLabel={language.t("scheduled.nextRun")}
+                      t={language.t}
                       onOpen={() => open(task)}
                     />
                   )}

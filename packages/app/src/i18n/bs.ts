@@ -1,4 +1,5 @@
 export const dict = {
+  "scheduled.schedule.every.interval": "Svakih {{count}} min",
   "command.category.suggested": "Predloženo",
   "command.category.view": "Prikaz",
   "command.category.project": "Projekat",

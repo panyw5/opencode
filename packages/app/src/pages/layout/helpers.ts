@@ -124,6 +124,21 @@ export function stripImChannelTitle(title: string | undefined, channel: string):
   return rest || title
 }
 
+/** Sessions written by scheduled tasks use this title prefix (server-owned). */
+export const SCHEDULED_SESSION_TITLE_PREFIX = "[scheduled]"
+
+export function isScheduledSessionTitle(title: string | undefined | null): boolean {
+  return !!title?.startsWith(SCHEDULED_SESSION_TITLE_PREFIX)
+}
+
+/** Display title without the internal `[scheduled]` marker. */
+export function stripScheduledSessionTitle(title: string | undefined | null): string {
+  if (!title) return ""
+  if (!isScheduledSessionTitle(title)) return title
+  const rest = title.slice(SCHEDULED_SESSION_TITLE_PREFIX.length).trimStart()
+  return rest || title
+}
+
 /** Sanitize channel name for default work-folder segment (mirrors server). */
 export function sanitizeChannelName(name: string): string {
   const cleaned = name.trim().replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "")

@@ -25,7 +25,9 @@ import {
   resolveChannelDirectory,
   sessionByOneBasedIndex,
   sortedProjectSessions,
+  isScheduledSessionTitle,
   stripImChannelTitle,
+  stripScheduledSessionTitle,
   latestWorkspaceSession,
   waitForMatch,
   workspaceKey,
@@ -134,6 +136,14 @@ describe("layout workspace helpers", () => {
     expect(stripImChannelTitle("[im:cc] oc_abc123", "cc")).toBe("oc_abc123")
     expect(stripImChannelTitle("normal", "cc")).toBe("normal")
     expect(stripImChannelTitle("[im:cc]", "cc")).toBe("[im:cc]")
+  })
+
+  test("detects and strips scheduled session title marker", () => {
+    expect(isScheduledSessionTitle("[scheduled] Nightly review")).toBe(true)
+    expect(isScheduledSessionTitle("normal")).toBe(false)
+    expect(stripScheduledSessionTitle("[scheduled] Nightly review")).toBe("Nightly review")
+    expect(stripScheduledSessionTitle("normal")).toBe("normal")
+    expect(stripScheduledSessionTitle("[scheduled]")).toBe("[scheduled]")
   })
 
   test("resolves per-channel work directory under opencode config", () => {
