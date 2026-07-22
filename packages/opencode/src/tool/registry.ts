@@ -24,6 +24,7 @@ import { Provider } from "@/provider/provider"
 import { ProviderID, type ModelID } from "../provider/schema"
 import { WebSearchTool } from "./websearch"
 import { CodexConsultTool } from "./codex_consult"
+import { ClaudeConsultTool } from "./claude_consult"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
 import { RepositoryCache } from "@/reference/repository-cache"
@@ -133,6 +134,7 @@ export const layer: Layer.Layer<
     const repoClone = yield* RepoCloneTool
     const repoOverview = yield* RepoOverviewTool
     const codexConsult = yield* CodexConsultTool
+    const claudeConsult = yield* ClaudeConsultTool
     const shell = yield* ShellTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
@@ -246,6 +248,7 @@ export const layer: Layer.Layer<
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
           codex_consult: Tool.init(codexConsult),
+          claude_consult: Tool.init(claudeConsult),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
@@ -271,6 +274,7 @@ export const layer: Layer.Layer<
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.codex_consult,
+            tool.claude_consult,
             tool.skill,
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),

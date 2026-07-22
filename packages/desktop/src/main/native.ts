@@ -18,6 +18,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve } from "node:pat
 import { promisify } from "node:util"
 import { app, shell } from "electron"
 import {
+  CLAUDE_CONFIG_KEY,
   CODEX_CONFIG_KEY,
   CUSTOM_EDITOR_PATH_KEY,
   DEFAULT_EDITOR_KEY,
@@ -32,6 +33,7 @@ import type {
   ExtraAgentId,
   ExtraAgentInfo,
   ConfigWorkspace,
+  ClaudeConfig,
   CodexConfig,
   GenericagentConfig,
   GenericagentTest,
@@ -554,6 +556,14 @@ export function getCodexConfig(): CodexConfig {
 
 export function setCodexConfig(config: CodexConfig) {
   getStore().set(CODEX_CONFIG_KEY, config)
+}
+
+export function getClaudeConfig(): ClaudeConfig {
+  return parseStoreObject<ClaudeConfig>(CLAUDE_CONFIG_KEY, { enabled: true })
+}
+
+export function setClaudeConfig(config: ClaudeConfig) {
+  getStore().set(CLAUDE_CONFIG_KEY, config)
 }
 
 export async function getExtraAgentInfo(

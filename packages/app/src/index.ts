@@ -3,6 +3,9 @@ export { ACCEPTED_FILE_EXTENSIONS, ACCEPTED_FILE_TYPES, filePickerFilters } from
 export { useCommand } from "./context/command"
 export { type Locale, loadLocaleDict, normalizeLocale } from "./context/language"
 export {
+  type ClaudeConfig,
+  type ClaudeInfo,
+  type ClaudeTest,
   type ConfigFile,
   type ConfigTreeItem,
   type ConfigWorkspace,

@@ -158,6 +158,33 @@ export type CodexInfo = {
   error?: string
 }
 
+export type ClaudeConfig = {
+  enabled: boolean
+  binaryPath?: string
+  configHome?: string
+}
+
+export type ClaudeTest = {
+  ok: boolean
+  logs: string[]
+}
+
+export type ClaudeInfo = {
+  sourceUrl: string
+  installed: boolean
+  binaryPath?: string
+  version?: string
+  configHome?: string
+  settingsPath?: string
+  settingsExists?: boolean
+  model?: string
+  permissionMode?: string
+  defaultMode?: string
+  apiKeyHelper?: string
+  checkedAt?: number
+  error?: string
+}
+
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
 
 export type ExtraAgentInfo = {
@@ -319,6 +346,18 @@ export type Platform = {
 
   /** Inspect Codex install/version/model/config.toml (desktop only) */
   getCodexInfo?(config?: CodexConfig): Promise<CodexInfo>
+
+  /** Get the configured Claude CLI integration (desktop only) */
+  getClaudeConfig?(): Promise<ClaudeConfig>
+
+  /** Set the configured Claude CLI integration (desktop only) */
+  setClaudeConfig?(config: ClaudeConfig): Promise<void> | void
+
+  /** Probe local Claude CLI install and settings.json (desktop only) */
+  testClaudeConfig?(config: ClaudeConfig): Promise<ClaudeTest>
+
+  /** Inspect Claude install/version/model/settings.json (desktop only) */
+  getClaudeInfo?(config?: ClaudeConfig): Promise<ClaudeInfo>
 
   /** Get the configured GenericAgent integration (desktop only) */
   getGenericagentConfig?(): Promise<GenericagentConfig>

@@ -52,6 +52,8 @@ import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject } from "@/context/layout"
 import {
   type ConfigTreeItem,
+  type ClaudeConfig,
+  type ClaudeInfo,
   type ConfigWorkspace,
   type CodexConfig,
   type CodexInfo,
@@ -306,7 +308,7 @@ type PluginSource = Pick<PluginItem, "group" | "project" | "root" | "origin">
 type ClawItem = {
   id: string
   label: string
-  note: string
+  note?: string
   meta?: string
   sourceUrl: string
   enabled: boolean
@@ -1232,6 +1234,19 @@ function hmCfg(input?: HermesConfig) {
 }
 
 function codexCfg(input?: CodexConfig) {
+  return {
+    enabled: input?.enabled ?? true,
+    binaryPath: input?.binaryPath ?? "",
+    configHome: input?.configHome ?? "",
+    saving: false,
+    testing: false,
+    err: {} as Record<string, string>,
+    test: undefined as undefined | { ok: boolean; logs: string[] },
+    run: 0,
+  }
+}
+
+function claudeCfg(input?: ClaudeConfig) {
   return {
     enabled: input?.enabled ?? true,
     binaryPath: input?.binaryPath ?? "",
@@ -2955,6 +2970,188 @@ function CodexEditor(props: {
   )
 }
 
+function ClaudeInfoCard(props: { info?: ClaudeInfo; loading?: boolean }) {
+  const language = useLanguage()
+  const value = (input?: string | number | boolean) => {
+    if (input === undefined || input === null || input === "") return language.t("config.claws.info.unknown")
+    return String(input)
+  }
+  const install = () => {
+    if (props.loading && !props.info) return language.t("config.claws.info.loading")
+    if (!props.info) return language.t("config.claws.info.unknown")
+    return props.info.installed
+      ? language.t("config.claws.claude.install.installed")
+      : language.t("config.claws.claude.install.missing")
+  }
+
+  return (
+    <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="text-13-medium text-text-strong">{language.t("config.claws.claude.info.title")}</div>
+        <Show when={props.loading}>
+          <div
+            class="inline-flex items-center gap-1.5 text-12-regular text-text-weak"
+            title={language.t("config.claws.info.refreshing")}
+          >
+            <Icon name="refresh" size="small" class="animate-spin" />
+            <span>{language.t("config.claws.info.loading")}</span>
+          </div>
+        </Show>
+      </div>
+      <div class="mt-4 grid gap-3 md:grid-cols-2">
+        <InfoCell label={language.t("config.claws.claude.info.install")} value={install()} />
+        <InfoCell label={language.t("config.claws.claude.info.version")} value={value(props.info?.version)} />
+        <InfoCell label={language.t("config.claws.claude.info.binary")} value={value(props.info?.binaryPath)} />
+        <InfoCell label={language.t("config.claws.claude.info.model")} value={value(props.info?.model)} />
+        <InfoCell
+          label={language.t("config.claws.claude.info.permissionMode")}
+          value={value(props.info?.permissionMode)}
+        />
+        <InfoCell label={language.t("config.claws.claude.info.defaultMode")} value={value(props.info?.defaultMode)} />
+        <InfoCell label={language.t("config.claws.claude.info.configHome")} value={value(props.info?.configHome)} />
+        <InfoCell
+          label={language.t("config.claws.claude.info.settingsPath")}
+          value={
+            props.info?.settingsPath
+              ? `${props.info.settingsPath}${props.info.settingsExists === false ? ` (${language.t("config.claws.claude.info.settingsMissing")})` : ""}`
+              : language.t("config.claws.info.unknown")
+          }
+        />
+      </div>
+      <Show when={props.info?.error}>
+        {(error) => <div class="mt-3 text-12-regular text-text-danger-base">{error()}</div>}
+      </Show>
+    </div>
+  )
+}
+
+function ClaudeEditor(props: {
+  item?: ClawItem
+  info?: ClaudeInfo
+  infoLoading?: boolean
+  form: ReturnType<typeof claudeCfg>
+  dirty: boolean
+  busy: boolean
+  canTest: boolean
+  onChange: (key: "enabled" | "binaryPath" | "configHome", value: string | boolean) => void
+  onSave: () => void
+  onTest: () => void
+  onRefresh: () => void
+}) {
+  const language = useLanguage()
+  const settings = useSettings()
+
+  return (
+    <div class="flex h-full min-h-0 flex-col">
+      <Show
+        when={props.item}
+        fallback={<div class="px-4 py-10 text-13-regular text-text-weak">{language.t("config.claws.empty")}</div>}
+      >
+        <ClawHeader
+          item={props.item}
+          enabled={props.form.enabled}
+          busy={props.busy}
+          saving={props.form.saving}
+          testing={props.form.testing}
+          onEnabled={(value) => props.onChange("enabled", value)}
+        />
+
+        <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
+          <div class="flex w-full flex-col gap-6">
+            <Show when={props.infoLoading || props.info}>
+              <ClaudeInfoCard info={props.info} loading={props.infoLoading} />
+            </Show>
+
+            <div class="grid gap-4 lg:grid-cols-2">
+              <TextField
+                type="text"
+                label={language.t("config.claws.field.claudeBinary")}
+                description={language.t("config.claws.field.claudeBinaryDescription")}
+                placeholder={language.t("config.claws.field.claudeBinaryPlaceholder")}
+                value={props.form.binaryPath}
+                disabled={props.busy || props.form.saving || props.form.testing}
+                onChange={(value) => props.onChange("binaryPath", value)}
+              />
+              <TextField
+                type="text"
+                label={language.t("config.claws.field.claudeHome")}
+                description={language.t("config.claws.field.claudeHomeDescription")}
+                placeholder={language.t("config.claws.field.claudeHomePlaceholder")}
+                value={props.form.configHome}
+                disabled={props.busy || props.form.saving || props.form.testing}
+                onChange={(value) => props.onChange("configHome", value)}
+              />
+            </div>
+
+            <div class="flex w-full flex-wrap items-center justify-end gap-2">
+              <Button
+                size="small"
+                variant="secondary"
+                icon="refresh"
+                disabled={props.busy || props.form.saving || props.form.testing || props.infoLoading}
+                onClick={props.onRefresh}
+              >
+                {language.t("config.claws.action.refreshInfo")}
+              </Button>
+              <ClawFormActions
+                dirty={props.dirty}
+                busy={props.busy}
+                canTest={props.canTest}
+                saving={props.form.saving}
+                testing={props.form.testing}
+                onSave={props.onSave}
+                onTest={props.onTest}
+              />
+            </div>
+
+            <Show when={props.form.testing || props.form.test}>
+              <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                  <div class="text-13-medium text-text-strong">{language.t("config.claws.test.title")}</div>
+                  <Show
+                    when={!props.form.testing && props.form.test}
+                    fallback={
+                      <div class="mt-2 inline-flex items-center gap-2 text-13-medium text-text-base">
+                        <Spinner class="size-4" />
+                        <span>{language.t("config.claws.status.testing")}</span>
+                      </div>
+                    }
+                  >
+                    <div
+                      class="text-13-medium"
+                      classList={{
+                        "text-text-success": !!props.form.test?.ok,
+                        "text-text-danger-base": !props.form.test?.ok,
+                      }}
+                    >
+                      {props.form.test?.ok
+                        ? language.t("config.claws.status.success")
+                        : language.t("config.claws.status.failed")}
+                    </div>
+                  </Show>
+                </div>
+                <div class="mt-4 rounded-xl border border-border-weak-base bg-background-base px-4 py-3">
+                  <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                    {language.t("config.claws.debug.logs")}
+                  </div>
+                  <pre
+                    class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-12-regular text-text-weak"
+                    style={{ "font-family": monoFontFamily(settings.appearance.font()) }}
+                  >
+                    {props.form.testing
+                      ? language.t("config.claws.logs.testingClaude")
+                      : props.form.test?.logs.join("\n") || ""}
+                  </pre>
+                </div>
+              </div>
+            </Show>
+          </div>
+        </div>
+      </Show>
+    </div>
+  )
+}
+
 function HermesEditor(props: {
   item?: ClawItem
   info?: ExtraAgentInfo
@@ -3481,6 +3678,7 @@ export default function ConfigPage() {
     ga: gaCfg(),
     hm: hmCfg(),
     codex: codexCfg(),
+    claude: claudeCfg(),
     skillTitle: "",
     skillErr: "",
     skillPath: "",
@@ -3507,6 +3705,7 @@ export default function ConfigPage() {
     gaRev: 0,
     hmRev: 0,
     codexRev: 0,
+    claudeRev: 0,
     mcpRev: 0,
     commandRev: 0,
     cmdTitle: "",
@@ -3527,7 +3726,16 @@ export default function ConfigPage() {
 
   function bump(
     ...list: Array<
-      "workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "codexRev" | "mcpRev" | "commandRev"
+      | "workspaceRev"
+      | "skillRev"
+      | "agentRev"
+      | "clawRev"
+      | "gaRev"
+      | "hmRev"
+      | "codexRev"
+      | "claudeRev"
+      | "mcpRev"
+      | "commandRev"
     >
   ) {
     list.forEach((key) => setState(key, (value) => value + 1))
@@ -3840,11 +4048,17 @@ export default function ConfigPage() {
   const [codexLoading, setCodexLoading] = createSignal(false)
   const [codexInfoState, setCodexInfoState] = createSignal<CodexInfo>()
   const [codexInfoLoading, setCodexInfoLoading] = createSignal(false)
+  const [claudeConfig, setClaudeConfigState] = createSignal<ClaudeConfig>()
+  const [claudeLoading, setClaudeLoading] = createSignal(false)
+  const [claudeInfoState, setClaudeInfoState] = createSignal<ClaudeInfo>()
+  const [claudeInfoLoading, setClaudeInfoLoading] = createSignal(false)
   let openclawConfigRun = 0
   let genericagentConfigRun = 0
   let hermesConfigRun = 0
   let codexConfigRun = 0
   let codexInfoRun = 0
+  let claudeConfigRun = 0
+  let claudeInfoRun = 0
 
   createEffect(
     on(
@@ -3923,9 +4137,9 @@ export default function ConfigPage() {
 
   createEffect(
     on(
-      () => [state.section, state.pick, state.codexRev] as const,
-      ([section, pick]) => {
-        if (section !== "claws" || pick !== "claw:codex" || !platform.getCodexConfig) {
+      () => [state.section, state.codexRev] as const,
+      ([section]) => {
+        if (section !== "claws" || !platform.getCodexConfig) {
           codexConfigRun++
           setCodexLoading(false)
           return
@@ -3948,12 +4162,12 @@ export default function ConfigPage() {
 
   createEffect(
     on(
-      () => [state.section, state.pick, state.codexRev, codexConfig(), codexLoading()] as const,
-      ([section, pick, , cfg, loading]) => {
-        if (section !== "claws" || pick !== "claw:codex" || !platform.getCodexInfo || loading || !cfg) {
+      () => [state.section, state.codexRev, codexConfig(), codexLoading()] as const,
+      ([section, , cfg, loading]) => {
+        if (section !== "claws" || !platform.getCodexInfo || loading || !cfg) {
           codexInfoRun++
           setCodexInfoLoading(false)
-          if (pick !== "claw:codex") setCodexInfoState(undefined)
+          if (section !== "claws") setCodexInfoState(undefined)
           return
         }
         const run = ++codexInfoRun
@@ -3967,6 +4181,57 @@ export default function ConfigPage() {
           .finally(() => {
             if (run !== codexInfoRun) return
             setCodexInfoLoading(false)
+          })
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [state.section, state.claudeRev] as const,
+      ([section]) => {
+        if (section !== "claws" || !platform.getClaudeConfig) {
+          claudeConfigRun++
+          setClaudeLoading(false)
+          return
+        }
+        const run = ++claudeConfigRun
+        setClaudeLoading(true)
+        void platform
+          .getClaudeConfig()
+          .then((result) => {
+            if (run !== claudeConfigRun) return
+            setClaudeConfigState(result)
+          })
+          .finally(() => {
+            if (run !== claudeConfigRun) return
+            setClaudeLoading(false)
+          })
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [state.section, state.claudeRev, claudeConfig(), claudeLoading()] as const,
+      ([section, , cfg, loading]) => {
+        if (section !== "claws" || !platform.getClaudeInfo || loading || !cfg) {
+          claudeInfoRun++
+          setClaudeInfoLoading(false)
+          if (section !== "claws") setClaudeInfoState(undefined)
+          return
+        }
+        const run = ++claudeInfoRun
+        setClaudeInfoLoading(true)
+        void platform
+          .getClaudeInfo(cfg)
+          .then((result) => {
+            if (run !== claudeInfoRun) return
+            setClaudeInfoState(result)
+          })
+          .finally(() => {
+            if (run !== claudeInfoRun) return
+            setClaudeInfoLoading(false)
           })
       },
     ),
@@ -4964,7 +5229,7 @@ export default function ConfigPage() {
 
   const claws = createMemo<ClawItem[]>(() => {
     if (platform.platform !== "desktop") return []
-    const items = extraAgents.map((agent) => {
+    const items: ClawItem[] = extraAgents.map((agent) => {
       if (agent.id === "openclaw") {
         const cfg = openclawConfig()
         return {
@@ -5003,9 +5268,19 @@ export default function ConfigPage() {
       items.push({
         id: "claw:codex",
         label: "Codex",
-        note: t("config.claws.note.codex"),
-        meta: info?.model?.trim() || info?.version?.trim() || cfg?.binaryPath?.trim() || "codex CLI",
+        meta: `codex CLI · ${info?.model?.trim() || t("config.claws.info.unknown")}`,
         sourceUrl: "https://github.com/openai/codex",
+        enabled: cfg?.enabled ?? true,
+      })
+    }
+    if (platform.getClaudeConfig) {
+      const cfg = claudeConfig()
+      const info = claudeInfoState()
+      items.push({
+        id: "claw:claude",
+        label: "Claude",
+        meta: `claude CLI · ${info?.model?.trim() || t("config.claws.info.unknown")}`,
+        sourceUrl: "https://docs.anthropic.com/en/docs/claude-code",
         enabled: cfg?.enabled ?? true,
       })
     }
@@ -5227,6 +5502,16 @@ export default function ConfigPage() {
     )
   })
 
+  const claudeDirty = createMemo(() => {
+    const cfg = claudeConfig()
+    if (!cfg || state.section !== "claws") return false
+    return (
+      state.claude.enabled !== (cfg.enabled ?? true) ||
+      state.claude.binaryPath.trim() !== (cfg.binaryPath?.trim() ?? "") ||
+      state.claude.configHome.trim() !== (cfg.configHome?.trim() ?? "")
+    )
+  })
+
   const hmDirty = createMemo(() => {
     const cfg = hermesConfig()
     if (!cfg || state.section !== "claws") return false
@@ -5368,6 +5653,16 @@ export default function ConfigPage() {
       (item) => {
         if (!item) return
         setState("codex", codexCfg(item))
+      },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => claudeConfig(),
+      (item) => {
+        if (!item) return
+        setState("claude", claudeCfg(item))
       },
     ),
   )
@@ -6075,6 +6370,93 @@ export default function ConfigPage() {
       .finally(() => {
         if (run !== codexInfoRun) return
         setCodexInfoLoading(false)
+      })
+  }
+
+  function claudeInput(): ClaudeConfig {
+    return {
+      enabled: state.claude.enabled,
+      binaryPath: state.claude.binaryPath.trim() || undefined,
+      configHome: state.claude.configHome.trim() || undefined,
+    }
+  }
+
+  async function saveClaude() {
+    if (!platform.setClaudeConfig) return
+    const cfg = claudeInput()
+    setState("claude", "saving", true)
+    setState("claude", "test", undefined)
+    await Promise.resolve(platform.setClaudeConfig(cfg))
+      .then(async () => {
+        bump("claudeRev")
+        showToast({ variant: "success", title: t("common.save"), description: "Claude" })
+      })
+      .catch((err: unknown) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+      .finally(() => setState("claude", "saving", false))
+  }
+
+  async function testClaude() {
+    if (!platform.testClaudeConfig) return
+    const cfg = claudeInput()
+    const run = state.claude.run + 1
+    setState("claude", "run", run)
+    setState("claude", "testing", true)
+    setState("claude", "test", undefined)
+    await platform
+      .testClaudeConfig(cfg)
+      .then((item) => {
+        if (state.claude.run !== run) return
+        setState("claude", "test", { ok: item.ok, logs: item.logs })
+        if (platform.getClaudeInfo) {
+          void platform.getClaudeInfo(cfg).then((info) => {
+            if (state.claude.run !== run) return
+            setClaudeInfoState(info)
+          })
+        }
+        showToast({
+          variant: item.ok ? "success" : "error",
+          icon: item.ok ? "circle-check" : undefined,
+          title: t("config.claws.action.test"),
+          description: item.ok
+            ? t("config.claws.claude.test.success")
+            : (item.logs[item.logs.length - 1] ?? t("common.requestFailed")),
+        })
+      })
+      .catch((err: unknown) => {
+        if (state.claude.run !== run) return
+        const message = err instanceof Error ? err.message : String(err)
+        setState("claude", "test", { ok: false, logs: [message] })
+        showToast({ title: language.t("common.requestFailed"), description: message })
+      })
+      .finally(() => {
+        if (state.claude.run !== run) return
+        setState("claude", "testing", false)
+      })
+  }
+
+  function setClaude(key: "enabled" | "binaryPath" | "configHome", value: string | boolean) {
+    setState("claude", key, value)
+    setState("claude", "test", undefined)
+  }
+
+  function refreshClaudeInfo() {
+    if (!platform.getClaudeInfo) return
+    const run = ++claudeInfoRun
+    setClaudeInfoLoading(true)
+    void platform
+      .getClaudeInfo(claudeInput())
+      .then((result) => {
+        if (run !== claudeInfoRun) return
+        setClaudeInfoState(result)
+      })
+      .finally(() => {
+        if (run !== claudeInfoRun) return
+        setClaudeInfoLoading(false)
       })
   }
 
@@ -7757,6 +8139,21 @@ export default function ConfigPage() {
                         onSave={() => void saveCodex()}
                         onTest={() => void testCodex()}
                         onRefresh={refreshCodexInfo}
+                      />
+                    </Match>
+                    <Match when={selectedClaw()?.id === "claw:claude"}>
+                      <ClaudeEditor
+                        item={selectedClaw()}
+                        info={claudeInfoState()}
+                        infoLoading={claudeInfoLoading()}
+                        form={state.claude}
+                        dirty={claudeDirty()}
+                        busy={claudeLoading()}
+                        canTest={!!platform.testClaudeConfig}
+                        onChange={setClaude}
+                        onSave={() => void saveClaude()}
+                        onTest={() => void testClaude()}
+                        onRefresh={refreshClaudeInfo}
                       />
                     </Match>
                     <Match when={selectedClaw()?.id === "claw:genericagent"}>

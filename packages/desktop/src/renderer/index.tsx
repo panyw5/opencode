@@ -528,6 +528,20 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
       typeof desktopApi.getCodexInfo === "function"
         ? (config) => desktopApi.getCodexInfo(config)
         : undefined,
+    getClaudeConfig:
+      typeof desktopApi.getClaudeConfig === "function" ? () => desktopApi.getClaudeConfig() : undefined,
+    setClaudeConfig:
+      typeof desktopApi.setClaudeConfig === "function"
+        ? (config) => desktopApi.setClaudeConfig(config)
+        : undefined,
+    testClaudeConfig:
+      typeof desktopApi.testClaudeConfig === "function"
+        ? (config) => desktopApi.testClaudeConfig(config)
+        : undefined,
+    getClaudeInfo:
+      typeof desktopApi.getClaudeInfo === "function"
+        ? (config) => desktopApi.getClaudeInfo(config)
+        : undefined,
 
     getExtraAgentInfo:
       typeof desktopApi.getExtraAgentInfo === "function"

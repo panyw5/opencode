@@ -192,6 +192,7 @@ export const layer = Layer.effect(
                 webfetch: "allow",
                 websearch: "allow",
                 codex_consult: "allow",
+                claude_consult: "allow",
                 read: "allow",
                 external_directory: readonlyExternalDirectory,
               }),

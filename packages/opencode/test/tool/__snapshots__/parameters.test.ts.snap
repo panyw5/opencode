@@ -517,3 +517,31 @@ exports[`tool parameters JSON Schema (wire shape) codex_consult 1`] = `
   "type": "object",
 }
 `;
+
+exports[`tool parameters JSON Schema (wire shape) claude_consult 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "model": {
+      "description": "Optional Claude model override (passed to \`claude --model\`).",
+      "type": "string",
+    },
+    "prompt": {
+      "description": "Self-contained consultation prompt for Claude. Include goal, absolute paths, constraints, and the exact form of answer you need. Claude cannot see this conversation.",
+      "type": "string",
+    },
+    "timeout_ms": {
+      "description": "Timeout in milliseconds (default 600000, max 1800000).",
+      "type": "number",
+    },
+    "working_directory": {
+      "description": "Absolute directory Claude should run in. Defaults to the current project directory. Must stay inside an allowed workspace path.",
+      "type": "string",
+    },
+  },
+  "required": [
+    "prompt",
+  ],
+  "type": "object",
+}
+`;

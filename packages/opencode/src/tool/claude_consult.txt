@@ -1,0 +1,21 @@
+- Consult Claude Code as an external read-only advisor (second opinion / review / analysis)
+- Spawns a one-shot Claude agent turn via the local `claude` CLI (same headless substrate as the Claude Code SDK)
+- Restricts Claude to read-only built-in tools (`Read`, `Grep`, `Glob`, `LS`) and non-interactive permissions
+- Use when you want an independent Claude judgment without making it the primary executor
+
+When to use:
+  - Architecture review, alternative approach, risk analysis
+  - Second opinion on a plan, bug diagnosis, or design trade-off
+  - Code review style feedback before you implement or after you draft a plan
+
+When NOT to use:
+  - Simple file reads/searches you can do with read/grep/glob
+  - Tasks that require writing code (you implement; Claude only advises)
+  - When the user did not ask for external consultation and local tools suffice
+
+Usage notes:
+  - Provide a self-contained prompt: goal, relevant absolute paths, constraints, and desired output format
+  - Claude starts cold - it cannot see this conversation unless you put the context in `prompt`
+  - Defaults to the current project directory; optional `working_directory` overrides cwd
+  - Requires a working local Claude Code install (`claude` on PATH) and authenticated credentials
+  - Long-running: prefer concise scoped questions over "review the entire monorepo"

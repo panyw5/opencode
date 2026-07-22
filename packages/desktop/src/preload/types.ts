@@ -180,6 +180,35 @@ export type CodexInfo = {
   error?: string
 }
 
+export type ClaudeConfig = {
+  enabled: boolean
+  /** Optional absolute path or name for the `claude` binary. */
+  binaryPath?: string
+  /** Optional CLAUDE_CONFIG_DIR override (defaults to ~/.claude). */
+  configHome?: string
+}
+
+export type ClaudeTest = {
+  ok: boolean
+  logs: string[]
+}
+
+export type ClaudeInfo = {
+  sourceUrl: string
+  installed: boolean
+  binaryPath?: string
+  version?: string
+  configHome?: string
+  settingsPath?: string
+  settingsExists?: boolean
+  model?: string
+  permissionMode?: string
+  defaultMode?: string
+  apiKeyHelper?: string
+  checkedAt?: number
+  error?: string
+}
+
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
 
 export type ExtraAgentServer = {
@@ -297,6 +326,10 @@ export type ElectronAPI = {
   setCodexConfig: (config: CodexConfig) => Promise<void>
   testCodexConfig: (config: CodexConfig) => Promise<CodexTest>
   getCodexInfo: (config?: CodexConfig) => Promise<CodexInfo>
+  getClaudeConfig: () => Promise<ClaudeConfig>
+  setClaudeConfig: (config: ClaudeConfig) => Promise<void>
+  testClaudeConfig: (config: ClaudeConfig) => Promise<ClaudeTest>
+  getClaudeInfo: (config?: ClaudeConfig) => Promise<ClaudeInfo>
   listExtraAgentServers: () => Promise<ExtraAgentServer[]>
   restartExtraAgent: (id: ExtraAgentId) => Promise<void>
   getExtraAgentInfo: (

@@ -26,6 +26,7 @@ import { Parameters as WebFetch } from "../../src/tool/webfetch"
 import { Parameters as WebSearch } from "../../src/tool/websearch"
 import { Parameters as Write } from "../../src/tool/write"
 import { Parameters as CodexConsult } from "../../src/tool/codex_consult"
+import { Parameters as ClaudeConsult } from "../../src/tool/claude_consult"
 
 const parse = <S extends Schema.Decoder<unknown>>(schema: S, input: unknown): S["Type"] =>
   Schema.decodeUnknownSync(schema)(input)
@@ -54,6 +55,7 @@ describe("tool parameters", () => {
     test("websearch", () => expect(toJsonSchema(WebSearch)).toMatchSnapshot())
     test("write", () => expect(toJsonSchema(Write)).toMatchSnapshot())
     test("codex_consult", () => expect(toJsonSchema(CodexConsult)).toMatchSnapshot())
+    test("claude_consult", () => expect(toJsonSchema(ClaudeConsult)).toMatchSnapshot())
 
     test("inlines named child schemas for provider compatibility", () => {
       const schema = toJsonSchema(Question)

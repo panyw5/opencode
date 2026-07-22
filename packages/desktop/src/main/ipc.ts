@@ -42,6 +42,7 @@ import {
   getDefaultEditor,
   getExtraAgentInfo,
   getGenericagentConfig,
+  getClaudeConfig,
   getCodexConfig,
   getHermesConfig,
   getOpenclawConfig,
@@ -56,6 +57,7 @@ import {
   setCustomEditorPath,
   setDefaultEditor,
   setGenericagentConfig,
+  setClaudeConfig,
   setCodexConfig,
   setHermesConfig,
   setOpenclawConfig,
@@ -64,6 +66,7 @@ import {
   createTrellisTask,
 } from "./native"
 import { getCodexInfo, testCodexConfig } from "./codex-status"
+import { getClaudeInfo, testClaudeConfig } from "./claude-status"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -308,6 +311,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("set-codex-config", (_event: IpcMainInvokeEvent, config) => setCodexConfig(config))
   ipcMain.handle("test-codex-config", (_event: IpcMainInvokeEvent, config) => testCodexConfig(config))
   ipcMain.handle("get-codex-info", (_event: IpcMainInvokeEvent, config) => getCodexInfo(config))
+  ipcMain.handle("get-claude-config", () => getClaudeConfig())
+  ipcMain.handle("set-claude-config", (_event: IpcMainInvokeEvent, config) => setClaudeConfig(config))
+  ipcMain.handle("test-claude-config", (_event: IpcMainInvokeEvent, config) => testClaudeConfig(config))
+  ipcMain.handle("get-claude-info", (_event: IpcMainInvokeEvent, config) => getClaudeInfo(config))
   ipcMain.handle("list-extra-agent-servers", () => listExtraAgentServers())
   ipcMain.handle("restart-extra-agent", (_event: IpcMainInvokeEvent, id) => restartExtraAgent(id))
   ipcMain.handle("get-extra-agent-info", (_event: IpcMainInvokeEvent, id, config) => getExtraAgentInfo(id, config))
