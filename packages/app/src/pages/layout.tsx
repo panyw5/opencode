@@ -3408,7 +3408,7 @@ export default function Layout(props: ParentProps) {
       }}
       imChannelsLabel={() => language.t("sidebar.im.title")}
       onOpenImChannelsConfig={() => openConfig("channels")}
-      configLabel={() => "Config"}
+      configLabel={() => language.t("config.title")}
       configActive={onConfigRoute}
       onOpenConfig={openConfig}
       settingsLabel={() => language.t("sidebar.settings")}

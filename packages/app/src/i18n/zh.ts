@@ -1255,7 +1255,7 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "创建持久化项目图标失败",
   "error.childStore.storeCreateFailed": "创建存储失败",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
-  "config.title": "配置",
+  "config.title": "配置页面",
   "config.description": "全局配置文件、提供商、智能体、技能和插件的结构化工作区。",
   "config.common.and": " 和 ",
   "config.action.openFolder": "打开文件夹",
@@ -1551,7 +1551,7 @@ export const dict = {
   "sidebar.im.meta.discord": "Discord",
   "sidebar.im.empty": "该通道尚无会话。在飞书/Discord 中给机器人发消息后会出现在此。",
   "sidebar.im.toast.unavailable": "通道不可用",
-  "sidebar.im.toast.configure": "请在 Config → 消息通道 中启用或配置该通道。",
+  "sidebar.im.toast.configure": "请在 配置页面 → 消息通道 中启用或配置该通道。",
 
   "config.commands.title": "命令",
   "config.commands.header": "创建和管理智能体的斜杠命令。",

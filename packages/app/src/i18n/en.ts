@@ -1299,7 +1299,7 @@ export const dict = {
   "workspace.reset.archived.one": "1 session will be archived.",
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
-  "config.title": "Config",
+  "config.title": "Config page",
   "config.description": "A structured workspace for global config files, providers, agents, skills, and plugins.",
   "config.common.and": " and ",
   "config.action.openFolder": "Open folder",
@@ -1601,7 +1601,7 @@ export const dict = {
   "sidebar.im.empty":
     "No sessions in this channel yet. Message the bot on Feishu/Discord and they will appear here.",
   "sidebar.im.toast.unavailable": "Channel unavailable",
-  "sidebar.im.toast.configure": "Enable or configure this channel in Config → Channels.",
+  "sidebar.im.toast.configure": "Enable or configure this channel in Config page → Channels.",
   "config.commands.title": "Commands",
   "config.commands.header": "Create and manage slash commands for agents.",
   "config.commands.empty": "No custom commands configured.",

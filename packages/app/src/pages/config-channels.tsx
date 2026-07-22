@@ -511,7 +511,7 @@ export const ConfigChannelsDetail: Component<{
       </div>
 
       <div class="min-h-0 flex-1 overflow-y-auto px-6 py-6">
-        <div class="flex max-w-[720px] flex-col gap-8">
+        <div class="flex w-full flex-col gap-8">
           {/* Existing channels */}
           <section class="flex flex-col gap-3">
             <div class="flex items-center justify-between gap-2">
