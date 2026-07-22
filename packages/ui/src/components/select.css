@@ -2,6 +2,8 @@
   [data-slot="select-select-trigger"] {
     padding: 0 4px 0 8px;
     box-shadow: none;
+    /* Select triggers must not lift/press — they are form controls, not action buttons. */
+    transform: none;
 
     [data-slot="select-select-trigger-value"] {
       overflow: hidden;
@@ -17,6 +19,14 @@
       flex-shrink: 0;
       color: var(--text-weak);
       transition: transform 0.1s ease-in-out;
+    }
+
+    &:hover:not(:disabled),
+    &:active:not(:disabled),
+    &[data-expanded],
+    &:focus,
+    &:focus-visible {
+      transform: none;
     }
 
     &[data-expanded] {

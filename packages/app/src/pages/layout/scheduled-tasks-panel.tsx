@@ -12,7 +12,6 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Select } from "@opencode-ai/ui/select"
-import { Switch } from "@opencode-ai/ui/switch"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -21,7 +20,9 @@ import { createEffect, createMemo, For, onCleanup, onMount, Show, type Accessor,
 import { createStore } from "solid-js/store"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
 import { useGlobalSDK } from "@/context/global-sdk"
+import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
+import { useModels } from "@/context/models"
 
 const formatDate = (value?: number) => (value ? new Date(value).toLocaleString() : "-")
 
@@ -63,6 +64,9 @@ function ScheduledTaskCard(props: {
         </span>
       </div>
       <div class="line-clamp-2 text-12-regular text-text-base">{props.task.prompt}</div>
+      <Show when={props.task.lastError}>
+        <div class="line-clamp-2 text-11-regular text-text-danger">{props.task.lastError}</div>
+      </Show>
       <div class="flex w-full items-center justify-between gap-2 text-11-regular text-text-weaker">
         <span class="truncate">{props.task.enabled ? formatDate(props.task.nextRunAt) : "-"}</span>
         <span class="shrink-0">{props.task.enabled ? props.enabledLabel : props.disabledLabel}</span>
@@ -71,7 +75,10 @@ function ScheduledTaskCard(props: {
   )
 }
 
-function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () => void }): JSX.Element {
+function ScheduledTaskDetailDialog(props: {
+  task: ScheduledTask
+  onChanged: () => void | Promise<void>
+}): JSX.Element {
   const sdk = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
@@ -105,7 +112,7 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
     try {
       await effect()
       await load()
-      props.onChanged()
+      await props.onChanged()
     } catch (error) {
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
@@ -118,7 +125,7 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
     setState({ pending: true, error: "" })
     try {
       await sdk.client.scheduledTask.remove({ taskID: state.task.id })
-      props.onChanged()
+      await props.onChanged()
       dialog.close()
     } catch (error) {
       setState("error", error instanceof Error ? error.message : String(error))
@@ -127,13 +134,21 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
   }
 
   function edit() {
-    dialog.show(() => <ScheduledTaskFormDialog task={state.task} onSaved={props.onChanged} />)
+    dialog.show(() => (
+      <ScheduledTaskFormDialog
+        task={state.task}
+        onSaved={async () => {
+          await load()
+          await props.onChanged()
+        }}
+      />
+    ))
   }
 
-  function openSession(run: ScheduledTaskRun) {
-    if (!run.sessionID) return
+  function openSession(sessionID?: string) {
+    if (!sessionID) return
     dialog.close()
-    navigate(`/${base64Encode(state.task.directory)}/session/${run.sessionID}`)
+    navigate(`/${base64Encode(state.task.directory)}/session/${sessionID}`)
   }
 
   onMount(() => void load())
@@ -207,7 +222,24 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
                       : "scheduled.execution.existing",
                   )}
                 />
+                <Detail
+                  label={language.t("scheduled.lastStatus")}
+                  value={state.task.lastStatus ?? "-"}
+                  tone={statusTone(state.task.lastStatus)}
+                />
               </div>
+              <Show when={state.task.lastError}>
+                <div class="mt-3 rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong break-words">
+                  {state.task.lastError}
+                </div>
+              </Show>
+              <Show when={state.task.sessionID}>
+                <div class="mt-3">
+                  <Button size="small" variant="secondary" onClick={() => openSession(state.task.sessionID)}>
+                    {language.t("scheduled.openSession")}
+                  </Button>
+                </div>
+              </Show>
             </section>
 
             <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
@@ -241,19 +273,27 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
               >
                 <div class="flex flex-col divide-y divide-border-weak-base rounded-lg border border-border-weak-base bg-background-base">
                   <For each={state.runs}>
-                    {(run) => (
-                      <div class="flex min-h-12 items-center gap-3 px-3 py-2">
-                        <span class={`w-16 shrink-0 text-11-medium ${statusTone(run.status)}`}>{run.status}</span>
-                        <span class="min-w-0 flex-1 truncate text-12-regular text-text-base">
-                          {formatDate(run.scheduledAt)}
-                        </span>
-                        <Show when={run.sessionID}>
-                          <Button size="small" variant="ghost" onClick={() => openSession(run)}>
-                            {language.t("scheduled.openSession")}
-                          </Button>
-                        </Show>
-                      </div>
-                    )}
+                    {(run) => {
+                      const sessionID = () => run.sessionID ?? state.task.sessionID
+                      return (
+                        <div class="flex flex-col gap-1 px-3 py-2">
+                          <div class="flex min-h-10 items-center gap-3">
+                            <span class={`w-16 shrink-0 text-11-medium ${statusTone(run.status)}`}>{run.status}</span>
+                            <span class="min-w-0 flex-1 truncate text-12-regular text-text-base">
+                              {formatDate(run.scheduledAt)}
+                            </span>
+                            <Show when={sessionID()}>
+                              <Button size="small" variant="ghost" onClick={() => openSession(sessionID())}>
+                                {language.t("scheduled.openSession")}
+                              </Button>
+                            </Show>
+                          </div>
+                          <Show when={run.error}>
+                            <div class="pl-[4.5rem] text-11-regular text-text-danger break-words">{run.error}</div>
+                          </Show>
+                        </div>
+                      )
+                    }}
                   </For>
                 </div>
               </Show>
@@ -296,13 +336,24 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
 
+type ModelOption = {
+  key: string
+  providerID: string
+  modelID: string
+  name: string
+  providerName: string
+  variants?: Record<string, Record<string, unknown>>
+}
+
 function ScheduledTaskFormDialog(props: {
   task?: ScheduledTask
   projectID?: string
   directory?: string
-  onSaved: () => void
+  onSaved: () => void | Promise<void>
 }): JSX.Element {
   const sdk = useGlobalSDK()
+  const globalSync = useGlobalSync()
+  const models = useModels()
   const language = useLanguage()
   const dialog = useDialog()
   const task = props.task
@@ -313,7 +364,7 @@ function ScheduledTaskFormDialog(props: {
     providerID: task?.model.providerID ?? "",
     modelID: task?.model.modelID ?? "",
     variant: task?.model.variant ?? "",
-    executionMode: task?.executionMode ?? ("new_session" as "new_session" | "existing_session"),
+    executionMode: task?.executionMode ?? ("existing_session" as "new_session" | "existing_session"),
     sessionID: task?.sessionID ?? "",
     scheduleKind: task?.schedule.kind ?? ("every" as ScheduleKind),
     at: task?.schedule.kind === "at" ? new Date(task.schedule.at).toISOString().slice(0, 16) : "",
@@ -323,10 +374,79 @@ function ScheduledTaskFormDialog(props: {
       task?.schedule.kind === "cron"
         ? (task.schedule.timezone ?? "")
         : Intl.DateTimeFormat().resolvedOptions().timeZone,
-    enabled: task?.enabled ?? true,
     unattended: !!task,
     saving: false,
     error: "",
+  })
+
+  const directory = () => task?.directory ?? props.directory ?? ""
+
+  const agentOptions = createMemo(() => {
+    const dir = directory()
+    const names = (
+      dir
+        ? globalSync.child(dir)[0].agent
+        : []
+    )
+      .filter((item) => item.mode !== "subagent" && !item.hidden)
+      .map((item) => item.name)
+    if (state.agent && !names.includes(state.agent)) names.unshift(state.agent)
+    return names.length > 0 ? names : state.agent ? [state.agent] : ["build"]
+  })
+
+  const modelOptions = createMemo((): ModelOption[] => {
+    const list: ModelOption[] = models
+      .list()
+      .filter((item) => models.visible({ modelID: item.id, providerID: item.provider.id }))
+      .map((item) => ({
+        key: `${item.provider.id}/${item.id}`,
+        providerID: item.provider.id,
+        modelID: item.id,
+        name: item.name,
+        providerName: item.provider.name,
+        variants: item.variants,
+      }))
+
+    if (state.providerID && state.modelID) {
+      const key = `${state.providerID}/${state.modelID}`
+      if (!list.some((item) => item.key === key)) {
+        const found = models.find({ providerID: state.providerID, modelID: state.modelID })
+        list.unshift({
+          key,
+          providerID: state.providerID,
+          modelID: state.modelID,
+          name: found?.name ?? state.modelID,
+          providerName: found?.provider.name ?? state.providerID,
+          variants: found?.variants,
+        })
+      }
+    }
+    return list
+  })
+
+  const currentModel = createMemo(() =>
+    modelOptions().find((item) => item.providerID === state.providerID && item.modelID === state.modelID),
+  )
+
+  const variantOptions = createMemo(() => {
+    const keys = currentModel()?.variants ? Object.keys(currentModel()!.variants!) : []
+    return ["default", ...keys]
+  })
+
+  createEffect(() => {
+    if (state.providerID && state.modelID) return
+    const recent = models.recent.list()[0]
+    if (recent) {
+      setState({ providerID: recent.providerID, modelID: recent.modelID })
+      return
+    }
+    const first = modelOptions()[0]
+    if (first) setState({ providerID: first.providerID, modelID: first.modelID })
+  })
+
+  createEffect(() => {
+    const agents = agentOptions()
+    if (!agents.includes(state.agent) && agents[0]) setState("agent", agents[0])
   })
 
   function schedule(): ScheduledTaskSchedule | undefined {
@@ -364,10 +484,6 @@ function ScheduledTaskFormDialog(props: {
       setState("error", language.t("scheduled.error.unattended"))
       return
     }
-    if (state.executionMode === "existing_session" && !state.sessionID.trim()) {
-      setState("error", language.t("scheduled.error.session"))
-      return
-    }
 
     setState({ saving: true, error: "" })
     const model = {
@@ -375,6 +491,9 @@ function ScheduledTaskFormDialog(props: {
       modelID: state.modelID.trim(),
       variant: state.variant.trim() || undefined,
     }
+    // existing_session binds a session on first run; keep any already-bound id when editing.
+    const sessionID =
+      state.executionMode === "existing_session" ? state.sessionID.trim() || undefined : null
     try {
       if (task) {
         await sdk.client.scheduledTask.update({
@@ -384,10 +503,9 @@ function ScheduledTaskFormDialog(props: {
             prompt: state.prompt.trim(),
             schedule: nextSchedule,
             executionMode: state.executionMode,
-            sessionID: state.executionMode === "existing_session" ? state.sessionID.trim() : null,
+            sessionID,
             agent: state.agent.trim(),
             model,
-            enabled: state.enabled,
           },
         })
       } else {
@@ -398,15 +516,15 @@ function ScheduledTaskFormDialog(props: {
           prompt: state.prompt.trim(),
           schedule: nextSchedule,
           executionMode: state.executionMode,
-          sessionID: state.executionMode === "existing_session" ? state.sessionID.trim() : undefined,
+          sessionID: sessionID ?? undefined,
           agent: state.agent.trim(),
           model,
-          enabled: state.enabled,
+          enabled: true,
           unattended: true,
         }
         await sdk.client.scheduledTask.create({ scheduledTaskCreateInput: input })
       }
-      props.onSaved()
+      await props.onSaved()
       dialog.close()
     } catch (error) {
       setState("error", error instanceof Error ? error.message : String(error))
@@ -430,147 +548,144 @@ function ScheduledTaskFormDialog(props: {
       containerStyle={{ height: "min(calc(100vh - 32px), 720px)" }}
     >
       <form onSubmit={save} class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4">
-        <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
-          <div class="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
-            <section class="flex min-h-[360px] flex-col rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
-              <div class="mb-3 flex items-center justify-between gap-3">
-                <div>
-                  <div class="text-13-medium text-text-strong">{language.t("scheduled.prompt")}</div>
-                  <div class="mt-0.5 text-12-regular text-text-weak">{language.t("scheduled.prompt.description")}</div>
-                </div>
+        <div class="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]">
+          <MarkdownEditorField
+            text={state.prompt}
+            preview
+            placeholder={language.t("scheduled.prompt.placeholder")}
+            onInput={(value) => setState("prompt", value)}
+            class="min-h-[320px] h-full min-w-0 bg-background-base lg:min-h-0"
+          />
+
+          <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto pr-1">
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+              <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
+                <Icon name="settings-gear" size="small" class="text-icon-base" />
+                {language.t("scheduled.section.basics")}
               </div>
-              <MarkdownEditorField
-                text={state.prompt}
-                preview
-                placeholder={language.t("scheduled.prompt.placeholder")}
-                onInput={(value) => setState("prompt", value)}
-                class="min-h-0 flex-1 bg-background-base"
-              />
+              <div class="grid gap-4">
+                <div>
+                  <TextField
+                    label={language.t("scheduled.name")}
+                    value={state.name}
+                    onChange={(value) => setState("name", value)}
+                  />
+                </div>
+                <FieldLabel label={language.t("scheduled.agent")}>
+                  <Select
+                    options={agentOptions()}
+                    current={state.agent}
+                    onSelect={(item) => item && setState("agent", item)}
+                    class="w-full"
+                  />
+                </FieldLabel>
+                <FieldLabel label={language.t("scheduled.model")}>
+                  <Select
+                    options={modelOptions()}
+                    current={currentModel()}
+                    value={(item) => item.key}
+                    label={(item) => `${item.providerName} / ${item.name}`}
+                    groupBy={(item) => item.providerName}
+                    onSelect={(item) => {
+                      if (!item) return
+                      const variants = item.variants ? Object.keys(item.variants) : []
+                      setState({
+                        providerID: item.providerID,
+                        modelID: item.modelID,
+                        variant: state.variant && variants.includes(state.variant) ? state.variant : "",
+                      })
+                    }}
+                    class="w-full"
+                  />
+                </FieldLabel>
+                <Show when={variantOptions().length > 1}>
+                  <FieldLabel label={language.t("scheduled.variant")}>
+                    <Select
+                      options={variantOptions()}
+                      current={state.variant || "default"}
+                      label={(item) => (item === "default" ? language.t("common.default") : item)}
+                      onSelect={(item) => item && setState("variant", item === "default" ? "" : item)}
+                      class="w-full"
+                    />
+                  </FieldLabel>
+                </Show>
+              </div>
             </section>
 
-            <div class="flex min-h-0 flex-col gap-4">
-              <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
-                <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
-                  <Icon name="settings-gear" size="small" class="text-icon-base" />
-                  {language.t("scheduled.section.basics")}
-                </div>
-                <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-1">
-                  <div>
-                    <TextField
-                      label={language.t("scheduled.name")}
-                      value={state.name}
-                      onChange={(value) => setState("name", value)}
-                    />
-                  </div>
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+              <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
+                <Icon name="clock" size="small" class="text-icon-base" />
+                {language.t("scheduled.section.timing")}
+              </div>
+              <div class="grid gap-4">
+                <FieldLabel label={language.t("scheduled.execution")}>
+                  <Select
+                    options={["existing_session", "new_session"] as const}
+                    current={state.executionMode}
+                    label={(item) =>
+                      language.t(item === "new_session" ? "scheduled.execution.new" : "scheduled.execution.existing")
+                    }
+                    onSelect={(item) => item && setState("executionMode", item)}
+                    class="w-full"
+                  />
+                </FieldLabel>
+                <FieldLabel label={language.t("scheduled.schedule")}>
+                  <Select
+                    options={["at", "every", "cron"] as const}
+                    current={state.scheduleKind}
+                    label={(item) => language.t(`scheduled.schedule.${item}`)}
+                    onSelect={(item) => item && setState("scheduleKind", item)}
+                    class="w-full"
+                  />
+                </FieldLabel>
+                <Show when={state.scheduleKind === "at"}>
                   <TextField
-                    label={language.t("scheduled.agent")}
-                    value={state.agent}
-                    onChange={(value) => setState("agent", value)}
+                    type="datetime-local"
+                    label={language.t("scheduled.schedule.at")}
+                    value={state.at}
+                    onChange={(value) => setState("at", value)}
+                  />
+                </Show>
+                <Show when={state.scheduleKind === "every"}>
+                  <TextField
+                    type="number"
+                    min="1"
+                    label={language.t("scheduled.intervalMinutes")}
+                    value={state.intervalMinutes}
+                    onChange={(value) => setState("intervalMinutes", value)}
+                  />
+                </Show>
+                <Show when={state.scheduleKind === "cron"}>
+                  <TextField
+                    label={language.t("scheduled.cron")}
+                    value={state.cron}
+                    onChange={(value) => setState("cron", value)}
                   />
                   <TextField
-                    label={language.t("scheduled.provider")}
-                    value={state.providerID}
-                    onChange={(value) => setState("providerID", value)}
+                    label={language.t("scheduled.timezone")}
+                    value={state.timezone}
+                    onChange={(value) => setState("timezone", value)}
                   />
-                  <TextField
-                    label={language.t("scheduled.modelID")}
-                    value={state.modelID}
-                    onChange={(value) => setState("modelID", value)}
-                  />
-                  <TextField
-                    label={language.t("scheduled.variant")}
-                    value={state.variant}
-                    onChange={(value) => setState("variant", value)}
-                  />
-                </div>
-              </section>
+                </Show>
+              </div>
+            </section>
 
-              <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
-                <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
-                  <Icon name="clock" size="small" class="text-icon-base" />
-                  {language.t("scheduled.section.timing")}
-                </div>
-                <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-1">
-                  <FieldLabel label={language.t("scheduled.execution")}>
-                    <Select
-                      options={["new_session", "existing_session"] as const}
-                      current={state.executionMode}
-                      label={(item) =>
-                        language.t(item === "new_session" ? "scheduled.execution.new" : "scheduled.execution.existing")
-                      }
-                      onSelect={(item) => item && setState("executionMode", item)}
-                      class="w-full"
-                    />
-                  </FieldLabel>
-                  <Show when={state.executionMode === "existing_session"}>
-                    <TextField
-                      label={language.t("scheduled.sessionID")}
-                      value={state.sessionID}
-                      onChange={(value) => setState("sessionID", value)}
-                    />
-                  </Show>
-                  <FieldLabel label={language.t("scheduled.schedule")}>
-                    <Select
-                      options={["at", "every", "cron"] as const}
-                      current={state.scheduleKind}
-                      label={(item) => language.t(`scheduled.schedule.${item}`)}
-                      onSelect={(item) => item && setState("scheduleKind", item)}
-                      class="w-full"
-                    />
-                  </FieldLabel>
-                  <Show when={state.scheduleKind === "at"}>
-                    <TextField
-                      type="datetime-local"
-                      label={language.t("scheduled.schedule.at")}
-                      value={state.at}
-                      onChange={(value) => setState("at", value)}
-                    />
-                  </Show>
-                  <Show when={state.scheduleKind === "every"}>
-                    <TextField
-                      type="number"
-                      min="1"
-                      label={language.t("scheduled.intervalMinutes")}
-                      value={state.intervalMinutes}
-                      onChange={(value) => setState("intervalMinutes", value)}
-                    />
-                  </Show>
-                  <Show when={state.scheduleKind === "cron"}>
-                    <TextField
-                      label={language.t("scheduled.cron")}
-                      value={state.cron}
-                      onChange={(value) => setState("cron", value)}
-                    />
-                    <TextField
-                      label={language.t("scheduled.timezone")}
-                      value={state.timezone}
-                      onChange={(value) => setState("timezone", value)}
-                    />
-                  </Show>
-                </div>
-              </section>
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+              <Checkbox
+                checked={state.unattended}
+                onChange={(value) => setState("unattended", value)}
+                description={language.t("scheduled.unattended.detail")}
+              >
+                {language.t("scheduled.unattended.accept")}
+              </Checkbox>
+            </section>
 
-              <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
-                <div class="flex flex-col gap-4">
-                  <Switch checked={state.enabled} onChange={(value) => setState("enabled", value)}>
-                    {language.t("scheduled.enabled")}
-                  </Switch>
-                  <Checkbox
-                    checked={state.unattended}
-                    onChange={(value) => setState("unattended", value)}
-                    description={language.t("scheduled.unattended.detail")}
-                  >
-                    {language.t("scheduled.unattended.accept")}
-                  </Checkbox>
-                </div>
-              </section>
-            </div>
+            <Show when={state.error}>
+              <div class="rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
+                {state.error}
+              </div>
+            </Show>
           </div>
-          <Show when={state.error}>
-            <div class="mt-4 rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
-              {state.error}
-            </div>
-          </Show>
         </div>
         <div class="mt-4 flex shrink-0 justify-end gap-2 border-t border-border-weak-base pt-4">
           <Button type="button" variant="ghost" onClick={() => dialog.close()}>
@@ -594,11 +709,11 @@ function FieldLabel(props: { label: string; children: JSX.Element }): JSX.Elemen
   )
 }
 
-function Detail(props: { label: string; value: string }): JSX.Element {
+function Detail(props: { label: string; value: string; tone?: string }): JSX.Element {
   return (
     <div class="min-w-0 rounded-lg border border-border-weak-base bg-background-base p-3">
       <div class="text-11-medium text-text-weak">{props.label}</div>
-      <div class="mt-1 truncate text-13-regular text-text-strong">{props.value}</div>
+      <div class={`mt-1 truncate text-13-regular ${props.tone ?? "text-text-strong"}`}>{props.value}</div>
     </div>
   )
 }
@@ -616,18 +731,18 @@ export function ScheduledTasksPanel(props: {
   const [state, setState] = createStore({ tasks: [] as ScheduledTask[], loading: true, error: "" })
   let request = 0
 
-  async function load() {
+  async function load(options?: { silent?: boolean }) {
     const current = ++request
     const projectID = props.projectID()
     if (!projectID) {
       setState({ tasks: [], loading: false, error: "" })
       return
     }
-    setState({ loading: true, error: "" })
+    if (!options?.silent) setState({ loading: true, error: "" })
     try {
       const result = await sdk.client.scheduledTask.list({ projectID })
       if (current !== request) return
-      setState("tasks", result.data ?? [])
+      setState({ tasks: result.data ?? [], error: "" })
     } catch (error) {
       if (current !== request) return
       setState("error", error instanceof Error ? error.message : String(error))
@@ -638,7 +753,7 @@ export function ScheduledTasksPanel(props: {
   }
 
   function open(task: ScheduledTask) {
-    dialog.show(() => <ScheduledTaskDetailDialog task={task} onChanged={() => void load()} />)
+    dialog.show(() => <ScheduledTaskDetailDialog task={task} onChanged={() => load({ silent: true })} />)
   }
 
   function create() {
@@ -646,7 +761,11 @@ export function ScheduledTasksPanel(props: {
     const directory = props.directory()
     if (!projectID || !directory) return
     dialog.show(() => (
-      <ScheduledTaskFormDialog projectID={projectID} directory={directory} onSaved={() => void load()} />
+      <ScheduledTaskFormDialog
+        projectID={projectID}
+        directory={directory}
+        onSaved={() => load({ silent: true })}
+      />
     ))
   }
 
@@ -654,9 +773,10 @@ export function ScheduledTasksPanel(props: {
     props.projectID()
     void load()
   })
+  // listenAll: name=directory, details.type=event type (e.g. scheduled-task.created)
   const stop = sdk.listenAll((event) => {
-    if (!event.name.startsWith("scheduled-task.")) return
-    void load()
+    if (!event.details.type.startsWith("scheduled-task.")) return
+    void load({ silent: true })
   })
   onCleanup(stop)
 

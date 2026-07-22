@@ -36,7 +36,7 @@ export function create(input: CreateInput, now = Date.now()): Effect.Effect<Info
       name: input.name,
       prompt: input.prompt,
       ...scheduleToRow(input.schedule),
-      execution_mode: input.executionMode ?? "new_session",
+      execution_mode: input.executionMode ?? "existing_session",
       session_id: input.sessionID,
       agent: input.agent,
       model: input.model,

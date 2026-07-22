@@ -21,10 +21,20 @@ import { createStore } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
+import { useModels } from "@/context/models"
 import { decode64 } from "@/utils/base64"
 import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
+
+type ModelOption = {
+  key: string
+  providerID: string
+  modelID: string
+  name: string
+  providerName: string
+  variants?: Record<string, Record<string, unknown>>
+}
 
 const formatDate = (value?: number) => (value ? new Date(value).toLocaleString() : "-")
 
@@ -44,6 +54,7 @@ function statusTone(status?: ScheduledTask["lastStatus"] | ScheduledTaskRun["sta
 export default function Scheduled() {
   const sdk = useGlobalSDK()
   const sync = useGlobalSync()
+  const models = useModels()
   const language = useLanguage()
   const navigate = useNavigate()
   const location = useLocation()
@@ -70,14 +81,13 @@ export default function Scheduled() {
     providerID: "",
     modelID: "",
     variant: "",
-    executionMode: "new_session" as "new_session" | "existing_session",
+    executionMode: "existing_session" as "new_session" | "existing_session",
     sessionID: "",
     scheduleKind: "every" as ScheduleKind,
     at: "",
     intervalMinutes: "60",
     cron: "0 9 * * 1-5",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    enabled: true,
     unattended: false,
   })
 
@@ -89,6 +99,72 @@ export default function Scheduled() {
   )
   const routeDirectory = createMemo(() => decode64(params.dir) ?? "")
   const routeProject = createMemo(() => projectOwner(routeDirectory(), projects())?.project)
+
+  const agentOptions = createMemo(() => {
+    const dir = state.directory || routeDirectory()
+    const names = (dir ? sync.child(dir)[0].agent : [])
+      .filter((item) => item.mode !== "subagent" && !item.hidden)
+      .map((item) => item.name)
+    if (state.agent && !names.includes(state.agent)) names.unshift(state.agent)
+    return names.length > 0 ? names : state.agent ? [state.agent] : ["build"]
+  })
+
+  const modelOptions = createMemo((): ModelOption[] => {
+    const list: ModelOption[] = models
+      .list()
+      .filter((item) => models.visible({ modelID: item.id, providerID: item.provider.id }))
+      .map((item) => ({
+        key: `${item.provider.id}/${item.id}`,
+        providerID: item.provider.id,
+        modelID: item.id,
+        name: item.name,
+        providerName: item.provider.name,
+        variants: item.variants,
+      }))
+
+    if (state.providerID && state.modelID) {
+      const key = `${state.providerID}/${state.modelID}`
+      if (!list.some((item) => item.key === key)) {
+        const found = models.find({ providerID: state.providerID, modelID: state.modelID })
+        list.unshift({
+          key,
+          providerID: state.providerID,
+          modelID: state.modelID,
+          name: found?.name ?? state.modelID,
+          providerName: found?.provider.name ?? state.providerID,
+          variants: found?.variants,
+        })
+      }
+    }
+    return list
+  })
+
+  const currentModel = createMemo(() =>
+    modelOptions().find((item) => item.providerID === state.providerID && item.modelID === state.modelID),
+  )
+
+  const variantOptions = createMemo(() => {
+    const keys = currentModel()?.variants ? Object.keys(currentModel()!.variants!) : []
+    return ["default", ...keys]
+  })
+
+  createEffect(() => {
+    if (!state.formOpen) return
+    if (state.providerID && state.modelID) return
+    const recent = models.recent.list()[0]
+    if (recent) {
+      setState({ providerID: recent.providerID, modelID: recent.modelID })
+      return
+    }
+    const first = modelOptions()[0]
+    if (first) setState({ providerID: first.providerID, modelID: first.modelID })
+  })
+
+  createEffect(() => {
+    if (!state.formOpen) return
+    const agents = agentOptions()
+    if (!agents.includes(state.agent) && agents[0]) setState("agent", agents[0])
+  })
   const projectOptions = createMemo(() => [
     { id: "all", label: language.t("scheduled.filter.all") },
     ...projects().map((project) => ({ id: project.id, label: project.name || getFilename(project.worktree) })),
@@ -156,7 +232,7 @@ export default function Scheduled() {
       providerID: task?.model.providerID ?? "",
       modelID: task?.model.modelID ?? "",
       variant: task?.model.variant ?? "",
-      executionMode: task?.executionMode ?? "new_session",
+      executionMode: task?.executionMode ?? "existing_session",
       sessionID: task?.sessionID ?? "",
       scheduleKind: task?.schedule.kind ?? "every",
       at: task?.schedule.kind === "at" ? new Date(task.schedule.at).toISOString().slice(0, 16) : "",
@@ -166,7 +242,6 @@ export default function Scheduled() {
         task?.schedule.kind === "cron"
           ? (task.schedule.timezone ?? "")
           : Intl.DateTimeFormat().resolvedOptions().timeZone,
-      enabled: task?.enabled ?? true,
       unattended: !!task,
       error: "",
     })
@@ -216,10 +291,6 @@ export default function Scheduled() {
       setState("error", language.t("scheduled.error.unattended"))
       return
     }
-    if (state.executionMode === "existing_session" && !state.sessionID.trim()) {
-      setState("error", language.t("scheduled.error.session"))
-      return
-    }
 
     setState({ saving: true, error: "" })
     const model = {
@@ -227,6 +298,9 @@ export default function Scheduled() {
       modelID: state.modelID.trim(),
       variant: state.variant.trim() || undefined,
     }
+    // existing_session binds a session on first run; keep any already-bound id when editing.
+    const sessionID =
+      state.executionMode === "existing_session" ? state.sessionID.trim() || undefined : null
     try {
       if (state.editing && state.selectedID) {
         await sdk.client.scheduledTask.update({
@@ -236,10 +310,9 @@ export default function Scheduled() {
             prompt: state.prompt.trim(),
             schedule: nextSchedule,
             executionMode: state.executionMode,
-            sessionID: state.executionMode === "existing_session" ? state.sessionID.trim() : null,
+            sessionID,
             agent: state.agent.trim(),
             model,
-            enabled: state.enabled,
           },
         })
       } else {
@@ -251,10 +324,10 @@ export default function Scheduled() {
           prompt: state.prompt.trim(),
           schedule: nextSchedule,
           executionMode: state.executionMode,
-          sessionID: state.executionMode === "existing_session" ? state.sessionID.trim() : undefined,
+          sessionID: sessionID ?? undefined,
           agent: state.agent.trim(),
           model,
-          enabled: state.enabled,
+          enabled: true,
           unattended: true,
         }
         const result = await sdk.client.scheduledTask.create({ scheduledTaskCreateInput: input })
@@ -293,8 +366,9 @@ export default function Scheduled() {
     const task = selected()
     if (task && state.runsTaskID !== task.id && !state.runsLoading) void loadRuns(task.id)
   })
+  // listenAll: name=directory, details.type=event type (e.g. scheduled-task.created)
   const stop = sdk.listenAll((event) => {
-    if (!event.name.startsWith("scheduled-task.")) return
+    if (!event.details.type.startsWith("scheduled-task.")) return
     void load()
     const id = state.selectedID
     if (id) void loadRuns(id)
@@ -518,37 +592,50 @@ export default function Scheduled() {
                   />
                 </div>
                 <div>
-                  <TextField
-                    label={language.t("scheduled.agent")}
-                    value={state.agent}
-                    onChange={(value) => setState("agent", value)}
+                  <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.agent")}</label>
+                  <Select
+                    options={agentOptions()}
+                    current={state.agent}
+                    onSelect={(item) => item && setState("agent", item)}
+                    class="w-full"
                   />
                 </div>
                 <div>
-                  <TextField
-                    label={language.t("scheduled.provider")}
-                    value={state.providerID}
-                    onChange={(value) => setState("providerID", value)}
+                  <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.model")}</label>
+                  <Select
+                    options={modelOptions()}
+                    current={currentModel()}
+                    value={(item) => item.key}
+                    label={(item) => `${item.providerName} / ${item.name}`}
+                    groupBy={(item) => item.providerName}
+                    onSelect={(item) => {
+                      if (!item) return
+                      const variants = item.variants ? Object.keys(item.variants) : []
+                      setState({
+                        providerID: item.providerID,
+                        modelID: item.modelID,
+                        variant: state.variant && variants.includes(state.variant) ? state.variant : "",
+                      })
+                    }}
+                    class="w-full"
                   />
                 </div>
-                <div>
-                  <TextField
-                    label={language.t("scheduled.modelID")}
-                    value={state.modelID}
-                    onChange={(value) => setState("modelID", value)}
-                  />
-                </div>
-                <div>
-                  <TextField
-                    label={language.t("scheduled.variant")}
-                    value={state.variant}
-                    onChange={(value) => setState("variant", value)}
-                  />
-                </div>
+                <Show when={variantOptions().length > 1}>
+                  <div>
+                    <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.variant")}</label>
+                    <Select
+                      options={variantOptions()}
+                      current={state.variant || "default"}
+                      label={(item) => (item === "default" ? language.t("common.default") : item)}
+                      onSelect={(item) => item && setState("variant", item === "default" ? "" : item)}
+                      class="w-full"
+                    />
+                  </div>
+                </Show>
                 <div>
                   <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.execution")}</label>
                   <Select
-                    options={["new_session", "existing_session"] as const}
+                    options={["existing_session", "new_session"] as const}
                     current={state.executionMode}
                     label={(item) =>
                       language.t(item === "new_session" ? "scheduled.execution.new" : "scheduled.execution.existing")
@@ -557,15 +644,6 @@ export default function Scheduled() {
                     class="w-full"
                   />
                 </div>
-                <Show when={state.executionMode === "existing_session"}>
-                  <div>
-                    <TextField
-                      label={language.t("scheduled.sessionID")}
-                      value={state.sessionID}
-                      onChange={(value) => setState("sessionID", value)}
-                    />
-                  </div>
-                </Show>
                 <div>
                   <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.schedule")}</label>
                   <Select
@@ -620,9 +698,6 @@ export default function Scheduled() {
                   </div>
                 </Show>
               </div>
-              <Switch checked={state.enabled} onChange={(value) => setState("enabled", value)}>
-                {language.t("scheduled.enabled")}
-              </Switch>
               <div class="border-y border-border-weak-base py-4">
                 <Checkbox
                   checked={state.unattended}

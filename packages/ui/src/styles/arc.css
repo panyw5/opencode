@@ -601,6 +601,21 @@ html[data-theme="arc"] [data-component="button"][data-variant="ghost"]:active:no
   transform: translateY(0) scale(0.97);
 }
 
+/* Dropdown/select triggers: no y-shift or press scale on hover/active */
+html[data-theme="arc"] [data-component="select"] [data-slot="select-select-trigger"]:hover:not(:disabled),
+html[data-theme="arc"] [data-component="select"] [data-slot="select-select-trigger"]:active:not(:disabled),
+html[data-theme="arc"] [data-component="select"] [data-slot="select-select-trigger"][data-expanded],
+html[data-theme="arc"] [data-component="select"] [data-slot="select-select-trigger"]:focus,
+html[data-theme="arc"] [data-component="select"] [data-slot="select-select-trigger"]:focus-visible,
+html[data-theme="arc"] [data-slot="dropdown-menu-trigger"][data-component="button"]:hover:not(:disabled),
+html[data-theme="arc"] [data-slot="dropdown-menu-trigger"][data-component="button"]:active:not(:disabled),
+html[data-theme="arc"] [data-slot="dropdown-menu-trigger"][data-component="button"][data-expanded],
+html[data-theme="arc"] [data-component="button"][data-slot="select-select-trigger"]:hover:not(:disabled),
+html[data-theme="arc"] [data-component="button"][data-slot="select-select-trigger"]:active:not(:disabled),
+html[data-theme="arc"] [data-component="button"][data-slot="select-select-trigger"][data-expanded] {
+  transform: none;
+}
+
 /* Icon button — pop on hover, press on active */
 html[data-theme="arc"] [data-component="icon-button"] {
   transition:

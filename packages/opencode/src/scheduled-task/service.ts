@@ -8,12 +8,23 @@ import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionStatus } from "@/session/status"
 import * as Log from "@opencode-ai/core/util/log"
-import { Context, Effect, Fiber, Layer, Schema, Scope } from "effect"
+import { Cause, Context, Effect, Fiber, Layer, Schema, Scope } from "effect"
 import { ScheduledTaskRepository } from "./repository"
 import { CreateInput, Info, NotFoundError, Run, ScheduledTaskID, ScheduledTaskRunID, UpdateInput } from "./schema"
 import { ScheduledTaskUnattended } from "./unattended"
 
 const log = Log.create({ service: "scheduled-task" })
+
+function formatCause(cause: Cause.Cause<unknown>) {
+  const squashed = Cause.squash(cause)
+  if (squashed instanceof Error) return squashed.message || squashed.name
+  if (typeof squashed === "string") return squashed
+  if (squashed && typeof squashed === "object" && "message" in squashed) {
+    const message = (squashed as { message?: unknown }).message
+    if (typeof message === "string" && message) return message
+  }
+  return Cause.pretty(cause)
+}
 const POLL_INTERVAL = "1 second"
 const RETRY_INTERVAL = "30 seconds"
 const MAX_BUSY_RETRIES = 3
@@ -91,7 +102,21 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           let sessionID = task.sessionID
           if (task.executionMode === "existing_session") {
-            if (!sessionID) throw new Error("Existing-session task has no target session")
+            // Bind a durable session on first run so the user never types a session ID.
+            if (!sessionID) {
+              if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
+              const session = yield* sessions.create({
+                title: task.name,
+                agent: task.agent,
+                model: {
+                  id: ModelID.make(task.model.modelID),
+                  providerID: ProviderID.make(task.model.providerID),
+                  variant: task.model.variant,
+                },
+              })
+              sessionID = session.id
+              yield* ScheduledTaskRepository.update(task.id, { sessionID })
+            }
             for (let attempt = run.attempt; attempt <= MAX_BUSY_RETRIES; attempt++) {
               const current = yield* statuses.get(sessionID)
               if (current.type === "idle") break
@@ -157,9 +182,10 @@ export const layer = Layer.effect(
         yield* complete(task, run.id, exit.value.status, { sessionID: exit.value.sessionID })
         return
       }
-      const error = String(exit.cause)
+      const error = formatCause(exit.cause)
       log.error("scheduled task execution failed", { taskID: task.id, runID: run.id, error })
-      yield* complete(task, run.id, "error", { error })
+      // Keep any session already bound to the task so the UI can still open it.
+      yield* complete(task, run.id, "error", { error, sessionID: task.sessionID })
     })
 
     const startOccurrence = Effect.fn("ScheduledTask.startOccurrence")(function* (
