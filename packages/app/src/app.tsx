@@ -5,7 +5,7 @@ import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { File } from "@opencode-ai/ui/file"
 import { Font } from "@opencode-ai/ui/font"
-import type { IconName } from "@opencode-ai/ui/icon"
+import { Icon, type IconName } from "@opencode-ai/ui/icon"
 import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
@@ -105,12 +105,18 @@ function ConfigLoadingShell() {
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
         <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] xl:w-[200px] xl:border-r xl:border-b-0">
           <div class="flex h-full min-h-0 flex-col">
-            <div class="border-b border-border-weak-base px-3 py-4">
-              <div class="min-w-0">
+            <div class="relative border-b border-border-weak-base px-3 py-4">
+              <div
+                class="absolute left-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border-weak-base bg-background-base text-text-weak"
+                aria-hidden="true"
+              >
+                <Icon name="chevron-left" size="small" />
+              </div>
+              <div class="min-w-0 text-center">
                 <div class="text-24-medium text-text-strong">{language.t("config.title")}</div>
               </div>
             </div>
-            <div class="config-scrollbar flex-1 overflow-y-auto p-2">
+            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
               <div class="flex flex-col gap-1.5">
                 <For each={CONFIG_FALLBACK_SECTIONS}>
                   {(section) => (
@@ -123,11 +129,6 @@ function ConfigLoadingShell() {
                     </Show>
                   )}
                 </For>
-              </div>
-            </div>
-            <div class="border-t border-border-weak-base p-2">
-              <div class="h-10 rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5 text-13-medium text-text-weak">
-                {language.t("common.goBack")}
               </div>
             </div>
           </div>
