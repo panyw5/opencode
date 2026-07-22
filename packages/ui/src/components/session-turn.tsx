@@ -708,7 +708,9 @@ export function SessionTurn(
                       fallback={<span>{i18n.t("ui.messagePart.reasoning.thought")}</span>}
                     >
                       <span data-slot="session-turn-thinking-status">
-                        <span data-slot="session-turn-thinking-label">{i18n.t("ui.sessionTurn.status.thinking")}</span>
+                        <span data-slot="session-turn-thinking-label" data-shimmer="true">
+                          {i18n.t("ui.sessionTurn.status.thinking")}
+                        </span>
                         <span data-slot="session-turn-thinking-time">{thinkingElapsedLabel()}</span>
                       </span>
                     </Show>

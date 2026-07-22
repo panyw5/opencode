@@ -2089,7 +2089,9 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
         <Collapsible.Trigger>
           <div data-component="reasoning-trigger" data-streaming={streaming()}>
             <div data-slot="reasoning-trigger-title">
-              <span>{title()}</span>
+              <span data-slot="reasoning-trigger-label" data-shimmer={streaming() ? "true" : "false"}>
+                {title()}
+              </span>
               <Show when={streaming()} fallback={<Icon name="circle-check" size="small" />}>
                 <Spinner />
               </Show>

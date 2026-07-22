@@ -2328,3 +2328,24 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   width: 20px;
   height: 20px;
 }
+
+[data-slot="reasoning-trigger-label"][data-shimmer="true"] {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      transparent 42%,
+      var(--text-strong) 50%,
+      transparent 58%,
+      transparent 100%
+    ),
+    linear-gradient(var(--text-weaker), var(--text-weaker));
+  background-size: 260% 100%, 100% 100%;
+  background-repeat: no-repeat, no-repeat;
+  background-position: 100% center, 0 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: session-title-text-shimmer 2.8s linear infinite;
+  will-change: background-position;
+}
