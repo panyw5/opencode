@@ -41,6 +41,7 @@ import {
   mainDomain,
   type DomainId,
 } from "@/pages/layout/extra-agents"
+import { workspaceKey } from "@/pages/layout/helpers"
 
 export type GlobalStore = {
   ready: boolean
@@ -341,6 +342,31 @@ function createGlobalSync() {
     if (!manager) return [] as string[]
     return Object.keys(manager.children)
   }
+
+  // Event streams may use a realpath/normalized directory while child stores are
+  // keyed by the route/worktree string. Resolve by exact key first, then workspaceKey
+  // and the store's path.directory so external writers (e.g. scheduled tasks) still
+  // update the open session UI.
+  const resolveChild = (directory: string) => {
+    const manager = managerOf(directory)
+    const exact = manager.children[directory]
+    if (exact) return { key: directory, child: exact, manager, domain: domainFromDirectory(directory) }
+
+    const want = workspaceKey(directory)
+    if (!want) return
+
+    for (const manager of managers.values()) {
+      for (const [key, child] of Object.entries(manager.children)) {
+        if (workspaceKey(key) === want) {
+          return { key, child, manager, domain: domainFromDirectory(key) }
+        }
+        const pathDir = child[0].path?.directory
+        if (pathDir && workspaceKey(pathDir) === want) {
+          return { key, child, manager, domain: domainFromDirectory(key) }
+        }
+      }
+    }
+  }
   const children = {
     child: (directory: string, options?: Parameters<ChildManager["child"]>[1]) =>
       managerOf(directory).child(directory, options),
@@ -605,21 +631,27 @@ function createGlobalSync() {
     // domain than the directory itself is a bug — drop it instead of applying.
     if (emittingDomain !== dirDomain) return
     if (isolated(directory)) return
-    const existing = managerOf(directory).children[directory]
-    if (!existing) return
-    children.mark(directory)
-    const [store, setStore] = existing
+    const resolved = resolveChild(directory)
+    if (!resolved) return
+    const { key, child, domain: resolvedDomain } = resolved
+    children.mark(key)
+    const [store, setStore] = child
+    // Re-broadcast under the store key so SDKProvider listeners subscribed to the
+    // route directory still receive events when the wire path is a realpath alias.
+    if (key !== directory) {
+      globalSDK.eventFor(resolvedDomain).emit(key, event)
+    }
     try {
       applyDirectoryEvent({
         event,
-        directory,
+        directory: key,
         store,
         setStore,
-        push: queueFor(dirDomain).push,
+        push: queueFor(resolvedDomain).push,
         setSessionTodo,
-        vcsCache: children.vcsCache.get(directory),
+        vcsCache: children.vcsCache.get(key),
         loadLsp: () => {
-          sdkFor(directory)
+          sdkFor(key)
             .lsp.status()
             .then((x) => setStore("lsp", x.data ?? []))
         },
@@ -633,7 +665,7 @@ function createGlobalSync() {
           }
         | undefined
       console.error(
-        `[global-sync] directory event failed directory=${directory} domain=${dirDomain} type=${event.type} recent=${recent ? 1 : 0} status=${store.status} sessions=${store.sessions} path=${store.path.directory} messageID=${props?.messageID ?? props?.part?.messageID ?? ""} partID=${props?.partID ?? props?.part?.id ?? ""} partType=${props?.part?.type ?? ""} err=${err instanceof Error ? err.message : String(err)}`,
+        `[global-sync] directory event failed directory=${directory} resolved=${key} domain=${resolvedDomain} type=${event.type} recent=${recent ? 1 : 0} status=${store.status} sessions=${store.sessions} path=${store.path.directory} messageID=${props?.messageID ?? props?.part?.messageID ?? ""} partID=${props?.partID ?? props?.part?.id ?? ""} partType=${props?.part?.type ?? ""} err=${err instanceof Error ? err.message : String(err)}`,
       )
       throw err
     }

@@ -36,8 +36,10 @@ import { promptLength } from "@/components/prompt-input/history"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
+import { workspaceKey as directoryKey } from "@/pages/layout/helpers"
 import { useLayout } from "@/context/layout"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
@@ -860,6 +862,58 @@ export default function Page() {
       })
     }),
   )
+
+  // Scheduled tasks (and other external writers) don't go through optimistic UI.
+  // When a run targets the open session, force a message refresh so the timeline
+  // updates without leaving and re-entering the page.
+  const globalSDK = useGlobalSDK()
+  createEffect(() => {
+    const id = params.id
+    const dir = sdk.directory
+    if (!id || !dir) return
+    const dirKey = directoryKey(dir)
+    let timer: number | undefined
+    const refresh = () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        timer = undefined
+        if (params.id !== id) return
+        void sync.session.sync(id, { force: true })
+      }, 150)
+    }
+    const stop = globalSDK.listenAll((e) => {
+      const type = e.details.type as string
+      if (type === "scheduled-task.run-updated") {
+        const run = (e.details as { properties?: { sessionID?: string } }).properties
+        if (run?.sessionID === id) refresh()
+        return
+      }
+      if (directoryKey(e.name) !== dirKey) return
+      if (
+        type === "message.updated" ||
+        type === "message.part.updated" ||
+        type === "message.part.delta" ||
+        type === "session.status"
+      ) {
+        const props = (e.details as { properties?: Record<string, unknown> }).properties ?? {}
+        const info = props.info as { id?: string; sessionID?: string } | undefined
+        const part = props.part as { sessionID?: string } | undefined
+        const sessionID =
+          (props.sessionID as string | undefined) ?? info?.sessionID ?? part?.sessionID
+        if (sessionID !== id) return
+        // Events should already apply via global-sync; if a message.updated was
+        // missed (path alias / race), force a sync so the open view catches up.
+        if (type === "message.updated" && info?.id) {
+          const messages = untrack(() => sync.data.message[id])
+          if (!messages?.some((m) => m.id === info.id)) refresh()
+        }
+      }
+    })
+    onCleanup(() => {
+      stop()
+      if (timer !== undefined) window.clearTimeout(timer)
+    })
+  })
 
   createEffect(() => {
     const el = root

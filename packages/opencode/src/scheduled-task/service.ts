@@ -148,6 +148,10 @@ export const layer = Layer.effect(
             sessionID = session.id
           }
 
+          // Notify clients as soon as the target session is known so an open
+          // session view can refresh before/while the prompt streams.
+          yield* emitRun(task, { ...run, sessionID, status: "running" })
+
           yield* prompts.prompt({
             sessionID,
             agent: task.agent,

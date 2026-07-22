@@ -3,6 +3,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { type Accessor, createEffect, createMemo, onCleanup } from "solid-js"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
+import { workspaceKey } from "@/pages/layout/helpers"
 import { useGlobalSDK } from "./global-sdk"
 
 type SDKEventMap = {
@@ -27,11 +28,24 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     createEffect(() => {
       const dir = directory()
-      const unsub = globalSDK.eventFor(domainFromDirectory(dir)).on(dir, (event) => {
+      const key = workspaceKey(dir)
+      const forward = (event: { type: string }) => {
         if (event.type === "sync") return
-        emitter.emit(event.type, event as Extract<Event, { type: typeof event.type }>)
+        // EventMap is generated from the public Event union; cast at the boundary.
+        emitter.emit(event.type as keyof SDKEventMap, event as never)
+      }
+      // Exact key subscription (normal path).
+      const unsubExact = globalSDK.eventFor(domainFromDirectory(dir)).on(dir, forward)
+      // Alias path: server may emit realpath while the app is keyed by route/worktree.
+      const unsubAlias = globalSDK.listenAll((e) => {
+        if (e.name === dir) return
+        if (workspaceKey(e.name) !== key) return
+        forward(e.details)
       })
-      onCleanup(unsub)
+      onCleanup(() => {
+        unsubExact()
+        unsubAlias()
+      })
     })
 
     return {
