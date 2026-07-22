@@ -501,6 +501,12 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
         title: i18n.t("ui.tool.codex"),
         subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.thread_id),
       }
+    case "claude_consult":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.claude"),
+        subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
+      }
     case "bash":
     case "hook":
     case "exec":
@@ -3325,7 +3331,10 @@ function codexAssistantText(metadata: Record<string, any>, output?: string): str
   if (typeof metadata.preview === "string" && metadata.preview.trim()) return metadata.preview.trim()
   if (typeof output === "string" && output.trim()) {
     // Strip machine header if present.
-    const body = output.replace(/^<codex_consult>[\s\S]*?<\/codex_consult>\s*/m, "").trim()
+    const body = output
+      .replace(/^<codex_consult>[\s\S]*?<\/codex_consult>\s*/m, "")
+      .replace(/^<claude_consult>[\s\S]*?<\/claude_consult>\s*/m, "")
+      .trim()
     return body || output.trim()
   }
   return ""
@@ -3377,7 +3386,15 @@ function codexChatMessages(
       continue
     }
     // Tool-ish events: show as system side notes so the chat stays readable.
-    if (item.kind === "command" || item.kind === "reasoning" || item.kind === "mcp" || item.kind === "web_search") {
+    if (
+      item.kind === "command" ||
+      item.kind === "reasoning" ||
+      item.kind === "mcp" ||
+      item.kind === "web_search" ||
+      item.kind === "tool_use" ||
+      item.kind === "tool_result" ||
+      item.kind === "thinking"
+    ) {
       const text = [item.title, item.text].filter(Boolean).join("\n").trim()
       if (!text) continue
       messages.push({
@@ -3427,9 +3444,21 @@ function CodexSessionDialog(props: {
   sandbox: () => string | undefined
   messages: () => CodexChatMessage[]
   running: () => boolean
+  runningLabel?: () => string
+  emptyLabel?: () => string
+  emptyRunningLabel?: () => string
+  streamingLabel?: () => string
+  assistantAvatar?: string
+  idChipPrefix?: string
 }) {
   const i18n = useI18n()
   let bodyRef: HTMLDivElement | undefined
+  const runningLabel = () => props.runningLabel?.() ?? i18n.t("ui.tool.codex.running")
+  const emptyLabel = () => props.emptyLabel?.() ?? i18n.t("ui.tool.codex.empty")
+  const emptyRunningLabel = () => props.emptyRunningLabel?.() ?? i18n.t("ui.tool.codex.empty.running")
+  const streamingLabel = () => props.streamingLabel?.() ?? i18n.t("ui.tool.codex.streaming")
+  const assistantAvatar = () => props.assistantAvatar ?? "C"
+  const idChipPrefix = () => props.idChipPrefix ?? "thread"
 
   createEffect(() => {
     // Keep the latest assistant output in view while streaming.
@@ -3453,7 +3482,11 @@ function CodexSessionDialog(props: {
       <div data-component="codex-session-dialog">
         <div data-slot="codex-session-meta">
           <Show when={props.threadId()}>
-            {(id) => <span data-slot="codex-session-chip">thread: {id()}</span>}
+            {(id) => (
+              <span data-slot="codex-session-chip">
+                {idChipPrefix()}: {id()}
+              </span>
+            )}
           </Show>
           <Show when={props.model()}>
             {(value) => <span data-slot="codex-session-chip">model: {value()}</span>}
@@ -3463,7 +3496,7 @@ function CodexSessionDialog(props: {
           </Show>
           <Show when={props.running()}>
             <span data-slot="codex-session-chip" data-active="true">
-              {i18n.t("ui.tool.codex.running")}
+              {runningLabel()}
             </span>
           </Show>
         </div>
@@ -3472,7 +3505,7 @@ function CodexSessionDialog(props: {
             when={props.messages().length > 0}
             fallback={
               <div data-slot="codex-session-empty">
-                {props.running() ? i18n.t("ui.tool.codex.empty.running") : i18n.t("ui.tool.codex.empty")}
+                {props.running() ? emptyRunningLabel() : emptyLabel()}
               </div>
             }
           >
@@ -3485,13 +3518,13 @@ function CodexSessionDialog(props: {
                   data-streaming={item.streaming ? "true" : undefined}
                 >
                   <div data-slot="codex-chat-avatar" data-role={item.role}>
-                    {item.role === "user" ? "A" : item.role === "assistant" ? "C" : "·"}
+                    {item.role === "user" ? "A" : item.role === "assistant" ? assistantAvatar() : "·"}
                   </div>
                   <div data-slot="codex-chat-bubble" data-role={item.role} data-kind={item.kind}>
                     <div data-slot="codex-chat-label">
                       <span>{item.label}</span>
                       <Show when={item.streaming}>
-                        <span data-slot="codex-chat-streaming">{i18n.t("ui.tool.codex.streaming")}</span>
+                        <span data-slot="codex-chat-streaming">{streamingLabel()}</span>
                       </Show>
                       <Show when={item.status && !item.streaming}>
                         <span data-slot="codex-chat-status">{item.status}</span>
@@ -3502,7 +3535,7 @@ function CodexSessionDialog(props: {
                       fallback={
                         <div data-slot="codex-chat-waiting">
                           <Spinner />
-                          <span>{i18n.t("ui.tool.codex.empty.running")}</span>
+                          <span>{emptyRunningLabel()}</span>
                         </div>
                       }
                     >
@@ -3511,7 +3544,7 @@ function CodexSessionDialog(props: {
                           when={item.role === "assistant"}
                           fallback={<pre data-slot="codex-chat-pre">{item.text}</pre>}
                         >
-                          <Markdown text={item.text} cacheKey={`codex-${item.id}`} />
+                          <Markdown text={item.text} cacheKey={`consult-${item.id}`} />
                         </Show>
                       </div>
                     </Show>
@@ -3609,8 +3642,8 @@ ToolRegistry.register({
         <span data-slot="basic-tool-tool-action" data-component="tool-action">
           <Tooltip value={i18n.t("ui.tool.codex.view")} placement="top" gutter={4} lazyMount>
             <IconButton
-              icon="expand"
-              size="small"
+              icon="eye"
+              size="normal"
               variant="ghost"
               onMouseDown={(e) => e.preventDefault()}
               onClick={openViewer}
@@ -3621,7 +3654,7 @@ ToolRegistry.register({
             <Tooltip value={i18n.t("ui.tool.codex.stop")} placement="top" gutter={4} lazyMount>
               <IconButton
                 icon="stop"
-                size="small"
+                size="normal"
                 variant="ghost"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={stopSession}
@@ -3637,3 +3670,127 @@ ToolRegistry.register({
     return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta />
   },
 })
+
+ToolRegistry.register({
+  name: "claude_consult",
+  render(props) {
+    const data = useData()
+    const dialog = useDialog()
+    const i18n = useI18n()
+    const running = createMemo(() => props.status === "pending" || props.status === "running")
+    const prompt = createMemo(() => (typeof props.input.prompt === "string" ? props.input.prompt : ""))
+    const sessionId = createMemo(() =>
+      typeof props.metadata.session_id === "string" ? props.metadata.session_id : undefined,
+    )
+    const model = createMemo(() => {
+      if (typeof props.metadata.model === "string" && props.metadata.model) return props.metadata.model
+      if (typeof props.input.model === "string" && props.input.model) return props.input.model
+      return undefined
+    })
+    const subtitle = createMemo(() => {
+      if (running()) return i18n.t("ui.tool.claude.running")
+      if (sessionId()) return sessionId()
+      const first = prompt().split("\n").find((line) => line.trim())
+      return first?.slice(0, 80)
+    })
+
+    const openViewer = (event?: MouseEvent) => {
+      event?.stopPropagation()
+      event?.preventDefault()
+      dialog.show(() => (
+        <CodexSessionDialog
+          title={i18n.t("ui.tool.claude.dialog.title")}
+          prompt={() => (typeof props.input.prompt === "string" ? props.input.prompt : "")}
+          threadId={() =>
+            typeof props.metadata.session_id === "string" ? props.metadata.session_id : undefined
+          }
+          model={() => {
+            if (typeof props.metadata.model === "string" && props.metadata.model) return props.metadata.model
+            if (typeof props.input.model === "string" && props.input.model) return props.input.model
+            return undefined
+          }}
+          sandbox={() =>
+            typeof props.metadata.permission_mode === "string"
+              ? props.metadata.permission_mode
+              : "read-only"
+          }
+          running={() => props.status === "pending" || props.status === "running"}
+          messages={() =>
+            codexChatMessages(
+              typeof props.input.prompt === "string" ? props.input.prompt : "",
+              props.metadata ?? {},
+              props.output,
+              props.status === "pending" || props.status === "running",
+              {
+                user: i18n.t("ui.tool.claude.role.user"),
+                assistant: i18n.t("ui.tool.claude.role.assistant"),
+                system: i18n.t("ui.tool.claude.role.system"),
+              },
+            )
+          }
+          runningLabel={() => i18n.t("ui.tool.claude.running")}
+          emptyLabel={() => i18n.t("ui.tool.claude.empty")}
+          emptyRunningLabel={() => i18n.t("ui.tool.claude.empty.running")}
+          streamingLabel={() => i18n.t("ui.tool.claude.streaming")}
+          assistantAvatar="C"
+          idChipPrefix="session"
+        />
+      ))
+    }
+
+    const stopSession = (event: MouseEvent) => {
+      event.stopPropagation()
+      event.preventDefault()
+      const sessionID = props.part?.sessionID
+      if (!sessionID || !data.abortSession) return
+      void data.abortSession(sessionID)
+    }
+
+    const trigger = () => (
+      <div data-slot="basic-tool-tool-info-structured">
+        <div data-slot="basic-tool-tool-info-main">
+          <span data-slot="basic-tool-tool-title" class="tool-interact">
+            <TextShimmer text={i18n.t("ui.tool.claude")} active={running()} />
+          </span>
+          <Show when={subtitle()}>
+            <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
+          </Show>
+          <Show when={props.metadata.safe_mode === true || props.metadata.permission_mode}>
+            <span data-slot="basic-tool-tool-arg">
+              {typeof props.metadata.permission_mode === "string"
+                ? props.metadata.permission_mode
+                : "read-only"}
+            </span>
+          </Show>
+        </div>
+        <span data-slot="basic-tool-tool-action" data-component="tool-action">
+          <Tooltip value={i18n.t("ui.tool.claude.view")} placement="top" gutter={4} lazyMount>
+            <IconButton
+              icon="eye"
+              size="normal"
+              variant="ghost"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={openViewer}
+              aria-label={i18n.t("ui.tool.claude.view")}
+            />
+          </Tooltip>
+          <Show when={running() && !!data.abortSession && !!props.part?.sessionID}>
+            <Tooltip value={i18n.t("ui.tool.claude.stop")} placement="top" gutter={4} lazyMount>
+              <IconButton
+                icon="stop"
+                size="normal"
+                variant="ghost"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={stopSession}
+                aria-label={i18n.t("ui.tool.claude.stop")}
+              />
+            </Tooltip>
+          </Show>
+        </span>
+      </div>
+    )
+
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta />
+  },
+})
+

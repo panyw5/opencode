@@ -1062,10 +1062,6 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   flex-direction: row-reverse;
 }
 
-[data-slot="codex-chat-row"][data-role="system"] {
-  padding-left: 36px;
-}
-
 [data-slot="codex-chat-avatar"] {
   width: 28px;
   height: 28px;
