@@ -40,6 +40,7 @@ const names = [
   "robot",
   "bullet-list",
   "check-small",
+  "play",
   "chevron-down",
   "chevron-left",
   "chevron-right",

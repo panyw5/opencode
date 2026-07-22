@@ -84,12 +84,7 @@ function init() {
   })
 
   const show = (element: DialogElement, owner: Owner, onClose?: () => void, opts?: DialogOptions) => {
-    // Immediately dispose any existing dialog when showing a new one
-    const current = active()
-    if (current) {
-      current.dispose()
-      setActive(undefined)
-    }
+    const previous = active()
 
     if (timer.current !== undefined) {
       clearTimeout(timer.current)
@@ -101,7 +96,14 @@ function init() {
     let dispose: (() => void) | undefined
     let setClosing: ((closing: boolean) => void) | undefined
 
-    const node = runWithOwner(owner, () =>
+    // Create the next dialog BEFORE disposing the previous one. Nested
+    // show() from inside an open dialog (e.g. detail → edit) still needs a
+    // live owner/context tree; disposing first leaves runWithOwner dead.
+    // Prefer the outer dialog's owner when replacing so the new root stays
+    // under a stable parent even after the nested caller is torn down.
+    const rootOwner = previous?.owner ?? owner
+
+    const node = runWithOwner(rootOwner, () =>
       createRoot((d: () => void) => {
         dispose = d
         const [closing, setClosingSignal] = createSignal(false)
@@ -114,11 +116,20 @@ function init() {
             open={!closing()}
             onOpenChange={(open: boolean) => {
               if (open) return
+              // Ignore close signals from a dialog that is no longer active
+              // (e.g. previous dialog unmounting after a nested show()).
+              if (active()?.id !== id) return
               close()
             }}
           >
             <Kobalte.Portal>
-              <Kobalte.Overlay data-component="dialog-overlay" onClick={close} />
+              <Kobalte.Overlay
+                data-component="dialog-overlay"
+                onClick={() => {
+                  if (active()?.id !== id) return
+                  close()
+                }}
+              />
               {isolated ? (
                 <ErrorBoundary fallback={opts?.errorFallback ?? null}>
                   <Suspense fallback={opts?.suspenseFallback ?? null}>{element()}</Suspense>
@@ -134,7 +145,11 @@ function init() {
 
     if (!dispose || !setClosing) return
 
-    setActive({ id, node, dispose, owner, onClose, setClosing })
+    setActive({ id, node, dispose, owner: rootOwner, onClose, setClosing })
+
+    if (previous) {
+      previous.dispose()
+    }
   }
 
   return {

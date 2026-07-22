@@ -19,6 +19,7 @@ import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, For, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
+import { Markdown } from "@opencode-ai/ui/markdown"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -227,38 +228,34 @@ function ScheduledTaskDetailDialog(props: {
                   value={state.task.lastStatus ?? "-"}
                   tone={statusTone(state.task.lastStatus)}
                 />
+                <div class="min-w-0 rounded-lg border border-border-weak-base bg-background-base p-3">
+                  <div class="flex items-center gap-1.5 text-11-medium text-text-weak">
+                    <Icon name="shield" size="small" class="text-icon-base" />
+                    {language.t("scheduled.unattended.title")}
+                  </div>
+                  <div class="mt-1 line-clamp-3 text-13-regular text-text-strong">
+                    {language.t("scheduled.unattended.detail")}
+                  </div>
+                </div>
               </div>
               <Show when={state.task.lastError}>
                 <div class="mt-3 rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong break-words">
                   {state.task.lastError}
                 </div>
               </Show>
-              <Show when={state.task.sessionID}>
-                <div class="mt-3">
-                  <Button size="small" variant="secondary" onClick={() => openSession(state.task.sessionID)}>
-                    {language.t("scheduled.openSession")}
-                  </Button>
-                </div>
-              </Show>
             </section>
 
             <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
               <div class="mb-2 text-12-medium text-text-weak">{language.t("scheduled.prompt")}</div>
-              <MarkdownEditorField
-                text={state.task.prompt}
-                editable={false}
-                preview
-                onInput={() => undefined}
-                class="h-52 bg-background-base"
-              />
-            </section>
-
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
-              <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
-                <Icon name="shield" size="small" class="text-icon-base" />
-                {language.t("scheduled.unattended.title")}
+              {/* Explicit height: MarkdownEditorField uses h-full and collapses when parent has no height. */}
+              <div class="max-h-80 min-h-40 overflow-y-auto rounded-xl border border-border-weak-base bg-background-base px-3 py-3 shadow-xs-border-base">
+                <Show
+                  when={state.task.prompt.trim()}
+                  fallback={<div class="text-12-regular text-text-weak">—</div>}
+                >
+                  <Markdown text={state.task.prompt} class="text-13-regular text-text-strong" />
+                </Show>
               </div>
-              <p class="text-12-regular leading-5 text-text-weak">{language.t("scheduled.unattended.detail")}</p>
             </section>
 
             <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
@@ -310,6 +307,7 @@ function ScheduledTaskDetailDialog(props: {
               {language.t("scheduled.runNow")}
             </Button>
             <Button
+              icon={state.task.enabled ? "stop" : "play"}
               variant="ghost"
               disabled={state.pending}
               onClick={() =>
@@ -323,6 +321,13 @@ function ScheduledTaskDetailDialog(props: {
             >
               {state.task.enabled ? language.t("scheduled.disable") : language.t("scheduled.enable")}
             </Button>
+            <Show when={state.task.sessionID ?? state.runs.find((run) => run.sessionID)?.sessionID}>
+              {(sessionID) => (
+                <Button icon="speech-bubble" variant="ghost" onClick={() => openSession(sessionID())}>
+                  {language.t("scheduled.openSession")}
+                </Button>
+              )}
+            </Show>
             <div class="ml-auto flex items-center gap-1.5 text-12-regular text-text-weak">
               <Icon name="shield" size="small" />
               {language.t("scheduled.unattended.title")}
