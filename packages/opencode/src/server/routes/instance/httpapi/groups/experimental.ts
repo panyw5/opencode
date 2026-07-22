@@ -79,6 +79,33 @@ export const SessionListQuery = Schema.Struct({
   limit: Schema.optional(Schema.NumberFromString),
   archived: Schema.optional(QueryBoolean),
 })
+export const SessionContentSearchQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  q: Schema.String,
+  cursor: Schema.optional(Schema.NumberFromString),
+  limit: Schema.optional(Schema.NumberFromString),
+  archived: Schema.optional(QueryBoolean),
+})
+const SessionContentSearchResult = Schema.Struct({
+  sessionID: Schema.String,
+  messageID: Schema.String,
+  partID: Schema.String,
+  projectID: Schema.String,
+  directory: Schema.String,
+  sessionTitle: Schema.String,
+  snippet: Schema.String,
+  time: Schema.Number,
+  role: Schema.optionalKey(Schema.String),
+})
+const SessionContentSearchResponse = Schema.Struct({
+  results: Schema.Array(SessionContentSearchResult),
+  nextCursor: Schema.optionalKey(Schema.Number),
+  index: Schema.Struct({
+    indexed: Schema.Number,
+    total: Schema.Number,
+    complete: Schema.Boolean,
+  }),
+})
 
 export const ExperimentalPaths = {
   console: "/experimental/console",
@@ -89,6 +116,7 @@ export const ExperimentalPaths = {
   worktree: "/experimental/worktree",
   worktreeReset: "/experimental/worktree/reset",
   session: "/experimental/session",
+  sessionSearch: "/experimental/session/search",
   resource: "/experimental/resource",
 } as const
 
@@ -211,6 +239,16 @@ export const ExperimentalApi = HttpApi.make("experimental")
             summary: "List sessions",
             description:
               "Get a list of all OpenCode sessions across projects, sorted by most recently updated. Archived sessions are excluded by default.",
+          }),
+        ),
+        HttpApiEndpoint.get("sessionContentSearch", ExperimentalPaths.sessionSearch, {
+          query: SessionContentSearchQuery,
+          success: described(SessionContentSearchResponse, "Session content search results"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.session.contentSearch",
+            summary: "Search session content",
+            description: "Search visible text parts across projects. Archived sessions are excluded by default.",
           }),
         ),
         HttpApiEndpoint.get("resource", ExperimentalPaths.resource, {

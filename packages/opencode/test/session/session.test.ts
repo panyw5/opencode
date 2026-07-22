@@ -14,6 +14,10 @@ import { Storage } from "@/storage/storage"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { BackgroundJob } from "@/background/job"
+import { Database } from "@/storage/db"
+import { eq, sql } from "drizzle-orm"
+import { SessionContentSearch } from "@/session/content-search"
+import { SessionTable } from "@/session/session.sql"
 
 void Log.init({ print: false })
 
@@ -217,6 +221,113 @@ describe("step-finish token propagation via Bus event", () => {
         yield* session.remove(info.id)
       }),
     { timeout: 30000 },
+  )
+})
+
+describe("session content search index", () => {
+  it.instance("keeps visible text parts synchronized with the FTS index", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const info = yield* session.create({})
+      const message = yield* session.updateMessage({
+        id: MessageID.ascending(),
+        sessionID: info.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "user",
+        model: ref,
+      } as MessageV2.Info)
+      const partID = PartID.ascending()
+
+      yield* session.updatePart({
+        id: partID,
+        messageID: message.id,
+        sessionID: info.id,
+        type: "text",
+        text: "distinctive searchable phrase",
+      })
+
+      const count = () =>
+        Database.use(
+          (db) =>
+            db
+              .select({ count: sql<number>`count(*)` })
+              .from(sql`session_content_fts`)
+              .where(sql`session_content_fts MATCH 'distinctive'`)
+              .get()?.count,
+        )
+      expect(count()).toBe(1)
+      expect(SessionContentSearch.search({ query: "distinctive" }).results).toMatchObject([
+        { sessionID: info.id, messageID: message.id, partID },
+      ])
+
+      yield* session.updatePart({
+        id: partID,
+        messageID: message.id,
+        sessionID: info.id,
+        type: "text",
+        text: "ignored phrase",
+        ignored: true,
+      })
+      expect(count()).toBe(0)
+
+      yield* session.remove(info.id)
+      expect(count()).toBe(0)
+    }),
+  )
+
+  it.instance("filters archived sessions and directories while treating special characters literally", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const indexed = yield* session.create({ directory: "/indexed" })
+      const archived = yield* session.create({ directory: "/archived" })
+      Database.use((db) => {
+        db.update(SessionTable).set({ directory: "/indexed" }).where(eq(SessionTable.id, indexed.id)).run()
+        db.update(SessionTable).set({ directory: "/archived" }).where(eq(SessionTable.id, archived.id)).run()
+      })
+      const indexedMessage = yield* session.updateMessage({
+        id: MessageID.ascending(),
+        sessionID: indexed.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "user",
+        model: ref,
+      } as MessageV2.Info)
+      const archivedMessage = yield* session.updateMessage({
+        id: MessageID.ascending(),
+        sessionID: archived.id,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "user",
+        model: ref,
+      } as MessageV2.Info)
+
+      yield* session.updatePart({
+        id: PartID.ascending(),
+        messageID: indexedMessage.id,
+        sessionID: indexed.id,
+        type: "text",
+        text: "needle OR keyword",
+      })
+      yield* session.updatePart({
+        id: PartID.ascending(),
+        messageID: archivedMessage.id,
+        sessionID: archived.id,
+        type: "text",
+        text: "needle OR keyword",
+      })
+      yield* session.setArchived({ sessionID: archived.id, time: Date.now() })
+
+      expect(SessionContentSearch.search({ query: "needle OR", directory: "/indexed" }).results).toMatchObject([
+        { sessionID: indexed.id },
+      ])
+      expect(SessionContentSearch.search({ query: "needle OR", directory: "/archived" }).results).toEqual([])
+      expect(
+        SessionContentSearch.search({ query: "needle OR", directory: "/archived", archived: true }).results,
+      ).toMatchObject([
+        { sessionID: archived.id },
+      ])
+    }),
   )
 })
 

@@ -5,6 +5,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
+import { SessionContentSearch } from "@/session/content-search"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
@@ -12,7 +13,7 @@ import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import { ConsoleSwitchPayload, SessionContentSearchQuery, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -147,6 +148,20 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       })
     })
 
+    const sessionContentSearch = Effect.fn("ExperimentalHttpApi.sessionContentSearch")(function* (ctx: {
+      query: typeof SessionContentSearchQuery.Type
+    }) {
+      return yield* Effect.sync(() =>
+        SessionContentSearch.search({
+          query: ctx.query.q,
+          directory: ctx.query.directory,
+          cursor: ctx.query.cursor,
+          limit: ctx.query.limit,
+          archived: ctx.query.archived,
+        }),
+      )
+    })
+
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
       return yield* mcp.resources()
     })
@@ -162,6 +177,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("worktreeRemove", worktreeRemove)
       .handle("worktreeReset", worktreeReset)
       .handle("session", session)
+      .handle("sessionContentSearch", sessionContentSearch)
       .handle("resource", resource)
   }),
 )

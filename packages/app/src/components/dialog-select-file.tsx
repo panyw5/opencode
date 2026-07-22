@@ -20,7 +20,7 @@ import { createSessionTabs } from "@/pages/session/helpers"
 import { decode64 } from "@/utils/base64"
 import { getRelativeTime } from "@/utils/time"
 
-type EntryType = "command" | "file" | "session"
+type EntryType = "command" | "file" | "session" | "content"
 
 type Entry = {
   id: string
@@ -268,6 +268,66 @@ function createSessionEntries(props: {
   return { sessions }
 }
 
+function createContentSearchEntries(props: {
+  globalSDK: ReturnType<typeof useGlobalSDK>
+  language: ReturnType<typeof useLanguage>
+}) {
+  const [results, setResults] = createSignal<Entry[]>([])
+  const [loading, setLoading] = createSignal(false)
+  const [error, setError] = createSignal<string>()
+  const [indexing, setIndexing] = createSignal(false)
+  let timer: ReturnType<typeof setTimeout> | undefined
+  let token = 0
+
+  const search = (text: string) => {
+    const query = text.trim()
+    token += 1
+    const current = token
+    if (timer) clearTimeout(timer)
+    if (!query) {
+      setResults([])
+      setLoading(false)
+      setError()
+      setIndexing(false)
+      return Promise.resolve([] as Entry[])
+    }
+    setLoading(true)
+    setError()
+    return new Promise<Entry[]>((resolve) => {
+      timer = setTimeout(() => {
+        void props.globalSDK.client.experimental.session
+          .contentSearch({ q: query, limit: "20" })
+          .then((response) => {
+            if (current !== token) return resolve([])
+            const data = response.data
+            setIndexing(!data?.index.complete)
+            const next = (data?.results ?? []).map((item) => ({
+              id: `content:${item.directory}:${item.partID}`,
+              type: "content" as const,
+              title: item.sessionTitle || props.language.t("command.session.new"),
+              description: `${item.directory} · ${item.snippet}`,
+              category: data?.index.complete ? "Content matches" : "Content matches (indexing)",
+              directory: item.directory,
+              sessionID: item.sessionID,
+              updated: item.time,
+            }))
+            setResults(next)
+            resolve(next)
+          })
+          .catch(() => {
+            if (current === token) setError("Unable to search session content")
+            resolve([])
+          })
+          .finally(() => {
+            if (current === token) setLoading(false)
+          })
+      }, 180)
+    })
+  }
+  onCleanup(() => timer && clearTimeout(timer))
+  return { results, loading, error, indexing, search }
+}
+
 export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFile?: (path: string) => void }) {
   const command = useCommand()
   const language = useLanguage()
@@ -315,6 +375,7 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   }
 
   const { sessions } = createSessionEntries({ workspaces, label, globalSDK, language })
+  const contentSearch = createContentSearchEntries({ globalSDK, language })
 
   const items = async (text: string) => {
     const query = text.trim()
@@ -347,10 +408,10 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
       return files.map((path) => createFileEntry(path, category))
     }
 
-    const [files, nextSessions] = await Promise.all([file.searchFiles(query), Promise.resolve(sessions(query))])
+    const [files, nextSessions, content] = await Promise.all([file.searchFiles(query), Promise.resolve(sessions(query)), contentSearch.search(query)])
     const category = language.t("palette.group.files")
     const entries = files.map((path) => createFileEntry(path, category))
-    return [...commandEntries.list(), ...nextSessions, ...entries]
+    return [...content, ...commandEntries.list(), ...nextSessions, ...entries]
   }
 
   const handleMove = (item: Entry | undefined) => {
@@ -384,7 +445,7 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
       return
     }
 
-    if (item.type === "session") {
+    if (item.type === "session" || item.type === "content") {
       if (!item.directory || !item.sessionID) return
       navigate(`/${base64Encode(item.directory)}/session/${item.sessionID}`)
       return
@@ -449,10 +510,10 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
                 </Show>
               </div>
             </Match>
-            <Match when={item.type === "session"}>
+            <Match when={item.type === "session" || item.type === "content"}>
               <div class="w-full flex items-center justify-between rounded-md pl-1">
                 <div class="flex items-center gap-x-3 grow min-w-0">
-                  <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
+                    <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
                   <div class="flex items-center gap-2 min-w-0">
                     <span
                       class="text-14-regular text-text-strong truncate"

@@ -15,6 +15,14 @@ import type {
   AuthRemoveResponses,
   AuthSetErrors,
   AuthSetResponses,
+  BackgroundShellBackgroundErrors,
+  BackgroundShellBackgroundResponses,
+  BackgroundShellCreateErrors,
+  BackgroundShellCreateResponses,
+  BackgroundShellListErrors,
+  BackgroundShellListResponses,
+  BackgroundShellStopErrors,
+  BackgroundShellStopResponses,
   CommandListErrors,
   CommandListResponses,
   Config as Config3,
@@ -36,6 +44,8 @@ import type {
   ExperimentalConsoleSwitchOrgResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
+  ExperimentalSessionContentSearchErrors,
+  ExperimentalSessionContentSearchResponses,
   ExperimentalSessionListErrors,
   ExperimentalSessionListResponses,
   ExperimentalWorkspaceAdapterListErrors,
@@ -193,6 +203,8 @@ import type {
   SessionDiffResponses,
   SessionForkErrors,
   SessionForkResponses,
+  SessionGenerateTitleErrors,
+  SessionGenerateTitleResponses,
   SessionGetErrors,
   SessionGetResponses,
   SessionHookControlErrors,
@@ -219,8 +231,6 @@ import type {
   SessionShellResponses,
   SessionStatusErrors,
   SessionStatusResponses,
-  SessionGenerateTitleErrors,
-  SessionGenerateTitleResponses,
   SessionSummarizeErrors,
   SessionSummarizeResponses,
   SessionTodoErrors,
@@ -562,10 +572,7 @@ export class Config extends HeyApiClient {
    */
   public refresh<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).post<GlobalConfigRefreshResponses, GlobalConfigRefreshErrors, ThrowOnError>(
-      {
-        url: "/global/config/refresh",
-        ...options,
-      },
+      { url: "/global/config/refresh", ...options },
     )
   }
 }
@@ -663,6 +670,169 @@ export class Event extends HeyApiClient {
     )
     return (options?.client ?? this.client).sse.get<EventSubscribeResponses, unknown, ThrowOnError>({
       url: "/event",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class BackgroundShell extends HeyApiClient {
+  /**
+   * List background shell tasks
+   *
+   * List PTY-backed background shell tasks for this workspace or session.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      sessionID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "sessionID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<BackgroundShellListResponses, BackgroundShellListErrors, ThrowOnError>({
+      url: "/background-shell",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create background shell task
+   *
+   * Create a PTY-backed background shell task.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      sessionID?: string
+      messageID?: string
+      callID?: string
+      command?: string
+      cwd?: string
+      description?: string
+      background?: boolean
+      env?: {
+        [key: string]: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "messageID" },
+            { in: "body", key: "callID" },
+            { in: "body", key: "command" },
+            { in: "body", key: "cwd" },
+            { in: "body", key: "description" },
+            { in: "body", key: "background" },
+            { in: "body", key: "env" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      BackgroundShellCreateResponses,
+      BackgroundShellCreateErrors,
+      ThrowOnError
+    >({
+      url: "/background-shell",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Send shell task to background
+   *
+   * Mark a running supervised shell task as a background shell task.
+   */
+  public background<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      BackgroundShellBackgroundResponses,
+      BackgroundShellBackgroundErrors,
+      ThrowOnError
+    >({
+      url: "/background-shell/{id}/background",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Stop background shell task
+   *
+   * Stop a running PTY-backed background shell task.
+   */
+  public stop<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      BackgroundShellStopResponses,
+      BackgroundShellStopErrors,
+      ThrowOnError
+    >({
+      url: "/background-shell/{id}",
       ...options,
       ...params,
     })
@@ -919,6 +1089,48 @@ export class Session extends HeyApiClient {
       ThrowOnError
     >({
       url: "/experimental/session",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Search session content
+   *
+   * Search visible text parts across projects. Archived sessions are excluded by default.
+   */
+  public contentSearch<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      q: string
+      cursor?: string
+      limit?: string
+      archived?: "true" | "false"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "q" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "archived" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalSessionContentSearchResponses,
+      ExperimentalSessionContentSearchErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/search",
       ...options,
       ...params,
     })
@@ -3091,7 +3303,7 @@ export class Session2 extends HeyApiClient {
       start?: number
       search?: string
       limit?: number
-      archived?: boolean | "true" | "false"
+      archived?: "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3278,7 +3490,7 @@ export class Session2 extends HeyApiClient {
       title?: string
       permission?: PermissionRuleset
       time?: {
-        archived?: number | null
+        archived?: number
       }
     },
     options?: Options<never, ThrowOnError>,
@@ -3868,7 +4080,6 @@ export class Session2 extends HeyApiClient {
     })
   }
 
-
   /**
    * Generate session title
    *
@@ -4222,6 +4433,186 @@ export class Part extends HeyApiClient {
   }
 }
 
+export class ScheduledTask extends HeyApiClient {
+  /**
+   * List scheduled tasks
+   *
+   * List scheduled Agent prompt tasks across projects, optionally filtered by project or state.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      projectID?: string
+      enabled?: "true" | "false"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "projectID" },
+            { in: "query", key: "enabled" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ScheduledTaskListResponses, ScheduledTaskListErrors, ThrowOnError>({
+      url: "/scheduled-task",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create scheduled task
+   *
+   * Create an unattended scheduled Agent prompt task.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      scheduledTaskCreateInput?: ScheduledTaskCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "scheduledTaskCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<ScheduledTaskCreateResponses, ScheduledTaskCreateErrors, ThrowOnError>(
+      {
+        url: "/scheduled-task",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+
+  /**
+   * Remove scheduled task
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
+    return (options?.client ?? this.client).delete<
+      ScheduledTaskRemoveResponses,
+      ScheduledTaskRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/scheduled-task/{taskID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get scheduled task
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
+    return (options?.client ?? this.client).get<ScheduledTaskGetResponses, ScheduledTaskGetErrors, ThrowOnError>({
+      url: "/scheduled-task/{taskID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update scheduled task
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+      scheduledTaskUpdateInput?: ScheduledTaskUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "taskID" },
+            { key: "scheduledTaskUpdateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      ScheduledTaskUpdateResponses,
+      ScheduledTaskUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/scheduled-task/{taskID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List scheduled task runs
+   */
+  public runs<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "taskID" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ScheduledTaskRunsResponses, ScheduledTaskRunsErrors, ThrowOnError>({
+      url: "/scheduled-task/{taskID}/run",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Run scheduled task now
+   */
+  public runNow<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
+    return (options?.client ?? this.client).post<ScheduledTaskRunNowResponses, ScheduledTaskRunNowErrors, ThrowOnError>(
+      {
+        url: "/scheduled-task/{taskID}/run-now",
+        ...options,
+        ...params,
+      },
+    )
+  }
+}
+
 export class History extends HeyApiClient {
   /**
    * List sync events
@@ -4260,136 +4651,6 @@ export class History extends HeyApiClient {
         ...params.headers,
       },
     })
-  }
-}
-
-export class ScheduledTask extends HeyApiClient {
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: { projectID?: string; enabled?: "true" | "false" },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "projectID" },
-            { in: "query", key: "enabled" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<ScheduledTaskListResponses, ScheduledTaskListErrors, ThrowOnError>({
-      url: "/scheduled-task",
-      ...options,
-      ...params,
-    })
-  }
-
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: { scheduledTaskCreateInput?: ScheduledTaskCreateInput },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ key: "scheduledTaskCreateInput", map: "body" }] }])
-    return (options?.client ?? this.client).post<ScheduledTaskCreateResponses, ScheduledTaskCreateErrors, ThrowOnError>(
-      {
-        url: "/scheduled-task",
-        ...options,
-        ...params,
-        headers: { "Content-Type": "application/json", ...options?.headers, ...params.headers },
-      },
-    )
-  }
-
-  public get<ThrowOnError extends boolean = false>(
-    parameters: { taskID: string },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
-    return (options?.client ?? this.client).get<ScheduledTaskGetResponses, ScheduledTaskGetErrors, ThrowOnError>({
-      url: "/scheduled-task/{taskID}",
-      ...options,
-      ...params,
-    })
-  }
-
-  public update<ThrowOnError extends boolean = false>(
-    parameters: { taskID: string; scheduledTaskUpdateInput?: ScheduledTaskUpdateInput },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "taskID" },
-            { key: "scheduledTaskUpdateInput", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).patch<
-      ScheduledTaskUpdateResponses,
-      ScheduledTaskUpdateErrors,
-      ThrowOnError
-    >({
-      url: "/scheduled-task/{taskID}",
-      ...options,
-      ...params,
-      headers: { "Content-Type": "application/json", ...options?.headers, ...params.headers },
-    })
-  }
-
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: { taskID: string },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
-    return (options?.client ?? this.client).delete<
-      ScheduledTaskRemoveResponses,
-      ScheduledTaskRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/scheduled-task/{taskID}",
-      ...options,
-      ...params,
-    })
-  }
-
-  public runs<ThrowOnError extends boolean = false>(
-    parameters: { taskID: string; limit?: string },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "taskID" },
-            { in: "query", key: "limit" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<ScheduledTaskRunsResponses, ScheduledTaskRunsErrors, ThrowOnError>({
-      url: "/scheduled-task/{taskID}/run",
-      ...options,
-      ...params,
-    })
-  }
-
-  public runNow<ThrowOnError extends boolean = false>(
-    parameters: { taskID: string },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
-    return (options?.client ?? this.client).post<ScheduledTaskRunNowResponses, ScheduledTaskRunNowErrors, ThrowOnError>(
-      {
-        url: "/scheduled-task/{taskID}/run-now",
-        ...options,
-        ...params,
-      },
-    )
   }
 }
 
@@ -5314,6 +5575,11 @@ export class OpencodeClient extends HeyApiClient {
   private _event?: Event
   get event(): Event {
     return (this._event ??= new Event({ client: this.client }))
+  }
+
+  private _backgroundShell?: BackgroundShell
+  get backgroundShell(): BackgroundShell {
+    return (this._backgroundShell ??= new BackgroundShell({ client: this.client }))
   }
 
   private _config?: Config2

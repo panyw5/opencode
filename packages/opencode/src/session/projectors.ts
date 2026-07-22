@@ -10,6 +10,7 @@ import { SessionTable, MessageTable, PartTable } from "./session.sql"
 import { WorkspaceTable } from "@/control-plane/workspace.sql"
 import { Log } from "@opencode-ai/core/util/log"
 import nextProjectors from "./projectors-next"
+import { SessionContentSearch } from "./content-search"
 
 const log = Log.create({ service: "session.projector" })
 
@@ -119,6 +120,7 @@ export default [
   }),
 
   SyncEvent.project(Session.Event.Deleted, (db, data) => {
+    SessionContentSearch.clearSession(db, data.sessionID)
     db.delete(SessionTable).where(eq(SessionTable.id, data.sessionID)).run()
   }),
 
@@ -155,6 +157,7 @@ export default [
       const previous = usage(row.data)
       if (previous) applyUsage(db, data.sessionID, previous, -1)
     }
+    db.run(sql`DELETE FROM session_content_fts WHERE message_id = ${data.messageID}`)
     db.delete(MessageTable)
       .where(and(eq(MessageTable.id, data.messageID), eq(MessageTable.session_id, data.sessionID)))
       .run()
@@ -169,6 +172,7 @@ export default [
     const previous = row && usage(row.data)
     if (previous) applyUsage(db, data.sessionID, previous, -1)
 
+    SessionContentSearch.remove(db, data.partID)
     db.delete(PartTable)
       .where(and(eq(PartTable.id, data.partID), eq(PartTable.session_id, data.sessionID)))
       .run()
@@ -189,6 +193,7 @@ export default [
         })
         .onConflictDoUpdate({ target: PartTable.id, set: { data: rest } })
         .run()
+      SessionContentSearch.upsert(db, data.part)
       const previous = row && usage(row.data)
       const next = usage(data.part)
       if (previous) applyUsage(db, row.session_id, previous, -1)

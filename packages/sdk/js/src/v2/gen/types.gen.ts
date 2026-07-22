@@ -5,13 +5,6 @@ export type ClientOptions = {
 }
 
 export type Event =
-  | EventTuiPromptAppend
-  | EventTuiCommandExecute
-  | EventTuiToastShow1
-  | EventTuiSessionSelect
-  | EventServerConnected
-  | EventGlobalDisposed
-  | EventGlobalConfigUpdated
   | EventServerInstanceDisposed
   | EventFileEdited
   | EventFileWatcherUpdated
@@ -22,27 +15,34 @@ export type Event =
   | EventPermissionReplied
   | EventSessionDiff
   | EventSessionError
+  | EventSessionStatus
+  | EventSessionIdle
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
   | EventTodoUpdated
-  | EventSessionStatus
-  | EventSessionIdle
+  | EventTuiPromptAppend
+  | EventTuiCommandExecute
+  | EventTuiToastShow1
+  | EventTuiSessionSelect
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
   | EventCommandExecuted
   | EventProjectUpdated
   | EventSessionCompacted
+  | EventPtyCreated
+  | EventPtyUpdated
+  | EventPtyExited
+  | EventPtyDeleted
+  | EventBackgroundShellCreated
+  | EventBackgroundShellUpdated
+  | EventBackgroundShellExited
   | EventVcsBranchUpdated
   | EventWorkspaceReady
   | EventWorkspaceFailed
   | EventWorkspaceStatus
   | EventWorktreeReady
   | EventWorktreeFailed
-  | EventPtyCreated
-  | EventPtyUpdated
-  | EventPtyExited
-  | EventPtyDeleted
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
   | EventMessageUpdated
@@ -78,11 +78,18 @@ export type Event =
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
-  | EventCatalogModelUpdated
+  | EventScheduledTaskCreated
+  | EventScheduledTaskUpdated
+  | EventScheduledTaskDeleted
+  | EventScheduledTaskRunUpdated
+  | EventServerConnected
+  | EventGlobalDisposed
+  | EventGlobalConfigUpdated
   | EventModelsDevRefreshed
   | EventAccountAdded
   | EventAccountRemoved
   | EventAccountSwitched
+  | EventCatalogModelUpdated
 
 export type OAuth = {
   type: "oauth"
@@ -118,61 +125,6 @@ export type InvalidRequestError = {
   message: string
   kind?: string
   field?: string
-}
-
-export type EventTuiPromptAppend = {
-  id: string
-  type: "tui.prompt.append"
-  properties: {
-    text: string
-  }
-}
-
-export type EventTuiCommandExecute = {
-  id: string
-  type: "tui.command.execute"
-  properties: {
-    command:
-      | "session.list"
-      | "session.new"
-      | "session.share"
-      | "session.interrupt"
-      | "session.compact"
-      | "session.page.up"
-      | "session.page.down"
-      | "session.line.up"
-      | "session.line.down"
-      | "session.half.page.up"
-      | "session.half.page.down"
-      | "session.first"
-      | "session.last"
-      | "prompt.clear"
-      | "prompt.submit"
-      | "agent.cycle"
-      | string
-  }
-}
-
-export type EventTuiToastShow = {
-  id: string
-  type: "tui.toast.show"
-  properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
-  }
-}
-
-export type EventTuiSessionSelect = {
-  id: string
-  type: "tui.session.select"
-  properties: {
-    /**
-     * Session ID to navigate to
-     */
-    sessionID: string
-  }
 }
 
 export type PermissionRequest = {
@@ -260,6 +212,28 @@ export type ApiError = {
   }
 }
 
+export type SessionStatus =
+  | {
+      type: "idle"
+    }
+  | {
+      type: "retry"
+      attempt: number
+      message: string
+      action?: {
+        reason: string
+        provider: string
+        title: string
+        message: string
+        label: string
+        link?: string
+      }
+      next: number
+    }
+  | {
+      type: "busy"
+    }
+
 export type QuestionOption = {
   /**
    * Display text (1-5 words, concise)
@@ -271,7 +245,7 @@ export type QuestionOption = {
   description: string
 }
 
-export type QuestionInfo = {
+export type QuestionPrompt = {
   /**
    * Complete question
    */
@@ -285,7 +259,6 @@ export type QuestionInfo = {
    */
   options: Array<QuestionOption>
   multiple?: boolean
-  custom?: boolean
 }
 
 export type QuestionTool = {
@@ -299,7 +272,7 @@ export type QuestionRequest = {
   /**
    * Questions to ask
    */
-  questions: Array<QuestionInfo>
+  questions: Array<QuestionPrompt>
   tool?: QuestionTool
 }
 
@@ -340,27 +313,60 @@ export type Todo = {
   priority: string
 }
 
-export type SessionStatus =
-  | {
-      type: "idle"
-    }
-  | {
-      type: "retry"
-      attempt: number
-      message: string
-      action?: {
-        reason: string
-        provider: string
-        title: string
-        message: string
-        label: string
-        link?: string
-      }
-      next: number
-    }
-  | {
-      type: "busy"
-    }
+export type EventTuiPromptAppend = {
+  id: string
+  type: "tui.prompt.append"
+  properties: {
+    text: string
+  }
+}
+
+export type EventTuiCommandExecute = {
+  id: string
+  type: "tui.command.execute"
+  properties: {
+    command:
+      | "session.list"
+      | "session.new"
+      | "session.share"
+      | "session.interrupt"
+      | "session.compact"
+      | "session.page.up"
+      | "session.page.down"
+      | "session.line.up"
+      | "session.line.down"
+      | "session.half.page.up"
+      | "session.half.page.down"
+      | "session.first"
+      | "session.last"
+      | "prompt.clear"
+      | "prompt.submit"
+      | "agent.cycle"
+      | string
+  }
+}
+
+export type EventTuiToastShow = {
+  id: string
+  type: "tui.toast.show"
+  properties: {
+    title?: string
+    message: string
+    variant: "info" | "success" | "warning" | "error"
+    duration?: number
+  }
+}
+
+export type EventTuiSessionSelect = {
+  id: string
+  type: "tui.session.select"
+  properties: {
+    /**
+     * Session ID to navigate to
+     */
+    sessionID: string
+  }
+}
 
 export type Project = {
   id: string
@@ -394,6 +400,23 @@ export type Pty = {
   cwd: string
   status: "running" | "exited"
   pid: number
+}
+
+export type BackgroundShell = {
+  id: string
+  sessionID: string
+  messageID?: string
+  callID?: string
+  ptyID: string
+  command: string
+  cwd: string
+  description?: string
+  background: boolean
+  status: "running" | "completed" | "error" | "stopped"
+  exitCode?: number
+  startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  endedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  outputTail?: string
 }
 
 export type OutputFormatText = {
@@ -431,7 +454,6 @@ export type UserMessage = {
     modelID: string
     variant?: string
   }
-  variant?: string
   system?: string
   tools?: {
     [key: string]: boolean
@@ -813,9 +835,19 @@ export type Prompt = {
 }
 
 export type ScheduledTaskSchedule =
-  | { kind: "at"; at: number }
-  | { kind: "every"; interval: number }
-  | { kind: "cron"; expression: string; timezone?: string }
+  | {
+      kind: "at"
+      at: number
+    }
+  | {
+      kind: "every"
+      interval: number
+    }
+  | {
+      kind: "cron"
+      expression: string
+      timezone?: string
+    }
 
 export type ScheduledTask = {
   id: string
@@ -828,14 +860,21 @@ export type ScheduledTask = {
   executionMode: "new_session" | "existing_session"
   sessionID?: string
   agent: string
-  model: { providerID: string; modelID: string; variant?: string }
+  model: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
   enabled: boolean
   unattended: true
   nextRunAt?: number
   lastRunAt?: number
   lastStatus?: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
   lastError?: string
-  time: { created: number; updated: number }
+  time: {
+    created: number
+    updated: number
+  }
 }
 
 export type ScheduledTaskRun = {
@@ -846,166 +885,11 @@ export type ScheduledTaskRun = {
   attempt: number
   sessionID?: string
   error?: string
-  time: { created: number; started?: number; finished?: number }
-}
-
-export type ScheduledTaskCreateInput = {
-  projectID: string
-  projectName?: string
-  directory: string
-  name: string
-  prompt: string
-  schedule: ScheduledTaskSchedule
-  executionMode?: "new_session" | "existing_session"
-  sessionID?: string
-  agent: string
-  model: { providerID: string; modelID: string; variant?: string }
-  enabled?: boolean
-  unattended: true
-}
-
-export type ScheduledTaskUpdateInput = {
-  name?: string
-  prompt?: string
-  schedule?: ScheduledTaskSchedule
-  executionMode?: "new_session" | "existing_session"
-  sessionID?: string | null
-  agent?: string
-  model?: { providerID: string; modelID: string; variant?: string }
-  enabled?: boolean
-}
-
-export type ScheduledTaskListErrors = { 400: EffectHttpApiErrorBadRequest }
-export type ScheduledTaskListResponses = { 200: Array<ScheduledTask> }
-export type ScheduledTaskCreateErrors = { 400: EffectHttpApiErrorBadRequest | InvalidRequestError }
-export type ScheduledTaskCreateResponses = { 200: ScheduledTask }
-export type ScheduledTaskGetErrors = { 400: EffectHttpApiErrorBadRequest; 404: NotFoundError }
-export type ScheduledTaskGetResponses = { 200: ScheduledTask }
-export type ScheduledTaskUpdateErrors = { 400: EffectHttpApiErrorBadRequest | InvalidRequestError; 404: NotFoundError }
-export type ScheduledTaskUpdateResponses = { 200: ScheduledTask }
-export type ScheduledTaskRemoveErrors = { 400: EffectHttpApiErrorBadRequest; 404: NotFoundError }
-export type ScheduledTaskRemoveResponses = { 200: boolean }
-export type ScheduledTaskRunsErrors = { 400: EffectHttpApiErrorBadRequest; 404: NotFoundError }
-export type ScheduledTaskRunsResponses = { 200: Array<ScheduledTaskRun> }
-export type ScheduledTaskRunNowErrors = { 400: EffectHttpApiErrorBadRequest; 404: NotFoundError }
-export type ScheduledTaskRunNowResponses = { 200: ScheduledTaskRun }
-
-export type GlobalEvent = {
-  directory: string
-  project?: string
-  workspace?: string
-  payload:
-    | EventTuiPromptAppend
-    | EventTuiCommandExecute
-    | EventTuiToastShow
-    | EventTuiSessionSelect
-    | EventServerConnected
-    | EventGlobalDisposed
-    | EventGlobalConfigUpdated
-    | EventServerInstanceDisposed
-    | EventFileEdited
-    | EventFileWatcherUpdated
-    | EventLspClientDiagnostics
-    | EventLspUpdated
-    | EventMessagePartDelta
-    | EventPermissionAsked
-    | EventPermissionReplied
-    | EventSessionDiff
-    | EventSessionError
-    | EventQuestionAsked
-    | EventQuestionReplied
-    | EventQuestionRejected
-    | EventTodoUpdated
-    | EventSessionStatus
-    | EventSessionIdle
-    | EventMcpToolsChanged
-    | EventMcpBrowserOpenFailed
-    | EventCommandExecuted
-    | EventProjectUpdated
-    | EventSessionCompacted
-    | EventVcsBranchUpdated
-    | EventWorkspaceReady
-    | EventWorkspaceFailed
-    | EventWorkspaceStatus
-    | EventWorktreeReady
-    | EventWorktreeFailed
-    | EventPtyCreated
-    | EventPtyUpdated
-    | EventPtyExited
-    | EventPtyDeleted
-    | EventInstallationUpdated
-    | EventInstallationUpdateAvailable
-    | EventMessageUpdated
-    | EventMessageRemoved
-    | EventMessagePartUpdated
-    | EventMessagePartRemoved
-    | EventSessionCreated
-    | EventSessionUpdated
-    | EventSessionDeleted
-    | EventSessionNextAgentSwitched
-    | EventSessionNextModelSwitched
-    | EventSessionNextPrompted
-    | EventSessionNextSynthetic
-    | EventSessionNextShellStarted
-    | EventSessionNextShellEnded
-    | EventSessionNextStepStarted
-    | EventSessionNextStepEnded
-    | EventSessionNextStepFailed
-    | EventSessionNextTextStarted
-    | EventSessionNextTextDelta
-    | EventSessionNextTextEnded
-    | EventSessionNextReasoningStarted
-    | EventSessionNextReasoningDelta
-    | EventSessionNextReasoningEnded
-    | EventSessionNextToolInputStarted
-    | EventSessionNextToolInputDelta
-    | EventSessionNextToolInputEnded
-    | EventSessionNextToolCalled
-    | EventSessionNextToolProgress
-    | EventSessionNextToolSuccess
-    | EventSessionNextToolFailed
-    | EventSessionNextRetried
-    | EventSessionNextCompactionStarted
-    | EventSessionNextCompactionDelta
-    | EventSessionNextCompactionEnded
-    | EventCatalogModelUpdated
-    | EventModelsDevRefreshed
-    | EventAccountAdded
-    | EventAccountRemoved
-    | EventAccountSwitched
-    | SyncEventMessageUpdated
-    | SyncEventMessageRemoved
-    | SyncEventMessagePartUpdated
-    | SyncEventMessagePartRemoved
-    | SyncEventSessionCreated
-    | SyncEventSessionUpdated
-    | SyncEventSessionDeleted
-    | SyncEventSessionNextAgentSwitched
-    | SyncEventSessionNextModelSwitched
-    | SyncEventSessionNextPrompted
-    | SyncEventSessionNextSynthetic
-    | SyncEventSessionNextShellStarted
-    | SyncEventSessionNextShellEnded
-    | SyncEventSessionNextStepStarted
-    | SyncEventSessionNextStepEnded
-    | SyncEventSessionNextStepFailed
-    | SyncEventSessionNextTextStarted
-    | SyncEventSessionNextTextDelta
-    | SyncEventSessionNextTextEnded
-    | SyncEventSessionNextReasoningStarted
-    | SyncEventSessionNextReasoningDelta
-    | SyncEventSessionNextReasoningEnded
-    | SyncEventSessionNextToolInputStarted
-    | SyncEventSessionNextToolInputDelta
-    | SyncEventSessionNextToolInputEnded
-    | SyncEventSessionNextToolCalled
-    | SyncEventSessionNextToolProgress
-    | SyncEventSessionNextToolSuccess
-    | SyncEventSessionNextToolFailed
-    | SyncEventSessionNextRetried
-    | SyncEventSessionNextCompactionStarted
-    | SyncEventSessionNextCompactionDelta
-    | SyncEventSessionNextCompactionEnded
+  time: {
+    created: number
+    started?: number
+    finished?: number
+  }
 }
 
 /**
@@ -1067,6 +951,8 @@ export type PermissionConfig =
       question?: PermissionActionConfig
       webfetch?: PermissionActionConfig
       websearch?: PermissionActionConfig
+      codex_consult?: PermissionActionConfig
+      claude_consult?: PermissionActionConfig
       repo_clone?: PermissionRuleConfig
       repo_overview?: PermissionRuleConfig
       lsp?: PermissionRuleConfig
@@ -1206,41 +1092,6 @@ export type ProviderConfig = {
   }
 }
 
-export type ChannelFeishuConfig = {
-  type: "feishu"
-  appId: string
-  appSecret: string
-  allowedUsers?: Array<string>
-  enabled?: boolean
-  domain?: "feishu" | "lark"
-  /** provider/model used for IM replies on this channel */
-  model?: string
-  /**
-   * Working directory for this channel's sessions and tools.
-   * Decoupled from OpenCode projects. Defaults to {config}/channels/{name}
-   * (e.g. ~/.config/opencode/channels/work-feishu).
-   */
-  directory?: string
-}
-
-export type ChannelDiscordConfig = {
-  type: "discord"
-  botToken: string
-  allowedUsers?: Array<string>
-  proxy?: string
-  enabled?: boolean
-  /** provider/model used for IM replies on this channel */
-  model?: string
-  /**
-   * Working directory for this channel's sessions and tools.
-   * Decoupled from OpenCode projects. Defaults to {config}/channels/{name}
-   * (e.g. ~/.config/opencode/channels/work-feishu).
-   */
-  directory?: string
-}
-
-export type ChannelConfig = ChannelFeishuConfig | ChannelDiscordConfig
-
 export type McpLocalConfig = {
   /**
    * Type of MCP server connection
@@ -1283,6 +1134,42 @@ export type McpRemoteConfig = {
    */
   oauth?: McpOAuthConfig | false
   timeout?: number
+}
+
+export type ChannelFeishuConfig = {
+  /**
+   * Feishu / Lark IM channel
+   */
+  type: "feishu"
+  /**
+   * Feishu App ID (cli_xxx)
+   */
+  appId: string
+  /**
+   * Feishu App Secret
+   */
+  appSecret: string
+  allowedUsers?: Array<string>
+  domain?: "feishu" | "lark"
+  directory?: string
+  enabled?: boolean
+  model?: string
+}
+
+export type ChannelDiscordConfig = {
+  /**
+   * Discord IM channel
+   */
+  type: "discord"
+  /**
+   * Discord bot token
+   */
+  botToken: string
+  allowedUsers?: Array<string>
+  proxy?: string
+  directory?: string
+  enabled?: boolean
+  model?: string
 }
 
 /**
@@ -1372,11 +1259,8 @@ export type Config = {
           enabled: boolean
         }
   }
-  /**
-   * IM message channel configurations (feishu, discord, ...). Config-only for now; adapters connect later.
-   */
   channels?: {
-    [key: string]: ChannelConfig
+    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
@@ -1444,6 +1328,131 @@ export type Config = {
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
   }
+}
+
+export type GlobalEvent = {
+  directory: string
+  project?: string
+  workspace?: string
+  payload:
+    | EventServerInstanceDisposed
+    | EventFileEdited
+    | EventFileWatcherUpdated
+    | EventLspClientDiagnostics
+    | EventLspUpdated
+    | EventMessagePartDelta
+    | EventPermissionAsked
+    | EventPermissionReplied
+    | EventSessionDiff
+    | EventSessionError
+    | EventSessionStatus
+    | EventSessionIdle
+    | EventQuestionAsked
+    | EventQuestionReplied
+    | EventQuestionRejected
+    | EventTodoUpdated
+    | EventTuiPromptAppend
+    | EventTuiCommandExecute
+    | EventTuiToastShow
+    | EventTuiSessionSelect
+    | EventMcpToolsChanged
+    | EventMcpBrowserOpenFailed
+    | EventCommandExecuted
+    | EventProjectUpdated
+    | EventSessionCompacted
+    | EventPtyCreated
+    | EventPtyUpdated
+    | EventPtyExited
+    | EventPtyDeleted
+    | EventBackgroundShellCreated
+    | EventBackgroundShellUpdated
+    | EventBackgroundShellExited
+    | EventVcsBranchUpdated
+    | EventWorkspaceReady
+    | EventWorkspaceFailed
+    | EventWorkspaceStatus
+    | EventWorktreeReady
+    | EventWorktreeFailed
+    | EventInstallationUpdated
+    | EventInstallationUpdateAvailable
+    | EventMessageUpdated
+    | EventMessageRemoved
+    | EventMessagePartUpdated
+    | EventMessagePartRemoved
+    | EventSessionCreated
+    | EventSessionUpdated
+    | EventSessionDeleted
+    | EventSessionNextAgentSwitched
+    | EventSessionNextModelSwitched
+    | EventSessionNextPrompted
+    | EventSessionNextSynthetic
+    | EventSessionNextShellStarted
+    | EventSessionNextShellEnded
+    | EventSessionNextStepStarted
+    | EventSessionNextStepEnded
+    | EventSessionNextStepFailed
+    | EventSessionNextTextStarted
+    | EventSessionNextTextDelta
+    | EventSessionNextTextEnded
+    | EventSessionNextReasoningStarted
+    | EventSessionNextReasoningDelta
+    | EventSessionNextReasoningEnded
+    | EventSessionNextToolInputStarted
+    | EventSessionNextToolInputDelta
+    | EventSessionNextToolInputEnded
+    | EventSessionNextToolCalled
+    | EventSessionNextToolProgress
+    | EventSessionNextToolSuccess
+    | EventSessionNextToolFailed
+    | EventSessionNextRetried
+    | EventSessionNextCompactionStarted
+    | EventSessionNextCompactionDelta
+    | EventSessionNextCompactionEnded
+    | EventScheduledTaskCreated
+    | EventScheduledTaskUpdated
+    | EventScheduledTaskDeleted
+    | EventScheduledTaskRunUpdated
+    | EventServerConnected
+    | EventGlobalDisposed
+    | EventGlobalConfigUpdated
+    | EventModelsDevRefreshed
+    | EventAccountAdded
+    | EventAccountRemoved
+    | EventAccountSwitched
+    | EventCatalogModelUpdated
+    | SyncEventMessageUpdated
+    | SyncEventMessageRemoved
+    | SyncEventMessagePartUpdated
+    | SyncEventMessagePartRemoved
+    | SyncEventSessionCreated
+    | SyncEventSessionUpdated
+    | SyncEventSessionDeleted
+    | SyncEventSessionNextAgentSwitched
+    | SyncEventSessionNextModelSwitched
+    | SyncEventSessionNextPrompted
+    | SyncEventSessionNextSynthetic
+    | SyncEventSessionNextShellStarted
+    | SyncEventSessionNextShellEnded
+    | SyncEventSessionNextStepStarted
+    | SyncEventSessionNextStepEnded
+    | SyncEventSessionNextStepFailed
+    | SyncEventSessionNextTextStarted
+    | SyncEventSessionNextTextDelta
+    | SyncEventSessionNextTextEnded
+    | SyncEventSessionNextReasoningStarted
+    | SyncEventSessionNextReasoningDelta
+    | SyncEventSessionNextReasoningEnded
+    | SyncEventSessionNextToolInputStarted
+    | SyncEventSessionNextToolInputDelta
+    | SyncEventSessionNextToolInputEnded
+    | SyncEventSessionNextToolCalled
+    | SyncEventSessionNextToolProgress
+    | SyncEventSessionNextToolSuccess
+    | SyncEventSessionNextToolFailed
+    | SyncEventSessionNextRetried
+    | SyncEventSessionNextCompactionStarted
+    | SyncEventSessionNextCompactionDelta
+    | SyncEventSessionNextCompactionEnded
 }
 
 export type Model = {
@@ -1718,19 +1727,21 @@ export type Path = {
   directory: string
 }
 
+export type VcsWorktreeInfo = {
+  path: string
+  branch?: string
+  head?: string
+  bare?: boolean
+  detached?: boolean
+  locked?: string
+  prunable?: string
+}
+
 export type VcsInfo = {
   branch?: string
   default_branch?: string
   branches?: Array<string>
-  worktrees?: Array<{
-    path: string
-    branch?: string
-    head?: string
-    bare?: boolean
-    detached?: boolean
-    locked?: string
-    prunable?: string
-  }>
+  worktrees?: Array<VcsWorktreeInfo>
 }
 
 export type VcsFileStatus = {
@@ -2000,6 +2011,40 @@ export type SessionBusyError = {
   message: string
 }
 
+export type ScheduledTaskCreateInput = {
+  projectID: string
+  projectName?: string
+  directory: string
+  name: string
+  prompt: string
+  schedule: ScheduledTaskSchedule
+  executionMode?: "new_session" | "existing_session"
+  sessionID?: string
+  agent: string
+  model: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
+  enabled?: boolean
+  unattended: true
+}
+
+export type ScheduledTaskUpdateInput = {
+  name?: string
+  prompt?: string
+  schedule?: ScheduledTaskSchedule
+  executionMode?: "new_session" | "existing_session"
+  sessionID?: string
+  agent?: string
+  model?: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
+  enabled?: boolean
+}
+
 export type V2SessionsResponse = {
   items: Array<SessionInfo>
   cursor: {
@@ -2121,6 +2166,23 @@ export type WorkspaceWarpError = {
 
 export type EffectHttpApiErrorForbidden = {
   _tag: "Forbidden"
+}
+
+export type BackgroundShell3 = {
+  id: string
+  sessionID: string
+  messageID?: string
+  callID?: string
+  ptyID: string
+  command: string
+  cwd: string
+  description?: string
+  background: boolean
+  status: "running" | "completed" | "error" | "stopped"
+  exitCode?: number
+  startedAt: number | "NaN" | "Infinity" | "-Infinity"
+  endedAt?: number | "NaN" | "Infinity" | "-Infinity"
+  outputTail?: string
 }
 
 export type SyncEventMessageUpdated = {
@@ -2655,28 +2717,6 @@ export type SyncEventSessionNextCompactionEnded = {
   }
 }
 
-export type EventServerConnected = {
-  id: string
-  type: "server.connected"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventGlobalDisposed = {
-  id: string
-  type: "global.disposed"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type EventGlobalConfigUpdated = {
-  id: string
-  type: "global.config.updated"
-  properties: Config
-}
-
 export type EventServerInstanceDisposed = {
   id: string
   type: "server.instance.disposed"
@@ -2772,6 +2812,23 @@ export type EventSessionError = {
   }
 }
 
+export type EventSessionStatus = {
+  id: string
+  type: "session.status"
+  properties: {
+    sessionID: string
+    status: SessionStatus
+  }
+}
+
+export type EventSessionIdle = {
+  id: string
+  type: "session.idle"
+  properties: {
+    sessionID: string
+  }
+}
+
 export type EventQuestionAsked = {
   id: string
   type: "question.asked"
@@ -2796,23 +2853,6 @@ export type EventTodoUpdated = {
   properties: {
     sessionID: string
     todos: Array<Todo>
-  }
-}
-
-export type EventSessionStatus = {
-  id: string
-  type: "session.status"
-  properties: {
-    sessionID: string
-    status: SessionStatus
-  }
-}
-
-export type EventSessionIdle = {
-  id: string
-  type: "session.idle"
-  properties: {
-    sessionID: string
   }
 }
 
@@ -2855,6 +2895,64 @@ export type EventSessionCompacted = {
   type: "session.compacted"
   properties: {
     sessionID: string
+  }
+}
+
+export type EventPtyCreated = {
+  id: string
+  type: "pty.created"
+  properties: {
+    info: Pty
+  }
+}
+
+export type EventPtyUpdated = {
+  id: string
+  type: "pty.updated"
+  properties: {
+    info: Pty
+  }
+}
+
+export type EventPtyExited = {
+  id: string
+  type: "pty.exited"
+  properties: {
+    id: string
+    exitCode: number
+    output?: string
+  }
+}
+
+export type EventPtyDeleted = {
+  id: string
+  type: "pty.deleted"
+  properties: {
+    id: string
+  }
+}
+
+export type EventBackgroundShellCreated = {
+  id: string
+  type: "background.shell.created"
+  properties: {
+    info: BackgroundShell
+  }
+}
+
+export type EventBackgroundShellUpdated = {
+  id: string
+  type: "background.shell.updated"
+  properties: {
+    info: BackgroundShell
+  }
+}
+
+export type EventBackgroundShellExited = {
+  id: string
+  type: "background.shell.exited"
+  properties: {
+    info: BackgroundShell
   }
 }
 
@@ -2905,39 +3003,6 @@ export type EventWorktreeFailed = {
   type: "worktree.failed"
   properties: {
     message: string
-  }
-}
-
-export type EventPtyCreated = {
-  id: string
-  type: "pty.created"
-  properties: {
-    info: Pty
-  }
-}
-
-export type EventPtyUpdated = {
-  id: string
-  type: "pty.updated"
-  properties: {
-    info: Pty
-  }
-}
-
-export type EventPtyExited = {
-  id: string
-  type: "pty.exited"
-  properties: {
-    id: string
-    exitCode: number
-  }
-}
-
-export type EventPtyDeleted = {
-  id: string
-  type: "pty.deleted"
-  properties: {
-    id: string
   }
 }
 
@@ -3403,6 +3468,112 @@ export type EventSessionNextCompactionEnded = {
   }
 }
 
+export type EventScheduledTaskCreated = {
+  id: string
+  type: "scheduled-task.created"
+  properties: ScheduledTask
+}
+
+export type EventScheduledTaskUpdated = {
+  id: string
+  type: "scheduled-task.updated"
+  properties: ScheduledTask
+}
+
+export type EventScheduledTaskDeleted = {
+  id: string
+  type: "scheduled-task.deleted"
+  properties: {
+    taskID: string
+  }
+}
+
+export type EventScheduledTaskRunUpdated = {
+  id: string
+  type: "scheduled-task.run-updated"
+  properties: ScheduledTaskRun
+}
+
+export type EventServerConnected = {
+  id: string
+  type: "server.connected"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type EventGlobalDisposed = {
+  id: string
+  type: "global.disposed"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type EventGlobalConfigUpdated = {
+  id: string
+  type: "global.config.updated"
+  properties: Config
+}
+
+export type EventModelsDevRefreshed = {
+  id: string
+  type: "models-dev.refreshed"
+  properties: {
+    [key: string]: unknown
+  }
+}
+
+export type AccountV2oAuthCredential = {
+  type: "oauth"
+  refresh: string
+  access: string
+  expires: number
+}
+
+export type AccountV2ApiKeyCredential = {
+  type: "api"
+  key: string
+  metadata?: {
+    [key: string]: string
+  }
+}
+
+export type AccountV2Credential = AccountV2oAuthCredential | AccountV2ApiKeyCredential
+
+export type AccountV2Info = {
+  id: string
+  serviceID: string
+  description: string
+  credential: AccountV2Credential
+}
+
+export type EventAccountAdded = {
+  id: string
+  type: "account.added"
+  properties: {
+    account: AccountV2Info
+  }
+}
+
+export type EventAccountRemoved = {
+  id: string
+  type: "account.removed"
+  properties: {
+    account: AccountV2Info
+  }
+}
+
+export type EventAccountSwitched = {
+  id: string
+  type: "account.switched"
+  properties: {
+    serviceID: string
+    from?: string
+    to?: string
+  }
+}
+
 export type ModelV2Info = {
   id: string
   apiID: string
@@ -3506,64 +3677,6 @@ export type EventCatalogModelUpdated = {
   type: "catalog.model.updated"
   properties: {
     model: ModelV2Info
-  }
-}
-
-export type EventModelsDevRefreshed = {
-  id: string
-  type: "models-dev.refreshed"
-  properties: {
-    [key: string]: unknown
-  }
-}
-
-export type AccountV2oAuthCredential = {
-  type: "oauth"
-  refresh: string
-  access: string
-  expires: number
-}
-
-export type AccountV2ApiKeyCredential = {
-  type: "api"
-  key: string
-  metadata?: {
-    [key: string]: string
-  }
-}
-
-export type AccountV2Credential = AccountV2oAuthCredential | AccountV2ApiKeyCredential
-
-export type AccountV2Info = {
-  id: string
-  serviceID: string
-  description: string
-  credential: AccountV2Credential
-}
-
-export type EventAccountAdded = {
-  id: string
-  type: "account.added"
-  properties: {
-    account: AccountV2Info
-  }
-}
-
-export type EventAccountRemoved = {
-  id: string
-  type: "account.removed"
-  properties: {
-    account: AccountV2Info
-  }
-}
-
-export type EventAccountSwitched = {
-  id: string
-  type: "account.switched"
-  properties: {
-    serviceID: string
-    from?: string
-    to?: string
   }
 }
 
@@ -4291,6 +4404,139 @@ export type EventSubscribeResponses = {
 
 export type EventSubscribeResponse = EventSubscribeResponses[keyof EventSubscribeResponses]
 
+export type BackgroundShellListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    sessionID?: string
+  }
+  url: "/background-shell"
+}
+
+export type BackgroundShellListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type BackgroundShellListError = BackgroundShellListErrors[keyof BackgroundShellListErrors]
+
+export type BackgroundShellListResponses = {
+  /**
+   * Background shell tasks
+   */
+  200: Array<BackgroundShell>
+}
+
+export type BackgroundShellListResponse = BackgroundShellListResponses[keyof BackgroundShellListResponses]
+
+export type BackgroundShellCreateData = {
+  body?: {
+    sessionID: string
+    messageID?: string
+    callID?: string
+    command: string
+    cwd?: string
+    description?: string
+    background?: boolean
+    env?: {
+      [key: string]: string
+    }
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/background-shell"
+}
+
+export type BackgroundShellCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type BackgroundShellCreateError = BackgroundShellCreateErrors[keyof BackgroundShellCreateErrors]
+
+export type BackgroundShellCreateResponses = {
+  /**
+   * Created background shell task
+   */
+  200: BackgroundShell
+}
+
+export type BackgroundShellCreateResponse = BackgroundShellCreateResponses[keyof BackgroundShellCreateResponses]
+
+export type BackgroundShellBackgroundData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/background-shell/{id}/background"
+}
+
+export type BackgroundShellBackgroundErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type BackgroundShellBackgroundError = BackgroundShellBackgroundErrors[keyof BackgroundShellBackgroundErrors]
+
+export type BackgroundShellBackgroundResponses = {
+  /**
+   * Background shell task
+   */
+  200: BackgroundShell
+}
+
+export type BackgroundShellBackgroundResponse =
+  BackgroundShellBackgroundResponses[keyof BackgroundShellBackgroundResponses]
+
+export type BackgroundShellStopData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/background-shell/{id}"
+}
+
+export type BackgroundShellStopErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type BackgroundShellStopError = BackgroundShellStopErrors[keyof BackgroundShellStopErrors]
+
+export type BackgroundShellStopResponses = {
+  /**
+   * Background shell task stopped
+   */
+  200: boolean
+}
+
+export type BackgroundShellStopResponse = BackgroundShellStopResponses[keyof BackgroundShellStopResponses]
+
 export type ConfigGetData = {
   body?: never
   path?: never
@@ -4681,6 +4927,58 @@ export type ExperimentalSessionListResponses = {
 }
 
 export type ExperimentalSessionListResponse = ExperimentalSessionListResponses[keyof ExperimentalSessionListResponses]
+
+export type ExperimentalSessionContentSearchData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    q: string
+    cursor?: string
+    limit?: string
+    archived?: "true" | "false"
+  }
+  url: "/experimental/session/search"
+}
+
+export type ExperimentalSessionContentSearchErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalSessionContentSearchError =
+  ExperimentalSessionContentSearchErrors[keyof ExperimentalSessionContentSearchErrors]
+
+export type ExperimentalSessionContentSearchResponses = {
+  /**
+   * Session content search results
+   */
+  200: {
+    results: Array<{
+      sessionID: string
+      messageID: string
+      partID: string
+      projectID: string
+      directory: string
+      sessionTitle: string
+      snippet: string
+      time: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      role?: string
+    }>
+    nextCursor?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    index: {
+      indexed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      complete: boolean
+    }
+  }
+}
+
+export type ExperimentalSessionContentSearchResponse =
+  ExperimentalSessionContentSearchResponses[keyof ExperimentalSessionContentSearchResponses]
 
 export type ExperimentalResourceListData = {
   body?: never
@@ -6218,7 +6516,7 @@ export type SessionListData = {
     start?: number
     search?: string
     limit?: number
-    archived?: boolean | "true" | "false"
+    archived?: "true" | "false"
   }
   url: "/session"
 }
@@ -6383,7 +6681,7 @@ export type SessionUpdateData = {
     title?: string
     permission?: PermissionRuleset
     time?: {
-      archived?: number | null
+      archived?: number
     }
   }
   path: {
@@ -6933,40 +7231,6 @@ export type SessionShareResponses = {
 
 export type SessionShareResponse = SessionShareResponses[keyof SessionShareResponses]
 
-
-export type SessionGenerateTitleData = {
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/generate_title"
-}
-
-export type SessionGenerateTitleErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionGenerateTitleError = SessionGenerateTitleErrors[keyof SessionGenerateTitleErrors]
-
-export type SessionGenerateTitleResponses = {
-  /**
-   * Generated session title
-   */
-  200: Session
-}
-
-export type SessionGenerateTitleResponse = SessionGenerateTitleResponses[keyof SessionGenerateTitleResponses]
-
 export type SessionSummarizeData = {
   body?: {
     providerID: string
@@ -7004,6 +7268,40 @@ export type SessionSummarizeResponses = {
 }
 
 export type SessionSummarizeResponse = SessionSummarizeResponses[keyof SessionSummarizeResponses]
+
+export type SessionGenerateTitleData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/generate_title"
+}
+
+export type SessionGenerateTitleErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionGenerateTitleError = SessionGenerateTitleErrors[keyof SessionGenerateTitleErrors]
+
+export type SessionGenerateTitleResponses = {
+  /**
+   * Generated session title
+   */
+  200: Session
+}
+
+export type SessionGenerateTitleResponse = SessionGenerateTitleResponses[keyof SessionGenerateTitleResponses]
 
 export type SessionPromptAsyncData = {
   body?: {
@@ -7342,6 +7640,216 @@ export type PartUpdateResponses = {
 }
 
 export type PartUpdateResponse = PartUpdateResponses[keyof PartUpdateResponses]
+
+export type ScheduledTaskListData = {
+  body?: never
+  path?: never
+  query?: {
+    projectID?: string
+    enabled?: "true" | "false"
+  }
+  url: "/scheduled-task"
+}
+
+export type ScheduledTaskListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ScheduledTaskListError = ScheduledTaskListErrors[keyof ScheduledTaskListErrors]
+
+export type ScheduledTaskListResponses = {
+  /**
+   * Scheduled tasks
+   */
+  200: Array<ScheduledTask>
+}
+
+export type ScheduledTaskListResponse = ScheduledTaskListResponses[keyof ScheduledTaskListResponses]
+
+export type ScheduledTaskCreateData = {
+  body?: ScheduledTaskCreateInput
+  path?: never
+  query?: never
+  url: "/scheduled-task"
+}
+
+export type ScheduledTaskCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ScheduledTaskCreateError = ScheduledTaskCreateErrors[keyof ScheduledTaskCreateErrors]
+
+export type ScheduledTaskCreateResponses = {
+  /**
+   * Created scheduled task
+   */
+  200: ScheduledTask
+}
+
+export type ScheduledTaskCreateResponse = ScheduledTaskCreateResponses[keyof ScheduledTaskCreateResponses]
+
+export type ScheduledTaskRemoveData = {
+  body?: never
+  path: {
+    taskID: string
+  }
+  query?: never
+  url: "/scheduled-task/{taskID}"
+}
+
+export type ScheduledTaskRemoveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ScheduledTaskRemoveError = ScheduledTaskRemoveErrors[keyof ScheduledTaskRemoveErrors]
+
+export type ScheduledTaskRemoveResponses = {
+  /**
+   * Scheduled task removed
+   */
+  200: boolean
+}
+
+export type ScheduledTaskRemoveResponse = ScheduledTaskRemoveResponses[keyof ScheduledTaskRemoveResponses]
+
+export type ScheduledTaskGetData = {
+  body?: never
+  path: {
+    taskID: string
+  }
+  query?: never
+  url: "/scheduled-task/{taskID}"
+}
+
+export type ScheduledTaskGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ScheduledTaskGetError = ScheduledTaskGetErrors[keyof ScheduledTaskGetErrors]
+
+export type ScheduledTaskGetResponses = {
+  /**
+   * Scheduled task
+   */
+  200: ScheduledTask
+}
+
+export type ScheduledTaskGetResponse = ScheduledTaskGetResponses[keyof ScheduledTaskGetResponses]
+
+export type ScheduledTaskUpdateData = {
+  body?: ScheduledTaskUpdateInput
+  path: {
+    taskID: string
+  }
+  query?: never
+  url: "/scheduled-task/{taskID}"
+}
+
+export type ScheduledTaskUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ScheduledTaskUpdateError = ScheduledTaskUpdateErrors[keyof ScheduledTaskUpdateErrors]
+
+export type ScheduledTaskUpdateResponses = {
+  /**
+   * Updated scheduled task
+   */
+  200: ScheduledTask
+}
+
+export type ScheduledTaskUpdateResponse = ScheduledTaskUpdateResponses[keyof ScheduledTaskUpdateResponses]
+
+export type ScheduledTaskRunsData = {
+  body?: never
+  path: {
+    taskID: string
+  }
+  query?: {
+    limit?: string
+  }
+  url: "/scheduled-task/{taskID}/run"
+}
+
+export type ScheduledTaskRunsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ScheduledTaskRunsError = ScheduledTaskRunsErrors[keyof ScheduledTaskRunsErrors]
+
+export type ScheduledTaskRunsResponses = {
+  /**
+   * Scheduled task runs
+   */
+  200: Array<ScheduledTaskRun>
+}
+
+export type ScheduledTaskRunsResponse = ScheduledTaskRunsResponses[keyof ScheduledTaskRunsResponses]
+
+export type ScheduledTaskRunNowData = {
+  body?: never
+  path: {
+    taskID: string
+  }
+  query?: never
+  url: "/scheduled-task/{taskID}/run-now"
+}
+
+export type ScheduledTaskRunNowErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ScheduledTaskRunNowError = ScheduledTaskRunNowErrors[keyof ScheduledTaskRunNowErrors]
+
+export type ScheduledTaskRunNowResponses = {
+  /**
+   * Started scheduled task run
+   */
+  200: ScheduledTaskRun
+}
+
+export type ScheduledTaskRunNowResponse = ScheduledTaskRunNowResponses[keyof ScheduledTaskRunNowResponses]
 
 export type SyncStartData = {
   body?: never
