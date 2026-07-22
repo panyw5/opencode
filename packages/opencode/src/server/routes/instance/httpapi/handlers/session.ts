@@ -483,6 +483,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* session.updatePart(payload)
     })
 
+
+    const generateTitle = Effect.fn("SessionHttpApi.generateTitle")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* promptSvc.generateTitle({ sessionID: ctx.params.sessionID, force: true }).pipe(
+        Effect.mapError(() => new HttpApiError.BadRequest({})),
+      )
+    })
+
     return handlers
       .handle("list", list)
       .handle("status", status)
@@ -503,6 +513,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("share", share)
       .handle("unshare", unshare)
       .handle("summarize", summarize)
+      .handle("generateTitle", generateTitle)
       .handle("prompt", prompt)
       .handle("promptAsync", promptAsync)
       .handle("command", command)

@@ -6933,6 +6933,40 @@ export type SessionShareResponses = {
 
 export type SessionShareResponse = SessionShareResponses[keyof SessionShareResponses]
 
+
+export type SessionGenerateTitleData = {
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/generate_title"
+}
+
+export type SessionGenerateTitleErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionGenerateTitleError = SessionGenerateTitleErrors[keyof SessionGenerateTitleErrors]
+
+export type SessionGenerateTitleResponses = {
+  /**
+   * Generated session title
+   */
+  200: Session
+}
+
+export type SessionGenerateTitleResponse = SessionGenerateTitleResponses[keyof SessionGenerateTitleResponses]
+
 export type SessionSummarizeData = {
   body?: {
     providerID: string

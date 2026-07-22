@@ -804,3 +804,14 @@
 html[data-platform="desktop"][data-color-scheme="dark"] [data-component="collapsible"].tool-collapsible {
   border: 1px solid var(--gray-dark-5);
 }
+
+
+/* Session title text-brightness shimmer */
+@keyframes session-title-text-shimmer {
+  0% {
+    background-position: 100% center, 0 0;
+  }
+  100% {
+    background-position: -100% center, 0 0;
+  }
+}

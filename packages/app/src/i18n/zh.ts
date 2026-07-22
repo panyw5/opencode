@@ -611,6 +611,8 @@ export const dict = {
   "toast.session.hooks.disabled.description": "本会话的所有插件 hooks 已临时禁用。",
   "toast.session.hooks.enabled.title": "已恢复本会话 hooks",
   "toast.session.hooks.enabled.description": "本会话的插件 hooks 已启用。",
+  "toast.session.generateTitle.success.title": "标题已生成",
+  "toast.session.generateTitle.failed.title": "生成标题失败",
   "toast.session.hooks.failed.title": "更新 hook 控制失败",
   "toast.session.hooks.failed.description": "无法更新此会话的 hook 控制。",
   "toast.session.listFailed.title": "无法加载 {{project}} 的会话",
@@ -782,6 +784,7 @@ export const dict = {
   "session.share.copy.copied": "已复制",
   "session.share.copy.copyLink": "复制链接",
   "session.copyInfo": "复制会话信息",
+  "session.generateTitle": "生成标题",
   "session.restore": "恢复",
   "session.restore.failed.title": "恢复会话失败",
 

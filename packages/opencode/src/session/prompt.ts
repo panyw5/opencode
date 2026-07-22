@@ -64,6 +64,7 @@ import { SessionTools } from "./tools"
 import { Question } from "@/question"
 import { LLMEvent } from "@opencode-ai/llm"
 import { TuiEvent } from "@/cli/cmd/tui/event"
+import { isScheduledSessionTitle, markScheduledSessionTitle } from "@/scheduled-task/title"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -93,6 +94,10 @@ export interface Interface {
   readonly shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
+  readonly generateTitle: (input: {
+    sessionID: SessionID
+    force?: boolean
+  }) => Effect.Effect<Session.Info, Session.NotFound | InstanceType<typeof NamedError.Unknown>>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionPrompt") {}
@@ -240,35 +245,38 @@ export const layer = Layer.effect(
       return parts
     })
 
-    const title = Effect.fn("SessionPrompt.ensureTitle")(function* (input: {
+    const runTitleGeneration = Effect.fn("SessionPrompt.runTitleGeneration")(function* (input: {
       session: Session.Info
       history: MessageV2.WithParts[]
       providerID: ProviderID
       modelID: ModelID
+      force?: boolean
     }) {
-      if (input.session.parentID) return
-      if (!Session.isDefaultTitle(input.session.title)) return
+      if (!input.force) {
+        if (input.session.parentID) return undefined as string | undefined
+        if (!Session.isDefaultTitle(input.session.title)) return undefined as string | undefined
+      }
 
       const real = (m: MessageV2.WithParts) =>
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
-      const idx = input.history.findIndex(real)
-      if (idx === -1) return
-      if (input.history.filter(real).length !== 1) return
+      const users = input.history.filter(real)
+      if (users.length === 0) return undefined as string | undefined
+      if (!input.force && users.length !== 1) return undefined as string | undefined
 
-      const context = input.history.slice(0, idx + 1)
-      const firstUser = context[idx]
-      if (!firstUser || firstUser.info.role !== "user") return
+      const firstUser = users[0]
+      if (!firstUser || firstUser.info.role !== "user") return undefined as string | undefined
       const firstInfo = firstUser.info
+      const idx = input.history.findIndex((m) => m.info.id === firstUser.info.id)
+      // Auto path keeps only the first user turn. Forced regeneration uses all
+      // non-synthetic user prompts so the title reflects the conversation topic.
+      const context = input.force ? users : input.history.slice(0, idx + 1)
 
       const subtasks = firstUser.parts.filter((p): p is MessageV2.SubtaskPart => p.type === "subtask")
       const onlySubtasks = subtasks.length > 0 && firstUser.parts.every((p) => p.type === "subtask")
 
       const ag = yield* agents.get("title")
-      if (!ag) return
+      if (!ag) return undefined as string | undefined
 
-      // Prefer models that already work for chat. getSmallModel alone can pick a
-      // catalog entry that the upstream API does not actually serve (e.g.
-      // axonhub/gpt-5-nano → model not found), so try candidates in order.
       // Prefer models that already work for chat. getSmallModel alone can pick a
       // catalog entry that the upstream API does not actually serve (e.g.
       // axonhub/gpt-5-nano → model not found), so try candidates in order.
@@ -294,14 +302,35 @@ export const layer = Layer.effect(
           providerID: input.providerID,
           modelID: input.modelID,
         })
-        return
+        return undefined as string | undefined
       }
 
       for (const mdl of candidates) {
         const attempt = yield* Effect.gen(function* () {
-          const msgs = onlySubtasks
-            ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-            : yield* MessageV2.toModelMessagesEffect(context, mdl)
+          const plainUserText = (messages: MessageV2.WithParts[]) => {
+            const chunks: string[] = []
+            for (const message of messages) {
+              if (message.info.role !== "user") continue
+              for (const part of message.parts) {
+                if (part.type === "text" && !part.ignored && !part.synthetic && part.text.trim()) {
+                  chunks.push(part.text.trim())
+                }
+                if (part.type === "subtask" && part.prompt.trim()) {
+                  chunks.push(part.prompt.trim())
+                }
+              }
+            }
+            return chunks.join("\n\n")
+          }
+
+          const forceText = input.force ? plainUserText(context) : ""
+          const msgs =
+            onlySubtasks && !input.force
+              ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
+              : input.force
+                ? [{ role: "user" as const, content: forceText || "Untitled conversation" }]
+                : yield* MessageV2.toModelMessagesEffect(context, mdl)
+
           const text = yield* llm
             .stream({
               agent: ag,
@@ -330,11 +359,9 @@ export const layer = Layer.effect(
               providerID: mdl.providerID,
               modelID: mdl.id,
             })
-            return false
+            return undefined as string | undefined
           }
-          const t = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
-          yield* sessions.setTitle({ sessionID: input.session.id, title: t })
-          return true
+          return cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
         }).pipe(
           Effect.catchCause((cause) =>
             elog
@@ -344,16 +371,63 @@ export const layer = Layer.effect(
                 modelID: mdl.id,
                 error: Cause.squash(cause),
               })
-              .pipe(Effect.as(false)),
+              .pipe(Effect.as(undefined as string | undefined)),
           ),
         )
-        if (attempt) return
+        if (attempt) {
+          const next = isScheduledSessionTitle(input.session.title)
+            ? markScheduledSessionTitle(attempt)
+            : attempt
+          yield* sessions.setTitle({ sessionID: input.session.id, title: next })
+          return next
+        }
       }
 
       yield* elog.error("ensureTitle all candidates failed", {
         sessionID: input.session.id,
         candidates: candidates.map((m) => `${m.providerID}/${m.id}`),
       })
+      return undefined as string | undefined
+    })
+
+    const title = Effect.fn("SessionPrompt.ensureTitle")(function* (input: {
+      session: Session.Info
+      history: MessageV2.WithParts[]
+      providerID: ProviderID
+      modelID: ModelID
+    }) {
+      yield* runTitleGeneration(input)
+    })
+
+    const generateTitle = Effect.fn("SessionPrompt.generateTitle")(function* (input: {
+      sessionID: SessionID
+      force?: boolean
+    }) {
+      const session = yield* sessions.get(input.sessionID)
+      const history = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
+      const real = (m: MessageV2.WithParts) =>
+        m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
+      const users = history.filter(real)
+      if (users.length === 0) {
+        return yield* Effect.fail(new NamedError.Unknown({ message: "No user prompts found to generate a title" }))
+      }
+      const lastUser = users[users.length - 1]
+      if (!lastUser || lastUser.info.role !== "user") {
+        return yield* Effect.fail(new NamedError.Unknown({ message: "No user prompts found to generate a title" }))
+      }
+      const providerID = lastUser.info.model.providerID
+      const modelID = lastUser.info.model.modelID
+      const next = yield* runTitleGeneration({
+        session,
+        history,
+        providerID,
+        modelID,
+        force: input.force ?? true,
+      })
+      if (!next) {
+        return yield* Effect.fail(new NamedError.Unknown({ message: "Failed to generate session title" }))
+      }
+      return yield* sessions.get(input.sessionID)
     })
 
     const handleSubtask = Effect.fn("SessionPrompt.handleSubtask")(function* (input: {
@@ -1939,6 +2013,7 @@ export const layer = Layer.effect(
       shell,
       command,
       resolvePromptParts,
+      generateTitle,
     })
   }),
 )

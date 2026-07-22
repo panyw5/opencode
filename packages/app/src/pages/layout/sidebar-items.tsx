@@ -9,8 +9,9 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { A, useParams } from "@solidjs/router"
-import { type Accessor, createEffect, createMemo, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
 import { useCommand } from "@/context/command"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
@@ -28,6 +29,60 @@ import {
 } from "./helpers"
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
+
+/** Module-level so title shimmer survives SessionItem remount after title update. */
+const titleShimmerTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const [titleShimmerById, setTitleShimmerById] = createSignal<Record<string, boolean>>({})
+
+const isTitleShimmering = (sessionID: string) => !!titleShimmerById()[sessionID]
+
+const SHIMMER_STYLE_ID = "opencode-session-title-shimmer-style"
+const ensureSessionTitleShimmerKeyframes = () => {
+  if (typeof document === "undefined") return
+  if (document.getElementById(SHIMMER_STYLE_ID)) return
+  const style = document.createElement("style")
+  style.id = SHIMMER_STYLE_ID
+  style.textContent = `
+@keyframes session-title-text-shimmer {
+  0% { background-position: 100% center, 0 0; }
+  100% { background-position: -100% center, 0 0; }
+}
+`
+  document.head.appendChild(style)
+}
+
+const setTitleShimmering = (sessionID: string, active: boolean) => {
+  setTitleShimmerById((prev) => {
+    if (!!prev[sessionID] === active) return prev
+    if (active) return { ...prev, [sessionID]: true }
+    const next = { ...prev }
+    delete next[sessionID]
+    return next
+  })
+}
+
+const clearTitleShimmer = (sessionID: string) => {
+  const timer = titleShimmerTimers.get(sessionID)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    titleShimmerTimers.delete(sessionID)
+  }
+  setTitleShimmering(sessionID, false)
+}
+
+const pulseTitleShimmer = (sessionID: string, ms = 3600) => {
+  const existing = titleShimmerTimers.get(sessionID)
+  if (existing !== undefined) clearTimeout(existing)
+  setTitleShimmering(sessionID, true)
+  titleShimmerTimers.set(
+    sessionID,
+    setTimeout(() => {
+      titleShimmerTimers.delete(sessionID)
+      setTitleShimmering(sessionID, false)
+    }, ms),
+  )
+}
+
 
 export const ProjectIcon = (props: { project: LocalProject; class?: string; notify?: boolean }): JSX.Element | null => {
   if (!props.project?.worktree) return null
@@ -170,9 +225,62 @@ const SessionRow = (props: {
   cancelHoverPrefetch: () => void
   detail?: Accessor<boolean | undefined>
   reduced?: boolean
+  shimmer: Accessor<boolean>
 }): JSX.Element => {
-  const scheduled = isScheduledSessionTitle(props.session.title)
-  const displayTitle = stripScheduledSessionTitle(props.session.title)
+  const scheduled = createMemo(() => isScheduledSessionTitle(props.session.title))
+  const displayTitle = createMemo(() => stripScheduledSessionTitle(props.session.title))
+  const shimmering = createMemo(() => props.shimmer())
+  let titleEl: HTMLSpanElement | undefined
+
+  const applyTitleShimmerStyle = (el: HTMLSpanElement | undefined, active: boolean, selected: boolean) => {
+    if (!el) return
+    ensureSessionTitleShimmerKeyframes()
+    if (!active) {
+      el.style.color = selected ? "var(--sidebar-session-accent)" : ""
+      el.style.removeProperty("-webkit-text-fill-color")
+      el.style.removeProperty("background-image")
+      el.style.removeProperty("background-size")
+      el.style.removeProperty("background-repeat")
+      el.style.removeProperty("background-position")
+      el.style.removeProperty("-webkit-background-clip")
+      el.style.removeProperty("background-clip")
+      el.style.removeProperty("animation")
+      el.style.removeProperty("will-change")
+      return
+    }
+    // Dual-layer fill (same idea as TextShimmer):
+    // 1) muted solid base keeps glyphs always readable
+    // 2) brighter peak band sweeps slowly for high-contrast motion
+    const base = selected
+      ? "color-mix(in srgb, var(--sidebar-session-accent) 55%, var(--text-weak))"
+      : "var(--text-weak)"
+    const peak = selected
+      ? "color-mix(in srgb, var(--sidebar-session-accent) 15%, var(--text-strong))"
+      : "var(--text-strong)"
+    el.style.setProperty("color", "transparent")
+    el.style.setProperty("-webkit-text-fill-color", "transparent")
+    el.style.setProperty(
+      "background-image",
+      [
+        `linear-gradient(90deg, transparent 0%, transparent 46%, ${peak} 50%, transparent 54%, transparent 100%)`,
+        `linear-gradient(${base}, ${base})`,
+      ].join(", "),
+    )
+    el.style.setProperty("background-size", "260% 100%, 100% 100%")
+    el.style.setProperty("background-repeat", "no-repeat, no-repeat")
+    el.style.setProperty("background-position", "100% center, 0 0")
+    el.style.setProperty("-webkit-background-clip", "text")
+    el.style.setProperty("background-clip", "text")
+    el.style.setProperty("will-change", "background-position")
+    el.style.animation = "none"
+    void el.offsetWidth
+    el.style.animation = "session-title-text-shimmer 2.8s linear infinite"
+  }
+
+  createEffect(() => {
+    applyTitleShimmerStyle(titleEl, shimmering(), !!props.active)
+  })
+
   return (
     <A
       href={`/${base64Encode(props.session.directory)}/session/${props.session.id}`}
@@ -211,7 +319,7 @@ const SessionRow = (props: {
             </Switch>
           </div>
         </Show>
-        <Show when={scheduled}>
+        <Show when={scheduled()}>
           <Icon
             name="clock"
             size="small"
@@ -220,19 +328,25 @@ const SessionRow = (props: {
           />
         </Show>
         <span
+          ref={(el) => {
+            titleEl = el
+            applyTitleShimmerStyle(el, shimmering(), !!props.active)
+          }}
+          data-slot="session-title"
+          data-shimmer={shimmering() ? "true" : "false"}
           classList={{
             "text-16-medium grow-1 min-w-0 overflow-hidden text-ellipsis truncate": true,
-            "transition-colors": !props.reduced,
-            "text-text-base": !props.active,
+            "transition-colors": !props.reduced && !shimmering(),
+            "text-text-base": !props.active && !shimmering(),
           }}
-          style={props.active ? { color: "var(--sidebar-session-accent)" } : undefined}
         >
-          {displayTitle}
+          {displayTitle()}
         </span>
       </div>
     </A>
   )
 }
+
 
 export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const params = useParams()
@@ -241,7 +355,10 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const command = useCommand()
   const notification = useNotification()
   const permission = usePermission()
+  const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
+  // Keep module shimmer signal subscribed at SessionItem level so remounts still animate.
+  const titleShimmer = createMemo(() => isTitleShimmering(props.session.id))
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
   const [sessionStore] = globalSync.child(props.session.directory, { bootstrap: false })
@@ -322,6 +439,53 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     )
   }
 
+  const generateTitle = () => {
+    pulseTitleShimmer(props.session.id, 60_000)
+    const [, setSessionStore] = globalSync.child(props.session.directory, { bootstrap: false })
+    void globalSDK.client.session
+      .generateTitle(
+        {
+          sessionID: props.session.id,
+          directory: props.session.directory,
+        },
+        { throwOnError: true },
+      )
+      .then(
+        (result) => {
+          const data =
+            result && typeof result === "object" && "data" in result
+              ? (result as { data?: Session }).data
+              : (result as Session | undefined)
+          if (data?.title) {
+            setSessionStore("session", (list) =>
+              list.map((item) => (item.id === props.session.id ? { ...item, title: data.title } : item)),
+            )
+          }
+          pulseTitleShimmer(props.session.id, 3600)
+          showToast({
+            variant: "success",
+            icon: "circle-check",
+            title: language.t("toast.session.generateTitle.success.title"),
+            description: data?.title,
+          })
+        },
+        (err: unknown) => {
+          clearTitleShimmer(props.session.id)
+          const message =
+            err instanceof Error
+              ? err.message
+              : typeof err === "object" && err && "message" in err
+                ? String((err as { message: unknown }).message)
+                : String(err)
+          showToast({
+            variant: "error",
+            title: language.t("toast.session.generateTitle.failed.title"),
+            description: message,
+          })
+        },
+      )
+  }
+
   const warm = (span: number, priority: "high" | "low") => {
     const nav = props.navList?.()
     const list = nav?.some((item) => item.id === props.session.id && item.directory === props.session.directory)
@@ -379,6 +543,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       cancelHoverPrefetch={cancelHoverPrefetch}
       detail={detail}
       reduced={props.reduced}
+      shimmer={titleShimmer}
     />
   )
 
@@ -414,12 +579,12 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
           class="relative overflow-hidden flex items-center gap-1"
           classList={{
             "transition-[width,opacity]": !props.reduced,
-            "w-[52px] opacity-100 pointer-events-auto":
+            "w-[84px] opacity-100 pointer-events-auto":
               !!props.mobile || (!props.mobile && !props.reduced && !!jumpKeybind()),
             "w-0 opacity-0 pointer-events-none": (!props.mobile && !jumpKeybind()) || !!props.reduced,
-            "group-hover/session:w-[52px] group-hover/session:opacity-100 group-hover/session:pointer-events-auto":
+            "group-hover/session:w-[84px] group-hover/session:opacity-100 group-hover/session:pointer-events-auto":
               !props.reduced,
-            "group-focus-within/session:w-[52px] group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto":
+            "group-focus-within/session:w-[84px] group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto":
               !props.reduced,
           }}
         >
@@ -434,6 +599,17 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             when={!props.reduced}
             fallback={
               <>
+                <IconButton
+                  icon="refresh"
+                  variant="ghost"
+                  class="size-6 rounded-md shrink-0"
+                  aria-label={language.t("session.generateTitle")}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    generateTitle()
+                  }}
+                />
                 <IconButton
                   icon="copy"
                   variant="ghost"
@@ -460,6 +636,23 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             }
           >
             <>
+              <Tooltip value={language.t("session.generateTitle")} placement="top">
+                <IconButton
+                  icon="refresh"
+                  variant="ghost"
+                  class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
+                  classList={{
+                    "opacity-0 pointer-events-none group-hover/session:pointer-events-auto group-focus-within/session:pointer-events-auto":
+                      !props.mobile && !!jumpKeybind(),
+                  }}
+                  aria-label={language.t("session.generateTitle")}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    generateTitle()
+                  }}
+                />
+              </Tooltip>
               <Tooltip value={language.t("session.copyInfo")} placement="top">
                 <IconButton
                   icon="copy"

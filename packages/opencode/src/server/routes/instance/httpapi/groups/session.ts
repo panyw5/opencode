@@ -92,6 +92,7 @@ export const SessionPaths = {
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
   summarize: `${root}/:sessionID/summarize`,
+  generateTitle: `${root}/:sessionID/generate_title`,
   prompt: `${root}/:sessionID/message`,
   promptAsync: `${root}/:sessionID/prompt_async`,
   command: `${root}/:sessionID/command`,
@@ -338,6 +339,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.summarize",
             summary: "Summarize session",
             description: "Generate a concise summary of the session using AI compaction to preserve key information.",
+          }),
+        ),
+        HttpApiEndpoint.post("generateTitle", SessionPaths.generateTitle, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Session.Info, "Generated session title"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.generate_title",
+            summary: "Generate session title",
+            description: "Generate or regenerate a session title from the session's user prompts using the title agent.",
           }),
         ),
         HttpApiEndpoint.post("prompt", SessionPaths.prompt, {

@@ -219,6 +219,8 @@ import type {
   SessionShellResponses,
   SessionStatusErrors,
   SessionStatusResponses,
+  SessionGenerateTitleErrors,
+  SessionGenerateTitleResponses,
   SessionSummarizeErrors,
   SessionSummarizeResponses,
   SessionTodoErrors,
@@ -3863,6 +3865,43 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+
+  /**
+   * Generate session title
+   *
+   * Generate or regenerate a session title from the session's user prompts using the title agent.
+   */
+  public generateTitle<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionGenerateTitleResponses,
+      SessionGenerateTitleErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/generate_title",
+      ...options,
+      ...params,
     })
   }
 
