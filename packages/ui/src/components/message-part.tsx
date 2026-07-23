@@ -52,6 +52,9 @@ import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/ut
 import { checksum } from "@opencode-ai/core/util/encode"
 import { Tooltip } from "./tooltip"
 import { IconButton } from "./icon-button"
+import { Button } from "./button"
+import { TextField } from "./text-field"
+import { showToast } from "./toast"
 import { TextShimmer } from "./text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
@@ -67,12 +70,7 @@ import {
   type PartGroup,
 } from "./message-part-order"
 import { activeStreamingAssistantMessageID } from "./message-part-stream"
-import {
-  isTaskResume,
-  resolveTaskChildSessionId,
-  taskSessionBadge,
-  taskSessionIndex,
-} from "./message-task-session"
+import { isTaskResume, resolveTaskChildSessionId, taskSessionBadge, taskSessionIndex } from "./message-task-session"
 export type { PartGroup } from "./message-part-order"
 
 type ProviderSummary = {
@@ -505,6 +503,12 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
       return {
         icon: "brain",
         title: i18n.t("ui.tool.claude"),
+        subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
+      }
+    case "grok_consult":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.grok"),
         subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
       }
     case "bash":
@@ -2175,9 +2179,7 @@ ToolRegistry.register({
 function ShellTool(props: ToolProps & { title: string }) {
   const i18n = useI18n()
   const running = createMemo(() => props.status === "pending" || props.status === "running")
-  const backgroundRunning = createMemo(
-    () => props.metadata.background === true && props.metadata.status === "running",
-  )
+  const backgroundRunning = createMemo(() => props.metadata.background === true && props.metadata.status === "running")
   const hook = createMemo(() => hookName(props.input ?? {}, props.metadata ?? {}))
   const type = createMemo(() => hookType(props.input ?? {}, props.metadata ?? {}))
   const line = createMemo(() => cmd(props.input ?? {}, props.metadata ?? {}) ?? "")
@@ -3336,6 +3338,7 @@ function codexAssistantText(metadata: Record<string, any>, output?: string): str
     const body = output
       .replace(/^<codex_consult>[\s\S]*?<\/codex_consult>\s*/m, "")
       .replace(/^<claude_consult>[\s\S]*?<\/claude_consult>\s*/m, "")
+      .replace(/^<grok_consult>[\s\S]*?<\/grok_consult>\s*/m, "")
       .trim()
     return body || output.trim()
   }
@@ -3362,6 +3365,17 @@ function codexChatMessages(
 
   const list = Array.isArray(metadata.transcript) ? (metadata.transcript as CodexTranscriptItem[]) : []
   for (const item of list) {
+    if (item.kind === "user" && item.text?.trim()) {
+      messages.push({
+        id: item.id,
+        role: "user",
+        kind: "message",
+        label: labels.user,
+        text: item.text.trim(),
+        status: item.status,
+      })
+      continue
+    }
     if (item.kind === "message" && item.text?.trim()) {
       messages.push({
         id: item.id,
@@ -3452,19 +3466,114 @@ function CodexSessionDialog(props: {
   streamingLabel?: () => string
   assistantAvatar?: string
   idChipPrefix?: string
+  sessionID?: () => string | undefined
+  intervention?: () =>
+    | {
+        available?: boolean
+        active?: boolean
+        waitingForInput?: boolean
+        busy?: boolean
+        queued?: boolean
+        callID?: string
+      }
+    | undefined
 }) {
   const i18n = useI18n()
+  const data = useData()
   let bodyRef: HTMLDivElement | undefined
+  const [interventionActive, setInterventionActive] = createSignal(false)
+  const [interventionDraft, setInterventionDraft] = createSignal("")
+  const [interventionQueued, setInterventionQueued] = createSignal(false)
+  const [interventionRequesting, setInterventionRequesting] = createSignal(false)
+  const [interventionError, setInterventionError] = createSignal<string>()
+  const [localInterventionMessages, setLocalInterventionMessages] = createSignal<CodexChatMessage[]>([])
   const runningLabel = () => props.runningLabel?.() ?? i18n.t("ui.tool.codex.running")
   const emptyLabel = () => props.emptyLabel?.() ?? i18n.t("ui.tool.codex.empty")
   const emptyRunningLabel = () => props.emptyRunningLabel?.() ?? i18n.t("ui.tool.codex.empty.running")
   const streamingLabel = () => props.streamingLabel?.() ?? i18n.t("ui.tool.codex.streaming")
   const assistantAvatar = () => props.assistantAvatar ?? "C"
   const idChipPrefix = () => props.idChipPrefix ?? "thread"
+  const intervention = () => props.intervention?.()
+  const canIntervene = () =>
+    !!data.advisorIntervention && !!props.sessionID?.() && !!intervention()?.available && !!intervention()?.callID
+  const activeIntervention = () => interventionActive() || intervention()?.active === true
+  const advisorBusy = () =>
+    intervention()?.busy === true || intervention()?.queued === true || interventionQueued() || interventionRequesting()
+  const messages = () => {
+    const server = props.messages()
+    const local = localInterventionMessages().filter(
+      (candidate) => !server.some((message) => message.role === "user" && message.text === candidate.text),
+    )
+    return [...server, ...local]
+  }
+
+  const requestIntervention = async (action: "start" | "message" | "finish") => {
+    const sessionID = props.sessionID?.()
+    const callID = intervention()?.callID
+    if (!sessionID || !callID || !data.advisorIntervention) return false
+    const message = action === "message" ? interventionDraft().trim() : undefined
+    if (action === "start") {
+      // Keep the dialog responsive while the server turns the live tool call into an intervention.
+      setInterventionActive(true)
+      setInterventionError(undefined)
+    }
+    setInterventionRequesting(true)
+    try {
+      await data.advisorIntervention({
+        sessionID,
+        callID,
+        action,
+        message,
+      })
+      if (action === "message" && message) {
+        setLocalInterventionMessages((messages) => [
+          ...messages,
+          {
+            id: `intervention-local:${Date.now()}`,
+            role: "user",
+            kind: "message",
+            label: i18n.t("ui.tool.codex.role.user"),
+            text: message,
+            status: "queued",
+          },
+        ])
+        setInterventionDraft("")
+        setInterventionQueued(true)
+      }
+      if (action === "finish") {
+        setInterventionActive(false)
+        setInterventionQueued(false)
+      }
+      return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setInterventionError(message)
+      if (action === "start") setInterventionActive(false)
+      showToast({
+        variant: "error",
+        title: i18n.t("ui.tool.advisor.intervention.failed"),
+        description: message,
+      })
+      return false
+    } finally {
+      setInterventionRequesting(false)
+    }
+  }
+
+  const submitIntervention = (event: SubmitEvent) => {
+    event.preventDefault()
+    if (!interventionDraft().trim() || advisorBusy() || !activeIntervention()) return
+    void requestIntervention("message")
+  }
+
+  createEffect(() => {
+    const current = intervention()
+    if (!current?.queued || current.waitingForInput || current.busy) setInterventionQueued(false)
+  })
 
   createEffect(() => {
     // Keep the latest assistant output in view while streaming.
-    props.messages()
+    messages()
     props.running()
     queueMicrotask(() => {
       if (!bodyRef) return
@@ -3490,9 +3599,7 @@ function CodexSessionDialog(props: {
               </span>
             )}
           </Show>
-          <Show when={props.model()}>
-            {(value) => <span data-slot="codex-session-chip">model: {value()}</span>}
-          </Show>
+          <Show when={props.model()}>{(value) => <span data-slot="codex-session-chip">model: {value()}</span>}</Show>
           <Show when={props.sandbox()}>
             {(value) => <span data-slot="codex-session-chip">sandbox: {value()}</span>}
           </Show>
@@ -3504,14 +3611,10 @@ function CodexSessionDialog(props: {
         </div>
         <div data-slot="codex-session-body" data-scrollable ref={bodyRef}>
           <Show
-            when={props.messages().length > 0}
-            fallback={
-              <div data-slot="codex-session-empty">
-                {props.running() ? emptyRunningLabel() : emptyLabel()}
-              </div>
-            }
+            when={messages().length > 0}
+            fallback={<div data-slot="codex-session-empty">{props.running() ? emptyRunningLabel() : emptyLabel()}</div>}
           >
-            <For each={props.messages()}>
+            <For each={messages()}>
               {(item) => (
                 <div
                   data-slot="codex-chat-row"
@@ -3556,6 +3659,54 @@ function CodexSessionDialog(props: {
             </For>
           </Show>
         </div>
+        <Show when={canIntervene()}>
+          <div data-slot="codex-intervention">
+            <Show
+              when={activeIntervention()}
+              fallback={
+                <Button
+                  type="button"
+                  size="small"
+                  variant="secondary"
+                  disabled={advisorBusy() || !props.running()}
+                  onClick={() => void requestIntervention("start")}
+                >
+                  {i18n.t("ui.tool.advisor.intervene")}
+                </Button>
+              }
+            >
+              <form data-slot="codex-intervention-form" onSubmit={submitIntervention}>
+                <TextField
+                  multiline
+                  value={interventionDraft()}
+                  onChange={setInterventionDraft}
+                  placeholder={i18n.t("ui.tool.advisor.intervention.placeholder")}
+                  disabled={advisorBusy()}
+                />
+                <Button
+                  type="submit"
+                  size="small"
+                  variant="primary"
+                  disabled={!interventionDraft().trim() || advisorBusy() || !activeIntervention()}
+                >
+                  {i18n.t("ui.tool.advisor.intervention.send")}
+                </Button>
+                <Button
+                  type="button"
+                  size="small"
+                  variant="secondary"
+                  disabled={interventionRequesting()}
+                  onClick={() => void requestIntervention("finish")}
+                >
+                  {i18n.t("ui.tool.advisor.intervention.finish")}
+                </Button>
+              </form>
+            </Show>
+            <Show when={interventionError()}>
+              {(message) => <div data-slot="codex-intervention-error">{message()}</div>}
+            </Show>
+          </div>
+        </Show>
       </div>
     </Dialog>
   )
@@ -3583,7 +3734,9 @@ ToolRegistry.register({
     const subtitle = createMemo(() => {
       if (running()) return i18n.t("ui.tool.codex.running")
       if (threadId()) return threadId()
-      const first = prompt().split("\n").find((line) => line.trim())
+      const first = prompt()
+        .split("\n")
+        .find((line) => line.trim())
       return first?.slice(0, 80)
     })
 
@@ -3602,6 +3755,8 @@ ToolRegistry.register({
             return undefined
           }}
           sandbox={() => (typeof props.metadata.sandbox === "string" ? props.metadata.sandbox : "read-only")}
+          sessionID={() => props.part?.sessionID}
+          intervention={() => props.metadata.intervention}
           running={() => props.status === "pending" || props.status === "running"}
           messages={() =>
             codexChatMessages(
@@ -3692,7 +3847,9 @@ ToolRegistry.register({
     const subtitle = createMemo(() => {
       if (running()) return i18n.t("ui.tool.claude.running")
       if (sessionId()) return sessionId()
-      const first = prompt().split("\n").find((line) => line.trim())
+      const first = prompt()
+        .split("\n")
+        .find((line) => line.trim())
       return first?.slice(0, 80)
     })
 
@@ -3703,19 +3860,17 @@ ToolRegistry.register({
         <CodexSessionDialog
           title={i18n.t("ui.tool.claude.dialog.title")}
           prompt={() => (typeof props.input.prompt === "string" ? props.input.prompt : "")}
-          threadId={() =>
-            typeof props.metadata.session_id === "string" ? props.metadata.session_id : undefined
-          }
+          threadId={() => (typeof props.metadata.session_id === "string" ? props.metadata.session_id : undefined)}
           model={() => {
             if (typeof props.metadata.model === "string" && props.metadata.model) return props.metadata.model
             if (typeof props.input.model === "string" && props.input.model) return props.input.model
             return undefined
           }}
           sandbox={() =>
-            typeof props.metadata.permission_mode === "string"
-              ? props.metadata.permission_mode
-              : "read-only"
+            typeof props.metadata.permission_mode === "string" ? props.metadata.permission_mode : "full access"
           }
+          sessionID={() => props.part?.sessionID}
+          intervention={() => props.metadata.intervention}
           running={() => props.status === "pending" || props.status === "running"}
           messages={() =>
             codexChatMessages(
@@ -3759,9 +3914,7 @@ ToolRegistry.register({
           </Show>
           <Show when={props.metadata.safe_mode === true || props.metadata.permission_mode}>
             <span data-slot="basic-tool-tool-arg">
-              {typeof props.metadata.permission_mode === "string"
-                ? props.metadata.permission_mode
-                : "read-only"}
+              {typeof props.metadata.permission_mode === "string" ? props.metadata.permission_mode : "read-only"}
             </span>
           </Show>
         </div>
@@ -3796,3 +3949,118 @@ ToolRegistry.register({
   },
 })
 
+ToolRegistry.register({
+  name: "grok_consult",
+  render(props) {
+    const data = useData()
+    const dialog = useDialog()
+    const i18n = useI18n()
+    const running = createMemo(() => props.status === "pending" || props.status === "running")
+    const prompt = createMemo(() => (typeof props.input.prompt === "string" ? props.input.prompt : ""))
+    const sessionId = createMemo(() =>
+      typeof props.metadata.session_id === "string" ? props.metadata.session_id : undefined,
+    )
+    const subtitle = createMemo(() => {
+      if (running()) return i18n.t("ui.tool.grok.running")
+      if (sessionId()) return sessionId()
+      const first = prompt()
+        .split("\n")
+        .find((line) => line.trim())
+      return first?.slice(0, 80)
+    })
+
+    const openViewer = (event?: MouseEvent) => {
+      event?.stopPropagation()
+      event?.preventDefault()
+      dialog.show(() => (
+        <CodexSessionDialog
+          title={i18n.t("ui.tool.grok.dialog.title")}
+          prompt={() => (typeof props.input.prompt === "string" ? props.input.prompt : "")}
+          threadId={() => (typeof props.metadata.session_id === "string" ? props.metadata.session_id : undefined)}
+          model={() => {
+            if (typeof props.metadata.model === "string" && props.metadata.model) return props.metadata.model
+            if (typeof props.input.model === "string" && props.input.model) return props.input.model
+            return undefined
+          }}
+          sandbox={() =>
+            typeof props.metadata.permission_mode === "string" ? props.metadata.permission_mode : "read-only"
+          }
+          sessionID={() => props.part?.sessionID}
+          intervention={() => props.metadata.intervention}
+          running={() => props.status === "pending" || props.status === "running"}
+          messages={() =>
+            codexChatMessages(
+              typeof props.input.prompt === "string" ? props.input.prompt : "",
+              props.metadata ?? {},
+              props.output,
+              props.status === "pending" || props.status === "running",
+              {
+                user: i18n.t("ui.tool.grok.role.user"),
+                assistant: i18n.t("ui.tool.grok.role.assistant"),
+                system: i18n.t("ui.tool.grok.role.system"),
+              },
+            )
+          }
+          runningLabel={() => i18n.t("ui.tool.grok.running")}
+          emptyLabel={() => i18n.t("ui.tool.grok.empty")}
+          emptyRunningLabel={() => i18n.t("ui.tool.grok.empty.running")}
+          streamingLabel={() => i18n.t("ui.tool.grok.streaming")}
+          assistantAvatar="G"
+          idChipPrefix="session"
+        />
+      ))
+    }
+
+    const stopSession = (event: MouseEvent) => {
+      event.stopPropagation()
+      event.preventDefault()
+      const sessionID = props.part?.sessionID
+      if (!sessionID || !data.abortSession) return
+      void data.abortSession(sessionID)
+    }
+
+    const trigger = () => (
+      <div data-slot="basic-tool-tool-info-structured">
+        <div data-slot="basic-tool-tool-info-main">
+          <span data-slot="basic-tool-tool-title" class="tool-interact">
+            <TextShimmer text={i18n.t("ui.tool.grok")} active={running()} />
+          </span>
+          <Show when={subtitle()}>
+            <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
+          </Show>
+          <Show when={props.metadata.permission_mode}>
+            <span data-slot="basic-tool-tool-arg">
+              {typeof props.metadata.permission_mode === "string" ? props.metadata.permission_mode : "full access"}
+            </span>
+          </Show>
+        </div>
+        <span data-slot="basic-tool-tool-action" data-component="tool-action">
+          <Tooltip value={i18n.t("ui.tool.grok.view")} placement="top" gutter={4} lazyMount>
+            <IconButton
+              icon="eye"
+              size="normal"
+              variant="ghost"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={openViewer}
+              aria-label={i18n.t("ui.tool.grok.view")}
+            />
+          </Tooltip>
+          <Show when={running() && !!data.abortSession && !!props.part?.sessionID}>
+            <Tooltip value={i18n.t("ui.tool.grok.stop")} placement="top" gutter={4} lazyMount>
+              <IconButton
+                icon="stop"
+                size="normal"
+                variant="ghost"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={stopSession}
+                aria-label={i18n.t("ui.tool.grok.stop")}
+              />
+            </Tooltip>
+          </Show>
+        </span>
+      </div>
+    )
+
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta />
+  },
+})

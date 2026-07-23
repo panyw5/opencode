@@ -1563,6 +1563,7 @@ function toToolKind(toolName: string): ToolKind {
     case "context7_resolve_library_id":
     case "context7_get_library_docs":
     case "codex_consult":
+    case "grok_consult":
       return "search"
 
     case "read":

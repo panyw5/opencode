@@ -72,6 +72,13 @@ export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput
 export const PermissionResponsePayload = Schema.Struct({
   response: Permission.Reply,
 })
+export const AdvisorInterventionPayload = Schema.Struct({
+  callID: Schema.String,
+})
+export const AdvisorInterventionMessagePayload = Schema.Struct({
+  callID: Schema.String,
+  message: Schema.String,
+})
 export const HookControlPayload = Plugin.HookControlInput
 
 export const SessionPaths = {
@@ -103,6 +110,9 @@ export const SessionPaths = {
   deleteMessage: `${root}/:sessionID/message/:messageID`,
   deletePart: `${root}/:sessionID/message/:messageID/part/:partID`,
   updatePart: `${root}/:sessionID/message/:messageID/part/:partID`,
+  advisorInterventionStart: `${root}/:sessionID/advisor-intervention/start`,
+  advisorInterventionMessage: `${root}/:sessionID/advisor-intervention/message`,
+  advisorInterventionFinish: `${root}/:sessionID/advisor-intervention/finish`,
 } as const
 
 export const SessionApi = HttpApi.make("session")
@@ -350,7 +360,8 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "session.generate_title",
             summary: "Generate session title",
-            description: "Generate or regenerate a session title from the session's user prompts using the title agent.",
+            description:
+              "Generate or regenerate a session title from the session's user prompts using the title agent.",
           }),
         ),
         HttpApiEndpoint.post("prompt", SessionPaths.prompt, {
@@ -378,6 +389,45 @@ export const SessionApi = HttpApi.make("session")
             summary: "Send async message",
             description:
               "Create and send a new message to a session asynchronously, starting the session if needed and returning immediately.",
+          }),
+        ),
+        HttpApiEndpoint.post("advisorInterventionStart", SessionPaths.advisorInterventionStart, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: AdvisorInterventionPayload,
+          success: described(Schema.Boolean, "Advisor intervention started"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.advisor_intervention_start",
+            summary: "Start advisor intervention",
+            description: "Keep an active Codex or Claude consultation open for user interaction.",
+          }),
+        ),
+        HttpApiEndpoint.post("advisorInterventionMessage", SessionPaths.advisorInterventionMessage, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: AdvisorInterventionMessagePayload,
+          success: described(Schema.Boolean, "Advisor message accepted"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.advisor_intervention_message",
+            summary: "Send advisor intervention message",
+            description: "Send a user message to an intervened Codex or Claude consultation.",
+          }),
+        ),
+        HttpApiEndpoint.post("advisorInterventionFinish", SessionPaths.advisorInterventionFinish, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: AdvisorInterventionPayload,
+          success: described(Schema.Boolean, "Advisor intervention finished"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.advisor_intervention_finish",
+            summary: "Finish advisor intervention",
+            description: "Return an intervened consultation to the OpenCode agent after its current turn completes.",
           }),
         ),
         HttpApiEndpoint.post("command", SessionPaths.command, {

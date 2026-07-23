@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   applyClaudeJsonlLine,
   buildClaudeExecArgs,
+  buildClaudeResumeArgs,
   createClaudeLiveState,
   parseClaudeJsonl,
   resolveTimeoutMs,
@@ -17,6 +18,25 @@ const accepts = (schema: Schema.Decoder<unknown>, input: unknown): boolean =>
   Result.isSuccess(Schema.decodeUnknownResult(schema)(input))
 
 describe("tool.claude_consult helpers", () => {
+  test("buildClaudeResumeArgs keeps the advisor restrictions while resuming", () => {
+    expect(
+      buildClaudeResumeArgs({ sessionId: "sess_abc", prompt: "Follow up", workingDirectory: "/tmp/project" }),
+    ).toEqual([
+      "-p",
+      "--output-format",
+      "stream-json",
+      "--permission-mode",
+      "dontAsk",
+      "--safe-mode",
+      "--tools",
+      "Read,Grep,Glob,LS",
+      "--add-dir",
+      "/tmp/project",
+      "--resume",
+      "sess_abc",
+      "Follow up",
+    ])
+  })
   test("buildClaudeExecArgs forces non-interactive read-only tools", () => {
     const args = buildClaudeExecArgs({
       prompt: "Review auth flow",
@@ -28,7 +48,7 @@ describe("tool.claude_consult helpers", () => {
     expect(args).toContain("stream-json")
     expect(args).toContain("--permission-mode")
     expect(args).toContain("dontAsk")
-    expect(args).toContain("--no-session-persistence")
+    expect(args).not.toContain("--no-session-persistence")
     expect(args).toContain("--safe-mode")
     expect(args).toContain("--tools")
     expect(args).toContain("Read,Grep,Glob,LS")
@@ -79,18 +99,16 @@ describe("tool.claude_consult helpers", () => {
   })
 
   test("parseClaudeJsonl captures result failure", () => {
-    const stdout = [
-      JSON.stringify({ type: "result", subtype: "error", is_error: true, result: "auth expired" }),
-    ].join("\n")
+    const stdout = [JSON.stringify({ type: "result", subtype: "error", is_error: true, result: "auth expired" })].join(
+      "\n",
+    )
     const parsed = parseClaudeJsonl(stdout)
     expect(parsed.error).toBe("auth expired")
     expect(parsed.finalResponse).toBe("auth expired")
   })
 
   test("parseClaudeJsonl ignores non-json noise lines", () => {
-    const stdout = ["not json", JSON.stringify({ type: "system", subtype: "init", session_id: "s1" }), ""].join(
-      "\n",
-    )
+    const stdout = ["not json", JSON.stringify({ type: "system", subtype: "init", session_id: "s1" }), ""].join("\n")
     const parsed = parseClaudeJsonl(stdout)
     expect(parsed.sessionId).toBe("s1")
     expect(parsed.finalResponse).toBe("")
@@ -98,9 +116,9 @@ describe("tool.claude_consult helpers", () => {
 
   test("applyClaudeJsonlLine builds a live transcript stream", () => {
     const state = createClaudeLiveState()
-    expect(
-      applyClaudeJsonlLine(state, JSON.stringify({ type: "system", subtype: "init", session_id: "sess_1" })),
-    ).toBe(true)
+    expect(applyClaudeJsonlLine(state, JSON.stringify({ type: "system", subtype: "init", session_id: "sess_1" }))).toBe(
+      true,
+    )
     expect(
       applyClaudeJsonlLine(
         state,

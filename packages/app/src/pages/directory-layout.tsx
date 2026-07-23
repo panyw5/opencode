@@ -36,6 +36,28 @@ function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
       onAbortSession={(sessionID: string) => {
         void sdk.client.session.abort({ sessionID }).catch(() => undefined)
       }}
+      onAdvisorIntervention={(input) => {
+        const callID = input.callID
+        if (input.action === "start") {
+          return sdk.client.session.advisorInterventionStart({ sessionID: input.sessionID, callID }).then((result) => {
+            if (result.data !== true) throw new Error("Advisor intervention was not accepted")
+          })
+        }
+        if (input.action === "finish") {
+          return sdk.client.session.advisorInterventionFinish({ sessionID: input.sessionID, callID }).then((result) => {
+            if (result.data !== true) throw new Error("Advisor intervention could not be finished")
+          })
+        }
+        return sdk.client.session
+          .advisorInterventionMessage({
+            sessionID: input.sessionID,
+            callID,
+            message: input.message ?? "",
+          })
+          .then((result) => {
+            if (result.data !== true) throw new Error("Advisor message was not accepted")
+          })
+      }}
     >
       <LocalProvider>{props.children}</LocalProvider>
     </DataProvider>

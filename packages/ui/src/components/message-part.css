@@ -1045,6 +1045,47 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   padding: 4px 2px 8px;
 }
 
+[data-slot="codex-intervention"] {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-weak-base);
+  padding-top: 12px;
+}
+
+[data-slot="codex-intervention-error"] {
+  margin-top: 8px;
+  color: var(--text-critical, var(--text-weak));
+  font-size: var(--font-size-small);
+}
+
+[data-slot="codex-intervention-form"] {
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+  gap: 8px;
+
+  [data-component="input"] {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  [data-component="button"] {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 640px) {
+  [data-slot="codex-intervention-form"] {
+    flex-wrap: wrap;
+
+    [data-component="input"] {
+      flex-basis: 100%;
+    }
+  }
+}
+
 [data-slot="codex-session-empty"] {
   color: var(--text-weak);
   font-size: 13px;
@@ -2332,18 +2373,16 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
 [data-slot="reasoning-trigger-label"][data-shimmer="true"] {
   color: transparent;
   -webkit-text-fill-color: transparent;
-  background-image: linear-gradient(
-      90deg,
-      transparent 0%,
-      transparent 42%,
-      var(--text-strong) 50%,
-      transparent 58%,
-      transparent 100%
-    ),
+  background-image:
+    linear-gradient(90deg, transparent 0%, transparent 42%, var(--text-strong) 50%, transparent 58%, transparent 100%),
     linear-gradient(var(--text-weaker), var(--text-weaker));
-  background-size: 260% 100%, 100% 100%;
+  background-size:
+    260% 100%,
+    100% 100%;
   background-repeat: no-repeat, no-repeat;
-  background-position: 100% center, 0 0;
+  background-position:
+    100% center,
+    0 0;
   -webkit-background-clip: text;
   background-clip: text;
   animation: session-title-text-shimmer 2.8s linear infinite;

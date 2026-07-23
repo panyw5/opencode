@@ -4,6 +4,7 @@
 - Use when you want an independent Codex judgment without making it the primary executor
 
 When to use:
+  - User explicitly requests Codex consultation
   - Architecture review, alternative approach, risk analysis
   - Second opinion on a plan, bug diagnosis, or design trade-off
   - Code review style feedback before you implement or after you draft a plan

@@ -15,6 +15,11 @@ import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
+import {
+  finishAdvisorIntervention,
+  sendAdvisorIntervention,
+  startAdvisorIntervention,
+} from "@/tool/advisor-intervention"
 import { NamedError } from "@opencode-ai/core/util/error"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
@@ -24,6 +29,8 @@ import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/htt
 import { InstanceHttpApi } from "../api"
 import {
   CommandPayload,
+  AdvisorInterventionMessagePayload,
+  AdvisorInterventionPayload,
   DiffQuery,
   ForkPayload,
   HookControlPayload,
@@ -401,6 +408,39 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return HttpApiSchema.NoContent.make()
     })
 
+    const advisorInterventionStart = Effect.fn("SessionHttpApi.advisorInterventionStart")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof AdvisorInterventionPayload.Type
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      if (!startAdvisorIntervention({ sessionID: ctx.params.sessionID, callID: ctx.payload.callID })) {
+        return yield* new HttpApiError.BadRequest({})
+      }
+      return true
+    })
+
+    const advisorInterventionMessage = Effect.fn("SessionHttpApi.advisorInterventionMessage")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof AdvisorInterventionMessagePayload.Type
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      if (!sendAdvisorIntervention({ ...ctx.payload, sessionID: ctx.params.sessionID })) {
+        return yield* new HttpApiError.BadRequest({})
+      }
+      return true
+    })
+
+    const advisorInterventionFinish = Effect.fn("SessionHttpApi.advisorInterventionFinish")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof AdvisorInterventionPayload.Type
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      if (!finishAdvisorIntervention({ sessionID: ctx.params.sessionID, callID: ctx.payload.callID })) {
+        return yield* new HttpApiError.BadRequest({})
+      }
+      return true
+    })
+
     const command = Effect.fn("SessionHttpApi.command")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof CommandPayload.Type
@@ -483,14 +523,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return yield* session.updatePart(payload)
     })
 
-
     const generateTitle = Effect.fn("SessionHttpApi.generateTitle")(function* (ctx: {
       params: { sessionID: SessionID }
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* promptSvc.generateTitle({ sessionID: ctx.params.sessionID, force: true }).pipe(
-        Effect.mapError(() => new HttpApiError.BadRequest({})),
-      )
+      return yield* promptSvc
+        .generateTitle({ sessionID: ctx.params.sessionID, force: true })
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
     })
 
     return handlers
@@ -516,6 +555,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("generateTitle", generateTitle)
       .handle("prompt", prompt)
       .handle("promptAsync", promptAsync)
+      .handle("advisorInterventionStart", advisorInterventionStart)
+      .handle("advisorInterventionMessage", advisorInterventionMessage)
+      .handle("advisorInterventionFinish", advisorInterventionFinish)
       .handle("command", command)
       .handle("shell", shell)
       .handle("revert", revert)

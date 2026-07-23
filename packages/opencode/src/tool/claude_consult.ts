@@ -1,5 +1,5 @@
 import path from "path"
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Fiber, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import * as Tool from "./tool"
@@ -7,6 +7,7 @@ import DESCRIPTION from "./claude_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
+import { registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.claude_consult" })
@@ -45,9 +46,34 @@ export type ClaudeExecBuildInput = {
   model?: string
 }
 
+export function buildClaudeResumeArgs(input: {
+  sessionId: string
+  prompt: string
+  workingDirectory: string
+  model?: string
+}): string[] {
+  const args = [
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--permission-mode",
+    "dontAsk",
+    "--safe-mode",
+    "--tools",
+    READ_ONLY_TOOLS,
+    "--add-dir",
+    input.workingDirectory,
+    "--resume",
+    input.sessionId,
+  ]
+  if (input.model?.trim()) args.push("--model", input.model.trim())
+  args.push(input.prompt)
+  return args
+}
+
 export type ClaudeTranscriptItem = {
   id: string
-  kind: "message" | "tool_use" | "tool_result" | "status" | "error" | "thinking"
+  kind: "message" | "user" | "tool_use" | "tool_result" | "status" | "error" | "thinking"
   title?: string
   text?: string
   status?: string
@@ -82,7 +108,6 @@ export function buildClaudeExecArgs(input: ClaudeExecBuildInput): string[] {
     "stream-json",
     "--permission-mode",
     "dontAsk",
-    "--no-session-persistence",
     "--safe-mode",
     "--tools",
     READ_ONLY_TOOLS,
@@ -196,7 +221,8 @@ export function applyClaudeJsonlLine(state: ClaudeLiveState, rawLine: string): b
       if (!content || typeof content !== "object") continue
       const item = content as Record<string, unknown>
       if (item.type !== "tool_result") continue
-      const toolUseID = typeof item.tool_use_id === "string" ? item.tool_use_id : `tool_result:${state.transcript.length}`
+      const toolUseID =
+        typeof item.tool_use_id === "string" ? item.tool_use_id : `tool_result:${state.transcript.length}`
       const isError = item.is_error === true
       const text = typeof item.content === "string" ? item.content : stringify(item.content)
       upsertTranscript(state, {
@@ -347,9 +373,21 @@ export const ClaudeConsultTool = Tool.define(
                   usage: live.usage,
                   cost_usd: live.costUsd,
                   duration_ms: live.durationMs,
+                  intervention: intervention?.snapshot(),
                 },
               })
             })
+
+          const intervention = ctx.callID
+            ? registerAdvisorIntervention({
+                sessionID: ctx.sessionID,
+                callID: ctx.callID,
+                advisor: "claude",
+                onChange: () => void Effect.runPromise(publishMetadata(true)),
+              })
+            : undefined
+
+          yield* Effect.addFinalizer(() => Effect.sync(() => intervention?.close()))
 
           yield* publishMetadata(true)
 
@@ -360,22 +398,22 @@ export const ClaudeConsultTool = Tool.define(
             timeoutMs,
           })
 
-          const result = yield* Effect.scoped(
-            Effect.gen(function* () {
-              const handle = yield* spawner.spawn(
-                ChildProcess.make(bin, args, {
-                  cwd: workingDirectory,
-                  extendEnv: true,
-                  stdin: "ignore",
-                }),
-              )
+          const runProcess = (runArgs: string[]) =>
+            Effect.scoped(
+              Effect.gen(function* () {
+                const handle = yield* spawner.spawn(
+                  ChildProcess.make(bin, runArgs, {
+                    cwd: workingDirectory,
+                    extendEnv: true,
+                    stdin: "ignore",
+                  }),
+                )
 
-              let stdout = ""
-              let stderr = ""
-              let lineBuffer = ""
+                let stdout = ""
+                let stderr = ""
+                let lineBuffer = ""
 
-              yield* Effect.forkScoped(
-                Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
+                const stdoutFiber = yield* Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
                   Effect.gen(function* () {
                     stdout += chunk
                     lineBuffer += chunk
@@ -387,43 +425,46 @@ export const ClaudeConsultTool = Tool.define(
                     }
                     if (dirty) yield* publishMetadata()
                   }),
-                ),
-              )
-              yield* Effect.forkScoped(
-                Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) =>
+                ).pipe(Effect.forkDetach({ startImmediately: true }))
+                const stderrFiber = yield* Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) =>
                   Effect.sync(() => {
                     stderr += chunk
                   }),
-                ),
-              )
+                ).pipe(Effect.forkDetach({ startImmediately: true }))
 
-              const abort = Effect.callback<void>((resume) => {
-                if (ctx.abort.aborted) return resume(Effect.void)
-                const handler = () => resume(Effect.void)
-                ctx.abort.addEventListener("abort", handler, { once: true })
-                return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
-              })
+                const abort = Effect.callback<void>((resume) => {
+                  if (ctx.abort.aborted) return resume(Effect.void)
+                  const handler = () => resume(Effect.void)
+                  ctx.abort.addEventListener("abort", handler, { once: true })
+                  return Effect.sync(() => ctx.abort.removeEventListener("abort", handler))
+                })
 
-              const timeout = Effect.sleep(`${timeoutMs} millis`)
+                const timeout = Effect.sleep(`${timeoutMs} millis`)
 
-              const exit = yield* Effect.raceAll([
-                handle.exitCode.pipe(
-                  Effect.map((code) => ({ kind: "exit" as const, code: Number(code) })),
-                  Effect.orDie,
-                ),
-                abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null as number | null }))),
-                timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null as number | null }))),
-              ])
+                const exit = yield* Effect.raceAll([
+                  handle.exitCode.pipe(
+                    Effect.map((code) => ({ kind: "exit" as const, code: Number(code) })),
+                    Effect.orDie,
+                  ),
+                  abort.pipe(Effect.map(() => ({ kind: "abort" as const, code: null as number | null }))),
+                  timeout.pipe(Effect.map(() => ({ kind: "timeout" as const, code: null as number | null }))),
+                ])
 
-              if (exit.kind === "abort" || exit.kind === "timeout") {
-                yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
-              }
+                if (exit.kind === "abort" || exit.kind === "timeout") {
+                  yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
+                }
 
-              if (lineBuffer.trim()) applyClaudeJsonlLine(live, lineBuffer)
+                // Drain the final stream chunks before parsing result JSONL.
+                yield* Fiber.join(stdoutFiber)
+                yield* Fiber.join(stderrFiber)
 
-              return { exit, stdout, stderr }
-            }),
-          ).pipe(Effect.orDie)
+                if (lineBuffer.trim()) applyClaudeJsonlLine(live, lineBuffer)
+
+                return { exit, stdout, stderr }
+              }),
+            ).pipe(Effect.orDie)
+
+          const result = yield* runProcess(args)
 
           if (result.exit.kind === "abort") {
             upsertTranscript(live, {
@@ -441,14 +482,13 @@ export const ClaudeConsultTool = Tool.define(
 
           const parsed = parseClaudeJsonl(result.stdout)
           const exitCode = result.exit.code
-          const sessionId = live.sessionId ?? parsed.sessionId
-          const usage = live.usage ?? parsed.usage
-          const costUsd = live.costUsd ?? parsed.costUsd
-          const durationMs = live.durationMs ?? parsed.durationMs
+          let sessionId = live.sessionId ?? parsed.sessionId
+          let usage = live.usage ?? parsed.usage
+          let costUsd = live.costUsd ?? parsed.costUsd
+          let durationMs = live.durationMs ?? parsed.durationMs
           const error = live.error ?? parsed.error
-          const transcript = live.transcript.length ? live.transcript : parsed.transcript
-          const finalResponse =
-            (live.agentMessages.at(-1) ?? parsed.finalResponse)?.trim() || parsed.finalResponse
+          let transcript = live.transcript.length ? live.transcript : parsed.transcript
+          const finalResponse = (live.agentMessages.at(-1) ?? parsed.finalResponse)?.trim() || parsed.finalResponse
 
           if (error && !finalResponse) {
             throw new Error(`Claude failed: ${error}`)
@@ -461,11 +501,71 @@ export const ClaudeConsultTool = Tool.define(
             )
           }
 
-          const body = finalResponse || stripAnsi(result.stdout).trim() || stripAnsi(result.stderr).trim()
+          let body = finalResponse || stripAnsi(result.stdout).trim() || stripAnsi(result.stderr).trim()
 
           if (!body) {
             throw new Error("Claude returned an empty response")
           }
+
+          while (intervention?.isActive()) {
+            const command = yield* Effect.promise(() => intervention.wait(ctx.abort))
+            if (command.type === "abort") throw new Error("Claude consultation was aborted")
+            if (command.type !== "message") break
+            if (!sessionId) throw new Error("Claude did not return a session id for intervention")
+
+            upsertTranscript(live, {
+              id: `intervention-user:${Date.now()}`,
+              kind: "user",
+              title: "User",
+              text: command.message,
+              status: "completed",
+            })
+            intervention.setBusy(true)
+            const messageCount = live.agentMessages.length
+            const next = yield* runProcess(
+              buildClaudeResumeArgs({
+                sessionId,
+                prompt: command.message,
+                workingDirectory,
+                model: params.model,
+              }),
+            )
+            intervention.setBusy(false)
+            if (next.exit.kind === "abort") throw new Error("Claude consultation was aborted")
+            if (next.exit.kind === "timeout") throw new Error(`Claude consultation timed out after ${timeoutMs}ms`)
+            const nextParsed = parseClaudeJsonl(next.stdout)
+            const nextError = nextParsed.error
+            const nextBody =
+              (live.agentMessages.slice(messageCount).at(-1) ?? nextParsed.finalResponse)?.trim() ||
+              stripAnsi(next.stdout).trim() ||
+              stripAnsi(next.stderr).trim()
+            if (nextError && !nextBody) throw new Error(`Claude failed: ${nextError}`)
+            if (!nextBody) throw new Error("Claude returned an empty response")
+            if (!live.agentMessages.includes(nextBody)) live.agentMessages.push(nextBody)
+            live.preview = nextBody
+            if (
+              !live.transcript.some(
+                (item) => item.kind === "message" && item.text === clip(nextBody, MAX_TRANSCRIPT_TEXT),
+              )
+            ) {
+              upsertTranscript(live, {
+                id: `intervention-assistant:${Date.now()}`,
+                kind: "message",
+                title: "Assistant",
+                text: clip(nextBody, MAX_TRANSCRIPT_TEXT),
+                status: "completed",
+              })
+            }
+            body = nextBody
+            sessionId = live.sessionId ?? nextParsed.sessionId ?? sessionId
+            usage = live.usage ?? nextParsed.usage ?? usage
+            costUsd = live.costUsd ?? nextParsed.costUsd ?? costUsd
+            durationMs = live.durationMs ?? nextParsed.durationMs ?? durationMs
+            transcript = live.transcript.length ? live.transcript : nextParsed.transcript
+            yield* publishMetadata(true)
+          }
+
+          intervention?.close()
 
           const header = [
             "<claude_consult>",

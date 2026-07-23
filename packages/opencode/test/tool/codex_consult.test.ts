@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   applyCodexJsonlLine,
   buildCodexExecArgs,
+  buildCodexResumeArgs,
   createCodexLiveState,
   parseCodexJsonl,
   resolveTimeoutMs,
@@ -17,6 +18,31 @@ const accepts = (schema: Schema.Decoder<unknown>, input: unknown): boolean =>
   Result.isSuccess(Schema.decodeUnknownResult(schema)(input))
 
 describe("tool.codex_consult helpers", () => {
+  test("buildCodexResumeArgs resumes a read-only consultation thread", () => {
+    expect(
+      buildCodexResumeArgs({
+        threadId: "thr_abc",
+        prompt: "Follow up",
+        workingDirectory: "/tmp/project",
+        model: "gpt-5.4",
+      }),
+    ).toEqual([
+      "exec",
+      "--sandbox",
+      "read-only",
+      "--skip-git-repo-check",
+      "-C",
+      "/tmp/project",
+      "-c",
+      'approval_policy="never"',
+      "resume",
+      "--json",
+      "-m",
+      "gpt-5.4",
+      "thr_abc",
+      "Follow up",
+    ])
+  })
   test("buildCodexExecArgs forces read-only sandbox and non-interactive approvals", () => {
     const args = buildCodexExecArgs({
       prompt: "Review auth flow",
@@ -83,18 +109,14 @@ describe("tool.codex_consult helpers", () => {
   })
 
   test("parseCodexJsonl captures turn failure", () => {
-    const stdout = [
-      JSON.stringify({ type: "turn.failed", error: { message: "auth expired" } }),
-    ].join("\n")
+    const stdout = [JSON.stringify({ type: "turn.failed", error: { message: "auth expired" } })].join("\n")
     const parsed = parseCodexJsonl(stdout)
     expect(parsed.error).toBe("auth expired")
     expect(parsed.finalResponse).toBe("")
   })
 
   test("parseCodexJsonl ignores non-json noise lines", () => {
-    const stdout = ["not json", JSON.stringify({ type: "thread.started", thread_id: "t1" }), ""].join(
-      "\n",
-    )
+    const stdout = ["not json", JSON.stringify({ type: "thread.started", thread_id: "t1" }), ""].join("\n")
     const parsed = parseCodexJsonl(stdout)
     expect(parsed.threadId).toBe("t1")
     expect(parsed.finalResponse).toBe("")
@@ -102,9 +124,7 @@ describe("tool.codex_consult helpers", () => {
 
   test("applyCodexJsonlLine builds a live transcript stream", () => {
     const state = createCodexLiveState()
-    expect(
-      applyCodexJsonlLine(state, JSON.stringify({ type: "thread.started", thread_id: "thr_1" })),
-    ).toBe(true)
+    expect(applyCodexJsonlLine(state, JSON.stringify({ type: "thread.started", thread_id: "thr_1" }))).toBe(true)
     expect(
       applyCodexJsonlLine(
         state,

@@ -1,0 +1,3 @@
+- Delegate implementation, debugging, review, research, or verification work to the local Grok Build CLI.
+- Use when a locally authenticated Grok Build session is useful as an independent agent.
+- Grok can inspect and edit files, execute shell commands, use network tools, and return its response to the current agent.

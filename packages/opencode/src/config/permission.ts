@@ -29,6 +29,7 @@ const InputObject = Schema.StructWithRest(
     websearch: Schema.optional(Action),
     codex_consult: Schema.optional(Action),
     claude_consult: Schema.optional(Action),
+    grok_consult: Schema.optional(Action),
     repo_clone: Schema.optional(Rule),
     repo_overview: Schema.optional(Rule),
     lsp: Schema.optional(Rule),
