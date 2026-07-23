@@ -853,6 +853,10 @@ export const dict = {
   "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Plugins",
   "status.popover.tab.skills": "Skills",
+  "status.popover.tab.agents": "Agents",
+  "status.popover.tab.commands": "Commands",
+  "status.popover.empty.agents": "No agent markdown files found",
+  "status.popover.empty.commands": "No command markdown files found",
   "status.popover.action.manageServers": "Manage servers",
 
   "session.share.popover.title": "Publish on web",
@@ -1570,7 +1574,8 @@ export const dict = {
     "Add a Discord bot token. Enable Message Content Intent in the Discord developer portal.",
   "config.channels.existing.title": "Configured channels",
   "config.channels.existing.count": "{{count}} saved",
-  "config.channels.existing.empty": "No channels of this type yet. Add one below — credentials are stored in global opencode.jsonc.",
+  "config.channels.existing.empty":
+    "No channels of this type yet. Add one below — credentials are stored in global opencode.jsonc.",
   "config.channels.add.title": "Add channel",
   "config.channels.add.action": "Save channel",
   "config.channels.editor.delete": "Delete",
@@ -1595,8 +1600,7 @@ export const dict = {
   "config.channels.toast.modelSaved": "Conversation model updated",
   "config.channels.toast.error": "Failed to update channel",
   "config.channels.error.duplicateName": "A channel with this name already exists",
-  "config.channels.note.runtime":
-    "Credentials are saved to config only. Real bot connection is not enabled yet.",
+  "config.channels.note.runtime": "Credentials are saved to config only. Real bot connection is not enabled yet.",
   "config.channels.feishu.setup": "Setup method",
   "config.channels.feishu.mode.qr": "Scan QR to create app",
   "config.channels.feishu.mode.manual": "Enter App ID / Secret manually",
@@ -1618,8 +1622,7 @@ export const dict = {
   "sidebar.im.title": "IM Channels",
   "sidebar.im.meta.feishu": "Feishu",
   "sidebar.im.meta.discord": "Discord",
-  "sidebar.im.empty":
-    "No sessions in this channel yet. Message the bot on Feishu/Discord and they will appear here.",
+  "sidebar.im.empty": "No sessions in this channel yet. Message the bot on Feishu/Discord and they will appear here.",
   "sidebar.im.toast.unavailable": "Channel unavailable",
   "sidebar.im.toast.configure": "Enable or configure this channel in Config page → Channels.",
   "config.commands.title": "Commands",

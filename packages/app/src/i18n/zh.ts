@@ -770,6 +770,10 @@ export const dict = {
   "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "插件",
   "status.popover.tab.skills": "技能",
+  "status.popover.tab.agents": "智能体",
+  "status.popover.tab.commands": "命令",
+  "status.popover.empty.agents": "未找到智能体 Markdown 文件",
+  "status.popover.empty.commands": "未找到命令 Markdown 文件",
   "status.popover.action.manageServers": "管理服务器",
 
   "session.share.popover.title": "发布到网页",
@@ -1076,7 +1080,6 @@ export const dict = {
   "settings.mcp.status.failed": "失败",
   "settings.mcp.status.needs_auth": "需要认证",
   "settings.mcp.status.disabled": "已禁用",
-
 
   "settings.commands.empty": "未配置自定义命令",
   "settings.commands.add": "添加命令",
@@ -1395,8 +1398,7 @@ export const dict = {
   "config.claws.codex.install.installed": "已安装",
   "config.claws.codex.install.missing": "未找到",
   "config.claws.codex.test.success": "Codex CLI 探测成功。",
-  "config.claws.logs.testingCodex":
-    "正在探测 Codex CLI\n解析二进制与 config.toml\n读取模型 / provider 设置...",
+  "config.claws.logs.testingCodex": "正在探测 Codex CLI\n解析二进制与 config.toml\n读取模型 / provider 设置...",
   "config.claws.field.claudeBinary": "Claude 可执行文件",
   "config.claws.field.claudeBinaryDescription": "可选绝对路径或命令名。留空则使用 PATH 上的 `claude`。",
   "config.claws.field.claudeBinaryPlaceholder": "claude",
@@ -1416,8 +1418,7 @@ export const dict = {
   "config.claws.claude.install.installed": "已安装",
   "config.claws.claude.install.missing": "未找到",
   "config.claws.claude.test.success": "Claude CLI 探测成功。",
-  "config.claws.logs.testingClaude":
-    "正在探测 Claude CLI\n解析二进制与 settings.json\n读取模型 / 权限设置...",
+  "config.claws.logs.testingClaude": "正在探测 Claude CLI\n解析二进制与 settings.json\n读取模型 / 权限设置...",
   "config.claws.field.pythonExecutable": "Python 可执行文件",
   "config.claws.field.pythonExecutableDescription":
     "覆盖默认 Python 解释器。默认优先使用项目 venv，否则回退到 `python3`。",
@@ -1521,8 +1522,7 @@ export const dict = {
   "config.channels.editor.select": "选择一个平台进行配置",
   "config.channels.platform.feishu": "飞书",
   "config.channels.platform.feishu.note": "扫码或粘贴 App ID / Secret",
-  "config.channels.platform.feishu.detail":
-    "通过扫码创建飞书智能体应用，或手动填写凭证。保存到全局 opencode.jsonc。",
+  "config.channels.platform.feishu.detail": "通过扫码创建飞书智能体应用，或手动填写凭证。保存到全局 opencode.jsonc。",
   "config.channels.platform.discord": "Discord",
   "config.channels.platform.discord.note": "粘贴 Bot Token",
   "config.channels.platform.discord.detail":

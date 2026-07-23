@@ -1,6 +1,8 @@
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Markdown } from "@opencode-ai/ui/markdown"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Tabs } from "@opencode-ai/ui/tabs"
@@ -24,10 +26,28 @@ import { useCheckServerHealth, type ServerHealth } from "@/utils/server-health"
 
 const pollMs = 10_000
 
+type MarkdownDocument = {
+  name: string
+  location: string
+  content: string
+  scope: "global" | "project"
+}
+
 function configPath(root: string | undefined, file: string) {
   if (!root || !isFilePath(root)) return
   const sep = root.includes("\\") && !root.includes("/") ? "\\" : "/"
   return `${root.replace(/[\\/]+$/, "")}${sep}${file.replace(/^[\\/]+/, "")}`
+}
+
+function markdownDocumentName(root: string, location: string) {
+  const base = localPath(root).replace(/\\/g, "/").replace(/\/+$/, "")
+  const value = localPath(location).replace(/\\/g, "/")
+  const relative = value.startsWith(`${base}/`) ? value.slice(base.length + 1) : getFilename(value)
+  return relative.replace(/\.mdx?$/i, "")
+}
+
+function markdownBody(text: string) {
+  return text.replace(/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/, "").trim()
 }
 
 const pluginEmptyMessage = (value: string, file: string): JSXElement => {
@@ -207,9 +227,16 @@ export function StatusPopover() {
   const dialog = useDialog()
   const language = useLanguage()
   const [shown, setShown] = createSignal(false)
-  const [tab, setTab] = createSignal<"servers" | "mcp" | "lsp" | "plugins" | "skills">("servers")
+  const [tab, setTab] = createSignal<"servers" | "mcp" | "lsp" | "plugins" | "skills" | "agents" | "commands">(
+    "servers",
+  )
+  const [documents, setDocuments] = createStore({
+    agents: [] as MarkdownDocument[],
+    commands: [] as MarkdownDocument[],
+  })
   let dialogRun = 0
   let dialogDead = false
+  let documentsKey: string | undefined
   onCleanup(() => {
     dialogDead = true
     dialogRun += 1
@@ -288,6 +315,80 @@ export function StatusPopover() {
     })
   })
 
+  const scanMarkdownDocuments = async (
+    roots: Array<{ root: string | undefined; scope: MarkdownDocument["scope"] }>,
+  ): Promise<MarkdownDocument[]> => {
+    const listDirectory = platform.listConfigDirectory
+    const read = platform.readConfigFile
+    if (!listDirectory || !read) return []
+
+    const walk = async (
+      directory: string,
+      root: string,
+      scope: MarkdownDocument["scope"],
+    ): Promise<MarkdownDocument[]> => {
+      if (!isFilePath(directory)) return []
+      const entries = await listDirectory(directory).catch(() => [])
+      return Promise.all(
+        entries.map(async (entry) => {
+          if (entry.kind === "directory") return walk(entry.path, root, scope)
+          if (!/\.mdx?$/i.test(entry.path)) return []
+          const content = await read(entry.path).catch(() => null)
+          if (content === null) return []
+          return [{ name: markdownDocumentName(root, entry.path), location: entry.path, content, scope }]
+        }),
+      ).then((items) => items.flat())
+    }
+
+    const items = await Promise.all(
+      roots
+        .filter((entry): entry is { root: string; scope: MarkdownDocument["scope"] } => !!entry.root)
+        .map((entry) => walk(entry.root, entry.root, entry.scope)),
+    ).then((items) => items.flat())
+    return [...new Map(items.map((entry) => [entry.location, entry])).values()]
+  }
+
+  createEffect(() => {
+    if (!shown() || (tab() !== "agents" && tab() !== "commands")) return
+
+    const list = platform.listConfigFiles
+    const dir = sync.data.path.directory
+    const config = global.data.path.config
+    if (platform.platform !== "desktop" || !list || !dir) return
+
+    const key = `${dir}\n${config ?? ""}`
+    if (key === documentsKey) return
+
+    let dead = false
+    void list(dir)
+      .catch(() => [])
+      .then(async () => {
+        const [agents, commands] = await Promise.all([
+          scanMarkdownDocuments([
+            { root: configPath(config, "agent"), scope: "global" as const },
+            { root: configPath(config, "agents"), scope: "global" as const },
+            { root: configPath(dir, ".opencode/agent"), scope: "project" as const },
+            { root: configPath(dir, ".opencode/agents"), scope: "project" as const },
+            { root: configPath(dir, ".agents/agent"), scope: "project" as const },
+            { root: configPath(dir, ".agents/agents"), scope: "project" as const },
+          ]),
+          scanMarkdownDocuments([
+            { root: configPath(config, "command"), scope: "global" as const },
+            { root: configPath(config, "commands"), scope: "global" as const },
+            { root: configPath(dir, ".opencode/command"), scope: "project" as const },
+            { root: configPath(dir, ".opencode/commands"), scope: "project" as const },
+          ]),
+        ])
+        if (dead) return
+        documentsKey = key
+        setDocuments({ agents, commands })
+      })
+
+    onCleanup(() => {
+      dead = true
+    })
+  })
+
   const mcpItems = createMemo(() =>
     mcpNames().map((name) =>
       mcp(
@@ -314,7 +415,7 @@ export function StatusPopover() {
   const skillItems = createMemo(() =>
     skills
       .list()
-      .map((entry) => skill(entry, global.data.project))
+      .map((entry) => ({ ...skill(entry, global.data.project), content: entry.content }))
       .toSorted((a, b) => {
         const ar = a.scope === "global" ? 1 : 0
         const br = b.scope === "global" ? 1 : 0
@@ -335,6 +436,44 @@ export function StatusPopover() {
     const text = language.t("dialog.skill.empty")
     if (text !== "dialog.skill.empty") return text
     return "No skills loaded"
+  })
+  const agentItems = createMemo(() => {
+    const agents = new Map(sync.data.agent.filter((entry) => !entry.hidden).map((entry) => [entry.name, entry]))
+    return documents.agents
+      .flatMap((entry) => {
+        const agent = agents.get(entry.name)
+        return agent ? [{ ...entry, description: agent.description, mode: agent.mode }] : []
+      })
+      .toSorted((a, b) => a.name.localeCompare(b.name))
+  })
+  const agentTab = createMemo(() => {
+    const text = language.t("status.popover.tab.agents")
+    if (text !== "status.popover.tab.agents") return text
+    return "Agents"
+  })
+  const agentEmpty = createMemo(() => {
+    const text = language.t("status.popover.empty.agents")
+    if (text !== "status.popover.empty.agents") return text
+    return "No agent markdown files found"
+  })
+  const commandItems = createMemo(() => {
+    const commands = new Map(sync.data.command.map((entry) => [entry.name, entry]))
+    return documents.commands
+      .flatMap((entry) => {
+        const command = commands.get(entry.name)
+        return command ? [{ ...entry, description: command.description, source: command.source }] : []
+      })
+      .toSorted((a, b) => a.name.localeCompare(b.name))
+  })
+  const commandTab = createMemo(() => {
+    const text = language.t("status.popover.tab.commands")
+    if (text !== "status.popover.tab.commands") return text
+    return "Commands"
+  })
+  const commandEmpty = createMemo(() => {
+    const text = language.t("status.popover.empty.commands")
+    if (text !== "status.popover.empty.commands") return text
+    return "No command markdown files found"
   })
 
   const overallHealthy = createMemo(() => {
@@ -386,6 +525,68 @@ export function StatusPopover() {
     })
   }
 
+  const openMarkdownPreview = (entry: { name: string; location: string; content: string }) => {
+    if (platform.platform !== "desktop") return
+    dialog.show(
+      () => (
+        <Dialog
+          title={<span class="text-20-medium font-semibold text-text-strong">{entry.name}</span>}
+          description={<span class="break-all font-mono text-12-regular text-text-weak">{entry.location}</span>}
+          class="w-full mx-auto"
+          containerStyle={{
+            width: "min(calc(100vw - 32px), 960px)",
+            transition: "width 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+          }}
+          fit
+          transition
+        >
+          <div class="config-scrollbar max-h-[min(70vh,800px)] overflow-auto p-4 sm:p-5">
+            <Markdown
+              text={markdownBody(entry.content)}
+              cacheKey={`status-markdown-preview:${entry.location}`}
+              math="full"
+              highlight="defer"
+              class="text-13-regular leading-6"
+            />
+          </div>
+        </Dialog>
+      ),
+      undefined,
+      { modal: true, preventScroll: true },
+    )
+  }
+
+  const documentActions = (location: string) => (
+    <>
+      <Button
+        size="small"
+        variant="ghost"
+        icon="copy"
+        class="shrink-0"
+        aria-label={language.t("session.header.open.copyPath")}
+        onClick={(event: MouseEvent) => {
+          event.stopPropagation()
+          copy(location)
+        }}
+      />
+      <Show when={canOpenContainingFolder(location)}>
+        <Tooltip value={language.t("ui.file.openFolder")} placement="bottom">
+          <Button
+            size="small"
+            variant="ghost"
+            icon="folder"
+            class="shrink-0"
+            aria-label={language.t("ui.file.openFolder")}
+            onClick={(event: MouseEvent) => {
+              event.stopPropagation()
+              openContainingFolder(location)
+            }}
+          />
+        </Tooltip>
+      </Show>
+    </>
+  )
+
   return (
     <Popover
       open={shown()}
@@ -430,7 +631,9 @@ export function StatusPopover() {
               value === "mcp" ||
               value === "lsp" ||
               value === "plugins" ||
-              value === "skills"
+              value === "skills" ||
+              value === "agents" ||
+              value === "commands"
             ) {
               setTab(value)
             }
@@ -456,6 +659,12 @@ export function StatusPopover() {
             </Tabs.Trigger>
             <Tabs.Trigger value="skills" data-slot="tab" class="text-12-regular">
               {tabLabel({ count: skillCount(), label: skillTab(), issue: false })}
+            </Tabs.Trigger>
+            <Tabs.Trigger value="agents" data-slot="tab" class="text-12-regular">
+              {tabLabel({ count: agentItems().length, label: agentTab(), issue: false })}
+            </Tabs.Trigger>
+            <Tabs.Trigger value="commands" data-slot="tab" class="text-12-regular">
+              {tabLabel({ count: commandItems().length, label: commandTab(), issue: false })}
             </Tabs.Trigger>
           </Tabs.List>
 
@@ -708,53 +917,136 @@ export function StatusPopover() {
                     fallback={<div class="text-14-regular text-text-base text-center my-auto">{skillEmpty()}</div>}
                   >
                     <For each={skillItems()}>
-                      {(entry) => (
-                        <div
-                          class="status-list-item flex items-center gap-2 w-full px-2 py-1 rounded-md"
-                          title={entry.value}
-                        >
-                          <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
-                          <div class="flex-1 min-w-0 text-14-regular text-text-base truncate">
-                            {entry.name}
-                            <span class="text-text-weak">
-                              {" "}
-                              {" | "}
-                              {entry.scope}
-                            </span>
-                            <Show when={entry.source}>
+                      {(entry) => {
+                        const previewable = () => platform.platform === "desktop"
+                        const details = () => (
+                          <>
+                            <div class="size-1.5 rounded-full shrink-0 bg-icon-success-base" />
+                            <div class="min-w-0 flex-1 text-14-regular text-text-base truncate">
+                              {entry.name}
                               <span class="text-text-weak">
                                 {" "}
                                 {" | "}
-                                {entry.source}
+                                {entry.scope}
                               </span>
+                              <Show when={entry.source}>
+                                <span class="text-text-weak">
+                                  {" "}
+                                  {" | "}
+                                  {entry.source}
+                                </span>
+                              </Show>
+                            </div>
+                          </>
+                        )
+                        return (
+                          <div class="flex items-center gap-2 w-full px-2 py-1 rounded-md" title={entry.value}>
+                            <Show
+                              when={previewable()}
+                              fallback={<div class="flex flex-1 min-w-0 items-center gap-2">{details()}</div>}
+                            >
+                              <button
+                                type="button"
+                                class="status-list-item flex flex-1 min-w-0 items-center gap-2 rounded-md text-left"
+                                onClick={() =>
+                                  openMarkdownPreview({
+                                    name: entry.name,
+                                    location: entry.value,
+                                    content: entry.content,
+                                  })
+                                }
+                              >
+                                {details()}
+                              </button>
                             </Show>
+                            {documentActions(entry.value)}
                           </div>
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            icon="copy"
-                            class="shrink-0"
-                            aria-label={language.t("session.header.open.copyPath")}
-                            onClick={(event: MouseEvent) => {
-                              event.stopPropagation()
-                              copy(entry.value)
-                            }}
-                          />
-                          <Show when={canOpenContainingFolder(entry.value)}>
-                            <Tooltip value={language.t("ui.file.openFolder")} placement="bottom">
-                              <Button
-                                size="small"
-                                variant="ghost"
-                                icon="folder"
-                                class="shrink-0"
-                                aria-label={language.t("ui.file.openFolder")}
-                                onClick={(event: MouseEvent) => {
-                                  event.stopPropagation()
-                                  openContainingFolder(entry.value)
-                                }}
-                              />
-                            </Tooltip>
-                          </Show>
+                        )
+                      }}
+                    </For>
+                  </Show>
+                </div>
+              </div>
+            </Show>
+          </Tabs.Content>
+
+          <Tabs.Content value="agents">
+            <Show when={tab() === "agents"}>
+              <div class="flex flex-col px-2 pb-2 max-h-[calc(100vh-120px)] overflow-y-auto">
+                <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
+                  <Show
+                    when={agentItems().length > 0}
+                    fallback={<div class="text-14-regular text-text-base text-center my-auto">{agentEmpty()}</div>}
+                  >
+                    <For each={agentItems()}>
+                      {(agent) => (
+                        <div class="flex items-start gap-2 w-full px-2 py-1 rounded-md" title={agent.location}>
+                          <button
+                            type="button"
+                            class="status-list-item flex flex-1 min-w-0 items-start gap-2 rounded-md text-left"
+                            onClick={() => openMarkdownPreview(agent)}
+                          >
+                            <div class="size-1.5 rounded-full shrink-0 mt-2 bg-icon-success-base" />
+                            <div class="flex-1 min-w-0">
+                              <div class="text-14-regular text-text-base truncate">
+                                {agent.name}
+                                <span class="text-text-weak">
+                                  {" "}
+                                  {" | "}
+                                  {agent.mode}
+                                  {" | "}
+                                  {agent.scope}
+                                </span>
+                              </div>
+                              <Show when={agent.description}>
+                                <div class="text-12-regular text-text-weak truncate">{agent.description}</div>
+                              </Show>
+                            </div>
+                          </button>
+                          {documentActions(agent.location)}
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+                </div>
+              </div>
+            </Show>
+          </Tabs.Content>
+
+          <Tabs.Content value="commands">
+            <Show when={tab() === "commands"}>
+              <div class="flex flex-col px-2 pb-2 max-h-[calc(100vh-120px)] overflow-y-auto">
+                <div class="flex flex-col p-3 bg-background-base rounded-sm min-h-14">
+                  <Show
+                    when={commandItems().length > 0}
+                    fallback={<div class="text-14-regular text-text-base text-center my-auto">{commandEmpty()}</div>}
+                  >
+                    <For each={commandItems()}>
+                      {(command) => (
+                        <div class="flex items-start gap-2 w-full px-2 py-1 rounded-md" title={command.location}>
+                          <button
+                            type="button"
+                            class="status-list-item flex flex-1 min-w-0 items-start gap-2 rounded-md text-left"
+                            onClick={() => openMarkdownPreview(command)}
+                          >
+                            <div class="size-1.5 rounded-full shrink-0 mt-2 bg-icon-success-base" />
+                            <div class="flex-1 min-w-0">
+                              <div class="text-14-regular text-text-base truncate">
+                                /{command.name}
+                                <span class="text-text-weak">
+                                  {" "}
+                                  {" | "}
+                                  {command.source ?? "command"}
+                                  {" | "}
+                                  {command.scope}
+                                </span>
+                              </div>
+                              <Show when={command.description}>
+                                <div class="text-12-regular text-text-weak truncate">{command.description}</div>
+                              </Show>
+                            </div>
+                          </button>
+                          {documentActions(command.location)}
                         </div>
                       )}
                     </For>
