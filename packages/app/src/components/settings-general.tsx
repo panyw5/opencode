@@ -1,7 +1,18 @@
-import { Component, Show, createMemo, createResource, onMount, type JSX } from "solid-js"
+import {
+  Component,
+  Show,
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  onCleanup,
+  onMount,
+  type JSX,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Progress } from "@opencode-ai/ui/progress"
 import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@opencode-ai/ui/switch"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -10,6 +21,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSettings, monoFontFamily } from "@/context/settings"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "./link"
 import { SettingsList } from "./settings-list"
@@ -64,6 +76,7 @@ export const SettingsGeneral: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
+  const globalSDK = useGlobalSDK()
 
   onMount(() => {
     void theme.loadThemes()
@@ -71,6 +84,68 @@ export const SettingsGeneral: Component = () => {
 
   const [store, setStore] = createStore({
     checking: false,
+  })
+  const [searchIndex, setSearchIndex] = createSignal<{
+    enabled: boolean
+    state: "disabled" | "running" | "paused" | "complete"
+    indexed: number
+    total: number
+    complete: boolean
+    known: boolean
+  }>()
+  const [searchIndexBusy, setSearchIndexBusy] = createSignal(false)
+  const normalizeSearchIndex = (value: {
+    enabled: boolean
+    state: "disabled" | "running" | "paused" | "complete"
+    indexed: number | "NaN" | "Infinity" | "-Infinity"
+    total: number | "NaN" | "Infinity" | "-Infinity"
+    complete: boolean
+    known: boolean
+  }) => ({
+    enabled: value.enabled,
+    state: value.state,
+    complete: value.complete,
+    known: value.known,
+    indexed: Number.isFinite(Number(value.indexed)) ? Number(value.indexed) : 0,
+    total: Number.isFinite(Number(value.total)) ? Number(value.total) : 0,
+  })
+
+  const refreshSearchIndex = () =>
+    globalSDK.client.experimental.session.contentSearchStatus({}).then((result) => {
+      if (result.data) setSearchIndex(normalizeSearchIndex(result.data))
+    })
+
+  const manageSearchIndex = (action: "enable" | "pause" | "resume" | "rebuild" | "clear") => {
+    setSearchIndexBusy(true)
+    void globalSDK.client.experimental.session
+      .contentSearchAction({ action })
+      .then((result) => {
+        if (result.data) setSearchIndex(normalizeSearchIndex(result.data))
+      })
+      .catch((error) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: error instanceof Error ? error.message : String(error),
+        })
+      })
+      .finally(() => setSearchIndexBusy(false))
+  }
+
+  createEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let disposed = false
+    const poll = () => {
+      void refreshSearchIndex().finally(() => {
+        if (disposed) return
+        const state = searchIndex()?.state
+        timer = setTimeout(poll, state === "running" ? 1_000 : 10_000)
+      })
+    }
+    poll()
+    onCleanup(() => {
+      disposed = true
+      if (timer) clearTimeout(timer)
+    })
   })
 
   let previewPending: ReturnType<typeof setTimeout> | undefined
@@ -277,6 +352,114 @@ export const SettingsGeneral: Component = () => {
       </SettingsList>
     </div>
   )
+
+  const SearchIndexSection = () => {
+    const progress = createMemo<JSX.Element>(() => {
+      const value = searchIndex()
+      if (!value) return <>Loading index status…</>
+      if (!value.enabled) return <>Disabled. Enable it to index visible session messages on this device.</>
+      if (!value.known) return <>Index status is unavailable.</>
+      if (value.complete)
+        return (
+          <div class="flex flex-col gap-1.5 pt-1">
+            <span>Ready. {value.indexed.toLocaleString()} messages indexed.</span>
+            <div class="flex flex-wrap gap-x-3 gap-y-0.5">
+              <span>Indexed: {value.indexed.toLocaleString()}</span>
+              <span>Total: {value.total.toLocaleString()}</span>
+            </div>
+            <Progress value={1} maxValue={1} hideLabel>
+              Index complete
+            </Progress>
+          </div>
+        )
+      if (value.total === 0)
+        return (
+          <div class="flex flex-col gap-1.5 pt-1">
+            <span>Preparing index.</span>
+            <div class="flex flex-wrap gap-x-3 gap-y-0.5">
+              <span>Indexed: {value.indexed.toLocaleString()}</span>
+              <span>Total: {value.total.toLocaleString()}</span>
+            </div>
+            <Progress hideLabel>Preparing index</Progress>
+          </div>
+        )
+      const indexed = Math.min(value.indexed, value.total)
+      const percent = Math.floor((indexed / value.total) * 100)
+      return (
+        <div class="flex flex-col gap-1.5 pt-1">
+          <span>
+            {indexed.toLocaleString()} / {value.total.toLocaleString()} messages indexed ({percent}%)
+          </span>
+          <div class="flex flex-wrap gap-x-3 gap-y-0.5">
+            <span>Indexed: {value.indexed.toLocaleString()}</span>
+            <span>Total: {value.total.toLocaleString()}</span>
+          </div>
+          <Progress value={indexed} maxValue={value.total} hideLabel>
+            Index progress
+          </Progress>
+        </div>
+      )
+    })
+    return (
+      <div class="flex flex-col gap-1">
+        <h3 class="text-14-medium text-text-strong pb-2">Global index</h3>
+        <SettingsList>
+          <SettingsRow title="Session content search" description={progress()}>
+            <div class="flex items-center gap-2">
+              <Show when={searchIndex() && !searchIndex()!.enabled}>
+                <Button
+                  size="small"
+                  variant="secondary"
+                  disabled={searchIndexBusy()}
+                  onClick={() => manageSearchIndex("enable")}
+                >
+                  Enable
+                </Button>
+              </Show>
+              <Show when={searchIndex()?.state === "running"}>
+                <Button
+                  size="small"
+                  variant="secondary"
+                  disabled={searchIndexBusy()}
+                  onClick={() => manageSearchIndex("pause")}
+                >
+                  Pause
+                </Button>
+              </Show>
+              <Show when={searchIndex()?.state === "paused"}>
+                <Button
+                  size="small"
+                  variant="secondary"
+                  disabled={searchIndexBusy()}
+                  onClick={() => manageSearchIndex("resume")}
+                >
+                  Resume
+                </Button>
+              </Show>
+              <Show when={searchIndex()?.enabled}>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  disabled={searchIndexBusy()}
+                  onClick={() => manageSearchIndex("rebuild")}
+                >
+                  Rebuild
+                </Button>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  disabled={searchIndexBusy()}
+                  onClick={() => manageSearchIndex("clear")}
+                >
+                  Clear and disable
+                </Button>
+              </Show>
+            </div>
+          </SettingsRow>
+        </SettingsList>
+      </div>
+    )
+  }
 
   const AppearanceSection = () => (
     <div class="flex flex-col gap-1">
@@ -670,6 +853,8 @@ export const SettingsGeneral: Component = () => {
 
       <div class="flex flex-col gap-8 w-full">
         <GeneralSection />
+
+        <SearchIndexSection />
 
         <AppearanceSection />
 

@@ -4,10 +4,12 @@ import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Keybind } from "@opencode-ai/ui/keybind"
 import { List } from "@opencode-ai/ui/list"
+import { Progress } from "@opencode-ai/ui/progress"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { useNavigate } from "@solidjs/router"
-import { createMemo, createSignal, Match, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { formatKeybind, useCommand, type CommandOption } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
@@ -275,9 +277,43 @@ function createContentSearchEntries(props: {
   const [results, setResults] = createSignal<Entry[]>([])
   const [loading, setLoading] = createSignal(false)
   const [error, setError] = createSignal<string>()
-  const [indexing, setIndexing] = createSignal(false)
+  const [index, setIndex] = createSignal<{
+    enabled: boolean
+    state: "disabled" | "running" | "paused" | "complete"
+    indexed: number
+    total: number
+    complete: boolean
+    known: boolean
+  }>()
   let timer: ReturnType<typeof setTimeout> | undefined
+  let pollTimer: ReturnType<typeof setTimeout> | undefined
+  let disposed = false
   let token = 0
+
+  const setStatus = (value: typeof index extends () => infer Value ? Value : never) => setIndex(value)
+
+  const refreshIndex = () =>
+    props.globalSDK.client.experimental.session.contentSearchStatus({}).then((response) => {
+      const value = response.data
+      if (!value) return
+      setStatus({
+        indexed: Number.isFinite(Number(value.indexed)) ? Number(value.indexed) : 0,
+        total: Number.isFinite(Number(value.total)) ? Number(value.total) : 0,
+        enabled: value.enabled,
+        state: value.state,
+        complete: value.complete,
+        known: value.known,
+      })
+    })
+
+  const pollIndex = () => {
+    void refreshIndex()
+      .catch(() => undefined)
+      .finally(() => {
+        if (disposed) return
+        pollTimer = setTimeout(pollIndex, index()?.state === "running" ? 1_000 : 10_000)
+      })
+  }
 
   const search = (text: string) => {
     const query = text.trim()
@@ -288,7 +324,6 @@ function createContentSearchEntries(props: {
       setResults([])
       setLoading(false)
       setError()
-      setIndexing(false)
       return Promise.resolve([] as Entry[])
     }
     setLoading(true)
@@ -300,7 +335,18 @@ function createContentSearchEntries(props: {
           .then((response) => {
             if (current !== token) return resolve([])
             const data = response.data
-            setIndexing(!data?.index.complete)
+            setStatus(
+              data?.index
+                ? {
+                    indexed: Number.isFinite(Number(data.index.indexed)) ? Number(data.index.indexed) : 0,
+                    total: Number.isFinite(Number(data.index.total)) ? Number(data.index.total) : 0,
+                    enabled: data.index.enabled,
+                    state: data.index.state,
+                    complete: data.index.complete,
+                    known: data.index.known,
+                  }
+                : undefined,
+            )
             const next = (data?.results ?? []).map((item) => ({
               id: `content:${item.directory}:${item.partID}`,
               type: "content" as const,
@@ -309,7 +355,7 @@ function createContentSearchEntries(props: {
               category: data?.index.complete ? "Content matches" : "Content matches (indexing)",
               directory: item.directory,
               sessionID: item.sessionID,
-              updated: item.time,
+              updated: typeof item.time === "number" ? item.time : undefined,
             }))
             setResults(next)
             resolve(next)
@@ -324,8 +370,13 @@ function createContentSearchEntries(props: {
       }, 180)
     })
   }
-  onCleanup(() => timer && clearTimeout(timer))
-  return { results, loading, error, indexing, search }
+  pollIndex()
+  onCleanup(() => {
+    disposed = true
+    if (timer) clearTimeout(timer)
+    if (pollTimer) clearTimeout(pollTimer)
+  })
+  return { results, loading, error, index, search }
 }
 
 export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFile?: (path: string) => void }) {
@@ -408,7 +459,11 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
       return files.map((path) => createFileEntry(path, category))
     }
 
-    const [files, nextSessions, content] = await Promise.all([file.searchFiles(query), Promise.resolve(sessions(query)), contentSearch.search(query)])
+    const [files, nextSessions, content] = await Promise.all([
+      file.searchFiles(query),
+      Promise.resolve(sessions(query)),
+      contentSearch.search(query),
+    ])
     const category = language.t("palette.group.files")
     const entries = files.map((path) => createFileEntry(path, category))
     return [...content, ...commandEntries.list(), ...nextSessions, ...entries]
@@ -513,7 +568,7 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
             <Match when={item.type === "session" || item.type === "content"}>
               <div class="w-full flex items-center justify-between rounded-md pl-1">
                 <div class="flex items-center gap-x-3 grow min-w-0">
-                    <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
+                  <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
                   <div class="flex items-center gap-2 min-w-0">
                     <span
                       class="text-14-regular text-text-strong truncate"
@@ -541,6 +596,168 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
           </Switch>
         )}
       </List>
+    </Dialog>
+  )
+}
+
+export function DialogSessionContentSearch() {
+  const dialog = useDialog()
+  const navigate = useNavigate()
+  const globalSDK = useGlobalSDK()
+  const language = useLanguage()
+  const contentSearch = createContentSearchEntries({ globalSDK, language })
+  const [query, setQuery] = createSignal("")
+  const [active, setActive] = createSignal(0)
+  let viewport: HTMLDivElement | undefined
+  const indexProgress = (): JSX.Element | undefined => {
+    const index = contentSearch.index()
+    if (!index?.enabled || !index.known) return
+    if (index.complete)
+      return (
+        <div class="flex flex-col gap-1.5 px-3 py-2 text-12-regular text-text-weak">
+          <span>Index ready. {index.indexed.toLocaleString()} messages indexed.</span>
+          <Progress value={1} maxValue={1} hideLabel>
+            Index complete
+          </Progress>
+        </div>
+      )
+    if (index.total === 0)
+      return (
+        <div class="flex flex-col gap-1.5 px-3 py-2 text-12-regular text-text-weak">
+          <span>Preparing index</span>
+          <Progress hideLabel>Preparing index</Progress>
+        </div>
+      )
+    const indexed = Math.min(index.indexed, index.total)
+    const percent = Math.floor((indexed / index.total) * 100)
+    return (
+      <div class="flex flex-col gap-1.5 px-3 py-2 text-12-regular text-text-weak">
+        <span>
+          {indexed.toLocaleString()} / {index.total.toLocaleString()} messages indexed ({percent}%)
+        </span>
+        <Progress value={indexed} maxValue={index.total} hideLabel>
+          Index progress
+        </Progress>
+      </div>
+    )
+  }
+  const indexDisabled = () => contentSearch.index()?.enabled === false
+
+  createEffect(() => {
+    const text = query()
+    void contentSearch.search(text)
+    setActive(0)
+  })
+
+  createEffect(() => {
+    const item = contentSearch.results()[active()]
+    if (!item || !viewport) return
+    viewport.querySelector<HTMLElement>(`[data-key="${CSS.escape(item.id)}"]`)?.scrollIntoView({ block: "nearest" })
+  })
+
+  const handleSelect = (item: Entry | undefined) => {
+    if (!item?.directory || !item.sessionID) return
+    dialog.close()
+    navigate(`/${base64Encode(item.directory)}/session/${item.sessionID}`)
+  }
+
+  const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") return
+
+    const results = contentSearch.results()
+    if (event.key === "ArrowDown") {
+      event.preventDefault()
+      if (results.length) setActive((index) => Math.min(index + 1, results.length - 1))
+      return
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault()
+      if (results.length) setActive((index) => Math.max(index - 1, 0))
+      return
+    }
+    if (event.key === "Enter" && !event.isComposing) {
+      event.preventDefault()
+      handleSelect(results[active()])
+    }
+  }
+
+  return (
+    <Dialog class="pt-4 !max-h-[480px]" transition>
+      <div data-component="list">
+        <div data-slot="list-search-wrapper">
+          <div data-slot="list-search">
+            <div data-slot="list-search-container">
+              <TextField
+                autofocus
+                variant="ghost"
+                data-slot="list-search-input"
+                type="text"
+                value={query()}
+                onChange={setQuery}
+                onKeyDown={handleKeyDown}
+                placeholder="Search session content"
+                spellcheck={false}
+                autocorrect="off"
+                autocomplete="off"
+                autocapitalize="off"
+              />
+            </div>
+          </div>
+        </div>
+        <div ref={viewport} data-slot="list-viewport">
+          <Show when={indexProgress()}>{indexProgress()}</Show>
+          <Show when={indexDisabled()}>
+            <div data-slot="list-empty-state">
+              <div data-slot="list-message">Enable the global index in Settings to search session content.</div>
+            </div>
+          </Show>
+          <Show
+            when={contentSearch.results().length > 0 && !indexDisabled()}
+            fallback={
+              <div data-slot="list-empty-state">
+                <div data-slot="list-message">
+                  <Show when={contentSearch.loading()} fallback={contentSearch.error() ?? language.t("palette.empty")}>
+                    {language.t("common.loading")}
+                  </Show>
+                </div>
+              </div>
+            }
+          >
+            <For each={contentSearch.results()}>
+              {(item, index) => (
+                <button
+                  data-slot="list-item"
+                  data-key={item.id}
+                  data-active={index() === active()}
+                  type="button"
+                  onClick={() => handleSelect(item)}
+                  onMouseMove={(event) => {
+                    if (event.movementX || event.movementY) setActive(index())
+                  }}
+                  onKeyDown={handleKeyDown}
+                >
+                  <div class="w-full flex items-center justify-between rounded-md pl-1">
+                    <div class="flex items-center gap-x-3 grow min-w-0">
+                      <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
+                      <div class="flex items-center gap-2 min-w-0">
+                        <span class="text-14-regular text-text-strong truncate">{item.title}</span>
+                        <Show when={item.description}>
+                          <span class="text-14-regular text-text-weak truncate">{item.description}</span>
+                        </Show>
+                      </div>
+                    </div>
+                    <Show when={item.updated}>
+                      <span class="text-12-regular text-text-weak whitespace-nowrap ml-2">
+                        {getRelativeTime(new Date(item.updated!).toISOString(), language.t)}
+                      </span>
+                    </Show>
+                  </div>
+                </button>
+              )}
+            </For>
+          </Show>
+        </div>
+      </div>
     </Dialog>
   )
 }

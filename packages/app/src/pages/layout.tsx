@@ -61,6 +61,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { triggerFileFind } from "@opencode-ai/ui/pierre/file-find"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
+import { DialogSessionContentSearch } from "@/components/dialog-select-file"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { DialogSettings } from "@/components/dialog-settings"
 import { useCommand, type CommandOption } from "@/context/command"
@@ -1275,6 +1276,19 @@ export default function Layout(props: ParentProps) {
         keybind: "mod+f",
         disabled: !platform.find,
         onSelect: () => openFindbar(window.getSelection?.()?.toString().trim() || ""),
+      },
+      {
+        id: "session.content.search",
+        title: "Search session content",
+        description: "Search across all session messages",
+        category: language.t("command.category.session"),
+        keybind: "mod+shift+f",
+        onSelect: () => {
+          dialog.show(() => <DialogSessionContentSearch />, undefined, {
+            modal: false,
+            preventScroll: false,
+          })
+        },
       },
       {
         id: "project.open",

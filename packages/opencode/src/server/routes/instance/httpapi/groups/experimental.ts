@@ -101,10 +101,16 @@ const SessionContentSearchResponse = Schema.Struct({
   results: Schema.Array(SessionContentSearchResult),
   nextCursor: Schema.optionalKey(Schema.Number),
   index: Schema.Struct({
+    enabled: Schema.Boolean,
+    state: Schema.Literals(["disabled", "running", "paused", "complete"]),
     indexed: Schema.Number,
     total: Schema.Number,
     complete: Schema.Boolean,
+    known: Schema.Boolean,
   }),
+})
+export const SessionContentSearchAction = Schema.Struct({
+  action: Schema.Literals(["enable", "pause", "resume", "rebuild", "clear"]),
 })
 
 export const ExperimentalPaths = {
@@ -117,6 +123,7 @@ export const ExperimentalPaths = {
   worktreeReset: "/experimental/worktree/reset",
   session: "/experimental/session",
   sessionSearch: "/experimental/session/search",
+  sessionSearchStatus: "/experimental/session/search/status",
   resource: "/experimental/resource",
 } as const
 
@@ -249,6 +256,25 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "experimental.session.contentSearch",
             summary: "Search session content",
             description: "Search visible text parts across projects. Archived sessions are excluded by default.",
+          }),
+        ),
+        HttpApiEndpoint.get("sessionContentSearchStatus", ExperimentalPaths.sessionSearchStatus, {
+          query: WorkspaceRoutingQuery,
+          success: described(SessionContentSearchResponse.fields.index, "Session content search index status"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.session.contentSearchStatus",
+            summary: "Get session content search index status",
+          }),
+        ),
+        HttpApiEndpoint.post("sessionContentSearchAction", ExperimentalPaths.sessionSearchStatus, {
+          query: WorkspaceRoutingQuery,
+          payload: SessionContentSearchAction,
+          success: described(SessionContentSearchResponse.fields.index, "Updated session content search index status"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "experimental.session.contentSearchAction",
+            summary: "Manage session content search index",
           }),
         ),
         HttpApiEndpoint.get("resource", ExperimentalPaths.resource, {

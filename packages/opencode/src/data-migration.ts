@@ -5,7 +5,6 @@ import * as Log from "@opencode-ai/core/util/log"
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm"
 import { MessageTable, SessionTable } from "./session/session.sql"
 import type { SessionID } from "./session/schema"
-import { SessionContentSearch } from "./session/content-search"
 
 export type Migration<R = never> = {
   name: string
@@ -22,10 +21,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const migrations: Migration[] = [
-      {
-        name: "session_content_fts_backfill_v1",
-        run: SessionContentSearch.backfill(),
-      },
       {
         name: "session_usage_from_messages",
         run: Effect.gen(function* () {

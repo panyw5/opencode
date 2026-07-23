@@ -4970,15 +4970,94 @@ export type ExperimentalSessionContentSearchResponses = {
     }>
     nextCursor?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     index: {
+      enabled: boolean
+      state: "disabled" | "running" | "paused" | "complete"
       indexed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       complete: boolean
+      known: boolean
     }
   }
 }
 
 export type ExperimentalSessionContentSearchResponse =
   ExperimentalSessionContentSearchResponses[keyof ExperimentalSessionContentSearchResponses]
+
+export type ExperimentalSessionContentSearchStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/search/status"
+}
+
+export type ExperimentalSessionContentSearchStatusErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalSessionContentSearchStatusError =
+  ExperimentalSessionContentSearchStatusErrors[keyof ExperimentalSessionContentSearchStatusErrors]
+
+export type ExperimentalSessionContentSearchStatusResponses = {
+  /**
+   * Session content search index status
+   */
+  200: {
+    enabled: boolean
+    state: "disabled" | "running" | "paused" | "complete"
+    indexed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    complete: boolean
+    known: boolean
+  }
+}
+
+export type ExperimentalSessionContentSearchStatusResponse =
+  ExperimentalSessionContentSearchStatusResponses[keyof ExperimentalSessionContentSearchStatusResponses]
+
+export type ExperimentalSessionContentSearchActionData = {
+  body?: {
+    action: "enable" | "pause" | "resume" | "rebuild" | "clear"
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/search/status"
+}
+
+export type ExperimentalSessionContentSearchActionErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExperimentalSessionContentSearchActionError =
+  ExperimentalSessionContentSearchActionErrors[keyof ExperimentalSessionContentSearchActionErrors]
+
+export type ExperimentalSessionContentSearchActionResponses = {
+  /**
+   * Updated session content search index status
+   */
+  200: {
+    enabled: boolean
+    state: "disabled" | "running" | "paused" | "complete"
+    indexed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    complete: boolean
+    known: boolean
+  }
+}
+
+export type ExperimentalSessionContentSearchActionResponse =
+  ExperimentalSessionContentSearchActionResponses[keyof ExperimentalSessionContentSearchActionResponses]
 
 export type ExperimentalResourceListData = {
   body?: never
@@ -7351,6 +7430,121 @@ export type SessionPromptAsyncResponses = {
 }
 
 export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof SessionPromptAsyncResponses]
+
+export type SessionAdvisorInterventionStartData = {
+  body?: {
+    callID: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/advisor-intervention/start"
+}
+
+export type SessionAdvisorInterventionStartErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionAdvisorInterventionStartError =
+  SessionAdvisorInterventionStartErrors[keyof SessionAdvisorInterventionStartErrors]
+
+export type SessionAdvisorInterventionStartResponses = {
+  /**
+   * Advisor intervention started
+   */
+  200: boolean
+}
+
+export type SessionAdvisorInterventionStartResponse =
+  SessionAdvisorInterventionStartResponses[keyof SessionAdvisorInterventionStartResponses]
+
+export type SessionAdvisorInterventionMessageData = {
+  body?: {
+    callID: string
+    message: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/advisor-intervention/message"
+}
+
+export type SessionAdvisorInterventionMessageErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionAdvisorInterventionMessageError =
+  SessionAdvisorInterventionMessageErrors[keyof SessionAdvisorInterventionMessageErrors]
+
+export type SessionAdvisorInterventionMessageResponses = {
+  /**
+   * Advisor message accepted
+   */
+  200: boolean
+}
+
+export type SessionAdvisorInterventionMessageResponse =
+  SessionAdvisorInterventionMessageResponses[keyof SessionAdvisorInterventionMessageResponses]
+
+export type SessionAdvisorInterventionFinishData = {
+  body?: {
+    callID: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/advisor-intervention/finish"
+}
+
+export type SessionAdvisorInterventionFinishErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionAdvisorInterventionFinishError =
+  SessionAdvisorInterventionFinishErrors[keyof SessionAdvisorInterventionFinishErrors]
+
+export type SessionAdvisorInterventionFinishResponses = {
+  /**
+   * Advisor intervention finished
+   */
+  200: boolean
+}
+
+export type SessionAdvisorInterventionFinishResponse =
+  SessionAdvisorInterventionFinishResponses[keyof SessionAdvisorInterventionFinishResponses]
 
 export type SessionCommandData = {
   body?: {

@@ -44,8 +44,12 @@ import type {
   ExperimentalConsoleSwitchOrgResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
+  ExperimentalSessionContentSearchActionErrors,
+  ExperimentalSessionContentSearchActionResponses,
   ExperimentalSessionContentSearchErrors,
   ExperimentalSessionContentSearchResponses,
+  ExperimentalSessionContentSearchStatusErrors,
+  ExperimentalSessionContentSearchStatusResponses,
   ExperimentalSessionListErrors,
   ExperimentalSessionListResponses,
   ExperimentalWorkspaceAdapterListErrors,
@@ -188,6 +192,12 @@ import type {
   ScheduledTaskUpdateResponses,
   SessionAbortErrors,
   SessionAbortResponses,
+  SessionAdvisorInterventionFinishErrors,
+  SessionAdvisorInterventionFinishResponses,
+  SessionAdvisorInterventionMessageErrors,
+  SessionAdvisorInterventionMessageResponses,
+  SessionAdvisorInterventionStartErrors,
+  SessionAdvisorInterventionStartResponses,
   SessionChildrenErrors,
   SessionChildrenResponses,
   SessionCommandErrors,
@@ -1133,6 +1143,77 @@ export class Session extends HeyApiClient {
       url: "/experimental/session/search",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Get session content search index status
+   */
+  public contentSearchStatus<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      ExperimentalSessionContentSearchStatusResponses,
+      ExperimentalSessionContentSearchStatusErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/search/status",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Manage session content search index
+   */
+  public contentSearchAction<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      action?: "enable" | "pause" | "resume" | "rebuild" | "clear"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "action" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalSessionContentSearchActionResponses,
+      ExperimentalSessionContentSearchActionErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/search/status",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 }
@@ -4166,6 +4247,137 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionPromptAsyncResponses, SessionPromptAsyncErrors, ThrowOnError>({
       url: "/session/{sessionID}/prompt_async",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Start advisor intervention
+   *
+   * Keep an active Codex or Claude consultation open for user interaction.
+   */
+  public advisorInterventionStart<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      callID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "callID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionAdvisorInterventionStartResponses,
+      SessionAdvisorInterventionStartErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/advisor-intervention/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Send advisor intervention message
+   *
+   * Send a user message to an intervened Codex or Claude consultation.
+   */
+  public advisorInterventionMessage<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      callID?: string
+      message?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "callID" },
+            { in: "body", key: "message" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionAdvisorInterventionMessageResponses,
+      SessionAdvisorInterventionMessageErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/advisor-intervention/message",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Finish advisor intervention
+   *
+   * Return an intervened consultation to the OpenCode agent after its current turn completes.
+   */
+  public advisorInterventionFinish<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      callID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "callID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionAdvisorInterventionFinishResponses,
+      SessionAdvisorInterventionFinishErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/advisor-intervention/finish",
       ...options,
       ...params,
       headers: {

@@ -225,7 +225,7 @@ describe("step-finish token propagation via Bus event", () => {
 })
 
 describe("session content search index", () => {
-  it.instance("keeps visible text parts synchronized with the FTS index", () =>
+  it.instance("only indexes visible text parts after the index is enabled", () =>
     Effect.gen(function* () {
       const session = yield* SessionNs.Service
       const info = yield* session.create({})
@@ -244,7 +244,7 @@ describe("session content search index", () => {
         messageID: message.id,
         sessionID: info.id,
         type: "text",
-        text: "distinctive searchable phrase",
+        text: "disabled searchable phrase",
       })
 
       const count = () =>
@@ -256,13 +256,25 @@ describe("session content search index", () => {
               .where(sql`session_content_fts MATCH 'distinctive'`)
               .get()?.count,
         )
+      expect(count()).toBe(0)
+      expect(SessionContentSearch.search({ query: "disabled" }).results).toEqual([])
+
+      Database.transaction((db) => SessionContentSearch.enable(db))
+      const indexedPartID = PartID.ascending()
+      yield* session.updatePart({
+        id: indexedPartID,
+        messageID: message.id,
+        sessionID: info.id,
+        type: "text",
+        text: "distinctive searchable phrase",
+      })
       expect(count()).toBe(1)
       expect(SessionContentSearch.search({ query: "distinctive" }).results).toMatchObject([
-        { sessionID: info.id, messageID: message.id, partID },
+        { sessionID: info.id, messageID: message.id, partID: indexedPartID },
       ])
 
       yield* session.updatePart({
-        id: partID,
+        id: indexedPartID,
         messageID: message.id,
         sessionID: info.id,
         type: "text",
@@ -324,9 +336,7 @@ describe("session content search index", () => {
       expect(SessionContentSearch.search({ query: "needle OR", directory: "/archived" }).results).toEqual([])
       expect(
         SessionContentSearch.search({ query: "needle OR", directory: "/archived", archived: true }).results,
-      ).toMatchObject([
-        { sessionID: archived.id },
-      ])
+      ).toMatchObject([{ sessionID: archived.id }])
     }),
   )
 })

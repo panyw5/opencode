@@ -14,6 +14,7 @@ import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
 import { BackgroundShell } from "@/background/shell"
+import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
 import { Command } from "@/command"
@@ -129,7 +130,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     backgroundShellHandlers,
     configHandlers,
-    experimentalHandlers,
+    experimentalHandlers.pipe(Layer.provide(BackgroundJob.defaultLayer.pipe(Layer.provide(InstanceLayer.layer)))),
     fileHandlers,
     instanceHandlers,
     mcpHandlers,

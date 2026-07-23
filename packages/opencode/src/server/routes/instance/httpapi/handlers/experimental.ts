@@ -6,6 +6,8 @@ import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
 import { SessionContentSearch } from "@/session/content-search"
+import { BackgroundJob } from "@/background/job"
+import { Database } from "@/storage/db"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
@@ -13,7 +15,17 @@ import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ConsoleSwitchPayload, SessionContentSearchQuery, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import {
+  ConsoleSwitchPayload,
+  SessionContentSearchAction,
+  SessionContentSearchQuery,
+  SessionListQuery,
+  ToolListQuery,
+  WorktreeApiError,
+} from "../groups/experimental"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "experimental.http" })
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -30,6 +42,16 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const project = yield* Project.Service
     const registry = yield* ToolRegistry.Service
     const worktreeSvc = yield* Worktree.Service
+    const background = yield* BackgroundJob.Service
+    log.info("session-content-search:background-job-service-ready")
+
+    const startContentBackfill = () =>
+      background.start({
+        id: "session-content-search-backfill",
+        type: "session-content-search",
+        title: "Session content index",
+        run: SessionContentSearch.backfill().pipe(Effect.as("complete")),
+      })
 
     const getConsole = Effect.fn("ExperimentalHttpApi.console")(function* () {
       const [state, groups] = yield* Effect.all(
@@ -151,15 +173,59 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const sessionContentSearch = Effect.fn("ExperimentalHttpApi.sessionContentSearch")(function* (ctx: {
       query: typeof SessionContentSearchQuery.Type
     }) {
-      return yield* Effect.sync(() =>
-        SessionContentSearch.search({
-          query: ctx.query.q,
-          directory: ctx.query.directory,
-          cursor: ctx.query.cursor,
-          limit: ctx.query.limit,
-          archived: ctx.query.archived,
+      const started = Date.now()
+      log.info("session-content-search:enter", {
+        queryLength: ctx.query.q.length,
+        hasDirectory: ctx.query.directory !== undefined,
+        archived: ctx.query.archived ?? false,
+        limit: ctx.query.limit,
+        hasCursor: ctx.query.cursor !== undefined,
+      })
+      return yield* Effect.sync(() => {
+        try {
+          const result = SessionContentSearch.search({
+            query: ctx.query.q,
+            directory: ctx.query.directory,
+            cursor: ctx.query.cursor,
+            limit: ctx.query.limit,
+            archived: ctx.query.archived,
+          })
+          log.info("session-content-search:return", {
+            resultCount: result.results.length,
+            durationMs: Date.now() - started,
+          })
+          return result
+        } catch (error) {
+          log.error("session-content-search:error", {
+            durationMs: Date.now() - started,
+            error: error instanceof Error ? error : String(error),
+          })
+          throw error
+        }
+      })
+    })
+
+    const sessionContentSearchStatus = Effect.fn("ExperimentalHttpApi.sessionContentSearchStatus")(function* () {
+      return yield* Effect.sync(() => Database.use(SessionContentSearch.progress))
+    })
+
+    const sessionContentSearchAction = Effect.fn("ExperimentalHttpApi.sessionContentSearchAction")(function* (ctx: {
+      payload: typeof SessionContentSearchAction.Type
+    }) {
+      const status = yield* Effect.sync(() =>
+        Database.transaction((db) => {
+          if (ctx.payload.action === "pause") return SessionContentSearch.pause(db)
+          if (ctx.payload.action === "rebuild") return SessionContentSearch.rebuild(db)
+          if (ctx.payload.action === "clear") return SessionContentSearch.clear(db)
+          return SessionContentSearch.enable(db)
         }),
       )
+      if (ctx.payload.action === "pause" || ctx.payload.action === "clear") {
+        yield* background.cancel("session-content-search-backfill")
+      } else if (status.enabled && !status.complete) {
+        yield* startContentBackfill()
+      }
+      return status
     })
 
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
@@ -178,6 +244,8 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("worktreeReset", worktreeReset)
       .handle("session", session)
       .handle("sessionContentSearch", sessionContentSearch)
+      .handle("sessionContentSearchStatus", sessionContentSearchStatus)
+      .handle("sessionContentSearchAction", sessionContentSearchAction)
       .handle("resource", resource)
   }),
 )
