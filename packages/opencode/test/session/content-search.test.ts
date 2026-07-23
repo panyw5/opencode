@@ -90,6 +90,7 @@ describe("session content search index management", () => {
           type: "text",
           text: "live text",
         })
+        // Live inserts bump indexed; total is the baseline from enable/rebuild.
         expect(Database.use((db) => SessionContentSearch.progress(db))).toMatchObject({
           enabled: true,
           complete: true,
@@ -119,7 +120,13 @@ describe("session content search index management", () => {
           text: "beta",
         })
 
-        Database.transaction((db) => SessionContentSearch.rebuild(db))
+        const rebuilt = Database.transaction((db) => SessionContentSearch.rebuild(db))
+        expect(rebuilt).toMatchObject({
+          enabled: true,
+          state: "running",
+          indexed: 0,
+        })
+        expect(rebuilt.total).toBeGreaterThanOrEqual(2)
         expect(Database.use((db) => SessionContentSearch.pause(db))).toMatchObject({ enabled: true, state: "paused" })
         yield* SessionContentSearch.backfill()
         expect(Database.use((db) => SessionContentSearch.progress(db))).toMatchObject({
@@ -137,15 +144,14 @@ describe("session content search index management", () => {
           state: "complete",
           known: true,
         })
-        expect(ready.total).toBeGreaterThan(0)
         expect(ready.indexed).toBe(ready.total)
-        const rebuilt = Database.use((db) => SessionContentSearch.rebuild(db))
-        expect(rebuilt).toMatchObject({
+        expect(ready.total).toBe(rebuilt.total)
+        expect(Database.use((db) => SessionContentSearch.rebuild(db))).toMatchObject({
           enabled: true,
           state: "running",
           indexed: 0,
+          total: ready.total,
         })
-        expect(rebuilt.total).toBe(ready.total)
         expect(Database.use((db) => SessionContentSearch.clear(db))).toMatchObject({
           enabled: false,
           state: "disabled",

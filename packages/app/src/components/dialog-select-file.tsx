@@ -29,6 +29,8 @@ type Entry = {
   type: EntryType
   title: string
   description?: string
+  snippet?: string
+  project?: string
   keywords?: string
   keybind?: string
   category: string
@@ -347,16 +349,22 @@ function createContentSearchEntries(props: {
                   }
                 : undefined,
             )
-            const next = (data?.results ?? []).map((item) => ({
-              id: `content:${item.directory}:${item.partID}`,
-              type: "content" as const,
-              title: item.sessionTitle || props.language.t("command.session.new"),
-              description: `${item.directory} · ${item.snippet}`,
-              category: data?.index.complete ? "Content matches" : "Content matches (indexing)",
-              directory: item.directory,
-              sessionID: item.sessionID,
-              updated: typeof item.time === "number" ? item.time : undefined,
-            }))
+            const next = (data?.results ?? []).map((item) => {
+              const directory = item.directory
+              const project = directory ? getFilename(directory) || directory : ""
+              return {
+                id: `content:${item.directory}:${item.partID}`,
+                type: "content" as const,
+                title: item.sessionTitle || props.language.t("command.session.new"),
+                project,
+                snippet: item.snippet,
+                description: item.snippet,
+                category: data?.index.complete ? "Content matches" : "Content matches (indexing)",
+                directory: item.directory,
+                sessionID: item.sessionID,
+                updated: typeof item.time === "number" ? item.time : undefined,
+              }
+            })
             setResults(next)
             resolve(next)
           })
@@ -682,8 +690,8 @@ export function DialogSessionContentSearch() {
   }
 
   return (
-    <Dialog class="pt-4 !max-h-[480px]" transition>
-      <div data-component="list">
+    <Dialog size="large" class="pt-4" transition>
+      <div data-component="list" class="w-full h-full min-h-0 flex flex-col">
         <div data-slot="list-search-wrapper">
           <div data-slot="list-search">
             <div data-slot="list-search-container">
@@ -704,7 +712,7 @@ export function DialogSessionContentSearch() {
             </div>
           </div>
         </div>
-        <div ref={viewport} data-slot="list-viewport">
+        <div ref={viewport} data-slot="list-viewport" class="min-h-0 flex-1 overflow-y-auto">
           <Show when={indexProgress()}>{indexProgress()}</Show>
           <Show when={indexDisabled()}>
             <div data-slot="list-empty-state">
@@ -730,27 +738,34 @@ export function DialogSessionContentSearch() {
                   data-key={item.id}
                   data-active={index() === active()}
                   type="button"
+                  class="!items-start !py-2.5"
                   onClick={() => handleSelect(item)}
                   onMouseMove={(event) => {
                     if (event.movementX || event.movementY) setActive(index())
                   }}
                   onKeyDown={handleKeyDown}
                 >
-                  <div class="w-full flex items-center justify-between rounded-md pl-1">
-                    <div class="flex items-center gap-x-3 grow min-w-0">
-                      <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak" />
+                  <div class="w-full flex items-start gap-x-3 rounded-md pl-1 min-w-0">
+                    <Icon name="bubble-5" size="small" class="shrink-0 text-icon-weak mt-0.5" />
+                    <div class="flex flex-col gap-0.5 grow min-w-0">
                       <div class="flex items-center gap-2 min-w-0">
-                        <span class="text-14-regular text-text-strong truncate">{item.title}</span>
-                        <Show when={item.description}>
-                          <span class="text-14-regular text-text-weak truncate">{item.description}</span>
+                        <Show when={item.project}>
+                          <span class="text-12-regular text-text-weak shrink-0 max-w-[28%] truncate">
+                            {item.project}
+                          </span>
+                          <span class="text-12-regular text-text-weak shrink-0">·</span>
+                        </Show>
+                        <span class="text-14-medium text-text-strong truncate min-w-0">{item.title}</span>
+                        <Show when={item.updated}>
+                          <span class="text-12-regular text-text-weak whitespace-nowrap ml-auto shrink-0">
+                            {getRelativeTime(new Date(item.updated!).toISOString(), language.t)}
+                          </span>
                         </Show>
                       </div>
+                      <Show when={item.snippet}>
+                        <span class="text-13-regular text-text-weak truncate text-left">{item.snippet}</span>
+                      </Show>
                     </div>
-                    <Show when={item.updated}>
-                      <span class="text-12-regular text-text-weak whitespace-nowrap ml-2">
-                        {getRelativeTime(new Date(item.updated!).toISOString(), language.t)}
-                      </span>
-                    </Show>
                   </div>
                 </button>
               )}

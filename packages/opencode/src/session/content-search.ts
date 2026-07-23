@@ -75,6 +75,7 @@ function isSearchablePart() {
     AND trim(COALESCE(json_extract(${PartTable.data}, '$.text'), '')) != ''`
 }
 
+// Expensive full-table JSON scan — only call from enable/rebuild control paths.
 function countSearchableParts(db: TxOrDb) {
   return (
     db
@@ -85,10 +86,6 @@ function countSearchableParts(db: TxOrDb) {
   )
 }
 
-function countIndexedParts(db: TxOrDb) {
-  return (db.all(sql`SELECT count(*) AS count FROM session_content_fts`)[0] as { count: number } | undefined)?.count ?? 0
-}
-
 function readProgressRow(db: TxOrDb) {
   return db
     .select()
@@ -97,19 +94,17 @@ function readProgressRow(db: TxOrDb) {
     .get()
 }
 
-function toStatus(db: TxOrDb, row?: ProgressRow): IndexProgress {
+function toStatus(row?: ProgressRow): IndexProgress {
   if (!row || row.enabled !== 1) {
     return { enabled: false, state: "disabled", indexed: 0, total: 0, complete: false, known: false, generation: 0 }
   }
-
   const state = IndexState.includes(row.state as IndexState) ? (row.state as IndexState) : "disabled"
   const complete = row.complete === 1 || state === "complete"
   return {
     enabled: true,
     state: complete ? "complete" : state,
-    // Live counts: the durable table only tracks control plane state (cursor/generation).
-    indexed: countIndexedParts(db),
-    total: countSearchableParts(db),
+    indexed: row.indexed,
+    total: row.total,
     complete,
     known: true,
     generation: row.generation,
@@ -117,33 +112,70 @@ function toStatus(db: TxOrDb, row?: ProgressRow): IndexProgress {
   }
 }
 
+// Cheap single-row read. Never runs full-table counts.
 export function progress(db: TxOrDb): IndexProgress {
-  return toStatus(db, readProgressRow(db))
+  return toStatus(readProgressRow(db))
 }
 
 export function upsert(db: TxOrDb, part: MessageV2.Part) {
+  const existed =
+    (db.all(sql`SELECT 1 AS ok FROM session_content_fts WHERE part_id = ${part.id} LIMIT 1`)[0] as
+      | { ok: number }
+      | undefined) !== undefined
   db.run(sql`DELETE FROM session_content_fts WHERE part_id = ${part.id}`)
   const row = readProgressRow(db)
   if (!row || row.enabled !== 1) return
   const text = searchableText(part)
-  if (!text) return
+  if (!text) {
+    if (existed) {
+      db.run(sql`
+        UPDATE session_content_search_progress
+        SET indexed = max(indexed - 1, 0)
+        WHERE id = 1 AND enabled = 1
+      `)
+    }
+    return
+  }
   db.run(sql`
     INSERT INTO session_content_fts (part_id, message_id, session_id, text)
     VALUES (${part.id}, ${part.messageID}, ${part.sessionID}, ${text})
   `)
+  if (!existed) {
+    db.run(sql`
+      UPDATE session_content_search_progress
+      SET indexed = indexed + 1
+      WHERE id = 1 AND enabled = 1
+    `)
+  }
 }
 
 export function remove(db: TxOrDb, partID: PartID) {
+  const existed =
+    (db.all(sql`SELECT 1 AS ok FROM session_content_fts WHERE part_id = ${partID} LIMIT 1`)[0] as
+      | { ok: number }
+      | undefined) !== undefined
   db.run(sql`DELETE FROM session_content_fts WHERE part_id = ${partID}`)
+  if (!existed) return
+  db.run(sql`
+    UPDATE session_content_search_progress
+    SET indexed = max(indexed - 1, 0)
+    WHERE id = 1 AND enabled = 1
+  `)
 }
 
 export function enable(db: TxOrDb) {
+  const current = readProgressRow(db)
+  const total = current && current.total > 0 ? current.total : countSearchableParts(db)
   db.run(sql`
     INSERT INTO session_content_search_progress (id, enabled, state, indexed, total, complete, generation)
-    VALUES (1, 1, 'running', 0, 0, 0, 0)
+    VALUES (1, 1, 'running', 0, ${total}, 0, 0)
     ON CONFLICT(id) DO UPDATE SET
       enabled = 1,
-      state = CASE WHEN session_content_search_progress.complete = 1 THEN 'complete' ELSE 'running' END
+      state = CASE WHEN session_content_search_progress.complete = 1 THEN 'complete' ELSE 'running' END,
+      total = CASE
+        WHEN session_content_search_progress.total > 0 THEN session_content_search_progress.total
+        ELSE excluded.total
+      END
   `)
   return progress(db)
 }
@@ -154,15 +186,16 @@ export function pause(db: TxOrDb) {
 }
 
 export function rebuild(db: TxOrDb) {
+  const total = countSearchableParts(db)
   db.run(sql`DELETE FROM session_content_fts`)
   db.run(sql`
     INSERT INTO session_content_search_progress (id, enabled, state, indexed, total, cursor, complete, generation)
-    VALUES (1, 1, 'running', 0, 0, NULL, 0, 1)
+    VALUES (1, 1, 'running', 0, ${total}, NULL, 0, 1)
     ON CONFLICT(id) DO UPDATE SET
       enabled = 1,
       state = 'running',
       indexed = 0,
-      total = 0,
+      total = excluded.total,
       cursor = NULL,
       complete = 0,
       generation = generation + 1
@@ -196,6 +229,7 @@ export function writeBackfillBatch(db: TxOrDb, generation: number, parts: Backfi
   if (!active(row, generation)) return progress(db)
 
   for (const part of parts) {
+    // upsert maintains the durable indexed counter for new searchable rows.
     upsert(db, {
       ...part.data,
       id: part.id,
@@ -209,7 +243,7 @@ export function writeBackfillBatch(db: TxOrDb, generation: number, parts: Backfi
 
   db.run(sql`
     UPDATE session_content_search_progress
-    SET indexed = indexed + ${parts.length}, cursor = ${nextCursor}
+    SET cursor = ${nextCursor}
     WHERE id = 1 AND enabled = 1 AND state = 'running' AND complete = 0 AND generation = ${generation}
   `)
   return progress(db)
@@ -290,8 +324,20 @@ export const backfill = Effect.fn("SessionContentSearch.backfill")(function* () 
   }
 })
 
-export const clearSession = (db: TxOrDb, sessionID: string) =>
+export const clearSession = (db: TxOrDb, sessionID: string) => {
+  const removed =
+    (db.all(sql`SELECT count(*) AS count FROM session_content_fts WHERE session_id = ${sessionID}`)[0] as
+      | { count: number }
+      | undefined)?.count ?? 0
   db.run(sql`DELETE FROM session_content_fts WHERE session_id = ${sessionID}`)
+  if (removed > 0) {
+    db.run(sql`
+      UPDATE session_content_search_progress
+      SET indexed = max(indexed - ${removed}, 0)
+      WHERE id = 1 AND enabled = 1
+    `)
+  }
+}
 
 export function search(input: {
   query: string
@@ -303,22 +349,14 @@ export function search(input: {
   const started = Date.now()
   const query = matchQuery(input.query)
   const limit = Math.min(Math.max(input.limit ?? defaultLimit, 1), maxLimit)
-  log.info("session-content-search:enter", {
-    queryLength: input.query.length,
-    hasDirectory: input.directory !== undefined,
-    archived: input.archived ?? false,
-    limit,
-    hasCursor: input.cursor !== undefined,
-  })
   try {
+    // Single-row progress read only — never recompute totals on the hot path.
     const status = Database.use(progress)
     if (!query || !status.enabled) {
-      log.info("session-content-search:return", { resultCount: 0, durationMs: Date.now() - started })
       return { results: [], index: status }
     }
 
     const ftsStarted = Date.now()
-    log.info("session-content-search:fts-start", { queryLength: input.query.length, limit })
     const results = Database.use(
       (db) =>
         db.all(sql<SearchResult>`
