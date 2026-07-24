@@ -16,6 +16,7 @@ import { Todo } from "@/session/todo"
 import { Skill } from "@/skill"
 import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
+import { BackgroundShell } from "@/background/shell"
 import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
 import { Provider } from "@/provider/provider"
@@ -55,7 +56,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Skill.defaultLayer),
       Layer.provide(Agent.defaultLayer),
       Layer.provide(Session.defaultLayer),
-      Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer)),
+      Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundShell.defaultLayer)),
       Layer.provide(Provider.defaultLayer),
       Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
       Layer.provide(Reference.defaultLayer),
@@ -139,6 +140,15 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).not.toContain("task_status")
+    }),
+  )
+
+  it.instance("shows task_transcript for inspecting child task sessions", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("task_transcript")
     }),
   )
 

@@ -1,0 +1,5 @@
+Read a paginated transcript for a task launched from the current session.
+
+Use this when a subagent is stuck or failed and you need its recent messages or tool activity before deciding whether to resume or cancel it. The task must be a child task of the current session.
+
+The first call returns the most recent messages. Pass `next_cursor` from the response to retrieve older messages. By default, text and tool activity are included; reasoning is only included when requested explicitly.

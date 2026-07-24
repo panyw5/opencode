@@ -353,6 +353,45 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
 }
 `;
 
+exports[`tool parameters JSON Schema (wire shape) task_transcript 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "cursor": {
+      "description": "Opaque next_cursor returned by a previous call, to read older messages",
+      "type": "string",
+    },
+    "include": {
+      "description": "Content to include; defaults to text and tool. Reasoning is excluded unless explicitly requested.",
+      "items": {
+        "enum": [
+          "text",
+          "tool",
+          "reasoning",
+        ],
+        "type": "string",
+      },
+      "type": "array",
+    },
+    "limit": {
+      "description": "Messages to return (default 20, maximum 50)",
+      "exclusiveMinimum": 0,
+      "maximum": 50,
+      "type": "integer",
+    },
+    "task_id": {
+      "description": "The task_id returned by the task tool",
+      "pattern": "^ses",
+      "type": "string",
+    },
+  },
+  "required": [
+    "task_id",
+  ],
+  "type": "object",
+}
+`;
+
 exports[`tool parameters JSON Schema (wire shape) todo 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",

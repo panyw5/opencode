@@ -21,6 +21,7 @@ import { Parameters as Read } from "../../src/tool/read"
 import { Parameters as Shell } from "../../src/tool/shell"
 import { Parameters as Skill } from "../../src/tool/skill"
 import { Parameters as Task } from "../../src/tool/task"
+import { Parameters as TaskTranscript } from "../../src/tool/task_transcript"
 import { Parameters as Todo } from "../../src/tool/todo"
 import { Parameters as WebFetch } from "../../src/tool/webfetch"
 import { Parameters as WebSearch } from "../../src/tool/websearch"
@@ -51,6 +52,7 @@ describe("tool parameters", () => {
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
     test("skill", () => expect(toJsonSchema(Skill)).toMatchSnapshot())
     test("task", () => expect(toJsonSchema(Task)).toMatchSnapshot())
+    test("task_transcript", () => expect(toJsonSchema(TaskTranscript)).toMatchSnapshot())
     test("todo", () => expect(toJsonSchema(Todo)).toMatchSnapshot())
     test("webfetch", () => expect(toJsonSchema(WebFetch)).toMatchSnapshot())
     test("websearch", () => expect(toJsonSchema(WebSearch)).toMatchSnapshot())
@@ -247,6 +249,18 @@ describe("tool parameters", () => {
     })
     test("rejects missing prompt", () => {
       expect(accepts(Task, { description: "d", subagent_type: "general" })).toBe(false)
+    })
+  })
+
+  describe("task_transcript", () => {
+    test("accepts task_id with optional pagination and content filters", () => {
+      const parsed = parse(TaskTranscript, { task_id: "ses_123", cursor: "opaque", limit: 10, include: ["tool"] })
+      expect(parsed.cursor).toBe("opaque")
+      expect(parsed.limit).toBe(10)
+      expect(parsed.include).toEqual(["tool"])
+    })
+    test("rejects limits over 50", () => {
+      expect(accepts(TaskTranscript, { task_id: "ses_123", limit: 51 })).toBe(false)
     })
   })
 
