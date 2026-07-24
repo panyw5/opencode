@@ -182,19 +182,33 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
     return true
   }
 
-  if (type === "turn.completed" && e.usage && typeof e.usage === "object") {
-    const u = e.usage as Record<string, unknown>
-    state.usage = {
-      input_tokens: num(u.input_tokens),
-      cached_input_tokens: num(u.cached_input_tokens),
-      output_tokens: num(u.output_tokens),
-      reasoning_output_tokens: num(u.reasoning_output_tokens),
+  if (type === "turn.completed") {
+    if (e.usage && typeof e.usage === "object") {
+      const u = e.usage as Record<string, unknown>
+      state.usage = {
+        input_tokens: num(u.input_tokens),
+        cached_input_tokens: num(u.cached_input_tokens),
+        output_tokens: num(u.output_tokens),
+        reasoning_output_tokens: num(u.reasoning_output_tokens),
+      }
+    }
+    const text = completedTurnText(e)
+    if (text && !state.agentMessages.includes(text)) {
+      state.agentMessages.push(text)
+      state.preview = text
+      upsertTranscript(state, {
+        id: `turn-message:${state.transcript.length}`,
+        kind: "message",
+        title: "Assistant",
+        text: clip(text, MAX_TRANSCRIPT_TEXT),
+        status: "completed",
+      })
     }
     upsertTranscript(state, {
       id: `turn-complete:${state.transcript.length}`,
       kind: "status",
       title: "Turn completed",
-      text: `in=${state.usage.input_tokens} out=${state.usage.output_tokens}`,
+      text: state.usage ? `in=${state.usage.input_tokens} out=${state.usage.output_tokens}` : undefined,
     })
     return true
   }
@@ -457,8 +471,6 @@ export const CodexConsultTool = Tool.define(
               })
             : undefined
 
-          yield* Effect.addFinalizer(() => Effect.sync(() => intervention?.close()))
-
           yield* publishMetadata(true)
 
           log.info("starting codex consult", {
@@ -483,24 +495,28 @@ export const CodexConsultTool = Tool.define(
                 let stderr = ""
                 let lineBuffer = ""
 
-                const stdoutFiber = yield* Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
-                  Effect.gen(function* () {
-                    stdout += chunk
-                    lineBuffer += chunk
-                    const parts = lineBuffer.split(/\r?\n/)
-                    lineBuffer = parts.pop() ?? ""
-                    let dirty = false
-                    for (const part of parts) {
-                      if (applyCodexJsonlLine(live, part)) dirty = true
-                    }
-                    if (dirty) yield* publishMetadata()
-                  }),
-                ).pipe(Effect.forkDetach({ startImmediately: true }))
-                const stderrFiber = yield* Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) =>
-                  Effect.sync(() => {
-                    stderr += chunk
-                  }),
-                ).pipe(Effect.forkDetach({ startImmediately: true }))
+                const stdoutFiber = yield* Effect.forkScoped(
+                  Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
+                    Effect.gen(function* () {
+                      stdout += chunk
+                      lineBuffer += chunk
+                      const parts = lineBuffer.split(/\r?\n/)
+                      lineBuffer = parts.pop() ?? ""
+                      let dirty = false
+                      for (const part of parts) {
+                        if (applyCodexJsonlLine(live, part)) dirty = true
+                      }
+                      if (dirty) yield* publishMetadata()
+                    }),
+                  ),
+                )
+                const stderrFiber = yield* Effect.forkScoped(
+                  Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) =>
+                    Effect.sync(() => {
+                      stderr += chunk
+                    }),
+                  ),
+                )
 
                 const abort = Effect.callback<void>((resume) => {
                   if (ctx.abort.aborted) return resume(Effect.void)
@@ -524,13 +540,13 @@ export const CodexConsultTool = Tool.define(
                   yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
                 }
 
-                // A process exit can arrive just before its final JSONL buffer is consumed.
-                // Join readers before parsing so the final agent_message is never dropped.
+                // Process exit can win the race before stdout's final JSONL chunk is consumed.
                 yield* Fiber.join(stdoutFiber)
                 yield* Fiber.join(stderrFiber)
 
-                // Flush trailing partial line if any complete JSON remains.
+                // Flush a final unterminated JSONL event, then make it visible immediately.
                 if (lineBuffer.trim()) applyCodexJsonlLine(live, lineBuffer)
+                yield* publishMetadata(true)
 
                 return { exit, stdout, stderr }
               }),
@@ -703,4 +719,21 @@ function clip(text: string, max: number): string {
 
 function num(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0
+}
+
+/** Some Codex CLI versions attach the final assistant text to turn.completed. */
+function completedTurnText(event: Record<string, unknown>): string | undefined {
+  const keys = new Set(["text", "output", "result", "message", "final_response", "finalResponse", "last_agent_message"])
+  const visit = (value: unknown, depth: number): string | undefined => {
+    if (!value || typeof value !== "object" || depth === 0) return undefined
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (keys.has(key) && typeof nested === "string" && nested.trim()) return nested.trim()
+      if (nested && typeof nested === "object") {
+        const text = visit(nested, depth - 1)
+        if (text) return text
+      }
+    }
+    return undefined
+  }
+  return visit(event, 3)
 }

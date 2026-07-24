@@ -4,6 +4,7 @@ import {
   createMemo,
   createSignal,
   For,
+  Index,
   Match,
   on,
   Show,
@@ -71,6 +72,7 @@ import {
 } from "./message-part-order"
 import { activeStreamingAssistantMessageID } from "./message-part-stream"
 import { isTaskResume, resolveTaskChildSessionId, taskSessionBadge, taskSessionIndex } from "./message-task-session"
+import { createAutoScroll } from "../hooks"
 export type { PartGroup } from "./message-part-order"
 
 type ProviderSummary = {
@@ -3345,6 +3347,14 @@ function codexAssistantText(metadata: Record<string, any>, output?: string): str
   return ""
 }
 
+function completedAdvisorText(item: CodexTranscriptItem): string | undefined {
+  if (item.kind !== "status" || item.title !== "Turn completed" || !item.text?.trim()) return undefined
+  // Normal completion state only contains a compact token summary. Older CLI
+  // streams persisted their final reply in this status item instead.
+  if (/^in=\d+\s+out=\d+(?:\s|$)/.test(item.text.trim())) return undefined
+  return item.text.trim()
+}
+
 function codexChatMessages(
   prompt: string,
   metadata: Record<string, any>,
@@ -3385,6 +3395,18 @@ function codexChatMessages(
         text: item.text.trim(),
         status: item.status,
         streaming: running && item.status === "running",
+      })
+      continue
+    }
+    const completedText = completedAdvisorText(item)
+    if (completedText) {
+      messages.push({
+        id: item.id,
+        role: "assistant",
+        kind: "message",
+        label: labels.assistant,
+        text: completedText,
+        status: "completed",
       })
       continue
     }
@@ -3480,7 +3502,6 @@ function CodexSessionDialog(props: {
 }) {
   const i18n = useI18n()
   const data = useData()
-  let bodyRef: HTMLDivElement | undefined
   const [interventionActive, setInterventionActive] = createSignal(false)
   const [interventionDraft, setInterventionDraft] = createSignal("")
   const [interventionQueued, setInterventionQueued] = createSignal(false)
@@ -3497,6 +3518,10 @@ function CodexSessionDialog(props: {
   const canIntervene = () =>
     !!data.advisorIntervention && !!props.sessionID?.() && !!intervention()?.available && !!intervention()?.callID
   const activeIntervention = () => interventionActive() || intervention()?.active === true
+  const autoScroll = createAutoScroll({
+    working: props.running,
+    overflowAnchor: "dynamic",
+  })
   const advisorBusy = () =>
     intervention()?.busy === true || intervention()?.queued === true || interventionQueued() || interventionRequesting()
   const messages = () => {
@@ -3571,16 +3596,6 @@ function CodexSessionDialog(props: {
     if (!current?.queued || current.waitingForInput || current.busy) setInterventionQueued(false)
   })
 
-  createEffect(() => {
-    // Keep the latest assistant output in view while streaming.
-    messages()
-    props.running()
-    queueMicrotask(() => {
-      if (!bodyRef) return
-      bodyRef.scrollTop = bodyRef.scrollHeight
-    })
-  })
-
   return (
     <Dialog
       size="x-large"
@@ -3609,55 +3624,63 @@ function CodexSessionDialog(props: {
             </span>
           </Show>
         </div>
-        <div data-slot="codex-session-body" data-scrollable ref={bodyRef}>
-          <Show
-            when={messages().length > 0}
-            fallback={<div data-slot="codex-session-empty">{props.running() ? emptyRunningLabel() : emptyLabel()}</div>}
-          >
-            <For each={messages()}>
-              {(item) => (
-                <div
-                  data-slot="codex-chat-row"
-                  data-role={item.role}
-                  data-kind={item.kind}
-                  data-streaming={item.streaming ? "true" : undefined}
-                >
-                  <div data-slot="codex-chat-avatar" data-role={item.role}>
-                    {item.role === "user" ? "A" : item.role === "assistant" ? assistantAvatar() : "·"}
-                  </div>
-                  <div data-slot="codex-chat-bubble" data-role={item.role} data-kind={item.kind}>
-                    <div data-slot="codex-chat-label">
-                      <span>{item.label}</span>
-                      <Show when={item.streaming}>
-                        <span data-slot="codex-chat-streaming">{streamingLabel()}</span>
-                      </Show>
-                      <Show when={item.status && !item.streaming}>
-                        <span data-slot="codex-chat-status">{item.status}</span>
-                      </Show>
+        <div
+          data-slot="codex-session-body"
+          data-scrollable
+          ref={autoScroll.scrollRef}
+          onScroll={autoScroll.handleScroll}
+          onClick={autoScroll.handleInteraction}
+        >
+          <div data-slot="codex-session-content" ref={autoScroll.contentRef}>
+            <Show
+              when={messages().length > 0}
+              fallback={<div data-slot="codex-session-empty">{props.running() ? emptyRunningLabel() : emptyLabel()}</div>}
+            >
+              <Index each={messages()}>
+                {(item) => (
+                  <div
+                    data-slot="codex-chat-row"
+                    data-role={item().role}
+                    data-kind={item().kind}
+                    data-streaming={item().streaming ? "true" : undefined}
+                  >
+                    <div data-slot="codex-chat-avatar" data-role={item().role}>
+                      {item().role === "user" ? "A" : item().role === "assistant" ? assistantAvatar() : "·"}
                     </div>
-                    <Show
-                      when={item.text.trim()}
-                      fallback={
-                        <div data-slot="codex-chat-waiting">
-                          <Spinner />
-                          <span>{emptyRunningLabel()}</span>
-                        </div>
-                      }
-                    >
-                      <div data-slot="codex-chat-text" data-role={item.role}>
-                        <Show
-                          when={item.role === "assistant"}
-                          fallback={<pre data-slot="codex-chat-pre">{item.text}</pre>}
-                        >
-                          <Markdown text={item.text} cacheKey={`consult-${item.id}`} />
+                    <div data-slot="codex-chat-bubble" data-role={item().role} data-kind={item().kind}>
+                      <div data-slot="codex-chat-label">
+                        <span>{item().label}</span>
+                        <Show when={item().streaming}>
+                          <span data-slot="codex-chat-streaming">{streamingLabel()}</span>
+                        </Show>
+                        <Show when={item().status && !item().streaming}>
+                          <span data-slot="codex-chat-status">{item().status}</span>
                         </Show>
                       </div>
-                    </Show>
+                      <Show
+                        when={item().text.trim()}
+                        fallback={
+                          <div data-slot="codex-chat-waiting">
+                            <Spinner />
+                            <span>{emptyRunningLabel()}</span>
+                          </div>
+                        }
+                      >
+                        <div data-slot="codex-chat-text" data-role={item().role}>
+                          <Show
+                            when={item().role === "assistant"}
+                            fallback={<pre data-slot="codex-chat-pre">{item().text}</pre>}
+                          >
+                            <Markdown text={item().text} cacheKey={`consult-${item().id}`} />
+                          </Show>
+                        </div>
+                      </Show>
+                    </div>
                   </div>
-                </div>
-              )}
-            </For>
-          </Show>
+                )}
+              </Index>
+            </Show>
+          </div>
         </div>
         <Show when={canIntervene()}>
           <div data-slot="codex-intervention">
@@ -3677,29 +3700,34 @@ function CodexSessionDialog(props: {
             >
               <form data-slot="codex-intervention-form" onSubmit={submitIntervention}>
                 <TextField
+                  data-slot="codex-intervention-input"
                   multiline
                   value={interventionDraft()}
                   onChange={setInterventionDraft}
                   placeholder={i18n.t("ui.tool.advisor.intervention.placeholder")}
                   disabled={advisorBusy()}
                 />
-                <Button
-                  type="submit"
-                  size="small"
-                  variant="primary"
-                  disabled={!interventionDraft().trim() || advisorBusy() || !activeIntervention()}
-                >
-                  {i18n.t("ui.tool.advisor.intervention.send")}
-                </Button>
-                <Button
-                  type="button"
-                  size="small"
-                  variant="secondary"
-                  disabled={interventionRequesting()}
-                  onClick={() => void requestIntervention("finish")}
-                >
-                  {i18n.t("ui.tool.advisor.intervention.finish")}
-                </Button>
+                <div data-slot="codex-intervention-actions">
+                  <IconButton
+                    data-slot="codex-intervention-send"
+                    type="submit"
+                    icon="arrow-up-bold"
+                    size="large"
+                    variant="primary"
+                    aria-label={i18n.t("ui.tool.advisor.intervention.send")}
+                    disabled={!interventionDraft().trim() || advisorBusy() || !activeIntervention()}
+                  />
+                  <IconButton
+                    data-slot="codex-intervention-finish"
+                    type="button"
+                    icon="close"
+                    size="large"
+                    variant="secondary"
+                    aria-label={i18n.t("ui.tool.advisor.intervention.finish")}
+                    disabled={interventionRequesting()}
+                    onClick={() => void requestIntervention("finish")}
+                  />
+                </div>
               </form>
             </Show>
             <Show when={interventionError()}>

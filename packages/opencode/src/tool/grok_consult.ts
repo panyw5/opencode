@@ -151,6 +151,9 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
       text: clip(state.assistantText, MAX_TRANSCRIPT_TEXT),
       status: "running",
     })
+    // Grok can interleave more thinking/tool events after starting its reply.
+    // Keep the mutable reply at the end so the transcript remains readable.
+    moveTranscriptToEnd(state, "assistant:stream")
     return true
   }
 
@@ -170,6 +173,7 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
       text: clip(state.thinkingText, MAX_TRANSCRIPT_TEXT),
       status: "running",
     })
+    moveTranscriptToEnd(state, "assistant:stream")
     return true
   }
 
@@ -184,6 +188,7 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
       text: clip(stringify(item.input ?? item.data), MAX_TRANSCRIPT_TEXT),
       status: string(item.status) ?? "running",
     })
+    moveTranscriptToEnd(state, "assistant:stream")
     return true
   }
 
@@ -201,11 +206,11 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
     if (result && !state.assistantText) state.assistantText = result
     if (state.assistantText) state.preview = state.assistantText
     if (item.error === true) state.error = result ?? "Grok Build turn failed"
+    closeAssistant(state)
     upsertTranscript(state, {
       id: `result:${state.sessionId ?? state.transcript.length}`,
       kind: state.error ? "error" : "status",
       title: state.error ? "Turn failed" : "Turn completed",
-      text: state.assistantText ? clip(state.assistantText, MAX_TRANSCRIPT_TEXT) : undefined,
       status: state.error ? "error" : "completed",
     })
     return true
@@ -415,6 +420,18 @@ function upsertTranscript(state: GrokLiveState, item: GrokTranscriptItem) {
     state.transcript.push(item)
     if (state.transcript.length > MAX_TRANSCRIPT_ITEMS) state.transcript.splice(0, state.transcript.length - MAX_TRANSCRIPT_ITEMS)
   }
+}
+
+function moveTranscriptToEnd(state: GrokLiveState, id: string) {
+  const index = state.transcript.findIndex((entry) => entry.id === id)
+  if (index < 0 || index === state.transcript.length - 1) return
+  const [item] = state.transcript.splice(index, 1)
+  if (item) state.transcript.push(item)
+}
+
+function closeAssistant(state: GrokLiveState) {
+  const item = state.transcript.find((entry) => entry.id === "assistant:stream")
+  if (item?.status === "running") item.status = "completed"
 }
 
 function closeThinking(state: GrokLiveState) {

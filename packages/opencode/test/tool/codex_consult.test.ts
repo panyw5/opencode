@@ -115,6 +115,22 @@ describe("tool.codex_consult helpers", () => {
     expect(parsed.finalResponse).toBe("")
   })
 
+  test("parseCodexJsonl renders final text attached to turn.completed as an assistant message", () => {
+    const state = createCodexLiveState()
+    expect(
+      applyCodexJsonlLine(
+        state,
+        JSON.stringify({
+          type: "turn.completed",
+          result: "## Final answer\n\nThis must render as Markdown.",
+          usage: { input_tokens: 1, output_tokens: 2 },
+        }),
+      ),
+    ).toBe(true)
+    expect(state.agentMessages).toEqual(["## Final answer\n\nThis must render as Markdown."])
+    expect(state.transcript.some((item) => item.kind === "message" && item.title === "Assistant")).toBe(true)
+  })
+
   test("parseCodexJsonl ignores non-json noise lines", () => {
     const stdout = ["not json", JSON.stringify({ type: "thread.started", thread_id: "t1" }), ""].join("\n")
     const parsed = parseCodexJsonl(stdout)

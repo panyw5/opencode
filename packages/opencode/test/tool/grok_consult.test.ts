@@ -92,6 +92,17 @@ describe("tool.grok_consult helpers", () => {
     expect(state.transcript.some((item) => item.kind === "message" && item.text === "done")).toBe(true)
   })
 
+  test("applyGrokJsonlLine keeps an interleaved assistant stream after later thinking", () => {
+    const state = createGrokLiveState()
+    applyGrokJsonlLine(state, JSON.stringify({ type: "text", data: "Draft answer" }))
+    applyGrokJsonlLine(state, JSON.stringify({ type: "thought", data: "Checking sources" }))
+    applyGrokJsonlLine(state, JSON.stringify({ type: "end", sessionId: "session_1" }))
+
+    expect(state.transcript.map((item) => item.kind)).toEqual(["thinking", "message", "status"])
+    expect(state.transcript.find((item) => item.id === "assistant:stream")).toMatchObject({ status: "completed" })
+    expect(state.transcript.find((item) => item.title === "Turn completed")?.text).toBeUndefined()
+  })
+
   test("parseGrokJsonl captures error events and ignores non-json noise", () => {
     const parsed = parseGrokJsonl(["not json", JSON.stringify({ type: "error", message: "auth expired" })].join("\n"))
     expect(parsed.error).toBe("auth expired")

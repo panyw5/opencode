@@ -387,8 +387,6 @@ export const ClaudeConsultTool = Tool.define(
               })
             : undefined
 
-          yield* Effect.addFinalizer(() => Effect.sync(() => intervention?.close()))
-
           yield* publishMetadata(true)
 
           log.info("starting claude consult", {
@@ -413,24 +411,28 @@ export const ClaudeConsultTool = Tool.define(
                 let stderr = ""
                 let lineBuffer = ""
 
-                const stdoutFiber = yield* Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
-                  Effect.gen(function* () {
-                    stdout += chunk
-                    lineBuffer += chunk
-                    const parts = lineBuffer.split(/\r?\n/)
-                    lineBuffer = parts.pop() ?? ""
-                    let dirty = false
-                    for (const part of parts) {
-                      if (applyClaudeJsonlLine(live, part)) dirty = true
-                    }
-                    if (dirty) yield* publishMetadata()
-                  }),
-                ).pipe(Effect.forkDetach({ startImmediately: true }))
-                const stderrFiber = yield* Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) =>
-                  Effect.sync(() => {
-                    stderr += chunk
-                  }),
-                ).pipe(Effect.forkDetach({ startImmediately: true }))
+                const stdoutFiber = yield* Effect.forkScoped(
+                  Stream.runForEach(Stream.decodeText(handle.stdout), (chunk) =>
+                    Effect.gen(function* () {
+                      stdout += chunk
+                      lineBuffer += chunk
+                      const parts = lineBuffer.split(/\r?\n/)
+                      lineBuffer = parts.pop() ?? ""
+                      let dirty = false
+                      for (const part of parts) {
+                        if (applyClaudeJsonlLine(live, part)) dirty = true
+                      }
+                      if (dirty) yield* publishMetadata()
+                    }),
+                  ),
+                )
+                const stderrFiber = yield* Effect.forkScoped(
+                  Stream.runForEach(Stream.decodeText(handle.stderr), (chunk) =>
+                    Effect.sync(() => {
+                      stderr += chunk
+                    }),
+                  ),
+                )
 
                 const abort = Effect.callback<void>((resume) => {
                   if (ctx.abort.aborted) return resume(Effect.void)
@@ -454,11 +456,13 @@ export const ClaudeConsultTool = Tool.define(
                   yield* handle.kill({ forceKillAfter: "3 seconds" }).pipe(Effect.orDie)
                 }
 
-                // Drain the final stream chunks before parsing result JSONL.
+                // Process exit can win the race before stdout's final JSONL chunk is consumed.
                 yield* Fiber.join(stdoutFiber)
                 yield* Fiber.join(stderrFiber)
 
+                // Flush a final unterminated JSONL event, then make it visible immediately.
                 if (lineBuffer.trim()) applyClaudeJsonlLine(live, lineBuffer)
+                yield* publishMetadata(true)
 
                 return { exit, stdout, stderr }
               }),

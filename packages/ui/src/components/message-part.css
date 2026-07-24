@@ -1039,10 +1039,16 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
+  /* macOS overlay scrollbars otherwise sit on the right-aligned user avatar. */
+  padding: 4px 14px 8px 2px;
+  scrollbar-gutter: stable;
+}
+
+[data-slot="codex-session-content"] {
   display: flex;
+  min-height: 100%;
   flex-direction: column;
   gap: 12px;
-  padding: 4px 2px 8px;
 }
 
 [data-slot="codex-intervention"] {
@@ -1051,7 +1057,10 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   flex-direction: column;
   justify-content: flex-end;
   border-top: 1px solid var(--border-weak-base);
-  padding-top: 12px;
+  padding: 12px;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--surface-base) 78%, var(--background-base));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--border-weak-base) 60%, transparent);
 }
 
 [data-slot="codex-intervention-error"] {
@@ -1061,18 +1070,68 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
 }
 
 [data-slot="codex-intervention-form"] {
+  position: relative;
   display: flex;
   width: 100%;
   align-items: flex-end;
-  gap: 8px;
 
   [data-component="input"] {
     flex: 1 1 auto;
     min-width: 0;
   }
 
-  [data-component="button"] {
-    flex: 0 0 auto;
+  [data-slot="codex-intervention-input"] [data-slot="input-wrapper"] {
+    min-height: 40px;
+    border-color: color-mix(in srgb, var(--border-weak-base) 78%, var(--icon-info-base, #3b82f6));
+    background: color-mix(in srgb, var(--input-base) 88%, var(--surface-base));
+    transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+
+    &:focus-within:not(:has([data-readonly])) {
+      border-color: var(--icon-info-base, #3b82f6);
+      background: var(--input-base);
+      box-shadow: 0 0 0 3px color-mix(in srgb, var(--icon-info-base, #3b82f6) 18%, transparent);
+    }
+  }
+
+  [data-slot="codex-intervention-input"] textarea[data-slot="input-input"] {
+    min-height: 54px;
+    padding-right: 86px;
+    padding-bottom: 28px;
+    font-family: var(--font-family-mono, ui-monospace, monospace);
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  [data-slot="codex-intervention-actions"] {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    display: flex;
+    gap: 6px;
+  }
+
+  [data-component="icon-button"] {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+  }
+
+  [data-slot="codex-intervention-send"] {
+    box-shadow: 0 1px 3px color-mix(in srgb, var(--button-primary-base) 42%, transparent);
+  }
+
+  [data-slot="codex-intervention-finish"] {
+    border-color: color-mix(in srgb, var(--border-weak-base) 60%, var(--icon-critical-base, #ef4444));
+    background: color-mix(in srgb, var(--surface-base) 84%, var(--icon-critical-base, #ef4444));
+
+    [data-slot="icon-svg"] {
+      color: var(--icon-critical-base, #ef4444);
+    }
+
+    &:hover:not(:disabled) {
+      border-color: color-mix(in srgb, var(--border-weak-base) 35%, var(--icon-critical-base, #ef4444));
+      background: color-mix(in srgb, var(--surface-base) 74%, var(--icon-critical-base, #ef4444));
+    }
   }
 }
 
