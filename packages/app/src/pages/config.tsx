@@ -4847,8 +4847,39 @@ export default function ConfigPage() {
     },
   )
 
+  const [projectPluginConfigs, setProjectPluginConfigs] = createSignal<NonNullable<Config["plugin"]>>([])
+  let projectPluginConfigsRun = 0
+  createEffect(
+    on(
+      () => [state.skillRev, openedKey()] as const,
+      () => {
+        const run = ++projectPluginConfigsRun
+        void (async () => {
+          const projects = untrack(opened)
+          const configs = await Promise.allSettled(
+            projects.flatMap((project) =>
+              projectRoots(project).map(async (directory) => {
+                const client = globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
+                const result = await client.config.get()
+                return result.data?.plugin ?? []
+              }),
+            ),
+          )
+          if (run !== projectPluginConfigsRun) return
+          setProjectPluginConfigs(configs.flatMap((result) => (result.status === "fulfilled" ? result.value : [])))
+        })()
+      },
+      { defer: false },
+    ),
+  )
+
+  const configuredPlugins = createMemo(() => [
+    ...(cfg().plugin ?? []),
+    ...projectPluginConfigs(),
+  ])
+
   const plugins = createMemo<PluginItem[]>(() => {
-    const on = new Set(cfg().plugin ?? [])
+    const on = configuredPlugins()
     const map = new Map<string, PluginItem>()
 
     for (const item of space()?.plugins ?? []) {
