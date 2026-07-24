@@ -793,6 +793,13 @@
     }
   }
 
+  [data-component="prompt-stop-halo"] [data-slot="prompt-stop-halo-ripple"] {
+    background: #c8b773;
+    opacity: 0.38;
+    transform-origin: center;
+    animation: project-activity-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     [data-slot="prompt-placeholder-text"],
     [data-slot="prompt-placeholder-text"]::after {

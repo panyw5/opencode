@@ -2149,23 +2149,30 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       />
                     </Tooltip>
                   </Show>
-                  <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
-                    <IconButton
-                      data-action="prompt-submit"
-                      type="submit"
-                      disabled={store.mode !== "normal" || store.submitting || (!prompt.dirty() && !working() && commentCount() === 0)}
-                      tabIndex={store.mode === "normal" ? undefined : -1}
-                      icon={working() ? "stop" : store.submitting ? "arrow-sync" : "arrow-up-bold"}
-                      variant="primary"
-                      iconSize={working() ? "normal" : "medium"}
-                      class="size-10 rounded-full shadow-xs-border"
-                      classList={{
-                        "animate-spin": store.submitting && !working(),
-                      }}
-                      style={buttons()}
-                      aria-label={working() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                    />
-                  </Tooltip>
+                  <div class="relative size-10 shrink-0">
+                    <Show when={working()}>
+                      <div data-component="prompt-stop-halo" aria-hidden="true" class="pointer-events-none absolute inset-0 z-0 flex">
+                        <span data-slot="prompt-stop-halo-ripple" class="absolute inline-flex h-full w-full rounded-full" />
+                      </div>
+                    </Show>
+                    <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
+                      <IconButton
+                        data-action="prompt-submit"
+                        type="submit"
+                        disabled={store.mode !== "normal" || store.submitting || (!prompt.dirty() && !working() && commentCount() === 0)}
+                        tabIndex={store.mode === "normal" ? undefined : -1}
+                        icon={working() ? "stop" : store.submitting ? "arrow-sync" : "arrow-up-bold"}
+                        variant="primary"
+                        iconSize={working() ? "normal" : "medium"}
+                        class="relative z-1 size-10 rounded-full shadow-xs-border"
+                        classList={{
+                          "animate-spin": store.submitting && !working(),
+                        }}
+                        style={buttons()}
+                        aria-label={working() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                      />
+                    </Tooltip>
+                  </div>
                 </div>
               </div>
             </div>
