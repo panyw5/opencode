@@ -24,6 +24,7 @@ import {
   DEFAULT_EDITOR_KEY,
   GENERICAGENT_CONFIG_KEY,
   HERMES_CONFIG_KEY,
+  GROK_CONFIG_KEY,
   OPENCLAW_CONFIG_KEY,
 } from "./constants"
 import { getStore } from "./store"
@@ -33,8 +34,8 @@ import type {
   ExtraAgentId,
   ExtraAgentInfo,
   ConfigWorkspace,
-  ClaudeConfig,
-  CodexConfig,
+  CliAgentConfig,
+  CliAgentID,
   GenericagentConfig,
   GenericagentTest,
   HermesConfig,
@@ -550,20 +551,18 @@ export function setHermesConfig(config: HermesConfig) {
   getStore().set(HERMES_CONFIG_KEY, config)
 }
 
-export function getCodexConfig(): CodexConfig {
-  return parseStoreObject<CodexConfig>(CODEX_CONFIG_KEY, { enabled: true })
+const cliAgentConfigKeys: Record<CliAgentID, string> = {
+  codex: CODEX_CONFIG_KEY,
+  claude: CLAUDE_CONFIG_KEY,
+  grok: GROK_CONFIG_KEY,
 }
 
-export function setCodexConfig(config: CodexConfig) {
-  getStore().set(CODEX_CONFIG_KEY, config)
+export function getCliAgentConfig(id: CliAgentID): CliAgentConfig {
+  return parseStoreObject<CliAgentConfig>(cliAgentConfigKeys[id], { enabled: true })
 }
 
-export function getClaudeConfig(): ClaudeConfig {
-  return parseStoreObject<ClaudeConfig>(CLAUDE_CONFIG_KEY, { enabled: true })
-}
-
-export function setClaudeConfig(config: ClaudeConfig) {
-  getStore().set(CLAUDE_CONFIG_KEY, config)
+export function setCliAgentConfig(id: CliAgentID, config: CliAgentConfig) {
+  getStore().set(cliAgentConfigKeys[id], config)
 }
 
 export async function getExtraAgentInfo(

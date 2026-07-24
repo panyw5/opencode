@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { promisify } from "node:util"
-import type { CodexConfig, CodexInfo, CodexTest } from "../preload/types"
+import type { CliAgentConfig, CliAgentDetail, CliAgentInfo, CliAgentTest } from "../preload/types"
 import { resolveDesktopPath } from "./native-path"
 
 const execFileAsync = promisify(execFile)
@@ -15,7 +15,7 @@ export function defaultCodexHome() {
   return join(homedir(), ".codex")
 }
 
-export function resolveCodexHome(config?: CodexConfig) {
+export function resolveCodexHome(config?: CliAgentConfig) {
   const override = config?.configHome?.trim()
   if (override) return resolveDesktopPath(override)
   return defaultCodexHome()
@@ -45,41 +45,28 @@ export function countTomlTables(text: string, prefix: string): number {
   return text.match(re)?.length ?? 0
 }
 
-export function parseCodexConfigToml(text: string): Pick<
-  CodexInfo,
-  | "model"
-  | "modelProvider"
-  | "modelReasoningEffort"
-  | "modelContextWindow"
-  | "modelAutoCompactTokenLimit"
-  | "sandboxMode"
-  | "approvalPolicy"
-  | "providerName"
-  | "providerBaseUrl"
-  | "providerWireApi"
-  | "trustedProjectCount"
-> {
+export function parseCodexConfigToml(text: string): CliAgentDetail[] {
   const modelProvider = readTomlString(text, "model_provider")
   const providerSection =
     (modelProvider && readTomlSection(text, `model_providers.${modelProvider}`)) ||
     readTomlSection(text, "model_providers.custom")
 
-  return {
-    model: readTomlString(text, "model"),
-    modelProvider,
-    modelReasoningEffort: readTomlString(text, "model_reasoning_effort"),
-    modelContextWindow: readTomlString(text, "model_context_window"),
-    modelAutoCompactTokenLimit: readTomlString(text, "model_auto_compact_token_limit"),
-    sandboxMode: readTomlString(text, "sandbox_mode") ?? readTomlString(text, "sandbox"),
-    approvalPolicy: readTomlString(text, "approval_policy"),
-    providerName: readTomlString(providerSection, "name") ?? modelProvider,
-    providerBaseUrl: readTomlString(providerSection, "base_url"),
-    providerWireApi: readTomlString(providerSection, "wire_api"),
-    trustedProjectCount: countTomlTables(text, "projects."),
-  }
+  return details({
+    Model: readTomlString(text, "model"),
+    "Model provider": modelProvider,
+    "Reasoning effort": readTomlString(text, "model_reasoning_effort"),
+    "Context window": readTomlString(text, "model_context_window"),
+    "Auto-compact limit": readTomlString(text, "model_auto_compact_token_limit"),
+    "Sandbox mode": readTomlString(text, "sandbox_mode") ?? readTomlString(text, "sandbox"),
+    "Approval policy": readTomlString(text, "approval_policy"),
+    "Provider name": readTomlString(providerSection, "name") ?? modelProvider,
+    "Provider base URL": readTomlString(providerSection, "base_url"),
+    "Wire API": readTomlString(providerSection, "wire_api"),
+    "Trusted projects": countTomlTables(text, "projects.").toString(),
+  })
 }
 
-export async function resolveCodexBinary(config?: CodexConfig): Promise<string | undefined> {
+export async function resolveCodexBinary(config?: CliAgentConfig): Promise<string | undefined> {
   const override = config?.binaryPath?.trim()
   if (override) {
     if (isAbsolute(override) || override.includes("/") || override.includes("\\")) {
@@ -100,11 +87,11 @@ export async function resolveCodexBinary(config?: CodexConfig): Promise<string |
   return undefined
 }
 
-export async function getCodexInfo(config?: CodexConfig): Promise<CodexInfo> {
+export async function getCodexInfo(config?: CliAgentConfig): Promise<CliAgentInfo> {
   const checkedAt = Date.now()
   const configHome = resolveCodexHome(config)
   const configPath = join(configHome, "config.toml")
-  const info: CodexInfo = {
+  const info: CliAgentInfo = {
     sourceUrl: CODEX_SOURCE_URL,
     installed: false,
     configHome,
@@ -125,7 +112,7 @@ export async function getCodexInfo(config?: CodexConfig): Promise<CodexInfo> {
     info.configExists = configExists
     if (configExists) {
       const text = await readFile(configPath, "utf8")
-      Object.assign(info, parseCodexConfigToml(text))
+      info.details = parseCodexConfigToml(text)
     }
   } catch (error) {
     info.error = error instanceof Error ? error.message : String(error)
@@ -134,7 +121,7 @@ export async function getCodexInfo(config?: CodexConfig): Promise<CodexInfo> {
   return info
 }
 
-export async function testCodexConfig(config: CodexConfig): Promise<CodexTest> {
+export async function testCodexConfig(config: CliAgentConfig): Promise<CliAgentTest> {
   const logs: string[] = []
   try {
     const info = await getCodexInfo(config)
@@ -143,9 +130,7 @@ export async function testCodexConfig(config: CodexConfig): Promise<CodexTest> {
     logs.push(`Binary: ${info.binaryPath ?? "not found"}`)
     logs.push(`Version: ${info.version ?? "unknown"}`)
     logs.push(`Installed: ${info.installed ? "yes" : "no"}`)
-    logs.push(`Model: ${info.model ?? "unknown"}`)
-    logs.push(`Model provider: ${info.modelProvider ?? "unknown"}`)
-    if (info.providerBaseUrl) logs.push(`Provider base URL: ${info.providerBaseUrl}`)
+    logs.push(...(info.details ?? []).map((detail) => `${detail.label}: ${detail.value}`))
     if (info.error) logs.push(`Probe error: ${info.error}`)
 
     if (!info.installed) {
@@ -200,4 +185,10 @@ async function exists(path: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function details(values: Record<string, string | undefined>): CliAgentDetail[] {
+  return Object.entries(values)
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([label, value]) => ({ label, value: value! }))
 }

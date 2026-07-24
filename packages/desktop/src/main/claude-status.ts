@@ -3,7 +3,7 @@ import { access, readFile } from "node:fs/promises"
 import { homedir } from "node:os"
 import { isAbsolute, join } from "node:path"
 import { promisify } from "node:util"
-import type { ClaudeConfig, ClaudeInfo, ClaudeTest } from "../preload/types"
+import type { CliAgentConfig, CliAgentDetail, CliAgentInfo, CliAgentTest } from "../preload/types"
 import { resolveDesktopPath } from "./native-path"
 
 const execFileAsync = promisify(execFile)
@@ -15,13 +15,13 @@ export function defaultClaudeHome() {
   return join(homedir(), ".claude")
 }
 
-export function resolveClaudeHome(config?: ClaudeConfig) {
+export function resolveClaudeHome(config?: CliAgentConfig) {
   const override = config?.configHome?.trim()
   if (override) return resolveDesktopPath(override)
   return defaultClaudeHome()
 }
 
-export async function resolveClaudeBinary(config?: ClaudeConfig): Promise<string | undefined> {
+export async function resolveClaudeBinary(config?: CliAgentConfig): Promise<string | undefined> {
   const override = config?.binaryPath?.trim()
   if (override) {
     if (isAbsolute(override) || override.includes("/") || override.includes("\\")) {
@@ -42,15 +42,15 @@ export async function resolveClaudeBinary(config?: ClaudeConfig): Promise<string
   return undefined
 }
 
-export async function getClaudeInfo(config?: ClaudeConfig): Promise<ClaudeInfo> {
+export async function getClaudeInfo(config?: CliAgentConfig): Promise<CliAgentInfo> {
   const checkedAt = Date.now()
   const configHome = resolveClaudeHome(config)
   const settingsPath = join(configHome, "settings.json")
-  const info: ClaudeInfo = {
+  const info: CliAgentInfo = {
     sourceUrl: CLAUDE_SOURCE_URL,
     installed: false,
     configHome,
-    settingsPath,
+    configPath: settingsPath,
     checkedAt,
   }
 
@@ -63,11 +63,8 @@ export async function getClaudeInfo(config?: ClaudeConfig): Promise<ClaudeInfo> 
       info.installed = !!version || (await exists(binaryPath))
     }
 
-    const settingsExists = await exists(settingsPath)
-    info.settingsExists = settingsExists
-    if (settingsExists) {
-      Object.assign(info, parseClaudeSettingsJson(await readFile(settingsPath, "utf8")))
-    }
+    info.configExists = await exists(settingsPath)
+    if (info.configExists) info.details = parseClaudeSettingsJson(await readFile(settingsPath, "utf8"))
   } catch (error) {
     info.error = error instanceof Error ? error.message : String(error)
   }
@@ -75,34 +72,30 @@ export async function getClaudeInfo(config?: ClaudeConfig): Promise<ClaudeInfo> 
   return info
 }
 
-export function parseClaudeSettingsJson(text: string): Pick<
-  ClaudeInfo,
-  "model" | "permissionMode" | "defaultMode" | "apiKeyHelper"
-> {
+export function parseClaudeSettingsJson(text: string): CliAgentDetail[] {
   try {
     const json = JSON.parse(text) as Record<string, unknown>
-    return {
-      model: readString(json, "model"),
-      permissionMode: readString(json, "permissionMode"),
-      defaultMode: readString(json, "defaultMode"),
-      apiKeyHelper: readString(json, "apiKeyHelper"),
-    }
+    return details({
+      Model: readString(json, "model"),
+      "Permission mode": readString(json, "permissionMode"),
+      "Default mode": readString(json, "defaultMode"),
+      "API key helper": readString(json, "apiKeyHelper"),
+    })
   } catch {
-    return {}
+    return []
   }
 }
 
-export async function testClaudeConfig(config: ClaudeConfig): Promise<ClaudeTest> {
+export async function testClaudeConfig(config: CliAgentConfig): Promise<CliAgentTest> {
   const logs: string[] = []
   try {
     const info = await getClaudeInfo(config)
     logs.push(`Config home: ${info.configHome ?? "-"}`)
-    logs.push(`Settings path: ${info.settingsPath ?? "-"} (${info.settingsExists ? "found" : "missing"})`)
+    logs.push(`Settings path: ${info.configPath ?? "-"} (${info.configExists ? "found" : "missing"})`)
     logs.push(`Binary: ${info.binaryPath ?? "not found"}`)
     logs.push(`Version: ${info.version ?? "unknown"}`)
     logs.push(`Installed: ${info.installed ? "yes" : "no"}`)
-    logs.push(`Model: ${info.model ?? "unknown"}`)
-    logs.push(`Permission mode: ${info.permissionMode ?? "unknown"}`)
+    logs.push(...(info.details ?? []).map((detail) => `${detail.label}: ${detail.value}`))
     if (info.error) logs.push(`Probe error: ${info.error}`)
 
     if (!info.installed) {
@@ -158,4 +151,10 @@ async function exists(path: string) {
 function readString(input: Record<string, unknown>, key: string): string | undefined {
   const value = input[key]
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function details(values: Record<string, string | undefined>): CliAgentDetail[] {
+  return Object.entries(values)
+    .filter(([, value]) => value !== undefined && value !== "")
+    .map(([label, value]) => ({ label, value: value! }))
 }

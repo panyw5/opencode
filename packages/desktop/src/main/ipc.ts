@@ -42,8 +42,6 @@ import {
   getDefaultEditor,
   getExtraAgentInfo,
   getGenericagentConfig,
-  getClaudeConfig,
-  getCodexConfig,
   getHermesConfig,
   getOpenclawConfig,
   installCli,
@@ -57,16 +55,13 @@ import {
   setCustomEditorPath,
   setDefaultEditor,
   setGenericagentConfig,
-  setClaudeConfig,
-  setCodexConfig,
   setHermesConfig,
   setOpenclawConfig,
   setTrellisCurrentTask,
   writeConfigFile,
   createTrellisTask,
 } from "./native"
-import { getCodexInfo, testCodexConfig } from "./codex-status"
-import { getClaudeInfo, testClaudeConfig } from "./claude-status"
+import { cliAgentDescriptors, getCliAgent, getCliAgentInfo, setCliAgent, testCliAgent } from "./cli-agents"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -307,14 +302,11 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("set-hermes-config", (_event: IpcMainInvokeEvent, config) => setHermesConfig(config))
   ipcMain.handle("test-hermes-config", (_event: IpcMainInvokeEvent, config) => testHermesBridge(config))
   ipcMain.handle("abort-hermes-test", () => abortExtraAgentTest("hermes"))
-  ipcMain.handle("get-codex-config", () => getCodexConfig())
-  ipcMain.handle("set-codex-config", (_event: IpcMainInvokeEvent, config) => setCodexConfig(config))
-  ipcMain.handle("test-codex-config", (_event: IpcMainInvokeEvent, config) => testCodexConfig(config))
-  ipcMain.handle("get-codex-info", (_event: IpcMainInvokeEvent, config) => getCodexInfo(config))
-  ipcMain.handle("get-claude-config", () => getClaudeConfig())
-  ipcMain.handle("set-claude-config", (_event: IpcMainInvokeEvent, config) => setClaudeConfig(config))
-  ipcMain.handle("test-claude-config", (_event: IpcMainInvokeEvent, config) => testClaudeConfig(config))
-  ipcMain.handle("get-claude-info", (_event: IpcMainInvokeEvent, config) => getClaudeInfo(config))
+  ipcMain.handle("cli-agents-list", () => cliAgentDescriptors)
+  ipcMain.handle("cli-agents-get", (_event: IpcMainInvokeEvent, id) => getCliAgent(id))
+  ipcMain.handle("cli-agents-set", (_event: IpcMainInvokeEvent, id, config) => setCliAgent(id, config))
+  ipcMain.handle("cli-agents-test", (_event: IpcMainInvokeEvent, id, config) => testCliAgent(id, config))
+  ipcMain.handle("cli-agents-info", (_event: IpcMainInvokeEvent, id, config) => getCliAgentInfo(id, config))
   ipcMain.handle("list-extra-agent-servers", () => listExtraAgentServers())
   ipcMain.handle("restart-extra-agent", (_event: IpcMainInvokeEvent, id) => restartExtraAgent(id))
   ipcMain.handle("get-extra-agent-info", (_event: IpcMainInvokeEvent, id, config) => getExtraAgentInfo(id, config))

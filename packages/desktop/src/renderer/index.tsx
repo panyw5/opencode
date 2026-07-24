@@ -509,39 +509,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     abortHermesTest: () => desktopApi.abortHermesTest(),
 
-    getCodexConfig:
-      typeof desktopApi.getCodexConfig === "function" ? () => desktopApi.getCodexConfig() : undefined,
-
-    setCodexConfig:
-      typeof desktopApi.setCodexConfig === "function"
-        ? async (config) => {
-            await desktopApi.setCodexConfig(config)
-          }
-        : undefined,
-
-    testCodexConfig:
-      typeof desktopApi.testCodexConfig === "function"
-        ? (config) => desktopApi.testCodexConfig(config)
-        : undefined,
-
-    getCodexInfo:
-      typeof desktopApi.getCodexInfo === "function"
-        ? (config) => desktopApi.getCodexInfo(config)
-        : undefined,
-    getClaudeConfig:
-      typeof desktopApi.getClaudeConfig === "function" ? () => desktopApi.getClaudeConfig() : undefined,
-    setClaudeConfig:
-      typeof desktopApi.setClaudeConfig === "function"
-        ? (config) => desktopApi.setClaudeConfig(config)
-        : undefined,
-    testClaudeConfig:
-      typeof desktopApi.testClaudeConfig === "function"
-        ? (config) => desktopApi.testClaudeConfig(config)
-        : undefined,
-    getClaudeInfo:
-      typeof desktopApi.getClaudeInfo === "function"
-        ? (config) => desktopApi.getClaudeInfo(config)
-        : undefined,
+    cliAgents: desktopApi.cliAgents,
 
     getExtraAgentInfo:
       typeof desktopApi.getExtraAgentInfo === "function"

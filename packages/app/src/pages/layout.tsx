@@ -271,7 +271,7 @@ export default function Layout(props: ParentProps) {
         platform.getOpenclawConfig ||
         platform.getHermesConfig ||
         platform.getGenericagentConfig ||
-        platform.getCodexConfig
+        platform.cliAgents
       ),
   )
   const availableThemeEntries = createMemo(() => theme.ids().map((id) => [id, theme.themes()[id]] as const))

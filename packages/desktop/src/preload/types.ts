@@ -144,20 +144,27 @@ export type HermesTest = {
   logs: string[]
 }
 
-export type CodexConfig = {
+export type CliAgentID = "codex" | "claude" | "grok"
+
+export type CliAgentConfig = {
   enabled: boolean
-  /** Optional absolute path or name for the `codex` binary. */
+  /** Optional absolute path or command name for the CLI binary. */
   binaryPath?: string
-  /** Optional CODEX_HOME override (defaults to ~/.codex). */
+  /** Optional CLI configuration home override. */
   configHome?: string
 }
 
-export type CodexTest = {
+export type CliAgentTest = {
   ok: boolean
   logs: string[]
 }
 
-export type CodexInfo = {
+export type CliAgentDetail = {
+  label: string
+  value: string
+}
+
+export type CliAgentInfo = {
   sourceUrl: string
   installed: boolean
   binaryPath?: string
@@ -165,48 +172,26 @@ export type CodexInfo = {
   configHome?: string
   configPath?: string
   configExists?: boolean
-  model?: string
-  modelProvider?: string
-  modelReasoningEffort?: string
-  modelContextWindow?: string
-  modelAutoCompactTokenLimit?: string
-  providerName?: string
-  providerBaseUrl?: string
-  providerWireApi?: string
-  sandboxMode?: string
-  approvalPolicy?: string
-  trustedProjectCount?: number
+  details?: CliAgentDetail[]
   checkedAt?: number
   error?: string
 }
 
-export type ClaudeConfig = {
-  enabled: boolean
-  /** Optional absolute path or name for the `claude` binary. */
-  binaryPath?: string
-  /** Optional CLAUDE_CONFIG_DIR override (defaults to ~/.claude). */
-  configHome?: string
-}
-
-export type ClaudeTest = {
-  ok: boolean
-  logs: string[]
-}
-
-export type ClaudeInfo = {
+export type CliAgentDescriptor = {
+  id: CliAgentID
+  label: string
+  command: string
   sourceUrl: string
-  installed: boolean
-  binaryPath?: string
-  version?: string
-  configHome?: string
-  settingsPath?: string
-  settingsExists?: boolean
-  model?: string
-  permissionMode?: string
-  defaultMode?: string
-  apiKeyHelper?: string
-  checkedAt?: number
-  error?: string
+  configHomeLabel: string
+  configHomePlaceholder: string
+}
+
+export type CliAgentsAPI = {
+  list: () => Promise<CliAgentDescriptor[]>
+  get: (id: CliAgentID) => Promise<CliAgentConfig>
+  set: (id: CliAgentID, config: CliAgentConfig) => Promise<void>
+  test: (id: CliAgentID, config: CliAgentConfig) => Promise<CliAgentTest>
+  info: (id: CliAgentID, config?: CliAgentConfig) => Promise<CliAgentInfo>
 }
 
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
@@ -322,14 +307,7 @@ export type ElectronAPI = {
   setHermesConfig: (config: HermesConfig) => Promise<void>
   testHermesConfig: (config: HermesConfig) => Promise<HermesTest>
   abortHermesTest: () => Promise<boolean>
-  getCodexConfig: () => Promise<CodexConfig>
-  setCodexConfig: (config: CodexConfig) => Promise<void>
-  testCodexConfig: (config: CodexConfig) => Promise<CodexTest>
-  getCodexInfo: (config?: CodexConfig) => Promise<CodexInfo>
-  getClaudeConfig: () => Promise<ClaudeConfig>
-  setClaudeConfig: (config: ClaudeConfig) => Promise<void>
-  testClaudeConfig: (config: ClaudeConfig) => Promise<ClaudeTest>
-  getClaudeInfo: (config?: ClaudeConfig) => Promise<ClaudeInfo>
+  cliAgents: CliAgentsAPI
   listExtraAgentServers: () => Promise<ExtraAgentServer[]>
   restartExtraAgent: (id: ExtraAgentId) => Promise<void>
   getExtraAgentInfo: (

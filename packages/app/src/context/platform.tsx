@@ -124,18 +124,25 @@ export type HermesTest = {
   logs: string[]
 }
 
-export type CodexConfig = {
+export type CliAgentID = "codex" | "claude" | "grok"
+
+export type CliAgentConfig = {
   enabled: boolean
   binaryPath?: string
   configHome?: string
 }
 
-export type CodexTest = {
+export type CliAgentTest = {
   ok: boolean
   logs: string[]
 }
 
-export type CodexInfo = {
+export type CliAgentDetail = {
+  label: string
+  value: string
+}
+
+export type CliAgentInfo = {
   sourceUrl: string
   installed: boolean
   binaryPath?: string
@@ -143,46 +150,26 @@ export type CodexInfo = {
   configHome?: string
   configPath?: string
   configExists?: boolean
-  model?: string
-  modelProvider?: string
-  modelReasoningEffort?: string
-  modelContextWindow?: string
-  modelAutoCompactTokenLimit?: string
-  providerName?: string
-  providerBaseUrl?: string
-  providerWireApi?: string
-  sandboxMode?: string
-  approvalPolicy?: string
-  trustedProjectCount?: number
+  details?: CliAgentDetail[]
   checkedAt?: number
   error?: string
 }
 
-export type ClaudeConfig = {
-  enabled: boolean
-  binaryPath?: string
-  configHome?: string
-}
-
-export type ClaudeTest = {
-  ok: boolean
-  logs: string[]
-}
-
-export type ClaudeInfo = {
+export type CliAgentDescriptor = {
+  id: CliAgentID
+  label: string
+  command: string
   sourceUrl: string
-  installed: boolean
-  binaryPath?: string
-  version?: string
-  configHome?: string
-  settingsPath?: string
-  settingsExists?: boolean
-  model?: string
-  permissionMode?: string
-  defaultMode?: string
-  apiKeyHelper?: string
-  checkedAt?: number
-  error?: string
+  configHomeLabel: string
+  configHomePlaceholder: string
+}
+
+export type CliAgents = {
+  list(): Promise<CliAgentDescriptor[]>
+  get(id: CliAgentID): Promise<CliAgentConfig>
+  set(id: CliAgentID, config: CliAgentConfig): Promise<void> | void
+  test(id: CliAgentID, config: CliAgentConfig): Promise<CliAgentTest>
+  info(id: CliAgentID, config?: CliAgentConfig): Promise<CliAgentInfo>
 }
 
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
@@ -335,29 +322,8 @@ export type Platform = {
   /** Abort a running Hermes connection test (desktop only) */
   abortHermesTest?(): Promise<boolean>
 
-  /** Get the configured Codex CLI integration (desktop only) */
-  getCodexConfig?(): Promise<CodexConfig>
-
-  /** Set the configured Codex CLI integration (desktop only) */
-  setCodexConfig?(config: CodexConfig): Promise<void> | void
-
-  /** Probe local Codex CLI install and config.toml (desktop only) */
-  testCodexConfig?(config: CodexConfig): Promise<CodexTest>
-
-  /** Inspect Codex install/version/model/config.toml (desktop only) */
-  getCodexInfo?(config?: CodexConfig): Promise<CodexInfo>
-
-  /** Get the configured Claude CLI integration (desktop only) */
-  getClaudeConfig?(): Promise<ClaudeConfig>
-
-  /** Set the configured Claude CLI integration (desktop only) */
-  setClaudeConfig?(config: ClaudeConfig): Promise<void> | void
-
-  /** Probe local Claude CLI install and settings.json (desktop only) */
-  testClaudeConfig?(config: ClaudeConfig): Promise<ClaudeTest>
-
-  /** Inspect Claude install/version/model/settings.json (desktop only) */
-  getClaudeInfo?(config?: ClaudeConfig): Promise<ClaudeInfo>
+  /** Local CLI-backed agents exposed by the desktop process. */
+  cliAgents?: CliAgents
 
   /** Get the configured GenericAgent integration (desktop only) */
   getGenericagentConfig?(): Promise<GenericagentConfig>
