@@ -23,7 +23,7 @@ type ModelKey = {
   modelID: string
 }
 
-type AssistantModel = ModelKey | "disabled" | undefined
+type AssistantModel = ModelKey | "auto" | "disabled"
 
 export interface Settings {
   general: {

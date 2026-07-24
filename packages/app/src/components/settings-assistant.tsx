@@ -9,7 +9,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { SettingsList } from "./settings-list"
 
 type ModelRef = { providerID: string; modelID: string }
-type AssistantModelValue = ModelRef | "disabled" | undefined
+type AssistantModelValue = ModelRef | "auto" | "disabled"
 type SmallModelValue = ModelRef | undefined
 
 type Option<T> = {
@@ -38,8 +38,8 @@ export const SettingsAssistant: Component = () => {
     value: "disabled",
     label: language.t("settings.assistant.model.option.disabled"),
   }
-  const assistantAuto: Option<undefined> = {
-    value: undefined,
+  const assistantAuto: Option<"auto"> = {
+    value: "auto",
     label: language.t("settings.assistant.model.option.auto"),
   }
   const assistantOptions = createMemo(() => [assistantOff, assistantAuto, ...modelOptions()])
@@ -47,7 +47,7 @@ export const SettingsAssistant: Component = () => {
   const assistantCurrent = createMemo(() => {
     const selected = settings.assistant.model()
     if (selected === "disabled") return assistantOff
-    if (!selected) return assistantAuto
+    if (selected === "auto") return assistantAuto
     return (
       assistantOptions().find(
         (item) =>
@@ -162,7 +162,7 @@ export const SettingsAssistant: Component = () => {
                 value={(item) =>
                   item.value === "disabled"
                     ? "disabled"
-                    : item.value
+                    : item.value !== "auto"
                       ? `${item.value.providerID}/${item.value.modelID}`
                       : "auto"
                 }

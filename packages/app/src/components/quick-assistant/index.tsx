@@ -302,7 +302,7 @@ export function QuickAssistant() {
     const store = data()
     const model = settings.assistant.model()
     if (!store || model === "disabled") return
-    return choose(store, model, agentChoose())
+    return choose(store, model === "auto" ? undefined : model, agentChoose())
   })
   const currentChild = createMemo(() => {
     const current = activeDir()
