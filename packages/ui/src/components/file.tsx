@@ -16,6 +16,7 @@ import {
 } from "@pierre/diffs"
 import { type PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { createMediaQuery } from "@solid-primitives/media"
+import { Portal } from "solid-js/web"
 import {
   type ComponentProps,
   createEffect,
@@ -729,6 +730,54 @@ function FileRoot(props: {
   )
 }
 
+function FloatingFileActions(props: { children: JSX.Element }) {
+  let anchor!: HTMLDivElement
+  const [position, setPosition] = createSignal({ top: 12, right: 12 })
+
+  onMount(() => {
+    const updatePosition = () => {
+      const viewport = anchor.closest<HTMLElement>('[data-slot="scroll-view-viewport"]')
+      const rect = (viewport ?? anchor.parentElement)?.getBoundingClientRect()
+      if (!rect) return
+
+      setPosition({
+        top: Math.round(rect.top + 12),
+        right: Math.round(window.innerWidth - rect.right + 12),
+      })
+    }
+
+    const observer = new ResizeObserver(updatePosition)
+    const viewport = anchor.closest<HTMLElement>('[data-slot="scroll-view-viewport"]')
+    if (viewport) observer.observe(viewport)
+    window.addEventListener("resize", updatePosition)
+    window.addEventListener("scroll", updatePosition, true)
+    updatePosition()
+
+    onCleanup(() => {
+      observer.disconnect()
+      window.removeEventListener("resize", updatePosition)
+      window.removeEventListener("scroll", updatePosition, true)
+    })
+  })
+
+  return (
+    <>
+      <div ref={anchor} data-slot="file-markdown-actions-anchor" />
+      <Portal>
+        <div
+          data-slot="file-markdown-actions"
+          class="fixed z-20"
+          data-prevent-autofocus=""
+          style={{ top: `${position().top}px`, right: `${position().right}px` }}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {props.children}
+        </div>
+      </Portal>
+    </>
+  )
+}
+
 function ViewerShell(props: {
   mode: "text" | "diff"
   viewer: ReturnType<typeof useFileViewer>
@@ -996,12 +1045,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
   if (!md() && !svg()) {
     const sourceBar = (
-      <div
-        data-slot="file-markdown-actions"
-        class="flex items-center justify-end gap-2"
-        data-prevent-autofocus=""
-        onPointerDown={(event) => event.stopPropagation()}
-      >
+      <FloatingFileActions>
         <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
           {props.openWith}
           <Show when={props.copyContent}>
@@ -1044,7 +1088,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
             )}
           </Show>
         </div>
-      </div>
+      </FloatingFileActions>
     )
     return SourceViewer<T>({ ...props, head: sourceBar })
   }
@@ -1052,12 +1096,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
   const [mode, setMode] = createSignal<"preview" | "source">(linked() ? "source" : "preview")
   const [full, setFull] = createSignal(false)
   const bar = (
-    <div
-      data-slot="file-markdown-actions"
-      class="flex items-center justify-end gap-2"
-      data-prevent-autofocus=""
-      onPointerDown={(event) => event.stopPropagation()}
-    >
+    <FloatingFileActions>
       <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
         {props.openWith}
         <Show when={props.copyContent}>
@@ -1108,7 +1147,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
           onSelect={(value) => value && setMode(value)}
         />
       </div>
-    </div>
+    </FloatingFileActions>
   )
 
   createEffect(
