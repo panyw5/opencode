@@ -104,7 +104,6 @@ import {
   extraAgentDir,
   extraAgentLabelKey,
   extraAgentProject,
-  isExtraAgentDirectory,
   mainDomain,
   sidebarExtraAgents,
 } from "./layout/extra-agents"
@@ -1204,6 +1203,7 @@ export default function Layout(props: ParentProps) {
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
 
+    layout.sessionBar.close(session.directory, session.id)
     await globalSDK.client.session.update({
       directory: session.directory,
       sessionID: session.id,
@@ -1827,6 +1827,15 @@ export default function Layout(props: ParentProps) {
 
   function syncSessionRoute(directory: string, id: string, root = activeProjectRoot(directory)) {
     rememberSessionRoute(directory, id, root)
+    const quickAssistant = globalSync.data.path.config
+      ? normalizeDirectory(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
+      : ""
+    if (normalizeDirectory(directory) !== quickAssistant) {
+      const title = globalSync
+        .child(directory, { bootstrap: false })[0]
+        .session.find((session) => session.id === id)?.title
+      layout.sessionBar.open(directory, id, title)
+    }
     notification.session.markViewed(id)
     requestAnimationFrame(() => scrollToSession(id, `${directory}:${id}`))
     return root

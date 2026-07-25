@@ -349,6 +349,18 @@ export const SettingsGeneral: Component = () => {
             triggerStyle={{ "min-width": "180px" }}
           />
         </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.sessionTabsBar.title")}
+          description={language.t("settings.general.row.sessionTabsBar.description")}
+        >
+          <div data-action="settings-session-tabs-bar">
+            <Switch
+              checked={settings.general.sessionTabsBar()}
+              onChange={(checked) => settings.general.setSessionTabsBar(checked)}
+            />
+          </div>
+        </SettingsRow>
       </SettingsList>
     </div>
   )

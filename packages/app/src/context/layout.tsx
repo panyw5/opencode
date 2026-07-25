@@ -38,6 +38,17 @@ type SessionTabs = {
   all: string[]
 }
 
+/** A single entry in the global session tabs bar (one tab per open session). */
+export type SessionBarTab = {
+  directory: string
+  id: string
+  title?: string
+}
+
+export const sessionBarKey = (tab: Pick<SessionBarTab, "directory" | "id">) => `${workspaceKey(tab.directory)}:${tab.id}`
+
+const MAX_SESSION_BAR_TABS = 30
+
 type SessionView = {
   scroll: Record<string, SessionScroll>
   reviewOpen?: string[]
@@ -265,6 +276,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         sessionTabs: {} as Record<string, SessionTabs>,
         sessionView: {} as Record<string, SessionView>,
+        sessionBar: {
+          all: [] as SessionBarTab[],
+        },
         handoff: {
           tabs: undefined as TabHandoff | undefined,
         },
@@ -656,6 +670,55 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         clearTabs() {
           if (!store.handoff?.tabs) return
           setStore("handoff", "tabs", undefined)
+        },
+      },
+      sessionBar: {
+        all: createMemo(() => store.sessionBar?.all ?? []),
+        /** Open (or focus) a session tab. Dedupes by directory+id, appends to the end. */
+        open(directory: string, id: string, title?: string) {
+          const key = workspaceKey(directory)
+          const existing = (store.sessionBar?.all ?? []).find(
+            (tab) => tab.id === id && workspaceKey(tab.directory) === key,
+          )
+          if (existing) {
+            if (title && existing.title !== title) {
+              setStore("sessionBar", "all", (prev) =>
+                (prev ?? []).map((tab) => (sessionBarKey(tab) === sessionBarKey(existing) ? { ...tab, title } : tab)),
+              )
+            }
+            return
+          }
+          setStore("sessionBar", "all", (prev) => {
+            const next = [...(prev ?? []), { directory, id, title }]
+            if (next.length <= MAX_SESSION_BAR_TABS) return next
+            // Bound the strip: drop the oldest (leftmost) tabs.
+            return next.slice(next.length - MAX_SESSION_BAR_TABS)
+          })
+        },
+        close(directory: string, id: string) {
+          const key = workspaceKey(directory)
+          setStore("sessionBar", "all", (prev) =>
+            (prev ?? []).filter((tab) => !(tab.id === id && workspaceKey(tab.directory) === key)),
+          )
+        },
+        move(tabKey: string, to: number) {
+          setStore(
+            "sessionBar",
+            "all",
+            produce((draft) => {
+              if (!draft) return
+              const from = draft.findIndex((tab) => sessionBarKey(tab) === tabKey)
+              if (from === -1 || from === to) return
+              draft.splice(to, 0, draft.splice(from, 1)[0])
+            }),
+          )
+        },
+        setTitle(directory: string, id: string, title: string) {
+          const all = store.sessionBar?.all ?? []
+          const index = all.findIndex((tab) => tab.id === id && workspaceKey(tab.directory) === workspaceKey(directory))
+          if (index === -1) return
+          if (all[index]?.title === title) return
+          setStore("sessionBar", "all", index, "title", title)
         },
       },
       projects: {
