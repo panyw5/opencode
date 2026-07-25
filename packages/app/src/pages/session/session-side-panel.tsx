@@ -298,7 +298,6 @@ export function SessionSidePanel(props: {
                           </TooltipKeybind>
                         </div>
                       </Show>
-                      <div class="min-w-0 flex-1" />
                     </Tabs.List>
                   </div>
 
