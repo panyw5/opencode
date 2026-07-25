@@ -299,6 +299,12 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     }
 
     performance.mark("submit:http-send:start")
+    console.debug("[prompt-submit]", {
+      stage: "request-start",
+      sessionID: input.draft.sessionID,
+      directory: input.draft.sessionDirectory,
+      messageID,
+    })
     await input.client.session.promptAsync({
       sessionID: input.draft.sessionID,
       agent: input.draft.agent,
@@ -306,6 +312,11 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       messageID,
       parts: requestParts,
       variant: input.draft.variant,
+    })
+    console.debug("[prompt-submit]", {
+      stage: "request-complete",
+      sessionID: input.draft.sessionID,
+      messageID,
     })
     performance.mark("submit:http-send:end")
     performance.measure("submit:http-send", "submit:http-send:start", "submit:http-send:end")
@@ -451,6 +462,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
 
+    const attempt = crypto.randomUUID()
+    const diagnose = (stage: string, details?: Record<string, unknown>) =>
+      console.debug("[prompt-submit]", { attempt, stage, ...details })
+
     // Clear stale marks from previous submit
     performance.clearMarks("submit:start")
     performance.clearMarks("submit:session-create:start")
@@ -473,7 +488,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const images = input.imageAttachments().slice()
     const mode = input.mode()
 
+    diagnose("start", {
+      sessionID: params.id,
+      mode,
+      textLength: text.length,
+      images: images.length,
+      comments: input.commentCount(),
+      working: input.working(),
+    })
+
     if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
+      diagnose("skip", { reason: "empty" })
       if (input.working()) abort()
       return
     }
@@ -482,6 +507,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (hookControlCommand) {
       const sessionID = params.id
       if (!sessionID) {
+        diagnose("skip", { reason: "hook-control-without-session" })
         showToast({
           title: language.t("toast.session.hooks.failed.title"),
           description: language.t("toast.session.hooks.failed.description"),
@@ -536,6 +562,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const currentAgent = local.agent.current() ?? (openclaw ? { name: "claw" } : undefined)
     const variant = local.model.variant.current()
     if (!currentModel || !currentAgent) {
+      diagnose("skip", {
+        reason: "missing-model-or-agent",
+        hasModel: !!currentModel,
+        hasAgent: !!currentAgent,
+      })
       showToast({
         title: language.t("prompt.toast.modelAgentRequired.title"),
         description: language.t("prompt.toast.modelAgentRequired.description"),
@@ -589,6 +620,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             })
 
           if (!createdWorktree?.directory) {
+            diagnose("skip", { reason: "worktree-create-failed" })
             showToast({
               title: language.t("prompt.toast.worktreeCreateFailed.title"),
               description: language.t("common.requestFailed"),
@@ -606,6 +638,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         if (sessionDirectory !== currentDirectory) {
           // Guard: 确保 sessionDirectory 不为空（worktree 场景）
           if (!sessionDirectory || sessionDirectory.trim() === "") {
+            diagnose("skip", { reason: "empty-worktree-directory" })
             console.error(
               `[BUG] sessionDirectory is empty in worktree path sessionDirectory=${sessionDirectory || ""} currentDirectory=${currentDirectory} rootDirectory=${rootDirectory} worktreeSelection=${worktreeSelection}`,
             )
@@ -667,6 +700,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
     }
     if (!session) {
+      diagnose("skip", { reason: "missing-session" })
       showToast({
         title: language.t("prompt.toast.promptSendFailed.title"),
         description: language.t("prompt.toast.promptSendFailed.description"),
@@ -712,6 +746,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
+      diagnose("queued", { sessionID: session.id, directory: sessionDirectory })
       input.onQueue?.(draft)
       clearContext()
       clearInput()
@@ -821,7 +856,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     const waitForWorktree = async () => {
       const worktree = WorktreeState.get(sessionDirectory)
-      if (!worktree || worktree.status !== "pending") return true
+      if (!worktree || worktree.status !== "pending") {
+        diagnose("worktree-ready", { directory: sessionDirectory, status: worktree?.status ?? "untracked" })
+        return true
+      }
+
+      diagnose("worktree-wait", { directory: sessionDirectory })
 
       if (sessionDirectory === currentDirectory) {
         sync.set("session_status", session.id, { type: "busy" })
@@ -869,11 +909,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         clearTimeout(timer.id)
       })
       pending.delete(session.id)
+      diagnose("worktree-wait-finished", {
+        directory: sessionDirectory,
+        status: result.status,
+        aborted: controller.signal.aborted,
+      })
       if (controller.signal.aborted) return false
       if (result.status === "failed") throw new Error(result.message)
       return true
     }
 
+    diagnose("dispatch", { sessionID: session.id, directory: sessionDirectory })
     void sendFollowupDraft({
       client,
       sync,

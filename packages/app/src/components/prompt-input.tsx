@@ -667,6 +667,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // Reset submitting state when working becomes true
   createEffect(() => {
     if (working() && store.submitting) {
+      console.debug("[prompt-submit]", { stage: "submitting-reset", reason: "session-working" })
       setStore("submitting", false)
     }
   })
@@ -1744,6 +1745,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onQueue: props.onQueue,
     onAbort: props.onAbort,
     onSubmit: () => {
+      console.debug("[prompt-submit]", { stage: "submitting-set" })
       setStore("submitting", true)
       props.onSubmit?.()
     },
@@ -1927,7 +1929,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       performance.mark("submit:keydown")
       console.debug("[perf:submit] Enter keydown", { timeStamp: event.timeStamp, now: performance.now(), delta: `${Math.round(performance.now() - event.timeStamp)}ms since event created` })
       event.preventDefault()
-      if (event.repeat) return
+      if (event.repeat) {
+        console.debug("[prompt-submit]", { stage: "keydown-skip", reason: "repeat" })
+        return
+      }
       if (
         working() &&
         prompt
@@ -1938,6 +1943,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         imageAttachments().length === 0 &&
         commentCount() === 0
       ) {
+        console.debug("[prompt-submit]", { stage: "keydown-skip", reason: "working-empty" })
         return
       }
       handleSubmit(event)
