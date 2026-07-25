@@ -28,7 +28,7 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Switch as Toggle } from "@opencode-ai/ui/switch"
 import { showToast } from "@opencode-ai/ui/toast"
-import { applyEdits, modify } from "jsonc-parser"
+import { applyEdits, modify, parse } from "jsonc-parser"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { paint } from "@/components/prompt-input/expand"
 import { pair } from "@/components/dialog-prompt-editor-input"
@@ -80,6 +80,7 @@ import {
   localPath,
   normalizePath,
 } from "@/utils/config-source"
+import { configPluginKey, pluginKey, relativePluginSpecifier, updatePluginEntries } from "@/utils/config-plugin"
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc } from "./config-agent-display"
 import {
@@ -352,13 +353,6 @@ function plugin(path: string) {
   const last = path.lastIndexOf("@")
   if (last > 0) return path.slice(0, last)
   return path
-}
-
-function pluginKey(path: string) {
-  const next = local(path)
-  if (file(path)) return norm(next)
-  if (path.includes("/") || path.includes("\\")) return norm(next)
-  return plugin(path)
 }
 
 function spec(path: string) {
@@ -6706,7 +6700,54 @@ export default function ConfigPage() {
       })
   }
 
+  async function toggleProjectPlugin(item: PluginItem, enabled: boolean) {
+    if (!item.root || !platform.listConfigFiles || !platform.readConfigFile || !platform.writeConfigFile)
+      throw new Error(t("config.error.globalConfigUnavailable"))
+
+    const nextSpec = item.spec ?? (item.path ? spec(item.path) : item.name)
+    const key = pluginKey(nextSpec)
+    const files = (await platform.listConfigFiles(item.root)).filter((file) => file.scope === "project" && file.kind === "config")
+    const records = await Promise.all(
+      files.map(async (file) => ({
+        file,
+        text: file.exists ? (await platform.readConfigFile!(file.path)) ?? "{}" : "{}",
+      })),
+    )
+    const declared = records.find((record) => {
+      const config = parse(record.text) as { plugin?: unknown }
+      return Array.isArray(config.plugin) && config.plugin.some((entry) => {
+        if (typeof entry !== "string" && !Array.isArray(entry)) return false
+        return configPluginKey(entry as string | [string, Record<string, unknown>], record.file.path) === key
+      })
+    })
+    const target = declared ?? records.find((record) => record.file.label === ".opencode/opencode.jsonc")
+    if (!target) throw new Error(`No project config file is available for ${item.label}.`)
+    if (!enabled && !declared) throw new Error(`${item.label} is automatically discovered and cannot be disabled from config.`)
+
+    const config = parse(target.text) as { plugin?: unknown }
+    const next = updatePluginEntries({
+      entries: config.plugin,
+      configPath: target.file.path,
+      key,
+      nextSpecifier: item.path ? relativePluginSpecifier(item.path, target.file.path) : nextSpec,
+      enabled,
+    })
+    await platform.writeConfigFile(target.file.path, patchText(target.text, ["plugin"], next))
+    await globalSDK.client.instance.dispose({ directory: item.root }).catch(() => undefined)
+    bump("skillRev")
+  }
+
   function togglePlugin(item: PluginItem, enabled: boolean) {
+    if (item.group === "project") {
+      void toggleProjectPlugin(item, enabled).catch((err: unknown) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+      return
+    }
+
     const prev = cfg().plugin ?? []
     const nextSpec = item.spec ?? (item.path ? spec(item.path) : item.name)
     const key = pluginKey(nextSpec)
