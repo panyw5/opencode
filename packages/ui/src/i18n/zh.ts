@@ -35,6 +35,7 @@ export const dict = {
   "ui.file.copyContent": "复制全部内容",
   "ui.file.copyPath": "复制文件地址",
   "ui.file.openFolder": "打开所在文件夹",
+  "ui.file.maximize": "最大化预览",
   "ui.file.largePreview.title": "已暂停大型 Markdown 预览",
   "ui.file.largePreview.meta": "可打开源码获得更接近编辑器的视图，或继续渲染 {{size}} 的完整预览。",
   "ui.file.largePreview.render": "渲染完整预览",

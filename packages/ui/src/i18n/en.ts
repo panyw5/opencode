@@ -34,6 +34,7 @@ export const dict: Record<string, string> = {
   "ui.file.copyContent": "Copy file content",
   "ui.file.copyPath": "Copy file path",
   "ui.file.openFolder": "Open containing folder",
+  "ui.file.maximize": "Maximize preview",
   "ui.file.largePreview.title": "Large markdown preview is paused",
   "ui.file.largePreview.meta": "Open source for an editor-like view, or render the full preview for {{size}}.",
   "ui.file.largePreview.render": "Render full preview",

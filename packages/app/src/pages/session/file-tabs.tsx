@@ -1,4 +1,4 @@
-import { createEffect, createMemo, For, Match, on, onCleanup, Show, Switch } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { AppIcon } from "@opencode-ai/ui/app-icon"
@@ -94,6 +94,7 @@ export function FileTabContent(props: { tab: string }) {
   }).activeFileTab
 
   let scroll: HTMLDivElement | undefined
+  const [actionsMount, setActionsMount] = createSignal<HTMLDivElement>()
   let scrollFrame: number | undefined
   let restoreFrame: number | undefined
   let pending: { x: number; y: number } | undefined
@@ -651,6 +652,7 @@ export function FileTabContent(props: { tab: string }) {
         }}
         search={search}
         class="select-text"
+        actionsMount={actionsMount}
         media={{
           mode: "auto",
           path: path(),
@@ -674,6 +676,7 @@ export function FileTabContent(props: { tab: string }) {
 
   return (
     <Tabs.Content value={props.tab} class="relative h-full">
+      <div ref={setActionsMount} data-slot="file-preview-actions-layer" class="pointer-events-none absolute inset-0 z-20" />
       <Show
         when={pdf() && state()?.loaded}
         fallback={

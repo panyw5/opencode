@@ -55,6 +55,7 @@ import { createLineNumberSelectionBridge, restoreShadowTextSelection } from "../
 import { acquireVirtualizer, virtualMetrics } from "../pierre/virtualizer"
 import { getWorkerPool } from "../pierre/worker"
 import { Button } from "./button"
+import { Dialog } from "./dialog"
 import { codeFileLanguage } from "./file-language"
 import { FileMedia, type FileMediaOptions } from "./file-media"
 import { FileSearchBar } from "./file-search"
@@ -62,6 +63,7 @@ import { IconButton } from "./icon-button"
 import { Markdown } from "./markdown"
 import { RadioGroup } from "./radio-group"
 import { Tooltip } from "./tooltip"
+import { useDialog } from "../context/dialog"
 
 const VIRTUALIZE_BYTES = 500_000
 const MARKDOWN_VIRTUALIZE_BYTES = 180_000
@@ -91,6 +93,8 @@ type SharedProps<T> = {
   openWith?: JSX.Element
   copyPath?: () => void
   copyContent?: () => void
+  toolbar?: boolean
+  actionsMount?: () => HTMLElement | undefined
 }
 
 export type FileSearchHandle = {
@@ -730,51 +734,22 @@ function FileRoot(props: {
   )
 }
 
-function FloatingFileActions(props: { children: JSX.Element }) {
-  let anchor!: HTMLDivElement
-  const [position, setPosition] = createSignal({ top: 12, right: 12 })
-
-  onMount(() => {
-    const updatePosition = () => {
-      const viewport = anchor.closest<HTMLElement>('[data-slot="scroll-view-viewport"]')
-      const rect = (viewport ?? anchor.parentElement)?.getBoundingClientRect()
-      if (!rect) return
-
-      setPosition({
-        top: Math.round(rect.top + 12),
-        right: Math.round(window.innerWidth - rect.right + 12),
-      })
-    }
-
-    const observer = new ResizeObserver(updatePosition)
-    const viewport = anchor.closest<HTMLElement>('[data-slot="scroll-view-viewport"]')
-    if (viewport) observer.observe(viewport)
-    window.addEventListener("resize", updatePosition)
-    window.addEventListener("scroll", updatePosition, true)
-    updatePosition()
-
-    onCleanup(() => {
-      observer.disconnect()
-      window.removeEventListener("resize", updatePosition)
-      window.removeEventListener("scroll", updatePosition, true)
-    })
-  })
-
+function FloatingFileActions(props: { mount: () => HTMLElement | undefined; children: JSX.Element }) {
   return (
-    <>
-      <div ref={anchor} data-slot="file-markdown-actions-anchor" />
-      <Portal>
-        <div
-          data-slot="file-markdown-actions"
-          class="fixed z-20"
-          data-prevent-autofocus=""
-          style={{ top: `${position().top}px`, right: `${position().right}px` }}
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          {props.children}
-        </div>
-      </Portal>
-    </>
+    <Show when={props.mount()}>
+      {(mount) => (
+        <Portal mount={mount()}>
+          <div
+            data-slot="file-markdown-actions"
+            class="absolute right-3 top-3 z-20"
+            data-prevent-autofocus=""
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            {props.children}
+          </div>
+        </Portal>
+      )}
+    </Show>
   )
 }
 
@@ -1026,6 +1001,7 @@ function SourceViewer<T>(props: SourceProps<T>) {
 
 function TextViewer<T>(props: TextFileProps<T>) {
   const i18n = useI18n()
+  const dialog = useDialog()
   const md = () => markdownFile(props.file.name)
   const svg = () => mediaKindFromPath(props.file.name) === "svg"
   const Source = SourceViewer as (props: SourceProps<T>) => JSX.Element
@@ -1042,11 +1018,27 @@ function TextViewer<T>(props: TextFileProps<T>) {
     if (!svg()) return
     return dataUrlFromMediaValue(props.media?.current ?? props.file.contents, "svg")
   })
+  const openMaximized = () => {
+    dialog.show(() => (
+      <Dialog title={props.file.name} class="h-full" containerStyle={{ width: "95vw", height: "95vh" }}>
+        <File {...props} toolbar={false} class="h-full" />
+      </Dialog>
+    ))
+  }
 
   if (!md() && !svg()) {
-    const sourceBar = (
-      <FloatingFileActions>
+    const sourceBar = props.toolbar === false || !props.actionsMount ? undefined : (
+      <FloatingFileActions mount={props.actionsMount}>
         <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+          <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
+            <IconButton
+              icon="expand"
+              variant="ghost"
+              class="h-8 w-8 rounded-md"
+              onClick={openMaximized}
+              aria-label={i18n.t("ui.file.maximize")}
+            />
+          </Tooltip>
           {props.openWith}
           <Show when={props.copyContent}>
             {(copyContent) => (
@@ -1095,9 +1087,18 @@ function TextViewer<T>(props: TextFileProps<T>) {
 
   const [mode, setMode] = createSignal<"preview" | "source">(linked() ? "source" : "preview")
   const [full, setFull] = createSignal(false)
-  const bar = (
-    <FloatingFileActions>
+  const bar = props.toolbar === false || !props.actionsMount ? undefined : (
+    <FloatingFileActions mount={props.actionsMount}>
       <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+        <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
+          <IconButton
+            icon="expand"
+            variant="ghost"
+            class="h-8 w-8 rounded-md"
+            onClick={openMaximized}
+            aria-label={i18n.t("ui.file.maximize")}
+          />
+        </Tooltip>
         {props.openWith}
         <Show when={props.copyContent}>
           {(copyContent) => (
