@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AssistantMessage, Part } from "@opencode-ai/sdk/v2"
-import { hiddenReasoning } from "./session-turn-state"
+import { formatThinkingElapsed, hiddenReasoning } from "./session-turn-state"
 
 function assistant(id: string): AssistantMessage {
   return {
@@ -62,5 +62,21 @@ describe("session-turn hiddenReasoning", () => {
     const msg = assistant("msg_assistant")
 
     expect(hiddenReasoning([msg], { [msg.id]: [text("part_text", msg.id)] }, false)).toBe(false)
+  })
+})
+
+describe("formatThinkingElapsed", () => {
+  test("renders elapsed seconds with one decimal place", () => {
+    expect(formatThinkingElapsed(12.39)).toBe("12.3")
+    expect(formatThinkingElapsed(12)).toBe("12.0")
+  })
+
+  test("keeps one decimal place after the minute boundary", () => {
+    expect(formatThinkingElapsed(59.99)).toBe("59.9")
+    expect(formatThinkingElapsed(60)).toEqual({ minutes: 1, seconds: "0.0" })
+  })
+
+  test("clamps negative elapsed values to zero", () => {
+    expect(formatThinkingElapsed(-1)).toBe("0.0")
   })
 })

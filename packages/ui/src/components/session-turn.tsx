@@ -23,7 +23,7 @@ import { SessionRetry } from "./session-retry"
 import { TextReveal } from "./text-reveal"
 import { createAutoScroll, suppressAutoScrollResize } from "../hooks"
 import { useI18n } from "../context/i18n"
-import { hiddenReasoning } from "./session-turn-state"
+import { formatThinkingElapsed, hiddenReasoning } from "./session-turn-state"
 import { isCustomHookTool, normalizeTool } from "./tool-meta"
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -171,14 +171,6 @@ function heading(text: string) {
     const value = clean(strong[1])
     if (value) return value
   }
-}
-
-function formatElapsed(seconds: number) {
-  const total = Math.max(0, Math.floor(seconds))
-  if (total < 60) return total
-  const minutes = Math.floor(total / 60)
-  const remainder = total % 60
-  return { minutes, seconds: remainder } as const
 }
 
 export function SessionTurn(
@@ -465,20 +457,20 @@ export function SessionTurn(
     on(thinkingStartMs, (start) => {
       if (typeof start !== "number") return
       setThinkingNow(Date.now())
-      const timer = setInterval(() => setThinkingNow(Date.now()), 1000)
+      const timer = setInterval(() => setThinkingNow(Date.now()), 100)
       onCleanup(() => clearInterval(timer))
     }),
   )
   const thinkingElapsed = createMemo(() => {
     const start = thinkingStartMs()
     if (typeof start !== "number") return undefined
-    return Math.max(0, Math.floor((thinkingNow() - start) / 1000))
+    return Math.max(0, (thinkingNow() - start) / 1000)
   })
   const thinkingElapsedLabel = createMemo(() => {
     const value = thinkingElapsed()
     if (typeof value !== "number") return ""
-    const formatted = formatElapsed(value)
-    if (typeof formatted === "number") return i18n.t("ui.message.duration.seconds", { count: formatted })
+    const formatted = formatThinkingElapsed(value)
+    if (typeof formatted === "string") return i18n.t("ui.message.duration.seconds", { count: formatted })
     return i18n.t("ui.message.duration.minutesSeconds", {
       minutes: formatted.minutes,
       seconds: formatted.seconds,
