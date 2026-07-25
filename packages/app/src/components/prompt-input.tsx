@@ -517,7 +517,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return
     }
 
-    if (!view().reviewPanel.opened()) view().reviewPanel.open()
+    if (!view().filePreview.opened()) view().filePreview.open()
     layout.fileTree.setTab("all")
     const tab = files.tab(item.path)
     tabs().open(tab)

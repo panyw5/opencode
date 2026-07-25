@@ -163,6 +163,7 @@ export const dict = {
   "command.terminal.toggle": "Toggle terminal",
   "command.fileTree.toggle": "Toggle file tree",
   "command.review.toggle": "Toggle review",
+  "command.filePreview.toggle": "Toggle file preview",
   "command.terminal.new": "New terminal",
   "command.terminal.new.description": "Create a new terminal tab",
   "command.terminal.openGhostty": "Open in Ghostty",

@@ -1854,7 +1854,7 @@ export function MessageTimeline(props: {
 
     void resolve().then((target) => {
       const tab = file.tab(target)
-      if (!view().reviewPanel.opened()) view().reviewPanel.open()
+      if (!view().filePreview.opened()) view().filePreview.open()
       layout.fileTree.setTab("all")
       file.setSelectedLines(target, line !== undefined ? { start: line, end: line } : null)
       void tabs().open(tab)

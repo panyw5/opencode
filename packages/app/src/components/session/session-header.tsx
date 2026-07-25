@@ -390,11 +390,24 @@ export function SessionHeader() {
                       onClick={() => view().reviewPanel.toggle()}
                       aria-label={language.t("command.review.toggle")}
                       aria-expanded={view().reviewPanel.opened()}
-                      aria-controls="review-panel"
+                      aria-controls="session-side-panel"
                     >
                       <Icon size="small" name={view().reviewPanel.opened() ? "review-active" : "review"} />
                     </Button>
                   </TooltipKeybind>
+
+                  <Tooltip value={language.t("command.filePreview.toggle")}>
+                    <Button
+                      variant="ghost"
+                      class="group/file-preview-toggle titlebar-icon w-8 h-6 p-0 box-border"
+                      onClick={() => view().filePreview.toggle()}
+                      aria-label={language.t("command.filePreview.toggle")}
+                      aria-expanded={view().filePreview.opened()}
+                      aria-controls="session-side-panel"
+                    >
+                      <Icon size="small" name="file" />
+                    </Button>
+                  </Tooltip>
 
                   <TooltipKeybind
                     title={language.t("command.fileTree.toggle")}
@@ -411,7 +424,7 @@ export function SessionHeader() {
                       <div class="relative flex items-center justify-center size-4">
                         <Icon
                           size="small"
-                          name={layout.fileTree.opened() ? "file-tree-active" : "file-tree"}
+                          name="branch"
                           classList={{
                             "text-icon-strong": layout.fileTree.opened(),
                             "text-icon-weak": !layout.fileTree.opened(),

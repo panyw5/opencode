@@ -372,6 +372,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         onSelect: () => view().reviewPanel.toggle(),
       }),
       viewCommand({
+        id: "filePreview.toggle",
+        title: language.t("command.filePreview.toggle"),
+        keywords: kw("command.filePreview.toggle"),
+        onSelect: () => view().filePreview.toggle(),
+      }),
+      viewCommand({
         id: "fileTree.toggle",
         title: language.t("command.fileTree.toggle"),
         keywords: kw("command.fileTree.toggle"),

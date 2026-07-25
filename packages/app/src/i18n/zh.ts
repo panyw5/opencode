@@ -175,6 +175,7 @@ export const dict = {
   "command.fileTree.toggle": "切换文件树",
 
   "command.review.toggle": "切换审查",
+  "command.filePreview.toggle": "切换文件预览",
 
   "command.terminal.new": "新建终端",
   "command.terminal.new.description": "创建新的终端标签页",

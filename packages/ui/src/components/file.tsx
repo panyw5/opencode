@@ -1021,7 +1021,9 @@ function TextViewer<T>(props: TextFileProps<T>) {
   const openMaximized = () => {
     dialog.show(() => (
       <Dialog title={props.file.name} class="h-full" containerStyle={{ width: "95vw", height: "95vh" }}>
-        <File {...props} toolbar={false} class="h-full" />
+        <div class="h-full overflow-auto">
+          <File {...props} toolbar={false} class="min-h-full" />
+        </div>
       </Dialog>
     ))
   }
@@ -1030,6 +1032,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
     const sourceBar = props.toolbar === false || !props.actionsMount ? undefined : (
       <FloatingFileActions mount={props.actionsMount}>
         <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+          {props.openWith}
           <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
             <IconButton
               icon="expand"
@@ -1039,7 +1042,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
               aria-label={i18n.t("ui.file.maximize")}
             />
           </Tooltip>
-          {props.openWith}
           <Show when={props.copyContent}>
             {(copyContent) => (
               <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
@@ -1090,6 +1092,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
   const bar = props.toolbar === false || !props.actionsMount ? undefined : (
     <FloatingFileActions mount={props.actionsMount}>
       <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+        {props.openWith}
         <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
           <IconButton
             icon="expand"
@@ -1099,7 +1102,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
             aria-label={i18n.t("ui.file.maximize")}
           />
         </Tooltip>
-        {props.openWith}
         <Show when={props.copyContent}>
           {(copyContent) => (
             <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">

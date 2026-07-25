@@ -249,6 +249,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           diffStyle: "split" as ReviewDiffStyle,
           panelOpened: true,
         },
+        filePreview: {
+          opened: false,
+        },
         fileTree: {
           opened: true,
           width: DEFAULT_PANEL_WIDTH,
@@ -836,6 +839,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const s = createMemo(() => store.sessionView[key()] ?? { scroll: {} })
         const terminalOpened = createMemo(() => store.terminal?.opened ?? false)
         const reviewPanelOpened = createMemo(() => store.review?.panelOpened ?? true)
+        const filePreviewOpened = createMemo(() => store.filePreview?.opened ?? false)
 
         function setTerminalOpened(next: boolean) {
           const current = store.terminal
@@ -850,6 +854,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         }
 
         function setReviewPanelOpened(next: boolean) {
+          if (next) setFilePreviewOpened(false)
           const current = store.review
           if (!current) {
             setStore("review", { diffStyle: "split" as ReviewDiffStyle, panelOpened: next })
@@ -859,6 +864,17 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           const value = current.panelOpened ?? true
           if (value === next) return
           setStore("review", "panelOpened", next)
+        }
+
+        function setFilePreviewOpened(next: boolean) {
+          if (next) setReviewPanelOpened(false)
+          if (!store.filePreview) {
+            setStore("filePreview", { opened: next })
+            return
+          }
+
+          if (store.filePreview.opened === next) return
+          setStore("filePreview", "opened", next)
         }
 
         return {
@@ -890,6 +906,18 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             },
             toggle() {
               setReviewPanelOpened(!reviewPanelOpened())
+            },
+          },
+          filePreview: {
+            opened: filePreviewOpened,
+            open() {
+              setFilePreviewOpened(true)
+            },
+            close() {
+              setFilePreviewOpened(false)
+            },
+            toggle() {
+              setFilePreviewOpened(!filePreviewOpened())
             },
           },
           review: {

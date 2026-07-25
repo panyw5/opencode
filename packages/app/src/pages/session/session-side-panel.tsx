@@ -54,17 +54,23 @@ export function SessionSidePanel(props: {
   const isDesktop = createMediaQuery("(min-width: 768px)")
 
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
+  const filePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
   const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const open = createMemo(() => reviewOpen() || fileOpen())
-  const reviewTab = createMemo(() => isDesktop())
+  const open = createMemo(() => reviewOpen() || filePreviewOpen() || fileOpen())
+  const reviewTab = reviewOpen
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
-    if (reviewOpen()) return `calc(100% - ${layout.session.width()}px)`
+    if (reviewOpen() || filePreviewOpen()) return `calc(100% - ${layout.session.width()}px)`
     return `${layout.fileTree.width()}px`
   })
   const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
 
-  const diffFiles = createMemo(() => props.diffs().map((d) => d.file).filter((f): f is string => !!f))
+  const diffFiles = createMemo(() =>
+    props
+      .diffs()
+      .map((d) => d.file)
+      .filter((f): f is string => !!f),
+  )
   const kinds = createMemo(() => {
     const merge = (a: "add" | "del" | "mix" | undefined, b: "add" | "del" | "mix") => {
       if (!a) return b
@@ -115,8 +121,8 @@ export function SessionSidePanel(props: {
     return file.tab(tab)
   }
 
-  const openReviewPanel = () => {
-    if (!view().reviewPanel.opened()) view().reviewPanel.open()
+  const openFilePreview = () => {
+    if (!view().filePreview.opened()) view().filePreview.open()
   }
 
   const openTab = createOpenSessionFileTab({
@@ -124,7 +130,7 @@ export function SessionSidePanel(props: {
     openTab: tabs().open,
     pathFromTab: file.pathFromTab,
     loadFile: file.load,
-    openReviewPanel,
+    openReviewPanel: openFilePreview,
     setActive: tabs().setActive,
   })
 
@@ -200,8 +206,8 @@ export function SessionSidePanel(props: {
   return (
     <Show when={isDesktop()}>
       <aside
-        id="review-panel"
-        aria-label={language.t("session.panel.reviewAndFiles")}
+        id="session-side-panel"
+        aria-label={reviewOpen() ? language.t("session.tab.review") : language.t("session.files.all")}
         aria-hidden={!open()}
         inert={!open()}
         class="relative min-w-0 h-full flex shrink-0 overflow-hidden bg-background-base"
@@ -211,17 +217,16 @@ export function SessionSidePanel(props: {
         }}
         style={{
           width: panelWidth(),
-          transition:
-            props.size.active() || props.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+          transition: props.size.active() || props.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
         <div class="size-full flex border-l border-border-weaker-base">
           <div
-            aria-hidden={!reviewOpen()}
-            inert={!reviewOpen()}
+            aria-hidden={!reviewOpen() && !filePreviewOpen()}
+            inert={!reviewOpen() && !filePreviewOpen()}
             class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base"
             classList={{
-              "pointer-events-none": !reviewOpen(),
+              "pointer-events-none": !reviewOpen() && !filePreviewOpen(),
             }}
           >
             <div class="size-full min-w-0 h-full bg-background-base">
@@ -233,7 +238,7 @@ export function SessionSidePanel(props: {
               >
                 <DragDropSensors />
                 <ConstrainDragYAxis />
-                <Tabs value={activeTab()} onChange={openTab}>
+                <Tabs value={reviewOpen() ? "review" : activeTab()} onChange={openTab}>
                   <div class="sticky top-0 shrink-0 flex">
                     <Tabs.List
                       ref={(el: HTMLDivElement) => {
@@ -241,7 +246,7 @@ export function SessionSidePanel(props: {
                         onCleanup(stop)
                       }}
                     >
-                      <Show when={contextOpen()}>
+                      <Show when={filePreviewOpen() && contextOpen()}>
                         <Tabs.Trigger
                           class="session-file-tab-trigger"
                           value="context"
@@ -270,74 +275,66 @@ export function SessionSidePanel(props: {
                           </div>
                         </Tabs.Trigger>
                       </Show>
-                      <SortableProvider ids={openedTabs()}>
-                        <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
-                      </SortableProvider>
-                      <div class="h-full shrink-0 flex items-center justify-center px-3">
-                        <TooltipKeybind
-                          title={language.t("command.file.open")}
-                          keybind={command.keybind("file.open")}
-                          class="flex items-center"
-                        >
-                          <IconButton
-                            icon="plus-small"
-                            variant="ghost"
-                            iconSize="large"
-                            class="!rounded-md"
-                            onClick={() =>
-                              dialog.show(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
-                            }
-                            aria-label={language.t("command.file.open")}
-                          />
-                        </TooltipKeybind>
-                      </div>
+                      <Show when={filePreviewOpen()}>
+                        <SortableProvider ids={openedTabs()}>
+                          <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
+                        </SortableProvider>
+                        <div class="h-full shrink-0 flex items-center justify-center px-3">
+                          <TooltipKeybind
+                            title={language.t("command.file.open")}
+                            keybind={command.keybind("file.open")}
+                            class="flex items-center"
+                          >
+                            <IconButton
+                              icon="plus-small"
+                              variant="ghost"
+                              iconSize="large"
+                              class="!rounded-md"
+                              onClick={() =>
+                                dialog.show(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
+                              }
+                              aria-label={language.t("command.file.open")}
+                            />
+                          </TooltipKeybind>
+                        </div>
+                      </Show>
                       <div class="min-w-0 flex-1" />
-                      <div class="bg-background-stronger h-full shrink-0 sticky right-0 z-10 flex items-center justify-center pr-3">
-                        <Show when={reviewTab() && props.canReview()}>
-                          <Tabs.Trigger value="review">
-                            <div class="flex items-center gap-1.5">
-                              <div>{language.t("session.tab.review")}</div>
-                              <Show when={props.hasReview()}>
-                                <div>{props.reviewCount()}</div>
-                              </Show>
-                            </div>
-                          </Tabs.Trigger>
-                        </Show>
-                      </div>
                     </Tabs.List>
                   </div>
 
-                  <Show when={reviewTab() && props.canReview()}>
+                  <Show when={reviewOpen() && props.canReview()}>
                     <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
-                      <Show when={activeTab() === "review"}>{props.reviewPanel()}</Show>
+                      {props.reviewPanel()}
                     </Tabs.Content>
                   </Show>
 
-                  <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
-                    <Show when={activeTab() === "empty"}>
-                      <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                        <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-6">
-                          <Mark class="w-14 opacity-10" />
-                          <div class="text-14-regular text-text-weak max-w-56">
-                            {language.t("session.files.selectToOpen")}
-                          </div>
-                        </div>
-                      </div>
-                    </Show>
-                  </Tabs.Content>
-
-                  <Show when={contextOpen()}>
-                    <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
-                      <Show when={activeTab() === "context"}>
+                  <Show when={filePreviewOpen()}>
+                    <Tabs.Content value="empty" class="flex flex-col h-full overflow-hidden contain-strict">
+                      <Show when={activeTab() === "empty"}>
                         <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
-                          <SessionContextTab />
+                          <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-6">
+                            <Mark class="w-14 opacity-10" />
+                            <div class="text-14-regular text-text-weak max-w-56">
+                              {language.t("session.files.selectToOpen")}
+                            </div>
+                          </div>
                         </div>
                       </Show>
                     </Tabs.Content>
-                  </Show>
 
-                  <Show when={activeFileTab()} keyed>
-                    {(tab) => <FileTabContent tab={tab} />}
+                    <Show when={contextOpen()}>
+                      <Tabs.Content value="context" class="flex flex-col h-full overflow-hidden contain-strict">
+                        <Show when={activeTab() === "context"}>
+                          <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
+                            <SessionContextTab />
+                          </div>
+                        </Show>
+                      </Tabs.Content>
+                    </Show>
+
+                    <Show when={activeFileTab()} keyed>
+                      {(tab) => <FileTabContent tab={tab} />}
+                    </Show>
                   </Show>
                 </Tabs>
                 <DragOverlay>
@@ -372,7 +369,7 @@ export function SessionSidePanel(props: {
           >
             <div
               class="h-full flex flex-col overflow-hidden group/filetree"
-              classList={{ "border-l border-border-weaker-base": reviewOpen() }}
+              classList={{ "border-l border-border-weaker-base": reviewOpen() || filePreviewOpen() }}
             >
               <Tabs
                 variant="pill"
