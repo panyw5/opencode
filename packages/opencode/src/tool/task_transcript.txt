@@ -1,5 +1,19 @@
-Read a paginated transcript for a task launched from the current session.
+Inspect the persisted transcript of a task launched from the current session.
 
-Use this when a subagent is stuck or failed and you need its recent messages or tool activity before deciding whether to resume or cancel it. The task must be a child task of the current session.
+Use this when a subagent is stuck, failed, produced an unexpected result, or needs more direction. Inspect its recent messages and tool activity before deciding whether to resume the task with `task(task_id=...)`, wait for it, or take over the work yourself.
 
-The first call returns the most recent messages. Pass `next_cursor` from the response to retrieve older messages. By default, text and tool activity are included; reasoning is only included when requested explicitly.
+Access rules:
+- `task_id` must be the ID returned by the Task tool for a direct or descendant child task of the current session.
+- This tool cannot read unrelated sessions.
+
+Pagination:
+- Omit `cursor` on the first call to retrieve the most recent messages.
+- The response includes `next_cursor` and `more`. When `more=true`, pass `next_cursor` in the next call to retrieve older messages.
+- Use `limit` to control messages per page. Start with the default or a small page; do not retrieve the full transcript unless it is necessary.
+
+Content selection:
+- By default, the transcript includes visible text and tool activity.
+- Set `include` to select `text`, `tool`, and/or `reasoning`. Request `reasoning` only when visible messages and tool results do not explain the failure.
+- Long text and tool fields are clipped. Use pagination to inspect additional messages rather than expecting one call to return all history.
+
+Returns the task ID, title, page size, pagination state, and selected transcript entries. Tool entries include the tool name, status, input, and completed output or error.

@@ -20,6 +20,10 @@ exports[`tool parameters JSON Schema (wire shape) bash 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "background": {
+      "description": "When true, run the command as a monitored PTY-backed background shell and return immediately. Use this for long-running servers, watchers, or commands that should continue while you work.",
+      "type": "boolean",
+    },
     "command": {
       "description": "The command to execute",
       "type": "string",
