@@ -8,7 +8,7 @@ import { SessionContentSearchProgressTable } from "./content-search.sql"
 import type { MessageV2 } from "./message-v2"
 import type { PartID } from "./schema"
 
-const pageSize = 100
+const pageSize = 500
 const defaultLimit = 30
 const maxLimit = 100
 const log = Log.create({ service: "session.content-search" })
@@ -228,14 +228,23 @@ export function writeBackfillBatch(db: TxOrDb, generation: number, parts: Backfi
   const row = readProgressRow(db)
   if (!active(row, generation)) return progress(db)
 
+  let added = 0
   for (const part of parts) {
-    // upsert maintains the durable indexed counter for new searchable rows.
-    upsert(db, {
-      ...part.data,
-      id: part.id,
-      messageID: part.messageID,
-      sessionID: part.sessionID,
-    } as MessageV2.Part)
+    const text = searchableText(part.data)
+    const existed =
+      (db.all(sql`SELECT 1 AS ok FROM session_content_fts WHERE part_id = ${part.id} LIMIT 1`)[0] as
+        | { ok: number }
+        | undefined) !== undefined
+    db.run(sql`DELETE FROM session_content_fts WHERE part_id = ${part.id}`)
+    if (!text) {
+      if (existed) added -= 1
+      continue
+    }
+    db.run(sql`
+      INSERT INTO session_content_fts (part_id, message_id, session_id, text)
+      VALUES (${part.id}, ${part.messageID}, ${part.sessionID}, ${text})
+    `)
+    if (!existed) added += 1
   }
 
   const nextCursor = parts.at(-1)?.id
@@ -243,7 +252,9 @@ export function writeBackfillBatch(db: TxOrDb, generation: number, parts: Backfi
 
   db.run(sql`
     UPDATE session_content_search_progress
-    SET cursor = ${nextCursor}
+    SET
+      indexed = max(indexed + ${added}, 0),
+      cursor = ${nextCursor}
     WHERE id = 1 AND enabled = 1 AND state = 'running' AND complete = 0 AND generation = ${generation}
   `)
   return progress(db)
@@ -314,7 +325,8 @@ export const backfill = Effect.fn("SessionContentSearch.backfill")(function* () 
         total: state.total,
         cursorPresent: state.cursor !== undefined,
       })
-      yield* Effect.sleep("10 millis")
+      // Yield briefly so live chat writes are not starved.
+      yield* Effect.sleep("1 millis")
     }
   } catch (error) {
     log.error("session-content-search:backfill-failed", {
@@ -367,7 +379,7 @@ export function search(input: {
           s.project_id AS projectID,
           s.directory AS directory,
           s.title AS sessionTitle,
-          snippet(session_content_fts, 3, '', '', '…', 16) AS snippet,
+          snippet(session_content_fts, 3, '<mark>', '</mark>', '…', 16) AS snippet,
           s.time_updated AS time,
           json_extract(m.data, '$.role') AS role
         FROM session_content_fts

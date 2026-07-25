@@ -4,6 +4,8 @@ import { Flag } from "@opencode-ai/core/flag/flag"
 import * as Log from "@opencode-ai/core/util/log"
 import { Server } from "../../src/server/server"
 import { PtyPaths } from "../../src/server/routes/instance/httpapi/groups/pty"
+import { SessionContentSearch } from "../../src/session/content-search"
+import { Database } from "../../src/storage/db"
 import { withTimeout } from "../../src/util/timeout"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
@@ -168,6 +170,17 @@ async function openPtySocket(listener: Awaited<ReturnType<typeof startListener>>
 }
 
 describe("HttpApi Server.listen", () => {
+  test("starts without an instance when a content index backfill is pending", async () => {
+    Database.transaction((db) => SessionContentSearch.enable(db))
+
+    const listener = await startListener()
+    try {
+      expect(listener.url.hostname).toBe("127.0.0.1")
+    } finally {
+      await stop(listener, "timed out cleaning up listener with pending content index")
+    }
+  })
+
   testPty("serves HTTP routes and upgrades PTY websocket through Server.listen", async () => {
     await using tmp = await tmpdir({ config: { formatter: false, lsp: false } })
     const listener = await startListener()

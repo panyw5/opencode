@@ -206,7 +206,12 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     })
 
     const sessionContentSearchStatus = Effect.fn("ExperimentalHttpApi.sessionContentSearchStatus")(function* () {
-      return yield* Effect.sync(() => Database.use(SessionContentSearch.progress))
+      const status = Database.use(SessionContentSearch.progress)
+      // Settings/status polling can restart a stalled worker after restart.
+      if (status.enabled && status.state === "running" && !status.complete) {
+        yield* startContentBackfill()
+      }
+      return status
     })
 
     const sessionContentSearchAction = Effect.fn("ExperimentalHttpApi.sessionContentSearchAction")(function* (ctx: {

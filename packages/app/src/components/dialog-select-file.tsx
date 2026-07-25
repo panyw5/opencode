@@ -65,6 +65,33 @@ const uniqueEntries = (items: Entry[]) => {
   return out
 }
 
+// FTS returns <mark>…</mark> around matches. Only those tags are interpreted;
+// remaining text is rendered as plain text to avoid HTML injection.
+const renderSnippet = (snippet: string) => {
+  const parts = snippet.split(/(<\/?mark>)/)
+  const nodes: JSX.Element[] = []
+  let highlight = false
+  for (const part of parts) {
+    if (part === "<mark>") {
+      highlight = true
+      continue
+    }
+    if (part === "</mark>") {
+      highlight = false
+      continue
+    }
+    if (!part) continue
+    nodes.push(
+      highlight ? (
+        <span class="rounded-sm bg-surface-info-base text-text-strong px-0.5">{part}</span>
+      ) : (
+        part
+      ),
+    )
+  }
+  return nodes
+}
+
 const createCommandEntry = (option: CommandOption, category: string): Entry => ({
   id: "command:" + option.id,
   type: "command",
@@ -755,7 +782,7 @@ export function DialogSessionContentSearch() {
                           </span>
                           <span class="text-12-regular text-text-weak shrink-0">·</span>
                         </Show>
-                        <span class="text-14-medium text-text-strong truncate min-w-0">{item.title}</span>
+                        <span class="text-12-regular text-text-strong truncate min-w-0">{item.title}</span>
                         <Show when={item.updated}>
                           <span class="text-12-regular text-text-weak whitespace-nowrap ml-auto shrink-0">
                             {getRelativeTime(new Date(item.updated!).toISOString(), language.t)}
@@ -763,7 +790,9 @@ export function DialogSessionContentSearch() {
                         </Show>
                       </div>
                       <Show when={item.snippet}>
-                        <span class="text-13-regular text-text-weak truncate text-left">{item.snippet}</span>
+                        <span class="text-13-regular text-text-weak truncate text-left">
+                          {renderSnippet(item.snippet!)}
+                        </span>
                       </Show>
                     </div>
                   </div>
