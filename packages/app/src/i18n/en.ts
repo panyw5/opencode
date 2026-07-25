@@ -118,6 +118,7 @@ export const dict = {
   "trellis.tasks.noPrd": "No prd.md file found in this task folder.",
   "trellis.tasks.openFolder": "Open folder",
   "trellis.tasks.copyTitle": "Copy task title",
+  "trellis.tasks.insert": "Insert to session",
   "trellis.tasks.setCurrent": "Set current task",
   "trellis.tasks.archive": "Archive task",
   "trellis.tasks.new.button": "New task",

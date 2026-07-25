@@ -123,6 +123,7 @@ export const dict = {
   "trellis.tasks.noPrd": "此任务文件夹下未找到 prd.md 文件。",
   "trellis.tasks.openFolder": "打开文件夹",
   "trellis.tasks.copyTitle": "复制任务标题",
+  "trellis.tasks.insert": "插入到会话",
   "trellis.tasks.setCurrent": "设为当前任务",
   "trellis.tasks.archive": "归档任务",
   "trellis.tasks.new.button": "新建任务",

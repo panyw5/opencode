@@ -3,6 +3,7 @@ import {
   applyPrdDocumentPairEdit,
   commitPrdDocumentSave,
   createPrdDocumentState,
+  prdPreviewTitle,
 } from "./trellis-prd-document"
 
 describe("trellis prd document", () => {
@@ -25,6 +26,10 @@ describe("trellis prd document", () => {
 
     expect(autosaved.savedContent).toBe("# Autosaved edit\n")
     expect(autosaved.draft).toBe("# Autosaved edit\n")
+  })
+
+  test("uses the task name rather than its description for the preview title", () => {
+    expect(prdPreviewTitle("07-22-global-session-content-search")).toBe("07-22-global-session-content-search")
   })
 
   test("auto-pairs common brackets and quotes in PRD edits", () => {

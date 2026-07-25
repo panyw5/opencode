@@ -20,6 +20,10 @@ export function commitPrdDocumentSave(state: PrdDocumentState): PrdDocumentState
   }
 }
 
+export function prdPreviewTitle(taskName: string) {
+  return taskName.trim()
+}
+
 export function applyPrdDocumentPairEdit(input: {
   text: string
   start: number

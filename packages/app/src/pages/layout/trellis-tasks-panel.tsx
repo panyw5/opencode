@@ -18,11 +18,13 @@ import { paint } from "@/components/prompt-input/expand"
 import { type AtOption } from "@/components/prompt-input/slash-popover"
 import { at, mention } from "@/components/dialog-prompt-editor-input"
 import { monoFontFamily, useSettings } from "@/context/settings"
+import { requestTrellisTaskInsert } from "@/utils/trellis-task-insert"
 import { errorMessage } from "./helpers"
 import {
   applyPrdDocumentPairEdit,
   commitPrdDocumentSave,
   createPrdDocumentState,
+  prdPreviewTitle,
 } from "./trellis-prd-document"
 
 const labelStatus = (status: string) =>
@@ -176,6 +178,7 @@ function NewTrellisTaskDialog(props: {
 function TaskCard(props: {
   task: TrellisTask
   onOpen: (task: TrellisTask) => void | Promise<void>
+  onInsert: (task: TrellisTask) => void
   onSetCurrent: (task: TrellisTask) => void | Promise<void>
   onArchive: (task: TrellisTask) => void | Promise<void>
 }): JSX.Element {
@@ -203,6 +206,11 @@ function TaskCard(props: {
     Promise.resolve(props.onSetCurrent(props.task)).finally(() => {
       setPending(undefined)
     })
+  }
+
+  const insert: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (event) => {
+    event.stopPropagation()
+    props.onInsert(props.task)
   }
 
   const archive: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (event) => {
@@ -254,6 +262,14 @@ function TaskCard(props: {
           <div class="mt-2 flex flex-wrap items-center gap-2">
             <button
               type="button"
+              class="flex items-center gap-1 rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover"
+              onClick={insert}
+            >
+              <Icon name="arrow-right" size="small" />
+              {language.t("trellis.tasks.insert")}
+            </button>
+            <button
+              type="button"
               class="rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
               disabled={props.task.current || !canAct()}
               onClick={setCurrent}
@@ -282,7 +298,6 @@ function TaskCard(props: {
 
 function PrdPreviewDialog(props: {
   name: string
-  taskTitle: string
   prdAbsPath: string
   initialContent: string | undefined
   searchFilesAndDirectories?: (query: string) => Promise<string[]>
@@ -365,7 +380,7 @@ function PrdPreviewDialog(props: {
   const shown = createMemo(() => atFlat().slice(0, 6))
 
   const editorH = createMemo(() => (maximized() ? "calc(95vh - 130px)" : "calc(90vh - 130px)"))
-  const title = createMemo(() => props.taskTitle.trim() || props.name)
+  const title = createMemo(() => prdPreviewTitle(props.name))
 
   const copyTitle = () => {
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
@@ -980,6 +995,10 @@ export function TrellisTasksPanel(props: {
     }
   }
 
+  const insert = (task: TrellisTask) => {
+    requestTrellisTaskInsert(task.title)
+  }
+
   const archive = async (task: TrellisTask) => {
     if (!platform.archiveTrellisTask) return
     setActionError(undefined)
@@ -1047,7 +1066,6 @@ export function TrellisTasksPanel(props: {
     dialog.show(() => (
       <PrdPreviewDialog
         name={name}
-        taskTitle={task.title}
         prdAbsPath={prdAbsPath}
         initialContent={content}
         searchFilesAndDirectories={searchFilesAndDirectories}
@@ -1119,7 +1137,15 @@ export function TrellisTasksPanel(props: {
                       {(err) => <ErrorCard err={err()} />}
                     </Show>
                     <For each={tasks()}>
-                      {(task) => <TaskCard task={task} onOpen={open} onSetCurrent={setCurrent} onArchive={archive} />}
+                      {(task) => (
+                        <TaskCard
+                          task={task}
+                          onOpen={open}
+                          onInsert={insert}
+                          onSetCurrent={setCurrent}
+                          onArchive={archive}
+                        />
+                      )}
                     </For>
                   </div>
                 </Show>
