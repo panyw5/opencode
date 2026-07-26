@@ -378,7 +378,7 @@ function SessionTab(props: { tab: SessionBarTab; active: boolean; onOpen: () => 
             </span>
           }
         >
-          <span class="flex shrink-0 text-icon-weak" aria-hidden="true">
+          <span class="flex shrink-0 text-icon-weak [transform:scaleY(-1)]" aria-hidden="true">
             <Icon name="branch" size="small" />
           </span>
         </Show>
