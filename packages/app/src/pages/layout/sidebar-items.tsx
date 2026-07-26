@@ -19,6 +19,10 @@ import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
+import {
+  PROJECT_SESSION_STATUS_REFRESH_INTERVAL,
+  shouldRefreshProjectSessionStatus,
+} from "@/context/global-sync/session-status-refresh"
 import { working } from "../session/session-working"
 import {
   hasProjectPermissions,
@@ -29,6 +33,8 @@ import {
 } from "./helpers"
 
 const OPENCODE_PROJECT_ID = "4b0ea68d7af9a6031a7ffda7ad66e0cb83315750"
+const projectActivityPulseInterval = 6_000
+const projectActivityPulseDuration = 1_000
 
 /** Module-level so title shimmer survives SessionItem remount after title update. */
 const titleShimmerTimers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -98,6 +104,43 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
       store.session.some((session) => working(store.session_status[session.id], store.message[session.id])),
     ),
   )
+  const [activityPulse, setActivityPulse] = createSignal(false)
+  createEffect(() => {
+    if (!hasActiveSession()) {
+      setActivityPulse(false)
+      return
+    }
+
+    let frame: number | undefined
+    let stop: number | undefined
+    const pulse = () => {
+      setActivityPulse(false)
+      frame = window.requestAnimationFrame(() => {
+        setActivityPulse(true)
+        stop = window.setTimeout(() => setActivityPulse(false), projectActivityPulseDuration)
+      })
+    }
+    pulse()
+    const timer = window.setInterval(pulse, projectActivityPulseInterval)
+    onCleanup(() => {
+      window.clearInterval(timer)
+      if (frame !== undefined) window.cancelAnimationFrame(frame)
+      if (stop !== undefined) window.clearTimeout(stop)
+    })
+  })
+  createEffect(() => {
+    if (!shouldRefreshProjectSessionStatus(hasActiveSession())) return
+
+    const directories = dirs()
+    const refresh = () => {
+      for (const directory of directories) {
+        void globalSync.project.refreshSessionStatus(directory)
+      }
+    }
+    refresh()
+    const timer = window.setInterval(refresh, PROJECT_SESSION_STATUS_REFRESH_INTERVAL)
+    onCleanup(() => window.clearInterval(timer))
+  })
   const count = createMemo(() =>
     dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )
@@ -163,7 +206,9 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
           aria-hidden="true"
           class="pointer-events-none absolute -bottom-0.5 -right-0.5 z-10 flex size-3"
         >
-          <span data-slot="project-activity-ripple" class="absolute inline-flex h-full w-full rounded-full" />
+          <Show when={activityPulse()}>
+            <span data-slot="project-activity-ripple" class="absolute inline-flex h-full w-full rounded-full" />
+          </Show>
           <span data-slot="project-activity-dot" class="relative inline-flex size-3 rounded-full" />
         </div>
       </Show>

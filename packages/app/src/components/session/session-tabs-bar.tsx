@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import {
@@ -15,17 +15,18 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 
-import { getAvatarColors, sessionBarKey, useLayout, type SessionBarTab } from "@/context/layout"
+import { sessionBarKey, useLayout, type SessionBarTab } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { ServerConnection, useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
+import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
-import { projectOwner, waitForMatch, workspaceKey } from "@/pages/layout/helpers"
+import { waitForMatch, workspaceKey } from "@/pages/layout/helpers"
 import { getTabReorderIndex } from "@/pages/session/helpers"
 import { working } from "@/pages/session/session-working"
 
@@ -44,10 +45,14 @@ export function SessionTabsBar() {
   const navigate = useNavigate()
   const params = useParams()
   const location = useLocation()
+  type DictKey = keyof typeof enDict
+  const kw = (...keys: DictKey[]) => (language.locale() === "en" ? undefined : keys.map((k) => enDict[k]).join(" "))
 
   const [state, setState] = createStore({
     activeDraggable: undefined as string | undefined,
   })
+  let tabsViewport: HTMLDivElement | undefined
+  let revealFrame: number | undefined
 
   const tabs = createMemo(() => layout.sessionBar.all())
   const routeDir = createMemo(() => {
@@ -149,6 +154,19 @@ export function SessionTabsBar() {
     navigate(`/${base64Encode(directory)}/session`)
   }
 
+  // Cycle through open tabs. When the current route is not a persisted tab
+  // (draft new-session page, home, config), previous lands on the last tab and
+  // next on the first, matching the draft tab's visual position at the end.
+  const switchBy = (delta: number) => {
+    const all = tabs()
+    if (all.length === 0) return
+    const index = all.findIndex((tab) => isActive(tab))
+    const target =
+      index === -1 ? (delta > 0 ? all[0] : all[all.length - 1]) : all[(index + delta + all.length) % all.length]
+    if (!target) return
+    void open(target)
+  }
+
   const closeActive = () => {
     if (draftDirectory()) {
       closeDraft()
@@ -158,17 +176,60 @@ export function SessionTabsBar() {
     if (active) close(active)
   }
 
-  command.register("session-tabs.close", () => [
+  command.register(() => [
     {
       id: "sessionTabs.close",
       title: language.t("command.sessionTabs.close"),
+      keywords: kw("command.sessionTabs.close"),
       category: language.t("command.category.session"),
       disabled: !draftDirectory() && !tabs().some((tab) => isActive(tab)),
       onSelect: closeActive,
     },
+    {
+      id: "sessionTabs.previous",
+      title: language.t("command.sessionTabs.previous"),
+      keywords: kw("command.sessionTabs.previous"),
+      category: language.t("command.category.session"),
+      keybind: "mod+shift+[",
+      disabled: tabs().length === 0,
+      onSelect: () => switchBy(-1),
+    },
+    {
+      id: "sessionTabs.next",
+      title: language.t("command.sessionTabs.next"),
+      keywords: kw("command.sessionTabs.next"),
+      category: language.t("command.category.session"),
+      keybind: "mod+shift+]",
+      disabled: tabs().length === 0,
+      onSelect: () => switchBy(1),
+    },
   ])
 
   const keys = createMemo(() => tabs().map((tab) => sessionBarKey(tab)))
+  const scrollTarget = createMemo(() => {
+    const draft = draftDirectory()
+    if (draft) return `draft:${workspaceKey(draft)}:${tabs().length}`
+    const active = tabs().find((tab) => isActive(tab))
+    if (!active) return
+    return `${sessionBarKey(active)}:${tabs().length}`
+  })
+
+  createEffect(() => {
+    const target = scrollTarget()
+    if (!shown() || !target) return
+
+    if (revealFrame !== undefined) cancelAnimationFrame(revealFrame)
+    revealFrame = requestAnimationFrame(() => {
+      revealFrame = undefined
+      tabsViewport
+        ?.querySelector<HTMLElement>('[data-component="session-tab"][data-active="true"]')
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" })
+    })
+  })
+
+  onCleanup(() => {
+    if (revealFrame !== undefined) cancelAnimationFrame(revealFrame)
+  })
 
   const handleDragStart = (event: unknown) => {
     const id = getDraggableId(event)
@@ -205,7 +266,7 @@ export function SessionTabsBar() {
         >
           <DragDropSensors />
           <ConstrainDragYAxis />
-          <div class="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
+          <div ref={tabsViewport} class="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
             <SortableProvider ids={keys()}>
               <For each={tabs()}>
                 {(tab) => (
@@ -263,6 +324,7 @@ function SessionTab(props: { tab: SessionBarTab; active: boolean; onOpen: () => 
   const [child] = globalSync.child(props.tab.directory, { bootstrap: false })
 
   const session = createMemo(() => (child.session ?? []).find((item) => item.id === props.tab.id))
+  const subagent = createMemo(() => !!session()?.parentID)
   const title = createMemo(() => {
     const raw = session()?.title || props.tab.title
     if (!raw) return language.t("session.tab.session")
@@ -280,12 +342,6 @@ function SessionTab(props: { tab: SessionBarTab; active: boolean; onOpen: () => 
   const busy = createMemo(() => working(child.session_status[props.tab.id], child.message[props.tab.id]))
   const unseen = createMemo(() => notification.session.unseenCount(props.tab.id))
 
-  const tint = createMemo(() => {
-    const owner = projectOwner(props.tab.directory, layout.projects.list())
-    if (!owner) return
-    return getAvatarColors(owner.project.icon?.color)
-  })
-
   return (
     <div use:sortable class="h-full flex items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
       <div
@@ -293,10 +349,11 @@ function SessionTab(props: { tab: SessionBarTab; active: boolean; onOpen: () => 
         tabIndex={0}
         data-component="session-tab"
         data-active={props.active ? "true" : undefined}
-        class="group relative flex h-7 max-w-52 min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-md pl-2 pr-1 text-13-medium"
+        data-subagent={subagent() ? "true" : undefined}
+        class="group relative flex h-7 max-w-52 min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-lg pl-2 pr-1 text-13-medium"
         classList={{
           "bg-surface-base-active text-text-strong": props.active,
-          "text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
+          "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
         }}
         onClick={props.onOpen}
         onKeyDown={(event) => {
@@ -313,10 +370,17 @@ function SessionTab(props: { tab: SessionBarTab; active: boolean; onOpen: () => 
           props.onClose()
         }}
       >
-        <Show when={tint()}>
-          {(colors) => (
-            <span class="size-2 shrink-0 rounded-[3px]" style={{ "background-color": colors().background }} />
-          )}
+        <Show
+          when={subagent()}
+          fallback={
+            <span class="session-tab-main-icon flex shrink-0" aria-hidden="true">
+              <Icon name="bubble-5" size="small" />
+            </span>
+          }
+        >
+          <span class="flex shrink-0 text-icon-weak" aria-hidden="true">
+            <Icon name="branch" size="small" />
+          </span>
         </Show>
         <span class="min-w-0 truncate">{title()}</span>
         <Show when={busy()}>
@@ -355,26 +419,15 @@ function SessionTab(props: { tab: SessionBarTab; active: boolean; onOpen: () => 
 }
 
 function DraftTab(props: { directory: string; closable: boolean; onClose: () => void }) {
-  const layout = useLayout()
   const language = useLanguage()
-  const tint = createMemo(() => {
-    const owner = projectOwner(props.directory, layout.projects.list())
-    if (!owner) return
-    return getAvatarColors(owner.project.icon?.color)
-  })
 
   return (
     <div class="h-full flex items-center">
       <div
         data-component="session-tab"
         data-active="true"
-        class="group relative flex h-7 max-w-52 min-w-0 cursor-default select-none items-center gap-1.5 rounded-md bg-surface-base-active pl-2 pr-1 text-13-medium italic text-text-strong"
+        class="group relative flex h-7 max-w-52 min-w-0 cursor-default select-none items-center gap-1.5 rounded-lg bg-surface-base-active pl-2 pr-1 text-13-medium italic text-text-strong"
       >
-        <Show when={tint()}>
-          {(colors) => (
-            <span class="size-2 shrink-0 rounded-[3px]" style={{ "background-color": colors().background }} />
-          )}
-        </Show>
         <span class="min-w-0 truncate">{language.t("command.session.new")}</span>
         <Show when={props.closable}>
           <span

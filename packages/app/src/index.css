@@ -155,6 +155,20 @@
     box-shadow: var(--shadow-xs-border-base);
   }
 
+  /* The titlebar surface can be close to --border-weak-base in some themes.
+     Use an inset outline so inactive session tabs remain distinct. */
+  [data-component="session-tab"].session-tab-inactive {
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-weak) 11%, transparent);
+  }
+
+  [data-component="session-tab"][data-subagent="true"] {
+    background-color: color-mix(in srgb, var(--surface-base-active) 54%, transparent);
+  }
+
+  [data-component="session-tab"][data-subagent="true"]:hover {
+    background-color: color-mix(in srgb, var(--surface-base-hover) 76%, transparent);
+  }
+
   .session-child-agent-scrollbar {
     scrollbar-color: transparent transparent;
     scrollbar-width: thin;
@@ -369,7 +383,7 @@
     background: #e6d28a;
     opacity: 0.68;
     transform-origin: center;
-    animation: project-activity-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+    animation: project-activity-ping 1s cubic-bezier(0, 0, 0.2, 1);
   }
 
   [data-component="project-activity-badge"] [data-slot="project-activity-dot"] {

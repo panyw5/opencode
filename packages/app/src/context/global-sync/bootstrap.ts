@@ -197,7 +197,10 @@ export async function bootstrapDirectory(input: {
           if (next) input.setStore("project", next)
         }),
       ),
-    () => retry(() => input.sdk.session.status().then((x) => input.setStore("session_status", x.data!))),
+    () =>
+      retry(() =>
+        input.sdk.session.status().then((x) => input.setStore("session_status", reconcile(x.data ?? {}))),
+      ),
     () =>
       retry(() =>
         input.sdk.vcs.get().then((x) => {

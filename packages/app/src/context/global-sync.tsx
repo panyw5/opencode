@@ -30,6 +30,7 @@ import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } fr
 import { createRefreshQueue } from "./global-sync/queue"
 import { clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
 import { loadRootSessions } from "./global-sync/session-load"
+import { authoritativeSessionStatusMap } from "./global-sync/session-status-refresh"
 import type { ProjectMeta } from "./global-sync/types"
 import { normalizeProviderList, sanitizeProject, stripProvider } from "./global-sync/utils"
 import { formatServerError, permissionNotice } from "@/utils/server-errors"
@@ -76,6 +77,7 @@ function createGlobalSync() {
   const sdkCache = new Map<string, OpencodeClient>()
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
+  const sessionStatusRefreshes = new Map<string, Promise<void>>()
   const sessionLoaded = new Set<string>()
   const providerRefreshes = new Map<DomainId, Promise<ProviderListResponse>>()
   const revs = new Map<string, number>()
@@ -406,6 +408,40 @@ function createGlobalSync() {
     if (!next) throw new Error(language.t("common.requestFailed"))
     updateGlobalConfig(domain, next)
     return next
+  }
+
+  async function refreshSessionStatus(directory: string): Promise<void> {
+    if (!directory || isolated(directory)) return
+    const pending = sessionStatusRefreshes.get(directory)
+    if (pending) return pending
+
+    children.pin(directory)
+    const child = children.peek(directory, { bootstrap: false })
+    const mark = rev(directory)
+    const raw = child[1] as (...args: unknown[]) => unknown
+    const setStore = ((...input: unknown[]) => {
+      if (rev(directory) !== mark || managerOf(directory).children[directory] !== child) return input[0]
+      return raw(...input)
+    }) as typeof child[1]
+
+    const promise = sdkFor(directory)
+      .session.status()
+      .then((x) => {
+        if (rev(directory) !== mark || managerOf(directory).children[directory] !== child) return
+        setStore("session_status", reconcile(authoritativeSessionStatusMap(x.data)))
+      })
+      .catch((err) => {
+        console.debug(
+          `[global-sync] refresh session status failed directory=${directory} err=${err instanceof Error ? err.message : String(err)}`,
+        )
+      })
+      .finally(() => {
+        sessionStatusRefreshes.delete(directory)
+        children.unpin(directory)
+      })
+
+    sessionStatusRefreshes.set(directory, promise)
+    return promise
   }
 
   async function loadSessions(
@@ -747,6 +783,7 @@ function createGlobalSync() {
 
   const projectApi = {
     loadSessions,
+    refreshSessionStatus,
     warm(directory: string) {
       void bootstrapInstance(directory)
     },
