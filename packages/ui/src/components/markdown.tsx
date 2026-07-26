@@ -1293,21 +1293,6 @@ export function Markdown(
       return
     }
 
-    if (isStreaming && prevHtml) {
-      const prefix = prevHtml.slice(0, Math.max(0, prevHtml.lastIndexOf("<")))
-      if (prefix && !content.startsWith(prefix)) {
-        console.warn("[markdown] non-prefix morph", {
-          key: local.cacheKey ?? "",
-          prev: prevHtml.length,
-          next: content.length,
-          old: container.childNodes.length,
-          fresh: temp.childNodes.length,
-          text: local.text.length,
-          tail: clip(local.text),
-        })
-      }
-    }
-
     morphdom(container, temp, {
       childrenOnly: true,
       onBeforeElUpdated: (fromEl, toEl) => {
