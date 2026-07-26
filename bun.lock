@@ -52,6 +52,7 @@
         "@solidjs/meta": "catalog:",
         "@solidjs/router": "catalog:",
         "@tanstack/solid-query": "5.91.4",
+        "@tanstack/solid-virtual": "catalog:",
         "@thisbeyond/solid-dnd": "0.7.5",
         "croner": "9.1.0",
         "cronstrue": "3.24.0",
@@ -734,8 +735,10 @@
     "tree-sitter-bash",
   ],
   "patchedDependencies": {
+    "@tanstack/solid-virtual@3.13.28": "patches/@tanstack%2Fsolid-virtual@3.13.28.patch",
     "solid-js@1.9.10": "patches/solid-js@1.9.10.patch",
     "@ai-sdk/xai@3.0.82": "patches/@ai-sdk%2Fxai@3.0.82.patch",
+    "@tanstack/virtual-core@3.17.0": "patches/@tanstack%2Fvirtual-core@3.17.0.patch",
     "@standard-community/standard-openapi@0.2.9": "patches/@standard-community%2Fstandard-openapi@0.2.9.patch",
     "@npmcli/agent@4.0.0": "patches/@npmcli%2Fagent@4.0.0.patch",
     "@silvia-odwyer/photon-node@0.3.4": "patches/@silvia-odwyer%2Fphoton-node@0.3.4.patch",
@@ -771,6 +774,7 @@
     "@solidjs/router": "0.15.4",
     "@solidjs/start": "https://pkg.pr.new/@solidjs/start@dfb2020",
     "@tailwindcss/vite": "4.1.11",
+    "@tanstack/solid-virtual": "3.13.28",
     "@tsconfig/bun": "1.0.9",
     "@tsconfig/node22": "22.0.2",
     "@types/bun": "1.3.13",
@@ -2341,6 +2345,10 @@
     "@tanstack/server-functions-plugin": ["@tanstack/server-functions-plugin@1.134.5", "", { "dependencies": { "@babel/code-frame": "7.27.1", "@babel/core": "^7.27.7", "@babel/plugin-syntax-jsx": "^7.27.1", "@babel/plugin-syntax-typescript": "^7.27.1", "@babel/template": "^7.27.2", "@babel/traverse": "^7.27.7", "@babel/types": "^7.27.7", "@tanstack/directive-functions-plugin": "1.134.5", "babel-dead-code-elimination": "^1.0.9", "tiny-invariant": "^1.3.3" } }, "sha512-2sWxq70T+dOEUlE3sHlXjEPhaFZfdPYlWTSkHchWXrFGw2YOAa+hzD6L9wHMjGDQezYd03ue8tQlHG+9Jzbzgw=="],
 
     "@tanstack/solid-query": ["@tanstack/solid-query@5.91.4", "", { "dependencies": { "@tanstack/query-core": "5.91.2" }, "peerDependencies": { "solid-js": "^1.6.0" } }, "sha512-oCEgn8iT7WnF/7ISd7usBpUK1C9EdvQfg8ZUpKNKZ4edVClICZrCX6f3/Bp8ZlwQnL21KLc2rp+CejEuehlRxg=="],
+
+    "@tanstack/solid-virtual": ["@tanstack/solid-virtual@3.13.28", "", { "dependencies": { "@tanstack/virtual-core": "3.17.0" }, "peerDependencies": { "solid-js": "^1.3.0" } }, "sha512-kRuOEL5orH/rzGgxNgfgOttsgV6cgrUeupVtrHMITb5p0rZ3hnxhbu/lhKcR9+7x+EJdfUtJIb2CVC85mlw15g=="],
+
+    "@tanstack/virtual-core": ["@tanstack/virtual-core@3.17.0", "", {}, "sha512-gOxY/hFkPh/XQYhnThBHzkbkX3Ed+z/iushyz+R+JAr213aXxUDgQoTgTdrDpBSRsjFM73P/KfUyWmaF9WHMkQ=="],
 
     "@tauri-apps/api": ["@tauri-apps/api@2.11.0", "", {}, "sha512-7CinYODhky9lmO23xHnUFv0Xt43fbtWMyxZcLcRBlFkcgXKuEirBvHpmtJ89YMhyeGcq20Wuc47Fa4XjyniywA=="],
 

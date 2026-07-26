@@ -25,6 +25,7 @@ export const useSessionHashScroll = (input: {
   autoScroll: { pause: () => void; forceScrollToBottom: () => void }
   scroller: () => HTMLDivElement | undefined
   anchor: (id: string) => string
+  revealMessage?: (id: string) => void
   scheduleScrollState: (el: HTMLDivElement) => void
   consumePendingMessage: (key: string) => string | undefined
 }) => {
@@ -225,6 +226,7 @@ export const useSessionHashScroll = (input: {
       clearSeeking(id)
       return false
     }
+    input.revealMessage?.(id)
     queue(() => {
       if (!seek(id, behavior, left - 1)) return
       updateHash(id)

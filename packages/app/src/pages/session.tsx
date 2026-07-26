@@ -57,7 +57,7 @@ import {
   focusTerminalById,
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
-import { MessageTimeline, type SessionRenderOverlayStatus } from "@/pages/session/message-timeline"
+import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
@@ -93,6 +93,7 @@ const smoothBottomEase = 0.32
 type ChangeMode = "git" | "branch" | "session" | "turn"
 type VcsMode = "git" | "branch"
 type ScrollMode = "live" | "anchored"
+type SessionRenderOverlayStatus = "showing" | "hiding" | "hidden"
 
 function mergeKnownSessions(current: Session[], incoming: readonly Session[]): Session[] {
   if (incoming.length === 0) return current
@@ -735,6 +736,9 @@ export default function Page() {
   let dockHeight = 0
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
+  let revealMessage = (_id: string) => {}
+  let scrollToEnd = () => {}
+  let historyAnchor = { capture: () => {}, restore: (_done: boolean) => {} }
   let scrollMark = 0
   let messageMark = 0
 
@@ -1553,11 +1557,6 @@ export default function Page() {
   let initialScrollKey: string | undefined
   let initialScrollFrame: number | undefined
   let until = 0
-  let jumpIntent = false
-  const jumpToBottomIntent = () => jumpIntent
-  const clearJumpIntent = () => {
-    jumpIntent = false
-  }
 
   const hasScrollTarget = () => !!location.hash || !!ui.pendingMessage || !!ui.seekingMessageId || !!store.messageId
   const settling = () => !!initialScrollKey && performance.now() < until && !hasScrollGesture()
@@ -1685,16 +1684,13 @@ export default function Page() {
   }
 
   const resumeScroll = () => {
-    jumpIntent = true
     setStore("messageId", undefined)
     setUi("seekingMessageId", undefined)
     clearMessageHash()
 
+    scrollToEnd()
     const el = scroller
-    if (el) {
-      el.scrollTop = el.scrollHeight
-      scheduleScrollState(el)
-    }
+    if (el) scheduleScrollState(el)
   }
 
   // When the user returns to the bottom, treat the active message as "latest".
@@ -1859,14 +1855,21 @@ export default function Page() {
     if (!id) return
     if (!historyMore() || historyLoading()) return
 
-    while (true) {
-      const loaded = messages().length
-      await sync.session.history.loadMore(id)
-      if (params.id !== id) return
-      const nextLoaded = messages().length
-      if (visibleUserMessages().length > 0 && nextLoaded > loaded) return
-      if (nextLoaded <= loaded) return
-      if (!historyMore()) return
+    historyAnchor.capture()
+    try {
+      while (true) {
+        const loaded = messages().length
+        await sync.session.history.loadMore(id)
+        if (params.id !== id) return
+        const nextLoaded = messages().length
+        const done = visibleUserMessages().length > 0 && nextLoaded > loaded
+        const finished = done || nextLoaded <= loaded || !historyMore()
+        historyAnchor.restore(finished)
+        if (finished) return
+      }
+    } catch (error) {
+      historyAnchor.restore(true)
+      throw error
     }
   }
 
@@ -2226,6 +2229,7 @@ export default function Page() {
     autoScroll,
     scroller: () => scroller,
     anchor,
+    revealMessage: (id) => revealMessage(id),
     scheduleScrollState,
     consumePendingMessage: layout.pendingMessage.consume,
   })
@@ -2297,31 +2301,35 @@ export default function Page() {
             <Switch>
               <Match when={params.id}>
                 <Show when={messagesReady()} fallback={<div class="size-full bg-background-stronger" />}>
-                  <MessageTimeline
-                    mobileChanges={mobileChanges()}
-                    mobileFallback={reviewContent({
-                      diffStyle: "unified",
-                      classes: {
-                        root: "pb-8",
-                        header: "px-4",
-                        container: "px-4",
-                      },
-                      loadingClass: "px-4 py-4 text-text-weak",
-                      emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
-                    })}
+                  <Show
+                    when={!mobileChanges()}
+                    fallback={
+                      <div class="relative h-full overflow-hidden">
+                        {reviewContent({
+                          diffStyle: "unified",
+                          classes: { root: "pb-8", header: "px-4", container: "px-4" },
+                          loadingClass: "px-4 py-4 text-text-weak",
+                          emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
+                        })}
+                      </div>
+                    }
+                  >
+                    <MessageTimeline
                     actions={actions}
                     scroll={ui.scroll}
-                    live={live()}
                     onResumeScroll={resumeScroll}
-                    jumpToBottomIntent={jumpToBottomIntent}
-                    onClearJumpIntent={clearJumpIntent}
                     setScrollRef={setScrollRef}
                     onScheduleScrollState={scheduleScrollState}
                     onAutoScrollHandleScroll={handleTimelineAutoScroll}
                     onMarkScrollGesture={markScrollGesture}
                     hasScrollGesture={hasScrollGesture}
                     onUserScroll={markUserScroll}
+                    onHistoryScroll={() => {
+                      if (!autoScroll.userScrolled() || !scroller || scroller.scrollTop >= 200) return
+                      void loadEarlier()
+                    }}
                     onAutoScrollInteraction={autoScroll.handleInteraction}
+                    shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled()}
                     centered={centered()}
                     setContentRef={(el) => {
                       content = el
@@ -2330,21 +2338,20 @@ export default function Page() {
                       const root = scroller
                       if (root) scheduleScrollState(root)
                     }}
-                    historyMore={historyMore()}
-                    historyLoading={historyLoading()}
-                    onLoadEarlier={() => {
-                      void loadEarlier()
-                    }}
-                    renderedUserMessages={visibleUserMessages()}
-                    currentMessageId={store.messageId}
-                    seekingMessageId={ui.seekingMessageId}
-                    onJumpToMessage={(message) => {
-                      autoScroll.pause()
-                      scrollToMessage(message, "auto")
-                    }}
+                    userMessages={visibleUserMessages()}
                     anchor={anchor}
+                    setRevealMessage={(fn) => {
+                      revealMessage = fn
+                    }}
+                    setScrollToEnd={(fn) => {
+                      scrollToEnd = fn
+                    }}
+                    setHistoryAnchor={(handlers) => {
+                      historyAnchor = handlers
+                    }}
                     onRenderOverlayStatusChange={(status) => setUi("renderOverlayStatus", status)}
-                  />
+                    />
+                  </Show>
                 </Show>
               </Match>
               <Match when={true}>

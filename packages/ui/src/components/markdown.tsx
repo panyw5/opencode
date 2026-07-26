@@ -610,7 +610,11 @@ function touch(key: string, value: Entry) {
   cache.delete(first)
 }
 
-function cacheMode(input: { highlight?: "full" | "defer"; chunked?: boolean; math?: "full" | "defer" }) {
+export function markdownCacheMode(input: {
+  highlight?: "full" | "defer"
+  chunked?: boolean
+  math: "full" | "defer"
+}) {
   return ["math-protect-v5", input.highlight ?? "full", input.math ?? "full", input.chunked ? "chunked" : "plain"].join(
     ":",
   )
@@ -890,10 +894,10 @@ export function Markdown(
     const markdown = local.text
     const normalized = prepareMarkdownSource(markdown, !!local.streaming)
     const hash = checksum(normalized)
-    const cache = cacheMode({ highlight: local.highlight, chunked: local.chunked, math: mathMode() })
     const current = mode()
-    const key = hash ? `${cache}:${current}:${hash}` : undefined
     const math: "full" | "defer" = mathReady() ? "full" : "defer"
+    const cache = markdownCacheMode({ highlight: local.highlight, chunked: local.chunked, math })
+    const key = hash ? `${cache}:${current}:${hash}` : undefined
     return {
       markdown,
       normalized,
