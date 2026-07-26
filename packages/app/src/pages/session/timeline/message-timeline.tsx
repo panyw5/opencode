@@ -1,10 +1,22 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  on,
+  onCleanup,
+  onMount,
+  Show,
+  type Accessor,
+  type JSX,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualItem } from "@tanstack/solid-virtual"
 import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
+import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -14,7 +26,13 @@ import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
-import type { AssistantMessage, Message as MessageType, Part as PartType, ToolPart, UserMessage } from "@opencode-ai/sdk/v2"
+import type {
+  AssistantMessage,
+  Message as MessageType,
+  Part as PartType,
+  ToolPart,
+  UserMessage,
+} from "@opencode-ai/sdk/v2"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { normalize } from "@opencode-ai/ui/session-diff"
@@ -23,7 +41,7 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
-import { partMeasurementKey, scheduleConnectedMeasure, timelineMeasurementsMatchWidth } from "./measure"
+import { createCoalescedConnectedMeasure, partMeasurementKey, timelineMeasurementsMatchWidth } from "./measure"
 import { createTimelineProjection } from "./projection"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
 
@@ -68,62 +86,82 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
 function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
   const language = useLanguage()
   const maxFiles = 10
-  const [state, setState] = createStore({ showAll: false, expanded: [] as string[] })
+  const [state, setState] = createStore({ open: false, showAll: false, expanded: [] as string[] })
   const overflow = createMemo(() => Math.max(0, props.diffs.length - maxFiles))
   const visible = createMemo(() => (state.showAll ? props.diffs : props.diffs.slice(0, maxFiles)))
+  const onOpenChange = (open: boolean) => {
+    setState("open", open)
+    if (!open) setState("expanded", [])
+  }
 
   return (
-    <div data-slot="session-turn-diffs" data-component="session-turn-diffs-group" data-show-all={state.showAll || undefined}>
-      <div data-slot="session-turn-diffs-header">
-        <span data-slot="session-turn-diffs-label">
-          {props.diffs.length} {language.t("ui.sessionTurn.diffs.changed")} {language.t(props.diffs.length === 1 ? "ui.common.file.one" : "ui.common.file.other")}
-        </span>
-        <DiffChanges changes={props.diffs} />
-        <Show when={overflow() > 0}>
-          <span data-slot="session-turn-diffs-toggle" onClick={() => setState("showAll", !state.showAll)}>
-            {state.showAll ? language.t("ui.sessionTurn.diffs.showLess") : language.t("ui.sessionTurn.diffs.showAll")}
-          </span>
-        </Show>
-      </div>
-      <div data-component="session-turn-diffs-content">
-        <Accordion
-          multiple
-          style={{ "--sticky-accordion-offset": "44px" }}
-          value={state.expanded}
-          onChange={(value) => setState("expanded", Array.isArray(value) ? value : value ? [value] : [])}
-        >
-          <For each={visible()}>
-            {(diff) => (
-              <Accordion.Item value={diff.file}>
-                <StickyAccordionHeader>
-                  <Accordion.Trigger>
-                    <div data-slot="session-turn-diff-trigger">
-                      <span data-slot="session-turn-diff-path">
-                        <Show when={diff.file.includes("/")}>
-                          <span data-slot="session-turn-diff-directory">{`\u202A${getDirectory(diff.file)}\u202C`}</span>
-                        </Show>
-                        <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
-                      </span>
-                      <div data-slot="session-turn-diff-meta">
-                        <span data-slot="session-turn-diff-changes"><DiffChanges changes={diff} /></span>
-                        <span data-slot="session-turn-diff-chevron"><Icon name="chevron-down" size="small" /></span>
-                      </div>
-                    </div>
-                  </Accordion.Trigger>
-                </StickyAccordionHeader>
-                <Accordion.Content>
-                  <Show when={state.expanded.includes(diff.file)}><TimelineDiffView diff={diff} /></Show>
-                </Accordion.Content>
-              </Accordion.Item>
-            )}
-          </For>
-        </Accordion>
-        <Show when={!state.showAll && overflow() > 0}>
-          <div data-slot="session-turn-diffs-more" onClick={() => setState("showAll", true)}>
-            {language.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
+    <div
+      data-slot="session-turn-diffs"
+      data-component="session-turn-diffs-group"
+      data-show-all={state.showAll || undefined}
+    >
+      <Collapsible open={state.open} onOpenChange={onOpenChange} variant="ghost">
+        <Collapsible.Trigger>
+          <div data-slot="session-turn-diffs-header">
+            <span data-slot="session-turn-diffs-label">
+              {language.t("ui.sessionTurn.diffs.summary", { count: String(props.diffs.length) })}
+            </span>
+            <div data-slot="session-turn-diffs-summary">
+              <DiffChanges changes={props.diffs} />
+              <Collapsible.Arrow />
+            </div>
           </div>
-        </Show>
-      </div>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
+          <Show when={state.open}>
+            <div data-component="session-turn-diffs-content">
+              <Accordion
+                multiple
+                style={{ "--sticky-accordion-offset": "44px" }}
+                value={state.expanded}
+                onChange={(value) => setState("expanded", Array.isArray(value) ? value : value ? [value] : [])}
+              >
+                <For each={visible()}>
+                  {(diff) => (
+                    <Accordion.Item value={diff.file}>
+                      <StickyAccordionHeader>
+                        <Accordion.Trigger>
+                          <div data-slot="session-turn-diff-trigger">
+                            <span data-slot="session-turn-diff-path">
+                              <Show when={diff.file.includes("/")}>
+                                <span data-slot="session-turn-diff-directory">{`\u202A${getDirectory(diff.file)}\u202C`}</span>
+                              </Show>
+                              <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
+                            </span>
+                            <div data-slot="session-turn-diff-meta">
+                              <span data-slot="session-turn-diff-changes">
+                                <DiffChanges changes={diff} />
+                              </span>
+                              <span data-slot="session-turn-diff-chevron">
+                                <Icon name="chevron-down" size="small" />
+                              </span>
+                            </div>
+                          </div>
+                        </Accordion.Trigger>
+                      </StickyAccordionHeader>
+                      <Accordion.Content>
+                        <Show when={state.expanded.includes(diff.file)}>
+                          <TimelineDiffView diff={diff} />
+                        </Show>
+                      </Accordion.Content>
+                    </Accordion.Item>
+                  )}
+                </For>
+              </Accordion>
+              <Show when={!state.showAll && overflow() > 0}>
+                <div data-slot="session-turn-diffs-more" onClick={() => setState("showAll", true)}>
+                  {language.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
+                </div>
+              </Show>
+            </div>
+          </Show>
+        </Collapsible.Content>
+      </Collapsible>
     </div>
   )
 }
@@ -131,7 +169,11 @@ function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
 function TimelineDiffView(props: { diff: SummaryDiff }) {
   const fileComponent = useFileComponent()
   const view = normalize(props.diff)
-  return <div data-slot="session-turn-diff-view" data-scrollable><Dynamic component={fileComponent} mode="diff" virtualize={false} fileDiff={view.fileDiff} /></div>
+  return (
+    <div data-slot="session-turn-diff-view" data-scrollable>
+      <Dynamic component={fileComponent} mode="diff" virtualize={false} fileDiff={view.fileDiff} />
+    </div>
+  )
 }
 
 export function MessageTimeline(props: {
@@ -177,7 +219,8 @@ export function MessageTimeline(props: {
     return id ? (sync.data.message[id] ?? emptyMessages) : emptyMessages
   })
   const getMessageParts = (messageID: string) => sync.data.part[messageID] ?? emptyParts
-  const getMessagePart = (messageID: string, partID: string) => getMessageParts(messageID).find((part) => part.id === partID)
+  const getMessagePart = (messageID: string, partID: string) =>
+    getMessageParts(messageID).find((part) => part.id === partID)
   const projection = createTimelineProjection({
     messages: sessionMessages,
     userMessages: () => props.userMessages,
@@ -263,7 +306,8 @@ export function MessageTimeline(props: {
     },
     get getItemKey() {
       const rows = timelineRows()
-      return (index: number) => TimelineRow.key(rows[index] ?? new TimelineRow.TurnGap({ userMessageID: `removed:${index}` }))
+      return (index: number) =>
+        TimelineRow.key(rows[index] ?? new TimelineRow.TurnGap({ userMessageID: `removed:${index}` }))
     },
     overscan: 50,
     paddingEnd: 64,
@@ -299,7 +343,9 @@ export function MessageTimeline(props: {
   }
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
     item.end <= instance.getLogicalScrollOffset()
-  const virtualItemByKey = createMemo(() => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)))
+  const virtualItemByKey = createMemo(
+    () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),
+  )
   const virtualRowKeys = createMemo(() => virtualizer.getVirtualItems().map((item) => item.key as string))
 
   createEffect(() => {
@@ -379,7 +425,12 @@ export function MessageTimeline(props: {
     const nested = boundaryTarget(root, target)
     if (
       nested === root ||
-      shouldMarkBoundaryGesture({ delta, scrollTop: nested.scrollTop, scrollHeight: nested.scrollHeight, clientHeight: nested.clientHeight })
+      shouldMarkBoundaryGesture({
+        delta,
+        scrollTop: nested.scrollTop,
+        scrollHeight: nested.scrollHeight,
+        clientHeight: nested.clientHeight,
+      })
     ) {
       props.onMarkScrollGesture(root)
     }
@@ -413,7 +464,8 @@ export function MessageTimeline(props: {
     const user = messageByID().get(userMessageID)
     if (!user || user.role !== "user") return
     const end = (assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages).reduce<number | undefined>(
-      (latest, message) => (typeof message.time.completed === "number" ? Math.max(latest ?? 0, message.time.completed) : latest),
+      (latest, message) =>
+        typeof message.time.completed === "number" ? Math.max(latest ?? 0, message.time.completed) : latest,
       undefined,
     )
     return typeof end === "number" && end >= user.time.created ? end - user.time.created : undefined
@@ -457,7 +509,9 @@ export function MessageTimeline(props: {
         return <div data-timeline-row="TurnGap" aria-hidden="true" class="h-6" />
       case "CommentStrip": {
         const item = row as Accessor<TimelineRowByTag<"CommentStrip">>
-        const comments = createMemo(() => getMessageParts(item().userMessageID).flatMap((part) => MessageComment.fromPart(part) ?? []))
+        const comments = createMemo(() =>
+          getMessageParts(item().userMessageID).flatMap((part) => MessageComment.fromPart(part) ?? []),
+        )
         return (
           <TimelineRowFrame row={item}>
             <div class="w-full px-4 md:px-5 pb-2">
@@ -470,7 +524,9 @@ export function MessageTimeline(props: {
                           <FileIcon node={{ path: comment.path, type: "file" }} class="size-3.5 shrink-0" />
                           <span class="truncate">{getFilename(comment.path)}</span>
                         </div>
-                        <div class="pt-1 text-12-regular text-text-strong whitespace-pre-wrap break-words">{comment.comment}</div>
+                        <div class="pt-1 text-12-regular text-text-strong whitespace-pre-wrap break-words">
+                          {comment.comment}
+                        </div>
                       </div>
                     )}
                   </For>
@@ -505,7 +561,17 @@ export function MessageTimeline(props: {
       }
       case "TurnDivider": {
         const item = row as Accessor<TimelineRowByTag<"TurnDivider">>
-        return <TimelineRowFrame row={item}><div class="w-full px-4 md:px-5"><MessageDivider label={language.t(item().label === "compaction" ? "ui.messagePart.compaction" : "ui.message.interrupted")} /></div></TimelineRowFrame>
+        return (
+          <TimelineRowFrame row={item}>
+            <div class="w-full px-4 md:px-5">
+              <MessageDivider
+                label={language.t(
+                  item().label === "compaction" ? "ui.messagePart.compaction" : "ui.message.interrupted",
+                )}
+              />
+            </div>
+          </TimelineRowFrame>
+        )
       }
       case "AssistantPart": {
         const item = row as Accessor<TimelineRowByTag<"AssistantPart">>
@@ -528,12 +594,46 @@ export function MessageTimeline(props: {
         })
         return (
           <TimelineRowFrame row={item}>
-            <div class="w-full px-4 md:px-5" data-slot="session-turn-assistant-content" aria-hidden={workingTurn(item().userMessageID)}>
+            <div
+              class="w-full px-4 md:px-5"
+              data-slot="session-turn-assistant-content"
+              aria-hidden={workingTurn(item().userMessageID)}
+            >
               <Show
                 when={item().group.type === "context"}
-                fallback={<Show when={message()}>{(message) => <Show when={part()}>{(part) => <MessagePart part={part()} message={message()} defaultOpen={defaultOpen(part())} showAssistantCopyPartID={assistantCopyPartID(item().userMessageID)} turnDurationMs={turnDurationMs(item().userMessageID)} markdownViewport={listRoot()} markdownHighlight="defer" markdownMath="full" />}</Show>}</Show>}
+                fallback={
+                  <Show when={message()}>
+                    {(message) => (
+                      <Show when={part()}>
+                        {(part) => (
+                          <MessagePart
+                            part={part()}
+                            message={message()}
+                            defaultOpen={defaultOpen(part())}
+                            showAssistantCopyPartID={assistantCopyPartID(item().userMessageID)}
+                            turnDurationMs={turnDurationMs(item().userMessageID)}
+                            markdownViewport={listRoot()}
+                            markdownHighlight="defer"
+                            markdownMath="full"
+                          />
+                        )}
+                      </Show>
+                    )}
+                  </Show>
+                }
               >
-                <For each={contextParts()}>{(entry) => <MessagePart part={entry.part} message={entry.message} defaultOpen={defaultOpen(entry.part)} markdownViewport={listRoot()} markdownHighlight="defer" markdownMath="full" />}</For>
+                <For each={contextParts()}>
+                  {(entry) => (
+                    <MessagePart
+                      part={entry.part}
+                      message={entry.message}
+                      defaultOpen={defaultOpen(entry.part)}
+                      markdownViewport={listRoot()}
+                      markdownHighlight="defer"
+                      markdownMath="full"
+                    />
+                  )}
+                </For>
               </Show>
             </div>
           </TimelineRowFrame>
@@ -541,27 +641,51 @@ export function MessageTimeline(props: {
       }
       case "Thinking": {
         const item = row as Accessor<TimelineRowByTag<"Thinking">>
-        return <TimelineRowFrame row={item}><div class="w-full px-4 md:px-5"><TimelineThinkingRow reasoningHeading={item().reasoningHeading} showReasoningSummaries={settings.general.showReasoningSummaries()} /></div></TimelineRowFrame>
+        return (
+          <TimelineRowFrame row={item}>
+            <div class="w-full px-4 md:px-5">
+              <TimelineThinkingRow
+                reasoningHeading={item().reasoningHeading}
+                showReasoningSummaries={settings.general.showReasoningSummaries()}
+              />
+            </div>
+          </TimelineRowFrame>
+        )
       }
       case "Retry": {
         const item = row as Accessor<TimelineRowByTag<"Retry">>
-        return <TimelineRowFrame row={item}><div class="w-full px-4 md:px-5"><SessionRetry status={sessionStatus()} show={activeMessageID() === item().userMessageID} /></div></TimelineRowFrame>
+        return (
+          <TimelineRowFrame row={item}>
+            <div class="w-full px-4 md:px-5">
+              <SessionRetry status={sessionStatus()} show={activeMessageID() === item().userMessageID} />
+            </div>
+          </TimelineRowFrame>
+        )
       }
       case "DiffSummary":
         return (
           <TimelineRowFrame row={row as Accessor<TimelineRowByTag<"DiffSummary">>}>
-            <div class="w-full px-4 md:px-5"><TimelineDiffSummaryRow diffs={(row() as TimelineRowByTag<"DiffSummary">).diffs} /></div>
+            <div class="w-full px-4 md:px-5">
+              <TimelineDiffSummaryRow diffs={(row() as TimelineRowByTag<"DiffSummary">).diffs} />
+            </div>
           </TimelineRowFrame>
         )
       case "Error": {
         const item = row as Accessor<TimelineRowByTag<"Error">>
-        return <TimelineRowFrame row={item}><div class="w-full px-4 md:px-5"><Card variant="error" class="error-card">{item().text}</Card></div></TimelineRowFrame>
+        return (
+          <TimelineRowFrame row={item}>
+            <div class="w-full px-4 md:px-5">
+              <Card variant="error" class="error-card">
+                {item().text}
+              </Card>
+            </div>
+          </TimelineRowFrame>
+        )
       }
     }
   }
   function VirtualTimelineRow(input: { rowKey: string }) {
     let element: HTMLDivElement | undefined
-    let contentMeasureFrame: number | undefined
     let resizeObserver: ResizeObserver | undefined
     const initialItem = virtualItemByKey().get(input.rowKey)!
     const initialRow = timelineRowByKey().get(input.rowKey)!
@@ -570,38 +694,61 @@ export function MessageTimeline(props: {
     const partMeasurements = createMemo(() => {
       const value = row()
       if (value._tag !== "AssistantPart") return ""
-      if (value.group.type === "part") return partMeasurementKey(getMessagePart(value.group.ref.messageID, value.group.ref.partID))
+      if (value.group.type === "part")
+        return partMeasurementKey(getMessagePart(value.group.ref.messageID, value.group.ref.partID))
       return value.group.refs.map((ref) => partMeasurementKey(getMessagePart(ref.messageID, ref.partID))).join("|")
     })
-    const requestMeasure = () => {
-      if (!element) return
-      if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
-      contentMeasureFrame = scheduleConnectedMeasure(element, (target) => {
+    const measurement = createCoalescedConnectedMeasure({
+      element: () => element,
+      measure: (target) => target.getBoundingClientRect().height,
+      commit: (_target, height) => {
         // TanStack skips measureElement updates during a user scroll. Dynamic
         // Markdown and tool content must still claim their new row height, or
         // the absolutely positioned following row clips it until scrolling ends.
-        virtualizer.resizeItem(item().index, target.getBoundingClientRect().height)
-      })
-    }
+        virtualizer.resizeItem(item().index, height)
+      },
+    })
+    const requestMeasure = () => measurement.request()
 
     onMount(() => {
       if (!element) return
       virtualizer.measureElement(element)
+      measurement.remember(element.getBoundingClientRect().height)
       resizeObserver = new ResizeObserver(requestMeasure)
       resizeObserver.observe(element)
     })
-    createEffect(on(() => item().index, () => element && virtualizer.measureElement(element), { defer: true }))
+    createEffect(
+      on(
+        () => item().index,
+        () => {
+          if (!element) return
+          virtualizer.measureElement(element)
+          measurement.remember(element.getBoundingClientRect().height)
+        },
+        { defer: true },
+      ),
+    )
     createEffect(() => {
       row()
       partMeasurements()
       requestMeasure()
     })
     onCleanup(() => {
-      if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
+      measurement.cancel()
       resizeObserver?.disconnect()
     })
     return (
-      <div data-timeline-key={input.rowKey} style={{ position: "absolute", top: `${item().start}px`, left: "0", width: "100%", height: `${item().size}px`, overflow: "clip" }}>
+      <div
+        data-timeline-key={input.rowKey}
+        style={{
+          position: "absolute",
+          top: `${item().start}px`,
+          left: "0",
+          width: "100%",
+          height: `${item().size}px`,
+          overflow: "clip",
+        }}
+      >
         <div ref={(value) => (element = value)} data-index={item().index}>
           {renderTimelineRow(row)}
         </div>
@@ -618,7 +765,11 @@ export function MessageTimeline(props: {
       <ScrollView
         viewportRef={bindListRoot}
         onWheel={(event) => {
-          const delta = normalizeWheelDelta({ deltaY: event.deltaY, deltaMode: event.deltaMode, rootHeight: event.currentTarget.clientHeight })
+          const delta = normalizeWheelDelta({
+            deltaY: event.deltaY,
+            deltaMode: event.deltaMode,
+            rootHeight: event.currentTarget.clientHeight,
+          })
           if (delta) markBoundaryGesture(event.currentTarget, event.target, delta)
         }}
         onTouchStart={(event) => {
@@ -633,14 +784,29 @@ export function MessageTimeline(props: {
         }}
         onTouchEnd={() => (touchGesture = undefined)}
         onTouchCancel={() => (touchGesture = undefined)}
-        onPointerDown={(event) => event.target === event.currentTarget && props.onMarkScrollGesture(event.currentTarget)}
+        onPointerDown={(event) =>
+          event.target === event.currentTarget && props.onMarkScrollGesture(event.currentTarget)
+        }
         onScroll={handleScroll}
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
       >
-        <div ref={(element) => { virtualContent = element; props.setContentRef(element) }} data-timeline-virtual-content style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}>
+        <div
+          ref={(element) => {
+            virtualContent = element
+            props.setContentRef(element)
+          }}
+          data-timeline-virtual-content
+          style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}
+        >
           <For each={virtualRowKeys()}>{(rowKey) => <VirtualTimelineRow rowKey={rowKey} />}</For>
-          <Show when={timelineRows().length > 0}><div aria-hidden="true" class="h-16 absolute top-0 left-0 w-full" style={{ transform: `translateY(${virtualizer.getTotalSize() - 64}px)` }} /></Show>
+          <Show when={timelineRows().length > 0}>
+            <div
+              aria-hidden="true"
+              class="h-16 absolute top-0 left-0 w-full"
+              style={{ transform: `translateY(${virtualizer.getTotalSize() - 64}px)` }}
+            />
+          </Show>
         </div>
       </ScrollView>
     </div>

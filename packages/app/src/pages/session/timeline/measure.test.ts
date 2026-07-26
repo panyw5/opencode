@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
-import { partMeasurementKey, scheduleConnectedMeasure, timelineMeasurementsMatchWidth } from "./measure"
+import {
+  createCoalescedConnectedMeasure,
+  partMeasurementKey,
+  scheduleConnectedMeasure,
+  timelineMeasurementsMatchWidth,
+} from "./measure"
 
 test("does not measure an element detached before the frame", async () => {
   const element = document.createElement("div")
@@ -27,6 +32,73 @@ test("measures a connected element on the next frame", async () => {
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
 
   expect(calls).toBe(1)
+  element.remove()
+})
+
+test("coalesces requests and skips an unchanged row height", async () => {
+  const element = document.createElement("div")
+  document.body.append(element)
+  let height = 100
+  let commits = 0
+  const measurement = createCoalescedConnectedMeasure({
+    element: () => element,
+    measure: () => height,
+    commit: () => {
+      commits += 1
+    },
+  })
+
+  measurement.request()
+  measurement.request()
+  measurement.request()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  expect(commits).toBe(1)
+
+  measurement.request()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  expect(commits).toBe(1)
+
+  height = 100.6
+  measurement.request()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  expect(commits).toBe(2)
+  element.remove()
+})
+
+test("coalesced measurement ignores a detached element", async () => {
+  const element = document.createElement("div")
+  document.body.append(element)
+  let commits = 0
+  const measurement = createCoalescedConnectedMeasure({
+    element: () => element,
+    measure: () => 100,
+    commit: () => {
+      commits += 1
+    },
+  })
+
+  measurement.request()
+  element.remove()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  expect(commits).toBe(0)
+})
+
+test("coalesced measurement cancels pending frame work", async () => {
+  const element = document.createElement("div")
+  document.body.append(element)
+  let commits = 0
+  const measurement = createCoalescedConnectedMeasure({
+    element: () => element,
+    measure: () => 100,
+    commit: () => {
+      commits += 1
+    },
+  })
+
+  measurement.request()
+  measurement.cancel()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  expect(commits).toBe(0)
   element.remove()
 })
 

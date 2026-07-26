@@ -1553,6 +1553,8 @@ export default function Page() {
 
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
+  let contentResizeFrame: number | undefined
+  let contentResizeTarget: HTMLDivElement | undefined
   let fillFrame: number | undefined
   let initialScrollKey: string | undefined
   let initialScrollFrame: number | undefined
@@ -1606,27 +1608,37 @@ export default function Page() {
     return top
   }
 
+  const reconcileContentResize = (root: HTMLDivElement) => {
+    if (!root.isConnected || root !== scroller) return
+    debug("content-resize:before", root)
+    clamp(root, "content:resize:clamp")
+    // ResizeObserver may deliver several row and total-size changes together.
+    // Reconcile after those callbacks complete so this page-level follow logic
+    // does not compete with the virtualizer in the same delivery cycle.
+    if ((live() || settling()) && !hasScrollTarget() && !hasScrollGesture()) {
+      lockBottom(root, "content:resize:lock-bottom", live() ? "smooth" : "auto")
+      if (root.style.visibility === "hidden") {
+        const gap = Math.round(root.scrollHeight - root.clientHeight - root.scrollTop)
+        if (Math.abs(gap) <= 1) root.style.visibility = ""
+      }
+    }
+    debug("content-resize:after", root)
+    scheduleScrollState(root)
+  }
+
   createResizeObserver(
     () => content,
     () => {
       const root = scroller
       if (!root) return
-      debug("content-resize:before", root)
-      clamp(root, "content:resize:clamp")
-      // Deferred markdown/math expansion can increase content height after the
-      // stream is already idle. If the viewport was still at the bottom before
-      // that resize, keep it pinned instead of letting the tail drift upward.
-      if ((live() || settling()) && !hasScrollTarget() && !hasScrollGesture()) {
-        lockBottom(root, "content:resize:lock-bottom", live() ? "smooth" : "auto")
-        if (root.style.visibility === "hidden") {
-          const gap = Math.round(root.scrollHeight - root.clientHeight - root.scrollTop)
-          if (Math.abs(gap) <= 1) {
-            root.style.visibility = ""
-          }
-        }
-      }
-      debug("content-resize:after", root)
-      scheduleScrollState(root)
+      contentResizeTarget = root
+      if (contentResizeFrame !== undefined) return
+      contentResizeFrame = requestAnimationFrame(() => {
+        contentResizeFrame = undefined
+        const target = contentResizeTarget
+        contentResizeTarget = undefined
+        if (target) reconcileContentResize(target)
+      })
     },
   )
 
@@ -2246,6 +2258,7 @@ export default function Page() {
     if (diffFrame !== undefined) cancelAnimationFrame(diffFrame)
     if (diffTimer !== undefined) window.clearTimeout(diffTimer)
     if (scrollStateFrame !== undefined) cancelAnimationFrame(scrollStateFrame)
+    if (contentResizeFrame !== undefined) cancelAnimationFrame(contentResizeFrame)
     if (fillFrame !== undefined) cancelAnimationFrame(fillFrame)
     if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
     if (scroller?.style.visibility === "hidden") scroller.style.visibility = ""
