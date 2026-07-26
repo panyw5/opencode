@@ -17,6 +17,7 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 
 import { getAvatarColors, sessionBarKey, useLayout, type SessionBarTab } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
+import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { ServerConnection, useServer } from "@/context/server"
@@ -38,6 +39,7 @@ export function SessionTabsBar() {
   const settings = useSettings()
   const globalSync = useGlobalSync()
   const language = useLanguage()
+  const command = useCommand()
   const server = useServer()
   const navigate = useNavigate()
   const params = useParams()
@@ -146,6 +148,25 @@ export function SessionTabsBar() {
     if (!directory) return
     navigate(`/${base64Encode(directory)}/session`)
   }
+
+  const closeActive = () => {
+    if (draftDirectory()) {
+      closeDraft()
+      return
+    }
+    const active = tabs().find((tab) => isActive(tab))
+    if (active) close(active)
+  }
+
+  command.register("session-tabs.close", () => [
+    {
+      id: "sessionTabs.close",
+      title: language.t("command.sessionTabs.close"),
+      category: language.t("command.category.session"),
+      disabled: !draftDirectory() && !tabs().some((tab) => isActive(tab)),
+      onSelect: closeActive,
+    },
+  ])
 
   const keys = createMemo(() => tabs().map((tab) => sessionBarKey(tab)))
 

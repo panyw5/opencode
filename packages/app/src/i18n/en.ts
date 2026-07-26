@@ -105,6 +105,7 @@ export const dict = {
   "command.session.next.unseen": "Next unread session",
   "command.session.jump": "Jump to session {{index}}",
   "command.session.archive": "Archive session",
+  "command.sessionTabs.close": "Close session tab",
 
   "trellis.tasks.title": "Tasks",
   "trellis.tasks.back": "Back to sessions",

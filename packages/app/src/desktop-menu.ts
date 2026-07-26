@@ -114,7 +114,15 @@ export const DESKTOP_MENU: DesktopMenu[] = [
         accelerator: { macos: "Cmd+Shift+N", windows: "Ctrl+Shift+N" },
       },
       { type: "separator" },
-      { type: "item", label: "Close Window", action: "window.close", role: "close" },
+      {
+        type: "item",
+        label: "Close Tab",
+        command: "sessionTabs.close",
+        accelerator: { macos: "Cmd+W" },
+        platforms: ["macos"],
+      },
+      // The native macOS close role reserves Cmd+W before the renderer can close a tab.
+      { type: "item", label: "Close Window", action: "window.close", accelerator: { macos: "Cmd+Shift+W" } },
     ],
   },
   {

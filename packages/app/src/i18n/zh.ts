@@ -110,6 +110,7 @@ export const dict = {
   "command.session.next.unseen": "下一个未读会话",
   "command.session.jump": "跳转到第 {{index}} 个会话",
   "command.session.archive": "归档会话",
+  "command.sessionTabs.close": "关闭会话标签页",
 
   "trellis.tasks.title": "任务",
   "trellis.tasks.back": "返回会话列表",
