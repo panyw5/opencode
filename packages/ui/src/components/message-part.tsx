@@ -29,7 +29,7 @@ import {
   UserMessage,
   Todo,
   QuestionAnswer,
-  QuestionInfo,
+  type QuestionPrompt,
 } from "@opencode-ai/sdk/v2"
 import { useData } from "../context"
 import { useFileComponent } from "../context/file"
@@ -3138,7 +3138,7 @@ ToolRegistry.register({
   render(props) {
     const i18n = useI18n()
     const dialog = useDialog()
-    const questions = createMemo(() => (props.input.questions ?? []) as QuestionInfo[])
+    const questions = createMemo(() => (props.input.questions ?? []) as QuestionPrompt[])
     const metadataAnswers = createMemo(() => (props.metadata.answers ?? []) as QuestionAnswer[])
     const handoffAnswers = createMemo(() => props.questionHandoff?.answers ?? [])
     const optimistic = createMemo(() => metadataAnswers().length === 0 && handoffAnswers().length > 0)
