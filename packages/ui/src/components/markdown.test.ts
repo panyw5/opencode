@@ -3,6 +3,7 @@ import { Marked } from "marked"
 import {
   fileLink,
   findFileLinks,
+  initialMarkdownEager,
   initialMarkdownMathSeen,
   markdownCacheMode,
   prepareMarkdownSource,
@@ -114,6 +115,13 @@ describe("markdown math", () => {
     expect(initialMarkdownMathSeen({ stage: "full" })).toBe(true)
     expect(initialMarkdownMathSeen({ stage: "lite", math: "defer" })).toBe(false)
     expect(initialMarkdownMathSeen({ math: "full" })).toBe(true)
+  })
+
+  test("uses the full parser on the first paint when math is explicitly full", () => {
+    expect(initialMarkdownEager({ math: "full" })).toBe(true)
+    expect(initialMarkdownEager({ math: "defer" })).toBe(false)
+    expect(initialMarkdownEager({ stage: "lite", math: "full" })).toBe(false)
+    expect(initialMarkdownEager({ stage: "lite", eager: true, math: "full" })).toBe(false)
   })
 
   test("uses a distinct cache identity after deferred math upgrades", () => {

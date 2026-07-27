@@ -2124,7 +2124,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
                 eager={props.markdownEager}
                 viewport={props.markdownViewport}
                 highlight={props.markdownHighlight}
-                math={props.markdownMath === "full" ? "full" : streaming() ? "defer" : props.markdownMath}
+                math={props.markdownMath ?? (streaming() ? "defer" : "full")}
               />
             </div>
           </Show>

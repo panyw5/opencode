@@ -27,12 +27,22 @@ type Mark = Record<string, string | number | boolean | undefined>
 
 export type MarkdownStage = "lite" | "structure" | "full"
 
+export function initialMarkdownEager(input: {
+  stage?: MarkdownStage
+  eager?: boolean
+  math?: "full" | "defer"
+}): boolean {
+  if (input.stage) return input.stage !== "lite"
+  // A full math request must not first paint a lite parser result without KaTeX.
+  return input.math === "full" || !!input.eager
+}
+
 export function initialMarkdownMathSeen(input: {
   stage?: MarkdownStage
   eager?: boolean
   math?: "full" | "defer"
 }): boolean {
-  const eager = input.stage ? input.stage !== "lite" : !!input.eager
+  const eager = initialMarkdownEager(input)
   const mathMode = input.stage === "full" ? "full" : input.stage === "structure" ? "defer" : (input.math ?? "full")
   return eager || mathMode !== "defer"
 }
@@ -859,7 +869,7 @@ export function Markdown(
   const i18n = useI18n()
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const [ready, setReady] = createSignal(true)
-  const eager = createMemo(() => (local.stage ? local.stage !== "lite" : !!local.eager))
+  const eager = createMemo(() => initialMarkdownEager(local))
   const mathMode = createMemo<"full" | "defer">(() => {
     if (local.stage === "full") return "full"
     if (local.stage === "structure") return "defer"
@@ -1043,13 +1053,7 @@ export function Markdown(
         }
         const observer = new IntersectionObserver(
           (entries) => {
-            if (!live || !container.isConnected) {
-              console.debug("[markdown] skip stale visible observer", {
-                key: info.key,
-                text: info.text,
-              })
-              return
-            }
+            if (!live || !container.isConnected) return
             if (!entries.some((entry) => entry.isIntersecting)) return
             setSeen(true)
           },
@@ -1228,13 +1232,7 @@ export function Markdown(
 
       if (copySetupTimer) clearTimeout(copySetupTimer)
       copySetupTimer = setTimeout(() => {
-        if (!live || !container.isConnected) {
-          console.debug("[markdown] skip stale copy setup", {
-            key: info.key,
-            text: info.text,
-          })
-          return
-        }
+        if (!live || !container.isConnected) return
         if (copyCleanup) copyCleanup()
         copyCleanup = setupCodeCopy(container, next)
         setLabels(container, next)
@@ -1331,13 +1329,7 @@ export function Markdown(
 
     if (copySetupTimer) clearTimeout(copySetupTimer)
     copySetupTimer = setTimeout(() => {
-      if (!live || !container.isConnected) {
-        console.debug("[markdown] skip stale label sync", {
-          key: info.key,
-          text: info.text,
-        })
-        return
-      }
+      if (!live || !container.isConnected) return
       if (copyCleanup) copyCleanup()
       copyCleanup = setupCodeCopy(container, next)
       setLabels(container, next)

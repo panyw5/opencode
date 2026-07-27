@@ -4,6 +4,7 @@ import {
   createCoalescedConnectedMeasure,
   partMeasurementKey,
   scheduleConnectedMeasure,
+  shouldAdjustVirtualScroll,
   timelineMeasurementsMatchWidth,
   virtualRowOverflow,
 } from "./measure"
@@ -107,6 +108,18 @@ test("does not clip a row while its DOM height is ahead of the virtualizer", () 
   expect(virtualRowOverflow(60, 60)).toBe("clip")
   expect(virtualRowOverflow(60.5, 60)).toBe("clip")
   expect(virtualRowOverflow(60.6, 60)).toBe("visible")
+})
+
+test("keeps a bottom-anchored stream pinned as its last row grows", () => {
+  expect(shouldAdjustVirtualScroll({ itemEnd: 600, scrollOffset: 500, bottomAnchored: true, initializing: false })).toBe(
+    true,
+  )
+  expect(shouldAdjustVirtualScroll({ itemEnd: 600, scrollOffset: 500, bottomAnchored: true, initializing: true })).toBe(
+    false,
+  )
+  expect(shouldAdjustVirtualScroll({ itemEnd: 400, scrollOffset: 500, bottomAnchored: false, initializing: false })).toBe(
+    true,
+  )
 })
 
 test("invalidates cached measurements after a meaningful timeline width change", () => {

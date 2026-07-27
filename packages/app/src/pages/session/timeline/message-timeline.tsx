@@ -50,6 +50,7 @@ import { useSessionKey } from "@/pages/session/session-layout"
 import {
   createCoalescedConnectedMeasure,
   partMeasurementKey,
+  shouldAdjustVirtualScroll,
   timelineMeasurementsMatchWidth,
   virtualRowOverflow,
 } from "./measure"
@@ -200,6 +201,7 @@ export function MessageTimeline(props: {
   onHistoryScroll: () => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
+  isInitialScrollSettling: () => boolean
   centered: boolean
   setContentRef: (el: HTMLDivElement) => void
   userMessages: UserMessage[]
@@ -308,7 +310,6 @@ export function MessageTimeline(props: {
       return timelineRows().length
     },
     getScrollElement: () => listRoot() ?? null,
-    initialOffset: () => (props.shouldAnchorBottom() ? Number.MAX_SAFE_INTEGER : 0),
     initialMeasurementsCache: initialMeasurements,
     estimateSize: () => timelineFallbackItemSize,
     scrollToFn: (offset, options, instance) => {
@@ -353,7 +354,12 @@ export function MessageTimeline(props: {
     resizeItem(index, size)
   }
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    item.end <= instance.getLogicalScrollOffset()
+    shouldAdjustVirtualScroll({
+      itemEnd: item.end,
+      scrollOffset: instance.getLogicalScrollOffset(),
+      bottomAnchored: props.shouldAnchorBottom(),
+      initializing: props.isInitialScrollSettling(),
+    })
   const virtualItemByKey = createMemo(
     () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),
   )
@@ -368,23 +374,11 @@ export function MessageTimeline(props: {
     props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
   })
 
-  let anchorSessionKey = ""
-  createEffect(() => {
-    const key = sessionKey()
-    timelineRows().length
-    if (anchorSessionKey === key || !timelineRows().length || !props.shouldAnchorBottom()) return
-    anchorSessionKey = key
-    clearPrependAnchor()
-    requestAnimationFrame(() => {
-      if (sessionKey() === key) virtualizer.scrollToEnd()
-    })
-  })
   onMount(() => {
     requestAnimationFrame(() => {
-      if (props.shouldAnchorBottom()) virtualizer.scrollToEnd()
       requestAnimationFrame(() => {
-        if (renderOverscan() < 20) setRenderOverscan(20)
-        if (props.shouldAnchorBottom()) virtualizer.scrollToEnd()
+        const previousOverscan = renderOverscan()
+        if (previousOverscan < 20) setRenderOverscan(20)
       })
     })
   })

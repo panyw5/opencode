@@ -86,6 +86,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 const emptyUserMessages: UserMessage[] = []
 const scrollBottomThreshold = 16
 const settleMs = 1_500
+const initialScrollRevealMs = 300
 const emptyFollowups: (FollowupDraft & { id: string })[] = []
 const smoothBottomSnapDistance = 900
 const smoothBottomMaxStep = 180
@@ -1560,6 +1561,9 @@ export default function Page() {
   let fillFrame: number | undefined
   let initialScrollKey: string | undefined
   let initialScrollFrame: number | undefined
+  let initialScrollStableFrames = 0
+  let initialScrollHeight: number | undefined
+  let initialScrollRevealUntil = 0
   let until = 0
 
   const hasScrollTarget = () => !!location.hash || !!ui.pendingMessage || !!ui.seekingMessageId || !!store.messageId
@@ -1587,9 +1591,19 @@ export default function Page() {
     lockBottom(root, "initial-scroll:settle")
     scheduleScrollState(root)
 
-    // Reveal the scroller once scrollTop is at the bottom (gap resolved)
+    const height = root.scrollHeight
     const gapAfter = Math.round(root.scrollHeight - root.clientHeight - root.scrollTop)
-    if (root.style.visibility === "hidden" && Math.abs(gapAfter) <= 1) {
+    if (Math.abs(gapAfter) <= 1 && height === initialScrollHeight) {
+      initialScrollStableFrames += 1
+    } else {
+      initialScrollStableFrames = 0
+    }
+    initialScrollHeight = height
+    // Do not reveal while virtual row measurements are still changing total height.
+    if (
+      root.style.visibility === "hidden" &&
+      (initialScrollStableFrames >= 2 || performance.now() >= initialScrollRevealUntil)
+    ) {
       root.style.visibility = ""
     }
 
@@ -1619,10 +1633,6 @@ export default function Page() {
     // does not compete with the virtualizer in the same delivery cycle.
     if ((live() || settling()) && !hasScrollTarget() && !hasScrollGesture()) {
       lockBottom(root, "content:resize:lock-bottom", live() ? "smooth" : "auto")
-      if (root.style.visibility === "hidden") {
-        const gap = Math.round(root.scrollHeight - root.clientHeight - root.scrollTop)
-        if (Math.abs(gap) <= 1) root.style.visibility = ""
-      }
     }
     debug("content-resize:after", root)
     scheduleScrollState(root)
@@ -1716,6 +1726,9 @@ export default function Page() {
         if (!mounted) return
         if (initialScrollKey === key) return
         initialScrollKey = key
+        initialScrollStableFrames = 0
+        initialScrollHeight = undefined
+        initialScrollRevealUntil = performance.now() + initialScrollRevealMs
         if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
 
         // Synchronously scroll to bottom before the browser paints to prevent
@@ -1726,11 +1739,6 @@ export default function Page() {
           // during session switch, causing a visible flash of the middle content.
           scroller.style.visibility = "hidden"
           lockBottom(scroller, "initial-scroll:immediate")
-          // If content doesn't overflow yet, keep hidden until settle resolves it
-          if (scroller.scrollHeight > scroller.clientHeight) {
-            // Content already overflows and lockBottom succeeded — reveal immediately
-            scroller.style.visibility = ""
-          }
         }
 
         initialScrollFrame = requestAnimationFrame(() => {
@@ -1762,11 +1770,6 @@ export default function Page() {
             lockBottom(el, "initial-scroll:bottom")
             scheduleScrollState(el)
             debug("initial:after", el, { key })
-            // Reveal if lockBottom brought us to the bottom
-            const gapNow = Math.round(el.scrollHeight - el.clientHeight - el.scrollTop)
-            if (el.style.visibility === "hidden" && Math.abs(gapNow) <= 1) {
-              el.style.visibility = ""
-            }
             initialScrollFrame = requestAnimationFrame(() => settle(key))
           })
         })
@@ -1846,13 +1849,13 @@ export default function Page() {
     const key = sessionKey()
     if (key && messagesReady() && initialScrollKey !== key) {
       initialScrollKey = key
+      initialScrollStableFrames = 0
+      initialScrollHeight = undefined
+      initialScrollRevealUntil = performance.now() + initialScrollRevealMs
       if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
       if (!hasScrollTarget()) {
         el.style.visibility = "hidden"
         lockBottom(el, "initial-scroll:ref-late")
-        if (el.scrollHeight > el.clientHeight) {
-          el.style.visibility = ""
-        }
       }
       until = performance.now() + settleMs
       initialScrollFrame = requestAnimationFrame(() => settle(key))
@@ -2353,6 +2356,7 @@ export default function Page() {
                       }}
                       onAutoScrollInteraction={autoScroll.handleInteraction}
                       shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled()}
+                      isInitialScrollSettling={settling}
                       centered={centered()}
                       setContentRef={(el) => {
                         content = el
