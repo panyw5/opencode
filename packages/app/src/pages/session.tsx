@@ -2406,6 +2406,8 @@ export default function Page() {
               resumeScroll()
             }}
             onResponseSubmit={resumeScroll}
+            onScrollToBottom={resumeScroll}
+            scrollState={ui.scroll}
             followup={
               params.id
                 ? {

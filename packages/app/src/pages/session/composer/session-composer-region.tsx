@@ -544,6 +544,8 @@ export function SessionComposerRegion(props: {
   onSubmit: () => void
   onSubmitted?: () => void
   onResponseSubmit: () => void
+  onScrollToBottom: () => void
+  scrollState?: { overflow: boolean; bottom: boolean }
   followup?: {
     queue: () => boolean
     items: { id: string; text: string }[]
@@ -999,6 +1001,8 @@ export function SessionComposerRegion(props: {
                 onAbort={props.followup?.onAbort}
                 onSubmit={props.onSubmit}
                 onSubmitted={props.onSubmitted}
+                onScrollToBottom={props.onScrollToBottom}
+                scrollState={props.scrollState}
               />
             </div>
           </Show>
