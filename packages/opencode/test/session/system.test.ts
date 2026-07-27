@@ -4,6 +4,7 @@ import type { Agent } from "../../src/agent/agent"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Skill } from "../../src/skill"
 import { Permission } from "../../src/permission"
+import type { Provider } from "../../src/provider/provider"
 import { SystemPrompt } from "../../src/session/system"
 import { testEffect } from "../lib/effect"
 
@@ -62,6 +63,17 @@ const it = testEffect(
 )
 
 describe("session.system", () => {
+  it.effect("uses one compact base prompt for every provider", () =>
+    Effect.sync(() => {
+      const prompt = SystemPrompt.provider({} as Provider.Model)
+
+      expect(prompt).toHaveLength(1)
+      expect(prompt[0]).toContain("interactive coding agent")
+      expect(prompt[0]).toContain("respect their permissions")
+      expect(prompt[0].length).toBeLessThan(2_000)
+    }),
+  )
+
   it.effect("skills output is sorted by name and stable across calls", () =>
     Effect.gen(function* () {
       const prompt = yield* SystemPrompt.Service
