@@ -5,6 +5,7 @@ import {
   partMeasurementKey,
   scheduleConnectedMeasure,
   timelineMeasurementsMatchWidth,
+  virtualRowOverflow,
 } from "./measure"
 
 test("does not measure an element detached before the frame", async () => {
@@ -100,6 +101,12 @@ test("coalesced measurement cancels pending frame work", async () => {
   await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
   expect(commits).toBe(0)
   element.remove()
+})
+
+test("does not clip a row while its DOM height is ahead of the virtualizer", () => {
+  expect(virtualRowOverflow(60, 60)).toBe("clip")
+  expect(virtualRowOverflow(60.5, 60)).toBe("clip")
+  expect(virtualRowOverflow(60.6, 60)).toBe("visible")
 })
 
 test("invalidates cached measurements after a meaningful timeline width change", () => {

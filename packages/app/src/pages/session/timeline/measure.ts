@@ -47,6 +47,11 @@ export function timelineMeasurementsMatchWidth(cachedWidth: number | undefined, 
   return Math.abs(cachedWidth - currentWidth) <= 16
 }
 
+/** Keeps a growing row readable until its deferred virtualizer measurement commits. */
+export function virtualRowOverflow(contentHeight: number, virtualHeight: number) {
+  return contentHeight > virtualHeight + 0.5 ? "visible" : "clip"
+}
+
 /** Keeps virtual row identity independent from the data that determines its height. */
 export function partMeasurementKey(part: Part | undefined) {
   if (!part) return "missing"

@@ -47,7 +47,12 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
-import { createCoalescedConnectedMeasure, partMeasurementKey, timelineMeasurementsMatchWidth } from "./measure"
+import {
+  createCoalescedConnectedMeasure,
+  partMeasurementKey,
+  timelineMeasurementsMatchWidth,
+  virtualRowOverflow,
+} from "./measure"
 import { createTimelineProjection } from "./projection"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
 
@@ -694,6 +699,7 @@ export function MessageTimeline(props: {
   function VirtualTimelineRow(input: { rowKey: string }) {
     let element: HTMLDivElement | undefined
     let resizeObserver: ResizeObserver | undefined
+    const [contentHeight, setContentHeight] = createSignal(0)
     const initialItem = virtualItemByKey().get(input.rowKey)!
     const initialRow = timelineRowByKey().get(input.rowKey)!
     const item = createMemo(() => virtualItemByKey().get(input.rowKey) ?? initialItem)
@@ -712,15 +718,21 @@ export function MessageTimeline(props: {
         // TanStack skips measureElement updates during a user scroll. Dynamic
         // Markdown and tool content must still claim their new row height, or
         // the absolutely positioned following row clips it until scrolling ends.
+        setContentHeight(height)
         virtualizer.resizeItem(item().index, height)
       },
     })
-    const requestMeasure = () => measurement.request()
+    const requestMeasure = () => {
+      if (element?.isConnected) setContentHeight(element.getBoundingClientRect().height)
+      measurement.request()
+    }
 
     onMount(() => {
       if (!element) return
       virtualizer.measureElement(element)
-      measurement.remember(element.getBoundingClientRect().height)
+      const height = element.getBoundingClientRect().height
+      setContentHeight(height)
+      measurement.remember(height)
       resizeObserver = new ResizeObserver(requestMeasure)
       resizeObserver.observe(element)
     })
@@ -730,7 +742,9 @@ export function MessageTimeline(props: {
         () => {
           if (!element) return
           virtualizer.measureElement(element)
-          measurement.remember(element.getBoundingClientRect().height)
+          const height = element.getBoundingClientRect().height
+          setContentHeight(height)
+          measurement.remember(height)
         },
         { defer: true },
       ),
@@ -753,7 +767,9 @@ export function MessageTimeline(props: {
           left: "0",
           width: "100%",
           height: `${item().size}px`,
-          overflow: "clip",
+          // Do not hide newly rendered streaming content while the virtualizer
+          // catches up with its ResizeObserver measurement.
+          overflow: virtualRowOverflow(contentHeight(), item().size),
         }}
       >
         <div ref={(value) => (element = value)} data-index={item().index}>
