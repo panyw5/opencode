@@ -14,35 +14,28 @@ export function normalizeTool(tool: string) {
 }
 
 export function hookName(input: Record<string, unknown>, metadata: Record<string, unknown>) {
-  const keys = ["hook", "hook_name", "hookName", "event", "name"]
+  const keys = ["hook", "hook_name", "hookName"]
   for (const src of [metadata, input]) {
     for (const key of keys) {
       const value = text(src?.[key])
-      if (!value) continue
-      if (value.includes("-")) return value
-      if (value === "session-start") return value
+      if (value) return value
     }
   }
-
-  const desc = text(input.description) ?? text(metadata.description)
-  if (!desc) return
-  const match = desc.match(/([a-z0-9]+(?:-[a-z0-9]+){1,})/i)
-  if (!match?.[1]) return
-  return match[1]
 }
 
-export function hookMeta(input: Record<string, unknown>, metadata: Record<string, unknown>) {
-  const keys = ["hook", "hook_name", "hookName", "hook_type", "hookType", "event", "stage", "phase"]
+function hookType(input: Record<string, unknown>, metadata: Record<string, unknown>) {
   for (const src of [metadata, input]) {
-    for (const key of keys) {
-      if (text(src?.[key])) return true
-    }
+    const value = text(src.hook_type) ?? text(src.hookType)
+    if (value) return value
   }
-  return false
 }
 
 export function isCustomHookTool(tool: string, input: Record<string, unknown>, metadata: Record<string, unknown>) {
   const name = normalizeTool(tool)
-  if (name !== "bash" && name !== "hook") return false
-  return hookMeta(input, metadata) || !!hookName(input, metadata)
+  if (name === "hook") return true
+  if (name !== "bash") return false
+
+  // Older sessions persisted hooks as bash calls. Require both explicit hook
+  // fields so ordinary shell metadata can never affect timeline visibility.
+  return !!hookName(input, metadata) && !!hookType(input, metadata)
 }

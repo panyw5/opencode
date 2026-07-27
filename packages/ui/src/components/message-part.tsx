@@ -64,6 +64,7 @@ import { animate } from "motion"
 import { attached, inline, kind } from "./message-file"
 import { skillText } from "./message-skill"
 import { hookName, isCustomHookTool, normalizeTool } from "./tool-meta"
+export { normalizeTool } from "./tool-meta"
 import {
   groupParts as groupOrderedParts,
   orderTextReasoningSegments,
@@ -723,8 +724,9 @@ export function renderable(part: PartType, showReasoningSummaries = true, showCu
 }
 
 function toolDefaultOpen(tool: string, shell = false, edit = false) {
-  if (tool === "bash") return shell
-  if (tool === "edit" || tool === "write" || tool === "apply_patch") return edit
+  const name = normalizeTool(tool)
+  if (name === "bash") return shell
+  if (name === "edit" || name === "write" || name === "apply_patch") return edit
 }
 
 function partDefaultOpen(part: PartType, shell = false, edit = false) {

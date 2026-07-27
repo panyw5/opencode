@@ -20,7 +20,13 @@ import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
-import { Message, MessageDivider, Part as MessagePart, type UserActions } from "@opencode-ai/ui/message-part"
+import {
+  Message,
+  MessageDivider,
+  normalizeTool,
+  Part as MessagePart,
+  type UserActions,
+} from "@opencode-ai/ui/message-part"
 import { SessionRetry } from "@opencode-ai/ui/session-retry"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
@@ -472,8 +478,9 @@ export function MessageTimeline(props: {
   }
   const defaultOpen = (part: PartType) => {
     if (part.type !== "tool") return
-    if (part.tool === "bash") return settings.general.shellToolPartsExpanded()
-    if (["edit", "write", "apply_patch"].includes(part.tool)) return settings.general.editToolPartsExpanded()
+    const tool = normalizeTool(part.tool)
+    if (tool === "bash") return settings.general.shellToolPartsExpanded()
+    if (["edit", "write", "apply_patch"].includes(tool)) return settings.general.editToolPartsExpanded()
   }
 
   function TimelineRowFrame(input: { row: Accessor<FramedTimelineRow>; children: JSX.Element }) {
