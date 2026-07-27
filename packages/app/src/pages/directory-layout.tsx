@@ -72,9 +72,11 @@ function ProjectStatusPortal() {
     <Show when={mount()}>
       {(node) => (
         <Portal mount={node()}>
-          <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-            <StatusPopover />
-          </Tooltip>
+          <div class="mr-2">
+            <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
+              <StatusPopover />
+            </Tooltip>
+          </div>
         </Portal>
       )}
     </Show>

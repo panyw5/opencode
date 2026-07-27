@@ -86,7 +86,8 @@
   [data-slot="session-turn-thinking-label"][data-shimmer="true"] {
     color: transparent !important;
     -webkit-text-fill-color: transparent !important;
-    background-image: linear-gradient(
+    background-image:
+      linear-gradient(
         90deg,
         transparent 0%,
         transparent 42%,
@@ -95,9 +96,13 @@
         transparent 100%
       ),
       linear-gradient(var(--text-weaker), var(--text-weaker));
-    background-size: 260% 100%, 100% 100%;
+    background-size:
+      260% 100%,
+      100% 100%;
     background-repeat: no-repeat, no-repeat;
-    background-position: 100% center, 0 0;
+    background-position:
+      100% center,
+      0 0;
     -webkit-background-clip: text;
     background-clip: text;
     animation: session-title-text-shimmer 2.8s linear infinite;
@@ -149,6 +154,10 @@
     min-width: 0;
   }
 
+  [data-component="session-turn-diffs-group"] > [data-component="collapsible"] > [data-slot="collapsible-trigger"] {
+    height: 44px;
+  }
+
   [data-slot="session-turn-diffs"]
     > [data-component="collapsible"]
     > [data-slot="collapsible-trigger"][aria-expanded="true"] {
@@ -158,6 +167,36 @@
     height: 40px;
     padding-bottom: 8px;
     background-color: var(--background-stronger);
+  }
+
+  [data-component="session-turn-diffs-group"]
+    > [data-component="collapsible"]
+    > [data-slot="collapsible-trigger"][aria-expanded="true"] {
+    height: 44px;
+    padding-bottom: 0;
+  }
+
+  [data-slot="session-turn-diffs-header"] {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    gap: 8px;
+  }
+
+  [data-component="session-turn-diffs-group"] [data-slot="session-turn-diffs-label"] {
+    color: var(--text-weak);
+    font-variant-numeric: tabular-nums;
+    font-size: var(--font-size-small);
+    font-weight: var(--font-weight-regular);
+  }
+
+  [data-slot="session-turn-diffs-summary"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    flex-shrink: 0;
   }
 
   [data-component="session-turn-diffs-trigger"] {
@@ -287,4 +326,3 @@
 [data-slot="session-turn-list"] {
   gap: 48px;
 }
-

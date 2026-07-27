@@ -11,8 +11,6 @@ import {
 } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 
 import { sessionBarKey, useLayout, type SessionBarTab } from "@/context/layout"
@@ -148,12 +146,6 @@ export function SessionTabsBar() {
     navigate("/")
   }
 
-  const createDraft = () => {
-    const directory = routeDir() || layout.projects.list()[0]?.worktree
-    if (!directory) return
-    navigate(`/${base64Encode(directory)}/session`)
-  }
-
   // Cycle through open tabs. When the current route is not a persisted tab
   // (draft new-session page, home, config), previous lands on the last tab and
   // next on the first, matching the draft tab's visual position at the end.
@@ -270,7 +262,12 @@ export function SessionTabsBar() {
             <SortableProvider ids={keys()}>
               <For each={tabs()}>
                 {(tab) => (
-                  <SessionTab tab={tab} active={isActive(tab)} onOpen={() => void open(tab)} onClose={() => close(tab)} />
+                  <SessionTab
+                    tab={tab}
+                    active={isActive(tab)}
+                    onOpen={() => void open(tab)}
+                    onClose={() => close(tab)}
+                  />
                 )}
               </For>
             </SortableProvider>
@@ -291,19 +288,6 @@ export function SessionTabsBar() {
             </Show>
           </DragOverlay>
         </DragDropProvider>
-        <Show when={routeDir() || layout.projects.list().length > 0}>
-          <div class="flex h-full shrink-0 items-center">
-            <Tooltip value={language.t("command.session.new")} placement="bottom">
-              <IconButton
-                icon="plus-small"
-                variant="ghost"
-                class="h-6 w-6"
-                onClick={createDraft}
-                aria-label={language.t("command.session.new")}
-              />
-            </Tooltip>
-          </div>
-        </Show>
       </Show>
     </div>
   )

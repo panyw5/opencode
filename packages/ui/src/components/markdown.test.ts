@@ -4,6 +4,7 @@ import {
   fileLink,
   findFileLinks,
   initialMarkdownMathSeen,
+  markdownCacheMode,
   prepareMarkdownSource,
   shouldShowMarkdownCodeTopCopy,
   shouldShowMarkdownMathBottomCopy,
@@ -113,6 +114,13 @@ describe("markdown math", () => {
     expect(initialMarkdownMathSeen({ stage: "full" })).toBe(true)
     expect(initialMarkdownMathSeen({ stage: "lite", math: "defer" })).toBe(false)
     expect(initialMarkdownMathSeen({ math: "full" })).toBe(true)
+  })
+
+  test("uses a distinct cache identity after deferred math upgrades", () => {
+    const deferred = markdownCacheMode({ highlight: "defer", math: "defer" })
+    const full = markdownCacheMode({ highlight: "defer", math: "full" })
+
+    expect(deferred).not.toBe(full)
   })
 
   test("adds bottom copy affordance only for tall display math", () => {
