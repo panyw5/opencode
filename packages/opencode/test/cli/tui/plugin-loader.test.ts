@@ -10,6 +10,7 @@ import { createTuiResolvedConfig, mockTuiRuntime } from "../../fixture/tui-runti
 import { Global } from "@opencode-ai/core/global"
 import { TuiConfig } from "../../../src/cli/cmd/tui/config/tui"
 import { Filesystem } from "@/util/filesystem"
+import { Hash } from "@/util/hash"
 import { PluginLoader } from "../../../src/plugin/loader"
 
 const { allThemes, addTheme } = await import("../../../src/cli/cmd/tui/context/theme")
@@ -150,6 +151,29 @@ export default { id: "demo.stateful", tui: async () => {}, count: state[key] }
   expect(scopedA).toEqual([2])
   expect(scopedB).toEqual([3])
   expect(scopedAAgain).toEqual([2])
+})
+
+test("writes a package.json with type module for scoped file plugins without one", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      const plugin = path.join(dir, "plugin.ts")
+      await Bun.write(plugin, `export default { id: "demo.pkg", tui: async () => {} }\n`)
+      return { spec: pathToFileURL(plugin).href }
+    },
+  })
+
+  const items = [{ spec: tmp.extra.spec, scope: "local" as const, source: path.join(tmp.path, "tui.json") }]
+  const loaded = await PluginLoader.loadExternal({ items, kind: "tui", importScope: "project-without-package-json" })
+  expect(loaded).toHaveLength(1)
+
+  const resolved = await PluginLoader.resolve({ spec: tmp.extra.spec, options: undefined, deprecated: false }, "tui")
+  expect(resolved.ok).toBe(true)
+  if (!resolved.ok) return
+
+  const key = Hash.fast(["project-without-package-json", resolved.value.source, resolved.value.target, resolved.value.entry].join("\0"))
+  const scopedPkg = path.join(Global.Path.tmp, "plugin-modules", key, "package.json")
+  expect(await Filesystem.exists(scopedPkg)).toBe(true)
+  expect(await Bun.file(scopedPkg).json()).toEqual({ type: "module" })
 })
 
 test("keeps config-local dependencies available for scoped file plugins", async () => {

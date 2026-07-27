@@ -119,6 +119,15 @@ export namespace PluginLoader {
     if (hasNodeModules) {
       await symlink(nodeModules, path.join(scoped, "node_modules"), "dir")
     }
+
+    // File plugins often live in directories without a package.json. Without a
+    // declared module type, Node/Bun reparses the file as ESM after detecting
+    // module syntax and emits a MODULE_TYPELESS_PACKAGE_JSON warning. Write a
+    // minimal package.json so the scoped import is unambiguous.
+    const scopedPkg = path.join(scoped, "package.json")
+    if (!(await Filesystem.exists(scopedPkg))) {
+      await Filesystem.writeJson(scopedPkg, { type: "module" })
+    }
   }
 
   // Bun normalizes file import query/hash fragments, so project isolation needs a real path.
