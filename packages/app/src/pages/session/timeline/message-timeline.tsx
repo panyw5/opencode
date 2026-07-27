@@ -361,9 +361,20 @@ export function MessageTimeline(props: {
       initializing: props.isInitialScrollSettling(),
     })
   const virtualItemByKey = createMemo(
-    () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),
+    () =>
+      new Map(
+        virtualizer
+          .getVirtualItems()
+          .filter((item): item is NonNullable<typeof item> => item !== undefined)
+          .map((item) => [item.key, item] as const),
+      ),
   )
-  const virtualRowKeys = createMemo(() => virtualizer.getVirtualItems().map((item) => item.key as string))
+  const virtualRowKeys = createMemo(() =>
+    virtualizer
+      .getVirtualItems()
+      .filter((item): item is NonNullable<typeof item> => item !== undefined)
+      .map((item) => item.key as string),
+  )
 
   createEffect(() => {
     props.setRevealMessage?.((id) => {
