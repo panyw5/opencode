@@ -1,8 +1,8 @@
 [data-component="tabs"] {
   --tabs-bar-height: 48px;
   --tabs-compact-pill-height: 24px;
-  --tabs-compact-pill-radius: 6px;
-  --tabs-compact-pill-padding-x: 4px;
+  --tabs-compact-pill-radius: 8px;
+  --tabs-compact-pill-padding-x: 8px;
 
   width: 100%;
   height: 100%;
@@ -215,7 +215,7 @@
 
       &.session-file-tab-trigger {
         height: 100%;
-        border-radius: 0;
+        border-radius: var(--tabs-compact-pill-radius);
 
         &::after {
           bottom: 0;
@@ -230,8 +230,7 @@
       }
 
       &.session-file-tab-trigger:has([data-slot="tabs-trigger-close-button"]) {
-        padding-left: 10px;
-        padding-right: 8px;
+        padding-inline: 12px;
       }
 
       [data-slot="tabs-trigger-close-button"][data-hidden="true"] {

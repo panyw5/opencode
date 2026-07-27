@@ -334,7 +334,7 @@ function SessionTab(props: { tab: SessionBarTab; active: boolean; onOpen: () => 
         data-component="session-tab"
         data-active={props.active ? "true" : undefined}
         data-subagent={subagent() ? "true" : undefined}
-        class="group relative flex h-7 max-w-52 min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-lg pl-2 pr-1 text-13-medium"
+        class="group relative flex h-7 max-w-52 min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
         classList={{
           "bg-surface-base-active text-text-strong": props.active,
           "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
@@ -410,7 +410,7 @@ function DraftTab(props: { directory: string; closable: boolean; onClose: () => 
       <div
         data-component="session-tab"
         data-active="true"
-        class="group relative flex h-7 max-w-52 min-w-0 cursor-default select-none items-center gap-1.5 rounded-lg bg-surface-base-active pl-2 pr-1 text-13-medium italic text-text-strong"
+        class="group relative flex h-7 max-w-52 min-w-0 cursor-default select-none items-center gap-1.5 rounded-[10px] bg-surface-base-active pl-3 pr-2 text-13-medium italic text-text-strong"
       >
         <span class="min-w-0 truncate">{language.t("command.session.new")}</span>
         <Show when={props.closable}>
