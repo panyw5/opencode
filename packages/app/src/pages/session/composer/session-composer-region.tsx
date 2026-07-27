@@ -204,6 +204,74 @@ function SessionBackgroundShellMenu(props: {
   )
 }
 
+type SessionUserMessageEntry = {
+  id: string
+  text: string
+  created: number
+}
+
+function SessionUserMessageMenu(props: {
+  entries: SessionUserMessageEntry[]
+  onOpen: (entry: SessionUserMessageEntry) => void
+}) {
+  const language = useLanguage()
+
+  return (
+    <DropdownMenu gutter={6} placement="top-start">
+      <DropdownMenu.Trigger
+        as={Button}
+        variant="ghost"
+        size="small"
+        icon="speech-bubble"
+        class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
+        aria-label="查看用户消息"
+        data-testid="session-user-message-menu-trigger"
+      >
+        <span>查看用户消息</span>
+        <span class="text-11-medium text-text-weak">({props.entries.length})</span>
+        <Icon name="chevron-down" size="small" class="text-icon-weak" />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          class="session-child-agent-scrollbar w-[420px] max-w-[calc(100vw-32px)]"
+          style={{
+            "max-height": "min(520px, calc(100dvh - 160px))",
+            "overflow-y": "auto",
+            "overscroll-behavior": "contain",
+            "scrollbar-gutter": "stable",
+          }}
+        >
+          <DropdownMenu.Group>
+            <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+              用户消息
+            </DropdownMenu.GroupLabel>
+            <For each={props.entries}>
+              {(entry, index) => (
+                <DropdownMenu.Item
+                  class="min-w-0"
+                  onSelect={() => props.onOpen(entry)}
+                  data-testid="session-user-message-menu-item"
+                >
+                  <div class="min-w-0 flex flex-col gap-1">
+                    <DropdownMenu.ItemLabel class="truncate text-13-medium text-text-strong">
+                      {entry.text}
+                    </DropdownMenu.ItemLabel>
+                    <DropdownMenu.ItemDescription class="text-11-regular text-text-weak">
+                      <span>第 {index() + 1} 条</span>
+                      <span> - </span>
+                      <span>{formatChildAgentTime(entry.created, language.intl())}</span>
+                    </DropdownMenu.ItemDescription>
+                  </div>
+                </DropdownMenu.Item>
+              )}
+            </For>
+          </DropdownMenu.Group>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
+  )
+}
+
 function SessionBackgroundShellDialog(props: {
   entry: BackgroundShellInfo
   load: (id: string) => Promise<BackgroundShellInfo>
@@ -495,6 +563,8 @@ export function SessionComposerRegion(props: {
   }
   childAgents?: SessionChildAgentEntry[]
   onOpenChildAgent?: (entry: SessionChildAgentEntry) => void
+  userMessages?: SessionUserMessageEntry[]
+  onOpenUserMessage?: (entry: SessionUserMessageEntry) => void
   subagentNavigation?: {
     previous?: string
     next?: string
@@ -598,13 +668,25 @@ export function SessionComposerRegion(props: {
     if (!onOpen) return undefined
     return { entries: props.childAgents ?? [], onOpen }
   })
-  const showPromptToolbar = createMemo(
-    () => !!route.params.id || (childAgentMenu()?.entries.length ?? 0) > 0 || skippedQuestionCount() > 0,
-  )
+  const userMessageMenu = createMemo(() => {
+    if (platform.platform !== "desktop") return undefined
+    const onOpen = props.onOpenUserMessage
+    const entries = props.userMessages ?? []
+    if (!onOpen || entries.length === 0) return undefined
+    return { entries, onOpen }
+  })
   const visibleSubagentNavigation = createMemo(() => {
     if (platform.platform !== "desktop") return undefined
     return props.subagentNavigation
   })
+  const showPromptToolbar = createMemo(
+    () =>
+      (childAgentMenu()?.entries.length ?? 0) > 0 ||
+      (platform.platform === "desktop" && backgroundShells().length > 0) ||
+      !!userMessageMenu() ||
+      !!visibleSubagentNavigation() ||
+      skippedQuestionCount() > 0,
+  )
 
   const refreshBackgroundShells = () => {
     const sessionID = route.params.id
@@ -655,6 +737,7 @@ export function SessionComposerRegion(props: {
   createEffect(() => {
     route.params.id
     sdk.directory
+    setBackgroundShells([])
     refreshBackgroundShells()
   })
 
@@ -778,7 +861,7 @@ export function SessionComposerRegion(props: {
                   <Show when={childAgentMenu()} keyed>
                     {(menu) => <SessionChildAgentMenu entries={menu.entries} onOpen={menu.onOpen} />}
                   </Show>
-                  <Show when={route.params.id}>
+                  <Show when={platform.platform === "desktop" && backgroundShells().length > 0}>
                     <SessionBackgroundShellMenu
                       entries={backgroundShells()}
                       loading={backgroundShellsLoading()}
@@ -821,13 +904,16 @@ export function SessionComposerRegion(props: {
                     </div>
                   )}
                 </Show>
-                <Show when={!!visibleSubagentNavigation() || skippedQuestionCount() > 0}>
+                <Show when={!!visibleSubagentNavigation() || !!userMessageMenu() || skippedQuestionCount() > 0}>
                   <div
                     classList={{
-                      "min-w-0 flex justify-end": true,
+                      "min-w-0 flex items-center justify-end gap-2": true,
                       "flex-1": !visibleSubagentNavigation(),
                     }}
                   >
+                    <Show when={userMessageMenu()} keyed>
+                      {(menu) => <SessionUserMessageMenu entries={menu.entries} onOpen={menu.onOpen} />}
+                    </Show>
                     <Show when={skippedQuestionCount() > 0}>
                       <Button
                         variant="ghost"

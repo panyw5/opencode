@@ -1920,6 +1920,13 @@ export default function Page() {
     if (text) return text
     return `[${language.t("common.attachment")}]`
   }
+  const userMessageMenu = createMemo(() =>
+    visibleUserMessages().map((message) => ({
+      id: message.id,
+      text: line(message.id),
+      created: message.time.created,
+    })),
+  )
 
   const fail = (err: unknown) => {
     showToast({
@@ -2432,6 +2439,11 @@ export default function Page() {
             }
             childAgents={childAgentEntries()}
             onOpenChildAgent={openChildAgent}
+            userMessages={userMessageMenu()}
+            onOpenUserMessage={(entry) => {
+              const message = visibleUserMessages().find((item) => item.id === entry.id)
+              if (message) scrollToMessage(message, "auto")
+            }}
             subagentNavigation={subagentNavigation()}
             setPromptDockRef={(el) => {
               promptDock = el
