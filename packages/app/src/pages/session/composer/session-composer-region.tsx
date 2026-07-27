@@ -657,7 +657,9 @@ export function SessionComposerRegion(props: {
 
   onCleanup(clear)
 
-  const open = createMemo(() => store.ready && props.state.dock() && !props.state.closing())
+  // Desktop uses the floating todo widget instead of the bottom dock,
+  // so the dock animation/margins should not run on desktop.
+  const open = createMemo(() => store.ready && props.state.dock() && !props.state.closing() && platform.platform !== "desktop")
   const progress = useSpring(() => (open() ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
   const value = createMemo(() => Math.max(0, Math.min(1, progress())))
   const dock = createMemo(() => (store.ready && props.state.dock()) || value() > 0.001)
