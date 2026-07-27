@@ -8,6 +8,8 @@ export const permissionRejectSelector = `${permissionDockSelector} [data-slot="p
 export const permissionAllowAlwaysSelector = `${permissionDockSelector} [data-slot="permission-footer-actions"] [data-component="button"]:nth-child(2)`
 export const permissionAllowOnceSelector = `${permissionDockSelector} [data-slot="permission-footer-actions"] [data-component="button"]:nth-child(3)`
 export const sessionTodoDockSelector = '[data-component="session-todo-dock"]'
+export const sessionTodoFloatSelector = '[data-component="session-todo-float"]'
+export const sessionTodoFloatToggleSelector = '[data-component="session-todo-float-toggle"]'
 export const sessionTodoToggleSelector = '[data-action="session-todo-toggle"]'
 export const sessionTodoToggleButtonSelector = '[data-action="session-todo-toggle-button"]'
 export const sessionTodoListSelector = '[data-slot="session-todo-list"]'

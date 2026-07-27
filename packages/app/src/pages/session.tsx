@@ -41,6 +41,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { workspaceKey as directoryKey } from "@/pages/layout/helpers"
 import { useLayout } from "@/context/layout"
+import { usePlatform } from "@/context/platform"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSessionHistory } from "@/context/session-history"
@@ -48,7 +49,7 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
-import { createSessionComposerState, SessionComposerRegion } from "@/pages/session/composer"
+import { createSessionComposerState, SessionComposerRegion, SessionTodoFloat } from "@/pages/session/composer"
 import {
   clipMessages,
   createOpenReviewFile,
@@ -131,6 +132,7 @@ export default function Page() {
   const settings = useSettings()
   const sessionHistory = useSessionHistory()
   const prompt = usePrompt()
+  const platform = usePlatform()
   const comments = useComments()
   const terminal = useTerminal()
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
@@ -2317,73 +2319,83 @@ export default function Page() {
               size.active() || ui.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
-          <div class="flex-1 min-h-0 overflow-hidden">
-            <Switch>
-              <Match when={params.id}>
-                <Show when={messagesReady()} fallback={<div class="size-full bg-background-stronger" />}>
-                  <Show
-                    when={!mobileChanges()}
-                    fallback={
-                      <div class="relative h-full overflow-hidden">
-                        {reviewContent({
-                          diffStyle: "unified",
-                          classes: { root: "pb-8", header: "px-4", container: "px-4" },
-                          loadingClass: "px-4 py-4 text-text-weak",
-                          emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
-                        })}
-                      </div>
-                    }
-                  >
-                    <MessageTimeline
-                    actions={actions}
-                    scroll={ui.scroll}
-                    onResumeScroll={resumeScroll}
-                    setScrollRef={setScrollRef}
-                    onScheduleScrollState={scheduleScrollState}
-                    onAutoScrollHandleScroll={handleTimelineAutoScroll}
-                    onMarkScrollGesture={markScrollGesture}
-                    hasScrollGesture={hasScrollGesture}
-                    onUserScroll={markUserScroll}
-                    onHistoryScroll={() => {
-                      if (!autoScroll.userScrolled() || !scroller || scroller.scrollTop >= 200) return
-                      void loadEarlier()
-                    }}
-                    onAutoScrollInteraction={autoScroll.handleInteraction}
-                    shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled()}
-                    centered={centered()}
-                    setContentRef={(el) => {
-                      content = el
-                      autoScroll.contentRef(el)
+          <div class="relative flex-1 min-h-0">
+            <div class="absolute inset-0 overflow-hidden">
+              <Switch>
+                <Match when={params.id}>
+                  <Show when={messagesReady()} fallback={<div class="size-full bg-background-stronger" />}>
+                    <Show
+                      when={!mobileChanges()}
+                      fallback={
+                        <div class="relative h-full overflow-hidden">
+                          {reviewContent({
+                            diffStyle: "unified",
+                            classes: { root: "pb-8", header: "px-4", container: "px-4" },
+                            loadingClass: "px-4 py-4 text-text-weak",
+                            emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
+                          })}
+                        </div>
+                      }
+                    >
+                      <MessageTimeline
+                      actions={actions}
+                      scroll={ui.scroll}
+                      onResumeScroll={resumeScroll}
+                      setScrollRef={setScrollRef}
+                      onScheduleScrollState={scheduleScrollState}
+                      onAutoScrollHandleScroll={handleTimelineAutoScroll}
+                      onMarkScrollGesture={markScrollGesture}
+                      hasScrollGesture={hasScrollGesture}
+                      onUserScroll={markUserScroll}
+                      onHistoryScroll={() => {
+                        if (!autoScroll.userScrolled() || !scroller || scroller.scrollTop >= 200) return
+                        void loadEarlier()
+                      }}
+                      onAutoScrollInteraction={autoScroll.handleInteraction}
+                      shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled()}
+                      centered={centered()}
+                      setContentRef={(el) => {
+                        content = el
+                        autoScroll.contentRef(el)
 
-                      const root = scroller
-                      if (root) scheduleScrollState(root)
-                    }}
-                    userMessages={visibleUserMessages()}
-                    anchor={anchor}
-                    setRevealMessage={(fn) => {
-                      revealMessage = fn
-                    }}
-                    setScrollToEnd={(fn) => {
-                      scrollToEnd = fn
-                    }}
-                    setHistoryAnchor={(handlers) => {
-                      historyAnchor = handlers
-                    }}
-                    onRenderOverlayStatusChange={(status) => setUi("renderOverlayStatus", status)}
-                    />
+                        const root = scroller
+                        if (root) scheduleScrollState(root)
+                      }}
+                      userMessages={visibleUserMessages()}
+                      anchor={anchor}
+                      setRevealMessage={(fn) => {
+                        revealMessage = fn
+                      }}
+                      setScrollToEnd={(fn) => {
+                        scrollToEnd = fn
+                      }}
+                      setHistoryAnchor={(handlers) => {
+                        historyAnchor = handlers
+                      }}
+                      onRenderOverlayStatusChange={(status) => setUi("renderOverlayStatus", status)}
+                      />
+                    </Show>
                   </Show>
-                </Show>
-              </Match>
-              <Match when={true}>
-                <NewSessionView
-                  worktree={newSessionWorktree()}
-                  onWorktreeChange={(value) => {
-                    setStore("newSessionWorktree", value)
-                    setStore("newSessionPicked", true)
-                  }}
-                />
-              </Match>
-            </Switch>
+                </Match>
+                <Match when={true}>
+                  <NewSessionView
+                    worktree={newSessionWorktree()}
+                    onWorktreeChange={(value) => {
+                      setStore("newSessionWorktree", value)
+                      setStore("newSessionPicked", true)
+                    }}
+                  />
+                </Match>
+              </Switch>
+            </div>
+            <Show when={platform.platform === "desktop" && params.id && composer.todos().length > 0}>
+              <SessionTodoFloat
+                sessionID={params.id}
+                todos={composer.todos()}
+                collapseLabel={language.t("session.todo.collapse")}
+                expandLabel={language.t("session.todo.expand")}
+              />
+            </Show>
           </div>
 
           <SessionComposerRegion

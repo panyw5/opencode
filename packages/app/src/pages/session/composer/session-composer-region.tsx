@@ -935,7 +935,7 @@ export function SessionComposerRegion(props: {
                 </Show>
               </div>
             </Show>
-            <Show when={dock()}>
+            <Show when={dock() && platform.platform !== "desktop"}>
               <div
                 classList={{
                   "overflow-hidden": true,

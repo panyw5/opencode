@@ -151,7 +151,7 @@ async function todoDock(page: any, sessionID: string) {
       await expect.poll(read, { timeout: 10_000 }).toMatchObject({
         mounted: true,
         collapsed: true,
-        hidden: true,
+        hidden: false,
         count: states.length,
         states,
       })
