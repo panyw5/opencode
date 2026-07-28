@@ -41,6 +41,12 @@ function ComposerDockExit(props: { active: boolean; children: JSX.Element }) {
   })
 
   createEffect(() => {
+    console.debug("[composer-dock-exit] state", {
+      active: props.active,
+      visible: visible(),
+      progress: value(),
+      hasBody: !!store.body,
+    })
     const el = store.body
     if (!el) return
     let raf: number | undefined
@@ -56,6 +62,11 @@ function ComposerDockExit(props: { active: boolean; children: JSX.Element }) {
     const observer = new ResizeObserver(update)
     observer.observe(el)
     onCleanup(() => {
+      console.debug("[composer-dock-exit] cleanup", {
+        active: props.active,
+        visible: visible(),
+        progress: value(),
+      })
       observer.disconnect()
       if (raf === undefined) return
       cancelAnimationFrame(raf)

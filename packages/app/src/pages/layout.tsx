@@ -2350,7 +2350,7 @@ export default function Layout(props: ParentProps) {
       const rows = await Promise.all(
         dirs.map((directory) =>
           globalSDK.client.session
-            .list({ directory, roots: true, archived: true })
+            .list({ directory, roots: "true", archived: "true" })
             .then((x) => x.data ?? [])
             .catch(() => []),
         ),

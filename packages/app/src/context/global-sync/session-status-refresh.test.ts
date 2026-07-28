@@ -33,7 +33,7 @@ describe("session-status-refresh", () => {
   })
 
   test("reconcile clears stale busy entries omitted by the server", () => {
-    const [store, setStore] = createStore({
+    const [store, setStore] = createStore<{ session_status: Record<string, SessionStatus> }>({
       session_status: {
         ses_stale: { type: "busy" } as SessionStatus,
         ses_live: { type: "busy" } as SessionStatus,
@@ -59,7 +59,7 @@ describe("session-status-refresh", () => {
   })
 
   test("reconcile clears the whole map when server returns no active sessions", () => {
-    const [store, setStore] = createStore({
+    const [store, setStore] = createStore<{ session_status: Record<string, SessionStatus> }>({
       session_status: {
         ses_stale: { type: "busy" } as SessionStatus,
       },

@@ -97,8 +97,7 @@ function addOptimisticCommandMessage(input: {
     role: "user",
     time: { created: Date.now() },
     agent: input.agent,
-    model: input.model,
-    variant: input.variant,
+    model: { ...input.model, variant: input.variant },
   }
   const parts: Part[] = [
     {
@@ -266,8 +265,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     role: "user",
     time: { created: Date.now() },
     agent: input.draft.agent,
-    model: input.draft.model,
-    variant: input.draft.variant,
+    model: { ...input.draft.model, variant: input.draft.variant },
   }
 
   const add = () =>

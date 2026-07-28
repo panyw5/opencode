@@ -11,8 +11,8 @@
 //   questionSetTab  → tab navigation between questions
 //   questionSubmit  → builds the final QuestionReply with all answers
 //
-// Custom answers: if a question has custom=true, an extra "Type your own
-// answer" option appears. Selecting it enters editing mode with a text field.
+// Custom answers: each question includes a "Type your own answer" option.
+// Selecting it enters editing mode with a text field.
 import type { QuestionPrompt, QuestionRequest } from "@opencode-ai/sdk/v2"
 import type { QuestionReject, QuestionReply } from "./types"
 
@@ -68,7 +68,7 @@ export function questionInfo(request: QuestionRequest, state: QuestionBodyState)
 }
 
 export function questionCustom(request: QuestionRequest, state: QuestionBodyState): boolean {
-  return questionInfo(request, state)?.custom !== false
+  return questionInfo(request, state) !== undefined
 }
 
 export function questionInput(state: QuestionBodyState): string {
@@ -86,7 +86,7 @@ export function questionPicked(state: QuestionBodyState): boolean {
 
 export function questionOther(request: QuestionRequest, state: QuestionBodyState): boolean {
   const info = questionInfo(request, state)
-  if (!info || info.custom === false) {
+  if (!info) {
     return false
   }
 

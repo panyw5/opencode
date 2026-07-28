@@ -137,6 +137,10 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
             : operation.requestBody.content?.["application/json"]?.schema?.properties
           if (properties?.id) properties.id = { anyOf: [properties.id, { type: "null" }] }
         }
+        if (path === "/session/{sessionID}" && method === "patch") {
+          const archived = body?.schema?.properties?.time?.properties?.archived
+          if (archived) body.schema!.properties!.time!.properties!.archived = nullable(archived)
+        }
       }
       for (const response of Object.values(operation.responses ?? {})) {
         for (const content of Object.values(response.content ?? {})) {
@@ -267,6 +271,8 @@ function applyLegacySchemaOverrides(spec: OpenApiSpec) {
   }
   if (schemas.GlobalSession?.properties?.project)
     schemas.GlobalSession.properties.project = nullable(schemas.GlobalSession.properties.project)
+  if (schemas.ScheduledTaskUpdateInput?.properties?.sessionID)
+    schemas.ScheduledTaskUpdateInput.properties.sessionID = nullable(schemas.ScheduledTaskUpdateInput.properties.sessionID)
   const providerOptions = schemas.ProviderConfig?.properties?.options
   if (providerOptions) providerOptions.additionalProperties = {}
   const model = schemas.ProviderConfig?.properties?.models?.additionalProperties

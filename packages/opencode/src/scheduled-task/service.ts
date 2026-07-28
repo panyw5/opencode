@@ -99,7 +99,7 @@ export const layer = Layer.effect(
     })
 
     const ensureScheduledTitle = Effect.fn("ScheduledTask.ensureScheduledTitle")(function* (sessionID: SessionID) {
-      const session = yield* sessions.get(sessionID).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
+      const session = yield* sessions.get(sessionID).pipe(Effect.catch(() => Effect.succeed(undefined)))
       if (!session) return
       const marked = markScheduledSessionTitle(session.title)
       if (marked === session.title) return

@@ -953,6 +953,7 @@ export type PermissionConfig =
       websearch?: PermissionActionConfig
       codex_consult?: PermissionActionConfig
       claude_consult?: PermissionActionConfig
+      grok_consult?: PermissionActionConfig
       repo_clone?: PermissionRuleConfig
       repo_overview?: PermissionRuleConfig
       lsp?: PermissionRuleConfig
@@ -2035,7 +2036,7 @@ export type ScheduledTaskUpdateInput = {
   prompt?: string
   schedule?: ScheduledTaskSchedule
   executionMode?: "new_session" | "existing_session"
-  sessionID?: string
+  sessionID?: string | null
   agent?: string
   model?: {
     providerID: string
@@ -6760,7 +6761,7 @@ export type SessionUpdateData = {
     title?: string
     permission?: PermissionRuleset
     time?: {
-      archived?: number
+      archived?: number | null
     }
   }
   path: {

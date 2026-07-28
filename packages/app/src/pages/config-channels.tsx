@@ -15,7 +15,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Switch as Toggle } from "@opencode-ai/ui/switch"
 import { showToast } from "@opencode-ai/ui/toast"
-import type { ChannelConfig, ChannelDiscordConfig, ChannelFeishuConfig, Config } from "@opencode-ai/sdk/v2/client"
+import type { ChannelDiscordConfig, ChannelFeishuConfig, Config } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useGlobalSync } from "@/context/global-sync"
 import { useModels } from "@/context/models"
@@ -32,6 +32,8 @@ import {
 import { defaultChannelDirectory } from "@/pages/layout/helpers"
 
 export type ChannelPlatform = "feishu" | "discord"
+
+type ChannelConfig = NonNullable<Config["channels"]>[string]
 
 export const CHANNEL_PLATFORMS: ChannelPlatform[] = ["feishu", "discord"]
 
