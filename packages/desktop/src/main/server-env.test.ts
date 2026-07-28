@@ -30,12 +30,12 @@ describe("sidecar environment", () => {
     expect(env.LD_PRELOAD).toBeUndefined()
   })
 
-  test("uses Electron user data for Windows sidecar paths", () => {
+  test("keeps the global config path on Windows while isolating desktop state", () => {
     const userDataPath = "C:\\Users\\Ada\\AppData\\Roaming\\ai.opencode.desktop"
     const paths = desktopXdgEnv({ userDataPath, platform: "win32", env: {} })
 
     expect(paths.XDG_DATA_HOME).toBe(join(resolve(userDataPath), "data"))
-    expect(paths.XDG_CONFIG_HOME).toBe(join(resolve(userDataPath), "config"))
+    expect(paths.XDG_CONFIG_HOME).toBeUndefined()
     expect(paths.XDG_CACHE_HOME).toBe(join(resolve(userDataPath), "cache"))
     expect(paths.XDG_STATE_HOME).toBe(join(resolve(userDataPath), "state"))
     expect(sidecarDataHome({ userDataPath, platform: "win32", env: {} })).toBe(paths.XDG_DATA_HOME)

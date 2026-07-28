@@ -17,11 +17,13 @@ export function desktopXdgEnv(input: {
     return { XDG_STATE_HOME: env.XDG_STATE_HOME ?? userDataPath }
   }
 
+  // The CLI reads its global config from ~/.config by default. Keep desktop
+  // state private, but do not redirect XDG_CONFIG_HOME away from that file.
   return {
     XDG_DATA_HOME: env.XDG_DATA_HOME ?? join(userDataPath, "data"),
-    XDG_CONFIG_HOME: env.XDG_CONFIG_HOME ?? join(userDataPath, "config"),
     XDG_CACHE_HOME: env.XDG_CACHE_HOME ?? join(userDataPath, "cache"),
     XDG_STATE_HOME: env.XDG_STATE_HOME ?? join(userDataPath, "state"),
+    ...(env.XDG_CONFIG_HOME ? { XDG_CONFIG_HOME: env.XDG_CONFIG_HOME } : {}),
   }
 }
 
