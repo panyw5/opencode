@@ -2,9 +2,41 @@ import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 import { describe, expect, test } from "bun:test"
 
-import { attachmentExtension, resolveDesktopPath, tempMarkdownAttachmentPath, trellisTaskFolderName } from "./native-path"
+import {
+  attachmentExtension,
+  cliInstallDirectory,
+  configRoot,
+  resolveDesktopPath,
+  tempMarkdownAttachmentPath,
+  trellisTaskFolderName,
+} from "./native-path"
 
 describe("native desktop paths", () => {
+  test("resolves the config root using core-compatible override precedence", () => {
+    const home = "/home/ada"
+    expect(configRoot({ home, env: {} })).toBe("/home/ada/.config/opencode")
+    expect(configRoot({ home, env: { XDG_CONFIG_HOME: "/data/config" } })).toBe("/data/config/opencode")
+    expect(
+      configRoot({
+        home,
+        env: { OPENCODE_CONFIG_DIR: "~/custom-opencode", XDG_CONFIG_HOME: "/data/config" },
+      }),
+    ).toBe("/home/ada/custom-opencode")
+  })
+
+  test("uses LOCALAPPDATA for the Windows CLI install location", () => {
+    expect(
+      cliInstallDirectory({
+        platform: "win32",
+        home: "/home/ada",
+        env: { LOCALAPPDATA: "D:/OpenCodeLocal" },
+      }),
+    ).toBe("D:/OpenCodeLocal/opencode/bin")
+    expect(cliInstallDirectory({ platform: "win32", home: "/home/ada", env: {} })).toBe(
+      "/home/ada/AppData/Local/opencode/bin",
+    )
+  })
+
   test("expands home aliases before resolving paths", () => {
     expect(resolveDesktopPath("~")).toBe(resolve(homedir()))
     expect(resolveDesktopPath("~/")).toBe(resolve(homedir()))

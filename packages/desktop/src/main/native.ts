@@ -46,7 +46,13 @@ import type {
   TrellisTask,
   TrellisTaskList,
 } from "../preload/types"
-import { resolveDesktopPath, tempMarkdownAttachmentPath, trellisTaskFolderName } from "./native-path"
+import {
+  cliInstallDirectory,
+  configRoot,
+  resolveDesktopPath,
+  tempMarkdownAttachmentPath,
+  trellisTaskFolderName,
+} from "./native-path"
 import { deployCli } from "./cli-deploy"
 
 const execFileAsync = promisify(execFile)
@@ -82,15 +88,12 @@ export function registerAllowedRoot(path: string | null | undefined) {
 }
 
 export function getConfigRoot() {
-  if (process.env.OPENCODE_CONFIG_DIR) return resolveDesktopPath(process.env.OPENCODE_CONFIG_DIR)
-  const xdg = process.env.XDG_CONFIG_HOME
-  if (xdg) return resolveDesktopPath(join(xdg, "opencode"))
-  return resolve(homedir(), ".config", "opencode")
+  return configRoot()
 }
 
 export async function installCli() {
   const source = await bundledCliPath()
-  const targetDir = process.platform === "win32" ? join(homedir(), "AppData", "Local", "opencode", "bin") : join(homedir(), ".local", "bin")
+  const targetDir = cliInstallDirectory()
   const target = join(targetDir, process.platform === "win32" ? "opencode.exe" : "opencode")
   await mkdir(targetDir, { recursive: true })
   await deployCli({ source, target })
