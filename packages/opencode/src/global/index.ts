@@ -6,14 +6,9 @@ import { Filesystem } from "../util/filesystem"
 
 const app = "opencode"
 
-function dataHome() {
-  // On Windows the desktop sidecar must share the CLI database, so ignore any
-  // inherited XDG_DATA_HOME and always use ~/.local/share.
-  if (process.platform === "win32") return path.join(os.homedir(), ".local", "share")
-  return xdgData!
-}
-
-const data = path.join(dataHome(), app)
+// xdg-basedir is the CLI data-home authority on every platform. Desktop passes
+// the same XDG_DATA_HOME to its sidecar, including explicit user overrides.
+const data = path.join(xdgData!, app)
 const cache = path.join(xdgCache!, app)
 const config = path.join(xdgConfig!, app)
 const state = path.join(xdgState!, app)

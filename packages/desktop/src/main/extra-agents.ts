@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process"
+import { mkdir } from "node:fs/promises"
 import { createConnection, createServer } from "node:net"
 import { app } from "electron"
 import type {
@@ -14,7 +15,7 @@ import type {
 import { write as writeLog } from "./logging"
 import { bundledCliPath, getGenericagentConfig, getHermesConfig, getOpenclawConfig } from "./native"
 import { terminateProcessTree } from "./process-tree"
-import { desktopXdgEnv } from "./server-env"
+import { type DesktopStartupPaths } from "./server-env"
 import { startWithPortRetry } from "./startup-retry"
 
 type ConfigById = {
@@ -167,6 +168,9 @@ async function startBridgeOnPort<T extends ExtraAgentId>(
   port: number,
 ) {
   const url = `http://${HOSTNAME}:${port}`
+  const cwd = startupPaths().defaultWorkspaceCwd
+  writeLog("extra-agent", `bridge startup id=${id} mode=${mode} cwd=${cwd}`)
+  await mkdir(cwd, { recursive: true })
   const child = spawn(
     cli,
     [
@@ -183,7 +187,7 @@ async function startBridgeOnPort<T extends ExtraAgentId>(
       JSON.stringify(payload),
     ],
     {
-      cwd: process.cwd(),
+      cwd,
       env: createBridgeEnv(),
       stdio: "pipe",
     },
@@ -374,10 +378,18 @@ function createBridgeEnv(): Record<string, string> {
   delete env.OPENCODE_SERVER_PASSWORD
   delete env.OPENCODE_SERVER_USERNAME
   if (process.platform === "linux") delete env.LD_PRELOAD
-  Object.assign(env, desktopXdgEnv({ userDataPath: app.getPath("userData"), env }))
+  Object.assign(env, startupPaths().sidecarEnv)
   env.OPENCODE_CLIENT = "desktop"
   env.OPENCODE_DISABLE_EMBEDDED_WEB_UI = "true"
   return env
+}
+
+let startupPaths = (): DesktopStartupPaths => {
+  throw new Error("Desktop startup paths were not configured")
+}
+
+export function configureExtraAgentStartupPaths(paths: DesktopStartupPaths) {
+  startupPaths = () => paths
 }
 
 function displayName(id: ExtraAgentId) {

@@ -14,7 +14,7 @@ import contextMenu from "electron-context-menu"
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
-import { reloadExtraAgents } from "./extra-agents"
+import { configureExtraAgentStartupPaths, reloadExtraAgents } from "./extra-agents"
 import { forwardInitializationFailure } from "./initialization"
 import { registerIpcHandlers, sendDeepLinks, sendMenuCommand, sendSqliteMigrationProgress } from "./ipc"
 import { exportDebugLogs, initCrashReporter, initLogging, startNetLog, write as writeLog } from "./logging"
@@ -29,7 +29,7 @@ import {
   spawnLocalServer,
   type SidecarListener,
 } from "./server"
-import { sidecarDataHome } from "./server-env"
+import { resolveDesktopStartupPaths } from "./server-env"
 import { createWslServersController, type WslServersController } from "./wsl/servers"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { registerWslIpcHandlers } from "./wsl/ipc"
@@ -162,8 +162,12 @@ const main = Effect.gen(function* () {
     onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
   )
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
-  logger = initLogging()
+  const startupPaths = resolveDesktopStartupPaths({ userDataPath: app.getPath("userData") })
+  logger = initLogging({ sidecarDataHome: startupPaths.sidecarDataHome })
   initCrashReporter()
+  logger.log(
+    `desktop startup paths resolved dataHome=${startupPaths.sidecarDataHome} cacheHome=${startupPaths.cacheHome} stateHome=${startupPaths.stateHome} cwd=${startupPaths.defaultWorkspaceCwd}`,
+  )
 
   try {
     setDefaultCACertificates([...new Set([...getCACertificates("default"), ...getCACertificates("system")])])
@@ -189,7 +193,8 @@ const main = Effect.gen(function* () {
     return
   }
 
-  preferAppEnv(app.getPath("userData"))
+  configureExtraAgentStartupPaths(startupPaths)
+  preferAppEnv(startupPaths)
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("opencode://"))
@@ -322,7 +327,7 @@ const main = Effect.gen(function* () {
   const needsMigration = ((): boolean => {
     if (process.env.OPENCODE_DB === ":memory:") return false
 
-    const base = sidecarDataHome({ userDataPath: app.getPath("userData") })
+    const base = startupPaths.sidecarDataHome
     if (!existsSync(join(base, "opencode", "opencode.db"))) return true
     return getStore().get(DATABASE_UPGRADE_PROMPT_KEY) !== true
   })()
@@ -374,7 +379,7 @@ const main = Effect.gen(function* () {
     logger.log("spawning sidecar", { url })
     const { listener, health } = await spawnLocalServer(hostname, port, password, {
       needsMigration: migrateDatabase,
-      userDataPath: app.getPath("userData"),
+      startupPaths,
       onSqliteProgress: (progress) => initEmitter.emit("sqlite", progress),
       onStdout: (message) => writeLog("server", "stdout", { message }),
       onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),

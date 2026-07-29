@@ -331,7 +331,10 @@ function createGlobalSync() {
     managers.set(domain, manager)
     return manager
   }
-  const managerOf = (directory: string): ChildManager => managerFor(domainFromDirectory(directory))
+  // Child stores are keyed by one canonical directory representation. SDK wire
+  // formatting is deliberately separate, so Windows slash variants share state.
+  const storeKey = (directory: string) => workspaceKey(directory)
+  const managerOf = (directory: string): ChildManager => managerFor(domainFromDirectory(storeKey(directory)))
   const forEachDirectory = (visit: (directory: string, manager: ChildManager) => void) => {
     for (const manager of managers.values()) {
       for (const directory of Object.keys(manager.children)) {
@@ -351,8 +354,9 @@ function createGlobalSync() {
   // update the open session UI.
   const resolveChild = (directory: string) => {
     const manager = managerOf(directory)
-    const exact = manager.children[directory]
-    if (exact) return { key: directory, child: exact, manager, domain: domainFromDirectory(directory) }
+    const key = storeKey(directory)
+    const exact = manager.children[key]
+    if (exact) return { key, child: exact, manager, domain: domainFromDirectory(key) }
 
     const want = workspaceKey(directory)
     if (!want) return
@@ -371,26 +375,27 @@ function createGlobalSync() {
   }
   const children = {
     child: (directory: string, options?: Parameters<ChildManager["child"]>[1]) =>
-      managerOf(directory).child(directory, options),
+      managerOf(directory).child(storeKey(directory), options),
     peek: (directory: string, options?: Parameters<ChildManager["peek"]>[1]) =>
-      managerOf(directory).peek(directory, options),
-    ensureChild: (directory: string) => managerOf(directory).ensureChild(directory),
-    pin: (directory: string) => managerOf(directory).pin(directory),
-    unpin: (directory: string) => managerOf(directory).unpin(directory),
-    mark: (directory: string) => managerOf(directory).mark(directory),
-    disposeDirectory: (directory: string) => managerOf(directory).disposeDirectory(directory),
-    resetDirectory: (directory: string) => managerOf(directory).resetDirectory(directory),
-    projectMeta: (directory: string, patch: ProjectMeta) => managerOf(directory).projectMeta(directory, patch),
+      managerOf(directory).peek(storeKey(directory), options),
+    ensureChild: (directory: string) => managerOf(directory).ensureChild(storeKey(directory)),
+    pin: (directory: string) => managerOf(directory).pin(storeKey(directory)),
+    unpin: (directory: string) => managerOf(directory).unpin(storeKey(directory)),
+    mark: (directory: string) => managerOf(directory).mark(storeKey(directory)),
+    disposeDirectory: (directory: string) => managerOf(directory).disposeDirectory(storeKey(directory)),
+    resetDirectory: (directory: string) => managerOf(directory).resetDirectory(storeKey(directory)),
+    projectMeta: (directory: string, patch: ProjectMeta) => managerOf(directory).projectMeta(storeKey(directory), patch),
     projectIcon: (directory: string, value: string | undefined) =>
-      managerOf(directory).projectIcon(directory, value),
-    lookup: (directory: string) => managerOf(directory).children[directory],
+      managerOf(directory).projectIcon(storeKey(directory), value),
+    lookup: (directory: string) => managerOf(directory).children[storeKey(directory)],
     vcsCache: {
-      get: (directory: string) => managerOf(directory).vcsCache.get(directory),
+      get: (directory: string) => managerOf(directory).vcsCache.get(storeKey(directory)),
     },
   }
 
   const sdkFor = (directory: string) => {
-    const cached = sdkCache.get(directory)
+    const key = storeKey(directory)
+    const cached = sdkCache.get(key)
     if (cached) {
       console.debug(`[global-sync] sdkFor cache hit directory=${directory}`)
       return cached
@@ -400,7 +405,7 @@ function createGlobalSync() {
       directory,
       throwOnError: true,
     })
-    sdkCache.set(directory, sdk)
+    sdkCache.set(key, sdk)
     return sdk
   }
 
@@ -415,6 +420,7 @@ function createGlobalSync() {
   }
 
   async function refreshSessionStatus(directory: string): Promise<void> {
+    directory = storeKey(directory)
     if (!directory || isolated(directory)) return
     const pending = sessionStatusRefreshes.get(directory)
     if (pending) return pending
@@ -452,6 +458,7 @@ function createGlobalSync() {
     directory: string,
     opts?: { silent?: boolean; force?: boolean },
   ): Promise<void> {
+    directory = storeKey(directory)
     if (isolated(directory)) {
       return
     }
@@ -581,6 +588,7 @@ function createGlobalSync() {
   }
 
   async function bootstrapInstance(directory: string) {
+    directory = storeKey(directory)
     if (!directory) return
     if (isolated(directory)) {
       return

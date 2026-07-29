@@ -2,7 +2,13 @@ import { describe, expect, test } from "bun:test"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 
-import { createSidecarEnv, desktopXdgEnv, sidecarDataHome, sidecarDefaultCwd } from "./server-env"
+import {
+  createSidecarEnv,
+  desktopXdgEnv,
+  resolveDesktopStartupPaths,
+  sidecarDataHome,
+  sidecarDefaultCwd,
+} from "./server-env"
 
 describe("sidecar environment", () => {
   test("uses an app-private default workspace instead of the process cwd", () => {
@@ -14,7 +20,7 @@ describe("sidecar environment", () => {
   test("sets PWD to the sidecar cwd and removes debug-only inherited variables", () => {
     const env = createSidecarEnv({
       cwd: "/tmp/opencode-user-data/default-workspace",
-      userDataPath: "/tmp/opencode-user-data",
+      paths: resolveDesktopStartupPaths({ userDataPath: "/tmp/opencode-user-data", platform: "linux" }),
       platform: "linux",
       env: {
         DEBUG: "1",
@@ -41,7 +47,20 @@ describe("sidecar environment", () => {
     expect(sidecarDataHome({ userDataPath, platform: "win32", env: {} })).toBe(paths.XDG_DATA_HOME)
   })
 
-  test("ignores inherited Windows data overrides while preserving explicit config", () => {
+  test("resolves Windows sidecar paths from one startup input", () => {
+    const paths = resolveDesktopStartupPaths({
+      userDataPath: "C:\\Users\\Ada\\AppData\\Roaming\\ai.opencode.desktop",
+      platform: "win32",
+      env: { XDG_DATA_HOME: "D:\\stale", XDG_CACHE_HOME: "D:\\cache" },
+    })
+
+    expect(paths.sidecarDataHome).toBe("D:\\stale")
+    expect(paths.sidecarEnv.XDG_DATA_HOME).toBe(paths.sidecarDataHome)
+    expect(paths.cacheHome).toBe("D:\\cache")
+    expect(paths.defaultWorkspaceCwd).toBe(join(resolve("C:\\Users\\Ada\\AppData\\Roaming\\ai.opencode.desktop"), "default-workspace"))
+  })
+
+  test("preserves explicit Windows data and config homes so desktop matches the CLI", () => {
     const env = desktopXdgEnv({
       userDataPath: "/tmp/opencode-user-data",
       platform: "win32",
@@ -51,11 +70,11 @@ describe("sidecar environment", () => {
       },
     })
 
-    expect(env.XDG_DATA_HOME).toBe(join(homedir(), ".local", "share"))
+    expect(env.XDG_DATA_HOME).toBe("D:\\OpenCodeData")
     expect(env.XDG_CONFIG_HOME).toBe("D:\\OpenCodeConfig")
     expect(env.XDG_CACHE_HOME).toBe(join(resolve("/tmp/opencode-user-data"), "cache"))
     expect(sidecarDataHome({ userDataPath: "/tmp/opencode-user-data", platform: "win32", env })).toBe(
-      join(homedir(), ".local", "share"),
+      "D:\\OpenCodeData",
     )
   })
 
