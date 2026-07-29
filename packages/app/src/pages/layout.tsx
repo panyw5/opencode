@@ -903,6 +903,7 @@ export default function Layout(props: ParentProps) {
   const prefetchPendingLimit = 10
   const span = 4
   const prefetchToken = { value: 0 }
+  const prefetchAttempts = new Set<string>()
   const prefetchQueues = new Map<string, PrefetchQueue>()
 
   const PREFETCH_MAX_SESSIONS_PER_DIR = 10
@@ -939,6 +940,7 @@ export default function Layout(props: ParentProps) {
     globalSDK.url
 
     prefetchToken.value += 1
+    prefetchAttempts.clear()
   })
 
   createEffect(() => {
@@ -1046,7 +1048,17 @@ export default function Layout(props: ParentProps) {
 
             return meta
           })
-          .catch(() => undefined),
+          .catch((error) => {
+            // A failed prefetch leaves no message cache, so retain a short-lived
+            // marker to prevent reactive session updates from immediately requeueing it.
+            console.error(
+              `[layout] session prefetch failed directory=${directory} sessionID=${sessionID} err=${error instanceof Error ? error.message : String(error)}`,
+            )
+            if (prefetchToken.value === token && isSessionPrefetchCurrent(directory, sessionID, rev)) {
+              setSessionPrefetch({ directory, sessionID, count: 0, complete: false })
+            }
+            return undefined
+          }),
     })
   }
 
@@ -1084,6 +1096,12 @@ export default function Layout(props: ParentProps) {
       })
     })
     if (cached) return
+
+    const attemptKey = `${directory}\n${session.id}`
+    if (prefetchAttempts.has(attemptKey)) return
+    // Session and event writes can re-run this effect before prefetch metadata is
+    // observable. One navigation gets one opportunistic request per session.
+    prefetchAttempts.add(attemptKey)
 
     const q = queueFor(directory)
     if (q.inflight.has(session.id)) return
