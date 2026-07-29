@@ -391,7 +391,11 @@ function createGlobalSync() {
 
   const sdkFor = (directory: string) => {
     const cached = sdkCache.get(directory)
-    if (cached) return cached
+    if (cached) {
+      console.debug(`[global-sync] sdkFor cache hit directory=${directory}`)
+      return cached
+    }
+    console.log(`[global-sync] sdkFor creating directory=${directory}`)
     const sdk = runtime(domainFromDirectory(directory)).createClient({
       directory,
       throwOnError: true,
@@ -485,7 +489,12 @@ function createGlobalSync() {
 
     const promise = loadRootSessions({
       directory,
-      list: (query) => runtime(domainFromDirectory(directory)).client.session.list(query),
+      list: (query) => {
+        console.log(`[global-sync] loadSessions list query directory=${directory} roots=${query.roots}`)
+        const sdk = sdkFor(directory)
+        console.log(`[global-sync] loadSessions using sdk directory=${(sdk as any).directory}`)
+        return sdk.session.list(query)
+      },
     })
       .then((x) => {
         const nonArchived = (x.data ?? [])

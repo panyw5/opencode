@@ -30,7 +30,11 @@ function rewrite(request: Request, directory?: string) {
   return next
 }
 
-export function createOpencodeClient(config?: Config & { directory?: string }) {
+function normalizeDirectory(directory: string) {
+  return directory.replace(/\\/g, "/")
+}
+
+export function createOpencodeClient(config?: Config & { directory?: string }): OpencodeClient & { directory?: string } {
   if (!config?.fetch) {
     const customFetch: any = (req: any) => {
       // @ts-ignore
@@ -43,15 +47,23 @@ export function createOpencodeClient(config?: Config & { directory?: string }) {
     }
   }
 
-  if (config?.directory) {
-    config.headers = {
-      ...config.headers,
-      "x-opencode-directory": encodeURIComponent(config.directory),
+  const normalizedDirectory = config?.directory ? normalizeDirectory(config.directory) : undefined
+
+  if (normalizedDirectory) {
+    config = {
+      ...config,
+      directory: normalizedDirectory,
+      headers: {
+        ...config.headers,
+        "x-opencode-directory": encodeURIComponent(normalizedDirectory),
+      },
     }
   }
 
   const client = createClient(config)
-  client.interceptors.request.use((request) => rewrite(request, config?.directory))
+  client.interceptors.request.use((request) => rewrite(request, normalizedDirectory))
   client.interceptors.error.use(wrapClientError)
-  return new OpencodeClient({ client })
+  const sdk = new OpencodeClient({ client })
+  ;(sdk as any).directory = normalizedDirectory
+  return sdk as OpencodeClient & { directory?: string }
 }

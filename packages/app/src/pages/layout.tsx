@@ -734,6 +734,20 @@ export default function Layout(props: ParentProps) {
       entry: active.extra ?? active.root,
     } satisfies CurrentProject
   })
+
+  createEffect(
+    on(
+      () => [pageReady(), routeDir()] as const,
+      ([ready, directory]) => {
+        if (!ready || !directory) return
+        if (resolveProject(directory)) return
+        console.debug(`[layout] registering untracked route directory=${directory}`)
+        layout.projects.open(directory)
+      },
+      { defer: true },
+    ),
+  )
+
   const railCurrentProject = createMemo(() => (onConfigRoute() ? undefined : currentProject()?.root))
   const currentProjectDirs = createMemo(() => {
     const project = currentProject()
@@ -745,6 +759,10 @@ export default function Layout(props: ParentProps) {
     await ready.promise
     await layout.ready.promise
     if (!untrack(() => state.autoselect)) return
+    if (routeDir()) {
+      console.debug(`[layout] skipping auto-selection for explicit route directory=${routeDir()}`)
+      return
+    }
 
     const list = layout.projects.list()
     const last = server.projects.last()

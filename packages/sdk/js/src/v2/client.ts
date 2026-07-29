@@ -24,11 +24,19 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
     ["x-opencode-directory", "directory"],
     ["x-opencode-workspace", "workspace"],
   ] as const) {
+    const rawHeader = request.headers.get(name)
+    const fallback = key === "directory" ? values.directory : values.workspace
     const value = pick(
-      request.headers.get(name),
-      key === "directory" ? values.directory : values.workspace,
+      rawHeader,
+      fallback,
       key === "directory" ? encodeURIComponent : undefined,
     )
+    // eslint-disable-next-line no-console
+    if (key === "directory") {
+      console.log(
+        `[sdk/v2] rewrite url=${request.url} rawHeader=${rawHeader} fallback=${fallback} picked=${value} encoded=${value ? encodeURIComponent(value) : undefined}`,
+      )
+    }
     if (!value) continue
     if (!url.searchParams.has(key)) {
       url.searchParams.set(key, value)
@@ -44,7 +52,13 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
   return next
 }
 
-export function createOpencodeClient(config?: Config & { directory?: string; experimental_workspaceID?: string }) {
+function normalizeDirectory(directory: string) {
+  return directory.replace(/\\/g, "/")
+}
+
+export function createOpencodeClient(
+  config?: Config & { directory?: string; experimental_workspaceID?: string },
+): OpencodeClient & { directory?: string } {
   if (!config?.fetch) {
     const customFetch: any = (req: any) => {
       // @ts-ignore
@@ -57,24 +71,37 @@ export function createOpencodeClient(config?: Config & { directory?: string; exp
     }
   }
 
-  if (config?.directory) {
-    config.headers = {
-      ...config.headers,
-      "x-opencode-directory": encodeURIComponent(config.directory),
+  const normalizedDirectory = config?.directory ? normalizeDirectory(config.directory) : undefined
+
+  if (normalizedDirectory) {
+    // eslint-disable-next-line no-console
+    console.log(
+      `[sdk/v2] createOpencodeClient original=${config.directory} normalized=${normalizedDirectory} encoded=${encodeURIComponent(normalizedDirectory)}`,
+    )
+    config = {
+      ...config,
+      directory: normalizedDirectory,
+      headers: {
+        ...config.headers,
+        "x-opencode-directory": encodeURIComponent(normalizedDirectory),
+      },
     }
   }
 
   if (config?.experimental_workspaceID) {
-    config.headers = {
-      ...config.headers,
-      "x-opencode-workspace": config.experimental_workspaceID,
+    config = {
+      ...config,
+      headers: {
+        ...config.headers,
+        "x-opencode-workspace": config.experimental_workspaceID,
+      },
     }
   }
 
   const client = createClient(config)
   client.interceptors.request.use((request) =>
     rewrite(request, {
-      directory: config?.directory,
+      directory: normalizedDirectory,
       workspace: config?.experimental_workspaceID,
     }),
   )
@@ -86,5 +113,7 @@ export function createOpencodeClient(config?: Config & { directory?: string; exp
     return response
   })
   client.interceptors.error.use(wrapClientError)
-  return new OpencodeClient({ client })
+  const sdk = new OpencodeClient({ client })
+  ;(sdk as any).directory = normalizedDirectory
+  return sdk as OpencodeClient & { directory?: string }
 }
