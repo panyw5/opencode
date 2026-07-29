@@ -167,6 +167,10 @@ export function expandHomePath(input: string, home: string): string {
  * Must stay in sync with `packages/opencode/src/channel/directory.ts`.
  */
 export function defaultChannelDirectory(channelName: string, configDir: string): string {
+  if (/^[A-Za-z]:[\\/]/.test(configDir)) {
+    const base = configDir.replace(/[\\/]+$/, "").replace(/\//g, "\\")
+    return `${base}\\channels\\${sanitizeChannelName(channelName)}`
+  }
   const base = configDir.replace(/[\\/]+$/, "")
   return `${base}/channels/${sanitizeChannelName(channelName)}`
 }
@@ -182,7 +186,12 @@ export function resolveChannelDirectory(
   home: string,
 ): string {
   const explicit = directory?.trim()
-  if (explicit) return expandHomePath(explicit, home)
+  if (explicit) {
+    const resolved = expandHomePath(explicit, home)
+    // The server resolves Windows paths with node:path before storing a
+    // session. Keep the browser request byte-for-byte compatible with it.
+    return /^[A-Za-z]:[\\/]/.test(resolved) ? resolved.replace(/\//g, "\\") : resolved
+  }
   return defaultChannelDirectory(channelName, configDir)
 }
 
