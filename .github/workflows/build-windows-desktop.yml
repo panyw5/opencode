@@ -71,7 +71,7 @@ jobs:
           # so test the real Windows per-user location instead of a child-only
           # APPDATA override that may be ignored by the packaged executable.
           $userData = Join-Path $env:APPDATA "ai.opencode.desktop"
-          $database = Join-Path $userData "data/opencode/opencode.db"
+          $database = Join-Path $env:USERPROFILE ".local/share/opencode/opencode.db"
 
           function Stop-OpenCodeProcess([System.Diagnostics.Process] $Process) {
             if ($Process -and -not $Process.HasExited) {
