@@ -9,6 +9,7 @@ const sidecarConfig = getCurrentSidecar(RUST_TARGET)
 const rustTarget = RUST_TARGET ?? sidecarConfig.rustTarget
 
 async function build(baseline: boolean) {
+  console.log(`predev: building opencode sidecar with baseline=${baseline}`)
   const cmd = baseline
     ? $`bun run build --single --baseline --skip-install --skip-embed-web-ui`
     : $`bun run build --single --skip-install --skip-embed-web-ui`
@@ -22,10 +23,21 @@ function fallbackBinary(name: string) {
 }
 
 let binary = sidecarConfig.ocBinary
+console.log(`predev: target sidecar binary is ${binary}`)
 
 const baseline = sidecarConfig.ocBinary.includes("-baseline")
 
-if (baseline) {
+// On Windows, baseline bun builds are flaky due to incomplete downloads of the
+// baseline executable. For dev, use the non-baseline binary which works on the
+// current machine.
+if (baseline && process.platform === "win32") {
+  binary = fallbackBinary(binary)
+  console.log(`predev: Windows dev baseline builds are flaky, using ${binary}`)
+}
+
+const shouldBuildBaseline = binary.includes("-baseline")
+
+if (shouldBuildBaseline) {
   const result = await build(true)
   if (result.exitCode !== 0 && process.platform === "win32") {
     binary = fallbackBinary(binary)
@@ -36,7 +48,7 @@ if (baseline) {
   if (result.exitCode !== 0 && process.platform !== "win32") process.exit(result.exitCode)
 }
 
-if (!baseline) {
+if (!shouldBuildBaseline) {
   const result = await build(false)
   if (result.exitCode !== 0) process.exit(result.exitCode)
 }
@@ -44,5 +56,7 @@ if (!baseline) {
 await $`bun script/build-node.ts`.cwd("../opencode")
 
 const binaryPath = windowsify(`../opencode/dist/${binary}/bin/opencode`)
+
+console.log(`predev: copying sidecar from ${binaryPath}`)
 
 await copyBinaryToSidecarFolder(binaryPath, rustTarget)
