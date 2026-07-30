@@ -363,6 +363,7 @@ export default function Page() {
     const index = siblings.findIndex((session) => session.id === sessionID)
     if (index < 0) return undefined
     return {
+      parentID: parentSessionID,
       previous: siblings[index - 1]?.id,
       next: siblings[index + 1]?.id,
       earlierCount: index,

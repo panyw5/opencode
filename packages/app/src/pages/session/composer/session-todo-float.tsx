@@ -73,7 +73,7 @@ export function SessionTodoFloat(props: {
       <Show when={visible()}>
         <div
           data-slot="session-todo-float-panel"
-          class="w-[500px] max-w-[calc(100vw-24px)] rounded-xl border border-border-weak-base bg-surface-raised-base shadow-lg overflow-hidden"
+          class="w-[500px] max-w-[calc(100vw-24px)] rounded-xl border border-border-base bg-surface-raised-stronger shadow-xl overflow-hidden"
           style={{
             "max-height": `${280 * value()}px`,
             opacity: `${value()}`,

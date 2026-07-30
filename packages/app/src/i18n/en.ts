@@ -101,6 +101,7 @@ export const dict = {
   "command.settings.open": "Open settings",
   "command.session.previous": "Previous session",
   "command.session.next": "Next session",
+  "command.session.back": "Back",
   "command.session.previous.unseen": "Previous unread session",
   "command.session.next.unseen": "Next unread session",
   "command.session.jump": "Jump to session {{index}}",

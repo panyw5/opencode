@@ -579,6 +579,7 @@ export function SessionComposerRegion(props: {
   userMessages?: SessionUserMessageEntry[]
   onOpenUserMessage?: (entry: SessionUserMessageEntry) => void
   subagentNavigation?: {
+    parentID: string
     previous?: string
     next?: string
     earlierCount: number
@@ -902,6 +903,18 @@ export function SessionComposerRegion(props: {
                           <Icon name="arrow-left" size="small" />
                           <span class="min-w-4 text-center">{navigation.earlierCount}</span>
                         </Button>
+                        <div class="mx-0.5 h-4 w-px bg-border-weak-base" />
+                        <Button
+                          size="small"
+                          variant="ghost"
+                          class="rounded-md text-11-medium text-text-weak hover:text-text-strong"
+                          aria-label={language.t("command.session.back")}
+                          onClick={() => navigation.onNavigate(navigation.parentID)}
+                        >
+                          <Icon name="arrow-up" size="small" />
+                          <span>{language.t("command.session.back")}</span>
+                        </Button>
+                        <div class="mx-0.5 h-4 w-px bg-border-weak-base" />
                         <Button
                           size="small"
                           variant="ghost"

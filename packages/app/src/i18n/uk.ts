@@ -31,6 +31,7 @@ export const dict = {
   "command.settings.open": "Відкрити налаштування",
   "command.session.previous": "Попередня сесія",
   "command.session.next": "Наступна сесія",
+  "command.session.back": "Назад",
   "command.session.previous.unseen": "Попередня непрочитана сесія",
   "command.session.next.unseen": "Наступна непрочитана сесія",
   "command.session.archive": "Архівувати сесію",

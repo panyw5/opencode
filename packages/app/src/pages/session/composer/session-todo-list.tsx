@@ -80,7 +80,7 @@ export function TodoList(props: { todos: Todo[]; open: boolean }) {
   return (
     <div class="relative">
       <div
-        class="px-3 pb-11 flex flex-col gap-1.5 max-h-42 overflow-y-auto no-scrollbar"
+        class="px-3 pb-11 flex flex-col gap-2.5 max-h-42 overflow-y-auto no-scrollbar"
         ref={scrollRef}
         style={{ "overflow-anchor": "none" }}
         onScroll={(e) => {

@@ -36,6 +36,7 @@ export const dict = {
   "command.settings.open": "Ayarları aç",
   "command.session.previous": "Önceki oturum",
   "command.session.next": "Sonraki oturum",
+  "command.session.back": "Geri",
   "command.session.previous.unseen": "Önceki okunmamış oturum",
   "command.session.next.unseen": "Sonraki okunmamış oturum",
   "command.session.archive": "Oturumu arşivle",

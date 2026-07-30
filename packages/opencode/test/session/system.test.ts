@@ -70,6 +70,7 @@ describe("session.system", () => {
       expect(prompt).toHaveLength(1)
       expect(prompt[0]).toContain("interactive coding agent")
       expect(prompt[0]).toContain("respect their permissions")
+      expect(prompt[0]).toContain("break the work into a todo list")
       expect(prompt[0]).toContain("inspect relevant local read-only context")
       expect(prompt[0]).toContain("Do not add unrelated cleanup")
       expect(prompt[0].length).toBeLessThan(2_000)

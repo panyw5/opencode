@@ -30,6 +30,7 @@ export const dict = {
   "command.settings.open": "Abrir configurações",
   "command.session.previous": "Sessão anterior",
   "command.session.next": "Próxima sessão",
+  "command.session.back": "Voltar",
   "command.session.previous.unseen": "Sessão não lida anterior",
   "command.session.next.unseen": "Próxima sessão não lida",
   "command.session.archive": "Arquivar sessão",

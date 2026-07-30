@@ -32,6 +32,7 @@ export const dict = {
   "command.settings.open": "Otvori postavke",
   "command.session.previous": "Prethodna sesija",
   "command.session.next": "Sljedeća sesija",
+  "command.session.back": "Nazad",
   "command.session.previous.unseen": "Prethodna nepročitana sesija",
   "command.session.next.unseen": "Sljedeća nepročitana sesija",
   "command.session.archive": "Arhiviraj sesiju",
