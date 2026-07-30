@@ -1,10 +1,11 @@
 import { expect, test } from "bun:test"
-import type { ToolPart } from "@opencode-ai/sdk/v2"
+import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
 import {
   createCoalescedConnectedMeasure,
   partMeasurementKey,
   scheduleConnectedMeasure,
   shouldAdjustVirtualScroll,
+  timelineContentVersion,
   timelineMeasurementsMatchWidth,
   virtualRowOverflow,
 } from "./measure"
@@ -154,4 +155,20 @@ test("changes the measurement key when a shell tool receives output", () => {
   } as ToolPart
 
   expect(partMeasurementKey(completed)).not.toBe(partMeasurementKey(running))
+})
+
+test("changes the timeline cache version when streaming text grows", () => {
+  const message = { id: "msg_test" }
+  const short = {
+    id: "prt_text",
+    sessionID: "ses_test",
+    messageID: message.id,
+    type: "text",
+    text: "partial",
+  } as Part
+  const full = { ...short, text: "partial response that arrived while the session was not visible" } as Part
+
+  expect(timelineContentVersion([message], { [message.id]: [short] })).not.toBe(
+    timelineContentVersion([message], { [message.id]: [full] }),
+  )
 })

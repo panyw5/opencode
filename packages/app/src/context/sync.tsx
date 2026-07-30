@@ -97,6 +97,28 @@ const mergeParts = (parts: Part[] | undefined, want: Part[]) => {
   return next
 }
 
+export function mergeFetchedParts(fetched: Part[], cached: Part[] | undefined) {
+  if (!cached?.length) return fetched
+  const current = new Map(cached.map((part) => [part.id, part] as const))
+  return fetched.map((part) => {
+    const existing = current.get(part.id)
+    if (existing?.type !== "text" || part.type !== "text") return part
+    const cachedText = existing.text ?? ""
+    const fetchedText = part.text ?? ""
+    if (cachedText.length <= fetchedText.length || !cachedText.startsWith(fetchedText)) return part
+
+    console.warn("[sync] kept streaming text over stale session snapshot", {
+      msg: part.messageID,
+      part: part.id,
+      cached: cachedText.length,
+      snapshot: fetchedText.length,
+      cachedTail: cachedText.slice(-40),
+      snapshotTail: fetchedText.slice(-40),
+    })
+    return existing
+  })
+}
+
 export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) {
   if (items.length === 0) return { ...page, confirmed: [] as string[] }
 
@@ -384,7 +406,10 @@ const initialMessagePageSize = 80
           batch(() => {
             input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
             for (const p of next.part) {
-              const filtered = p.part.filter((x) => !SKIP_PARTS.has(x.type))
+              const filtered = mergeFetchedParts(
+                p.part.filter((x) => !SKIP_PARTS.has(x.type)),
+                store.part[p.id],
+              )
               if (filtered.length) input.setStore("part", p.id, filtered)
             }
             if ((meta.show[key] ?? 0) > message.length) setMeta("show", key, message.length)
@@ -401,7 +426,10 @@ const initialMessagePageSize = 80
           batch(() => {
             input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
             for (const p of next.part) {
-              const filtered = p.part.filter((x) => !SKIP_PARTS.has(x.type))
+              const filtered = mergeFetchedParts(
+                p.part.filter((x) => !SKIP_PARTS.has(x.type)),
+                store.part[p.id],
+              )
               if (filtered.length) input.setStore("part", p.id, filtered)
             }
             if ((meta.show[key] ?? 0) > message.length) setMeta("show", key, message.length)

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { applyOptimisticAdd, applyOptimisticRemove, mergeOptimisticPage, reveal, shown } from "./sync"
+import { applyOptimisticAdd, applyOptimisticRemove, mergeFetchedParts, mergeOptimisticPage, reveal, shown } from "./sync"
 
 type Text = Extract<Part, { type: "text" }>
 
@@ -119,6 +119,24 @@ describe("sync optimistic reducers", () => {
       { id: "prt_1", type: "text", text: "server" },
       { id: "prt_2", type: "text", text: "prt_2" },
     ])
+  })
+
+  test("keeps longer streaming text when a session snapshot is stale", () => {
+    const sessionID = "ses_1"
+    const messageID = "msg_1"
+    const fetched = { ...textPart("prt_1", sessionID, messageID), text: "partial" }
+    const cached = { ...fetched, text: "partial text received from stream" }
+
+    expect(mergeFetchedParts([fetched], [cached])).toEqual([cached])
+  })
+
+  test("uses a fetched text part when it is not a prefix of the cached text", () => {
+    const sessionID = "ses_1"
+    const messageID = "msg_1"
+    const fetched = { ...textPart("prt_1", sessionID, messageID), text: "new snapshot" }
+    const cached = { ...fetched, text: "old stream" }
+
+    expect(mergeFetchedParts([fetched], [cached])).toEqual([fetched])
   })
 })
 

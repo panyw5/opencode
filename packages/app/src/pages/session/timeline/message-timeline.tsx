@@ -51,6 +51,7 @@ import {
   createCoalescedConnectedMeasure,
   partMeasurementKey,
   shouldAdjustVirtualScroll,
+  timelineContentVersion,
   timelineMeasurementsMatchWidth,
   virtualRowOverflow,
 } from "./measure"
@@ -72,6 +73,7 @@ type TimelineCacheEntry = {
   version: number
   measurements: VirtualItem[]
   width?: number
+  contentVersion: string
 }
 
 const timelineCache = new Map<string, TimelineCacheEntry>()
@@ -217,7 +219,22 @@ export function MessageTimeline(props: {
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
   const cached = timelineCache.get(ownerSessionKey)
-  const initialMeasurements = cached?.version === timelineMeasurementVersion ? cached.measurements : undefined
+  const cachedContentVersion = timelineContentVersion(
+    params.id ? (sync.data.message[params.id] ?? emptyMessages) : emptyMessages,
+    sync.data.part,
+  )
+  const initialMeasurements =
+    cached?.version === timelineMeasurementVersion && cached.contentVersion === cachedContentVersion
+      ? cached.measurements
+      : undefined
+  if (cached && !initialMeasurements) {
+    console.warn("[timeline] discarded stale measurement cache", {
+      session: params.id,
+      cacheVersion: cached.version,
+      cacheContentLength: cached.contentVersion.length,
+      currentContentLength: cachedContentVersion.length,
+    })
+  }
   const coldBottomMount = !initialMeasurements?.length && props.shouldAnchorBottom()
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length || coldBottomMount ? 6 : 20)
@@ -245,7 +262,6 @@ export function MessageTimeline(props: {
   const timelineRows = projection.rows
   const timelineRowByKey = projection.rowByKey
   const messageRowIndex = projection.messageRowIndex
-  const messageLastRowIndex = projection.messageLastRowIndex
   const messageByID = projection.messageByID
   const assistantMessagesByParent = projection.assistantMessagesByParent
   const activeMessageID = projection.activeMessageID
@@ -325,9 +341,13 @@ export function MessageTimeline(props: {
     paddingEnd: 64,
     rangeExtractor: (range) => {
       const activeID = activeMessageID()
-      const active = activeID ? (messageLastRowIndex().get(activeID) ?? -1) : -1
+      const activeRows = activeID
+        ? timelineRows().flatMap((row, index) =>
+            row._tag === "AssistantPart" && row.userMessageID === activeID ? [index] : [],
+          )
+        : []
       const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
-      return [...new Set([...resizePinnedIndexes, ...indexes, ...(active < 0 ? [] : [active])])].sort((a, b) => a - b)
+      return [...new Set([...resizePinnedIndexes, ...indexes, ...activeRows])].sort((a, b) => a - b)
     },
   })
   const resizeItem = virtualizer.resizeItem
@@ -399,6 +419,7 @@ export function MessageTimeline(props: {
       version: timelineMeasurementVersion,
       measurements: virtualizer.takeSnapshot(),
       width: listRoot()?.clientWidth,
+      contentVersion: timelineContentVersion(sessionMessages(), sync.data.part),
     })
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
     if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)

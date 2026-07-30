@@ -79,3 +79,12 @@ export function partMeasurementKey(part: Part | undefined) {
   }
   return `${part.type}:${JSON.stringify(part).length}`
 }
+
+export function timelineContentVersion(
+  messages: readonly { id: string }[],
+  parts: Record<string, Part[] | undefined>,
+) {
+  return messages
+    .map((message) => `${message.id}:${(parts[message.id] ?? []).map(partMeasurementKey).join(",")}`)
+    .join("|")
+}
