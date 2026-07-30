@@ -115,9 +115,9 @@ export function normalizePath(p: string): string {
   if (process.platform !== "win32") return p
   const resolved = win32.normalize(win32.resolve(windowsPath(p)))
   try {
-    return realpathSync.native(resolved)
+    return realpathSync.native(resolved).replace(/\\/g, "/")
   } catch {
-    return resolved
+    return resolved.replace(/\\/g, "/")
   }
 }
 
@@ -136,9 +136,9 @@ export function normalizePathPattern(p: string): string {
 export function resolve(p: string): string {
   const resolved = pathResolve(windowsPath(p))
   try {
-    return normalizePath(realpathSync(resolved))
+    return normalizePath(realpathSync(resolved)).replace(/\\/g, "/")
   } catch (e) {
-    if (isEnoent(e)) return normalizePath(resolved)
+    if (isEnoent(e)) return normalizePath(resolved).replace(/\\/g, "/")
     throw e
   }
 }

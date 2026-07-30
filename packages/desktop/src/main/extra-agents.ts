@@ -169,7 +169,6 @@ async function startBridgeOnPort<T extends ExtraAgentId>(
 ) {
   const url = `http://${HOSTNAME}:${port}`
   const cwd = startupPaths().defaultWorkspaceCwd
-  writeLog("extra-agent", `bridge startup id=${id} mode=${mode} cwd=${cwd}`)
   await mkdir(cwd, { recursive: true })
   const child = spawn(
     cli,

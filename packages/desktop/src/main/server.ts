@@ -111,7 +111,6 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
   ) {
     const sidecar = deps.sidecarPath
     const cwd = options.startupPaths.defaultWorkspaceCwd
-    options.onStdout?.(`sidecar startup cwd=${cwd} dataHome=${options.startupPaths.sidecarDataHome}`)
     await deps.makeDirectory(cwd, { recursive: true })
     const child = deps.forkSidecar(sidecar, cwd, options.startupPaths)
     let exited = false

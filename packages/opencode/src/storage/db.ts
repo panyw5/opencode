@@ -41,7 +41,11 @@ export const getPath = (flags?: Pick<DatabaseFlags, "disableChannelDb">) => {
     if (Flag.OPENCODE_DB === ":memory:" || path.isAbsolute(Flag.OPENCODE_DB)) return Flag.OPENCODE_DB
     return path.join(Global.Path.data, Flag.OPENCODE_DB)
   }
-  return getChannelPath(flags)
+  const result = getChannelPath(flags)
+  log.info(
+    `database path resolved path=${result} dataPath=${Global.Path.data} xdgDataHome=${process.env.XDG_DATA_HOME} home=${require("os").homedir()}`,
+  )
+  return result
 }
 
 export type Transaction = SQLiteTransaction<"sync", void>
@@ -66,11 +70,71 @@ function applyMigrations(db: SQLiteBunDatabase, entries: Journal) {
   migrateFromJournal(db, entries)
 }
 
-function rawAll(db: Client, sql: string) {
+function rawAll(db: Client, sql: string, ...params: unknown[]) {
   const client = db.$client as unknown as RawSQLiteClient
-  if (client.query) return client.query(sql).all() as Record<string, unknown>[]
-  if (client.prepare) return client.prepare(sql).all() as Record<string, unknown>[]
+  if (client.query) return client.query(sql).all(...params) as Record<string, unknown>[]
+  if (client.prepare) return client.prepare(sql).all(...params) as Record<string, unknown>[]
   throw new Error("SQLite client does not support raw all queries")
+}
+
+function hasTable(db: Client, table: string) {
+  return rawAll(db, "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1", table).length > 0
+}
+
+function sqlString(value: string) {
+  return `'${value.replaceAll("'", "''")}'`
+}
+
+function seedDrizzleJournal(db: Client) {
+  if (!hasTable(db, "project")) return
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS __drizzle_migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      hash text NOT NULL,
+      created_at numeric,
+      name text,
+      applied_at TEXT
+    )
+  `)
+
+  const columns = new Set(rawAll(db, "PRAGMA table_info(__drizzle_migrations)").map((column) => String(column.name)))
+  if (!columns.has("name")) db.run("ALTER TABLE __drizzle_migrations ADD COLUMN name text")
+  if (!columns.has("applied_at")) db.run("ALTER TABLE __drizzle_migrations ADD COLUMN applied_at TEXT")
+
+  const existingNames = new Set(rawAll(db, "SELECT name FROM __drizzle_migrations WHERE name IS NOT NULL").map((row) => String(row.name)))
+
+  // Prefer names already recorded by the upstream migration tracker.
+  if (hasTable(db, "migration")) {
+    const rows = rawAll(db, "SELECT id FROM migration")
+    let inserted = 0
+    for (const row of rows) {
+      const name = String(row.id)
+      if (existingNames.has(name)) continue
+      db.run(`
+        INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at, name, applied_at)
+        VALUES (${sqlString(name)}, ${Date.now()}, ${sqlString(name)}, ${sqlString(new Date().toISOString())})
+      `)
+      inserted++
+    }
+    if (inserted > 0) {
+      log.info("seeded drizzle journal from migration table", { count: inserted })
+      return
+    }
+  }
+
+  // Fallback: mark the baseline migration so CREATE TABLE does not re-run.
+  if (existingNames.has("20260127222353_familiar_lady_ursula")) return
+  db.run(`
+    INSERT OR IGNORE INTO __drizzle_migrations (hash, created_at, name, applied_at)
+    VALUES (
+      '20260127222353_familiar_lady_ursula',
+      ${Date.now()},
+      '20260127222353_familiar_lady_ursula',
+      ${sqlString(new Date().toISOString())}
+    )
+  `)
+  log.info("seeded drizzle journal with baseline migration")
 }
 
 function createSessionMessageSeqIndexes(db: Client) {
@@ -239,6 +303,10 @@ export const Client = Object.assign(
     log.info("opening database", { path: dbPath })
 
     const db = init(dbPath)
+
+    // Seed drizzle journal when empty/missing but schema already exists (CLI DBs often track
+    // applied migrations only in the `migration` table, leaving __drizzle_migrations empty).
+    seedDrizzleJournal(db)
 
     db.run("PRAGMA journal_mode = WAL")
     db.run("PRAGMA synchronous = NORMAL")

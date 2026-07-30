@@ -165,9 +165,6 @@ const main = Effect.gen(function* () {
   const startupPaths = resolveDesktopStartupPaths({ userDataPath: app.getPath("userData") })
   logger = initLogging({ sidecarDataHome: startupPaths.sidecarDataHome })
   initCrashReporter()
-  logger.log(
-    `desktop startup paths resolved dataHome=${startupPaths.sidecarDataHome} cacheHome=${startupPaths.cacheHome} stateHome=${startupPaths.stateHome} cwd=${startupPaths.defaultWorkspaceCwd}`,
-  )
 
   try {
     setDefaultCACertificates([...new Set([...getCACertificates("default"), ...getCACertificates("system")])])
