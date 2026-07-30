@@ -17,9 +17,10 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
 
     const directory = createMemo(props.directory)
     const domain = createMemo(() => domainFromDirectory(directory()))
+    const normalizedDirectory = createMemo(() => directory().replace(/\\/g, "/"))
     const client = createMemo(() =>
-      globalSDK.forDomain(domain()).createClient({
-        directory: directory(),
+      globalSDK.forDomain(domainFromDirectory(normalizedDirectory())).createClient({
+        directory: normalizedDirectory(),
         throwOnError: true,
       }),
     )

@@ -4,7 +4,6 @@ import { app, crashReporter, netLog, shell } from "electron"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
-import { sidecarDataHome } from "./server-env"
 
 const MAX_LOG_AGE_DAYS = 7
 const TAIL_LINES = 1000
@@ -15,11 +14,13 @@ const NET_LOG_SIZE = 20 * 1024 * 1024
 let root = ""
 let run = ""
 let netLogPath: string | undefined
+let sidecarDataHome = ""
 
 let logger: MainLogger
 export const getLogger = () => logger
 
-export function initLogging() {
+export function initLogging(input?: { sidecarDataHome: string }) {
+  sidecarDataHome = input?.sidecarDataHome ?? ""
   initRunDirectory()
   log.transports.file.maxSize = 5 * 1024 * 1024
   log.transports.file.resolvePathFn = (_vars, message) =>
@@ -150,7 +151,8 @@ function manifest() {
 }
 
 function serverLogRoots() {
-  const xdgData = sidecarDataHome({ userDataPath: app.getPath("userData") })
+  const xdgData = sidecarDataHome
+  if (!xdgData) return [join(app.getPath("userData"), "opencode", "log")]
   return [...new Set([join(xdgData, "opencode", "log"), join(app.getPath("userData"), "opencode", "log")])]
 }
 

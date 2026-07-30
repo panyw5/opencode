@@ -52,6 +52,8 @@ function provideLightweightInstanceContext<E>(
   return Effect.gen(function* () {
     const route = yield* WorkspaceRouteContext
     const directory = decode(route.directory)
+    // eslint-disable-next-line no-console
+    console.log(`[instance-context] lightweight raw=${route.directory} decoded=${directory}`)
     const result = yield* project.fromDirectory(directory)
     const ctx = {
       directory,

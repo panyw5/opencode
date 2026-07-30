@@ -2,7 +2,6 @@ import * as http from "node:http"
 import * as tls from "node:tls"
 import { Effect, Layer } from "effect"
 import type { SqliteMigrationProgress } from "../preload/types"
-import { desktopXdgEnv } from "./server-env"
 
 type NodeTlsWithSystemCertificates = typeof tls & {
   getCACertificates: (type: "default" | "system") => string[]
@@ -14,7 +13,6 @@ type StartCommand = {
   hostname: string
   port: number
   password: string
-  userDataPath: string
   needsMigration: boolean
 }
 
@@ -60,7 +58,7 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
-    prepareSidecarEnv(command.password, command.userDataPath)
+    prepareSidecarEnv(command.password)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
@@ -108,9 +106,8 @@ async function stop() {
   }
 }
 
-function prepareSidecarEnv(password: string, userDataPath: string) {
+function prepareSidecarEnv(password: string) {
   Object.assign(process.env, {
-    ...desktopXdgEnv({ userDataPath }),
     OPENCODE_SERVER_USERNAME: "opencode",
     OPENCODE_SERVER_PASSWORD: password,
     OPENCODE_DISABLE_CHANNEL_DB: "true",
@@ -171,14 +168,12 @@ function parseCommand(value: unknown): SidecarCommand | undefined {
   if (typeof command.hostname !== "string") return undefined
   if (typeof command.port !== "number") return undefined
   if (typeof command.password !== "string") return undefined
-  if (typeof command.userDataPath !== "string") return undefined
   if (typeof command.needsMigration !== "boolean") return undefined
   return {
     type: "start",
     hostname: command.hostname,
     port: command.port,
     password: command.password,
-    userDataPath: command.userDataPath,
     needsMigration: command.needsMigration,
   }
 }

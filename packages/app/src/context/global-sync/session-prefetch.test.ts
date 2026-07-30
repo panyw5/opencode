@@ -74,6 +74,13 @@ describe("session prefetch", () => {
     ).toBe(false)
   })
 
+  test("cools down failed prefetches without a message cache", () => {
+    const info = { count: 0, complete: false, at: 1 }
+
+    expect(shouldSkipSessionPrefetch({ message: false, info, chunk: 200, now: 1 + 14_999 })).toBe(true)
+    expect(shouldSkipSessionPrefetch({ message: false, info, chunk: 200, now: 1 + 15_001 })).toBe(false)
+  })
+
   test("keeps deeper or complete history cached", () => {
     expect(
       shouldSkipSessionPrefetch({

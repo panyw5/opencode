@@ -1,7 +1,7 @@
 import { MessageTable, SessionMessageTable, SessionTable } from "@/session/session.sql"
 import { SessionID } from "@/session/schema"
 import { WorkspaceID } from "@/control-plane/schema"
-import { and, asc, desc, eq, gt, gte, isNull, like, lt, or, type SQL } from "@/storage/db"
+import { and, asc, desc, eq, gt, gte, isNull, like, lt, or, sql, type SQL } from "@/storage/db"
 import * as Database from "@/storage/db"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { SessionMessage } from "@opencode-ai/core/session-message"
@@ -244,7 +244,11 @@ export const layer = Layer.effect(
         if (direction === "previous" && order === "asc") order = "desc"
         if (direction === "previous" && order === "desc") order = "asc"
         const conditions: SQL[] = []
-        if (input.directory) conditions.push(eq(SessionTable.directory, input.directory))
+        if (input.directory) {
+          // SDK sends `/`; Windows create stores `\`. Match both.
+          const normalized = input.directory.replace(/\\/g, "/")
+          conditions.push(sql`replace(${SessionTable.directory}, char(92), '/') = ${normalized}`)
+        }
         if (input.path)
           conditions.push(or(eq(SessionTable.path, input.path), like(SessionTable.path, `${input.path}/%`))!)
         if (input.workspaceID) conditions.push(eq(SessionTable.workspace_id, input.workspaceID))

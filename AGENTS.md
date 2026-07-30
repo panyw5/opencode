@@ -1,3 +1,8 @@
+# MANDATORY RULES
+- Read backend logs YOURSELF!!!! You are forbidden to ask user to read backend log for you!!!!
+- When fixing bug: ADD LOGS AT EVERY STEP!!!! ASSUME YOU ARE MORON, AND NEED LOGS TO DO ANY DEBUGGING
+
+
 <!-- TRELLIS:START -->
 
 # Trellis Instructions

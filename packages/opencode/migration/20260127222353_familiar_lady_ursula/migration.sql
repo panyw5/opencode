@@ -1,4 +1,4 @@
-CREATE TABLE `project` (
+CREATE TABLE IF NOT EXISTS `project` (
 	`id` text PRIMARY KEY,
 	`worktree` text NOT NULL,
 	`vcs` text,
@@ -11,7 +11,7 @@ CREATE TABLE `project` (
 	`sandboxes` text NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE `message` (
+CREATE TABLE IF NOT EXISTS `message` (
 	`id` text PRIMARY KEY,
 	`session_id` text NOT NULL,
 	`time_created` integer NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE `message` (
 	CONSTRAINT `fk_message_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE `part` (
+CREATE TABLE IF NOT EXISTS `part` (
 	`id` text PRIMARY KEY,
 	`message_id` text NOT NULL,
 	`session_id` text NOT NULL,
@@ -30,7 +30,7 @@ CREATE TABLE `part` (
 	CONSTRAINT `fk_part_message_id_message_id_fk` FOREIGN KEY (`message_id`) REFERENCES `message`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE `permission` (
+CREATE TABLE IF NOT EXISTS `permission` (
 	`project_id` text PRIMARY KEY,
 	`time_created` integer NOT NULL,
 	`time_updated` integer NOT NULL,
@@ -38,7 +38,7 @@ CREATE TABLE `permission` (
 	CONSTRAINT `fk_permission_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE `session` (
+CREATE TABLE IF NOT EXISTS `session` (
 	`id` text PRIMARY KEY,
 	`project_id` text NOT NULL,
 	`parent_id` text,
@@ -60,7 +60,7 @@ CREATE TABLE `session` (
 	CONSTRAINT `fk_session_project_id_project_id_fk` FOREIGN KEY (`project_id`) REFERENCES `project`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE `todo` (
+CREATE TABLE IF NOT EXISTS `todo` (
 	`session_id` text NOT NULL,
 	`content` text NOT NULL,
 	`status` text NOT NULL,
@@ -72,7 +72,7 @@ CREATE TABLE `todo` (
 	CONSTRAINT `fk_todo_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE TABLE `session_share` (
+CREATE TABLE IF NOT EXISTS `session_share` (
 	`session_id` text PRIMARY KEY,
 	`id` text NOT NULL,
 	`secret` text NOT NULL,
@@ -82,9 +82,9 @@ CREATE TABLE `session_share` (
 	CONSTRAINT `fk_session_share_session_id_session_id_fk` FOREIGN KEY (`session_id`) REFERENCES `session`(`id`) ON DELETE CASCADE
 );
 --> statement-breakpoint
-CREATE INDEX `message_session_idx` ON `message` (`session_id`);--> statement-breakpoint
-CREATE INDEX `part_message_idx` ON `part` (`message_id`);--> statement-breakpoint
-CREATE INDEX `part_session_idx` ON `part` (`session_id`);--> statement-breakpoint
-CREATE INDEX `session_project_idx` ON `session` (`project_id`);--> statement-breakpoint
-CREATE INDEX `session_parent_idx` ON `session` (`parent_id`);--> statement-breakpoint
-CREATE INDEX `todo_session_idx` ON `todo` (`session_id`);
+CREATE INDEX IF NOT EXISTS `message_session_idx` ON `message` (`session_id`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `part_message_idx` ON `part` (`message_id`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `part_session_idx` ON `part` (`session_id`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `session_project_idx` ON `session` (`project_id`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `session_parent_idx` ON `session` (`parent_id`);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS `todo_session_idx` ON `todo` (`session_id`);

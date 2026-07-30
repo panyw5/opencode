@@ -624,8 +624,12 @@ export const ImChannelSidebar = (props: {
     if (!s) return
     if (s.sessions === "loading") return
     if (initialFullRequested.has(dir)) return
+    console.debug(`[im-sidebar] load start channel=${props.channel() || "?"} directory=${dir}`)
     void globalSync.project.loadSessions(dir, { silent: true }).finally(() => {
       initialFullRequested.add(dir)
+      console.debug(
+        `[im-sidebar] load done channel=${props.channel() || "?"} directory=${dir} sessions=${s.session.length} state=${s.sessions}`,
+      )
     })
   })
 

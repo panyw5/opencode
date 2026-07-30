@@ -84,7 +84,15 @@ function selectedV2WorkspaceID(
 }
 
 function defaultDirectory(request: HttpServerRequest.HttpServerRequest, url: URL): string {
-  return url.searchParams.get("directory") || request.headers["x-opencode-directory"] || process.cwd()
+  const fromQuery = url.searchParams.get("directory")
+  const fromHeader = request.headers["x-opencode-directory"]
+  const fallback = process.cwd()
+  const result = fromQuery || fromHeader || fallback
+  // eslint-disable-next-line no-console
+  console.log(
+    `[workspace-routing] defaultDirectory fromQuery=${fromQuery} fromHeader=${fromHeader} fallback=${fallback} result=${result} pathname=${url.pathname}`,
+  )
+  return result
 }
 
 function shouldStayOnControlPlane(request: HttpServerRequest.HttpServerRequest, url: URL): boolean {

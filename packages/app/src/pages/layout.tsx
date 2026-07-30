@@ -734,6 +734,32 @@ export default function Layout(props: ParentProps) {
       entry: active.extra ?? active.root,
     } satisfies CurrentProject
   })
+
+  createEffect(
+    on(
+      () => [pageReady(), globalSync.data.ready, routeDir()] as const,
+      ([ready, globalReady, directory]) => {
+        // Channel config arrives with the global bootstrap. Waiting prevents an
+        // IM work directory from being persisted as an ordinary project first.
+        if (!ready || !globalReady || !directory) return
+        const im = findImChannelByDirectory(
+          directory,
+          globalSync.data.config.channels,
+          globalSync.data.path.config || "",
+          globalSync.data.path.home || "",
+        )
+        if (im) {
+          console.debug(`[layout] skipped IM channel project registration channel=${im.name} directory=${directory}`)
+          return
+        }
+        if (resolveProject(directory)) return
+        console.debug(`[layout] registering untracked route directory=${directory}`)
+        layout.projects.open(directory)
+      },
+      { defer: true },
+    ),
+  )
+
   const railCurrentProject = createMemo(() => (onConfigRoute() ? undefined : currentProject()?.root))
   const currentProjectDirs = createMemo(() => {
     const project = currentProject()
@@ -745,6 +771,10 @@ export default function Layout(props: ParentProps) {
     await ready.promise
     await layout.ready.promise
     if (!untrack(() => state.autoselect)) return
+    if (routeDir()) {
+      console.debug(`[layout] skipping auto-selection for explicit route directory=${routeDir()}`)
+      return
+    }
 
     const list = layout.projects.list()
     const last = server.projects.last()
@@ -885,6 +915,7 @@ export default function Layout(props: ParentProps) {
   const prefetchPendingLimit = 10
   const span = 4
   const prefetchToken = { value: 0 }
+  const prefetchAttempts = new Set<string>()
   const prefetchQueues = new Map<string, PrefetchQueue>()
 
   const PREFETCH_MAX_SESSIONS_PER_DIR = 10
@@ -921,6 +952,7 @@ export default function Layout(props: ParentProps) {
     globalSDK.url
 
     prefetchToken.value += 1
+    prefetchAttempts.clear()
   })
 
   createEffect(() => {
@@ -1028,7 +1060,17 @@ export default function Layout(props: ParentProps) {
 
             return meta
           })
-          .catch(() => undefined),
+          .catch((error) => {
+            // A failed prefetch leaves no message cache, so retain a short-lived
+            // marker to prevent reactive session updates from immediately requeueing it.
+            console.error(
+              `[layout] session prefetch failed directory=${directory} sessionID=${sessionID} err=${error instanceof Error ? error.message : String(error)}`,
+            )
+            if (prefetchToken.value === token && isSessionPrefetchCurrent(directory, sessionID, rev)) {
+              setSessionPrefetch({ directory, sessionID, count: 0, complete: false })
+            }
+            return undefined
+          }),
     })
   }
 
@@ -1066,6 +1108,12 @@ export default function Layout(props: ParentProps) {
       })
     })
     if (cached) return
+
+    const attemptKey = `${directory}\n${session.id}`
+    if (prefetchAttempts.has(attemptKey)) return
+    // Session and event writes can re-run this effect before prefetch metadata is
+    // observable. One navigation gets one opportunistic request per session.
+    prefetchAttempts.add(attemptKey)
 
     const q = queueFor(directory)
     if (q.inflight.has(session.id)) return
@@ -3375,7 +3423,14 @@ export default function Layout(props: ParentProps) {
   // Use the dedicated project rail source. This keeps the normal OpenCode
   // project rail decoupled from extra-agent entry rendering while still
   // preserving rail visibility when browsing extra-agent domains.
-  const projects = () => layout.projects.rail()
+  const projects = createMemo(() => {
+    const channels = globalSync.data.config.channels
+    const configDir = globalSync.data.path.config || ""
+    const home = globalSync.data.path.home || ""
+    return layout.projects
+      .rail()
+      .filter((project) => !findImChannelByDirectory(project.worktree, channels, configDir, home))
+  })
   const projectOverlay = () => <ProjectDragOverlay projects={projects} activeProject={() => store.activeProject} />
   const sidebarContent = (mobile?: boolean) => (
     <SidebarContent

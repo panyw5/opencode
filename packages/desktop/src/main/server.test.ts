@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
 import { EventEmitter } from "node:events"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 
 import type { SqliteMigrationProgress } from "../preload/types"
+import { resolveDesktopStartupPaths } from "./server-env"
 
 type ServerModule = typeof import("./server")
 
@@ -36,6 +37,8 @@ type HarnessOptions = {
   delay?: (ms: number) => Promise<void>
 }
 
+const startupPaths = resolveDesktopStartupPaths({ userDataPath: "/tmp/opencode-user-data" })
+
 let serverModule: ServerModule | undefined
 
 function module(): ServerModule {
@@ -60,7 +63,7 @@ function createHarness(options: HarnessOptions = {}) {
   const start = () =>
     spawnLocalServer("127.0.0.1", 4096, "secret", {
       needsMigration: true,
-      userDataPath: "/tmp/opencode-user-data",
+      startupPaths,
     })
 
   return { app, child, spawnLocalServer, start }
@@ -126,7 +129,7 @@ describe("spawnLocalServer", () => {
     const exitCodes: number[] = []
     const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
       needsMigration: false,
-      userDataPath: "/tmp/opencode-user-data",
+      startupPaths,
       onExit: (code) => exitCodes.push(code),
     })
 
@@ -144,7 +147,7 @@ describe("spawnLocalServer", () => {
     const { child, spawnLocalServer } = createHarness({ startStallTimeout: 150 })
     const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
       needsMigration: true,
-      userDataPath: "/tmp/opencode-user-data",
+      startupPaths,
       onSqliteProgress: (item) => progress.push(item),
     })
 
@@ -173,7 +176,7 @@ describe("spawnLocalServer", () => {
     })
     const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
       needsMigration: false,
-      userDataPath: "/tmp/opencode-user-data",
+      startupPaths,
       onUnexpectedExit: (code) => unexpectedCodes.push(code),
     })
 
@@ -192,7 +195,7 @@ describe("spawnLocalServer", () => {
     const { child, spawnLocalServer } = createHarness()
     const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
       needsMigration: false,
-      userDataPath: "/tmp/opencode-user-data",
+      startupPaths,
       onUnexpectedExit: (code) => unexpectedCodes.push(code),
     })
 
@@ -210,11 +213,13 @@ describe("spawnLocalServer", () => {
 
   test("starts the sidecar in the app-private default workspace", async () => {
     let cwd = ""
+    let receivedPaths: typeof startupPaths | undefined
     const child = new FakeSidecar()
     const spawnLocalServer = module().createSpawnLocalServer({
       app: new EventEmitter(),
-      forkSidecar: (_sidecar, sidecarCwd) => {
+      forkSidecar: (_sidecar, sidecarCwd, paths) => {
         cwd = sidecarCwd
+        receivedPaths = paths
         return child
       },
       makeDirectory: async () => undefined,
@@ -226,13 +231,14 @@ describe("spawnLocalServer", () => {
     })
     const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
       needsMigration: false,
-      userDataPath: "/tmp/opencode-user-data",
+      startupPaths,
     })
 
     await Bun.sleep(0)
     child.emitMessage({ type: "ready" })
     await started
 
-    expect(cwd).toBe(join("/tmp/opencode-user-data", "default-workspace"))
+    expect(cwd).toBe(join(resolve("/tmp/opencode-user-data"), "default-workspace"))
+    expect(receivedPaths).toBe(startupPaths)
   })
 })

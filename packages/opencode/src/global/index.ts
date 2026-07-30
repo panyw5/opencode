@@ -6,6 +6,8 @@ import { Filesystem } from "../util/filesystem"
 
 const app = "opencode"
 
+// xdg-basedir is the CLI data-home authority on every platform. Desktop passes
+// the same XDG_DATA_HOME to its sidecar, including explicit user overrides.
 const data = path.join(xdgData!, app)
 const cache = path.join(xdgCache!, app)
 const config = path.join(xdgConfig!, app)
@@ -17,7 +19,9 @@ export namespace Global {
     get home() {
       return process.env.OPENCODE_TEST_HOME || os.homedir()
     },
-    data,
+    get data() {
+      return data
+    },
     bin: path.join(cache, "bin"),
     log: path.join(data, "log"),
     cache,

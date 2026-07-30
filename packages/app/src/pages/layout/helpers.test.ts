@@ -163,6 +163,21 @@ describe("layout workspace helpers", () => {
     )
   })
 
+  test("normalizes Windows channel directories for exact session queries", () => {
+    const configDir = "C:\\Users\\me\\.config\\opencode"
+    expect(defaultChannelDirectory("work-feishu", configDir)).toBe(
+      "C:\\Users\\me\\.config\\opencode\\channels\\work-feishu",
+    )
+    expect(
+      resolveChannelDirectory(
+        "work-feishu",
+        "C:\\Users\\me\\.config\\opencode/channels/work-feishu",
+        configDir,
+        "C:\\Users\\me",
+      ),
+    ).toBe("C:\\Users\\me\\.config\\opencode\\channels\\work-feishu")
+  })
+
   test("maps a work directory back to an IM channel (independent domain)", () => {
     const configDir = "/Users/me/.config/opencode"
     const home = "/Users/me"

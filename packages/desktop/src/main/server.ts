@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url"
 import { app, utilityProcess } from "electron"
 import type { Details } from "electron"
 import { DEFAULT_SERVER_URL_KEY, WSL_ENABLED_KEY } from "./constants"
-import { createSidecarEnv, desktopXdgEnv, sidecarDefaultCwd } from "./server-env"
+import { createSidecarEnv, type DesktopStartupPaths } from "./server-env"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import type { SqliteMigrationProgress } from "../preload/types"
@@ -45,7 +45,7 @@ type DesktopAppEvents = {
 
 type SpawnLocalServerDeps = {
   app: DesktopAppEvents
-  forkSidecar: (sidecar: string, cwd: string) => SidecarProcess
+  forkSidecar: (sidecar: string, cwd: string, paths: DesktopStartupPaths) => SidecarProcess
   makeDirectory: typeof mkdir
   sidecarPath: string
   checkHealth: (url: string, password?: string | null) => Promise<boolean>
@@ -60,7 +60,7 @@ const SIDECAR_STOP_TIMEOUT = 6_000
 
 type SpawnLocalServerOptions = {
   needsMigration: boolean
-  userDataPath: string
+  startupPaths: DesktopStartupPaths
   onSqliteProgress?: (progress: SqliteMigrationProgress) => void
   onStdout?: (message: string) => void
   onStderr?: (message: string) => void
@@ -91,11 +91,11 @@ export function setWslConfig(config: WslConfig) {
   getStore().set(WSL_ENABLED_KEY, config.enabled)
 }
 
-export function preferAppEnv(userDataPath: string) {
+export function preferAppEnv(startupPaths: DesktopStartupPaths) {
   const shell = process.platform === "win32" ? null : getUserShell()
   Object.assign(process.env, {
     ...(shell ? loadShellEnv(shell) : null),
-    ...desktopXdgEnv({ userDataPath }),
+    ...startupPaths.sidecarEnv,
     OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
     OPENCODE_CLIENT: "desktop",
@@ -110,9 +110,9 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
     options: SpawnLocalServerOptions,
   ) {
     const sidecar = deps.sidecarPath
-    const cwd = sidecarDefaultCwd(options.userDataPath)
+    const cwd = options.startupPaths.defaultWorkspaceCwd
     await deps.makeDirectory(cwd, { recursive: true })
-    const child = deps.forkSidecar(sidecar, cwd)
+    const child = deps.forkSidecar(sidecar, cwd, options.startupPaths)
     let exited = false
     let expectedExit = false
     let ready = false
@@ -196,7 +196,6 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
         hostname,
         port,
         password,
-        userDataPath: options.userDataPath,
         needsMigration: options.needsMigration,
       })
     }).catch((error) => {
@@ -250,10 +249,10 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
 
 export const spawnLocalServer = createSpawnLocalServer({
   app,
-  forkSidecar: (sidecar, cwd) =>
+  forkSidecar: (sidecar, cwd, paths) =>
     utilityProcess.fork(sidecar, [], {
       cwd,
-      env: createSidecarEnv({ cwd, userDataPath: app.getPath("userData") }),
+      env: createSidecarEnv({ cwd, paths }),
       serviceName: SIDECAR_SERVICE_NAME,
       stdio: "pipe",
     }),

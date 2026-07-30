@@ -19,6 +19,7 @@ import { like } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import { SyncEvent } from "../sync"
 import type { SQL } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "./session.sql"
@@ -655,6 +656,10 @@ export const layer: Layer.Layer<
 
     const list = Effect.fn("Session.list")(function* (input?: ListInput) {
       const ctx = yield* InstanceState.context
+    // eslint-disable-next-line no-console
+    console.log(
+      `[session.list] instance projectID=${ctx.project.id} worktree=${ctx.worktree} directory=${ctx.directory} inputDirectory=${input?.directory} inputPath=${input?.path} roots=${input?.roots}`,
+    )
       return Array.from(
         listByProject({ projectID: ctx.project.id, experimentalWorkspaces: flags.experimentalWorkspaces, ...input }),
       )
@@ -1127,12 +1132,25 @@ const cancelBackgroundJobs = Effect.fn("Session.cancelBackgroundJobs")(function*
   )
 })
 
+/**
+ * Match session.directory ignoring Windows `\` vs `/` (SDK always sends `/`,
+ * create stores path.resolve which uses `\` on Windows).
+ */
+function directoryEq(directory: string): SQL {
+  const normalized = directory.replace(/\\/g, "/")
+  return sql`replace(${SessionTable.directory}, char(92), '/') = ${normalized}`
+}
+
 function* listByProject(
   input: ListInput & {
     projectID: ProjectID
     experimentalWorkspaces: boolean
   },
 ) {
+  // eslint-disable-next-line no-console
+  console.log(
+    `[session.listByProject] input projectID=${input.projectID} directory=${input.directory} path=${input.path} scope=${input.scope} roots=${input.roots} start=${input.start} limit=${input.limit}`,
+  )
   const conditions = [eq(SessionTable.project_id, input.projectID)]
 
   if (input.workspaceID) {
@@ -1144,13 +1162,13 @@ function* listByProject(
 
       conditions.push(
         input.directory
-          ? or(...conds, and(isNull(SessionTable.path), eq(SessionTable.directory, input.directory))!)!
+          ? or(...conds, and(isNull(SessionTable.path), directoryEq(input.directory))!)!
           : or(...conds)!,
       )
     }
   } else if (input.scope !== "project" && !input.experimentalWorkspaces) {
     if (input.directory) {
-      conditions.push(eq(SessionTable.directory, input.directory))
+      conditions.push(directoryEq(input.directory))
     }
   }
   if (input.roots) {
@@ -1175,8 +1193,10 @@ function* listByProject(
       .where(and(...conditions))
       .orderBy(desc(SessionTable.time_updated), desc(SessionTable.id))
       .limit(limit)
-      .all(),
+      .all()
   )
+  // eslint-disable-next-line no-console
+  console.log(`[session.listByProject] rows count=${rows.length} firstIDs=${rows.slice(0, 3).map((r) => r.id).join(",")}`)
   for (const row of rows) {
     yield fromRow(row)
   }
@@ -1194,7 +1214,7 @@ export function* listGlobal(input?: {
   const conditions: SQL[] = []
 
   if (input?.directory) {
-    conditions.push(eq(SessionTable.directory, input.directory))
+    conditions.push(directoryEq(input.directory))
   }
   if (input?.roots) {
     conditions.push(isNull(SessionTable.parent_id))
