@@ -163,6 +163,11 @@ export function createMainWindow(options: CreateMainWindowOptions = {}) {
 
   allowRendererPermissions(win)
   wireWindowRecovery(win, "main")
+  if (process.platform === "win32") {
+    win.webContents.setIgnoreMenuShortcuts(true)
+    writeLog("keyboard", "Windows menu shortcuts disabled so renderer receives Ctrl+Comma")
+  }
+  wireWindowsShortcuts(win)
 
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
     const { requestHeaders } = details
@@ -190,6 +195,29 @@ export function createMainWindow(options: CreateMainWindowOptions = {}) {
   })
 
   return win
+}
+
+function wireWindowsShortcuts(win: BrowserWindow) {
+  if (process.platform !== "win32") return
+
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type === "keyUp" && input.control && !input.meta && !input.alt && !input.shift && input.code === "Comma") {
+      event.preventDefault()
+      writeLog("keyboard", "Windows Ctrl+Comma keyUp converted to renderer shortcut event")
+      win.webContents.send("windows-shortcut", "ctrl+comma")
+      return
+    }
+
+    if (input.type !== "keyDown") return
+    if (!input.control || input.meta || input.alt || input.shift) return
+
+    if (input.key.toLowerCase() !== "w") return
+
+    event.preventDefault()
+    writeLog("keyboard", "Windows Ctrl+W intercepted for sessionTabs.close")
+    win.webContents.send("menu-command", "sessionTabs.close")
+    writeLog("keyboard", "Windows Ctrl+W command sent to renderer: sessionTabs.close")
+  })
 }
 
 export function createLoadingWindow() {

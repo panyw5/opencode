@@ -65,6 +65,11 @@ const api: ElectronAPI = {
     ipcRenderer.on("menu-command", handler)
     return () => ipcRenderer.removeListener("menu-command", handler)
   },
+  onWindowsShortcut: (cb) => {
+    const handler = (_: unknown, shortcut: string) => cb(shortcut)
+    ipcRenderer.on("windows-shortcut", handler)
+    return () => ipcRenderer.removeListener("windows-shortcut", handler)
+  },
   onDeepLink: (cb) => {
     const handler = (_: unknown, urls: string[]) => cb(urls)
     ipcRenderer.on("deep-link", handler)

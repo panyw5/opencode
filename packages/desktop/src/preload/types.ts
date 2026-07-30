@@ -254,6 +254,7 @@ export type ElectronAPI = {
   getWindowCount: () => Promise<number>
   onSqliteMigrationProgress: (cb: (progress: SqliteMigrationProgress) => void) => () => void
   onMenuCommand: (cb: (id: string) => void) => () => void
+  onWindowsShortcut: (cb: (shortcut: string) => void) => () => void
   onDeepLink: (cb: (urls: string[]) => void) => () => void
 
   openDirectoryPicker: (opts?: {

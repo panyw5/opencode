@@ -531,6 +531,18 @@ let menuTrigger = null as null | ((id: string) => void)
 desktopApi.onMenuCommand((id) => {
   menuTrigger?.(id)
 })
+desktopApi.onWindowsShortcut((shortcut) => {
+  if (shortcut !== "ctrl+comma") return
+  document.dispatchEvent(
+    new KeyboardEvent("keydown", {
+      key: ",",
+      code: "Comma",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    }),
+  )
+})
 listenForDeepLinks()
 
 render(() => {
