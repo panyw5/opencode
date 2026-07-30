@@ -737,9 +737,21 @@ export default function Layout(props: ParentProps) {
 
   createEffect(
     on(
-      () => [pageReady(), routeDir()] as const,
-      ([ready, directory]) => {
-        if (!ready || !directory) return
+      () => [pageReady(), globalSync.data.ready, routeDir()] as const,
+      ([ready, globalReady, directory]) => {
+        // Channel config arrives with the global bootstrap. Waiting prevents an
+        // IM work directory from being persisted as an ordinary project first.
+        if (!ready || !globalReady || !directory) return
+        const im = findImChannelByDirectory(
+          directory,
+          globalSync.data.config.channels,
+          globalSync.data.path.config || "",
+          globalSync.data.path.home || "",
+        )
+        if (im) {
+          console.debug(`[layout] skipped IM channel project registration channel=${im.name} directory=${directory}`)
+          return
+        }
         if (resolveProject(directory)) return
         console.debug(`[layout] registering untracked route directory=${directory}`)
         layout.projects.open(directory)
@@ -3411,7 +3423,14 @@ export default function Layout(props: ParentProps) {
   // Use the dedicated project rail source. This keeps the normal OpenCode
   // project rail decoupled from extra-agent entry rendering while still
   // preserving rail visibility when browsing extra-agent domains.
-  const projects = () => layout.projects.rail()
+  const projects = createMemo(() => {
+    const channels = globalSync.data.config.channels
+    const configDir = globalSync.data.path.config || ""
+    const home = globalSync.data.path.home || ""
+    return layout.projects
+      .rail()
+      .filter((project) => !findImChannelByDirectory(project.worktree, channels, configDir, home))
+  })
   const projectOverlay = () => <ProjectDragOverlay projects={projects} activeProject={() => store.activeProject} />
   const sidebarContent = (mobile?: boolean) => (
     <SidebarContent
