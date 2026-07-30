@@ -697,3 +697,25 @@ describe("session archive state", () => {
     }),
   )
 })
+
+describe("session.list directory slash matching", () => {
+  it.instance("matches Windows backslash directories when queried with forward slashes", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const info = yield* session.create({ title: "[im:test] chat" })
+      const winDir = "C:\\Users\\me\\.config\\opencode\\channels\\test"
+      Database.use((db) => {
+        db.update(SessionTable).set({ directory: winDir }).where(eq(SessionTable.id, info.id)).run()
+      })
+
+      const listed = yield* session.list({
+        directory: "C:/Users/me/.config/opencode/channels/test",
+        roots: true,
+      })
+      expect(listed.map((item) => item.id)).toContain(info.id)
+      expect(listed.find((item) => item.id === info.id)?.directory).toBe(winDir)
+
+      yield* session.remove(info.id)
+    }),
+  )
+})

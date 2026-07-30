@@ -9,7 +9,7 @@ import { Config } from "../config/config"
 import { Flag } from "../flag/flag"
 import { Installation } from "../installation"
 
-import { Database, NotFoundError, eq, and, gte, isNull, desc, like, inArray, lt } from "../storage/db"
+import { Database, NotFoundError, eq, and, gte, isNull, desc, like, inArray, lt, sql } from "../storage/db"
 import { SyncEvent } from "../sync"
 import type { SQL } from "../storage/db"
 import { MessageTable, SessionTable } from "./session.sql"
@@ -546,7 +546,9 @@ export namespace Session {
       conditions.push(eq(SessionTable.workspace_id, WorkspaceContext.workspaceID))
     }
     if (input?.directory) {
-      conditions.push(eq(SessionTable.directory, input.directory))
+      // SDK sends `/`; Windows create stores `\`. Match both.
+      const normalized = input.directory.replace(/\\/g, "/")
+      conditions.push(sql`replace(${SessionTable.directory}, char(92), '/') = ${normalized}`)
     }
     if (input?.roots) {
       conditions.push(isNull(SessionTable.parent_id))
@@ -597,7 +599,8 @@ export namespace Session {
     const conditions: SQL[] = []
 
     if (input?.directory) {
-      conditions.push(eq(SessionTable.directory, input.directory))
+      const normalized = input.directory.replace(/\\/g, "/")
+      conditions.push(sql`replace(${SessionTable.directory}, char(92), '/') = ${normalized}`)
     }
     if (input?.roots) {
       conditions.push(isNull(SessionTable.parent_id))

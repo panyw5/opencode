@@ -19,6 +19,7 @@ import { like } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import { SyncEvent } from "../sync"
 import type { SQL } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "./session.sql"
@@ -1131,6 +1132,15 @@ const cancelBackgroundJobs = Effect.fn("Session.cancelBackgroundJobs")(function*
   )
 })
 
+/**
+ * Match session.directory ignoring Windows `\` vs `/` (SDK always sends `/`,
+ * create stores path.resolve which uses `\` on Windows).
+ */
+function directoryEq(directory: string): SQL {
+  const normalized = directory.replace(/\\/g, "/")
+  return sql`replace(${SessionTable.directory}, char(92), '/') = ${normalized}`
+}
+
 function* listByProject(
   input: ListInput & {
     projectID: ProjectID
@@ -1152,13 +1162,13 @@ function* listByProject(
 
       conditions.push(
         input.directory
-          ? or(...conds, and(isNull(SessionTable.path), eq(SessionTable.directory, input.directory))!)!
+          ? or(...conds, and(isNull(SessionTable.path), directoryEq(input.directory))!)!
           : or(...conds)!,
       )
     }
   } else if (input.scope !== "project" && !input.experimentalWorkspaces) {
     if (input.directory) {
-      conditions.push(eq(SessionTable.directory, input.directory))
+      conditions.push(directoryEq(input.directory))
     }
   }
   if (input.roots) {
@@ -1204,7 +1214,7 @@ export function* listGlobal(input?: {
   const conditions: SQL[] = []
 
   if (input?.directory) {
-    conditions.push(eq(SessionTable.directory, input.directory))
+    conditions.push(directoryEq(input.directory))
   }
   if (input?.roots) {
     conditions.push(isNull(SessionTable.parent_id))
