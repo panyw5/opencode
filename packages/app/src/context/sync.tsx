@@ -573,7 +573,9 @@ const initialMessagePageSize = 80
           return runInflight(inflight, key, async () => {
             const pending = getSessionPrefetchPromise(directory, sessionID)
             if (pending) {
-              await pending
+              // Prefetch is an optimization — if it fails or hangs, fall through
+              // to a direct fetch instead of blocking the session view forever.
+              await Promise.race([pending, new Promise((r) => setTimeout(r, 5000))]).catch(() => {})
               const seeded = getSessionPrefetch(directory, sessionID)
               if (seeded && store.message[sessionID] !== undefined && meta.complete[key] === undefined) {
                 batch(() => {
