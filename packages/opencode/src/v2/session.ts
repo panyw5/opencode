@@ -2,6 +2,7 @@ import { MessageTable, SessionMessageTable, SessionTable } from "@/session/sessi
 import { SessionID } from "@/session/schema"
 import { WorkspaceID } from "@/control-plane/schema"
 import { and, asc, desc, eq, gt, gte, isNull, like, lt, or, sql, type SQL } from "@/storage/db"
+import { directorySqlEq } from "@/util/directory-sql"
 import * as Database from "@/storage/db"
 import { Context, DateTime, Effect, Layer, Schema } from "effect"
 import { SessionMessage } from "@opencode-ai/core/session-message"
@@ -246,8 +247,7 @@ export const layer = Layer.effect(
         const conditions: SQL[] = []
         if (input.directory) {
           // SDK sends `/`; Windows create stores `\`. Match both.
-          const normalized = input.directory.replace(/\\/g, "/")
-          conditions.push(sql`replace(${SessionTable.directory}, char(92), '/') = ${normalized}`)
+          conditions.push(directorySqlEq(SessionTable.directory, input.directory))
         }
         if (input.path)
           conditions.push(or(eq(SessionTable.path, input.path), like(SessionTable.path, `${input.path}/%`))!)

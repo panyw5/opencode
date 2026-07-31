@@ -1,3 +1,39 @@
+/**
+ * Canonical logical-path form used as identity for directories across the
+ * codebase (SDK wire, Instance cache, session/project DB columns, app store
+ * keys, channel mapping, UI comparisons).
+ *
+ * Rules:
+ *  - backslashes -> forward slashes (Windows `\` normalization)
+ *  - trailing slashes collapsed (but `C:/` and `/` keep their trailing slash
+ *    so drive-rooted or posix-root keys remain distinguishable from relative
+ *    segments)
+ *  - case preserved (case-folding is a separate concern; callers that need
+ *    case-insensitive identity on Windows should lowercase the result)
+ *
+ * Anything that touches the real filesystem (fs.*, spawn, Electron shell)
+ * should convert to native separators at that boundary, not beforehand.
+ */
+export function toLogicalPath(p: string | undefined): string {
+  if (!p) return ""
+  const value = p.replace(/\\/g, "/")
+  const drive = value.match(/^([A-Za-z]:)\/+$/)
+  if (drive) return `${drive[1]}/`
+  if (/^\/+$/i.test(value)) return "/"
+  return value.replace(/\/+$/, "")
+}
+
+/**
+ * Directory identity equality. Two paths are the same directory when they
+ * share the same logical-path form. Prefer this over raw `===` for any
+ * comparison involving session.directory / project.worktree / channel
+ * directories, since SDK always sends `/` while Windows stores may hold `\`.
+ */
+export function directoryEquals(a: string | undefined, b: string | undefined): boolean {
+  if (!a || !b) return a === b
+  return toLogicalPath(a) === toLogicalPath(b)
+}
+
 export function getFilename(path: string | undefined) {
   if (!path) return ""
   const trimmed = path.replace(/[/\\]+$/, "")

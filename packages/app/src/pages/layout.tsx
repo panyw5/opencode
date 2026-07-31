@@ -1095,7 +1095,13 @@ export default function Layout(props: ParentProps) {
   }
 
   const prefetchSession = (session: Session, priority: "high" | "low" = "low") => {
-    const directory = session.directory
+    // Session records (especially legacy rows in the shared DB) may persist the
+    // `directory` with platform-native separators (e.g. "D:\\chat"), while the
+    // rest of the app keys workspaces by the normalized forward-slash form via
+    // workspaceKey(). Normalize at the entry point so prefetch, the SDK query,
+    // and the shared child store land on the same keys as the page's
+    // sync.session.sync (which uses sdk.directory).
+    const directory = session.directory ? workspaceKey(session.directory) : session.directory
     if (!directory) return
 
     const [store] = globalSync.child(directory, { bootstrap: false })

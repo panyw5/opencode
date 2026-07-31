@@ -1,4 +1,6 @@
 import { Slug } from "@opencode-ai/core/util/slug"
+import { toLogicalPath } from "@opencode-ai/core/util/path"
+import { directorySqlEq } from "@/util/directory-sql"
 import { serviceUse } from "@/effect/service-use"
 import path from "path"
 import { BackgroundJob } from "@/background/job"
@@ -141,7 +143,11 @@ export function toRow(info: Info) {
     workspace_id: info.workspaceID,
     parent_id: info.parentID,
     slug: info.slug,
-    directory: info.directory,
+    // Normalize to the canonical logical-path form (`/`) on write so future
+    // list queries stay consistent regardless of how the directory arrived
+    // (SDK `/`, path.resolve `\`, legacy mixed). Read-side directoryEq still
+    // tolerates rows written before this normalization landed.
+    directory: toLogicalPath(info.directory) || info.directory,
     path: info.path,
     title: info.title,
     agent: info.agent,
@@ -1134,11 +1140,12 @@ const cancelBackgroundJobs = Effect.fn("Session.cancelBackgroundJobs")(function*
 
 /**
  * Match session.directory ignoring Windows `\` vs `/` (SDK always sends `/`,
- * create stores path.resolve which uses `\` on Windows).
+ * create stores path.resolve which uses `\` on Windows). Delegates to the
+ * shared {@link directorySqlEq} helper so every path column predicate uses
+ * the same rule.
  */
 function directoryEq(directory: string): SQL {
-  const normalized = directory.replace(/\\/g, "/")
-  return sql`replace(${SessionTable.directory}, char(92), '/') = ${normalized}`
+  return directorySqlEq(SessionTable.directory, directory)
 }
 
 function* listByProject(

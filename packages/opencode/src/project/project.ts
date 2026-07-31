@@ -1,6 +1,8 @@
 import { and } from "drizzle-orm"
 import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
+import { toLogicalPath } from "@opencode-ai/core/util/path"
+import { directorySqlEq } from "@/util/directory-sql"
 import { ProjectTable } from "./project.sql"
 import { SessionTable } from "../session/session.sql"
 import * as Log from "@opencode-ai/core/util/log"
@@ -201,12 +203,12 @@ export const layer: Layer.Layer<
       // Phase 1: discover git info
       type DiscoveryResult = { id: ProjectID; worktree: string; sandbox: string; vcs: Info["vcs"] }
 
-      const data: DiscoveryResult = yield* Effect.gen(function* () {
+      const dataRaw: DiscoveryResult = yield* Effect.gen(function* () {
         // fork-1.13.21 behavior: non-git directories used a `dir:<hash>` project id keyed by worktree
         // path, so sessions created before the 1.15 rebase live under those ids rather than `global`.
         // Reuse the existing row so listByProject lands on the correct project_id.
         const existingByWorktree = yield* db((d) =>
-          d.select().from(ProjectTable).where(eq(ProjectTable.worktree, directory)).get(),
+          d.select().from(ProjectTable).where(directorySqlEq(ProjectTable.worktree, directory)).get(),
         )
         if (existingByWorktree?.id.startsWith("dir:")) {
           return {
@@ -292,6 +294,17 @@ export const layer: Layer.Layer<
         return { id, sandbox, worktree, vcs: "git" as const }
       })
 
+      // Normalize discovered paths to the canonical logical-path form (`/`)
+      // before any DB write or compare. git rev-parse / pathSvc.dirname may
+      // return Windows `\`; storing `/` keeps project.worktree consistent
+      // with the SDK wire form and the session.directory write side.
+      const data: DiscoveryResult = {
+        id: dataRaw.id,
+        worktree: toLogicalPath(dataRaw.worktree) || dataRaw.worktree,
+        sandbox: toLogicalPath(dataRaw.sandbox) || dataRaw.sandbox,
+        vcs: dataRaw.vcs,
+      }
+
       // Phase 2: upsert
       const row = yield* db((d) => d.select().from(ProjectTable).where(eq(ProjectTable.id, data.id)).get())
       const existing = row
@@ -365,7 +378,7 @@ export const layer: Layer.Layer<
           d
             .update(SessionTable)
             .set({ project_id: data.id })
-            .where(and(eq(SessionTable.project_id, ProjectID.global), eq(SessionTable.directory, data.worktree)))
+            .where(and(eq(SessionTable.project_id, ProjectID.global), directorySqlEq(SessionTable.directory, data.worktree)))
             .run(),
         )
       }
