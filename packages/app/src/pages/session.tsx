@@ -68,15 +68,15 @@ import { working } from "@/pages/session/session-working"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
+import { useServer } from "@/context/server"
+import { domainFromDirectory } from "@/pages/layout/extra-agents"
+import { setBackgroundShell } from "@/pages/session/background-shell-api"
 import {
   collectSessionLayoutMetrics,
   logSessionLayout,
   type SessionLayoutMetrics,
 } from "@/pages/session/session-layout-debug"
-import {
-  collectSessionChildAgentEntries,
-  type SessionChildAgentEntry,
-} from "@/pages/session/session-child-agents"
+import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import { Identifier } from "@/utils/id"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
@@ -130,6 +130,7 @@ export default function Page() {
   const navigate = useNavigate()
   const location = useLocation()
   const sdk = useSDK()
+  const server = useServer()
   const settings = useSettings()
   const sessionHistory = useSessionHistory()
   const prompt = usePrompt()
@@ -213,7 +214,9 @@ export default function Page() {
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFilePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const desktopSidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFilePreviewOpen() || desktopFileTreeOpen())
+  const desktopSidePanelOpen = createMemo(
+    () => desktopReviewOpen() || desktopFilePreviewOpen() || desktopFileTreeOpen(),
+  )
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"
     if (desktopReviewOpen() || desktopFilePreviewOpen()) return `${layout.session.width()}px`
@@ -907,8 +910,7 @@ export default function Page() {
         const props = (e.details as { properties?: Record<string, unknown> }).properties ?? {}
         const info = props.info as { id?: string; sessionID?: string } | undefined
         const part = props.part as { sessionID?: string } | undefined
-        const sessionID =
-          (props.sessionID as string | undefined) ?? info?.sessionID ?? part?.sessionID
+        const sessionID = (props.sessionID as string | undefined) ?? info?.sessionID ?? part?.sessionID
         if (sessionID !== id) return
         // Events should already apply via global-sync; if a message.updated was
         // missed (path alias / race), force a sync so the open view catches up.
@@ -1546,8 +1548,7 @@ export default function Page() {
       return
     }
     if (mode === "smooth" && Math.abs(dist) <= smoothBottomSnapDistance) {
-      const step =
-        Math.sign(dist) * Math.min(Math.max(Math.abs(dist) * smoothBottomEase, 1), smoothBottomMaxStep)
+      const step = Math.sign(dist) * Math.min(Math.max(Math.abs(dist) * smoothBottomEase, 1), smoothBottomMaxStep)
       el.scrollTop += step
     } else {
       el.scrollTop = next
@@ -1942,6 +1943,75 @@ export default function Page() {
     })
   }
 
+  const backgroundShell = async (input: {
+    sessionID: string
+    messageID?: string
+    callID?: string
+    jobId?: string
+    command: string
+    cwd?: string
+    description?: string
+  }) => {
+    const currentSessionID = params.id
+    console.info("[background-shell] request", {
+      currentSessionID,
+      sessionID: input.sessionID,
+      messageID: input.messageID,
+      callID: input.callID,
+      jobId: input.jobId,
+      command: input.command,
+    })
+
+    if (!currentSessionID || input.sessionID !== currentSessionID) {
+      const error = new Error("Background shell belongs to a different session")
+      console.warn("[background-shell] rejected session mismatch", {
+        currentSessionID,
+        sessionID: input.sessionID,
+        jobId: input.jobId,
+      })
+      fail(error)
+      throw error
+    }
+    if (!input.jobId) {
+      const error = new Error("Background shell job is not available")
+      console.warn("[background-shell] rejected missing job", {
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+        callID: input.callID,
+      })
+      fail(error)
+      throw error
+    }
+
+    try {
+      const info = await setBackgroundShell({
+        sdk,
+        platform,
+        auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+        id: input.jobId,
+      })
+      console.info("[background-shell] upgraded", {
+        sessionID: input.sessionID,
+        jobId: info.id,
+        status: info.status,
+        background: info.background,
+      })
+      showToast({
+        variant: "success",
+        title: "已设为背景 shell",
+        description: input.description ?? input.command,
+      })
+    } catch (err) {
+      console.error("[background-shell] upgrade failed", {
+        sessionID: input.sessionID,
+        jobId: input.jobId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      fail(err)
+      throw err
+    }
+  }
+
   const merge = (next: NonNullable<ReturnType<typeof info>>) =>
     sync.set("session", (list) => {
       const idx = list.findIndex((item) => item.id === next.id)
@@ -2319,8 +2389,7 @@ export default function Page() {
           }}
           style={{
             width: sessionPanelWidth(),
-            transition:
-              size.active() || ui.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+            transition: size.active() || ui.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
           <div class="relative flex-1 min-h-0">
@@ -2336,48 +2405,50 @@ export default function Page() {
                             diffStyle: "unified",
                             classes: { root: "pb-8", header: "px-4", container: "px-4" },
                             loadingClass: "px-4 py-4 text-text-weak",
-                            emptyClass: "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
+                            emptyClass:
+                              "h-full pb-64 -mt-4 flex flex-col items-center justify-center text-center gap-6",
                           })}
                         </div>
                       }
                     >
                       <MessageTimeline
-                      actions={actions}
-                      scroll={ui.scroll}
-                      onResumeScroll={resumeScroll}
-                      setScrollRef={setScrollRef}
-                      onScheduleScrollState={scheduleScrollState}
-                      onAutoScrollHandleScroll={handleTimelineAutoScroll}
-                      onMarkScrollGesture={markScrollGesture}
-                      hasScrollGesture={hasScrollGesture}
-                      onUserScroll={markUserScroll}
-                      onHistoryScroll={() => {
-                        if (!autoScroll.userScrolled() || !scroller || scroller.scrollTop >= 200) return
-                        void loadEarlier()
-                      }}
-                      onAutoScrollInteraction={autoScroll.handleInteraction}
-                      shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled()}
-                      isInitialScrollSettling={settling}
-                      centered={centered()}
-                      setContentRef={(el) => {
-                        content = el
-                        autoScroll.contentRef(el)
+                        actions={actions}
+                        onBackgroundShell={backgroundShell}
+                        scroll={ui.scroll}
+                        onResumeScroll={resumeScroll}
+                        setScrollRef={setScrollRef}
+                        onScheduleScrollState={scheduleScrollState}
+                        onAutoScrollHandleScroll={handleTimelineAutoScroll}
+                        onMarkScrollGesture={markScrollGesture}
+                        hasScrollGesture={hasScrollGesture}
+                        onUserScroll={markUserScroll}
+                        onHistoryScroll={() => {
+                          if (!autoScroll.userScrolled() || !scroller || scroller.scrollTop >= 200) return
+                          void loadEarlier()
+                        }}
+                        onAutoScrollInteraction={autoScroll.handleInteraction}
+                        shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled()}
+                        isInitialScrollSettling={settling}
+                        centered={centered()}
+                        setContentRef={(el) => {
+                          content = el
+                          autoScroll.contentRef(el)
 
-                        const root = scroller
-                        if (root) scheduleScrollState(root)
-                      }}
-                      userMessages={visibleUserMessages()}
-                      anchor={anchor}
-                      setRevealMessage={(fn) => {
-                        revealMessage = fn
-                      }}
-                      setScrollToEnd={(fn) => {
-                        scrollToEnd = fn
-                      }}
-                      setHistoryAnchor={(handlers) => {
-                        historyAnchor = handlers
-                      }}
-                      onRenderOverlayStatusChange={(status) => setUi("renderOverlayStatus", status)}
+                          const root = scroller
+                          if (root) scheduleScrollState(root)
+                        }}
+                        userMessages={visibleUserMessages()}
+                        anchor={anchor}
+                        setRevealMessage={(fn) => {
+                          revealMessage = fn
+                        }}
+                        setScrollToEnd={(fn) => {
+                          scrollToEnd = fn
+                        }}
+                        setHistoryAnchor={(handlers) => {
+                          historyAnchor = handlers
+                        }}
+                        onRenderOverlayStatusChange={(status) => setUi("renderOverlayStatus", status)}
                       />
                     </Show>
                   </Show>

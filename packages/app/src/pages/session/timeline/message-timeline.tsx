@@ -25,6 +25,7 @@ import {
   MessageDivider,
   normalizeTool,
   Part as MessagePart,
+  type MessageProps,
   type UserActions,
 } from "@opencode-ai/ui/message-part"
 import { SessionRetry } from "@opencode-ai/ui/session-retry"
@@ -192,6 +193,7 @@ function TimelineDiffView(props: { diff: SummaryDiff }) {
 
 export function MessageTimeline(props: {
   actions?: UserActions
+  onBackgroundShell?: MessageProps["onBackgroundShell"]
   scroll: { overflow: boolean; bottom: boolean }
   onResumeScroll: () => void
   setScrollRef: (el: HTMLDivElement | undefined) => void
@@ -586,6 +588,7 @@ export function MessageTimeline(props: {
                     message={value()}
                     parts={getMessageParts(value().id)}
                     actions={props.actions}
+                    onBackgroundShell={props.onBackgroundShell}
                     showCustomHookParts={settings.general.showCustomHookParts()}
                     markdownViewport={listRoot()}
                     markdownHighlight="defer"
@@ -648,6 +651,7 @@ export function MessageTimeline(props: {
                             part={part()}
                             message={message()}
                             defaultOpen={defaultOpen(part())}
+                            onBackgroundShell={props.onBackgroundShell}
                             showAssistantCopyPartID={assistantCopyPartID(item().userMessageID)}
                             turnDurationMs={turnDurationMs(item().userMessageID)}
                             markdownViewport={listRoot()}
@@ -666,6 +670,7 @@ export function MessageTimeline(props: {
                       part={entry.part}
                       message={entry.message}
                       defaultOpen={defaultOpen(entry.part)}
+                      onBackgroundShell={props.onBackgroundShell}
                       markdownViewport={listRoot()}
                       markdownHighlight="defer"
                       markdownMath="full"

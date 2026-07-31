@@ -13,6 +13,7 @@ export type BackgroundShellInfo = {
   command: string
   cwd: string
   description?: string
+  background: boolean
   status: BackgroundShellStatus
   exitCode?: number
   startedAt: number

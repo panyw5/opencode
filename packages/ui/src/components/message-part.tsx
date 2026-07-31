@@ -2213,12 +2213,30 @@ function ShellTool(props: ToolProps & { title: string }) {
   const handleBackground = async (event: MouseEvent) => {
     event.preventDefault()
     event.stopPropagation()
-    if (!canBackground() || backgrounding()) return
+    if (!canBackground() || backgrounding()) {
+      console.warn("[background-shell] ignored tool-card request", {
+        canBackground: canBackground(),
+        backgrounding: backgrounding(),
+        hasHandler: !!props.onBackgroundShell,
+        jobId: props.metadata.jobId,
+      })
+      return
+    }
     const command = line()
     if (!command) return
     setBackgrounding(true)
     try {
-      await props.onBackgroundShell?.({
+      if (!props.onBackgroundShell) {
+        throw new Error("Background shell handler is not available")
+      }
+      console.info("[background-shell] tool-card request", {
+        sessionID: props.part?.sessionID,
+        messageID: props.part?.messageID,
+        callID: props.part?.callID,
+        jobId: props.metadata.jobId,
+        command,
+      })
+      await props.onBackgroundShell({
         sessionID: props.part?.sessionID ?? "",
         messageID: props.part?.messageID,
         callID: props.part?.callID,
@@ -2226,6 +2244,16 @@ function ShellTool(props: ToolProps & { title: string }) {
         command,
         cwd: typeof props.input.workdir === "string" ? props.input.workdir : undefined,
         description: text(props.input.description) ?? text(props.metadata.description),
+      })
+      console.info("[background-shell] tool-card request completed", {
+        sessionID: props.part?.sessionID,
+        jobId: props.metadata.jobId,
+      })
+    } catch (err) {
+      console.error("[background-shell] tool-card request failed", {
+        sessionID: props.part?.sessionID,
+        jobId: props.metadata.jobId,
+        error: err instanceof Error ? err.message : String(err),
       })
     } finally {
       setBackgrounding(false)
@@ -2269,7 +2297,10 @@ function ShellTool(props: ToolProps & { title: string }) {
                 type="button"
                 class="h-6 rounded-md border border-border-weak-base px-2 text-11-medium text-text-weak hover:text-text-strong disabled:opacity-60"
                 disabled={backgrounding()}
-                onMouseDown={(e) => e.preventDefault()}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                }}
                 onClick={handleBackground}
               >
                 {backgrounding() ? "设置中" : "设为背景 shell"}
@@ -3636,7 +3667,9 @@ function CodexSessionDialog(props: {
           <div data-slot="codex-session-content" ref={autoScroll.contentRef}>
             <Show
               when={messages().length > 0}
-              fallback={<div data-slot="codex-session-empty">{props.running() ? emptyRunningLabel() : emptyLabel()}</div>}
+              fallback={
+                <div data-slot="codex-session-empty">{props.running() ? emptyRunningLabel() : emptyLabel()}</div>
+              }
             >
               <Index each={messages()}>
                 {(item) => (

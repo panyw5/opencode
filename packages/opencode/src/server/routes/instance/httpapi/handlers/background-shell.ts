@@ -1,16 +1,17 @@
 import { BackgroundShell } from "@/background/shell"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import * as Log from "@opencode-ai/core/util/log"
 import { InstanceHttpApi } from "../api"
 import { ListQuery } from "../groups/background-shell"
+
+const log = Log.create({ service: "background-shell.http" })
 
 export const backgroundShellHandlers = HttpApiBuilder.group(InstanceHttpApi, "background-shell", (handlers) =>
   Effect.gen(function* () {
     const backgroundShell = yield* BackgroundShell.Service
 
-    const list = Effect.fn("BackgroundShellHttpApi.list")(function* (ctx: {
-      query: typeof ListQuery.Type
-    }) {
+    const list = Effect.fn("BackgroundShellHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
       return yield* backgroundShell.list({ sessionID: ctx.query.sessionID })
     })
 
@@ -34,15 +35,21 @@ export const backgroundShellHandlers = HttpApiBuilder.group(InstanceHttpApi, "ba
     const background = Effect.fn("BackgroundShellHttpApi.background")(function* (ctx: {
       params: typeof BackgroundShell.Params.Type
     }) {
+      log.info("background request", { id: ctx.params.id })
       const info = yield* backgroundShell.setBackground(ctx.params.id)
-      if (!info) return yield* new HttpApiError.NotFound({})
+      if (!info) {
+        log.warn("background shell not found", { id: ctx.params.id })
+        return yield* new HttpApiError.NotFound({})
+      }
+      log.info("background request completed", {
+        id: info.id,
+        sessionID: info.sessionID,
+        status: info.status,
+        background: info.background,
+      })
       return info
     })
 
-    return handlers
-      .handle("list", list)
-      .handle("create", create)
-      .handle("background", background)
-      .handle("stop", stop)
+    return handlers.handle("list", list).handle("create", create).handle("background", background).handle("stop", stop)
   }),
 )
