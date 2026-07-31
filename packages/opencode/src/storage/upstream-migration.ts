@@ -156,6 +156,126 @@ function ensureFinalSessionContextEpoch(db: MigrationClient) {
   db.run("PRAGMA foreign_keys = ON")
 }
 
+function ensureProjectDirectory(db: MigrationClient) {
+  if (!hasTable(db, "project")) return
+
+  if (!hasTable(db, "project_directory")) {
+    db.run(`
+      CREATE TABLE project_directory (
+        project_id text NOT NULL,
+        directory text NOT NULL,
+        type text,
+        strategy text,
+        time_created integer NOT NULL,
+        CONSTRAINT project_directory_pk PRIMARY KEY(project_id, directory),
+        CONSTRAINT fk_project_directory_project_id_project_id_fk
+          FOREIGN KEY (project_id) REFERENCES project(id) ON DELETE CASCADE
+      )
+    `)
+    return
+  }
+
+  if (!hasColumn(db, "project_directory", "type")) {
+    db.run("ALTER TABLE project_directory ADD COLUMN type text")
+  }
+  if (!hasColumn(db, "project_directory", "strategy")) {
+    db.run("ALTER TABLE project_directory ADD COLUMN strategy text")
+  }
+}
+
+function ensureCredential(db: MigrationClient) {
+  if (hasTable(db, "credential")) return
+  db.run(`
+    CREATE TABLE credential (
+      id text PRIMARY KEY,
+      integration_id text,
+      label text NOT NULL,
+      value text NOT NULL,
+      connector_id text,
+      method_id text,
+      active integer,
+      time_created integer NOT NULL,
+      time_updated integer NOT NULL
+    )
+  `)
+}
+
+/** Fork session list composite indexes (not present upstream). */
+export const FORK_SESSION_LIST_INDEXES = [
+  {
+    name: "session_project_parent_time_idx",
+    columns: ["project_id", "parent_id", "time_updated", "id"],
+    sql: "CREATE INDEX IF NOT EXISTS session_project_parent_time_idx ON session (project_id, parent_id, time_updated, id)",
+  },
+  {
+    name: "session_project_directory_parent_time_idx",
+    columns: ["project_id", "directory", "parent_id", "time_updated", "id"],
+    sql: "CREATE INDEX IF NOT EXISTS session_project_directory_parent_time_idx ON session (project_id, directory, parent_id, time_updated, id)",
+  },
+  {
+    name: "session_project_path_parent_time_idx",
+    columns: ["project_id", "path", "parent_id", "time_updated", "id"],
+    sql: "CREATE INDEX IF NOT EXISTS session_project_path_parent_time_idx ON session (project_id, path, parent_id, time_updated, id)",
+  },
+  {
+    name: "session_workspace_parent_time_idx",
+    columns: ["workspace_id", "parent_id", "time_updated", "id"],
+    sql: "CREATE INDEX IF NOT EXISTS session_workspace_parent_time_idx ON session (workspace_id, parent_id, time_updated, id)",
+  },
+] as const
+
+function ensureForkSessionListIndexes(db: MigrationClient) {
+  if (!hasTable(db, "session")) return
+  const existing = new Set(columns(db, "session"))
+  for (const index of FORK_SESSION_LIST_INDEXES) {
+    if (!index.columns.every((column) => existing.has(column))) continue
+    db.run(index.sql)
+  }
+}
+
+/**
+ * Keep `migration` ledger aligned with drizzle journal names so dual ledgers
+ * do not drift (fork SQL folders like scheduled_tasks / FTS often land only in
+ * __drizzle_migrations). Never deletes rows; INSERT OR IGNORE only.
+ */
+function syncMigrationLedgerFromDrizzle(db: MigrationClient) {
+  if (!hasTable(db, "__drizzle_migrations")) return
+  db.run(`
+    INSERT OR IGNORE INTO migration (id, time_completed)
+    SELECT name, ${Date.now()}
+    FROM __drizzle_migrations
+    WHERE name IS NOT NULL
+  `)
+}
+
+/**
+ * Idempotent post-apply fork invariants. Safe on every open.
+ * Must never DELETE/TRUNCATE session, message, part, event, or session_message.
+ */
+function ensureForkInvariants(db: MigrationClient) {
+  ensureForkSessionListIndexes(db)
+  ensureProjectDirectory(db)
+  ensureCredential(db)
+}
+
+/**
+ * Upstream permission rewrite migrations. This fork keeps the project-scoped
+ * JSON blob (`project_id` PK + `data`). Completing these ids must NOT imply
+ * row-level (action/resource) schema. repairPermissionSchema reverts upstream
+ * shape if it ever appears on disk.
+ */
+function keepForkPermissionModel() {
+  // intentional no-op
+}
+
+/**
+ * Upstream destructive reset of derived v2 state. This fork treats those rows
+ * as potentially valuable historical data — never DELETE session/message/part/event.
+ */
+function keepForkV2ProjectionData() {
+  // intentional no-op — DO NOT add DELETE FROM session/message/part/event/session_message
+}
+
 const migrations: Migration[] = [
   {
     id: "20260511173437_session-metadata",
@@ -186,6 +306,24 @@ const migrations: Migration[] = [
           "UPDATE session SET path = REPLACE(path, char(92), '/') WHERE path IS NOT NULL AND instr(path, char(92)) > 0 AND (directory GLOB '[A-Za-z]:*' OR directory LIKE '//%')",
         )
       }
+    },
+  },
+  {
+    id: "20260601202201_amazing_prowler",
+    up() {
+      keepForkPermissionModel()
+    },
+  },
+  {
+    id: "20260602002951_lowly_union_jack",
+    up() {
+      keepForkPermissionModel()
+    },
+  },
+  {
+    id: "20260602182828_add_project_directories",
+    up(db) {
+      ensureProjectDirectory(db)
     },
   },
   {
@@ -233,6 +371,34 @@ const migrations: Migration[] = [
     },
   },
   {
+    id: "20260605042240_add_context_epoch_agent",
+    up(db) {
+      // Upstream briefly added agent fields then simplified. Final shape is
+      // ensureFinalSessionContextEpoch (no agent column on live/test DBs).
+      ensureFinalSessionContextEpoch(db)
+    },
+  },
+  {
+    id: "20260611035744_credential",
+    up(db) {
+      ensureCredential(db)
+    },
+  },
+  {
+    id: "20260611192811_lush_chimera",
+    up() {
+      // Upstream structural step with no residual delta vs fork live schema
+      // (permission stays fork-json-blob; project_directory/credential ensured
+      // by neighboring migrations). Mark complete without destructive work.
+    },
+  },
+  {
+    id: "20260612174303_project_dir_strategy",
+    up(db) {
+      ensureProjectDirectory(db)
+    },
+  },
+  {
     id: "20260622142730_simplify_session_context_epoch",
     up(db) {
       ensureFinalSessionContextEpoch(db)
@@ -241,9 +407,7 @@ const migrations: Migration[] = [
   {
     id: "20260622170816_reset_v2_session_state",
     up() {
-      // Upstream clears derived v2 state here. This fork still treats these rows
-      // as potentially valuable, so production migration marks the id complete
-      // without deleting canonical or projection data.
+      keepForkV2ProjectionData()
     },
   },
   {
@@ -256,13 +420,7 @@ const migrations: Migration[] = [
 ]
 
 function seedFromDrizzleJournal(db: MigrationClient) {
-  if (!hasTable(db, "__drizzle_migrations")) return
-  db.run(`
-    INSERT OR IGNORE INTO migration (id, time_completed)
-    SELECT name, ${Date.now()}
-    FROM __drizzle_migrations
-    WHERE name IS NOT NULL
-  `)
+  syncMigrationLedgerFromDrizzle(db)
 }
 
 function completed(db: MigrationClient) {
@@ -293,15 +451,27 @@ export function apply(db: MigrationClient, dbPath: string) {
   if (done.size === 0) {
     seedFromDrizzleJournal(db)
     done = completed(db)
+  } else {
+    // Dual-ledger honesty: fork SQL journals may exist only in drizzle.
+    syncMigrationLedgerFromDrizzle(db)
+    done = completed(db)
   }
 
   const pending = migrations.filter((migration) => !done.has(migration.id))
-  if (pending.length === 0) return
+  if (pending.length > 0) {
+    log.info("applying upstream migrations", {
+      path: dbPath,
+      count: pending.length,
+      migrations: pending.map((migration) => migration.id),
+    })
+    for (const migration of pending) runMigration(db, migration)
+  }
 
-  log.info("applying upstream migrations", {
+  // Always re-assert fork invariants (idempotent; no core-row deletes).
+  ensureForkInvariants(db)
+  log.info("upstream migration pass complete", {
     path: dbPath,
-    count: pending.length,
-    migrations: pending.map((migration) => migration.id),
+    pending: pending.length,
+    ledger: completed(db).size,
   })
-  for (const migration of pending) runMigration(db, migration)
 }

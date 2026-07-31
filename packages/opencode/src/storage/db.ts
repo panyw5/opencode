@@ -211,6 +211,11 @@ function repairSessionMessageSchema(db: Client) {
   }
 }
 
+/**
+ * Convert accidental upstream row-level permission (action/resource) back to
+ * the fork JSON-blob model (project_id + data). Ledger ids amazing_prowler /
+ * lowly_union_jack complete without changing structure on purpose.
+ */
 function repairPermissionSchema(db: Client) {
   const columns = rawAll(db, "PRAGMA table_info(permission)")
   if (columns.length === 0) return

@@ -129,7 +129,19 @@ describe("Database.Client upstream migration path", () => {
       const columns = new Map([
         [
           "session",
-          ["id", "project_id", "slug", "directory", "path", "title", "version", "time_created", "time_updated"],
+          [
+            "id",
+            "project_id",
+            "parent_id",
+            "workspace_id",
+            "slug",
+            "directory",
+            "path",
+            "title",
+            "version",
+            "time_created",
+            "time_updated",
+          ],
         ],
       ])
       const completed = new Set<string>()
@@ -145,11 +157,18 @@ describe("Database.Client upstream migration path", () => {
         const pragma = /^PRAGMA table_info\("([A-Za-z_][A-Za-z0-9_]*)"\)$/.exec(sql)
         if (pragma) return (columns.get(pragma[1]!) ?? []).map((name) => ({ name }))
 
+        // Post-apply invariant probes may issue extra SELECTs; treat as empty.
+        if (sql.startsWith("SELECT")) return []
+
         throw new Error(`Unexpected SQL: ${sql}`)
       }
       const db = {
         run(sql: string, ...params: unknown[]) {
           if (/VALUES \("/.test(sql)) throw new Error("Migration id was interpolated as a double-quoted literal")
+          // Phase 2: never allow destructive core-row deletes through the bridge.
+          if (/DELETE\s+FROM\s+(session|message|part|event|session_message)\b/i.test(sql)) {
+            throw new Error(`Forbidden destructive SQL in upstream migration: ${sql}`)
+          }
           runs.push({ sql, params })
           if (sql.startsWith("CREATE TABLE IF NOT EXISTS migration")) tables.add("migration")
           if (sql.includes("INSERT OR IGNORE INTO migration") && sql.includes("SELECT name,")) {
@@ -160,6 +179,8 @@ describe("Database.Client upstream migration path", () => {
           if (sql.startsWith("ALTER TABLE session ADD metadata")) columns.get("session")?.push("metadata")
           if (sql.includes("CREATE TABLE session_input")) tables.add("session_input")
           if (sql.includes("CREATE TABLE session_context_epoch")) tables.add("session_context_epoch")
+          if (sql.includes("CREATE TABLE credential")) tables.add("credential")
+          if (sql.includes("CREATE TABLE project_directory")) tables.add("project_directory")
           if (sql.startsWith("INSERT OR IGNORE INTO migration") && /VALUES \('[^']+', \d+\)/.test(sql)) {
             const id = /VALUES \('([^']+)'/.exec(sql)?.[1]
             expect(id).toEqual(expect.any(String))
@@ -181,6 +202,11 @@ describe("Database.Client upstream migration path", () => {
       expect(runs.some((run) => /VALUES \('[^']+', \d+\)/.test(run.sql))).toBe(true)
       expect(completed).toContain("20260511173437_session-metadata")
       expect(completed).toContain("20260622202450_simplify_session_input")
+      expect(completed).toContain("20260622170816_reset_v2_session_state")
+      expect(runs.some((run) => /CREATE INDEX IF NOT EXISTS session_project_parent_time_idx/.test(run.sql))).toBe(
+        true,
+      )
+      expect(runs.some((run) => /DELETE\s+FROM\s+session\b/i.test(run.sql))).toBe(false)
     }),
   )
 
@@ -217,6 +243,7 @@ describe("Database.Client upstream migration path", () => {
             id text PRIMARY KEY,
             project_id text NOT NULL,
             parent_id text,
+            workspace_id text,
             slug text NOT NULL,
             directory text NOT NULL,
             path text,
@@ -296,6 +323,15 @@ describe("Database.Client upstream migration path", () => {
         const contextColumns = Database.Client().$client.query("PRAGMA table_info(session_context_epoch)").all() as {
           name: string
         }[]
+        const projectDirectoryColumns = Database.Client()
+          .$client.query("PRAGMA table_info(project_directory)")
+          .all() as { name: string }[]
+        const credentialColumns = Database.Client().$client.query("PRAGMA table_info(credential)").all() as {
+          name: string
+        }[]
+        const permissionColumns = Database.Client().$client.query("PRAGMA table_info(permission)").all() as {
+          name: string
+        }[]
         const counts = Database.Client()
           .$client.query(
             `
@@ -313,9 +349,15 @@ describe("Database.Client upstream migration path", () => {
           )
           .all()[0] as { worktree: string; directory: string; path: string }
 
-        expect(rows.map((row) => row.id)).toContain("20260211171708_add_project_commands")
-        expect(rows.map((row) => row.id)).toContain("20260511173437_session-metadata")
-        expect(rows.map((row) => row.id)).toContain("20260601010001_normalize_storage_paths")
+        const migrationIds = rows.map((row) => row.id)
+        expect(migrationIds).toContain("20260211171708_add_project_commands")
+        expect(migrationIds).toContain("20260511173437_session-metadata")
+        expect(migrationIds).toContain("20260601010001_normalize_storage_paths")
+        expect(migrationIds).toContain("20260601202201_amazing_prowler")
+        expect(migrationIds).toContain("20260602002951_lowly_union_jack")
+        expect(migrationIds).toContain("20260602182828_add_project_directories")
+        expect(migrationIds).toContain("20260611035744_credential")
+        expect(migrationIds).toContain("20260612174303_project_dir_strategy")
         expect(sessionColumns.map((column) => column.name)).toContain("metadata")
         expect(sessionInputColumns.map((column) => column.name)).toEqual([
           "id",
@@ -332,6 +374,27 @@ describe("Database.Client upstream migration path", () => {
           "snapshot",
           "baseline_seq",
         ])
+        expect(projectDirectoryColumns.map((column) => column.name)).toEqual([
+          "project_id",
+          "directory",
+          "type",
+          "strategy",
+          "time_created",
+        ])
+        expect(credentialColumns.map((column) => column.name)).toEqual([
+          "id",
+          "integration_id",
+          "label",
+          "value",
+          "connector_id",
+          "method_id",
+          "active",
+          "time_created",
+          "time_updated",
+        ])
+        // Permission table is not created by upstream ensures (fork SQL migrations own it).
+        // When present it must stay json-blob; this fixture has no permission table.
+        expect(permissionColumns.map((column) => column.name)).toEqual([])
         expect(counts).toEqual({
           session_count: 1,
           message_count: 1,
@@ -343,6 +406,104 @@ describe("Database.Client upstream migration path", () => {
           directory: "C:/Users/Ada/repo",
           path: "src/index.ts",
         })
+
+        const listIndexes = Database.Client()
+          .$client.query(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND name LIKE 'session_%parent_time_idx' ORDER BY name",
+          )
+          .all() as { name: string }[]
+        expect(listIndexes.map((row) => row.name)).toEqual([
+          "session_project_directory_parent_time_idx",
+          "session_project_parent_time_idx",
+          "session_project_path_parent_time_idx",
+          "session_workspace_parent_time_idx",
+        ])
+
+        // Dual-ledger: drizzle-only name is mirrored into migration table.
+        expect(migrationIds).toContain("20260211171708_add_project_commands")
+
+        // reset_v2 must not wipe canonical rows
+        expect(counts).toEqual({
+          session_count: 1,
+          message_count: 1,
+          part_count: 1,
+          todo_count: 1,
+        })
+      } finally {
+        Database.close()
+        Flag.OPENCODE_DB = previousDb
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }),
+  )
+
+  it.effect("syncs drizzle-only ledger names into migration without destroying rows", () =>
+    Effect.sync(() => {
+      const dir = mkdtempSync(path.join(tmpdir(), "opencode-ledger-sync-"))
+      const dbPath = path.join(dir, "opencode.db")
+      const previousDb = Flag.OPENCODE_DB
+
+      try {
+        const sqlite = new BunDatabase(dbPath, { create: true })
+        sqlite.run(`
+          CREATE TABLE __drizzle_migrations (
+            id INTEGER PRIMARY KEY,
+            hash text NOT NULL,
+            created_at numeric,
+            name text,
+            applied_at text
+          )
+        `)
+        sqlite.run(`
+          INSERT INTO __drizzle_migrations (hash, created_at, name)
+          VALUES
+            ('h1', 1, '20260528143649_session_list_indexes'),
+            ('h2', 2, '20260721011749_scheduled_tasks'),
+            ('h3', 3, '20260722141617_session_content_search')
+        `)
+        sqlite.run(`
+          CREATE TABLE session (
+            id text PRIMARY KEY,
+            project_id text,
+            parent_id text,
+            directory text,
+            path text,
+            workspace_id text,
+            time_updated integer
+          )
+        `)
+        sqlite.run(`
+          CREATE TABLE migration (
+            id TEXT PRIMARY KEY,
+            time_completed INTEGER NOT NULL
+          )
+        `)
+        // Pretend upstream path already completed one id; drizzle has more.
+        sqlite.run(`INSERT INTO migration (id, time_completed) VALUES ('20260528143649_session_list_indexes', 1)`)
+        sqlite.run("INSERT INTO session (id, project_id, directory, time_updated) VALUES ('s1', 'p', '/tmp', 1)")
+        sqlite.close()
+
+        Flag.OPENCODE_DB = dbPath
+        Database.Client({ disableChannelDb: true, skipMigrations: true })
+
+        const ids = Database.Client()
+          .$client.query("SELECT id FROM migration ORDER BY id")
+          .all()
+          .map((row: { id: string }) => row.id)
+        const sessionCount = (
+          Database.Client().$client.query("SELECT count(*) AS c FROM session").all()[0] as { c: number }
+        ).c
+        const indexes = Database.Client()
+          .$client.query(
+            "SELECT name FROM sqlite_master WHERE type='index' AND name='session_project_parent_time_idx'",
+          )
+          .all() as { name: string }[]
+
+        expect(ids).toContain("20260528143649_session_list_indexes")
+        expect(ids).toContain("20260721011749_scheduled_tasks")
+        expect(ids).toContain("20260722141617_session_content_search")
+        expect(sessionCount).toBe(1)
+        expect(indexes).toHaveLength(1)
       } finally {
         Database.close()
         Flag.OPENCODE_DB = previousDb

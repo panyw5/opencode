@@ -1,5 +1,6 @@
 export { AccountTable, AccountStateTable, ControlAccountTable } from "../account/account.sql"
-export { ProjectTable } from "../project/project.sql"
+export { ProjectTable, ProjectDirectoryTable } from "../project/project.sql"
+export { CredentialTable } from "../credential/credential.sql"
 export {
   SessionTable,
   MessageTable,

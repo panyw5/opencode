@@ -187,6 +187,12 @@ export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
   baseline_seq: integer().notNull(),
 })
 
+/**
+ * Fork permission model: one row per project, `data` JSON Ruleset.
+ * Upstream rewrote to row-level (action/resource); this fork keeps the blob.
+ * Ledger ids amazing_prowler / lowly_union_jack are intentional no-ops here;
+ * `repairPermissionSchema` reverts any accidental upstream shape on open.
+ */
 export const PermissionTable = sqliteTable("permission", {
   project_id: text()
     .primaryKey()
