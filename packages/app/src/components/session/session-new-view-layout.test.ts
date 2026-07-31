@@ -3,7 +3,7 @@ import { sessionNewMeta, sessionNewPane } from "./session-new-view-layout"
 
 describe("session new layout", () => {
   test("keeps regular projects aligned with session content width", () => {
-    expect(sessionNewMeta(false)).toBe("md:max-w-200 md:mx-auto 2xl:max-w-[1000px]")
+    expect(sessionNewMeta(false)).toBe("md:max-w-[var(--session-content-width)] md:mx-auto")
   })
 
   test("keeps extra agents on wide layout", () => {

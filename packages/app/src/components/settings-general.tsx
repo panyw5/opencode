@@ -632,7 +632,11 @@ export const SettingsGeneral: Component = () => {
                 const width = settings.appearance.contentWidth()
                 const opts = [200, 250, 300, 350, 400]
                 const idx = opts.indexOf(width)
-                if (idx > 0) settings.appearance.setContentWidth(opts[idx - 1])
+                if (idx > 0) {
+                  const next = opts[idx - 1]
+                  console.debug(`[settings] contentWidth decrease from=${width} to=${next}`)
+                  settings.appearance.setContentWidth(next)
+                }
               }}
               disabled={settings.appearance.contentWidth() <= 200}
               aria-label={language.t("settings.general.row.contentWidth.decrease")}
@@ -653,7 +657,11 @@ export const SettingsGeneral: Component = () => {
                 const width = settings.appearance.contentWidth()
                 const opts = [200, 250, 300, 350, 400]
                 const idx = opts.indexOf(width)
-                if (idx >= 0 && idx < opts.length - 1) settings.appearance.setContentWidth(opts[idx + 1])
+                if (idx >= 0 && idx < opts.length - 1) {
+                  const next = opts[idx + 1]
+                  console.debug(`[settings] contentWidth increase from=${width} to=${next}`)
+                  settings.appearance.setContentWidth(next)
+                }
               }}
               disabled={settings.appearance.contentWidth() >= 400}
               aria-label={language.t("settings.general.row.contentWidth.increase")}

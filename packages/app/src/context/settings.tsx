@@ -182,7 +182,9 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       // Apply 0.8 scaling factor to reduce default width (1200px -> 960px)
       const effectiveWidth = width * 0.8
       // Convert to rem units (width units are in 0.25rem spacing scale)
-      document.documentElement.style.setProperty("--session-content-width", `${effectiveWidth * 0.25}rem`)
+      const cssWidth = `${effectiveWidth * 0.25}rem`
+      document.documentElement.style.setProperty("--session-content-width", cssWidth)
+      console.debug(`[settings] applyContentWidth setting=${width} css=${cssWidth}`)
     })
 
     return {
@@ -257,6 +259,8 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         },
         contentWidth: createMemo(() => store.appearance?.contentWidth ?? defaultSettings.appearance.contentWidth),
         setContentWidth(value: number) {
+          const previous = store.appearance?.contentWidth ?? defaultSettings.appearance.contentWidth
+          console.debug(`[settings] setContentWidth previous=${previous} next=${value}`)
           setStore("appearance", "contentWidth", value)
         },
       },

@@ -531,7 +531,7 @@ export function MessageTimeline(props: {
         data-timeline-row={row()._tag}
         classList={{
           "min-w-0 w-full max-w-full": true,
-          "md:max-w-200 2xl:max-w-[1000px] md:mx-auto": props.centered,
+          "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,
           "pt-3": previousAssistantPart(),
         }}
       >

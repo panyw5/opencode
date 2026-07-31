@@ -827,7 +827,7 @@ export function SessionComposerRegion(props: {
       <div
         classList={{
           "w-full px-3 pointer-events-auto": true,
-          "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": props.centered,
+          "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,
         }}
       >
         <ComposerDockExit active={!!props.state.questionRequest()}>

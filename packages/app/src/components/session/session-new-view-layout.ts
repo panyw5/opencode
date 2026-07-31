@@ -8,5 +8,5 @@ export function sessionNewPane(width: number) {
 
 export function sessionNewMeta(agent: boolean) {
   if (agent) return ""
-  return "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]"
+  return "md:max-w-[var(--session-content-width)] md:mx-auto"
 }
