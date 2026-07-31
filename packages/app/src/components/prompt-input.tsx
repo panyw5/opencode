@@ -2156,7 +2156,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         data-action="prompt-expand"
                         type="button"
                         icon="expand-corners"
-                        iconSize="normal"
+                        iconSize="medium"
                         variant="ghost"
                         class="size-9 rounded-full"
                         style={buttons()}
