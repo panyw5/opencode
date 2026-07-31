@@ -5,7 +5,9 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { PromptInput } from "@/components/prompt-input"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
@@ -695,14 +697,27 @@ export function SessionComposerRegion(props: {
     if (platform.platform !== "desktop") return undefined
     return props.subagentNavigation
   })
+  const jumpToLatestVisible = createMemo(
+    () => !!props.onScrollToBottom && !!props.scrollState?.overflow && !props.scrollState.bottom,
+  )
   const showPromptToolbar = createMemo(
     () =>
       (childAgentMenu()?.entries.length ?? 0) > 0 ||
       (platform.platform === "desktop" && backgroundShells().length > 0) ||
       !!userMessageMenu() ||
       !!visibleSubagentNavigation() ||
-      skippedQuestionCount() > 0,
+      skippedQuestionCount() > 0 ||
+      jumpToLatestVisible(),
   )
+
+  createEffect(() => {
+    console.debug("[composer-scroll-to-latest] state", {
+      visible: jumpToLatestVisible(),
+      hasHandler: !!props.onScrollToBottom,
+      overflow: !!props.scrollState?.overflow,
+      atBottom: !!props.scrollState?.bottom,
+    })
+  })
 
   const refreshBackgroundShells = () => {
     const sessionID = route.params.id
@@ -862,11 +877,34 @@ export function SessionComposerRegion(props: {
             <Show when={showPromptToolbar()}>
               <div
                 classList={{
-                  "mb-2 min-h-7 items-center gap-2": true,
+                  "relative mb-2 min-h-7 items-center gap-2": true,
                   "grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]": !!visibleSubagentNavigation(),
                   flex: !visibleSubagentNavigation(),
                 }}
               >
+                <Show when={jumpToLatestVisible()}>
+                  <div data-component="composer-scroll-to-latest" class="absolute left-1/2 bottom-full mb-3 -translate-x-1/2 z-20">
+                    <Tooltip placement="top" value={language.t("session.messages.jumpToLatest")}>
+                      <IconButton
+                        type="button"
+                        icon="arrow-down-to-line"
+                        variant="primary"
+                        size="normal"
+                        iconSize="medium"
+                        class="size-10 rounded-full shadow-md opacity-70 hover:opacity-100 transition-opacity [&_svg_path]:stroke-[2px]"
+                        onClick={() => {
+                          console.debug("[composer-scroll-to-latest] click", {
+                            visible: jumpToLatestVisible(),
+                            overflow: !!props.scrollState?.overflow,
+                            atBottom: !!props.scrollState?.bottom,
+                          })
+                          props.onScrollToBottom()
+                        }}
+                        aria-label={language.t("session.messages.jumpToLatest")}
+                      />
+                    </Tooltip>
+                  </div>
+                </Show>
                 <div
                   classList={{
                     "min-w-0 flex items-center gap-2": true,

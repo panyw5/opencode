@@ -1989,22 +1989,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         t={(key) => language.t(key as Parameters<typeof language.t>[0])}
       />
       <Show when={!read()}>
-        <Show when={props.onScrollToBottom && props.scrollState && props.scrollState.overflow && !props.scrollState.bottom}>
-          <div class="absolute left-1/2 -translate-x-1/2 -top-5 z-20">
-            <Tooltip {...hover} placement="top" value={language.t("session.messages.jumpToLatest")}>
-              <IconButton
-                type="button"
-                icon="arrow-down-to-line"
-                variant="primary"
-                size="normal"
-                iconSize="medium"
-                class="size-10 rounded-full shadow-md opacity-70 hover:opacity-100 transition-opacity [&_svg_path]:stroke-[2px]"
-                onClick={props.onScrollToBottom}
-                aria-label={language.t("session.messages.jumpToLatest")}
-              />
-            </Tooltip>
-          </div>
-        </Show>
         <DockShellForm
           onSubmit={handleSubmit}
           data-slot="prompt-shell"
