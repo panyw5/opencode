@@ -10,6 +10,8 @@ export const permissionAllowOnceSelector = `${permissionDockSelector} [data-slot
 export const sessionTodoDockSelector = '[data-component="session-todo-dock"]'
 export const sessionTodoFloatSelector = '[data-component="session-todo-float"]'
 export const sessionTodoFloatToggleSelector = '[data-component="session-todo-float-toggle"]'
+export const sessionStatusFloatSelector = '[data-component="session-status-float"]'
+export const sessionStatusFloatPanelSelector = '[data-slot="session-status-float-panel"]'
 export const sessionTodoToggleSelector = '[data-action="session-todo-toggle"]'
 export const sessionTodoToggleButtonSelector = '[data-action="session-todo-toggle-button"]'
 export const sessionTodoListSelector = '[data-slot="session-todo-list"]'

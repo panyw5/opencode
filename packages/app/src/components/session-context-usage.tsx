@@ -27,7 +27,7 @@ const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
 }
 
 interface SessionContextUsageProps {
-  variant?: "button" | "indicator"
+  variant?: "button" | "indicator" | "panel"
   placement?: TooltipProps["placement"]
 }
 
@@ -177,13 +177,15 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     { label: "context.stats.totalCost", value: cost() },
   ])
 
-  const popoverContent = () => (
+  const details = () => (
     <div class="flex flex-col gap-4">
       <div class="grid grid-cols-2 gap-x-5 gap-y-2.5">
         <For each={stats()}>
           {(stat) => (
             <>
-              <div class="text-13-regular text-text-weak">{language.t(stat.label as Parameters<typeof language.t>[0])}</div>
+              <div class="text-13-regular text-text-weak">
+                {language.t(stat.label as Parameters<typeof language.t>[0])}
+              </div>
               <div class="text-13-medium text-text-strong text-right truncate">{stat.value}</div>
             </>
           )}
@@ -225,6 +227,16 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   return (
     <Show when={params.id}>
       <Switch>
+        <Match when={variant() === "panel"}>
+          <div data-component="session-context-usage-panel" class="px-3 py-3">
+            <div class="flex items-center gap-2 pb-3">
+              <span class="text-13-medium text-text-strong">{language.t("session.status.contextUsage")}</span>
+              {circle()}
+              <span class="ml-auto text-13-medium text-text-weak tabular-nums">{contextUsageLabel()}</span>
+            </div>
+            {details()}
+          </div>
+        </Match>
         <Match when={variant() === "indicator"}>
           <Tooltip value={tooltipValue()} placement={props.placement ?? "top"}>
             {circle()}
@@ -242,7 +254,13 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
             }}
             trigger={buttonTrigger()}
             class="[&_[data-slot=popover-body]]:p-0 w-[min(380px,calc(100vw-40px))] max-w-[calc(100vw-40px)] bg-transparent border-0 shadow-none rounded-xl"
-            style={{ "box-shadow": "none", "background-color": "transparent", "border": "none", "backdrop-filter": "none", "-webkit-backdrop-filter": "none" }}
+            style={{
+              "box-shadow": "none",
+              "background-color": "transparent",
+              border: "none",
+              "backdrop-filter": "none",
+              "-webkit-backdrop-filter": "none",
+            }}
             gutter={4}
             placement={props.placement === "bottom" ? "bottom-end" : "top-end"}
           >
@@ -263,7 +281,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
                 {circle()}
                 <span class="text-14-medium text-text-strong">{language.t("context.usage.view")}</span>
               </div>
-              <div class="px-4 py-4">{popoverContent()}</div>
+              <div class="px-4 py-4">{details()}</div>
             </div>
           </Popover>
         </Match>

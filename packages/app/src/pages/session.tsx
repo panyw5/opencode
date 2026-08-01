@@ -49,7 +49,12 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
-import { createSessionComposerState, SessionComposerRegion, SessionTodoFloat } from "@/pages/session/composer"
+import {
+  createSessionComposerState,
+  SessionComposerRegion,
+  SessionStatusFloat,
+  SessionTodoFloat,
+} from "@/pages/session/composer"
 import {
   clipMessages,
   createOpenReviewFile,
@@ -77,6 +82,7 @@ import {
   type SessionLayoutMetrics,
 } from "@/pages/session/session-layout-debug"
 import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/pages/session/session-child-agents"
+import { collectSessionActiveSkills } from "@/pages/session/session-active-skills"
 import { Identifier } from "@/utils/id"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
@@ -396,6 +402,12 @@ export default function Page() {
       sessions: childAgentSessions(),
       messagesBySession: sync.data.message,
       statuses: sync.data.session_status,
+    }),
+  )
+  const activeSkills = createMemo(() =>
+    collectSessionActiveSkills({
+      messages: messages(),
+      parts: sync.data.part,
     }),
   )
   const messagesReady = createMemo(() => {
@@ -2464,13 +2476,16 @@ export default function Page() {
                 </Match>
               </Switch>
             </div>
-            <Show when={platform.platform === "desktop" && params.id && composer.todos().length > 0}>
-              <SessionTodoFloat
-                sessionID={params.id}
-                todos={composer.todos()}
-                collapseLabel={language.t("session.todo.collapse")}
-                expandLabel={language.t("session.todo.expand")}
-              />
+            <Show when={platform.platform === "desktop" && params.id}>
+              <SessionStatusFloat skills={activeSkills()} />
+              <Show when={composer.todos().length > 0}>
+                <SessionTodoFloat
+                  sessionID={params.id}
+                  todos={composer.todos()}
+                  collapseLabel={language.t("session.todo.collapse")}
+                  expandLabel={language.t("session.todo.expand")}
+                />
+              </Show>
             </Show>
           </div>
 

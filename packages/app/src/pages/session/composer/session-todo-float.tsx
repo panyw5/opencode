@@ -47,7 +47,7 @@ export function SessionTodoFloat(props: {
   return (
     <div
       data-component="session-todo-float"
-      class="absolute top-3 right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto"
+      class="absolute top-14 right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto"
     >
       <button
         type="button"
