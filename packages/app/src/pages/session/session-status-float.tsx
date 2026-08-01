@@ -1,13 +1,84 @@
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
-import { For, Show, createSignal } from "solid-js"
+import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
+import type { Part } from "@opencode-ai/sdk/v2/client"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useLanguage } from "@/context/language"
+import { useSDK } from "@/context/sdk"
+import {
+  collectSessionFileChanges,
+  collectSessionReportedFileChanges,
+  type SessionFileChange,
+} from "./session-file-changes"
 
-export function SessionStatusFloat(props: { skills: string[] }) {
+const historyPageSize = 100
+
+export function SessionStatusFloat(props: {
+  sessionID?: string
+  skills: string[]
+  diffs: SnapshotFileDiff[]
+  childSessionIDs: string[]
+}) {
   const language = useLanguage()
+  const sdk = useSDK()
   const [shown, setShown] = createSignal(false)
+  const [childDiffs, setChildDiffs] = createSignal<SnapshotFileDiff[]>([])
+  const [reportedFileChanges, setReportedFileChanges] = createSignal<SessionFileChange[]>([])
+  const fileChanges = createMemo(() =>
+    collectSessionFileChanges([...props.diffs, ...childDiffs()], reportedFileChanges(), sdk.directory),
+  )
+  const hasFileChanges = createMemo(() => Object.values(fileChanges()).some((files) => files.length > 0))
+
+  createEffect(() => {
+    if (!shown()) return
+    if (!props.sessionID) return
+    const sessionIDs = [...new Set([props.sessionID, ...props.childSessionIDs])]
+    let cancelled = false
+    setChildDiffs([])
+    setReportedFileChanges([])
+    console.info("[session-status] loading file change history", { sessionIDs })
+
+    void Promise.all(
+      sessionIDs.map(async (sessionID) => {
+        const [diff, messages] = await Promise.all([
+          sdk.client.session.diff({ sessionID }),
+          loadAllMessages(sdk.client, sessionID),
+        ])
+        const parts = messages
+          .filter((message) => message.info.role === "assistant")
+          .flatMap((message) => message.parts as Part[])
+        console.info("[session-status] loaded file change history", {
+          sessionID,
+          diffs: diff.data?.length ?? 0,
+          messages: messages.length,
+          reported: parts.length,
+        })
+        return { sessionID, diffs: diff.data ?? [], reported: collectSessionReportedFileChanges(parts) }
+      }),
+    )
+      .then((results) => {
+        if (cancelled) return
+        setChildDiffs(
+          results.filter((result) => result.sessionID !== props.sessionID).flatMap((result) => result.diffs),
+        )
+        setReportedFileChanges(results.flatMap((result) => result.reported))
+        console.info("[session-status] merged file change history", {
+          sessionIDs,
+          diffs: results.reduce((count, result) => count + result.diffs.length, 0),
+          reported: results.reduce((count, result) => count + result.reported.length, 0),
+        })
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.warn("[session-status] failed to load file change history", { sessionIDs, error })
+      })
+
+    onCleanup(() => {
+      cancelled = true
+    })
+  })
 
   return (
     <div
@@ -41,7 +112,7 @@ export function SessionStatusFloat(props: { skills: string[] }) {
       >
         <div data-slot="session-status-float-panel" class="flex max-h-[min(960px,calc(100dvh-24px))] flex-col">
           <div class="flex items-center justify-between px-3 py-2 border-b border-border-weaker-base">
-            <span class="text-13-medium text-text-strong">{language.t("session.status.skills")}</span>
+            <span class="text-13-medium text-text-strong">{language.t("session.status.title")}</span>
             <IconButton
               data-action="session-status-float-close"
               icon="close"
@@ -53,6 +124,7 @@ export function SessionStatusFloat(props: { skills: string[] }) {
           </div>
           <div class="min-h-0 overflow-y-auto no-scrollbar">
             <div class="border-b border-border-weaker-base py-2">
+              <h3 class="px-3 py-1 text-13-medium text-text-strong">{language.t("session.status.skills")}</h3>
               <Show
                 when={props.skills.length > 0}
                 fallback={<p class="px-3 py-4 text-13-regular text-text-weak">{language.t("session.status.empty")}</p>}
@@ -69,9 +141,48 @@ export function SessionStatusFloat(props: { skills: string[] }) {
               </Show>
             </div>
             <SessionContextUsage variant="panel" />
+            <Show when={hasFileChanges()}>
+              <div data-slot="session-status-file-changes" class="border-b border-border-weaker-base px-3 py-3">
+                <div class="flex flex-col gap-3">
+                  <FileChangeList title={language.t("session.status.files.added")} files={fileChanges().added} />
+                  <FileChangeList title={language.t("session.status.files.modified")} files={fileChanges().modified} />
+                  <FileChangeList title={language.t("session.status.files.deleted")} files={fileChanges().deleted} />
+                </div>
+              </div>
+            </Show>
           </div>
         </div>
       </Popover>
     </div>
+  )
+}
+
+async function loadAllMessages(client: ReturnType<typeof useSDK>["client"], sessionID: string) {
+  const result: Array<{ info: { role: string }; parts: unknown[] }> = []
+  let before: string | undefined
+  do {
+    const response = await client.session.messages({ sessionID, limit: historyPageSize, before })
+    result.push(...((response.data ?? []) as Array<{ info: { role: string }; parts: unknown[] }>))
+    before = response.response.headers.get("x-next-cursor") ?? undefined
+  } while (before)
+  return result
+}
+
+function FileChangeList(props: { title: string; files: string[] }) {
+  return (
+    <Show when={props.files.length > 0}>
+      <section>
+        <h3 class="mb-1.5 text-13-medium text-text-strong">{props.title}</h3>
+        <ul class="space-y-1">
+          <For each={props.files}>
+            {(file) => (
+              <li class="rounded-lg border border-border-weaker-base bg-surface-base px-2.5 py-1.5 text-12-regular text-text-strong shadow-xs-border-base">
+                <code class="block break-all font-mono">{file}</code>
+              </li>
+            )}
+          </For>
+        </ul>
+      </section>
+    </Show>
   )
 }

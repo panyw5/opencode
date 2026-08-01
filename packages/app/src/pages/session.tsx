@@ -2488,7 +2488,12 @@ export default function Page() {
               </Switch>
             </div>
             <Show when={platform.platform === "desktop" && params.id}>
-              <SessionStatusFloat skills={activeSkills()} />
+              <SessionStatusFloat
+                sessionID={params.id}
+                skills={activeSkills()}
+                diffs={diffs()}
+                childSessionIDs={apiChildSessions().map((session) => session.id)}
+              />
               <Show when={composer.todos().length > 0}>
                 <SessionTodoFloat
                   sessionID={params.id}
