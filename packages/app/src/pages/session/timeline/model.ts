@@ -1,4 +1,4 @@
-import type { Message, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, Message, Part, UserMessage } from "@opencode-ai/sdk/v2"
 import { createMemo, createResource, onCleanup, untrack, type Accessor } from "solid-js"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { useSDK } from "@/context/sdk"
@@ -6,6 +6,21 @@ import { useSync } from "@/context/sync"
 import { same } from "@/utils/same"
 
 const emptyUserMessages: UserMessage[] = []
+
+export function assistantCopySummary(messages: AssistantMessage[], parts: (messageID: string) => Part[]) {
+  let partID: string | undefined
+  const text: string[] = []
+
+  for (const message of messages) {
+    for (const part of parts(message.id)) {
+      if (part.type !== "text" || !part.text?.trim()) continue
+      partID = part.id
+      text.push(part.text)
+    }
+  }
+
+  return { partID, text: text.join("\n\n") }
+}
 
 export function createTimelineModel(input: {
   sessionID: Accessor<string | undefined>

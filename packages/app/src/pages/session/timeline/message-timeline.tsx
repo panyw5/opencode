@@ -56,6 +56,7 @@ import {
   timelineMeasurementsMatchWidth,
   virtualRowOverflow,
 } from "./measure"
+import { assistantCopySummary } from "./model"
 import { createTimelineProjection } from "./projection"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
 
@@ -490,15 +491,6 @@ export function MessageTimeline(props: {
   }
 
   const workingTurn = (userMessageID: string) => sessionStatus().type !== "idle" && activeMessageID() === userMessageID
-  const assistantCopyPartID = (userMessageID: string) => {
-    if (workingTurn(userMessageID)) return null
-    const messages = assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages
-    for (const message of messages.toReversed()) {
-      for (const part of getMessageParts(message.id).toReversed()) {
-        if (part.type === "text" && part.text?.trim()) return part.id
-      }
-    }
-  }
   const turnDurationMs = (userMessageID: string) => {
     const user = messageByID().get(userMessageID)
     if (!user || user.role !== "user") return
@@ -616,6 +608,11 @@ export function MessageTimeline(props: {
       }
       case "AssistantPart": {
         const item = row as Accessor<TimelineRowByTag<"AssistantPart">>
+        const assistantCopy = createMemo(() => {
+          const userMessageID = item().userMessageID
+          if (workingTurn(userMessageID)) return { partID: null, text: "" }
+          return assistantCopySummary(assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages, getMessageParts)
+        })
         const message = createMemo(() => {
           const group = item().group
           return group.type === "part" ? messageByID().get(group.ref.messageID) : undefined
@@ -652,7 +649,8 @@ export function MessageTimeline(props: {
                             message={message()}
                             defaultOpen={defaultOpen(part())}
                             onBackgroundShell={props.onBackgroundShell}
-                            showAssistantCopyPartID={assistantCopyPartID(item().userMessageID)}
+                            showAssistantCopyPartID={assistantCopy().partID}
+                            assistantCopyText={assistantCopy().text}
                             turnDurationMs={turnDurationMs(item().userMessageID)}
                             markdownViewport={listRoot()}
                             markdownHighlight="defer"

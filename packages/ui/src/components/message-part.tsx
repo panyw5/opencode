@@ -1981,6 +1981,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const handleCopy = async () => {
     const content = props.assistantCopyText?.trim() ? props.assistantCopyText : displayText()
     if (!content) return
+    console.debug(`[assistant-copy] part=${part.id} chars=${content.length} turn=${props.assistantCopyText?.trim() ? "full" : "part"}`)
     await navigator.clipboard.writeText(content)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)

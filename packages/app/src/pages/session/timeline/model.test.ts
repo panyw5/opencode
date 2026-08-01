@@ -1,11 +1,27 @@
 import { describe, expect, test } from "bun:test"
-import type { AssistantMessage, Message, UserMessage } from "@opencode-ai/sdk/v2"
-import { loadOlderTimeline, selectUserMessages, selectVisibleUserMessages } from "./model"
+import type { AssistantMessage, Message, Part, UserMessage } from "@opencode-ai/sdk/v2"
+import { assistantCopySummary, loadOlderTimeline, selectUserMessages, selectVisibleUserMessages } from "./model"
 
 const user = (id: string) => ({ id, role: "user" }) as UserMessage
 const assistant = (id: string) => ({ id, role: "assistant" }) as AssistantMessage
+const text = (id: string, messageID: string, value: string) => ({ id, messageID, type: "text", text: value }) as Part
+const tool = (id: string, messageID: string) => ({ id, messageID, type: "tool" }) as Part
 
 describe("timeline model", () => {
+  test("copies all assistant text across tool calls from the tail copy button", () => {
+    const first = assistant("msg_assistant_1")
+    const second = assistant("msg_assistant_2")
+    const parts: Record<string, Part[]> = {
+      [first.id]: [text("part_before", first.id, "Before tool"), tool("part_tool", first.id)],
+      [second.id]: [text("part_after", second.id, "After tool")],
+    }
+
+    expect(assistantCopySummary([first, second], (messageID) => parts[messageID] ?? [])).toEqual({
+      partID: "part_after",
+      text: "Before tool\n\nAfter tool",
+    })
+  })
+
   test("selects users and applies the revert boundary", () => {
     const messages: Message[] = [user("msg_1"), assistant("msg_2"), user("msg_3"), user("msg_5")]
     const users = selectUserMessages(messages)
