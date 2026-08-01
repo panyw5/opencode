@@ -57,7 +57,7 @@ Flag.OPENCODE_DB = target
 
 const storage = await import("../../src/storage/db.ts")
 storage.Client.reset()
-const client = storage.Client({ disableChannelDb: true })
+const client = storage.Client({ disableChannelDb: true, skipMigrations: false })
 
 const postCounts = client
   .$client.query(
@@ -94,7 +94,7 @@ const forkIndexes = client
   `,
   )
   .all()
-  .map((row: { name: string }) => row.name)
+  .map((row) => (row as { name: string }).name)
 
 const tables = {
   project_directory: !!(
@@ -122,7 +122,7 @@ const tables = {
 const permissionCols = client
   .$client.query("PRAGMA table_info(permission)")
   .all()
-  .map((row: { name: string }) => row.name)
+  .map((row) => (row as { name: string }).name)
 
 storage.close()
 
