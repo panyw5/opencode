@@ -1,6 +1,16 @@
 import { test, expect } from "../fixtures"
 import { promptSelector } from "../selectors"
 
+test("prompt editor starts at three input lines without extra shell space", async ({ page, gotoSession }) => {
+  await gotoSession()
+
+  const prompt = page.locator(promptSelector)
+  const scroll = page.locator('[data-slot="prompt-editor-scroll"]')
+
+  await expect(prompt).toHaveCSS("min-height", "96px")
+  await expect(scroll).toHaveJSProperty("clientHeight", 96)
+})
+
 test("shift+enter inserts a newline without submitting", async ({ page, gotoSession }) => {
   await gotoSession()
 

@@ -2044,7 +2044,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             }}
           >
             <div
-              class="relative min-h-[144px] max-h-[280px] overflow-y-auto no-scrollbar"
+              data-slot="prompt-editor-scroll"
+              class="relative max-h-[280px] overflow-y-auto no-scrollbar"
               ref={(el) => (scrollRef = el)}
             >
               <div
@@ -2068,7 +2069,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 onKeyDown={handleKeyDown}
                 classList={{
                   "select-text": true,
-                  "w-full px-4 pt-3 pb-3 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
+                  "w-full min-h-[96px] px-4 pt-3 pb-3 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
                   "[&_[data-type=file]]:text-syntax-property": true,
                   "[&_[data-type=agent]]:text-syntax-type": true,
                   "font-mono!": true,
