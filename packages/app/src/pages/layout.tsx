@@ -760,7 +760,6 @@ export default function Layout(props: ParentProps) {
     ),
   )
 
-  const railCurrentProject = createMemo(() => (onConfigRoute() ? undefined : currentProject()?.root))
   const currentProjectDirs = createMemo(() => {
     const project = currentProject()
     if (!project) return [] as string[]
@@ -1360,10 +1359,14 @@ export default function Layout(props: ParentProps) {
         keybind: "mod+t",
         disabled: layout.projects.list().length === 0 && enabledExtraAgents(server.list).length === 0,
         onSelect: () => {
-          dialog.show(() => <DialogSwitchProject onSelect={navigateToProject} current={() => currentProject()?.entry} />, undefined, {
-            modal: false,
-            preventScroll: false,
-          })
+          dialog.show(
+            () => <DialogSwitchProject onSelect={navigateToProject} current={() => currentProject()?.entry} />,
+            undefined,
+            {
+              modal: false,
+              preventScroll: false,
+            },
+          )
         },
       },
       {
@@ -1521,17 +1524,15 @@ export default function Layout(props: ParentProps) {
         keybind: "shift+alt+arrowdown",
         onSelect: () => navigateSessionByUnseen(1),
       },
-      ...[1, 2, 3, 4, 5].map((index) =>
-        ({
-          id: `session.jump.${index}`,
-          title: language.t("command.session.jump", { index }),
-          keywords: kw("command.session.jump"),
-          category: language.t("command.category.session"),
-          keybind: `mod+${index}`,
-          disabled: currentSessions().length < index,
-          onSelect: () => navigateSessionByIndex(index),
-        }),
-      ),
+      ...[1, 2, 3, 4, 5].map((index) => ({
+        id: `session.jump.${index}`,
+        title: language.t("command.session.jump", { index }),
+        keywords: kw("command.session.jump"),
+        category: language.t("command.category.session"),
+        keybind: `mod+${index}`,
+        disabled: currentSessions().length < index,
+        onSelect: () => navigateSessionByIndex(index),
+      })),
       {
         id: "session.archive",
         title: language.t("command.session.archive"),
@@ -1777,9 +1778,7 @@ export default function Layout(props: ParentProps) {
     if (viewingIm) {
       console.debug(`[layout] openImChannel already viewing im session name=${name}`)
     } else if (imSessions[0]) {
-      console.debug(
-        `[layout] openImChannel navigate latest id=${imSessions[0].id} dir=${imSessions[0].directory}`,
-      )
+      console.debug(`[layout] openImChannel navigate latest id=${imSessions[0].id} dir=${imSessions[0].directory}`)
       navigateToSession(imSessions[0])
     } else {
       console.debug(`[layout] openImChannel navigate new-session dir=${dir}`)
@@ -1817,7 +1816,9 @@ export default function Layout(props: ParentProps) {
         pathname: location.pathname,
       })
     ) {
-      console.debug(`[layout] extra agent already active id=${id} directory=${routeDir() || "none"} path=${location.pathname}`)
+      console.debug(
+        `[layout] extra agent already active id=${id} directory=${routeDir() || "none"} path=${location.pathname}`,
+      )
       return
     }
     console.debug(`[layout] navigate to extra agent id=${id} directory=${extraAgentDir(id)}`)
@@ -1841,9 +1842,7 @@ export default function Layout(props: ParentProps) {
 
     const recent = store.lastProjectSession[root]
     const known =
-      recent && dirs.some((item) => workspaceKey(item) === workspaceKey(recent.directory))
-        ? recent
-        : undefined
+      recent && dirs.some((item) => workspaceKey(item) === workspaceKey(recent.directory)) ? recent : undefined
     const stores = dirs.map((item) => globalSync.child(item, { bootstrap: false })[0])
     const session = latestProjectSession(
       {
@@ -1897,9 +1896,11 @@ export default function Layout(props: ParentProps) {
 
   async function navigateToProject(directory: string | undefined) {
     if (!directory) return
+    console.debug(`[project-switch] request directory=${directory} navigated=true`)
     const extra = extraAgentByDirectory(directory)
     if (extra) {
       setSwitching(undefined)
+      console.debug(`[project-switch] open extra-agent directory=${extra.directory}`)
       const conn = server.list.find((item) => item.integration === extra.id)
       if (conn) {
         const key = ServerConnection.key(conn)
@@ -1923,11 +1924,13 @@ export default function Layout(props: ParentProps) {
     const session = cachedProjectSession(root)
     if (session) {
       setSwitching(undefined)
+      console.debug(`[project-switch] restore session root=${root} directory=${session.directory} id=${session.id}`)
       navigateWithSidebarReset(`/${base64Encode(session.directory)}/session/${session.id}`)
       return
     }
 
     setSwitching(root)
+    console.debug(`[project-switch] load project sessions root=${root}`)
     navigateWithSidebarReset(`/${base64Encode(root)}/session`)
   }
 
@@ -2615,9 +2618,7 @@ export default function Layout(props: ParentProps) {
 
         const recent = store.lastProjectSession[root]
         const known =
-          recent && dirs.some((item) => workspaceKey(item) === workspaceKey(recent.directory))
-            ? recent
-            : undefined
+          recent && dirs.some((item) => workspaceKey(item) === workspaceKey(recent.directory)) ? recent : undefined
         const stores = dirs.map((item) => globalSync.child(item, { bootstrap: false })[0])
         const session = latestProjectSession(
           {
@@ -2691,6 +2692,50 @@ export default function Layout(props: ParentProps) {
         activeRoute.directory = dir
         activeRoute.sessionProject = rememberSessionRoute(dir, id, root)
       },
+    ),
+  )
+
+  let lastSidebarRoute = ""
+  createEffect(
+    on(
+      () => [pageReady(), onSessionRoute(), routeSlug(), routeDir(), currentProject()?.root] as const,
+      ([ready, sessionRoute, slug, directory, root]) => {
+        if (!ready || !sessionRoute) return
+        const marker = `${slug ?? ""}\u0000${directory}\u0000${root ?? ""}`
+        if (marker === lastSidebarRoute) return
+        lastSidebarRoute = marker
+
+        const project = root
+          ? layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(root))
+          : undefined
+        const next = project?.worktree
+        if (workspaceKey(sidebarProjectRoot() ?? "") === workspaceKey(next ?? "")) return
+
+        console.debug(
+          `[sidebar-project] route-sync root=${next ?? "none"} route-directory=${directory || "none"} navigated=true`,
+        )
+        setSidebarProjectRoot(next)
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [sidebarProjectRoot(), layout.projects.list(), currentProject()?.root] as const,
+      ([selected, projects, routeRoot]) => {
+        if (!selected) return
+        if (projects.some((item) => workspaceKey(item.worktree) === workspaceKey(selected))) return
+
+        const fallback = routeRoot
+          ? projects.find((item) => workspaceKey(item.worktree) === workspaceKey(routeRoot))?.worktree
+          : undefined
+        console.debug(
+          `[sidebar-project] fallback selected-root=${selected} fallback-root=${fallback ?? "none"} route-directory=${routeDir() || "none"} navigated=false`,
+        )
+        setSidebarProjectRoot(fallback)
+      },
+      { defer: true },
     ),
   )
 
@@ -2825,9 +2870,91 @@ export default function Layout(props: ParentProps) {
     return [...ordered, extra]
   }
 
+  const [sidebarProjectRoot, setSidebarProjectRoot] = createSignal<string | undefined>()
+
   const sidebarProject = createMemo(() => {
+    const selected = sidebarProjectRoot()
+    const project = selected
+      ? layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(selected))
+      : undefined
+    if (project) {
+      return {
+        ...project,
+        root: project.worktree,
+        entry: project.worktree,
+      } satisfies CurrentProject
+    }
     return currentProject()
   })
+
+  const railCurrentProject = createMemo(() => (onConfigRoute() ? undefined : sidebarProject()?.root))
+
+  const sidebarProjectDirs = createMemo(() => {
+    const project = sidebarProject()
+    if (!project) return [] as string[]
+    return workspaceIds(project)
+  })
+
+  const sidebarWorkspaceSetting = createMemo(() => {
+    const project = sidebarProject()
+    if (!project) return false
+    if (project.vcs !== "git") return false
+    return layout.sidebar.workspaces(project.worktree)()
+  })
+
+  const sidebarVisibleSessionDirs = createMemo(() => {
+    const project = sidebarProject()
+    if (!project) return [] as string[]
+    if (!sidebarWorkspaceSetting()) return [project.worktree]
+
+    return sidebarProjectDirs().filter((directory) => {
+      return store.workspaceExpanded[directory] ?? directory === project.worktree
+    })
+  })
+
+  const sidebarSessions = createMemo(() => {
+    globalSync.version
+    const now = Date.now()
+    const project = sidebarProject()
+    const dirs = !sidebarWorkspaceSetting() && project ? sidebarProjectDirs() : sidebarVisibleSessionDirs()
+    if (dirs.length === 0) return [] as Session[]
+
+    if (!sidebarWorkspaceSetting()) {
+      return sortedProjectSessions(
+        dirs.map((directory) => globalSync.child(directory, { bootstrap: false })[0]),
+        now,
+      )
+    }
+    const result: Session[] = []
+    for (const directory of dirs) {
+      const [store] = globalSync.child(directory, { bootstrap: false })
+      result.push(...sortedRootSessions(store, now))
+    }
+    return result
+  })
+
+  function selectSidebarProject(directory: string) {
+    const project = layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(directory))
+    if (!project) {
+      console.debug(
+        `[sidebar-project] select ignored root=${directory} route-directory=${routeDir() || "none"} navigated=false`,
+      )
+      return
+    }
+
+    const hasCurrentSession = onSessionRoute() && !!params.id
+    console.debug(
+      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} navigated=${!hasCurrentSession}`,
+    )
+    setSidebarProjectRoot(project.worktree)
+    if (!hasCurrentSession) {
+      setSwitching(undefined)
+      navigateWithSidebarReset(`/${base64Encode(project.worktree)}/session`)
+      return
+    }
+    warmProjectSessions(project.worktree)
+    layout.sidebar.open()
+  }
 
   function handleWorkspaceDragStart(event: unknown) {
     const id = getDraggableId(event)
@@ -2936,7 +3063,7 @@ export default function Layout(props: ParentProps) {
     current: railCurrentProject,
     sidebarReduced,
     consumeProjectClick,
-    navigateToProject,
+    selectSidebarProject,
     closeProject,
     showEditProjectDialog,
     toggleProjectWorkspaces,
@@ -3039,10 +3166,7 @@ export default function Layout(props: ParentProps) {
         }}
         style={{
           width: panelProps.mobile ? undefined : layout.sidebar.opened() ? `${panel()}px` : "0px",
-          transition:
-            panelProps.mobile || state.sizing
-              ? undefined
-              : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+          transition: panelProps.mobile || state.sizing ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
         <Show
@@ -3056,7 +3180,10 @@ export default function Layout(props: ParentProps) {
                     <div class="mt-8 flex max-w-60 flex-col items-center gap-6 text-center">
                       <div class="flex flex-col gap-3">
                         <div class="text-14-medium text-text-strong">{language.t("sidebar.empty.title")}</div>
-                        <div class="text-14-regular text-text-base" style={{ "line-height": "var(--line-height-normal)" }}>
+                        <div
+                          class="text-14-regular text-text-base"
+                          style={{ "line-height": "var(--line-height-normal)" }}
+                        >
                           {language.t("sidebar.empty.description")}
                         </div>
                       </div>
@@ -3069,308 +3196,310 @@ export default function Layout(props: ParentProps) {
               }
             >
               <>
-            <div class="shrink-0 pl-1 py-1">
-              <div class="group/project flex items-start justify-between gap-2 py-2 pl-2 pr-0">
-                <div class="flex flex-col min-w-0">
-                  <InlineEditor
-                    id={`project:${projectId()}`}
-                    value={projectName}
-                    onSave={(next) => {
-                      const item = project()
-                      if (!item) return
-                      renameProject(item, next)
-                    }}
-                    class="text-14-medium text-text-strong truncate"
-                    displayClass="text-14-medium text-text-strong truncate"
-                    stopPropagation
-                  />
-
-                  <div class="flex min-w-0 items-center gap-1">
-                    <Tooltip
-                      placement="bottom"
-                      gutter={2}
-                      value={worktree()}
-                      class="min-w-0"
-                      contentStyle={{
-                        "max-width": "640px",
-                        transform: "translate3d(52px, 0, 0)",
-                      }}
-                    >
-                      <span class="block min-w-0 truncate select-text text-12-mono text-text-weak">
-                        {worktree().replace(homedir(), "~")}
-                      </span>
-                    </Tooltip>
-                    <Tooltip placement="bottom" value={language.t("session.header.open.copyPath")}>
-                      <IconButton
-                        icon="copy"
-                        variant="ghost"
-                        class="size-5 shrink-0 rounded-md text-icon-base"
-                        aria-label={language.t("session.header.open.copyPath")}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          copyProjectPath()
+                <div class="shrink-0 pl-1 py-1">
+                  <div class="group/project flex items-start justify-between gap-2 py-2 pl-2 pr-0">
+                    <div class="flex flex-col min-w-0">
+                      <InlineEditor
+                        id={`project:${projectId()}`}
+                        value={projectName}
+                        onSave={(next) => {
+                          const item = project()
+                          if (!item) return
+                          renameProject(item, next)
                         }}
+                        class="text-14-medium text-text-strong truncate"
+                        displayClass="text-14-medium text-text-strong truncate"
+                        stopPropagation
                       />
-                    </Tooltip>
+
+                      <div class="flex min-w-0 items-center gap-1">
+                        <Tooltip
+                          placement="bottom"
+                          gutter={2}
+                          value={worktree()}
+                          class="min-w-0"
+                          contentStyle={{
+                            "max-width": "640px",
+                            transform: "translate3d(52px, 0, 0)",
+                          }}
+                        >
+                          <span class="block min-w-0 truncate select-text text-12-mono text-text-weak">
+                            {worktree().replace(homedir(), "~")}
+                          </span>
+                        </Tooltip>
+                        <Tooltip placement="bottom" value={language.t("session.header.open.copyPath")}>
+                          <IconButton
+                            icon="copy"
+                            variant="ghost"
+                            class="size-5 shrink-0 rounded-md text-icon-base"
+                            aria-label={language.t("session.header.open.copyPath")}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              event.stopPropagation()
+                              copyProjectPath()
+                            }}
+                          />
+                        </Tooltip>
+                      </div>
+                    </div>
+
+                    <DropdownMenu modal>
+                      <DropdownMenu.Trigger
+                        as={IconButton}
+                        icon="dot-grid"
+                        variant="ghost"
+                        data-action="project-menu"
+                        data-project={slug()}
+                        class="shrink-0 size-6 rounded-md transition-opacity data-[expanded]:bg-surface-base-active"
+                        classList={{
+                          "opacity-100": panelProps.mobile || merged(),
+                          "opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 data-[expanded]:opacity-100":
+                            !panelProps.mobile && !merged(),
+                        }}
+                        aria-label={language.t("common.moreOptions")}
+                      />
+                      <DropdownMenu.Portal>
+                        <DropdownMenu.Content class="mt-1">
+                          <DropdownMenu.Item
+                            onSelect={() => {
+                              const item = project()
+                              if (!item) return
+                              showEditProjectDialog(item)
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>{language.t("common.edit")}</DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            data-action="project-workspaces-toggle"
+                            data-project={slug()}
+                            disabled={!canToggle()}
+                            onSelect={() => {
+                              const item = project()
+                              if (!item) return
+                              toggleProjectWorkspaces(item)
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>
+                              {workspacesEnabled()
+                                ? language.t("sidebar.workspaces.disable")
+                                : language.t("sidebar.workspaces.enable")}
+                            </DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Item
+                            data-action="project-clear-notifications"
+                            data-project={slug()}
+                            disabled={unseenCount() === 0}
+                            onSelect={clearNotifications}
+                          >
+                            <DropdownMenu.ItemLabel>
+                              {language.t("sidebar.project.clearNotifications")}
+                            </DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                          <DropdownMenu.Separator />
+                          <DropdownMenu.Item
+                            data-action="project-close-menu"
+                            data-project={slug()}
+                            onSelect={() => {
+                              const dir = worktree()
+                              if (!dir) return
+                              closeProject(dir)
+                            }}
+                          >
+                            <DropdownMenu.ItemLabel>{language.t("common.close")}</DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                        </DropdownMenu.Content>
+                      </DropdownMenu.Portal>
+                    </DropdownMenu>
                   </div>
                 </div>
 
-                <DropdownMenu modal>
-                  <DropdownMenu.Trigger
-                    as={IconButton}
-                    icon="dot-grid"
-                    variant="ghost"
-                    data-action="project-menu"
-                    data-project={slug()}
-                    class="shrink-0 size-6 rounded-md transition-opacity data-[expanded]:bg-surface-base-active"
-                    classList={{
-                      "opacity-100": panelProps.mobile || merged(),
-                      "opacity-0 group-hover/project:opacity-100 group-focus-within/project:opacity-100 data-[expanded]:opacity-100":
-                        !panelProps.mobile && !merged(),
-                    }}
-                    aria-label={language.t("common.moreOptions")}
-                  />
-                  <DropdownMenu.Portal>
-                    <DropdownMenu.Content class="mt-1">
-                      <DropdownMenu.Item
-                        onSelect={() => {
-                          const item = project()
-                          if (!item) return
-                          showEditProjectDialog(item)
-                        }}
-                      >
-                        <DropdownMenu.ItemLabel>{language.t("common.edit")}</DropdownMenu.ItemLabel>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        data-action="project-workspaces-toggle"
-                        data-project={slug()}
-                        disabled={!canToggle()}
-                        onSelect={() => {
-                          const item = project()
-                          if (!item) return
-                          toggleProjectWorkspaces(item)
-                        }}
-                      >
-                        <DropdownMenu.ItemLabel>
-                          {workspacesEnabled()
-                            ? language.t("sidebar.workspaces.disable")
-                            : language.t("sidebar.workspaces.enable")}
-                        </DropdownMenu.ItemLabel>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Item
-                        data-action="project-clear-notifications"
-                        data-project={slug()}
-                        disabled={unseenCount() === 0}
-                        onSelect={clearNotifications}
-                      >
-                        <DropdownMenu.ItemLabel>
-                          {language.t("sidebar.project.clearNotifications")}
-                        </DropdownMenu.ItemLabel>
-                      </DropdownMenu.Item>
-                      <DropdownMenu.Separator />
-                      <DropdownMenu.Item
-                        data-action="project-close-menu"
-                        data-project={slug()}
-                        onSelect={() => {
-                          const dir = worktree()
-                          if (!dir) return
-                          closeProject(dir)
-                        }}
-                      >
-                        <DropdownMenu.ItemLabel>{language.t("common.close")}</DropdownMenu.ItemLabel>
-                      </DropdownMenu.Item>
-                    </DropdownMenu.Content>
-                  </DropdownMenu.Portal>
-                </DropdownMenu>
-              </div>
-            </div>
-
-            <div class="flex-1 min-h-0 flex flex-col">
-              <Show
-                when={workspacesEnabled()}
-                fallback={
-                  <>
-                    <div class="shrink-0 py-4 px-3">
-                      <div class="grid grid-cols-5 gap-2">
-                        <Tooltip placement="bottom" value={language.t("command.session.new")}>
-                          <IconButton
-                            icon="new-session"
-                            variant="ghost"
-                            size="large"
-                            class="sidebar-action-button h-10 w-full rounded-xl"
-                            aria-label={language.t("command.session.new")}
-                            onClick={() => {
-                              const dir = worktree()
-                              if (!dir) return
-                              navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
-                            }}
-                          />
-                        </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
-                          <IconButton
-                            icon="task"
-                            variant="ghost"
-                            size="large"
-                            class="sidebar-action-button h-10 w-full rounded-xl"
-                            aria-label={language.t("trellis.tasks.title")}
-                            onClick={openTasksPanel}
-                          />
-                        </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("scheduled.title")}>
-                          <IconButton
-                            icon="clock"
-                            variant="ghost"
-                            size="large"
-                            class="sidebar-action-button h-10 w-full rounded-xl"
-                            aria-label={language.t("scheduled.title")}
-                            onClick={openScheduledPanel}
-                          />
-                        </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
-                          <IconButton
-                            icon="bell-off"
-                            variant="ghost"
-                            size="large"
-                            class="sidebar-action-button h-10 w-full rounded-xl"
-                            disabled={unseenCount() === 0}
-                            aria-label={language.t("sidebar.project.clearNotifications")}
-                            onClick={clearNotifications}
-                          />
-                        </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
-                          <IconButton
-                            icon="archive"
-                            variant="ghost"
-                            size="large"
-                            class="sidebar-action-button h-10 w-full rounded-xl"
-                            aria-label={language.t("sidebar.project.viewArchivedSessions")}
-                            onClick={() => {
-                              const item = project()
-                              if (!item) return
-                              dialog.show(() => <DialogArchivedSessions project={item} />)
-                            }}
-                          />
-                        </Tooltip>
-                      </div>
-                    </div>
-                    <div class="flex-1 min-h-0">
-                      <LocalWorkspace
-                        ctx={workspaceSidebarCtx}
-                        project={project()!}
-                        sortNow={sortNow}
-                        mobile={panelProps.mobile}
-                      />
-                    </div>
-                  </>
-                }
-              >
-                <>
-                  <div class="shrink-0 py-4 px-3">
-                    <div class="grid grid-cols-5 gap-2">
-                      <Tooltip placement="bottom" value={language.t("workspace.new")}>
-                        <IconButton
-                          icon="plus-small"
-                          variant="ghost"
-                          size="large"
-                          class="sidebar-action-button h-10 w-full rounded-xl"
-                          aria-label={language.t("workspace.new")}
-                          onClick={() => {
-                            const item = project()
-                            if (!item) return
-                            createWorkspace(item)
-                          }}
-                        />
-                      </Tooltip>
-                      <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
-                        <IconButton
-                          icon="task"
-                          variant="ghost"
-                          size="large"
-                          class="sidebar-action-button h-10 w-full rounded-xl"
-                          aria-label={language.t("trellis.tasks.title")}
-                          onClick={openTasksPanel}
-                        />
-                      </Tooltip>
-                      <Tooltip placement="bottom" value={language.t("scheduled.title")}>
-                        <IconButton
-                          icon="clock"
-                          variant="ghost"
-                          size="large"
-                          class="sidebar-action-button h-10 w-full rounded-xl"
-                          aria-label={language.t("scheduled.title")}
-                          onClick={openScheduledPanel}
-                        />
-                      </Tooltip>
-                      <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
-                        <IconButton
-                          icon="bell-off"
-                          variant="ghost"
-                          size="large"
-                          class="sidebar-action-button h-10 w-full rounded-xl"
-                          disabled={unseenCount() === 0}
-                          aria-label={language.t("sidebar.project.clearNotifications")}
-                          onClick={clearNotifications}
-                        />
-                      </Tooltip>
-                      <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
-                        <IconButton
-                          icon="archive"
-                          variant="ghost"
-                          size="large"
-                          class="sidebar-action-button h-10 w-full rounded-xl"
-                          aria-label={language.t("sidebar.project.viewArchivedSessions")}
-                          onClick={() => {
-                            const item = project()
-                            if (!item) return
-                            dialog.show(() => <DialogArchivedSessions project={item} />)
-                          }}
-                        />
-                      </Tooltip>
-                    </div>
-                  </div>
-                  <div class="relative flex-1 min-h-0">
-                    <DragDropProvider
-                      onDragStart={handleWorkspaceDragStart}
-                      onDragEnd={handleWorkspaceDragEnd}
-                      onDragOver={handleWorkspaceDragOver}
-                      collisionDetector={closestCenter}
-                    >
-                      <DragDropSensors />
-                      <ConstrainDragXAxis />
-                      <div
-                        ref={(el) => {
-                          if (!panelProps.mobile) scrollContainerRef = el
-                        }}
-                        class="size-full flex flex-col py-2 gap-4 overflow-y-auto no-scrollbar [overflow-anchor:none]"
-                      >
-                        <SortableProvider ids={workspaces()}>
-                          <For each={workspaces()}>
-                            {(directory) => (
-                              <SortableWorkspace
-                                ctx={workspaceSidebarCtx}
-                                directory={directory}
-                                project={project()!}
-                                sortNow={sortNow}
-                                mobile={panelProps.mobile}
+                <div class="flex-1 min-h-0 flex flex-col">
+                  <Show
+                    when={workspacesEnabled()}
+                    fallback={
+                      <>
+                        <div class="shrink-0 py-4 px-3">
+                          <div class="grid grid-cols-5 gap-2">
+                            <Tooltip placement="bottom" value={language.t("command.session.new")}>
+                              <IconButton
+                                icon="new-session"
+                                variant="ghost"
+                                size="large"
+                                class="sidebar-action-button h-10 w-full rounded-xl"
+                                aria-label={language.t("command.session.new")}
+                                onClick={() => {
+                                  const dir = worktree()
+                                  if (!dir) return
+                                  navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
+                                }}
                               />
-                            )}
-                          </For>
-                        </SortableProvider>
+                            </Tooltip>
+                            <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
+                              <IconButton
+                                icon="task"
+                                variant="ghost"
+                                size="large"
+                                class="sidebar-action-button h-10 w-full rounded-xl"
+                                aria-label={language.t("trellis.tasks.title")}
+                                onClick={openTasksPanel}
+                              />
+                            </Tooltip>
+                            <Tooltip placement="bottom" value={language.t("scheduled.title")}>
+                              <IconButton
+                                icon="clock"
+                                variant="ghost"
+                                size="large"
+                                class="sidebar-action-button h-10 w-full rounded-xl"
+                                aria-label={language.t("scheduled.title")}
+                                onClick={openScheduledPanel}
+                              />
+                            </Tooltip>
+                            <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
+                              <IconButton
+                                icon="bell-off"
+                                variant="ghost"
+                                size="large"
+                                class="sidebar-action-button h-10 w-full rounded-xl"
+                                disabled={unseenCount() === 0}
+                                aria-label={language.t("sidebar.project.clearNotifications")}
+                                onClick={clearNotifications}
+                              />
+                            </Tooltip>
+                            <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
+                              <IconButton
+                                icon="archive"
+                                variant="ghost"
+                                size="large"
+                                class="sidebar-action-button h-10 w-full rounded-xl"
+                                aria-label={language.t("sidebar.project.viewArchivedSessions")}
+                                onClick={() => {
+                                  const item = project()
+                                  if (!item) return
+                                  dialog.show(() => <DialogArchivedSessions project={item} />)
+                                }}
+                              />
+                            </Tooltip>
+                          </div>
+                        </div>
+                        <div class="flex-1 min-h-0">
+                          <LocalWorkspace
+                            ctx={workspaceSidebarCtx}
+                            project={project()!}
+                            directories={sidebarProjectDirs}
+                            sessions={sidebarSessions}
+                            sortNow={sortNow}
+                            mobile={panelProps.mobile}
+                          />
+                        </div>
+                      </>
+                    }
+                  >
+                    <>
+                      <div class="shrink-0 py-4 px-3">
+                        <div class="grid grid-cols-5 gap-2">
+                          <Tooltip placement="bottom" value={language.t("workspace.new")}>
+                            <IconButton
+                              icon="plus-small"
+                              variant="ghost"
+                              size="large"
+                              class="sidebar-action-button h-10 w-full rounded-xl"
+                              aria-label={language.t("workspace.new")}
+                              onClick={() => {
+                                const item = project()
+                                if (!item) return
+                                createWorkspace(item)
+                              }}
+                            />
+                          </Tooltip>
+                          <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
+                            <IconButton
+                              icon="task"
+                              variant="ghost"
+                              size="large"
+                              class="sidebar-action-button h-10 w-full rounded-xl"
+                              aria-label={language.t("trellis.tasks.title")}
+                              onClick={openTasksPanel}
+                            />
+                          </Tooltip>
+                          <Tooltip placement="bottom" value={language.t("scheduled.title")}>
+                            <IconButton
+                              icon="clock"
+                              variant="ghost"
+                              size="large"
+                              class="sidebar-action-button h-10 w-full rounded-xl"
+                              aria-label={language.t("scheduled.title")}
+                              onClick={openScheduledPanel}
+                            />
+                          </Tooltip>
+                          <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
+                            <IconButton
+                              icon="bell-off"
+                              variant="ghost"
+                              size="large"
+                              class="sidebar-action-button h-10 w-full rounded-xl"
+                              disabled={unseenCount() === 0}
+                              aria-label={language.t("sidebar.project.clearNotifications")}
+                              onClick={clearNotifications}
+                            />
+                          </Tooltip>
+                          <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
+                            <IconButton
+                              icon="archive"
+                              variant="ghost"
+                              size="large"
+                              class="sidebar-action-button h-10 w-full rounded-xl"
+                              aria-label={language.t("sidebar.project.viewArchivedSessions")}
+                              onClick={() => {
+                                const item = project()
+                                if (!item) return
+                                dialog.show(() => <DialogArchivedSessions project={item} />)
+                              }}
+                            />
+                          </Tooltip>
+                        </div>
                       </div>
-                      <DragOverlay>
-                        <WorkspaceDragOverlay
-                          sidebarProject={sidebarProject}
-                          activeWorkspace={() => store.activeWorkspace}
-                          workspaceLabel={workspaceLabel}
-                        />
-                      </DragOverlay>
-                    </DragDropProvider>
-                  </div>
-                </>
-              </Show>
-            </div>
-          </>
+                      <div class="relative flex-1 min-h-0">
+                        <DragDropProvider
+                          onDragStart={handleWorkspaceDragStart}
+                          onDragEnd={handleWorkspaceDragEnd}
+                          onDragOver={handleWorkspaceDragOver}
+                          collisionDetector={closestCenter}
+                        >
+                          <DragDropSensors />
+                          <ConstrainDragXAxis />
+                          <div
+                            ref={(el) => {
+                              if (!panelProps.mobile) scrollContainerRef = el
+                            }}
+                            class="size-full flex flex-col py-2 gap-4 overflow-y-auto no-scrollbar [overflow-anchor:none]"
+                          >
+                            <SortableProvider ids={workspaces()}>
+                              <For each={workspaces()}>
+                                {(directory) => (
+                                  <SortableWorkspace
+                                    ctx={workspaceSidebarCtx}
+                                    directory={directory}
+                                    project={project()!}
+                                    sortNow={sortNow}
+                                    mobile={panelProps.mobile}
+                                  />
+                                )}
+                              </For>
+                            </SortableProvider>
+                          </div>
+                          <DragOverlay>
+                            <WorkspaceDragOverlay
+                              sidebarProject={sidebarProject}
+                              activeWorkspace={() => store.activeWorkspace}
+                              workspaceLabel={workspaceLabel}
+                            />
+                          </DragOverlay>
+                        </DragDropProvider>
+                      </div>
+                    </>
+                  </Show>
+                </div>
+              </>
             </Show>
           }
         >
@@ -3474,9 +3603,7 @@ export default function Layout(props: ParentProps) {
           .map(([name, entry]) => {
             const dir = resolveChannelDirectory(name, entry.directory, configDir, home)
             const platform =
-              entry.type === "feishu"
-                ? language.t("sidebar.im.meta.feishu")
-                : language.t("sidebar.im.meta.discord")
+              entry.type === "feishu" ? language.t("sidebar.im.meta.feishu") : language.t("sidebar.im.meta.discord")
             return {
               id: name,
               // Platform first, then channel name: e.g. "飞书 | cc"
@@ -3637,7 +3764,14 @@ export default function Layout(props: ParentProps) {
 
             <Show when={findbar.open && platform.find}>
               <div class="pointer-events-none absolute top-3 right-3 z-30 w-[min(480px,calc(100%-24px))]">
-                <div class="pointer-events-auto flex flex-row items-center gap-2 rounded-2xl border border-border-weak-base px-2 py-2 shadow-lg" style={{ "background-color": "color-mix(in srgb, var(--background-stronger) 92%, transparent)", "backdrop-filter": "blur(24px) saturate(150%)", "-webkit-backdrop-filter": "blur(24px) saturate(150%)" }}>
+                <div
+                  class="pointer-events-auto flex flex-row items-center gap-2 rounded-2xl border border-border-weak-base px-2 py-2 shadow-lg"
+                  style={{
+                    "background-color": "color-mix(in srgb, var(--background-stronger) 92%, transparent)",
+                    "backdrop-filter": "blur(24px) saturate(150%)",
+                    "-webkit-backdrop-filter": "blur(24px) saturate(150%)",
+                  }}
+                >
                   <div class="flex flex-1 min-w-0 flex-row items-center gap-2 rounded-xl bg-surface-panel px-3 ring-1 ring-border-weaker-base/70">
                     <Icon name="magnifying-glass" size="small" class="shrink-0 text-text-weaker" />
                     <InlineInput
@@ -3691,8 +3825,7 @@ export default function Layout(props: ParentProps) {
               }}
               style={{
                 "--main-left": layout.sidebar.opened() ? `${side()}px` : "4rem",
-                transition:
-                  state.sizing || onConfigRoute() ? undefined : "left 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+                transition: state.sizing || onConfigRoute() ? undefined : "left 300ms cubic-bezier(0.16, 1, 0.3, 1)",
               }}
             >
               <main

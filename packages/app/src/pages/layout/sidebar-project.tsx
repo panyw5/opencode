@@ -16,7 +16,7 @@ import { projectSelected } from "./sidebar-project-helpers"
 function railHue(input: string): number {
   let h = 0
   for (let i = 0; i < input.length; i++) h = (h * 31 + input.charCodeAt(i)) | 0
-  return Math.abs(h) % 6 + 1
+  return (Math.abs(h) % 6) + 1
 }
 
 const debug = () =>
@@ -28,7 +28,7 @@ export type ProjectSidebarContext = {
   current: Accessor<string | undefined>
   sidebarReduced: Accessor<boolean>
   consumeProjectClick: () => boolean
-  navigateToProject: (directory: string) => void
+  selectSidebarProject: (directory: string) => void
   closeProject: (directory: string) => void
   showEditProjectDialog: (project: LocalProject) => void
   toggleProjectWorkspaces: (project: LocalProject) => void
@@ -60,7 +60,7 @@ const ProjectTile = (props: {
   active: Accessor<boolean>
   dirs: Accessor<string[]>
   consumeProjectClick: () => boolean
-  navigateToProject: (directory: string) => void
+  selectSidebarProject: (directory: string) => void
   showEditProjectDialog: (project: LocalProject) => void
   toggleProjectWorkspaces: (project: LocalProject) => void
   workspacesEnabled: (project: LocalProject) => boolean
@@ -143,7 +143,7 @@ const ProjectTile = (props: {
             layout.sidebar.toggle()
             return
           }
-          props.navigateToProject(props.project.worktree)
+          props.selectSidebarProject(props.project.worktree)
         }}
       >
         <ProjectIcon project={props.project} notify />
@@ -211,7 +211,9 @@ export const SortableProject = (props: {
 }): JSX.Element | null => {
   if (!props.project?.worktree) return null
   const sortable = createSortable(props.project.worktree)
-  const selected = createMemo(() => projectSelected(props.ctx.current(), props.project.worktree, props.project.sandboxes))
+  const selected = createMemo(() =>
+    projectSelected(props.ctx.current(), props.project.worktree, props.project.sandboxes),
+  )
   const language = useLanguage()
   const dirs = createMemo(() => props.ctx.workspaceIds(props.project))
   const [state, setState] = createStore({ menu: false })
@@ -224,7 +226,7 @@ export const SortableProject = (props: {
       active={() => state.menu}
       dirs={dirs}
       consumeProjectClick={props.ctx.consumeProjectClick}
-      navigateToProject={props.ctx.navigateToProject}
+      selectSidebarProject={props.ctx.selectSidebarProject}
       showEditProjectDialog={props.ctx.showEditProjectDialog}
       toggleProjectWorkspaces={props.ctx.toggleProjectWorkspaces}
       workspacesEnabled={props.ctx.workspacesEnabled}

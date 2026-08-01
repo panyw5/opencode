@@ -23,7 +23,6 @@ import { NewSessionItem, SessionItem, SessionGroupHeader, SessionSearchBar } fro
 import {
   isInitialSessionLoad,
   sessionGroupBoundaries,
-  sortedProjectSessions,
   sortedRootSessions,
   stripImChannelTitle,
   type SessionGroupKey,
@@ -172,11 +171,7 @@ const WorkspaceActions = (props: {
       "group-focus-within/workspace:opacity-100 group-focus-within/workspace:pointer-events-auto": true,
     }}
   >
-    <DropdownMenu
-      modal
-      open={props.menuOpen()}
-      onOpenChange={(open) => props.setMenuOpen(open)}
-    >
+    <DropdownMenu modal open={props.menuOpen()} onOpenChange={(open) => props.setMenuOpen(open)}>
       <Tooltip value={props.language.t("common.moreOptions")} placement="top">
         <DropdownMenu.Trigger
           as={IconButton}
@@ -371,8 +366,7 @@ const WorkspaceSessionList = (props: {
           <Button
             variant="ghost"
             classList={{
-              "flex h-8 w-full items-center justify-center rounded-lg border border-dashed border-border bg-surface-raised-base/35 px-3 text-12-medium text-text-weak":
-                true,
+              "flex h-8 w-full items-center justify-center rounded-lg border border-dashed border-border bg-surface-raised-base/35 px-3 text-12-medium text-text-weak": true,
               "transition-colors hover:border-border-strong hover:bg-surface-raised-base-hover hover:text-text":
                 !props.ctx.sidebarReduced(),
             }}
@@ -469,7 +463,14 @@ export const SortableWorkspace = (props: {
     if (workspaceStore.sessions === "loading") return
     if (initialFullRequested) return
     initialFullRequested = true
-    void globalSync.project.loadSessions(props.directory, { silent: true })
+    console.debug(
+      `[sidebar-project] workspace-session-list load start root=${props.project.worktree} directory=${props.directory}`,
+    )
+    void globalSync.project.loadSessions(props.directory, { silent: true }).finally(() => {
+      console.debug(
+        `[sidebar-project] workspace-session-list load done root=${props.project.worktree} directory=${props.directory} state=${workspaceStore.sessions} count=${workspaceStore.session.length}`,
+      )
+    })
   })
 
   return (
@@ -643,7 +644,9 @@ export const ImChannelSidebar = (props: {
             <Show when={directory()}>
               {(dir) => (
                 <div class="truncate font-mono text-12-regular text-text-weak">
-                  {dir().replace(/^\/Users\/[^/]+/, "~").replace(/^\/home\/[^/]+/, "~")}
+                  {dir()
+                    .replace(/^\/Users\/[^/]+/, "~")
+                    .replace(/^\/home\/[^/]+/, "~")}
                 </div>
               )}
             </Show>
@@ -692,6 +695,8 @@ export const ImChannelSidebar = (props: {
 export const LocalWorkspace = (props: {
   ctx: WorkspaceSidebarContext
   project: LocalProject
+  directories: Accessor<string[]>
+  sessions: Accessor<Session[]>
   sortNow: Accessor<number>
   mobile?: boolean
 }): JSX.Element => {
@@ -704,15 +709,10 @@ export const LocalWorkspace = (props: {
   // Project view paginates the merged, sorted session list; per-directory store
   // limits would make worktrees compete and cause rows to appear mid-list later.
   const [visibleLimit, setVisibleLimit] = createSignal(10)
-  const dirs = createMemo(() => [props.project.worktree, ...(props.project.sandboxes ?? [])])
+  const dirs = props.directories
   const stores = createMemo(() => dirs().map((directory) => globalSync.child(directory, { bootstrap: false })))
   const slug = createMemo(() => base64Encode(props.project.worktree))
-  const allSessions = createMemo(() =>
-    sortedProjectSessions(
-      stores().map((item) => item[0]),
-      props.sortNow(),
-    ),
-  )
+  const allSessions = props.sessions
   const sessions = createMemo(() => {
     const query = searchQuery().toLowerCase().trim()
     if (!query) return allSessions().slice(0, visibleLimit())
@@ -723,7 +723,11 @@ export const LocalWorkspace = (props: {
     if (searchQuery()) return false
     return stores().reduce((sum, item) => sum + item[0].sessionTotal, 0) > visibleLimit()
   })
-  const issue = createMemo(() => stores().map((item) => item[0].session_error).find(Boolean))
+  const issue = createMemo(() =>
+    stores()
+      .map((item) => item[0].session_error)
+      .find(Boolean),
+  )
   const extraAgent = createMemo(() => extraAgentByDirectory(props.project.worktree))
   const initialFullRequested = new Set<string>()
   const refresh = async () => {
@@ -773,12 +777,18 @@ export const LocalWorkspace = (props: {
   }
 
   createEffect(() => {
+    const root = props.project.worktree
     for (const directory of dirs()) {
       const [store] = globalSync.child(directory, { bootstrap: false })
       if (store.sessions === "loading") continue
       if (initialFullRequested.has(directory)) continue
+      console.debug(`[sidebar-project] session-list load start root=${root} directory=${directory}`)
       void globalSync.project.loadSessions(directory, { silent: true }).finally(() => {
         initialFullRequested.add(directory)
+        const [next] = globalSync.child(directory, { bootstrap: false })
+        console.debug(
+          `[sidebar-project] session-list load done root=${root} directory=${directory} state=${next.sessions} count=${next.session.length}`,
+        )
       })
     }
   })
