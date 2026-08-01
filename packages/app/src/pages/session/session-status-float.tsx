@@ -60,8 +60,7 @@ export function SessionStatusFloat(props: { skills: string[] }) {
                 <ul class="flex flex-wrap gap-2 px-3 py-2">
                   <For each={props.skills}>
                     {(skill) => (
-                      <li class="inline-flex items-center gap-1.5 rounded-full border border-border-weaker-base bg-surface-base px-2.5 py-1 text-12-regular text-text-strong">
-                        <Icon name="check" size="small" class="text-icon-success-base" />
+                      <li class="inline-flex rounded-full border border-border-weak-base bg-surface-raised-base px-3 py-1.5 text-12-medium text-text-strong shadow-xs-border-base">
                         <code class="font-mono">{skill}</code>
                       </li>
                     )}
