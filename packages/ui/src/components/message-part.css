@@ -754,6 +754,8 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
 }
 
 [data-slot="subagent-task-stat"] {
+  display: inline-flex;
+  align-items: center;
   flex-shrink: 0;
   min-width: 0;
   max-width: 132px;
@@ -761,17 +763,58 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   text-overflow: ellipsis;
   white-space: nowrap;
   border-radius: 999px;
-  padding: 1px 6px;
-  background: var(--background-element);
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 82%, transparent);
+  padding: 2px 7px;
+  background: color-mix(in srgb, var(--background-element) 78%, transparent);
   color: var(--text-weak);
   font-family: var(--font-family-sans);
   font-size: 11px;
   font-weight: var(--font-weight-medium);
   line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--surface-base) 42%, transparent);
 }
 
 [data-slot="subagent-task-stat"][data-primary="true"] {
+  border-color: color-mix(in srgb, var(--text-info-base) 25%, var(--border-weak-base));
+  background: color-mix(in srgb, var(--surface-info-weak) 65%, var(--background-element));
+  color: var(--text-info-base);
+}
+
+[data-slot="subagent-task-stat"][data-kind="time"] {
+  color: var(--text-interactive-base);
+}
+
+[data-slot="subagent-task-stat"][data-kind="error"] {
+  color: var(--text-critical-base);
+}
+
+[data-slot="subagent-task-stat"][data-kind="message"] {
+  color: var(--text-weak);
+}
+
+[data-slot="subagent-task-stat"][data-kind="tool"] {
   color: var(--text-base);
+}
+
+[data-slot="subagent-task-stat"][data-kind="running"] {
+  border-color: color-mix(in srgb, var(--text-success-base) 30%, var(--border-weak-base));
+  background: color-mix(in srgb, var(--surface-success-weak) 66%, var(--background-element));
+  color: var(--text-success-base);
+  animation: subagent-task-stat-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes subagent-task-stat-pulse {
+  50% {
+    border-color: color-mix(in srgb, var(--text-success-base) 56%, var(--border-weak-base));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="subagent-task-stat"][data-kind="running"] {
+    animation: none;
+  }
 }
 
 [data-component="tool-output"][data-kind="subagent-task"] {

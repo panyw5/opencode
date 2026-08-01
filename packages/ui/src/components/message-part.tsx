@@ -2627,12 +2627,12 @@ ToolRegistry.register({
       const stats = childStats()
       const elapsed = taskElapsed()
       return [
-        statusLabel(),
-        ...(elapsed === undefined ? [] : [i18n.t("ui.message.duration.seconds", { count: elapsed })]),
-        `${stats.errorTools} error`,
-        `${stats.messages} msg`,
-        `${stats.tools} tool`,
-        ...(stats.runningTools > 0 ? [`${stats.runningTools} running`] : []),
+        { label: statusLabel(), kind: "status" },
+        ...(elapsed === undefined ? [] : [{ label: i18n.t("ui.message.duration.seconds", { count: elapsed }), kind: "time" }]),
+        { label: `${stats.errorTools} error`, kind: "error" },
+        { label: `${stats.messages} msg`, kind: "message" },
+        { label: `${stats.tools} tool`, kind: "tool" },
+        ...(stats.runningTools > 0 ? [{ label: `${stats.runningTools} running`, kind: "running" }] : []),
       ]
     })
     const missingSessionDetail = createMemo(() => {
@@ -2690,8 +2690,12 @@ ToolRegistry.register({
           </Show>
           <For each={statItems()}>
             {(item, index) => (
-              <span data-slot="subagent-task-stat" data-primary={index() === 0 ? "true" : undefined}>
-                {item}
+              <span
+                data-slot="subagent-task-stat"
+                data-kind={item.kind}
+                data-primary={index() === 0 ? "true" : undefined}
+              >
+                {item.label}
               </span>
             )}
           </For>
