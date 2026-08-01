@@ -13,6 +13,14 @@ function taskStartTime(part: ToolPart | undefined): number | undefined {
   return state.time.start
 }
 
+/** Whole elapsed seconds for a task invocation, fixed once the tool records its end time. */
+export function taskElapsedSeconds(input: { start?: number; end?: number; now?: number }): number | undefined {
+  if (typeof input.start !== "number") return undefined
+  const stop = input.end ?? input.now
+  if (typeof stop !== "number") return undefined
+  return Math.max(0, Math.floor((stop - input.start) / 1000))
+}
+
 function taskTitleMatches(session: Session, description: string | undefined): boolean {
   if (!description) return false
   const title = text(session.title)

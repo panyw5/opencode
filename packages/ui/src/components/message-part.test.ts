@@ -4,6 +4,7 @@ import { groupParts, reasoningPartStreaming } from "./message-part-order"
 import {
   isTaskResume,
   resolveTaskChildSessionId,
+  taskElapsedSeconds,
   taskSessionIndex,
   taskSessionNeighbors,
   taskSessionSiblings,
@@ -202,6 +203,20 @@ describe("message-part resolveTaskChildSessionId", () => {
         ],
       }),
     ).toBe("ses_child")
+  })
+})
+
+describe("message-part taskElapsedSeconds", () => {
+  test("counts whole seconds while a task is running", () => {
+    expect(taskElapsedSeconds({ start: 1_000, now: 7_999 })).toBe(6)
+  })
+
+  test("uses the recorded completion time instead of the current time", () => {
+    expect(taskElapsedSeconds({ start: 1_000, end: 7_999, now: 60_000 })).toBe(6)
+  })
+
+  test("does not render a duration before the task has started", () => {
+    expect(taskElapsedSeconds({ now: 7_999 })).toBeUndefined()
   })
 })
 

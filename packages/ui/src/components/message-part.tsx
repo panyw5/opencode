@@ -72,7 +72,13 @@ import {
   type PartGroup,
 } from "./message-part-order"
 import { activeStreamingAssistantMessageID } from "./message-part-stream"
-import { isTaskResume, resolveTaskChildSessionId, taskSessionBadge, taskSessionIndex } from "./message-task-session"
+import {
+  isTaskResume,
+  resolveTaskChildSessionId,
+  taskElapsedSeconds,
+  taskSessionBadge,
+  taskSessionIndex,
+} from "./message-task-session"
 import { createAutoScroll } from "../hooks"
 export type { PartGroup } from "./message-part-order"
 
@@ -2507,6 +2513,34 @@ ToolRegistry.register({
       }),
     )
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
+    const taskTime = createMemo(() => {
+      const state = props.part?.state
+      if (!state || state.status === "pending") return undefined
+      return {
+        start: state.time.start,
+        end: state.status === "running" ? undefined : state.time.end,
+      }
+    })
+    const [taskNow, setTaskNow] = createSignal(Date.now())
+    createEffect(
+      on(
+        () => [taskTime()?.start, taskTime()?.end] as const,
+        ([start, end]) => {
+          if (typeof start !== "number" || typeof end === "number") return
+          const update = () => setTaskNow(Date.now())
+          update()
+          const timer = setInterval(update, 1000)
+          onCleanup(() => clearInterval(timer))
+        },
+      ),
+    )
+    const taskElapsed = createMemo(() =>
+      taskElapsedSeconds({
+        start: taskTime()?.start,
+        end: taskTime()?.end,
+        now: taskNow(),
+      }),
+    )
     const hasOutput = createMemo(() => typeof props.output === "string" && props.output.trim().length > 0)
     const outputPreview = createMemo(() =>
       props.output
@@ -2591,8 +2625,10 @@ ToolRegistry.register({
     })
     const statItems = createMemo(() => {
       const stats = childStats()
+      const elapsed = taskElapsed()
       return [
         statusLabel(),
+        ...(elapsed === undefined ? [] : [i18n.t("ui.message.duration.seconds", { count: elapsed })]),
         `${stats.errorTools} error`,
         `${stats.messages} msg`,
         `${stats.tools} tool`,
