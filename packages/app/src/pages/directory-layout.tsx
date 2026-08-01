@@ -4,6 +4,7 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { createEffect, createMemo, type ParentProps, Show } from "solid-js"
 import { Portal } from "solid-js/web"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
 import { LocalProvider } from "@/context/local"
@@ -66,13 +67,29 @@ function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
 
 function ProjectStatusPortal() {
   const language = useLanguage()
+  const params = useParams()
+  const navigate = useNavigate()
   const mount = createMemo(() => document.getElementById("opencode-titlebar-center-project"))
 
   return (
     <Show when={mount()}>
       {(node) => (
         <Portal mount={node()}>
-          <div class="mr-2">
+          <div class="mr-2 flex items-center gap-1">
+            <Tooltip placement="bottom" value={language.t("command.session.new")}>
+              <IconButton
+                data-action="session-new-button"
+                icon="new-session"
+                size="normal"
+                variant="ghost"
+                class="titlebar-icon w-8 h-6 p-0 box-border"
+                aria-label={language.t("command.session.new")}
+                onClick={() => {
+                  if (!params.dir) return
+                  navigate(`/${params.dir}/session`)
+                }}
+              />
+            </Tooltip>
             <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
               <StatusPopover />
             </Tooltip>
