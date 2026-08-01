@@ -1,6 +1,6 @@
 import type { Todo } from "@opencode-ai/sdk/v2"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { useSpring } from "@opencode-ai/ui/motion-spring"
+import { Popover } from "@opencode-ai/ui/popover"
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { TodoList } from "@/pages/session/composer/session-todo-list"
@@ -13,8 +13,7 @@ export function SessionTodoFloat(props: {
   expandLabel: string
 }) {
   const language = useLanguage()
-  const [collapsed, setCollapsed] = createSignal(true)
-  const toggle = () => setCollapsed((value) => !value)
+  const [shown, setShown] = createSignal(false)
 
   const total = createMemo(() => props.todos.length)
   const done = createMemo(() => props.todos.filter((todo) => todo.status === "completed").length)
@@ -28,7 +27,7 @@ export function SessionTodoFloat(props: {
     if (!e2e) return
     probe.set({
       mounted: true,
-      collapsed: collapsed(),
+      collapsed: !shown(),
       hidden: false,
       count: props.todos.length,
       states: props.todos.map((todo) => todo.status),
@@ -40,46 +39,45 @@ export function SessionTodoFloat(props: {
     probe.drop()
   })
 
-  const progress = useSpring(() => (collapsed() ? 0 : 1), { visualDuration: 0.25, bounce: 0 })
-  const value = createMemo(() => Math.max(0, Math.min(1, progress())))
-  const visible = createMemo(() => !collapsed() || value() > 0.001)
-
   return (
     <div
       data-component="session-todo-float"
-      class="absolute top-14 right-3 z-20 flex flex-col items-end gap-2 pointer-events-auto"
+      data-action="session-todo-toggle-button"
+      data-collapsed={shown() ? "false" : "true"}
+      class="absolute top-14 right-3 z-20 pointer-events-auto"
     >
-      <button
-        type="button"
-        data-component="session-todo-float-toggle"
-        data-action="session-todo-toggle-button"
-        data-collapsed={collapsed() ? "true" : "false"}
-        aria-label={collapsed() ? props.expandLabel : props.collapseLabel}
-        onClick={toggle}
-        class="inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-3 py-2 shadow-sm text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors"
+      <Popover
+        open={shown()}
+        onOpenChange={setShown}
+        triggerAs="button"
+        triggerProps={{
+          type: "button",
+          "aria-label": shown() ? props.collapseLabel : props.expandLabel,
+          class:
+            "inline-flex items-center gap-1.5 rounded-full border border-border-weak-base bg-surface-raised-base px-3 py-2 shadow-sm text-13-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors",
+        }}
+        trigger={
+          <>
+            <Show when={inProgress()}>
+              <span
+                class="size-1.5 rounded-full bg-icon-warning-base"
+                style={{
+                  animation: "var(--animate-pulse-scale)",
+                  "transform-origin": "center",
+                }}
+              />
+            </Show>
+            <span>{badge()}</span>
+          </>
+        }
+        class="w-[500px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger p-0 shadow-xl"
+        style={{
+          "max-height": "min(680px, calc(100dvh - 24px))",
+        }}
+        gutter={8}
+        placement="bottom-end"
       >
-        <Show when={inProgress()}>
-          <span
-            class="size-1.5 rounded-full bg-icon-warning-base"
-            style={{
-              animation: "var(--animate-pulse-scale)",
-              "transform-origin": "center",
-            }}
-          />
-        </Show>
-        <span>{badge()}</span>
-      </button>
-
-      <Show when={visible()}>
-        <div
-          data-slot="session-todo-float-panel"
-          class="w-[500px] max-w-[calc(100vw-24px)] rounded-xl border border-border-base bg-surface-raised-stronger shadow-xl overflow-hidden"
-          style={{
-            "max-height": `${280 * value()}px`,
-            opacity: `${value()}`,
-            "pointer-events": collapsed() ? "none" : "auto",
-          }}
-        >
+        <div data-slot="session-todo-float-panel" class="flex max-h-[min(680px,calc(100dvh-24px))] flex-col">
           <div class="flex items-center justify-between px-3 py-2 border-b border-border-weaker-base">
             <span class="text-13-medium text-text-strong">{language.t("session.todo.title")}</span>
             <IconButton
@@ -88,14 +86,14 @@ export function SessionTodoFloat(props: {
               size="normal"
               variant="ghost"
               aria-label={props.collapseLabel}
-              onClick={toggle}
+              onClick={() => setShown(false)}
             />
           </div>
-          <div class="max-h-60 overflow-y-auto no-scrollbar py-2">
-            <TodoList todos={props.todos} open={!collapsed()} />
+          <div class="min-h-0 overflow-y-auto no-scrollbar py-2">
+            <TodoList todos={props.todos} open={shown()} />
           </div>
         </div>
-      </Show>
+      </Popover>
     </div>
   )
 }

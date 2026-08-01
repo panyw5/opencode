@@ -34,12 +34,12 @@ export function SessionStatusFloat(props: { skills: string[] }) {
         }
         class="w-[500px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger p-0 shadow-xl"
         style={{
-          "max-height": "min(680px, calc(100dvh - 24px))",
+          "max-height": "min(960px, calc(100dvh - 24px))",
         }}
         gutter={8}
         placement="bottom-end"
       >
-        <div data-slot="session-status-float-panel" class="flex max-h-[min(680px,calc(100dvh-24px))] flex-col">
+        <div data-slot="session-status-float-panel" class="flex max-h-[min(960px,calc(100dvh-24px))] flex-col">
           <div class="flex items-center justify-between px-3 py-2 border-b border-border-weaker-base">
             <span class="text-13-medium text-text-strong">{language.t("session.status.skills")}</span>
             <IconButton
