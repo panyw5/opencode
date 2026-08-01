@@ -29,7 +29,7 @@ function dot(status: Todo["status"]) {
   )
 }
 
-export function TodoList(props: { todos: Todo[]; open: boolean }) {
+export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: string }) {
   const [store, setStore] = createStore({
     stuck: false,
     scrolling: false,
@@ -38,6 +38,7 @@ export function TodoList(props: { todos: Todo[]; open: boolean }) {
   let timer: number | undefined
 
   const inProgress = createMemo(() => props.todos.findIndex((todo) => todo.status === "in_progress"))
+  const maxHeight = () => props.maxHeight ?? "10.5rem" // max-h-42 default for dock
 
   const ensure = () => {
     if (!props.open) return
@@ -80,9 +81,9 @@ export function TodoList(props: { todos: Todo[]; open: boolean }) {
   return (
     <div class="relative">
       <div
-        class="px-3 pb-11 flex flex-col gap-2.5 max-h-42 overflow-y-auto no-scrollbar"
+        class="px-3 pb-11 flex flex-col gap-2.5 overflow-y-auto no-scrollbar"
         ref={scrollRef}
-        style={{ "overflow-anchor": "none" }}
+        style={{ "overflow-anchor": "none", "max-height": maxHeight() }}
         onScroll={(e) => {
           setStore("stuck", e.currentTarget.scrollTop > 0)
           setStore("scrolling", true)

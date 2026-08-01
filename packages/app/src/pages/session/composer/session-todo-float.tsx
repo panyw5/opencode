@@ -90,7 +90,7 @@ export function SessionTodoFloat(props: {
             />
           </div>
           <div class="min-h-0 overflow-y-auto no-scrollbar py-2">
-            <TodoList todos={props.todos} open={shown()} />
+            <TodoList todos={props.todos} open={shown()} maxHeight="540px" />
           </div>
         </div>
       </Popover>
