@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Part } from "@opencode-ai/sdk/v2"
-import { extractPromptFromParts } from "./prompt"
+import { commandInvocationFromParts, extractPromptFromParts } from "./prompt"
 
 describe("extractPromptFromParts", () => {
   test("restores multiple uploaded attachments", () => {
@@ -40,5 +40,40 @@ describe("extractPromptFromParts", () => {
       { type: "image", filename: "a.png", mime: "image/png", dataUrl: "data:image/png;base64,AAA" },
       { type: "image", filename: "b.pdf", mime: "application/pdf", dataUrl: "data:application/pdf;base64,BBB" },
     ])
+  })
+})
+
+describe("commandInvocationFromParts", () => {
+  test("returns a persisted command invocation with its arguments", () => {
+    const parts = [
+      {
+        id: "text_1",
+        type: "text",
+        text: "/review packages/app/src",
+        ignored: true,
+        metadata: { kind: "command-invocation", command: "review" },
+        sessionID: "ses_1",
+        messageID: "msg_1",
+      },
+    ] satisfies Part[]
+
+    expect(commandInvocationFromParts(parts)).toBe("/review packages/app/src")
+  })
+
+  test("returns a slash command for persisted subtask messages", () => {
+    const parts = [
+      {
+        id: "subtask_1",
+        type: "subtask",
+        command: "research",
+        prompt: "Investigate the issue",
+        description: "Research",
+        agent: "explore",
+        sessionID: "ses_1",
+        messageID: "msg_1",
+      },
+    ] satisfies Part[]
+
+    expect(commandInvocationFromParts(parts)).toBe("/research")
   })
 })

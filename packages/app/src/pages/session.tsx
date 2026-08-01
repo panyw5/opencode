@@ -84,7 +84,7 @@ import {
 import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import { collectSessionActiveSkills } from "@/pages/session/session-active-skills"
 import { Identifier } from "@/utils/id"
-import { extractPromptFromParts } from "@/utils/prompt"
+import { commandInvocationFromParts, extractPromptFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { formatServerError } from "@/utils/server-errors"
 import type { Session } from "@opencode-ai/sdk/v2/client"
@@ -1931,6 +1931,17 @@ export default function Page() {
     })
 
   const line = (id: string) => {
+    const parts = sync.data.part[id] ?? []
+    const command = commandInvocationFromParts(parts)
+    if (command) {
+      console.debug("[session] user message menu command", {
+        messageID: id,
+        command,
+        partTypes: parts.map((part) => part.type),
+      })
+      return command
+    }
+
     const text = draft(id)
       .map((part) => (part.type === "image" ? `[image:${part.filename}]` : part.content))
       .join("")

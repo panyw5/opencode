@@ -1,4 +1,4 @@
-import type { AgentPart as MessageAgentPart, FilePart, Part, TextPart } from "@opencode-ai/sdk/v2"
+import type { AgentPart as MessageAgentPart, FilePart, Part, SubtaskPart, TextPart } from "@opencode-ai/sdk/v2"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
 
 type Inline =
@@ -47,6 +47,23 @@ function textPartValue(parts: Part[]) {
     if (part.text.length > best.text.length) return part
     return best
   }, undefined)
+}
+
+/**
+ * Return the slash-command invocation when a user message represents a command
+ * rather than ordinary prompt text.
+ */
+export function commandInvocationFromParts(parts: Part[]): string | undefined {
+  const invocation = parts.find(
+    (part): part is TextPart =>
+      part.type === "text" && part.metadata?.kind === "command-invocation" && part.text.trim().length > 0,
+  )
+  if (invocation) return invocation.text.trim()
+
+  const subtask = parts.find(
+    (part): part is SubtaskPart => part.type === "subtask" && !!part.command?.trim(),
+  )
+  if (subtask?.command) return `/${subtask.command.trim()}`
 }
 
 /**
