@@ -2695,26 +2695,44 @@ export default function Layout(props: ParentProps) {
     ),
   )
 
-  let lastSidebarRoute = ""
+  let observedSidebarRoute = ""
+  let pendingSidebarRoute = ""
   createEffect(
     on(
-      () => [pageReady(), onSessionRoute(), routeSlug(), routeDir(), currentProject()?.root] as const,
-      ([ready, sessionRoute, slug, directory, root]) => {
-        if (!ready || !sessionRoute) return
-        const marker = `${slug ?? ""}\u0000${directory}\u0000${root ?? ""}`
-        if (marker === lastSidebarRoute) return
-        lastSidebarRoute = marker
+      () => [pageReady(), onSessionRoute(), routeSlug(), routeDir()] as const,
+      ([ready, sessionRoute, slug, directory]) => {
+        if (!ready || !sessionRoute) {
+          pendingSidebarRoute = ""
+          return
+        }
+        const marker = `${slug ?? ""}\u0000${directory}`
+        if (marker === observedSidebarRoute) return
+        observedSidebarRoute = marker
+        pendingSidebarRoute = marker
 
+        console.debug(`[sidebar-project] route-observed marker=${marker} route-directory=${directory || "none"}`)
+      },
+      { defer: true },
+    ),
+  )
+
+  createEffect(
+    on(
+      () => [currentProject()?.root, layout.projects.list()] as const,
+      ([root, projects]) => {
+        if (!pendingSidebarRoute || !root) return
         const project = root
-          ? layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(root))
+          ? projects.find((item) => workspaceKey(item.worktree) === workspaceKey(root))
           : undefined
         const next = project?.worktree
-        if (workspaceKey(sidebarProjectRoot() ?? "") === workspaceKey(next ?? "")) return
+        if (workspaceKey(sidebarProjectRoot() ?? "") !== workspaceKey(next ?? "")) {
+          console.debug(
+            `[sidebar-project] route-sync root=${next ?? "none"} route-directory=${routeDir() || "none"} navigated=true`,
+          )
+          setSidebarProjectRoot(next)
+        }
 
-        console.debug(
-          `[sidebar-project] route-sync root=${next ?? "none"} route-directory=${directory || "none"} navigated=true`,
-        )
-        setSidebarProjectRoot(next)
+        pendingSidebarRoute = ""
       },
       { defer: true },
     ),
@@ -2871,6 +2889,13 @@ export default function Layout(props: ParentProps) {
   }
 
   const [sidebarProjectRoot, setSidebarProjectRoot] = createSignal<string | undefined>()
+
+  createEffect(() => {
+    const root = sidebarProjectRoot()
+    if (workspaceKey(layout.sidebar.project() ?? "") === workspaceKey(root ?? "")) return
+    console.debug(`[sidebar-project] context-sync root=${root ?? "none"} route-directory=${routeDir() || "none"}`)
+    layout.sidebar.setProject(root)
+  })
 
   const sidebarProject = createMemo(() => {
     const selected = sidebarProjectRoot()
@@ -3075,7 +3100,7 @@ export default function Layout(props: ParentProps) {
 
   const workspaceSidebarCtx: WorkspaceSidebarContext = {
     currentDir: routeDir,
-    navList: currentSessions,
+    navList: sidebarSessions,
     pendingSessionSelection,
     sidebarExpanded,
     sidebarReduced,
@@ -3373,6 +3398,7 @@ export default function Layout(props: ParentProps) {
                                 onClick={() => {
                                   const dir = worktree()
                                   if (!dir) return
+                                  console.debug(`[sidebar-project] new-session root=${dir} source=sidebar-button`)
                                   navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
                                 }}
                               />
@@ -3687,9 +3713,9 @@ export default function Layout(props: ParentProps) {
             onBack={() => setStore("sidebarPanel", "project")}
           />
         ) : mobile ? (
-          <SidebarPanel project={currentProject} mobile />
+          <SidebarPanel project={sidebarProject} mobile />
         ) : (
-          <SidebarPanel project={currentProject} merged />
+          <SidebarPanel project={sidebarProject} merged />
         )
       }
     />

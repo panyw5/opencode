@@ -70,9 +70,21 @@ test("project rail selection leaves the active session route unchanged", async (
 
         await expect(page).toHaveURL(originalURL)
         await expect(otherButton).toHaveAttribute("aria-current", "true")
+        await expect(page.locator('[data-component="sidebar-panel"]')).toContainText(other)
         await expect(page.locator(sessionItemSelector(otherSession.id))).toBeVisible()
         await expect(activeTabs).toHaveCount(originalTabs.length)
         await expect(activeTabs).toHaveText(originalTabs)
+
+        await page.keyboard.press(`${modKey}+Shift+S`)
+        await expect(page).toHaveURL(new RegExp(`/${otherSlug}/session(?:[?#]|$)`))
+        await expect(page.locator(promptSelector)).toBeVisible()
+
+        await gotoSession(currentSession.id)
+        await otherButton.click()
+        await expect(otherButton).toHaveAttribute("aria-current", "true")
+        await page.getByRole("button", { name: "New session" }).click()
+        await expect(page).toHaveURL(new RegExp(`/${otherSlug}/session(?:[?#]|$)`))
+        await expect(page.locator(promptSelector)).toBeVisible()
 
         const otherSessionLink = page.locator(`${sessionItemSelector(otherSession.id)} a`).first()
         await expect(otherSessionLink).toBeVisible()

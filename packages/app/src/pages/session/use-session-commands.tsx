@@ -18,6 +18,7 @@ import { DialogSelectSkill } from "@/components/dialog-select-skill"
 import { DialogFork } from "@/components/dialog-fork"
 import { showToast } from "@opencode-ai/ui/toast"
 import { findLast } from "@opencode-ai/core/util/array"
+import { base64Encode } from "@opencode-ai/core/util/encode"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { extractPromptFromParts } from "@/utils/prompt"
 import type { Message, UserMessage } from "@opencode-ai/sdk/v2"
@@ -82,6 +83,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const closableTab = tabState.closableTab
 
   const projectDirectory = () => decode64(params.dir) ?? ""
+  const newSessionDirectory = () => layout.sidebar.project() ?? projectDirectory()
 
   const idle = { type: "idle" as const }
   const status = () => sync.data.session_status[params.id ?? ""] ?? idle
@@ -264,7 +266,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keywords: kw("command.session.new"),
         keybind: "mod+shift+s",
         slash: "new",
-        onSelect: () => navigate(`/${params.dir}/session`),
+        onSelect: () => {
+          const directory = newSessionDirectory()
+          if (!directory) return
+          console.debug(`[session-new] source=command directory=${directory} route-directory=${projectDirectory() || "none"}`)
+          navigate(`/${base64Encode(directory)}/session`)
+        },
       }),
       fileCommand({
         id: "file.open",

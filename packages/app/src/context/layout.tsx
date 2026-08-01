@@ -1,5 +1,5 @@
 import { createStore, produce } from "solid-js/store"
-import { batch, createEffect, createMemo, onCleanup, onMount, untrack, type Accessor } from "solid-js"
+import { batch, createEffect, createMemo, createSignal, onCleanup, onMount, untrack, type Accessor } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useGlobalSync } from "./global-sync"
 import { useGlobalSDK } from "./global-sdk"
@@ -287,6 +287,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
     const MAX_SESSION_KEYS = 50
     const PENDING_MESSAGE_TTL_MS = 2 * 60 * 1000
+    // Transient sidebar selection may differ from the project owning the current route.
+    const [sidebarProject, setSidebarProject] = createSignal<string | undefined>()
     const usage = {
       active: undefined as string | undefined,
       pruned: false,
@@ -751,6 +753,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       },
       sidebar: {
+        project: sidebarProject,
+        setProject(directory: string | undefined) {
+          setSidebarProject(directory)
+        },
         opened: createMemo(() => store.sidebar.opened),
         open() {
           setStore("sidebar", "opened", true)
