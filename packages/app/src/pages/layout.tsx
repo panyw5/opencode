@@ -1360,7 +1360,7 @@ export default function Layout(props: ParentProps) {
         disabled: layout.projects.list().length === 0 && enabledExtraAgents(server.list).length === 0,
         onSelect: () => {
           dialog.show(
-            () => <DialogSwitchProject onSelect={navigateToProject} current={() => currentProject()?.entry} />,
+            () => <DialogSwitchProject onSelect={switchProjectFromDialog} current={() => currentProject()?.entry} />,
             undefined,
             {
               modal: false,
@@ -2933,7 +2933,7 @@ export default function Layout(props: ParentProps) {
     return result
   })
 
-  function selectSidebarProject(directory: string) {
+  function selectSidebarProject(directory: string, options?: { navigateWhenNoSession?: boolean }) {
     const project = layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(directory))
     if (!project) {
       console.debug(
@@ -2943,17 +2943,60 @@ export default function Layout(props: ParentProps) {
     }
 
     const hasCurrentSession = onSessionRoute() && !!params.id
+    const navigateWhenNoSession = options?.navigateWhenNoSession ?? true
     console.debug(
-      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} navigated=${!hasCurrentSession}`,
+      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} navigated=${!hasCurrentSession && navigateWhenNoSession}`,
     )
     setSidebarProjectRoot(project.worktree)
-    if (!hasCurrentSession) {
+    if (!hasCurrentSession && navigateWhenNoSession) {
       setSwitching(undefined)
       navigateWithSidebarReset(`/${base64Encode(project.worktree)}/session`)
       return
     }
     warmProjectSessions(project.worktree)
     layout.sidebar.open()
+  }
+
+  function switchProjectFromDialog(directory: string) {
+    const project = layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(directory))
+    if (!project) {
+      console.debug(
+        `[project-switch] dialog explicit navigation directory=${directory} route-directory=${routeDir() || "none"} reason=non-project`,
+      )
+      void navigateToProject(directory)
+      return
+    }
+
+    const hasCurrentSession = onSessionRoute() && !!params.id
+    selectSidebarProject(project.worktree, { navigateWhenNoSession: false })
+
+    const directories = new Set(workspaceIds(project).map(workspaceKey))
+    const openTab = layout
+      .sessionBar
+      .all()
+      .toReversed()
+      .find((tab) => directories.has(workspaceKey(tab.directory)))
+    if (openTab) {
+      console.debug(
+        `[project-switch] dialog open-tab root=${project.worktree} directory=${openTab.directory} id=${openTab.id} route-directory=${routeDir() || "none"}`,
+      )
+      setSwitching(undefined)
+      navigateWithSidebarReset(`/${base64Encode(openTab.directory)}/session/${openTab.id}`)
+      return
+    }
+
+    if (hasCurrentSession) {
+      console.debug(
+        `[project-switch] dialog keep-current root=${project.worktree} route-directory=${routeDir() || "none"} reason=no-open-tab`,
+      )
+      return
+    }
+
+    console.debug(
+      `[project-switch] dialog new-session root=${project.worktree} route-directory=${routeDir() || "none"} reason=no-current-session`,
+    )
+    setSwitching(undefined)
+    navigateWithSidebarReset(`/${base64Encode(project.worktree)}/session`)
   }
 
   function handleWorkspaceDragStart(event: unknown) {
