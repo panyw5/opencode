@@ -674,6 +674,30 @@ function configModel(model: ModelsDev.Model) {
   }
 }
 
+const deepSeekV4Config = (modelOptions: Record<string, unknown> = {}): Partial<Config.Info> => ({
+  enabled_providers: ["deepseek-test"],
+  provider: {
+    "deepseek-test": {
+      name: "DeepSeek Test",
+      npm: "@ai-sdk/openai-compatible",
+      api: "https://api.deepseek.com/v1",
+      models: {
+        "deepseek-v4-flash": {
+          name: "DeepSeek V4 Flash",
+          reasoning: true,
+          tool_call: true,
+          interleaved: { field: "reasoning_content" },
+          options: modelOptions,
+        },
+      },
+      options: {
+        apiKey: "test-deepseek-key",
+        baseURL: `${state.server!.url.origin}/v1`,
+      },
+    },
+  },
+})
+
 function createEventStream(chunks: unknown[], includeDone = false) {
   const lines = chunks.map((chunk) => `data: ${typeof chunk === "string" ? chunk : JSON.stringify(chunk)}`)
   if (includeDone) {
@@ -775,6 +799,110 @@ describe("session.llm.stream", () => {
         },
       }),
     },
+  )
+
+  it.instance(
+    "omits tool_choice for DeepSeek V4 thinking mode",
+    () =>
+      Effect.gen(function* () {
+        const request = waitRequest(
+          "/chat/completions",
+          new Response(createChatStream("Hello"), {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          }),
+        )
+        const resolved = yield* Provider.use.getModel(
+          ProviderID.make("deepseek-test"),
+          ModelID.make("deepseek-v4-flash"),
+        )
+        const sessionID = SessionID.make("session-test-deepseek-v4-tool-choice")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-deepseek-v4-tool-choice"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make("deepseek-test"), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: [],
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {
+            lookup: tool({
+              description: "Lookup data",
+              inputSchema: z.object({ query: z.string() }),
+              execute: async () => ({ output: "ok" }),
+            }),
+          },
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        expect(capture.body.tool_choice).toBeUndefined()
+      }),
+    { config: () => deepSeekV4Config({ extra_body: { thinking: { type: "enabled" } } }) },
+  )
+
+  it.instance(
+    "keeps tool_choice when DeepSeek V4 thinking mode is explicitly disabled",
+    () =>
+      Effect.gen(function* () {
+        const request = waitRequest(
+          "/chat/completions",
+          new Response(createChatStream("Hello"), {
+            status: 200,
+            headers: { "Content-Type": "text/event-stream" },
+          }),
+        )
+        const resolved = yield* Provider.use.getModel(
+          ProviderID.make("deepseek-test"),
+          ModelID.make("deepseek-v4-flash"),
+        )
+        const sessionID = SessionID.make("session-test-deepseek-v4-tool-choice-disabled")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-deepseek-v4-tool-choice-disabled"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make("deepseek-test"), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: [],
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {
+            lookup: tool({
+              description: "Lookup data",
+              inputSchema: z.object({ query: z.string() }),
+              execute: async () => ({ output: "ok" }),
+            }),
+          },
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        expect(capture.body.tool_choice).toBe("auto")
+      }),
+    { config: () => deepSeekV4Config({ extra_body: { thinking: { type: "disabled" } } }) },
   )
 
   const alibabaQwenFixture = { providerID: "alibaba", modelID: "qwen-plus" }

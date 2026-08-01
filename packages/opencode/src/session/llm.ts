@@ -30,6 +30,17 @@ import { LLMRequestPrep } from "./llm/request"
 const log = Log.create({ service: "llm" })
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
+function isDeepSeekV4ThinkingEnabled(model: Provider.Model, options: Record<string, unknown>) {
+  if (model.api.npm !== "@ai-sdk/openai-compatible") return false
+  if (!model.api.id.toLowerCase().startsWith("deepseek-v4")) return false
+
+  const extraBody = options.extra_body
+  if (!extraBody || typeof extraBody !== "object" || Array.isArray(extraBody)) return true
+  const thinking = (extraBody as Record<string, unknown>).thinking
+  if (!thinking || typeof thinking !== "object" || Array.isArray(thinking)) return true
+  return (thinking as Record<string, unknown>).type !== "disabled"
+}
+
 export type StreamInput = {
   user: MessageV2.User
   sessionID: string
@@ -111,6 +122,13 @@ const live: Layer.Layer<
         flags,
         isWorkflow,
       })
+      const suppressDeepSeekV4ToolChoice = isDeepSeekV4ThinkingEnabled(input.model, prepared.params.options)
+      if (suppressDeepSeekV4ToolChoice) {
+        l.warn("DeepSeek V4 thinking mode requires omitting tool_choice", {
+          providerID: input.model.providerID,
+          modelID: input.model.api.id,
+        })
+      }
 
       // Wire up toolExecutor for DWS workflow models so that tool calls
       // from the workflow service are executed via opencode's tool system
@@ -225,7 +243,7 @@ const live: Layer.Layer<
           llmClient,
           messages: prepared.messages,
           tools: prepared.tools,
-          toolChoice: input.toolChoice,
+          toolChoice: suppressDeepSeekV4ToolChoice ? undefined : input.toolChoice,
           temperature: prepared.params.temperature,
           topP: prepared.params.topP,
           topK: prepared.params.topK,
@@ -314,15 +332,27 @@ const live: Layer.Layer<
               {
                 specificationVersion: "v3" as const,
                 async transformParams(args) {
+                  let params = args.params
                   if (args.type === "stream") {
-                    // @ts-expect-error
-                    args.params.prompt = ProviderTransform.message(
-                      args.params.prompt,
-                      input.model,
-                      prepared.messageTransformOptions,
-                    )
+                    params = {
+                      ...params,
+                      // ProviderTransform operates on the AI SDK's public ModelMessage shape.
+                      // The V3 middleware prompt type is narrower but has the same runtime representation.
+                      // @ts-expect-error
+                      prompt: ProviderTransform.message(
+                        params.prompt,
+                        input.model,
+                        prepared.messageTransformOptions,
+                      ),
+                    }
                   }
-                  return args.params
+                  if (suppressDeepSeekV4ToolChoice && params.toolChoice !== undefined) {
+                    l.warn("omitting tool_choice for DeepSeek V4 thinking request", {
+                      toolChoice: params.toolChoice.type,
+                    })
+                    return { ...params, toolChoice: undefined }
+                  }
+                  return params
                 },
               },
             ],
