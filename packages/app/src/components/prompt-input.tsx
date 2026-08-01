@@ -1,6 +1,6 @@
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
-import { createEffect, on, Component, Show, onCleanup, Switch, Match, createMemo, createSignal, For } from "solid-js"
+import { createEffect, on, Component, Show, onCleanup, Switch, Match, createMemo, createSignal, createUniqueId, For } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
@@ -429,8 +429,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   let inputUndoLast = 0
 
   const mirror = { input: false }
-  const inset = 56
-  const space = `${inset}px`
+  const formID = `prompt-shell-${createUniqueId()}`
+  const inset = 16
 
   const scrollCursorIntoView = () => {
     const container = scrollRef
@@ -1990,6 +1990,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       />
       <Show when={!read()}>
         <DockShellForm
+          id={formID}
           onSubmit={handleSubmit}
           data-slot="prompt-shell"
           style={glass()}
@@ -2045,7 +2046,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             <div
               class="relative min-h-[144px] max-h-[280px] overflow-y-auto no-scrollbar"
               ref={(el) => (scrollRef = el)}
-              style={{ "scroll-padding-bottom": space }}
             >
               <div
                 data-component="prompt-input"
@@ -2068,21 +2068,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 onKeyDown={handleKeyDown}
                 classList={{
                   "select-text": true,
-                  "w-full pl-4 pr-4 pt-3 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
+                  "w-full px-4 pt-3 pb-3 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
                   "[&_[data-type=file]]:text-syntax-property": true,
                   "[&_[data-type=agent]]:text-syntax-type": true,
                   "font-mono!": true,
                 }}
-                style={{ "padding-bottom": space }}
               />
               <Show keyed when={!prompt.dirty() ? placeholder() : undefined}>
                 {(text) => (
                   <div
                     data-slot="prompt-placeholder"
                     data-typing={placeholderTyping() || undefined}
-                    class="absolute top-0 inset-x-0 pl-4 pr-4 pt-3 text-14-regular pointer-events-none whitespace-nowrap truncate"
+                    class="absolute top-0 inset-x-0 px-4 pt-3 pb-3 text-14-regular pointer-events-none whitespace-nowrap truncate"
                     classList={{ "font-mono!": store.mode === "shell" }}
-                    style={{ "padding-bottom": space }}
                   >
                     <span data-slot="prompt-placeholder-text">{animatedPlaceholder() || "\u00A0"}</span>
                   </div>
@@ -2090,29 +2088,45 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               </Show>
             </div>
 
-            <div class="pointer-events-none absolute inset-x-3 bottom-3 flex items-end justify-end gap-3">
-              <div class="pointer-events-auto flex items-center gap-2.5">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept={ACCEPTED_FILE_TYPES.join(",")}
-                  class="hidden"
-                  onChange={(e) => {
-                    const list = e.currentTarget.files
-                    if (list) void addAttachments(Array.from(list))
-                    e.currentTarget.value = ""
-                  }}
-                />
-
+          </div>
+        </DockShellForm>
+      </Show>
+      <Show when={store.mode === "normal" || store.mode === "shell"}>
+        <DockTray attach="top">
+          <div class="px-1.75 pt-5.5 pb-2 flex items-center gap-2 min-w-0">
+            <div class="flex items-center gap-1.5 min-w-0 flex-1 relative">
+              <div
+                class="h-7 flex items-center gap-1.5 max-w-[160px] min-w-0 absolute inset-y-0 left-0"
+                style={{
+                  padding: "0 4px 0 8px",
+                  ...shell(),
+                }}
+              >
+                <span class="truncate text-13-medium text-text-strong">{language.t("prompt.mode.shell")}</span>
+                <div class="size-4 shrink-0" />
+              </div>
+              <div class="flex items-center gap-1.5 min-w-0 flex-1">
                 <div
+                  data-slot="prompt-actions"
                   aria-hidden={store.mode !== "normal"}
-                  class="flex items-center gap-2.5 transition-all duration-200 ease-out"
+                  class="flex items-center gap-2.5 shrink-0 transition-all duration-200 ease-out"
                   classList={{
                     "opacity-100 translate-y-0 scale-100 pointer-events-auto": store.mode === "normal",
                     "opacity-0 translate-y-2 scale-95 pointer-events-none": store.mode !== "normal",
                   }}
                 >
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept={ACCEPTED_FILE_TYPES.join(",")}
+                    class="hidden"
+                    onChange={(e) => {
+                      const list = e.currentTarget.files
+                      if (list) void addAttachments(Array.from(list))
+                      e.currentTarget.value = ""
+                    }}
+                  />
                   <TooltipKeybind
                     {...hover}
                     placement="top"
@@ -2167,51 +2181,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       />
                     </Tooltip>
                   </Show>
-                  <div class="relative size-10 shrink-0">
-                    <Show when={working()}>
-                      <div data-component="prompt-stop-halo" aria-hidden="true" class="pointer-events-none absolute inset-0 z-0 flex">
-                        <span data-slot="prompt-stop-halo-ripple" class="absolute inline-flex h-full w-full rounded-full" />
-                      </div>
-                    </Show>
-                    <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
-                      <IconButton
-                        data-action="prompt-submit"
-                        type="submit"
-                        disabled={store.mode !== "normal" || store.submitting || (!prompt.dirty() && !working() && commentCount() === 0)}
-                        tabIndex={store.mode === "normal" ? undefined : -1}
-                        icon={working() ? "stop" : store.submitting ? "arrow-sync" : "arrow-up-bold"}
-                        variant="primary"
-                        iconSize={working() ? "normal" : "medium"}
-                        class="relative z-1 size-10 rounded-full shadow-xs-border"
-                        classList={{
-                          "animate-spin": store.submitting && !working(),
-                        }}
-                        style={buttons()}
-                        aria-label={working() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                      />
-                    </Tooltip>
-                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </DockShellForm>
-      </Show>
-      <Show when={store.mode === "normal" || store.mode === "shell"}>
-        <DockTray attach="top">
-          <div class="px-1.75 pt-5.5 pb-2 flex items-center gap-2 min-w-0">
-            <div class="flex items-center gap-1.5 min-w-0 flex-1 relative">
-              <div
-                class="h-7 flex items-center gap-1.5 max-w-[160px] min-w-0 absolute inset-y-0 left-0"
-                style={{
-                  padding: "0 4px 0 8px",
-                  ...shell(),
-                }}
-              >
-                <span class="truncate text-13-medium text-text-strong">{language.t("prompt.mode.shell")}</span>
-                <div class="size-4 shrink-0" />
-              </div>
-              <div class="flex items-center gap-1.5 min-w-0 flex-1">
+                <Tooltip {...hover} placement="top" value={language.t("session.read")}>
+                  <IconButton
+                    data-action="prompt-read"
+                    type="button"
+                    icon="read"
+                    variant="ghost"
+                    class="size-7 shrink-0"
+                    iconSize="normal"
+                    style={control()}
+                    onClick={toggleRead}
+                    aria-label={language.t("session.read")}
+                    aria-pressed={read()}
+                  />
+                </Tooltip>
                 <Show
                   when={hasAgentChoose()}
                   fallback={
@@ -2496,20 +2480,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     <Icon name="shield" size="small" classList={{ "text-icon-success-base": accepting() }} />
                   </Button>
                 </TooltipKeybind>
-                <Tooltip {...hover} placement="top" value={language.t("session.read")}>
-                  <IconButton
-                    data-action="prompt-read"
-                    type="button"
-                    icon="read"
-                    variant="ghost"
-                    class="size-7 shrink-0"
-                    iconSize="normal"
-                    style={control()}
-                    onClick={toggleRead}
-                    aria-label={language.t("session.read")}
-                    aria-pressed={read()}
-                  />
-                </Tooltip>
                 <Show when={!!extraAgentIntegration()}>
                   <Tooltip {...hover} placement="top" value={language.t("prompt.action.insertSession")}>
                     <SessionPickerPopover
@@ -2522,6 +2492,33 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     />
                   </Tooltip>
                 </Show>
+              </div>
+            </div>
+            <div class="flex items-center gap-2.5 shrink-0">
+              <div class="relative size-10 shrink-0">
+                <Show when={working()}>
+                  <div data-component="prompt-stop-halo" aria-hidden="true" class="pointer-events-none absolute inset-0 z-0 flex">
+                    <span data-slot="prompt-stop-halo-ripple" class="absolute inline-flex h-full w-full rounded-full" />
+                  </div>
+                </Show>
+                <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
+                  <IconButton
+                    data-action="prompt-submit"
+                    type="submit"
+                    form={formID}
+                    disabled={store.mode !== "normal" || store.submitting || (!prompt.dirty() && !working() && commentCount() === 0)}
+                    tabIndex={store.mode === "normal" ? undefined : -1}
+                    icon={working() ? "stop" : store.submitting ? "arrow-sync" : "arrow-up-bold"}
+                    variant="primary"
+                    iconSize={working() ? "normal" : "medium"}
+                    class="relative z-1 size-10 rounded-full shadow-xs-border"
+                    classList={{
+                      "animate-spin": store.submitting && !working(),
+                    }}
+                    style={buttons()}
+                    aria-label={working() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                  />
+                </Tooltip>
               </div>
             </div>
           </div>
