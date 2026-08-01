@@ -1,7 +1,8 @@
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { Component, ComponentProps, createMemo, getOwner, JSX, runWithOwner, Show, ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useLocal } from "@/context/local"
+import { useLocal, type ModelKey } from "@/context/local"
+import { useModels } from "@/context/models"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { compareProviderGroups } from "./provider-order"
@@ -52,7 +53,81 @@ function rect(el: HTMLElement | undefined) {
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "opencode" && (!cost || cost.input === 0)
 
-type ModelState = ReturnType<typeof useLocal>["model"]
+export type ModelState = ReturnType<typeof useLocal>["model"]
+
+/** Parse `provider/model` config refs (first slash separates provider from model id). */
+export function parseModelRef(raw: string): ModelKey | undefined {
+  const value = raw.trim()
+  if (!value) return undefined
+  const idx = value.indexOf("/")
+  if (idx <= 0 || idx >= value.length - 1) return undefined
+  return { providerID: value.slice(0, idx), modelID: value.slice(idx + 1) }
+}
+
+/**
+ * Bound model state for settings forms.
+ * Reuses the session model picker (ModelSelectorPopover / DialogSelectModel)
+ * without writing into the session-local selection.
+ */
+export function useBoundModelState(input: {
+  value: () => string
+  onChange: (next: string) => void
+}): ModelState {
+  const models = useModels()
+
+  const key = createMemo(() => parseModelRef(input.value()))
+  const current = () => {
+    const item = key()
+    if (!item) return undefined
+    return models.find(item)
+  }
+  const recent = createMemo(() => models.recent.list().map(models.find).filter(Boolean))
+
+  const set = (item: ModelKey | undefined, options?: { recent?: boolean }) => {
+    if (!item) {
+      input.onChange("")
+      return
+    }
+    input.onChange(`${item.providerID}/${item.modelID}`)
+    models.setVisibility(item, true)
+    if (options?.recent) models.recent.push(item)
+  }
+
+  return {
+    ready: models.ready,
+    current,
+    recent,
+    list: models.list,
+    cycle(direction) {
+      const items = recent()
+      const item = current()
+      if (!item || items.length === 0) return
+      const index = items.findIndex((entry) => entry?.provider.id === item.provider.id && entry?.id === item.id)
+      if (index === -1) return
+      let next = index + direction
+      if (next < 0) next = items.length - 1
+      if (next >= items.length) next = 0
+      const entry = items[next]
+      if (!entry) return
+      set({ providerID: entry.provider.id, modelID: entry.id })
+    },
+    set,
+    visible(item) {
+      return models.visible(item)
+    },
+    setVisibility(item, visible) {
+      models.setVisibility(item, visible)
+    },
+    variant: {
+      configured: () => undefined,
+      selected: () => undefined,
+      current: () => undefined,
+      list: () => [],
+      set() {},
+      cycle() {},
+    },
+  }
+}
 
 const CurrentModelSummary: Component<{ model: ModelState; class?: string }> = (props) => {
   const language = useLanguage()

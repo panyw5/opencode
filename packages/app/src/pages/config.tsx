@@ -50,6 +50,7 @@ import { FetchProviderModels } from "@/components/fetch-provider-models"
 import { Link } from "@/components/link"
 import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject } from "@/context/layout"
+import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import {
   type ConfigTreeItem,
   type CliAgentConfig,
@@ -1045,6 +1046,12 @@ function JsoncAgentEditor(props: {
   const [saving, setSaving] = createSignal(false)
   const [error, setError] = createSignal("")
 
+  const formModel = useBoundModelState({
+    value: () => form.model,
+    onChange: (next) => setForm("model", next),
+  })
+  const selectedModel = createMemo(() => formModel.current())
+
   createEffect(
     on(
       () => [props.name, props.config] as const,
@@ -1086,7 +1093,43 @@ function JsoncAgentEditor(props: {
         <div class="mx-auto flex max-w-[920px] flex-col gap-6">
           <Show when={error()}>{(message) => <div class="text-12-regular text-text-danger-base">{message()}</div>}</Show>
           <div class="grid gap-4 md:grid-cols-2">
-            <TextField label={language.t("config.agents.field.model")} placeholder="provider/model" value={form.model} onChange={(value) => setForm("model", value)} />
+            <div class="flex flex-col gap-2">
+              <label class="text-12-medium text-text-weak">{language.t("config.agents.field.model")}</label>
+              <div class="flex min-w-0 items-center gap-1">
+                <ModelSelectorPopover
+                  model={formModel}
+                  triggerAs={Button}
+                  triggerProps={{
+                    type: "button",
+                    variant: "ghost",
+                    class:
+                      "h-10 min-w-0 flex-1 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover",
+                  }}
+                >
+                  <div class="flex min-w-0 items-center gap-2">
+                    <Show when={selectedModel()?.provider?.id}>
+                      <ProviderIcon id={selectedModel()!.provider.id} class="size-4 shrink-0" />
+                    </Show>
+                    <span class="truncate">
+                      {selectedModel()
+                        ? `${selectedModel()!.provider.name} / ${selectedModel()!.name}`
+                        : form.model.trim() || language.t("config.agents.field.default")}
+                    </span>
+                  </div>
+                  <Icon name="chevron-down" size="small" class="shrink-0 text-text-weak" />
+                </ModelSelectorPopover>
+                <Show when={form.model.trim()}>
+                  <IconButton
+                    icon="close"
+                    variant="ghost"
+                    iconSize="small"
+                    class="size-10 shrink-0"
+                    aria-label={language.t("config.agents.field.default")}
+                    onClick={() => formModel.set(undefined)}
+                  />
+                </Show>
+              </div>
+            </div>
             <TextField label={language.t("config.agents.field.variant")} value={form.variant} onChange={(value) => setForm("variant", value)} />
             <TextField label={language.t("config.agents.field.temperature")} inputmode="decimal" value={form.temperature} onChange={(value) => setForm("temperature", value)} />
             <TextField label={language.t("config.agents.field.topP")} inputmode="decimal" value={form.topP} onChange={(value) => setForm("topP", value)} />
