@@ -1,3 +1,4 @@
+import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
@@ -230,20 +231,37 @@ async function loadAllMessages(client: ReturnType<typeof useSDK>["client"], sess
 }
 
 function FileChangeList(props: { title: string; files: string[] }) {
+  const [open, setOpen] = createSignal(false)
+
   return (
     <Show when={props.files.length > 0}>
-      <section>
-        <h3 class="mb-1.5 text-13-medium text-text-strong">{props.title}</h3>
-        <ul class="space-y-1">
-          <For each={props.files}>
-            {(file) => (
-              <li class="rounded-lg border border-border-weaker-base bg-surface-base px-2.5 py-1.5 text-12-regular text-text-strong shadow-xs-border-base">
-                <code class="block break-all font-mono">{file}</code>
-              </li>
-            )}
-          </For>
-        </ul>
-      </section>
+      <Collapsible
+        data-slot="session-status-file-change-list"
+        variant="ghost"
+        open={open()}
+        onOpenChange={setOpen}
+      >
+        <Collapsible.Trigger>
+          <div class="flex w-full items-center justify-between gap-2">
+            <span class="text-13-medium text-text-strong">
+              {props.title}
+              <span class="ml-1.5 text-12-regular text-text-weak">({props.files.length})</span>
+            </span>
+            <Collapsible.Arrow style={{ opacity: 1 }} />
+          </div>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
+          <ul class="mt-1.5 space-y-1">
+            <For each={props.files}>
+              {(file) => (
+                <li class="rounded-lg border border-border-weaker-base bg-surface-base px-2.5 py-1.5 text-12-regular text-text-strong shadow-xs-border-base">
+                  <code class="block break-all font-mono">{file}</code>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Collapsible.Content>
+      </Collapsible>
     </Show>
   )
 }
