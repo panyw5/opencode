@@ -36,6 +36,7 @@ import { registerWslIpcHandlers } from "./wsl/ipc"
 import {
   createLoadingWindow,
   createMainWindow,
+  isAppActive,
   registerRendererProtocol,
   setRelaunchHandler,
   setBackgroundColor,
@@ -422,14 +423,33 @@ const main = Effect.gen(function* () {
     return queueBackendReload("manual reload")
   }
 
+  // Track user leaving during sidecar / optional migration wait. On macOS with no
+  // windows yet, did-resign-active is the reliable signal (wired inside isAppActive).
+  const markStartupBlur = (source: string) => {
+    didStartupWindowBlur = true
+    logger.log("startup focus: blur", { source, appActive: isAppActive() })
+  }
+  const markStartupFocus = (source: string) => {
+    didStartupWindowBlur = false
+    logger.log("startup focus: focus", { source, appActive: isAppActive() })
+  }
+  // Prime app-active tracking so resign/become events are observed during wait.
+  void isAppActive()
+  const onResignActive = () => markStartupBlur("did-resign-active")
+  const onBecomeActive = () => markStartupFocus("did-become-active")
+  if (process.platform === "darwin") {
+    app.on("did-resign-active", onResignActive)
+    app.on("did-become-active", onBecomeActive)
+  }
+
   if (needsMigration) {
     setInitStep({ phase: "sqlite_waiting" })
     overlay = createLoadingWindow()
     overlay.on("blur", () => {
-      didStartupWindowBlur = true
+      markStartupBlur("overlay-blur")
     })
     overlay.on("focus", () => {
-      didStartupWindowBlur = false
+      markStartupFocus("overlay-focus")
     })
   }
 
@@ -452,10 +472,28 @@ const main = Effect.gen(function* () {
 
   if (overlay) yield* Deferred.await(loadingComplete)
 
+  // Migration overlay: if the user left, keep the main window hidden until dock
+  // activate (existing behavior). Normal startup always shows the window, but
+  // only activates when the app is still focused so we do not yank focus back.
+  const appActive = isAppActive()
+  if (!appActive) didStartupWindowBlur = true
   const shouldShowMainWindow = overlay ? !didStartupWindowBlur : true
-  mainWindow = createMainWindow({ activate: shouldShowMainWindow, show: shouldShowMainWindow })
+  const shouldActivateMainWindow = shouldShowMainWindow && appActive
+  logger.log("startup focus: main window policy", {
+    needsMigration: Boolean(overlay),
+    didStartupWindowBlur,
+    appActive,
+    shouldShowMainWindow,
+    shouldActivateMainWindow,
+  })
+  mainWindow = createMainWindow({ activate: shouldActivateMainWindow, show: shouldShowMainWindow })
+  if (process.platform === "darwin") {
+    app.off("did-resign-active", onResignActive)
+    app.off("did-become-active", onBecomeActive)
+  }
   if (!shouldShowMainWindow) {
     app.once("activate", () => {
+      logger.log("startup focus: activate → show main window")
       mainWindow?.show()
     })
   }

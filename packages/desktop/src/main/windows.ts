@@ -116,18 +116,60 @@ export function setDockIcon() {
   if (!icon.isEmpty()) app.dock?.setIcon(icon)
 }
 
+// Electron's App has no isFocused(); on macOS track active state via native events.
+let appActive = true
+let appActiveWired = false
+
+function wireAppActiveTracking() {
+  if (appActiveWired) return
+  appActiveWired = true
+  if (process.platform === "darwin") {
+    app.on("did-become-active", () => {
+      appActive = true
+      writeLog("window", "startup-focus app did-become-active")
+    })
+    app.on("did-resign-active", () => {
+      appActive = false
+      writeLog("window", "startup-focus app did-resign-active")
+    })
+    return
+  }
+  app.on("browser-window-focus", () => {
+    appActive = true
+  })
+  app.on("browser-window-blur", () => {
+    queueMicrotask(() => {
+      if (!BrowserWindow.getFocusedWindow()) appActive = false
+    })
+  })
+}
+
+/** Whether this app is currently the active/frontmost application. */
+export function isAppActive() {
+  wireAppActiveTracking()
+  return appActive
+}
+
 export type CreateMainWindowOptions = {
   activate?: boolean
   show?: boolean
 }
 
 export function createMainWindow(options: CreateMainWindowOptions = {}) {
+  wireAppActiveTracking()
   const shouldActivate = options.activate ?? true
   const shouldShow = options.show ?? true
+  const createdAt = Date.now()
+  // Disable auto maximize/fullscreen in manage() — those APIs show a still-hidden
+  // window early, then ready-to-show calls show() and steals focus a second time.
   const state = windowState({
     defaultWidth: 1280,
     defaultHeight: 800,
+    maximize: false,
+    fullScreen: false,
   })
+  const wantsMaximized = state.isMaximized === true
+  const wantsFullScreen = state.isFullScreen === true
 
   const mode = tone()
   const win = new BrowserWindow({
@@ -161,6 +203,29 @@ export function createMainWindow(options: CreateMainWindowOptions = {}) {
     },
   })
 
+  const trace = (event: string, extra?: Record<string, unknown>) => {
+    if (win.isDestroyed()) {
+      writeLog("window", `startup-focus ${event}`, { tMs: Date.now() - createdAt, destroyed: true, ...extra })
+      return
+    }
+    writeLog("window", `startup-focus ${event}`, {
+      tMs: Date.now() - createdAt,
+      appActive: isAppActive(),
+      winFocused: win.isFocused(),
+      visible: win.isVisible(),
+      maximized: win.isMaximized(),
+      fullScreen: win.isFullScreen(),
+      shouldShow,
+      shouldActivate,
+      ...extra,
+    })
+  }
+
+  win.on("show", () => trace("event:show"))
+  win.on("focus", () => trace("event:focus"))
+  win.on("blur", () => trace("event:blur"))
+  win.on("maximize", () => trace("event:maximize"))
+
   allowRendererPermissions(win)
   wireWindowRecovery(win, "main")
   if (process.platform === "win32") {
@@ -186,14 +251,35 @@ export function createMainWindow(options: CreateMainWindowOptions = {}) {
   wireZoom(win)
 
   win.once("ready-to-show", () => {
-    if (!shouldShow) return
-    if (shouldActivate) {
-      win.show()
+    if (!shouldShow) {
+      trace("ready-to-show:skip", { reason: "shouldShow=false" })
       return
     }
-    win.showInactive()
+
+    // Re-check focus at show time: sidecar + page load may take seconds, and the
+    // user may have switched apps after createMainWindow() was called.
+    const activate = shouldActivate && isAppActive()
+    const method = activate ? "show" : "showInactive"
+    trace("ready-to-show:before", { activate, method, wantsMaximized, wantsFullScreen })
+
+    if (activate) win.show()
+    else win.showInactive()
+
+    // Apply restored chrome state only after the window is visible so maximize()
+    // does not force an early show (Electron shows hidden windows on maximize).
+    if (wantsMaximized && !win.isMaximized()) {
+      trace("apply:maximize")
+      win.maximize()
+    }
+    if (wantsFullScreen && !win.isFullScreen()) {
+      trace("apply:fullscreen")
+      win.setFullScreen(true)
+    }
+
+    trace("ready-to-show:after", { method })
   })
 
+  trace("created", { wantsMaximized, wantsFullScreen })
   return win
 }
 
@@ -221,13 +307,15 @@ function wireWindowsShortcuts(win: BrowserWindow) {
 }
 
 export function createLoadingWindow() {
+  wireAppActiveTracking()
+  const createdAt = Date.now()
   const mode = tone()
   const win = new BrowserWindow({
     width: 640,
     height: 480,
     resizable: false,
     center: true,
-    show: true,
+    show: false,
     autoHideMenuBar: true,
     icon: iconPath(),
     backgroundColor: backgroundColor ?? defaultBackgroundColor(),
@@ -247,11 +335,34 @@ export function createLoadingWindow() {
     },
   })
 
+  const trace = (event: string, extra?: Record<string, unknown>) => {
+    writeLog("window", `startup-focus loading ${event}`, {
+      tMs: Date.now() - createdAt,
+      appActive: isAppActive(),
+      winFocused: win.isDestroyed() ? false : win.isFocused(),
+      visible: win.isDestroyed() ? false : win.isVisible(),
+      ...extra,
+    })
+  }
+
+  win.on("show", () => trace("event:show"))
+  win.on("focus", () => trace("event:focus"))
+  win.on("blur", () => trace("event:blur"))
+
   allowRendererPermissions(win)
   wireWindowRecovery(win, "loading")
 
   loadWindow(win, "loading.html")
 
+  win.once("ready-to-show", () => {
+    const activate = isAppActive()
+    const method = activate ? "show" : "showInactive"
+    trace("ready-to-show", { activate, method })
+    if (activate) win.show()
+    else win.showInactive()
+  })
+
+  trace("created")
   return win
 }
 
