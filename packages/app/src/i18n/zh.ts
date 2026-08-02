@@ -726,6 +726,7 @@ export const dict = {
   "session.todo.badge": "任务：{{done}}/{{total}}",
   "session.status.button": "会话状态",
   "session.status.title": "会话状态",
+  "session.status.copyDetails": "复制会话 ID 和项目路径",
   "session.status.skills": "激活技能",
   "session.status.files.added": "新增的文件",
   "session.status.files.modified": "修改的文件",

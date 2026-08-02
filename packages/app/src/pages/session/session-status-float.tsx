@@ -1,6 +1,7 @@
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
+import { showToast } from "@opencode-ai/ui/toast"
 import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import type { Part } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
@@ -24,12 +25,53 @@ export function SessionStatusFloat(props: {
   const language = useLanguage()
   const sdk = useSDK()
   const [shown, setShown] = createSignal(false)
+  const [copied, setCopied] = createSignal(false)
   const [childDiffs, setChildDiffs] = createSignal<SnapshotFileDiff[]>([])
   const [reportedFileChanges, setReportedFileChanges] = createSignal<SessionFileChange[]>([])
   const fileChanges = createMemo(() =>
     collectSessionFileChanges([...props.diffs, ...childDiffs()], reportedFileChanges(), sdk.directory),
   )
   const hasFileChanges = createMemo(() => Object.values(fileChanges()).some((files) => files.length > 0))
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+
+  const copySessionDetails = () => {
+    const sessionID = props.sessionID
+    const directory = sdk.directory
+    if (!sessionID || !directory) return
+
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    const value = `Session ID: ${sessionID}\nProject path: ${directory}`
+    console.debug("[session-status] copying session details", { sessionID, directory })
+    if (!clipboard?.writeText) {
+      console.debug("[session-status] clipboard unavailable", { sessionID, directory })
+      showToast({ variant: "error", title: language.t("common.requestFailed"), description: "Clipboard unavailable" })
+      return
+    }
+
+    void clipboard.writeText(value).then(
+      () => {
+        console.debug("[session-status] copied session details", { sessionID, directory })
+        setCopied(true)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setCopied(false), 1_200)
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("session.share.copy.copied"),
+          description: sessionID,
+        })
+      },
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error)
+        console.debug("[session-status] copy session details failed", { sessionID, directory, message })
+        showToast({ variant: "error", title: language.t("common.requestFailed"), description: message })
+      },
+    )
+  }
+
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
 
   createEffect(() => {
     if (!shown()) return
@@ -112,7 +154,26 @@ export function SessionStatusFloat(props: {
       >
         <div data-slot="session-status-float-panel" class="flex max-h-[min(960px,calc(100dvh-24px))] flex-col">
           <div class="flex items-center justify-between px-3 py-2 border-b border-border-weaker-base">
-            <span class="text-13-medium text-text-strong">{language.t("session.status.title")}</span>
+            <div class="flex min-w-0 items-center gap-1.5">
+              <span class="shrink-0 text-13-medium text-text-strong">{language.t("session.status.title")}</span>
+              <Show when={props.sessionID}>
+                {(sessionID) => (
+                  <>
+                    <span class="min-w-0 truncate font-mono text-12-regular text-text-weak" title={sessionID()}>
+                      {sessionID()}
+                    </span>
+                    <IconButton
+                      data-action="session-status-copy-details"
+                      icon={copied() ? "check-small" : "copy"}
+                      size="normal"
+                      variant="ghost"
+                      aria-label={language.t("session.status.copyDetails")}
+                      onClick={copySessionDetails}
+                    />
+                  </>
+                )}
+              </Show>
+            </div>
             <IconButton
               data-action="session-status-float-close"
               icon="close"

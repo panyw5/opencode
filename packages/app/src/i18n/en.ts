@@ -779,6 +779,7 @@ export const dict = {
   "session.todo.badge": "Tasks: {{done}}/{{total}}",
   "session.status.button": "Session status",
   "session.status.title": "Session status",
+  "session.status.copyDetails": "Copy session ID and project path",
   "session.status.skills": "Activated skills",
   "session.status.files.added": "Added files",
   "session.status.files.modified": "Modified files",
