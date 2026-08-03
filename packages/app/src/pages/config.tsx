@@ -82,8 +82,9 @@ import {
   normalizePath,
 } from "@/utils/config-source"
 import { configPluginKey, pluginKey, relativePluginSpecifier, updatePluginEntries } from "@/utils/config-plugin"
+import { refreshAfterConfigWrite } from "@/utils/config-reload"
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
-import { configAgentDisplayItems, configuredAgentsFromJsonc } from "./config-agent-display"
+import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
 import {
   CHANNEL_PLATFORMS,
   channelPick,
@@ -1051,6 +1052,7 @@ function JsoncAgentEditor(props: {
     onChange: (next) => setForm("model", next),
   })
   const selectedModel = createMemo(() => formModel.current())
+  const variantOptions = createMemo(() => jsoncAgentVariantOptions(selectedModel()?.variants, form.variant))
 
   createEffect(
     on(
@@ -1130,7 +1132,22 @@ function JsoncAgentEditor(props: {
                 </Show>
               </div>
             </div>
-            <TextField label={language.t("config.agents.field.variant")} value={form.variant} onChange={(value) => setForm("variant", value)} />
+            <div class="flex flex-col gap-2">
+              <label class="text-12-medium text-text-weak">{language.t("config.agents.field.variant")}</label>
+              <Select
+                options={variantOptions()}
+                current={variantOptions().find((value) => value === form.variant)}
+                onSelect={(value) => {
+                  console.info("[config] jsonc agent variant selected", { name: props.name, variant: value ?? "" })
+                  setForm("variant", value ?? "")
+                }}
+                variant="secondary"
+                size="large"
+                triggerStyle={{ width: "100%", "justify-content": "space-between", transform: "none" }}
+              >
+                {(value) => <span>{value || language.t("config.agents.field.default")}</span>}
+              </Select>
+            </div>
             <TextField label={language.t("config.agents.field.temperature")} inputmode="decimal" value={form.temperature} onChange={(value) => setForm("temperature", value)} />
             <TextField label={language.t("config.agents.field.topP")} inputmode="decimal" value={form.topP} onChange={(value) => setForm("topP", value)} />
             <TextField label={language.t("config.agents.field.color")} placeholder="primary or #FF5733" value={form.color} onChange={(value) => setForm("color", value)} />
@@ -4490,7 +4507,9 @@ export default function ConfigPage() {
     )
     return configAgentDisplayItems({
       runtime: loaded.latest ?? [],
-      configured: { ...cfg().agent, ...configFileAgents() },
+      // The server config is merged with Markdown agents. Only the file read here
+      // is authoritative for the editable opencode.jsonc section.
+      configured: configFileAgents(),
       definedNames: names,
     }).map((item) => {
       const local = item.origin !== "runtime"
@@ -5623,9 +5642,11 @@ export default function ConfigPage() {
   }
 
   async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
+    console.info("[config] jsonc agent save started", { name })
     const files = await platform.listConfigFiles?.(null)
     const file = files?.find((item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc")
     if (!file?.path || !platform.readConfigFile || !platform.writeConfigFile) throw new Error(t("config.error.globalConfigUnavailable"))
+    console.info("[config] jsonc agent config file resolved", { name, path: file.path })
 
     const number = (label: string, value: string) => {
       if (!value.trim()) return undefined
@@ -5652,9 +5673,17 @@ export default function ConfigPage() {
       options: jsoncObjectField("Options", form.options),
     }
     let text = (await platform.readConfigFile(file.path)) ?? "{}"
+    console.info("[config] jsonc agent config file read", { name, path: file.path, bytes: text.length })
     for (const [key, value] of Object.entries(fields)) text = patchText(text, ["agent", name, key], value)
     await platform.writeConfigFile(file.path, text)
+    console.info("[config] jsonc agent config file written", { name, path: file.path, bytes: text.length })
     setConfigFileAgents(configuredAgentsFromJsonc(text))
+    await refreshAfterConfigWrite({
+      source: `jsonc-agent:${name}`,
+      refreshConfig: () => globalSync.refreshConfig(mainDomain),
+      refresh: () => bump("workspaceRev", "agentRev"),
+    })
+    console.info("[config] jsonc agent save completed", { name })
     showToast({ variant: "success", title: t("common.save"), description: name })
   }
 
@@ -6234,11 +6263,14 @@ export default function ConfigPage() {
     if (refreshing()) return
     setRefreshing(true)
     try {
-      await globalSync.refreshConfig(mainDomain)
+      console.info("[config] provider refresh started")
+      const config = await globalSync.refreshConfig(mainDomain)
+      console.info("[config] provider runtime config refreshed", { agentCount: Object.keys(config.agent ?? {}).length })
       const result = await globalSDK.forDomain(mainDomain).client.provider.list()
       const data = result.data
       if (!data) throw new Error(t("common.requestFailed"))
       setMainProviders(normalizeProviderList(data))
+      console.info("[config] provider list refreshed", { providerCount: data.all.length })
       showToast({
         variant: "success",
         icon: "circle-check",
@@ -6247,8 +6279,10 @@ export default function ConfigPage() {
       })
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
+      console.error("[config] provider refresh failed", { message })
       showToast({ title: t("common.requestFailed"), description: message })
     } finally {
+      console.info("[config] provider refresh finished")
       setRefreshing(false)
     }
   }

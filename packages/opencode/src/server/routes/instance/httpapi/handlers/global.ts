@@ -97,7 +97,9 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const configRefresh = Effect.fn("GlobalHttpApi.configRefresh")(function* () {
+      log.info("global config runtime refresh requested")
       const result = yield* config.refreshGlobal()
+      log.info("global config runtime refresh completed", { agentCount: Object.keys(result.agent ?? {}).length })
       GlobalBus.emit("event", {
         directory: "global",
         payload: {

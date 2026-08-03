@@ -28,6 +28,13 @@ export function configuredAgentsFromJsonc(input: string): Config["agent"] | unde
   return Object.fromEntries(entries) as Config["agent"]
 }
 
+/** Keep an existing JSONC variant selectable while model metadata catches up. */
+export function jsoncAgentVariantOptions(variants: Record<string, unknown> | undefined, current: string): string[] {
+  const options = Object.keys(variants ?? {})
+  if (current && !options.includes(current)) options.push(current)
+  return ["", ...options]
+}
+
 export function configAgentDisplayItems(input: {
   runtime: RuntimeAgent[]
   configured?: Config["agent"]

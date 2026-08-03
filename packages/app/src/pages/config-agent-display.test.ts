@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Agent, Config } from "@opencode-ai/sdk/v2/client"
-import { configAgentDisplayItems, configuredAgentsFromJsonc } from "./config-agent-display"
+import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
 
 function agent(name: string, input: Partial<Agent> = {}): Agent {
   return {
@@ -13,6 +13,12 @@ function agent(name: string, input: Partial<Agent> = {}): Agent {
 }
 
 describe("config agent display items", () => {
+  test("uses model variants while preserving an existing unlisted JSONC variant", () => {
+    expect(jsoncAgentVariantOptions({ low: {}, high: {} }, "high")).toEqual(["", "low", "high"])
+    expect(jsoncAgentVariantOptions({ low: {} }, "legacy")).toEqual(["", "low", "legacy"])
+    expect(jsoncAgentVariantOptions(undefined, "")).toEqual([""])
+  })
+
   test("reads agent overrides from JSONC", () => {
     const result = configuredAgentsFromJsonc(`{
       // Keep the config file as the source of truth for display-only agents.
@@ -64,6 +70,18 @@ describe("config agent display items", () => {
     })
 
     expect(result.map((item) => item.name)).toEqual(["explore", "trellis-check", "config-only"])
+  })
+
+  test("does not create JSONC entries from merged Markdown agent configuration", () => {
+    const result = configAgentDisplayItems({
+      runtime: [agent("literature"), agent("wls-computational-verifier")],
+      // These names are defined by .config/opencode/agents/*.md and must not
+      // become editable JSONC cards merely because the server merges metadata.
+      configured: undefined,
+      definedNames: ["literature", "wls-computational-verifier"],
+    })
+
+    expect(result).toEqual([])
   })
 
   test("classifies native, config, and runtime-only entries by source", () => {
