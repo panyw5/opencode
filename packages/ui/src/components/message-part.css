@@ -404,6 +404,8 @@
   [data-slot="user-message-hook-injection-preview"] {
     padding: 6px 12px 10px 30px;
     color: var(--text-weaker);
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
     font-size: var(--font-size-small);
     line-height: var(--line-height-large);
     overflow: hidden;
@@ -417,8 +419,12 @@
     border-top: 1px solid var(--border-weaker-base);
     padding: 8px 12px;
     scrollbar-width: thin;
+    font-family: var(--font-family-mono);
+    font-feature-settings: var(--font-family-mono--font-feature-settings);
 
     [data-component="markdown"] {
+      font-family: inherit;
+      font-feature-settings: inherit;
       font-size: var(--font-size-small);
       color: var(--text-weak);
 
