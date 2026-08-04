@@ -139,6 +139,65 @@ Hidden system agent that creates session summaries. It runs automatically and is
 
 ---
 
+## Background subagents
+
+Foreground Task calls block the parent session until the child finishes. With **experimental background subagents** enabled, the parent can keep working while the child runs asynchronously, or promote a running foreground task to background from Desktop.
+
+### Enable
+
+| Surface | How |
+| --- | --- |
+| **Desktop** | Enabled by default via sidecar env `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`. Restart the app after changing env. |
+| **CLI / server** | Export `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true` (or set `OPENCODE_EXPERIMENTAL=true`, which enables experimental flags as a group). |
+
+When the flag is **off**:
+
+- The Task tool has no `background` parameter.
+- Foreground Task still blocks the parent until completion.
+- Desktop **背景运行** / promote has no job to detach (returns “no promotable task”).
+
+When the flag is **on**:
+
+- Task accepts optional `background: true` and returns immediately with a running task id.
+- Foreground Task still runs as a job under the hood so it can be **promoted** mid-flight.
+- Results are **injected** into the parent session when the child finishes (no polling tool).
+- Desktop: on a running Task card, use **背景运行** to promote the child without cancelling it.
+
+### No `task_status` polling
+
+Background results do **not** use a `task_status` tool. Do not sleep, poll, or ask the child for status. The runtime notifies the parent when the task completes (synthetic inject + optional idle resume).
+
+You may still pass `task_id` later to **resume** the same subagent session for a new turn.
+
+### Promote API
+
+Detach all non-background running Task jobs for a parent session:
+
+```http
+POST /experimental/session/:sessionID/background?directory=<workspace>
+```
+
+Returns `true` if at least one job was promoted. Requires the experimental flag.
+
+### Nesting depth
+
+Subagent nesting is capped by [`subagent_depth`](/docs/config#subagent-depth) (default `1`). This is independent of the background flag.
+
+### Plan mode permissions
+
+Subagents spawned from **Plan** still inherit Plan’s edit deny (they stay read-only). Subagents spawned from **Build** use their own permission frontmatter (edit can stay allowed). Parent session `deny` rules and `external_directory` always apply.
+
+### Desktop checklist (permission / question bubble-up)
+
+When a child subagent needs permission or a question while you stay on the **parent** session:
+
+1. Enable background subagents (Desktop default).
+2. Run a Task that triggers a child permission or question.
+3. Confirm the parent composer dock still surfaces the request without navigating into the child session.
+4. Approve/reject on the parent view and confirm the child continues.
+
+---
+
 ## Configure
 
 You can customize the built-in agents or create your own through configuration. Agents can be configured in two ways:

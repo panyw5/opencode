@@ -135,6 +135,65 @@ _模式_：`primary`
 
 ---
 
+## 后台子代理
+
+前台 Task 会阻塞父会话直到子任务结束。开启**实验性后台子代理**后，父会话可在子任务异步运行时继续工作，或在 Desktop 上将运行中的前台任务提升为后台。
+
+### 如何开启
+
+| 场景 | 方式 |
+| --- | --- |
+| **Desktop** | 默认开启：sidecar 环境变量 `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`。修改 env 后需重启应用。 |
+| **CLI / server** | 导出 `OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true`（或设置 `OPENCODE_EXPERIMENTAL=true` 一并打开实验开关组）。 |
+
+**关闭**时：
+
+- Task 工具不暴露 `background` 参数。
+- 前台 Task 仍会阻塞父会话直至完成。
+- Desktop **背景运行** 没有可提升的 job（返回无可 promote 的任务）。
+
+**开启**时：
+
+- Task 支持可选 `background: true`，立即返回并携带运行中的 task id。
+- 前台 Task 也会注册为 BackgroundJob，因此可在中途 **promote**。
+- 子任务完成时结果 **inject** 到父会话（无轮询工具）。
+- Desktop：在运行中的 Task 卡片上点 **背景运行**，不中断子会话。
+
+### 不再使用 `task_status` 轮询
+
+后台结果**不**再提供 `task_status` 工具。不要 sleep、轮询或向子任务询问状态；运行时会在完成时通知父会话（合成 inject，并在空闲时可选 resume）。
+
+之后仍可用 `task_id` **续跑**同一子代理会话。
+
+### Promote API
+
+将父会话下所有仍为前台的 Task job 提升为后台：
+
+```http
+POST /experimental/session/:sessionID/background?directory=<workspace>
+```
+
+至少一个 job 被提升时返回 `true`。需要上述实验开关。
+
+### 嵌套深度
+
+子代理嵌套受 [`subagent_depth`](/docs/config#subagent-depth) 限制（默认 `1`），与后台开关无关。
+
+### Plan 模式权限
+
+从 **Plan** 启动的子代理仍继承 Plan 的 edit deny（只读）。从 **Build** 启动的子代理按自身 frontmatter 权限（可允许 edit）。父会话的 `deny` 与 `external_directory` 始终生效。
+
+### Desktop 检查清单（权限 / 问题上抛）
+
+子代理需要权限或提问、且你仍停留在**父会话**时：
+
+1. 确认后台子代理已开启（Desktop 默认）。
+2. 触发需要权限或 question 的 Task。
+3. 确认父会话 composer dock 仍能展示请求，无需进入子会话。
+4. 在父会话上批准/拒绝后，子会话可继续。
+
+---
+
 ## 配置
 
 您可以自定义内置代理或通过配置创建自己的代理。代理可以通过两种方式进行配置：

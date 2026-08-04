@@ -134,7 +134,7 @@ describe("tool.registry", () => {
     }),
   )
 
-  it.instance("hides task_status unless experimental background subagents are enabled", () =>
+  it.instance("never exposes task_status (background results are injected)", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const ids = yield* registry.ids()
@@ -169,12 +169,12 @@ describe("tool.registry", () => {
     }),
   )
 
-  background.instance("shows task_status when experimental background subagents are enabled", () =>
+  background.instance("still omits task_status when experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const ids = yield* registry.ids()
 
-      expect(ids).toContain("task_status")
+      expect(ids).not.toContain("task_status")
     }),
   )
 

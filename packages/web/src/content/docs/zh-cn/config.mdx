@@ -354,6 +354,21 @@ Bearer Token（`AWS_BEARER_TOKEN_BEDROCK` 或 `/connect`）优先于基于配置
 
 ---
 
+### 子代理嵌套深度
+
+使用 `subagent_depth` 控制子代理可以再调用其他子代理的深度。
+
+```json title="opencode.json"
+{
+  "$schema": "https://opencode.ai/config.json",
+  "subagent_depth": 2
+}
+```
+
+默认值为 `1`：主代理可以启动子代理，但子代理不能再启动下一层子代理。设为 `2` 可允许多一层嵌套；设为 `0` 则禁止所有子代理启动。
+
+---
+
 ### 分享
 
 您可以通过 `share` 选项配置[分享](/docs/share)功能。

@@ -130,7 +130,10 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     backgroundShellHandlers,
     configHandlers,
-    experimentalHandlers.pipe(Layer.provide(BackgroundJob.defaultLayer.pipe(Layer.provide(InstanceLayer.layer)))),
+    // Share BackgroundJob / RuntimeFlags with SessionPrompt + ToolRegistry
+    // (provided below in createRoutes). A private BackgroundJob layer here
+    // would isolate jobs and make promote always return false.
+    experimentalHandlers,
     fileHandlers,
     instanceHandlers,
     mcpHandlers,
@@ -202,6 +205,7 @@ export function createRoutes(
       Account.defaultLayer,
       Agent.defaultLayer,
       Auth.defaultLayer,
+      BackgroundJob.defaultLayer,
       BackgroundShell.defaultLayer,
       Command.defaultLayer,
       Config.defaultLayer,

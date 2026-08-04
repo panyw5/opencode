@@ -195,6 +195,7 @@ function TimelineDiffView(props: { diff: SummaryDiff }) {
 export function MessageTimeline(props: {
   actions?: UserActions
   onBackgroundShell?: MessageProps["onBackgroundShell"]
+  onBackgroundTask?: MessageProps["onBackgroundTask"]
   scroll: { overflow: boolean; bottom: boolean }
   onResumeScroll: () => void
   setScrollRef: (el: HTMLDivElement | undefined) => void
@@ -581,6 +582,7 @@ export function MessageTimeline(props: {
                     parts={getMessageParts(value().id)}
                     actions={props.actions}
                     onBackgroundShell={props.onBackgroundShell}
+                    onBackgroundTask={props.onBackgroundTask}
                     showCustomHookParts={settings.general.showCustomHookParts()}
                     markdownViewport={listRoot()}
                     markdownHighlight="defer"
@@ -649,6 +651,7 @@ export function MessageTimeline(props: {
                             message={message()}
                             defaultOpen={defaultOpen(part())}
                             onBackgroundShell={props.onBackgroundShell}
+                            onBackgroundTask={props.onBackgroundTask}
                             showAssistantCopyPartID={assistantCopy().partID}
                             assistantCopyText={assistantCopy().text}
                             turnDurationMs={turnDurationMs(item().userMessageID)}
@@ -669,6 +672,7 @@ export function MessageTimeline(props: {
                       message={entry.message}
                       defaultOpen={defaultOpen(entry.part)}
                       onBackgroundShell={props.onBackgroundShell}
+                      onBackgroundTask={props.onBackgroundTask}
                       markdownViewport={listRoot()}
                       markdownHighlight="defer"
                       markdownMath="full"

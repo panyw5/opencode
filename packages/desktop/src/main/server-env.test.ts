@@ -34,6 +34,20 @@ describe("sidecar environment", () => {
     expect(env.PATH).toBe("/usr/bin")
     expect(env.DEBUG).toBeUndefined()
     expect(env.LD_PRELOAD).toBeUndefined()
+    expect(env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS).toBe("true")
+  })
+
+  test("does not override an explicit BACKGROUND_SUBAGENTS env", () => {
+    const env = createSidecarEnv({
+      cwd: "/tmp/workspace",
+      paths: resolveDesktopStartupPaths({ userDataPath: "/tmp/opencode-user-data", platform: "linux" }),
+      platform: "linux",
+      env: {
+        OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: "false",
+      },
+    })
+
+    expect(env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS).toBe("false")
   })
 
   test("shares the default data home with the CLI on Windows while keeping cache/state private", () => {

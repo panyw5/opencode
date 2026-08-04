@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
 import { BackgroundJob } from "@/background/job"
 import { testEffect } from "../lib/effect"
 
@@ -122,6 +122,49 @@ describe("background.job", () => {
       if (job.metadata) job.metadata.value = "changed"
 
       expect((yield* jobs.get(job.id))?.metadata?.value).toBe("initial")
+    }),
+  )
+
+  it.instance("promotes running jobs without interrupting them", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const latch = yield* Deferred.make<void>()
+      const promoted = yield* Deferred.make<void>()
+      const job = yield* jobs.start({
+        type: "test",
+        metadata: { parentSessionId: "parent" },
+        onPromote: Deferred.succeed(promoted, undefined).pipe(Effect.asVoid),
+        run: Deferred.await(latch).pipe(Effect.as("done")),
+      })
+
+      const info = yield* jobs.promote(job.id)
+
+      expect(info?.status).toBe("running")
+      expect(info?.metadata?.background).toBe(true)
+      yield* Deferred.await(promoted)
+      expect((yield* jobs.get(job.id))?.status).toBe("running")
+
+      yield* Deferred.succeed(latch, undefined)
+      expect((yield* jobs.wait({ id: job.id })).info?.output).toBe("done")
+    }),
+  )
+
+  it.instance("waitForPromotion resolves when a job is promoted", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const latch = yield* Deferred.make<void>()
+      const job = yield* jobs.start({
+        type: "test",
+        run: Deferred.await(latch).pipe(Effect.as("done")),
+      })
+
+      const fiber = yield* jobs.waitForPromotion(job.id).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      yield* jobs.promote(job.id)
+      const promoted = yield* Fiber.join(fiber)
+
+      expect(promoted.metadata?.background).toBe(true)
+      yield* Deferred.succeed(latch, undefined)
     }),
   )
 })

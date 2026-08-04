@@ -128,11 +128,33 @@ const OPENCLAW_ERRORS: ReadonlyArray<ExtraAgentErrorMatcher> = [
   },
   {
     kind: "gateway_auth",
-    match: (msg) =>
-      msg.includes("accepted") ||
-      msg.includes("unauthorized") ||
-      msg.includes("forbidden") ||
-      msg.includes("token"),
+    // Do NOT match bare "token" / "accepted" / "forbidden" — those appear in
+    // unrelated failures (e.g. JSON.parse "Unexpected token '<'" on HTML 404,
+    // or normal HTTP 403). Require OpenClaw/gateway context first.
+    match: (msg) => {
+      const openclawContext =
+        msg.includes("openclaw") ||
+        msg.includes("gateway token") ||
+        msg.includes("gateway auth") ||
+        (msg.includes("gateway") &&
+          (msg.includes("unauthorized") ||
+            msg.includes("forbidden") ||
+            msg.includes("authentication") ||
+            msg.includes("invalid token") ||
+            msg.includes("401") ||
+            msg.includes("403")))
+      if (!openclawContext) return false
+      return (
+        msg.includes("unauthorized") ||
+        msg.includes("forbidden") ||
+        msg.includes("invalid token") ||
+        msg.includes("authentication") ||
+        msg.includes("auth failed") ||
+        msg.includes("not accepted") ||
+        msg.includes("401") ||
+        msg.includes("403")
+      )
+    },
     lines: [
       { key: "error.openclaw.gatewayAuth", fallback: "OpenClaw gateway 鉴权可能失败了。" },
       {

@@ -98,6 +98,8 @@ export function preferAppEnv(startupPaths: DesktopStartupPaths) {
     ...startupPaths.sidecarEnv,
     OPENCODE_EXPERIMENTAL_ICON_DISCOVERY: "true",
     OPENCODE_EXPERIMENTAL_FILEWATCHER: "true",
+    // Enable promote / background=true subagent path for Desktop (Phase C/E).
+    OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: "true",
     OPENCODE_CLIENT: "desktop",
   })
 }

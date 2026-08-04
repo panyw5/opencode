@@ -210,3 +210,96 @@ it.effect("subagent inherits parent session deny rules as hard runtime ceilings"
     expect(Permission.evaluate("bash", "git status", effective).action).toBe("deny")
   }),
 )
+
+it.instance("[B2] build parent does not forward edit deny onto edit-capable subagent", () =>
+  Effect.gen(function* () {
+    const build = yield* Agent.use.get("build")
+    expect(build).toBeDefined()
+    expect(Permission.evaluate("edit", "/some/file.ts", build!.permission).action).toBe("allow")
+
+    const implement = testAgent({
+      name: "trellis-implement",
+      mode: "subagent",
+      permission: {
+        edit: "allow",
+        write: "allow",
+      },
+    })
+
+    const effective = Permission.merge(
+      implement.permission,
+      deriveSubagentSessionPermission({
+        parentSessionPermission: [],
+        parentAgent: build,
+        subagent: implement,
+      }),
+    )
+
+    expect(Permission.evaluate("edit", "/some/file.ts", effective).action).toBe("allow")
+    expect(Permission.disabled(["edit", "write", "apply_patch"], effective)).toEqual(new Set())
+  }),
+)
+
+it.effect("[B2] non-plan primary with edit deny does not pollute subagent edit allow", () =>
+  Effect.sync(() => {
+    const restrictedBuild = testAgent({
+      name: "restricted-build",
+      mode: "primary",
+      permission: {
+        edit: "deny",
+        write: "deny",
+      },
+    })
+    const implement = testAgent({
+      name: "trellis-implement",
+      mode: "subagent",
+      permission: {
+        edit: "allow",
+        write: "allow",
+      },
+    })
+
+    const effective = Permission.merge(
+      implement.permission,
+      deriveSubagentSessionPermission({
+        parentSessionPermission: [],
+        parentAgent: restrictedBuild,
+        subagent: implement,
+      }),
+    )
+
+    expect(Permission.evaluate("edit", "/some/file.ts", effective).action).toBe("allow")
+  }),
+)
+
+it.effect("[B2] custom plan-like primary still forwards edit deny via plan_exit", () =>
+  Effect.sync(() => {
+    const customPlan = testAgent({
+      name: "my-plan",
+      mode: "primary",
+      permission: {
+        plan_exit: "allow",
+        edit: "deny",
+        write: "deny",
+      },
+    })
+    const general = testAgent({
+      name: "general",
+      mode: "subagent",
+      permission: {
+        edit: "allow",
+      },
+    })
+
+    const effective = Permission.merge(
+      general.permission,
+      deriveSubagentSessionPermission({
+        parentSessionPermission: [],
+        parentAgent: customPlan,
+        subagent: general,
+      }),
+    )
+
+    expect(Permission.evaluate("edit", "/some/file.ts", effective).action).toBe("deny")
+  }),
+)
