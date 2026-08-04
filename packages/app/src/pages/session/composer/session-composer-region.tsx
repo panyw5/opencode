@@ -387,15 +387,15 @@ function SessionChildAgentMenu(props: {
   let contentRef: HTMLDivElement | undefined
   let scrollTimer: number | undefined
   const [scrolling, setScrolling] = createSignal(false)
-  const badge = (entry: SessionChildAgentEntry): string | undefined => {
+  const indexBadge = (entry: SessionChildAgentEntry): string | undefined => {
     if (entry.index === undefined) return undefined
-    return entry.resume ? `#${entry.index} 续跑` : `#${entry.index}`
+    if (entry.resume) {
+      return language.t("session.childAgents.indexResume", { index: entry.index })
+    }
+    return language.t("session.childAgents.index", { index: entry.index })
   }
   const title = (entry: SessionChildAgentEntry): string => {
-    const cleaned = entry.title
-      .replace(/^\s*#\d+(?:\s+续跑)?\s+/u, "")
-      .replace(/\s+\(@[^)]*\s+subagent\)$/i, "")
-      .trim()
+    const cleaned = entry.title.replace(/\s+\(@[^)]*\s+subagent\)$/i, "").trim()
     return cleaned || entry.title
   }
   const agent = (entry: SessionChildAgentEntry): string | undefined => {
@@ -412,6 +412,7 @@ function SessionChildAgentMenu(props: {
     if (value === "running") return "text-icon-warning-base"
     return "text-icon-critical-base"
   }
+  const backgroundLabel = (): string => language.t("session.childAgents.background")
   const revealScrollbar = (): void => {
     if (scrollTimer !== undefined) {
       window.clearTimeout(scrollTimer)
@@ -482,58 +483,69 @@ function SessionChildAgentMenu(props: {
               </DropdownMenu.GroupLabel>
               <For each={props.entries}>
                 {(entry) => {
-                  const itemBadge = () => badge(entry)
+                  const itemIndexBadge = () => indexBadge(entry)
                   const itemAgent = () => agent(entry)
                   const itemStatus = () => status(entry)
                   const itemTime = () => formatChildAgentTime(entry.created, language.intl())
-                  const hasPrefix = () => itemAgent() !== undefined || itemStatus() !== undefined
+                  const itemBackground = () => entry.background === true
 
                   return (
                     <DropdownMenu.Item
                       class="min-w-0"
                       onSelect={() => props.onOpen(entry)}
                       data-testid="session-child-agent-menu-item"
+                      data-background={itemBackground() ? "true" : undefined}
                     >
                       <div class="min-w-0 flex flex-col gap-0.5">
-                        <DropdownMenu.ItemLabel class="truncate text-13-medium text-text-strong">
-                          <Show when={itemBadge()}>
+                        <DropdownMenu.ItemLabel class="flex min-w-0 items-center gap-1.5 text-13-medium text-text-strong">
+                          <Show when={itemIndexBadge()}>
                             {(mark) => (
                               <span
                                 class={
                                   entry.resume
-                                    ? "mr-1 font-semibold text-text-warning-base"
-                                    : "mr-1 font-semibold text-text-info-base"
+                                    ? "shrink-0 font-semibold text-text-warning-base"
+                                    : "shrink-0 font-semibold text-text-info-base"
                                 }
                               >
                                 {mark()}
                               </span>
                             )}
                           </Show>
-                          {title(entry)}
-                        </DropdownMenu.ItemLabel>
-                        <DropdownMenu.ItemDescription class="truncate text-11-regular text-text-weak">
-                          <Show when={itemAgent()}>{(value) => <span>{value()}</span>}</Show>
+                          <span class="min-w-0 truncate">{title(entry)}</span>
+                          <Show when={itemBackground()}>
+                            <span
+                              class="inline-flex shrink-0 items-center rounded-full border border-border-weak-base bg-surface-base px-2 py-0.5 text-11-medium font-medium text-text-info-base"
+                              data-testid="session-child-agent-background-badge"
+                            >
+                              {backgroundLabel()}
+                            </span>
+                          </Show>
                           <Show when={itemStatus()}>
                             {(value) => (
-                              <>
-                                <Show when={itemAgent()}>
-                                  <span> - </span>
-                                </Show>
-                                <span class={`font-medium ${statusClass(value())}`}>{value()}</span>
-                              </>
+                              <span
+                                class={`shrink-0 text-11-medium font-medium ${statusClass(value())}`}
+                                data-testid="session-child-agent-status"
+                              >
+                                {value()}
+                              </span>
                             )}
                           </Show>
-                          <Show when={itemTime()}>
-                            {(time) => (
-                              <>
-                                <Show when={hasPrefix()}>
-                                  <span> - </span>
-                                </Show>
-                                <span>{time()}</span>
-                              </>
-                            )}
-                          </Show>
-                        </DropdownMenu.ItemDescription>
+                        </DropdownMenu.ItemLabel>
+                        <Show when={itemAgent() || itemTime()}>
+                          <DropdownMenu.ItemDescription class="truncate text-11-regular text-text-weak">
+                            <Show when={itemAgent()}>{(value) => <span>{value()}</span>}</Show>
+                            <Show when={itemTime()}>
+                              {(time) => (
+                                <>
+                                  <Show when={itemAgent()}>
+                                    <span> - </span>
+                                  </Show>
+                                  <span>{time()}</span>
+                                </>
+                              )}
+                            </Show>
+                          </DropdownMenu.ItemDescription>
+                        </Show>
                       </div>
                     </DropdownMenu.Item>
                   )

@@ -116,7 +116,7 @@ describe("collectSessionChildAgentEntries", () => {
     })
 
     expect(entries.map((entry) => entry.sessionID)).toEqual(["ses_early", "ses_late"])
-    expect(entries.map((entry) => entry.title)).toEqual(["#1 Early child", "#2 Late child"])
+    expect(entries.map((entry) => entry.title)).toEqual(["Early child", "Late child"])
     expect(entries.map((entry) => entry.index)).toEqual([1, 2])
     expect(entries.map((entry) => entry.resume)).toEqual([false, false])
   })
@@ -135,7 +135,7 @@ describe("collectSessionChildAgentEntries", () => {
       {
         id: "session:ses_child",
         sessionID: "ses_child",
-        title: "#1 Only child",
+        title: "Only child",
         agent: "general",
         created: 50,
         usage: "not used",
@@ -170,11 +170,12 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries[0]?.id).toBe("tool:msg_1:prt_1:ses_child")
     expect(entries[0]?.status).toBe("completed")
     expect(entries[0]?.usage).toBeUndefined()
-    expect(entries[0]?.title).toBe("#1 Inspect bug")
+    expect(entries[0]?.title).toBe("Inspect bug")
+    expect(entries[0]?.index).toBe(1)
     expect(entries[0]?.resume).toBe(false)
   })
 
-  test("marks resumed task calls with the same session number and 续跑", () => {
+  test("marks resumed task calls with the same session index and resume flag", () => {
     const messages = [
       assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 }),
       assistant({ id: "msg_2", sessionID: "ses_parent", created: 20 }),
@@ -210,10 +211,8 @@ describe("collectSessionChildAgentEntries", () => {
       sessions: [session({ id: "ses_child", parentID: "ses_parent", title: "计算 flavored 指标", created: 25 })],
     })
 
-    expect(entries.map((entry) => entry.title)).toEqual([
-      "#1 计算 flavored 指标",
-      "#1 续跑 计算 flavored 指标",
-    ])
+    // Titles stay plain; UI renders "#n" / "#n 续跑" from index + resume.
+    expect(entries.map((entry) => entry.title)).toEqual(["计算 flavored 指标", "计算 flavored 指标"])
     expect(entries.map((entry) => entry.resume)).toEqual([false, true])
     expect(entries.map((entry) => entry.index)).toEqual([1, 1])
   })
@@ -246,7 +245,7 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries[0]?.resume).toBe(false)
   })
 
-  test("does not mark background task children completed without loaded child messages", () => {
+  test("marks background task children completed once the child is idle", () => {
     const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
     const entries = collectSessionChildAgentEntries({
       sessionID: "ses_parent",
@@ -268,7 +267,61 @@ describe("collectSessionChildAgentEntries", () => {
       sessions: [session({ id: "ses_child", parentID: "ses_parent", title: "Background work", created: 25 })],
     })
 
-    expect(entries[0]?.status).toBeUndefined()
+    // Parent tool completes immediately for background/promote; when the child is
+    // not working, surface the normal completed status (same as foreground).
+    expect(entries[0]?.status).toBe("completed")
+    expect(entries[0]?.background).toBe(true)
+  })
+
+  test("keeps background task children running while the child session is active", () => {
+    const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages: [message],
+      parts: {
+        msg_1: [
+          task({
+            id: "prt_1",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "background work",
+            agent: "general",
+            started: 25,
+            background: true,
+          }),
+        ],
+      },
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", title: "Background work", created: 25 })],
+      statuses: { ses_child: { type: "busy" } },
+    })
+
+    expect(entries[0]?.status).toBe("running")
+    expect(entries[0]?.background).toBe(true)
+  })
+
+  test("marks foreground task children without background flag", () => {
+    const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages: [message],
+      parts: {
+        msg_1: [
+          task({
+            id: "prt_1",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "foreground work",
+            agent: "general",
+            started: 25,
+          }),
+        ],
+      },
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", title: "Foreground work", created: 25 })],
+    })
+
+    expect(entries[0]?.background).toBeUndefined()
   })
 
   test("marks direct child sessions not referenced by task metadata as not used", () => {
@@ -319,7 +372,7 @@ describe("collectSessionChildAgentEntries", () => {
       {
         id: "session:ses_child",
         sessionID: "ses_child",
-        title: "#1 Active child",
+        title: "Active child",
         agent: "general",
         created: 50,
         status: "running",
@@ -416,7 +469,7 @@ describe("collectSessionChildAgentEntries", () => {
       {
         id: "session:ses_child",
         sessionID: "ses_child",
-        title: "#1 Failed child",
+        title: "Failed child",
         agent: "general",
         created: 50,
         status: "error",
