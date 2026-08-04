@@ -31,9 +31,9 @@ html[data-theme="arc"] {
      panel identity against the darker main content pane. */
   --sidebar-card-bg: #4a3d47;
 
-  /* Dock-prompt shell background — opaque (not the hardcoded
-     rgb(12 12 14 / 0.34) which becomes muddy grey on light canvases). */
-  --dock-shell-bg: color-mix(in srgb, #3d323b 68%, transparent);
+  /* Dock-prompt shell — solid, deeper purple-gray (was translucent #3d323b
+     which washed out lighter than the canvas / tray). */
+  --dock-shell-bg: #221c22;
 
   /* Floating card elevation (subtle violet-tinged outer shadow) */
   --card-elevation:
@@ -64,8 +64,8 @@ html[data-theme="arc"][data-color-scheme="light"] {
      dark-sidebar / light-main contrast Arc is known for. */
   --sidebar-card-bg: #756b7e;
 
-  /* Dock-prompt shell background — soft opaque white-violet */
-  --dock-shell-bg: color-mix(in srgb, #ffffff 84%, transparent);
+  /* Dock-prompt shell — soft solid, slightly cooler than pure white */
+  --dock-shell-bg: #ebe6ef;
 
   /* Floating card elevation (subtle violet-tinged warm shadow) */
   --card-elevation:
@@ -347,6 +347,10 @@ html[data-theme="arc"] [data-dock-surface="tray"] {
 
 html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
   border-radius: var(--radius-2xl);
+  /* Beat generic prompt-shell fill; keep Arc's deep solid panel. */
+  background-color: var(--dock-shell-bg) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
 }
 
 /* Question tool — keep the outer shell and dock surfaces on the same

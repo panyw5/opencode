@@ -612,13 +612,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const buttons = createMemo(() => motion(buttonsSpring()))
   const shell = createMemo(() => motion(1 - buttonsSpring()))
   const control = createMemo(() => ({ height: "28px", ...buttons() }))
-  // Solid shell only — no backdrop-filter glass. Frosted blur was a steady GPU cost on
-  // desktop (especially while the session transcript scrolled behind the prompt).
+  // Do not set background-color here — theme CSS owns the fill (Arc/aether/etc).
+  // Inline bg was overriding theme tokens and kept the Arc shell too light.
   const glass = createMemo(() => ({
-    "background-color":
-      platform.platform === "desktop"
-        ? "light-dark(#ffffff, var(--surface-raised-stronger-non-alpha))"
-        : "var(--surface-raised-stronger-non-alpha)",
     "backdrop-filter": "none",
     "-webkit-backdrop-filter": "none",
   }))
