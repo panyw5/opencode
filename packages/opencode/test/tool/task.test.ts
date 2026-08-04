@@ -434,6 +434,7 @@ describe("tool.task", () => {
       const kids = yield* sessions.children(chat.id)
       expect(kids).toHaveLength(1)
       expect(kids[0]?.id).toBe(result.metadata.sessionId)
+      expect(kids[0]?.agent).toBe("general")
       expect(result.metadata.sessionId).not.toBe("ses_missing")
       expect(result.output).toContain(`task_id: ${result.metadata.sessionId}`)
       expect(seen?.sessionID).toBe(result.metadata.sessionId)

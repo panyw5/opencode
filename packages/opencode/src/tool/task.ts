@@ -184,6 +184,7 @@ export const TaskTool = Tool.define(
               parentID: ctx.sessionID,
               title: params.description + ` (@${next.name} subagent)`,
               permission,
+              agent: next.name,
             }))
           const metadata = {
             parentSessionId: ctx.sessionID,
