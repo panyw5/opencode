@@ -1044,6 +1044,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   justify-content: center;
   gap: 2px;
   flex-shrink: 0;
+  margin-left: auto;
 }
 
 [data-component="codex-session-dialog"] {

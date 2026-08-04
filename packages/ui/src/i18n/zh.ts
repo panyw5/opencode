@@ -131,7 +131,7 @@ export const dict = {
   "ui.tool.todos": "待办",
   "ui.tool.todos.read": "读取待办",
   "ui.tool.questions": "问题",
-  "ui.tool.agent": "{{type}} 智能体",
+  "ui.tool.agent": "{{type}}",
   "ui.tool.agent.default": "智能体",
   "ui.tool.codex": "Codex 参谋",
   "ui.tool.codex.running": "会诊中…",

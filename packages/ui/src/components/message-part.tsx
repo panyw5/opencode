@@ -2776,7 +2776,7 @@ ToolRegistry.register({
           </For>
         </div>
         <Show when={canBackground()}>
-          <div data-component="tool-action">
+          <div data-slot="basic-tool-tool-action" data-component="tool-action">
             <button
               type="button"
               data-testid="task-tool-background"
