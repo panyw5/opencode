@@ -6,6 +6,7 @@ import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 
 export type AtOption =
   | { type: "agent"; name: string; display: string }
+  | { type: "consult"; id: string; name: string; display: string }
   | { type: "file"; path: string; display: string; content?: string; recent?: boolean }
 
 export interface SlashCommand {
@@ -73,7 +74,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                 {(item) => {
                   const key = props.atKey(item)
 
-                  if (item.type === "agent") {
+                  if (item.type === "agent" || item.type === "consult") {
                     return (
                       <button
                         data-prompt-popover-active={props.atActive === key ? "" : undefined}
@@ -82,8 +83,17 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         onClick={() => props.onAtSelect(item)}
                         onMouseEnter={() => props.setAtActive(key)}
                       >
-                        <Icon name="brain" size="small" class="text-icon-info-active shrink-0" />
+                        <Icon
+                          name={item.type === "consult" ? "review" : "brain"}
+                          size="small"
+                          class="text-icon-info-active shrink-0"
+                        />
                         <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.name}</span>
+                        <Show when={item.type === "consult"}>
+                          <span class="text-11-regular text-text-subtle px-1.5 py-0.5 bg-surface-base rounded shrink-0">
+                            {props.t("prompt.at.badge.consult")}
+                          </span>
+                        </Show>
                       </button>
                     )
                   }

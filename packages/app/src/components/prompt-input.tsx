@@ -55,6 +55,11 @@ import {
 } from "./prompt-input/history"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
+import {
+  filterAgentsForConsultMentions,
+  loadReadyConsultMentions,
+  type ReadyConsultMention,
+} from "./prompt-input/consult-mentions"
 import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
@@ -1005,10 +1010,34 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   }
 
-  const agentList = createMemo(() =>
-    sync.data.agent
-      .filter((agent) => !agent.hidden && agent.mode !== "primary")
-      .map((agent): AtOption => ({ type: "agent", name: agent.name, display: agent.name })),
+  const agentList = createMemo((): AtOption[] =>
+    filterAgentsForConsultMentions(
+      sync.data.agent.filter((agent) => !agent.hidden && agent.mode !== "primary"),
+    ).map((agent) => ({ type: "agent" as const, name: agent.name, display: agent.name })),
+  )
+  const [readyConsults, setReadyConsults] = createSignal<ReadyConsultMention[]>([])
+  createEffect(() => {
+    const api = platform.cliAgents
+    let cancelled = false
+    if (!api) {
+      setReadyConsults([])
+      return
+    }
+    void loadReadyConsultMentions(api).then((items) => {
+      if (!cancelled) setReadyConsults(items)
+    })
+    onCleanup(() => {
+      cancelled = true
+    })
+  })
+  const consultList = createMemo(
+    (): AtOption[] =>
+      readyConsults().map((item) => ({
+        type: "consult" as const,
+        id: item.id,
+        name: item.name,
+        display: item.display,
+      })),
   )
   const agentNames = createMemo(() => local.agent.list().map((agent) => agent.name))
   const genericAgentAtDirectory = createMemo(() => {
@@ -1023,7 +1052,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const handleAtSelect = (option: AtOption | undefined) => {
     if (!option) return
-    if (option.type === "agent") {
+    if (option.type === "agent" || option.type === "consult") {
       addPart({ type: "agent", name: option.name, content: "@" + option.name, start: 0, end: 0 })
     } else {
       addPart({ type: "file", path: option.path, content: option.content ?? "@" + option.path, start: 0, end: 0 })
@@ -1032,7 +1061,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const atKey = (x: AtOption | undefined) => {
     if (!x) return ""
-    return x.type === "agent" ? `agent:${x.name}` : `file:${x.path}`
+    if (x.type === "consult") return `consult:${x.id}`
+    if (x.type === "agent") return `agent:${x.name}`
+    return `file:${x.path}`
   }
 
   const {
@@ -1043,6 +1074,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onKeyDown: atOnKeyDown,
   } = useFilteredList<AtOption>({
     items: async (query) => {
+      const consults = consultList()
       const agents = agentList()
       const open = recent()
       const seen = new Set(open)
@@ -1061,7 +1093,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             }
           })
       if (!query.trim()) {
-        return [...agents, ...pinned]
+        return [...consults, ...agents, ...pinned]
       }
       const paths = atDirectory
         ? await sdk
@@ -1070,20 +1102,22 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             .then((x) => x.data ?? [])
             .catch(() => [])
         : await files.searchFilesAndDirectories(query)
-      return [...agents, ...pinned, ...toFileOptions(paths)]
+      return [...consults, ...agents, ...pinned, ...toFileOptions(paths)]
     },
     key: atKey,
-    filterKeys: ["display"],
+    filterKeys: ["display", "name"],
     groupBy: (item) => {
+      if (item.type === "consult") return "consult"
       if (item.type === "agent") return "agent"
-      if (item.recent) return "recent"
+      if (item.type === "file" && item.recent) return "recent"
       return "file"
     },
     sortGroupsBy: (a, b) => {
       const rank = (category: string) => {
-        if (category === "agent") return 0
-        if (category === "recent") return 1
-        return 2
+        if (category === "consult") return 0
+        if (category === "agent") return 1
+        if (category === "recent") return 2
+        return 3
       }
       return rank(a.category) - rank(b.category)
     },

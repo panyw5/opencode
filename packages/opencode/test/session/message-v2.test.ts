@@ -1800,4 +1800,31 @@ describe("session.message-v2.latest", () => {
     expect(state.tasks).toHaveLength(1)
     expect(state.tasks[0]).toMatchObject({ type: "compaction", auto: true })
   })
+
+  test("reserved @codex/@claude/@grok agent parts surface as consult tasks", () => {
+    const consultUser: MessageV2.WithParts = {
+      info: userInfo(CONTINUE_USER),
+      parts: [
+        {
+          ...basePart(CONTINUE_USER, "t1"),
+          type: "text",
+          text: "review auth",
+        },
+        {
+          ...basePart(CONTINUE_USER, "a1"),
+          type: "agent",
+          name: "codex",
+        },
+        {
+          ...basePart(CONTINUE_USER, "a2"),
+          type: "agent",
+          name: "explore",
+        },
+      ] as MessageV2.Part[],
+    }
+
+    const state = MessageV2.latest([consultUser])
+    expect(state.user?.id).toBe(CONTINUE_USER)
+    expect(state.tasks).toEqual([{ type: "consult", name: "codex" }])
+  })
 })

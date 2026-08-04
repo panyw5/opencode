@@ -379,7 +379,7 @@ export const dict = {
   "prompt.suggestion.hint.tempAttachment": "For long prompts, use Add temporary attachment to avoid truncation.",
   "prompt.suggestion.hint.expandEditor": "Click Expand editor to enlarge the prompt editor and preview Markdown.",
   "prompt.suggestion.hint.dragDrop": "Drop images, PDFs, or text files here to attach context.",
-  "prompt.suggestion.hint.mentions": "Type @ to mention files, or / to run commands and skills.",
+  "prompt.suggestion.hint.mentions": "Type @ to mention files, advisors, or agents; / for commands and skills.",
   "prompt.suggestion.hint.outputShape": "Tell me the output format you want, such as patch, review, plan, or tests.",
 
   "prompt.example.1": "Fix a TODO in the codebase",
@@ -415,6 +415,7 @@ export const dict = {
   "prompt.slash.badge.custom": "custom",
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
+  "prompt.at.badge.consult": "consult",
   "prompt.context.active": "active",
   "prompt.context.includeActiveFile": "Include active file",
   "prompt.context.removeActiveFile": "Remove active file from context",

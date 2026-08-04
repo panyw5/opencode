@@ -1137,8 +1137,15 @@ export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: Ses
 // position is not chronological. Derive each binding by max id (MessageID
 // is monotonic via MessageID.ascending) so a pre-compaction overflowing tail
 // assistant doesn't get mistaken for the most recent turn. tasks are
-// compaction/subtask parts attached to user messages newer than the latest
+// compaction/subtask/consult parts attached to user messages newer than the latest
 // finished assistant — i.e. unprocessed work.
+export type ConsultTask = {
+  type: "consult"
+  name: string
+}
+
+export type PendingTask = CompactionPart | SubtaskPart | ConsultTask
+
 export function latest(msgs: WithParts[]) {
   let user: User | undefined
   let assistant: Assistant | undefined
@@ -1149,11 +1156,17 @@ export function latest(msgs: WithParts[]) {
     if (info.role === "assistant" && (!assistant || info.id > assistant.id)) assistant = info
     if (info.role === "assistant" && info.finish && (!finished || info.id > finished.id)) finished = info
   }
-  const tasks = msgs.flatMap((m) =>
-    finished && m.info.id <= finished.id
-      ? []
-      : m.parts.filter((p): p is CompactionPart | SubtaskPart => p.type === "compaction" || p.type === "subtask"),
-  )
+  const tasks = msgs.flatMap((m): PendingTask[] => {
+    if (finished && m.info.id <= finished.id) return []
+    return m.parts.flatMap((p): PendingTask[] => {
+      if (p.type === "compaction" || p.type === "subtask") return [p]
+      // Reserved @codex/@claude/@grok agent parts are direct consult tasks (not task/subagent).
+      if (p.type === "agent" && (p.name === "codex" || p.name === "claude" || p.name === "grok")) {
+        return [{ type: "consult", name: p.name }]
+      }
+      return []
+    })
+  })
   return { user, assistant, finished, tasks }
 }
 

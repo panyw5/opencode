@@ -204,7 +204,9 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
 
   const atKey = (item: AtOption | undefined) => {
     if (!item) return ""
-    return item.type === "agent" ? `agent:${item.name}` : `file:${item.path}`
+    if (item.type === "consult") return `consult:${item.id}`
+    if (item.type === "agent") return `agent:${item.name}`
+    return `file:${item.path}`
   }
 
   const {

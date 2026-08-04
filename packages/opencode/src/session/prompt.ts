@@ -46,6 +46,12 @@ import { Cause, Effect, Exit, Latch, Layer, Option, Scope, Context, Schema, Type
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { InstanceState } from "@/effect/instance-state"
 import { TaskTool, type TaskPromptOps } from "@/tool/task"
+import {
+  buildConsultFollowupSynthetic,
+  buildConsultPromptFromParts,
+  consultMentionFor,
+  isConsultMention,
+} from "@/tool/consult-mention"
 import { SessionRunState } from "./run-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -624,6 +630,217 @@ export const layer = Layer.effect(
         sessionID,
         type: "text",
         text: "Summarize the task tool output above and continue with your task.",
+        synthetic: true,
+      } satisfies MessageV2.TextPart)
+    })
+
+    /** Run @codex/@claude/@grok consults directly against the local CLI (no main-agent tool hop). */
+    const handleConsultMentions = Effect.fn("SessionPrompt.handleConsultMentions")(function* (input: {
+      names: string[]
+      model: Provider.Model
+      lastUser: MessageV2.User
+      sessionID: SessionID
+      session: Session.Info
+      msgs: MessageV2.WithParts[]
+      lastUserParts: MessageV2.Part[]
+    }) {
+      const { model, lastUser, sessionID, session, msgs, lastUserParts } = input
+      const ctx = yield* InstanceState.context
+      const agent = yield* agents.get(lastUser.agent)
+      if (!agent) {
+        const available = (yield* agents.list()).filter((a) => !a.hidden).map((a) => a.name)
+        const hint = available.length ? ` Available agents: ${available.join(", ")}` : ""
+        const error = new NamedError.Unknown({ message: `Agent not found: "${lastUser.agent}".${hint}` })
+        yield* bus.publish(Session.Event.Error, { sessionID, error: error.toObject() })
+        throw error
+      }
+
+      const uniqueNames = [...new Set(input.names.filter(isConsultMention))]
+      if (uniqueNames.length === 0) return
+
+      const allTools = yield* registry.all()
+      const toolByID = new Map(allTools.map((tool) => [tool.id, tool] as const))
+
+      const promptText =
+        buildConsultPromptFromParts(lastUserParts).trim() ||
+        "The user requested an external consultation. Review the project context and provide structured analysis."
+
+      const assistantMessage: MessageV2.Assistant = yield* sessions.updateMessage({
+        id: MessageID.ascending(),
+        role: "assistant",
+        parentID: lastUser.id,
+        sessionID,
+        mode: lastUser.agent,
+        agent: lastUser.agent,
+        variant: lastUser.model.variant,
+        path: { cwd: ctx.directory, root: ctx.worktree },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: model.id,
+        providerID: model.providerID,
+        time: { created: Date.now() },
+      })
+
+      for (const name of uniqueNames) {
+        const mention = consultMentionFor(name)
+        if (!mention) continue
+        const consultTool = toolByID.get(mention.tool)
+        if (!consultTool) {
+          log.error("consult tool missing from registry", { tool: mention.tool, sessionID })
+          continue
+        }
+
+        let part: MessageV2.ToolPart = yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: assistantMessage.id,
+          sessionID: assistantMessage.sessionID,
+          type: "tool",
+          callID: ulid(),
+          tool: mention.tool,
+          state: {
+            status: "running",
+            input: {
+              prompt: promptText,
+            },
+            time: { start: Date.now() },
+          },
+        })
+
+        const toolArgs = { prompt: promptText }
+        yield* plugin.trigger(
+          "tool.execute.before",
+          { tool: mention.tool, sessionID, callID: part.id },
+          { args: toolArgs },
+        )
+
+        let error: Error | undefined
+        const consultAbort = new AbortController()
+        const result = yield* consultTool
+          .execute(toolArgs, {
+            agent: lastUser.agent,
+            messageID: assistantMessage.id,
+            sessionID,
+            abort: consultAbort.signal,
+            callID: part.callID,
+            messages: msgs,
+            metadata: (val: { title?: string; metadata?: Record<string, unknown> }) =>
+              Effect.gen(function* () {
+                if (part.state.status !== "running") return
+                part = yield* sessions.updatePart({
+                  ...part,
+                  type: "tool",
+                  state: {
+                    ...part.state,
+                    ...(val.title === undefined ? {} : { title: val.title }),
+                    ...(val.metadata === undefined ? {} : { metadata: { ...part.state.metadata, ...val.metadata } }),
+                  },
+                } satisfies MessageV2.ToolPart)
+              }),
+            ask: (req: any) =>
+              permission
+                .ask({
+                  ...req,
+                  sessionID,
+                  ruleset: Permission.merge(agent.permission, session.permission ?? []),
+                })
+                .pipe(Effect.orDie),
+          })
+          .pipe(
+            Effect.catchCause((cause) => {
+              const defect = Cause.squash(cause)
+              error = defect instanceof Error ? defect : new Error(String(defect))
+              log.error("consult mention execution failed", {
+                error,
+                advisor: name,
+                tool: mention.tool,
+                sessionID,
+              })
+              return Effect.void
+            }),
+            Effect.onInterrupt(() =>
+              Effect.uninterruptible(
+                Effect.gen(function* () {
+                  consultAbort.abort()
+                  if (part.state.status === "running") {
+                    yield* sessions.abortToolPart({
+                      sessionID,
+                      messageID: assistantMessage.id,
+                      partID: part.id,
+                      source: "tool-specific-interrupt",
+                      error: "Cancelled",
+                      ownerMessageID: assistantMessage.id,
+                    })
+                  }
+                }),
+              ),
+            ),
+          )
+
+        const attachments = result?.attachments?.map((attachment) => ({
+          ...attachment,
+          id: PartID.ascending(),
+          sessionID,
+          messageID: assistantMessage.id,
+        }))
+
+        yield* plugin.trigger(
+          "tool.execute.after",
+          { tool: mention.tool, sessionID, callID: part.id, args: toolArgs },
+          result,
+        )
+
+        if (result && part.state.status === "running") {
+          yield* sessions.updatePart({
+            ...part,
+            state: {
+              status: "completed",
+              input: part.state.input,
+              title: result.title,
+              metadata: result.metadata,
+              output: result.output,
+              attachments,
+              time: { ...part.state.time, end: Date.now() },
+            },
+          } satisfies MessageV2.ToolPart)
+        }
+
+        if (!result) {
+          yield* sessions.updatePart({
+            ...part,
+            state: {
+              status: "error",
+              error: error ? `Tool execution failed: ${error.message}` : "Tool execution failed",
+              time: {
+                start: part.state.status === "running" ? part.state.time.start : Date.now(),
+                end: Date.now(),
+              },
+              metadata: part.state.status === "pending" ? undefined : part.state.metadata,
+              input: part.state.input,
+            },
+          } satisfies MessageV2.ToolPart)
+        }
+      }
+
+      assistantMessage.finish = "tool-calls"
+      assistantMessage.time.completed = Date.now()
+      yield* sessions.updateMessage(assistantMessage)
+
+      // Let the primary agent summarize the advisor output without re-invoking consult.
+      const summaryUserMsg: MessageV2.User = {
+        id: MessageID.ascending(),
+        sessionID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: lastUser.agent,
+        model: lastUser.model,
+      }
+      yield* sessions.updateMessage(summaryUserMsg)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: summaryUserMsg.id,
+        sessionID,
+        type: "text",
+        text: buildConsultFollowupSynthetic(uniqueNames),
         synthetic: true,
       } satisfies MessageV2.TextPart)
     })
@@ -1257,6 +1474,11 @@ export const layer = Layer.effect(
         }
 
         if (part.type === "agent") {
+          // @codex/@claude/@grok are executed directly as consult tools (see handleConsultMentions).
+          // Do not inject task-tool synthetic text for reserved consult names.
+          if (isConsultMention(part.name)) {
+            return [{ ...part, messageID: info.id, sessionID: input.sessionID }]
+          }
           const perm = Permission.evaluate("task", part.name, ag.permission)
           const hint = perm.action === "deny" ? " . Invoked by user; guaranteed to exist." : ""
           return [
@@ -1547,6 +1769,32 @@ export const layer = Layer.effect(
 
           if (task?.type === "subtask") {
             yield* handleSubtask({ task, model, lastUser, sessionID, session, msgs })
+            continue
+          }
+
+          if (task?.type === "consult") {
+            const lastUserMsg = msgs.find((m) => m.info.id === lastUser.id)
+            const names = [
+              task.name,
+              ...tasks.filter((t): t is MessageV2.ConsultTask => t.type === "consult").map((t) => t.name),
+              ...(lastUserMsg?.parts
+                .filter((p): p is MessageV2.AgentPart => p.type === "agent" && isConsultMention(p.name))
+                .map((p) => p.name) ?? []),
+            ]
+            // Drain remaining consult tasks so a mixed queue does not re-run them.
+            while (tasks.length && tasks[tasks.length - 1]?.type === "consult") tasks.pop()
+            for (let i = tasks.length - 1; i >= 0; i--) {
+              if (tasks[i]?.type === "consult") tasks.splice(i, 1)
+            }
+            yield* handleConsultMentions({
+              names,
+              model,
+              lastUser,
+              sessionID,
+              session,
+              msgs,
+              lastUserParts: lastUserMsg?.parts ?? [],
+            })
             continue
           }
 
