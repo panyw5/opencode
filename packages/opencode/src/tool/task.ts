@@ -127,6 +127,24 @@ export const TaskTool = Tool.define(
         )
       }
 
+      // Hard limit nesting depth via parentID chain (#37124).
+      // Default 1: root can spawn subagents; subagents cannot spawn further.
+      const parent = yield* sessions.get(ctx.sessionID)
+      let current = parent
+      let depth = 0
+      while (current.parentID) {
+        depth++
+        current = yield* sessions.get(current.parentID)
+      }
+      const maxDepth = cfg.subagent_depth ?? 1
+      if (depth >= maxDepth) {
+        return yield* Effect.fail(
+          new Error(
+            `Subagent depth limit reached (${maxDepth}). Increase "subagent_depth" to allow nested subagents.`,
+          ),
+        )
+      }
+
       if (!ctx.extra?.bypassAgentCheck) {
         yield* ctx.ask({
           permission: id,
@@ -148,7 +166,6 @@ export const TaskTool = Tool.define(
       const session = taskID
         ? yield* sessions.get(SessionID.make(taskID)).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
-      const parent = yield* sessions.get(ctx.sessionID)
       const parentAgent = parent.agent
         ? yield* agent.get(parent.agent).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
         : undefined
