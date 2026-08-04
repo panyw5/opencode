@@ -142,4 +142,21 @@ describe("formatServerError", () => {
       "Diretorio protegido pelo sistema e indisponivel para carregar sessoes",
     )
   })
+
+  test("does not mislabel JSON Unexpected token as OpenClaw gateway auth", () => {
+    const message = `Unexpected token '<', \"<!doctype \"... is not valid JSON`
+    // Must return the original message, not OpenClaw gateway auth copy.
+    expect(formatServerError(new Error(message), language.t)).toBe(message)
+    expect(formatServerError(new Error(message), language.t)).not.toContain("OpenClaw")
+    expect(formatServerError(new Error(message), language.t)).not.toContain("Gateway Token")
+  })
+
+  test("still labels genuine OpenClaw gateway auth failures", () => {
+    const message = "OpenClaw gateway unauthorized: invalid token"
+    const result = formatServerError(new Error(message), language.t)
+    // Fallback Chinese copy when i18n keys are missing from the mock dict.
+    expect(result).toContain("OpenClaw gateway")
+    expect(result).toContain("鉴权")
+    expect(result).toContain(message)
+  })
 })

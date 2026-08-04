@@ -12,7 +12,7 @@ import type { SessionPrompt } from "../session/prompt"
 import { SessionStatus } from "@/session/status"
 import { Config } from "@/config/config"
 import { TuiEvent } from "@/cli/cmd/tui/event"
-import { Cause, Effect, Exit, Option, Schema, Scope } from "effect"
+import { Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 
@@ -101,11 +101,6 @@ function backgroundMessage(input: {
   return [title, `task_id: ${input.sessionID}`, `state: ${input.state}`, "", `<${tag}>`, input.text, `</${tag}>`].join(
     "\n",
   )
-}
-
-function errorText(error: unknown) {
-  if (error instanceof Error) return error.message
-  return String(error)
 }
 
 export const TaskTool = Tool.define(
@@ -298,35 +293,96 @@ export const TaskTool = Tool.define(
         )
       }
 
-      if (runInBackground) {
+      const cancel = ops.cancel(nextSession.id)
+
+      // When experimental background subagents are enabled, always run via
+      // BackgroundJob so a foreground task can be promoted mid-flight without
+      // restarting the child session.
+      if (flags.experimentalBackgroundSubagents) {
+        const notify = Effect.fn("TaskTool.notifyBackgroundResult")(function* (jobID: string) {
+          yield* background.wait({ id: jobID }).pipe(
+            Effect.flatMap((result) => {
+              if (result.info?.status === "completed") return inject("completed", result.info.output ?? "")
+              if (result.info?.status === "error") return inject("error", result.info.error ?? "")
+              return Effect.void
+            }),
+            Effect.ignore,
+            Effect.forkIn(scope, { startImmediately: true }),
+          )
+        })
+
         const info = yield* background.start({
           id: nextSession.id,
           type: id,
           title: params.description,
           metadata,
-          run: runTask().pipe(
-            Effect.tap((text) => inject("completed", text).pipe(Effect.ignore)),
-            Effect.catchCause((cause) =>
-              (Cause.hasInterruptsOnly(cause)
-                ? Effect.void
-                : inject("error", errorText(Cause.squash(cause))).pipe(Effect.ignore)
-              ).pipe(Effect.andThen(Effect.failCause(cause))),
-            ),
+          onPromote: Effect.all(
+            [
+              ctx.metadata({
+                title: params.description,
+                metadata: { ...metadata, background: true, jobId: nextSession.id },
+              }),
+              notify(nextSession.id),
+            ],
+            { discard: true },
           ),
+          run: runTask().pipe(Effect.onInterrupt(() => cancel)),
         })
 
-        return {
+        const backgroundResult = () => ({
           title: params.description,
           metadata: {
             ...metadata,
+            background: true as const,
             jobId: info.id,
           },
           output: backgroundOutput(nextSession.id),
+        })
+
+        if (runInBackground) {
+          yield* notify(info.id)
+          return backgroundResult()
         }
+
+        function onAbort() {
+          runCancel.fork(Effect.all([cancel, background.cancel(nextSession.id)], { discard: true }))
+        }
+
+        return yield* Effect.acquireUseRelease(
+          Effect.sync(() => {
+            ctx.abort.addEventListener("abort", onAbort)
+          }),
+          () =>
+            Effect.gen(function* () {
+              const result = yield* Effect.raceFirst(
+                background.wait({ id: nextSession.id }).pipe(Effect.map((waited) => waited.info)),
+                background.waitForPromotion(nextSession.id),
+              )
+              if (result?.metadata?.background === true) return backgroundResult()
+              if (result?.status === "error") return yield* Effect.fail(new Error(result.error ?? "Task failed"))
+              if (result?.status === "cancelled") return yield* Effect.fail(new Error("Task cancelled"))
+              return {
+                title: params.description,
+                metadata,
+                output: output(nextSession.id, result?.output ?? ""),
+              }
+            }),
+          (_, exit) =>
+            Effect.gen(function* () {
+              if (Exit.hasInterrupts(exit)) {
+                yield* Effect.all([cancel, background.cancel(nextSession.id)], { discard: true })
+              }
+            }).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  ctx.abort.removeEventListener("abort", onAbort)
+                }),
+              ),
+            ),
+        )
       }
 
-      const cancel = ops.cancel(nextSession.id)
-
+      // Flag off: pure sync wait (no job, no promote).
       function onAbort() {
         runCancel.fork(cancel)
       }

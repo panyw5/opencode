@@ -270,6 +270,13 @@ export interface MessageProps {
     cwd?: string
     description?: string
   }) => Promise<void> | void
+  onBackgroundTask?: (input: {
+    sessionID: string
+    messageID?: string
+    callID?: string
+    childSessionID?: string
+    description?: string
+  }) => Promise<void> | void
 }
 
 export type SessionAction = (input: { sessionID: string; messageID: string }) => Promise<void> | void
@@ -294,6 +301,7 @@ export interface MessagePartProps {
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
+  onBackgroundTask?: MessageProps["onBackgroundTask"]
 }
 
 export type PartComponent = Component<MessagePartProps>
@@ -757,6 +765,7 @@ export function AssistantParts(props: {
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
+  onBackgroundTask?: MessageProps["onBackgroundTask"]
 }) {
   const data = useData()
   const emptyParts: PartType[] = []
@@ -849,6 +858,7 @@ export function AssistantParts(props: {
                   markdownStage={props.markdownStage}
                   onMarkdownStage={props.onMarkdownStage}
                   onBackgroundShell={props.onBackgroundShell}
+                  onBackgroundTask={props.onBackgroundTask}
                 />
               )}
             </Show>
@@ -970,6 +980,7 @@ export function Message(props: MessageProps) {
             markdownStage={props.markdownStage}
             onMarkdownStage={props.onMarkdownStage}
             onBackgroundShell={props.onBackgroundShell}
+            onBackgroundTask={props.onBackgroundTask}
           />
         )}
       </Match>
@@ -988,6 +999,7 @@ export function Message(props: MessageProps) {
             markdownStage={props.markdownStage}
             onMarkdownStage={props.onMarkdownStage}
             onBackgroundShell={props.onBackgroundShell}
+            onBackgroundTask={props.onBackgroundTask}
           />
         )}
       </Match>
@@ -1008,6 +1020,7 @@ export function AssistantMessageDisplay(props: {
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
+  onBackgroundTask?: MessageProps["onBackgroundTask"]
 }) {
   const grouped = createMemo(() => {
     const keys: string[] = []
@@ -1086,6 +1099,7 @@ export function AssistantMessageDisplay(props: {
                   markdownStage={props.markdownStage}
                   onMarkdownStage={props.onMarkdownStage}
                   onBackgroundShell={props.onBackgroundShell}
+                  onBackgroundTask={props.onBackgroundTask}
                 />
               )}
             </Show>
@@ -1208,6 +1222,7 @@ export function UserMessageDisplay(props: {
   markdownStage?: MarkdownStage
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
+  onBackgroundTask?: MessageProps["onBackgroundTask"]
 }) {
   const data = useData()
   const dialog = useDialog()
@@ -1610,6 +1625,7 @@ export function UserMessageDisplay(props: {
                 markdownStage={props.markdownStage}
                 onMarkdownStage={props.onMarkdownStage}
                 onBackgroundShell={props.onBackgroundShell}
+                onBackgroundTask={props.onBackgroundTask}
               />
             )}
           </For>
@@ -1639,6 +1655,7 @@ export function Part(props: MessagePartProps) {
         markdownStage={props.markdownStage}
         onMarkdownStage={props.onMarkdownStage}
         onBackgroundShell={props.onBackgroundShell}
+        onBackgroundTask={props.onBackgroundTask}
       />
     </Show>
   )
@@ -1661,6 +1678,7 @@ export interface ToolProps {
   onMarkdownStage?: (key: string, stage: MarkdownStage | undefined) => void
   questionHandoff?: QuestionHandoff
   onBackgroundShell?: MessageProps["onBackgroundShell"]
+  onBackgroundTask?: MessageProps["onBackgroundTask"]
 }
 
 export type ToolComponent = Component<ToolProps>
@@ -1828,6 +1846,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
               onMarkdownStage={props.onMarkdownStage}
               questionHandoff={questionHandoff()}
               onBackgroundShell={props.onBackgroundShell}
+              onBackgroundTask={props.onBackgroundTask}
             />
           </Match>
         </Switch>
@@ -2514,6 +2533,15 @@ ToolRegistry.register({
       }),
     )
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
+    const backgroundRunning = createMemo(() => props.metadata?.background === true && pending())
+    const canBackground = createMemo(
+      () =>
+        pending() &&
+        props.metadata?.background !== true &&
+        !!props.part?.sessionID &&
+        !!props.onBackgroundTask,
+    )
+    const [backgrounding, setBackgrounding] = createSignal(false)
     const taskTime = createMemo(() => {
       const state = props.part?.state
       if (!state || state.status === "pending") return undefined
@@ -2657,6 +2685,49 @@ ToolRegistry.register({
       data.navigateToSession?.(sessionId)
     }
 
+    const handleBackground = async (event: MouseEvent) => {
+      event.preventDefault()
+      event.stopPropagation()
+      if (!canBackground() || backgrounding()) {
+        console.warn("[background-task] ignored tool-card request", {
+          canBackground: canBackground(),
+          backgrounding: backgrounding(),
+          hasHandler: !!props.onBackgroundTask,
+          sessionID: props.part?.sessionID,
+        })
+        return
+      }
+      setBackgrounding(true)
+      try {
+        if (!props.onBackgroundTask) throw new Error("Background task handler is not available")
+        console.info("[background-task] tool-card request", {
+          sessionID: props.part?.sessionID,
+          messageID: props.part?.messageID,
+          callID: props.part?.callID,
+          childSessionID: childSessionId(),
+        })
+        await props.onBackgroundTask({
+          sessionID: props.part?.sessionID ?? "",
+          messageID: props.part?.messageID,
+          callID: props.part?.callID,
+          childSessionID: childSessionId(),
+          description: typeof props.input.description === "string" ? props.input.description : undefined,
+        })
+        console.info("[background-task] tool-card request completed", {
+          sessionID: props.part?.sessionID,
+          childSessionID: childSessionId(),
+        })
+      } catch (err) {
+        console.error("[background-task] tool-card request failed", {
+          sessionID: props.part?.sessionID,
+          childSessionID: childSessionId(),
+          error: err instanceof Error ? err.message : String(err),
+        })
+      } finally {
+        setBackgrounding(false)
+      }
+    }
+
     const trigger = () => (
       <div data-slot="basic-tool-tool-info-structured">
         <div data-slot="basic-tool-tool-info-main">
@@ -2689,6 +2760,9 @@ ToolRegistry.register({
               </Match>
             </Switch>
           </Show>
+          <Show when={backgroundRunning()}>
+            <span data-slot="basic-tool-tool-arg">{i18n.t("ui.tool.task.backgroundRunning")}</span>
+          </Show>
           <For each={statItems()}>
             {(item, index) => (
               <span
@@ -2701,6 +2775,23 @@ ToolRegistry.register({
             )}
           </For>
         </div>
+        <Show when={canBackground()}>
+          <div data-component="tool-action">
+            <button
+              type="button"
+              data-testid="task-tool-background"
+              class="h-6 rounded-md border border-border-weak-base px-2 text-11-medium text-text-weak hover:text-text-strong disabled:opacity-60"
+              disabled={backgrounding()}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+              }}
+              onClick={handleBackground}
+            >
+              {backgrounding() ? i18n.t("ui.tool.task.backgrounding") : i18n.t("ui.tool.task.background")}
+            </button>
+          </div>
+        </Show>
       </div>
     )
 

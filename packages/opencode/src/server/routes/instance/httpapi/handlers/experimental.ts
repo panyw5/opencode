@@ -2,9 +2,11 @@ import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
+import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
+import type { SessionID } from "@/session/schema"
 import { SessionContentSearch } from "@/session/content-search"
 import { BackgroundJob } from "@/background/job"
 import { Database } from "@/storage/db"
@@ -43,6 +45,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const registry = yield* ToolRegistry.Service
     const worktreeSvc = yield* Worktree.Service
     const background = yield* BackgroundJob.Service
+    const flags = yield* RuntimeFlags.Service
     log.info("session-content-search:background-job-service-ready")
 
     const startContentBackfill = () =>
@@ -233,6 +236,34 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return status
     })
 
+    const sessionBackground = Effect.fn("ExperimentalHttpApi.sessionBackground")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      const all = yield* background.list()
+      if (!flags.experimentalBackgroundSubagents) {
+        log.info("sessionBackground skipped: experimentalBackgroundSubagents disabled", {
+          sessionID: ctx.params.sessionID,
+          jobCount: all.length,
+        })
+        return false
+      }
+      const jobs = all.filter(
+        (job) =>
+          job.type === "task" &&
+          job.status === "running" &&
+          job.metadata?.parentSessionId === ctx.params.sessionID &&
+          job.metadata.background !== true,
+      )
+      log.info("sessionBackground candidates", {
+        sessionID: ctx.params.sessionID,
+        jobCount: all.length,
+        candidates: jobs.map((job) => job.id),
+      })
+      if (jobs.length === 0) return false
+      const promoted = yield* Effect.forEach(jobs, (job) => background.promote(job.id), { concurrency: "unbounded" })
+      return promoted.some((job) => job !== undefined)
+    })
+
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
       return yield* mcp.resources()
     })
@@ -248,6 +279,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("worktreeRemove", worktreeRemove)
       .handle("worktreeReset", worktreeReset)
       .handle("session", session)
+      .handle("sessionBackground", sessionBackground)
       .handle("sessionContentSearch", sessionContentSearch)
       .handle("sessionContentSearchStatus", sessionContentSearchStatus)
       .handle("sessionContentSearchAction", sessionContentSearchAction)

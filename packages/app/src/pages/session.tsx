@@ -76,6 +76,7 @@ import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { useServer } from "@/context/server"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
 import { setBackgroundShell } from "@/pages/session/background-shell-api"
+import { backgroundSessionTasks } from "@/pages/session/background-task-api"
 import {
   collectSessionLayoutMetrics,
   logSessionLayout,
@@ -2035,6 +2036,70 @@ export default function Page() {
     }
   }
 
+  const backgroundTask = async (input: {
+    sessionID: string
+    messageID?: string
+    callID?: string
+    childSessionID?: string
+    description?: string
+  }) => {
+    const currentSessionID = params.id
+    console.info("[background-task] request", {
+      currentSessionID,
+      sessionID: input.sessionID,
+      messageID: input.messageID,
+      callID: input.callID,
+      childSessionID: input.childSessionID,
+    })
+
+    if (!currentSessionID || input.sessionID !== currentSessionID) {
+      const error = new Error("Background task belongs to a different session")
+      console.warn("[background-task] rejected session mismatch", {
+        currentSessionID,
+        sessionID: input.sessionID,
+      })
+      fail(error)
+      throw error
+    }
+
+    try {
+      const promoted = await backgroundSessionTasks({
+        sdk,
+        platform,
+        auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+        sessionID: input.sessionID,
+      })
+      console.info("[background-task] result", {
+        sessionID: input.sessionID,
+        childSessionID: input.childSessionID,
+        promoted,
+      })
+      if (!promoted) {
+        // Server returns false when the experimental flag is off, or when the
+        // running task was not registered as a BackgroundJob (e.g. started
+        // before the flag was enabled). Surface a clear, non-OpenClaw message.
+        const error = new Error(
+          "没有可转为背景的前台子智能体。请重启桌面端（需开启 OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS），并在任务仍在前台运行时再试。",
+        )
+        fail(error)
+        throw error
+      }
+      showToast({
+        variant: "success",
+        title: "已转为背景运行",
+        description: input.description ?? input.childSessionID,
+      })
+    } catch (err) {
+      console.error("[background-task] failed", {
+        sessionID: input.sessionID,
+        childSessionID: input.childSessionID,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      fail(err)
+      throw err
+    }
+  }
+
   const merge = (next: NonNullable<ReturnType<typeof info>>) =>
     sync.set("session", (list) => {
       const idx = list.findIndex((item) => item.id === next.id)
@@ -2437,6 +2502,7 @@ export default function Page() {
                       <MessageTimeline
                         actions={actions}
                         onBackgroundShell={backgroundShell}
+                        onBackgroundTask={backgroundTask}
                         scroll={ui.scroll}
                         onResumeScroll={resumeScroll}
                         setScrollRef={setScrollRef}

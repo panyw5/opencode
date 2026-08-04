@@ -1,5 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Effect, Exit, Fiber, Layer } from "effect"
+import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Bus } from "@/bus"
@@ -540,6 +540,73 @@ describe("tool.task", () => {
         .pipe(Effect.exit)
 
       expect(Exit.isFailure(exit)).toBe(true)
+    }),
+  )
+
+  background.instance("promotes a running foreground task without restarting it", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const ready = yield* Deferred.make<void>()
+      const done = yield* Deferred.make<void>()
+      const injected = yield* Deferred.make<SessionPrompt.PromptInput>()
+      let runs = 0
+      const promptOps: TaskPromptOps = {
+        cancel: () => Effect.void,
+        resolvePromptParts: (template) => Effect.succeed([{ type: "text" as const, text: template }]),
+        prompt: (input) => {
+          if (input.sessionID === chat.id) {
+            return Deferred.succeed(injected, input).pipe(Effect.as(reply(input, "injected")))
+          }
+          return Effect.gen(function* () {
+            runs += 1
+            yield* Deferred.succeed(ready, undefined)
+            yield* Deferred.await(done)
+            return reply(input, "background done")
+          })
+        },
+        loop: (input) => Effect.succeed(reply({ sessionID: input.sessionID, parts: [] }, "done")),
+      }
+
+      const fiber = yield* def
+        .execute(
+          {
+            description: "inspect bug",
+            prompt: "look into the cache key path",
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+        .pipe(Effect.forkChild)
+
+      yield* Deferred.await(ready)
+      const job = (yield* jobs.list())[0]
+      expect(job).toBeDefined()
+      if (!job) throw new Error("task job not found")
+      expect(job.metadata?.parentSessionId).toBe(chat.id)
+      yield* jobs.promote(job.id)
+
+      const result = yield* Fiber.join(fiber)
+      expect(result.metadata.background).toBe(true)
+      expect(result.output).toContain("state: running")
+      expect((yield* jobs.get(result.metadata.sessionId))?.status).toBe("running")
+      expect(runs).toBe(1)
+
+      yield* Deferred.succeed(done, undefined)
+      expect((yield* jobs.wait({ id: result.metadata.sessionId })).info?.output).toBe("background done")
+      expect((yield* Deferred.await(injected)).parts[0]?.type).toBe("text")
+      expect(runs).toBe(1)
     }),
   )
 

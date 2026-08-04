@@ -86,5 +86,10 @@ export function createSidecarEnv(input: {
   if ((input.platform ?? process.platform) === "linux") delete env.LD_PRELOAD
   Object.assign(env, input.paths.sidecarEnv)
   env.PWD = input.cwd
+  // Desktop defaults: allow sync subagents to be promoted to background.
+  // Honor an explicit override from the parent process/env if already set.
+  if (env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS === undefined) {
+    env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS = "true"
+  }
   return env
 }
