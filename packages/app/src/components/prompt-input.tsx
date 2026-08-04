@@ -612,16 +612,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const buttons = createMemo(() => motion(buttonsSpring()))
   const shell = createMemo(() => motion(1 - buttonsSpring()))
   const control = createMemo(() => ({ height: "28px", ...buttons() }))
+  // Solid shell only — no backdrop-filter glass. Frosted blur was a steady GPU cost on
+  // desktop (especially while the session transcript scrolled behind the prompt).
   const glass = createMemo(() => ({
     "background-color":
-      platform.platform === "desktop" && platform.os === "windows"
+      platform.platform === "desktop"
         ? "light-dark(#ffffff, var(--surface-raised-stronger-non-alpha))"
-        : platform.platform === "desktop"
-          ? "light-dark(#ffffff, rgb(12 12 14 / 0.34))"
-          : "rgb(12 12 14 / 0.34)",
-    "backdrop-filter": platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
-    "-webkit-backdrop-filter":
-      platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
+        : "var(--surface-raised-stronger-non-alpha)",
+    "backdrop-filter": "none",
+    "-webkit-backdrop-filter": "none",
   }))
   const commentCount = createMemo(() => {
     if (store.mode === "shell") return 0

@@ -807,17 +807,42 @@
     }
   }
 
+  /* Slow pulse: animate ~1.2s, then rest until next cycle (3.5s total). */
+  @keyframes prompt-stop-halo-ping {
+    0% {
+      transform: scale(1);
+      opacity: 0.38;
+    }
+
+    35% {
+      transform: scale(2);
+      opacity: 0;
+    }
+
+    35.01%,
+    100% {
+      transform: scale(1);
+      opacity: 0;
+    }
+  }
+
   [data-component="prompt-stop-halo"] [data-slot="prompt-stop-halo-ripple"] {
     background: #c8b773;
-    opacity: 0.38;
+    opacity: 0;
     transform-origin: center;
-    animation: project-activity-ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
+    animation: prompt-stop-halo-ping 3.5s cubic-bezier(0, 0, 0.2, 1) infinite;
   }
 
   @media (prefers-reduced-motion: reduce) {
     [data-slot="prompt-placeholder-text"],
     [data-slot="prompt-placeholder-text"]::after {
       animation: none;
+    }
+
+    [data-component="prompt-stop-halo"] [data-slot="prompt-stop-halo-ripple"] {
+      animation: none;
+      opacity: 0.22;
+      transform: scale(1.15);
     }
   }
 }
