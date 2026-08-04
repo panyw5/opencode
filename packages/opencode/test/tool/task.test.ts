@@ -576,6 +576,9 @@ describe("tool.task", () => {
       const job = yield* jobs.get(result.metadata.sessionId)
       expect(result.metadata.background).toBe(true)
       expect(result.output).toContain("state: running")
+      expect(result.output).toContain("You will be notified automatically when it finishes")
+      expect(result.output).toContain("DO NOT sleep, poll for progress")
+      expect(result.output).not.toContain("task_status")
       expect(job?.status).toBe("running")
     }),
   )

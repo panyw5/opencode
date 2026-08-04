@@ -7,7 +7,6 @@ import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
-import { TaskStatusTool } from "./task_status"
 import { TaskTranscriptTool } from "./task_transcript"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
@@ -125,7 +124,6 @@ export const layer: Layer.Layer<
 
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
-    const taskStatus = yield* TaskStatusTool
     const taskTranscript = yield* TaskTranscriptTool
     const read = yield* ReadTool
     const question = yield* QuestionTool
@@ -245,7 +243,6 @@ export const layer: Layer.Layer<
           edit: Tool.init(edit),
           write: Tool.init(writetool),
           task: Tool.init(task),
-          task_status: Tool.init(taskStatus),
           task_transcript: Tool.init(taskTranscript),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
@@ -275,7 +272,6 @@ export const layer: Layer.Layer<
             tool.write,
             tool.task,
             tool.task_transcript,
-            ...(flags.experimentalBackgroundSubagents ? [tool.task_status] : []),
             tool.fetch,
             tool.todo,
             tool.search,

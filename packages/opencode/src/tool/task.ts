@@ -28,9 +28,16 @@ const BACKGROUND_DESCRIPTION = [
   "",
   "",
   [
-    "Background mode: background=true launches the subagent asynchronously.",
-    "Use task_status(task_id=..., wait=false) to poll, or wait=true to block until done.",
+    "Background mode: background=true launches the subagent asynchronously and returns immediately.",
+    "Foreground is the default; use it when you need the result before continuing.",
+    "Use background only for independent work that can run while you continue elsewhere.",
+    "You will be notified automatically when it finishes.",
   ].join(" "),
+].join("\n")
+const BACKGROUND_STARTED = [
+  "The task is working in the background. You will be notified automatically when it finishes.",
+  "DO NOT sleep, poll for progress, ask the task for status, or duplicate this task's work — avoid working with the same files or topics it is using.",
+  "Work on non-overlapping tasks, or briefly tell the user what you launched and end your response.",
 ].join("\n")
 
 const BaseParameters = Schema.Struct({
@@ -54,7 +61,8 @@ export const Parameters = Schema.Struct({
   }),
   command: Schema.optional(Schema.String).annotate({ description: "The command that triggered this task" }),
   background: Schema.optional(Schema.Boolean).annotate({
-    description: "When true, launch the subagent in the background and return immediately",
+    description:
+      "Run the agent in the background. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress",
   }),
 })
 
@@ -70,11 +78,11 @@ function output(sessionID: SessionID, text: string) {
 
 function backgroundOutput(sessionID: SessionID) {
   return [
-    `task_id: ${sessionID} (for polling this task with task_status)`,
+    `task_id: ${sessionID} (for resuming to continue this task if needed)`,
     "state: running",
     "",
     "<task_result>",
-    "Background task started. Continue your current work and call task_status when you need the result.",
+    BACKGROUND_STARTED,
     "</task_result>",
   ].join("\n")
 }
@@ -283,7 +291,9 @@ export const TaskTool = Tool.define(
       const existing = yield* background.get(nextSession.id)
       if (existing?.status === "running") {
         return yield* Effect.fail(
-          new Error(`Task ${nextSession.id} is already running. Use task_status to check progress.`),
+          new Error(
+            `Task ${nextSession.id} is already running. Wait for the automatic completion notification before reusing this task_id.`,
+          ),
         )
       }
 
