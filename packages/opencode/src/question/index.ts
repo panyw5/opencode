@@ -125,6 +125,8 @@ interface State {
 const QUESTION_REQUEST_METADATA = "questionRequest"
 const RECOVERED_SESSION_ENDED_MESSAGE =
   "Session has ended. Your answer was saved, but the original assistant run is no longer active. Send a new message to continue."
+/** Startup / recovery: only scan the N most recently updated sessions (list is ordered by time_updated desc). */
+const RECOVERY_SESSION_LIMIT = 50
 
 type QuestionToolPart = {
   request: Request
@@ -368,28 +370,68 @@ export const layer = Layer.effect(
       }).pipe(Effect.catchCause((cause) => Effect.sync(() => log.warn("question request clear failed", { cause }))))
     })
 
-    const persisted = Effect.fn("Question.persisted")(function* () {
-      const session = EffectOption.getOrUndefined(yield* Effect.serviceOption(Session.Service))
-      if (!session) return []
+    /** Pure: pull active question tool parts out of already-loaded messages. */
+    const collectFromMessages = (messages: MessageV2.WithParts[]) => {
       const result: QuestionToolPart[] = []
-      const sessions = yield* session.list({ limit: 1000 })
-      for (const item of sessions) {
-        const messages = yield* session
-          .messages({ sessionID: item.id })
-          .pipe(Effect.catchCause(() => Effect.succeed([])))
-        for (const message of messages) {
-          for (const part of message.parts) {
-            const request = requestFromPart(part)
-            if (request) result.push(request)
-          }
+      for (const message of messages) {
+        for (const part of message.parts) {
+          const item = requestFromPart(part)
+          if (item) result.push(item)
         }
+      }
+      return result
+    }
+
+    /**
+     * Load one session's messages and collect active persisted questions.
+     * Shared by session-scoped and workspace-scoped scanners.
+     */
+    const scanSessionPersisted = Effect.fn("Question.scanSessionPersisted")(function* (sessionID: SessionID) {
+      const session = EffectOption.getOrUndefined(yield* Effect.serviceOption(Session.Service))
+      if (!session) return [] as QuestionToolPart[]
+      const messages = yield* session
+        .messages({ sessionID })
+        .pipe(Effect.catchCause(() => Effect.succeed([] as MessageV2.WithParts[])))
+      return collectFromMessages(messages)
+    })
+
+    /**
+     * New-message / per-turn path: only the current session.
+     * Used by expireSuperseded so sending a prompt does not scan the whole workspace.
+     */
+    const persistedInSession = Effect.fn("Question.persistedInSession")(function* (sessionID: SessionID) {
+      return yield* scanSessionPersisted(sessionID)
+    })
+
+    /**
+     * Startup / recovery path: scan the most recently updated sessions (default 50).
+     * Session.list is ordered by time_updated desc.
+     * Used by list() (frontend bootstrap rehydrate).
+     */
+    const persistedAll = Effect.fn("Question.persistedAll")(function* (opts?: { limit?: number }) {
+      const session = EffectOption.getOrUndefined(yield* Effect.serviceOption(Session.Service))
+      if (!session) return [] as QuestionToolPart[]
+      const limit = opts?.limit ?? RECOVERY_SESSION_LIMIT
+      const sessions = yield* session.list({ limit })
+      const result: QuestionToolPart[] = []
+      for (const item of sessions) {
+        for (const q of yield* scanSessionPersisted(item.id)) result.push(q)
       }
       return result
     })
 
+    /**
+     * Find one persisted question by id (restart recovery for reply/reject).
+     * Walks recent sessions until match so we can early-exit.
+     */
     const findPersisted = Effect.fn("Question.findPersisted")(function* (requestID: QuestionID) {
-      for (const item of yield* persisted()) {
-        if (item.request.id === requestID) return item
+      const session = EffectOption.getOrUndefined(yield* Effect.serviceOption(Session.Service))
+      if (!session) return undefined
+
+      const sessions = yield* session.list({ limit: RECOVERY_SESSION_LIMIT })
+      for (const item of sessions) {
+        const match = (yield* scanSessionPersisted(item.id)).find((q) => q.request.id === requestID)
+        if (match) return match
       }
       return undefined
     })
@@ -611,10 +653,9 @@ export const layer = Layer.effect(
         count++
       }
 
-      // Phase 2: Persisted requests — scan all tool parts with questionRequest metadata
-      const allPersisted = yield* persisted()
-      for (const item of allPersisted) {
-        if (item.request.sessionID !== input.sessionID) continue
+      // Phase 2: persisted questions for this session only (new-message path).
+      // Workspace recovery for bootstrap lives in list()/findPersisted via persistedAll.
+      for (const item of yield* persistedInSession(input.sessionID)) {
         if (!(yield* isSuperseded(item.request))) continue
 
         // Clear metadata (handles any tool part status)
@@ -735,11 +776,15 @@ export const layer = Layer.effect(
       yield* Deferred.fail(existing.deferred, new RejectedError())
     })
 
+    /**
+     * Startup / bootstrap path: in-memory pending + recent-session persisted recovery.
+     * Frontend calls this on connect to rehydrate docks after app restart.
+     */
     const list = Effect.fn("Question.list")(function* () {
       const pending = (yield* InstanceState.get(state)).pending
       const result = Array.from(pending.values(), (x) => x.info)
       const seen = new Set(result.map((item) => item.id))
-      for (const item of yield* persisted()) {
+      for (const item of yield* persistedAll()) {
         if (seen.has(item.request.id)) continue
         seen.add(item.request.id)
         result.push(item.request)
