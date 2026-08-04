@@ -646,16 +646,7 @@ export function DialogSessionContentSearch() {
   let viewport: HTMLDivElement | undefined
   const indexProgress = (): JSX.Element | undefined => {
     const index = contentSearch.index()
-    if (!index?.enabled || !index.known) return
-    if (index.complete)
-      return (
-        <div class="flex flex-col gap-1.5 px-3 py-2 text-12-regular text-text-weak">
-          <span>Index ready. {index.indexed.toLocaleString()} messages indexed.</span>
-          <Progress value={1} maxValue={1} hideLabel>
-            Index complete
-          </Progress>
-        </div>
-      )
+    if (!index?.enabled || !index.known || index.complete) return
     if (index.total === 0)
       return (
         <div class="flex flex-col gap-1.5 px-3 py-2 text-12-regular text-text-weak">
@@ -730,7 +721,7 @@ export function DialogSessionContentSearch() {
                 value={query()}
                 onChange={setQuery}
                 onKeyDown={handleKeyDown}
-                placeholder="Search session content"
+                placeholder={language.t("dialog.contentSearch.placeholder")}
                 spellcheck={false}
                 autocorrect="off"
                 autocomplete="off"
@@ -743,19 +734,33 @@ export function DialogSessionContentSearch() {
           <Show when={indexProgress()}>{indexProgress()}</Show>
           <Show when={indexDisabled()}>
             <div data-slot="list-empty-state">
-              <div data-slot="list-message">Enable the global index in Settings to search session content.</div>
+              <div data-slot="list-message">{language.t("dialog.contentSearch.disabled")}</div>
             </div>
           </Show>
           <Show
             when={contentSearch.results().length > 0 && !indexDisabled()}
             fallback={
-              <div data-slot="list-empty-state">
-                <div data-slot="list-message">
-                  <Show when={contentSearch.loading()} fallback={contentSearch.error() ?? language.t("palette.empty")}>
-                    {language.t("common.loading")}
+              <Show when={!indexDisabled()}>
+                <div data-slot="list-empty-state">
+                  <Show when={contentSearch.loading()}>
+                    <div data-slot="list-message">{language.t("common.loading")}</div>
+                  </Show>
+                  <Show when={!contentSearch.loading() && contentSearch.error()}>
+                    <div data-slot="list-message">{contentSearch.error()}</div>
+                  </Show>
+                  <Show when={!contentSearch.loading() && !contentSearch.error() && !query().trim()}>
+                    <div class="flex flex-col gap-1.5 items-center max-w-sm text-center">
+                      <div class="text-14-regular text-text-weak">{language.t("dialog.contentSearch.hint")}</div>
+                      <div class="text-12-regular text-text-weak opacity-80">
+                        {language.t("dialog.contentSearch.hint.detail")}
+                      </div>
+                    </div>
+                  </Show>
+                  <Show when={!contentSearch.loading() && !contentSearch.error() && !!query().trim()}>
+                    <div data-slot="list-message">{language.t("palette.empty")}</div>
                   </Show>
                 </div>
-              </div>
+              </Show>
             }
           >
             <For each={contentSearch.results()}>

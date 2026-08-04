@@ -244,6 +244,11 @@ export const dict = {
   "palette.group.commands": "命令",
   "palette.group.files": "文件",
 
+  "dialog.contentSearch.placeholder": "搜索会话内容",
+  "dialog.contentSearch.hint": "输入关键词，搜索全部会话中的消息内容",
+  "dialog.contentSearch.hint.detail": "多个词需同时匹配；选择结果可跳转到对应会话",
+  "dialog.contentSearch.disabled": "请先在设置中启用全局索引，才能搜索会话内容。",
+
   "dialog.theme.search.placeholder": "搜索主题",
   "dialog.theme.empty": "未找到主题",
   "dialog.theme.group.theme": "主题",

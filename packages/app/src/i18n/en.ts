@@ -221,6 +221,11 @@ export const dict = {
   "palette.group.commands": "Commands",
   "palette.group.files": "Files",
 
+  "dialog.contentSearch.placeholder": "Search session content",
+  "dialog.contentSearch.hint": "Type keywords to search message text across sessions",
+  "dialog.contentSearch.hint.detail": "Multiple words must all match. Select a result to open that session.",
+  "dialog.contentSearch.disabled": "Enable the global index in Settings to search session content.",
+
   "dialog.provider.search.placeholder": "Search providers",
   "dialog.provider.empty": "No providers found",
   "dialog.provider.group.popular": "Popular",

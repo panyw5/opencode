@@ -106,6 +106,11 @@ export const dict = {
   "palette.group.commands": "命令",
   "palette.group.files": "檔案",
 
+  "dialog.contentSearch.placeholder": "搜尋工作階段內容",
+  "dialog.contentSearch.hint": "輸入關鍵詞，搜尋全部工作階段中的訊息內容",
+  "dialog.contentSearch.hint.detail": "多個詞需同時符合；選擇結果可跳轉到對應工作階段",
+  "dialog.contentSearch.disabled": "請先在設定中啟用全域索引，才能搜尋工作階段內容。",
+
   "dialog.provider.search.placeholder": "搜尋提供者",
   "dialog.provider.empty": "找不到提供者",
   "dialog.provider.group.popular": "熱門",
