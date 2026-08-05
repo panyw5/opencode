@@ -2260,13 +2260,22 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
 
     [data-slot="answer-summary"] {
       display: flex;
-      align-items: baseline;
-      gap: 7px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       width: fit-content;
       max-width: 100%;
       padding: 4px 7px;
       border-radius: 5px;
       background-color: color-mix(in srgb, var(--background-stronger) 34%, transparent);
+    }
+
+    [data-slot="answer-summary-main"] {
+      display: flex;
+      min-width: 0;
+      flex: 1;
+      align-items: baseline;
+      gap: 7px;
     }
 
     [data-slot="answer-marker"] {
@@ -2280,6 +2289,34 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
       color: var(--markdown-code);
       line-height: 1.45;
       overflow-wrap: anywhere;
+    }
+
+    [data-slot="answer-summary-actions"] {
+      display: inline-flex;
+      flex: none;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-weak);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.12s ease;
+    }
+
+    [data-slot="answer-summary"]:hover [data-slot="answer-summary-actions"],
+    [data-slot="answer-summary"]:focus-within [data-slot="answer-summary-actions"] {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    [data-slot="answer-summary-actions"] [data-component="icon-button"] {
+      width: 22px;
+      height: 22px;
+      opacity: 0.72;
+    }
+
+    [data-slot="answer-summary-actions"] [data-component="icon-button"]:hover,
+    [data-slot="answer-summary-actions"] [data-component="icon-button"]:focus-visible {
+      opacity: 1;
     }
 
     [data-slot="answer-images"] {

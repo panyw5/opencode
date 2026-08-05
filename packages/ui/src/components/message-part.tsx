@@ -3340,6 +3340,21 @@ ToolRegistry.register({
                     (part): part is { type: "image"; url: string; mime: string; filename?: string } =>
                       typeof part !== "string" && part.type === "image",
                   )
+                const [answerCopied, setAnswerCopied] = createSignal(false)
+                let answerCopiedTimeout: ReturnType<typeof setTimeout> | undefined
+                const answerText = () => textParts().join(", ")
+                const copyAnswer = async (event: MouseEvent) => {
+                  event.stopPropagation()
+                  const value = answerText()
+                  if (!value) return
+                  await navigator.clipboard.writeText(value)
+                  setAnswerCopied(true)
+                  if (answerCopiedTimeout) clearTimeout(answerCopiedTimeout)
+                  answerCopiedTimeout = setTimeout(() => setAnswerCopied(false), 2000)
+                }
+                onCleanup(() => {
+                  if (answerCopiedTimeout) clearTimeout(answerCopiedTimeout)
+                })
 
                 return (
                   <div data-slot="question-answer-item">
@@ -3404,8 +3419,27 @@ ToolRegistry.register({
                     <div data-slot="answer-content">
                       <Show when={textParts().length > 0}>
                         <div data-slot="answer-summary">
-                          <span data-slot="answer-marker">❱</span>
-                          <span data-slot="answer-text">{textParts().join(", ")}</span>
+                          <div data-slot="answer-summary-main">
+                            <span data-slot="answer-marker">❱</span>
+                            <span data-slot="answer-text">{answerText()}</span>
+                          </div>
+                          <span data-slot="answer-summary-actions">
+                            <Tooltip
+                              value={answerCopied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                              placement="top"
+                              gutter={4}
+                              lazyMount
+                            >
+                              <IconButton
+                                icon={answerCopied() ? "check" : "copy"}
+                                size="small"
+                                variant="secondary"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={copyAnswer}
+                                aria-label={answerCopied() ? i18n.t("ui.message.copied") : i18n.t("ui.message.copy")}
+                              />
+                            </Tooltip>
+                          </span>
                         </div>
                       </Show>
                       <Show when={imageParts().length > 0}>
