@@ -172,7 +172,7 @@ export function toRow(info: Info) {
     revert: info.revert ?? null,
     permission: info.permission,
     mounted_task_id: info.mountedTaskID ?? null,
-    inject_task_context: info.injectTaskContext ?? false,
+    inject_task_context: info.injectTaskContext ?? true,
     time_created: info.time.created,
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
@@ -637,6 +637,8 @@ export const layer: Layer.Layer<
         agent: input.agent,
         model: input.model,
         permission: input.permission ? [...input.permission] : undefined,
+        // Default on: inject mounted project-task context each turn unless opted out.
+        injectTaskContext: true,
         cost: 0,
         tokens: EmptyTokens,
         time: {

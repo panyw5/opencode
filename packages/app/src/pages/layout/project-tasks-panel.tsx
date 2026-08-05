@@ -212,6 +212,10 @@ function ProjectTaskDetailDialog(props: {
   const language = useLanguage()
   const dialog = useDialog()
   const navigate = useNavigate()
+  const dialogKey = createMemo(() => props.task.id)
+  const [maximized, setMaximized] = createSignal(false)
+  const [titleCopied, setTitleCopied] = createSignal(false)
+  let titleCopiedTimer: ReturnType<typeof setTimeout> | undefined
   const [state, setState] = createStore({
     detail: undefined as ProjectTaskDetail | undefined,
     loading: true,
@@ -220,7 +224,15 @@ function ProjectTaskDetailDialog(props: {
     mode: "preview" as "preview" | "edit",
     draft: props.task.description,
     dirty: false,
+    saved: props.task.description,
   })
+
+  const detail = createMemo(() => state.detail)
+  const title = createMemo(() => detail()?.title ?? props.task.title)
+  const status = createMemo(() => detail()?.status ?? props.task.status)
+  const contentH = createMemo(() =>
+    maximized() ? "calc(95vh - 200px)" : state.mode === "edit" ? "calc(90vh - 220px)" : "calc(90vh - 200px)",
+  )
 
   async function load() {
     setState({ loading: true, error: "" })
@@ -230,6 +242,7 @@ function ProjectTaskDetailDialog(props: {
         setState({
           detail: result.data,
           draft: result.data.description,
+          saved: result.data.description,
           dirty: false,
         })
       }
@@ -253,32 +266,46 @@ function ProjectTaskDetailDialog(props: {
     }
   }
 
-  async function saveDescription() {
+  async function saveDescription(options?: { preview?: boolean }) {
+    if (!state.dirty && state.draft === state.saved) {
+      if (options?.preview) setState("mode", "preview")
+      return true
+    }
     setState({ pending: true, error: "" })
     try {
       const result = await props.client.projectTask.update({
         taskID: props.task.id,
         projectTaskUpdateInput: { description: state.draft },
       })
-      if (result.data) setState("detail", { ...state.detail!, ...result.data, sessions: state.detail?.sessions ?? [] })
-      setState({ dirty: false, mode: "preview" })
+      if (result.data) {
+        setState("detail", {
+          ...(state.detail ?? result.data),
+          ...result.data,
+          sessions: state.detail?.sessions ?? [],
+        })
+      }
+      setState({ dirty: false, saved: state.draft, mode: options?.preview ? "preview" : state.mode })
       await props.onChanged()
+      return true
     } catch (error) {
       setState("error", error instanceof Error ? error.message : String(error))
+      return false
     } finally {
       setState("pending", false)
     }
   }
 
-  async function setStatus(status: ProjectTaskStatus) {
+  async function setStatus(next: ProjectTaskStatus) {
     setState({ pending: true, error: "" })
     try {
       const result = await props.client.projectTask.update({
         taskID: props.task.id,
-        projectTaskUpdateInput: { status },
+        projectTaskUpdateInput: { status: next },
       })
       if (result.data && state.detail) {
         setState("detail", { ...state.detail, ...result.data, sessions: state.detail.sessions })
+      } else if (result.data) {
+        setState("detail", { ...result.data, sessions: [] })
       }
       await props.onChanged()
     } catch (error) {
@@ -293,142 +320,276 @@ function ProjectTaskDetailDialog(props: {
     navigate(`/${base64Encode(props.directory)}/session/${sessionID}`)
   }
 
-  onMount(() => void load())
+  const copyTitle = () => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!clipboard?.writeText) return
+    void clipboard.writeText(title()).then(() => {
+      setTitleCopied(true)
+      if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
+      titleCopiedTimer = setTimeout(() => setTitleCopied(false), 1200)
+    })
+  }
 
-  const detail = createMemo(() => state.detail)
-  const title = createMemo(() => detail()?.title ?? props.task.title)
-  const status = createMemo(() => detail()?.status ?? props.task.status)
+  const enterEdit = () => {
+    setState({
+      mode: "edit",
+      draft: detail()?.description ?? props.task.description,
+      dirty: false,
+    })
+  }
+
+  const saveAndPreview = async () => {
+    const ok = await saveDescription({ preview: true })
+    if (ok) setState("mode", "preview")
+  }
+
+  const closeDialog = async () => {
+    if (state.mode === "edit" && state.dirty) {
+      const ok = await saveDescription()
+      if (!ok) return
+    }
+    dialog.close()
+  }
+
+  onMount(() => void load())
+  onCleanup(() => {
+    if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
+  })
 
   return (
     <>
-      <style>{`
-        dialog:has([data-component="project-task-detail"]) {
-          width: min(960px, calc(100vw - 48px)) !important;
-          max-width: min(960px, calc(100vw - 48px)) !important;
-        }
-      `}</style>
+      <style
+        // eslint-disable-next-line solid/no-innerhtml
+        innerHTML={`
+          [data-component="dialog"][data-project-task-dialog="${dialogKey()}"] [data-slot="dialog-container"] {
+            height: 90vh !important;
+            max-height: 90vh !important;
+          }
+          [data-component="dialog"][data-project-task-dialog="${dialogKey()}"][data-maximized] [data-slot="dialog-container"] {
+            width: 90vw !important;
+            max-width: 90vw !important;
+            height: 95vh !important;
+            max-height: 95vh !important;
+          }
+          [data-component="dialog"][data-project-task-dialog="${dialogKey()}"] [data-slot="dialog-content"] {
+            overflow: hidden !important;
+          }
+        `}
+      />
       <Dialog
         title={
-          <div class="flex min-w-0 flex-col pl-1">
-            <span class="truncate">{title()}</span>
-            <span class="mt-0.5 truncate text-12-regular text-text-weak">
-              {labelStatus(status())} · {progressText(detail() ?? props.task)}
-            </span>
+          <div class="flex min-w-0 items-center gap-2">
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 items-center gap-2">
+                <span class="min-w-0 truncate">{title()}</span>
+                <Tooltip
+                  placement="bottom"
+                  value={titleCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyTitle")}
+                >
+                  <IconButton
+                    icon={titleCopied() ? "check" : "copy"}
+                    variant="ghost"
+                    size="large"
+                    aria-label={
+                      titleCopied()
+                        ? language.t("session.share.copy.copied")
+                        : language.t("trellis.tasks.copyTitle")
+                    }
+                    onClick={copyTitle}
+                  />
+                </Tooltip>
+              </div>
+              <div class="mt-0.5 truncate text-12-regular text-text-weak">
+                {labelStatus(status())} · {progressText(detail() ?? props.task)}
+              </div>
+            </div>
           </div>
         }
-        size="large"
+        size="x-large"
         transition
+        data-project-task-dialog={dialogKey()}
+        data-maximized={maximized() ? "" : undefined}
         action={
-          <div class="flex items-center gap-1">
-            <Tooltip value={language.t("projectTask.edit")}>
-              <IconButton
-                icon="edit"
-                variant="ghost"
-                onClick={() => setState("mode", state.mode === "edit" ? "preview" : "edit")}
-                aria-label={language.t("projectTask.edit")}
-              />
-            </Tooltip>
-            <Tooltip value={language.t("projectTask.archive")}>
+          <div class="flex items-center gap-2">
+            <div
+              role="group"
+              class="flex items-center rounded-lg border border-border-weak-base bg-background-stronger p-0.5"
+            >
+              <button
+                type="button"
+                class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
+                classList={{
+                  "bg-background-base text-text-strong shadow-sm": state.mode === "preview",
+                  "text-text-base hover:text-text-strong": state.mode !== "preview",
+                }}
+                onClick={() => void saveAndPreview()}
+              >
+                <Icon name="eye" size="small" />
+                {language.t("trellis.tasks.preview")}
+              </button>
+              <button
+                type="button"
+                class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
+                classList={{
+                  "bg-background-base text-text-strong shadow-sm": state.mode === "edit",
+                  "text-text-base hover:text-text-strong": state.mode !== "edit",
+                }}
+                onClick={enterEdit}
+              >
+                <Icon name="edit" size="small" />
+                {language.t("trellis.tasks.edit")}
+              </button>
+            </div>
+            <Tooltip placement="bottom" value={language.t("projectTask.archive")}>
               <IconButton
                 icon="archive"
                 variant="ghost"
+                size="large"
                 disabled={state.pending}
-                onClick={() => void archive()}
                 aria-label={language.t("projectTask.archive")}
+                onClick={() => void archive()}
               />
             </Tooltip>
-            <IconButton
-              icon="close"
-              variant="ghost"
-              onClick={() => dialog.close()}
-              aria-label={language.t("common.close")}
-            />
+            <Tooltip
+              placement="bottom"
+              value={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+            >
+              <IconButton
+                icon={maximized() ? "collapse" : "expand"}
+                variant="ghost"
+                size="large"
+                aria-label={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+                onClick={() => setMaximized((v) => !v)}
+              />
+            </Tooltip>
+            <Tooltip placement="bottom" value={language.t("trellis.tasks.close")}>
+              <IconButton
+                icon="close"
+                variant="ghost"
+                size="large"
+                aria-label={language.t("trellis.tasks.close")}
+                onClick={() => void closeDialog()}
+              />
+            </Tooltip>
           </div>
         }
       >
-        <div data-component="project-task-detail" class="flex min-h-0 flex-col gap-4 overflow-y-auto p-1">
-          <Show when={state.loading}>
-            <div class="flex items-center gap-2 text-12-regular text-text-weak">
-              <Spinner />
-              {language.t("projectTask.loading")}
-            </div>
-          </Show>
-          <Show when={state.error}>
-            <ErrorCard err={state.error} />
-          </Show>
+        <div data-component="project-task-detail" class="flex min-h-0 flex-1 flex-col gap-3 p-4">
+          <Show when={state.error}>{(err) => <ErrorCard err={err()} />}</Show>
 
           <div class="flex flex-wrap items-center gap-2">
-            <For each={(["open", "in_progress", "done"] as ProjectTaskStatus[])}>
+            <For each={["open", "in_progress", "done"] as ProjectTaskStatus[]}>
               {(value) => (
                 <button
                   type="button"
-                  class="rounded-md border px-2 py-1 text-12-medium transition-colors"
+                  class="rounded-full border px-3 py-1 text-12-medium transition-colors"
                   classList={{
                     "border-border-brand-base bg-surface-interactive-selected/40 text-text-strong": status() === value,
                     "border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover":
                       status() !== value,
                   }}
-                  disabled={state.pending}
+                  disabled={state.pending || state.loading}
                   onClick={() => void setStatus(value)}
                 >
                   {labelStatus(value)}
                 </button>
               )}
             </For>
+            <span class="ml-auto text-12-regular text-text-weak">
+              {language.t("projectTask.sessions.count", {
+                count: detail()?.sessionCount ?? props.task.sessionCount,
+              })}
+            </span>
           </div>
 
-          <section class="flex flex-col gap-2">
-            <div class="flex items-center justify-between gap-2">
-              <div class="text-12-medium text-text-base">{language.t("projectTask.field.description")}</div>
-              <Show when={state.mode === "edit"}>
-                <div class="flex items-center gap-2">
-                  <button
-                    type="button"
-                    class="rounded-md border border-border-weak-base bg-background-base px-3 py-1.5 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:opacity-50"
-                    disabled={state.pending}
-                    onClick={() => {
-                      setState({ mode: "preview", draft: detail()?.description ?? props.task.description, dirty: false })
+          <div
+            class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"
+            classList={{ "border-border-focus": state.mode === "edit" }}
+            style={{ height: contentH() }}
+          >
+            <Show when={state.loading}>
+              <div class="flex flex-1 items-center justify-center gap-2 text-12-regular text-text-weak">
+                <Spinner />
+                {language.t("projectTask.loading")}
+              </div>
+            </Show>
+            <Show when={!state.loading}>
+              <Show
+                when={state.mode === "preview"}
+                fallback={
+                  <textarea
+                    value={state.draft}
+                    autofocus
+                    spellcheck={false}
+                    placeholder={language.t("projectTask.field.descriptionPlaceholder")}
+                    class="min-h-0 flex-1 resize-none bg-transparent px-5 py-4 text-14-regular text-text-strong outline-none"
+                    style={{ height: contentH() }}
+                    onInput={(event) => {
+                      const next = event.currentTarget.value
+                      setState({ draft: next, dirty: next !== state.saved })
                     }}
-                  >
-                    {language.t("common.cancel")}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-md bg-surface-interactive-base px-3 py-1.5 text-12-medium text-text-on-interactive transition-colors hover:bg-surface-interactive-base-hover disabled:opacity-50"
-                    disabled={state.pending || !state.dirty}
-                    onClick={() => void saveDescription()}
-                  >
-                    {state.pending ? language.t("common.saving") : language.t("common.save")}
-                  </button>
-                </div>
-              </Show>
-            </div>
-            <Show
-              when={state.mode === "edit"}
-              fallback={
-                <div class="min-h-24 rounded-lg border border-border-weak-base bg-surface-base px-3 py-2">
+                    onKeyDown={(event) => {
+                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                        event.preventDefault()
+                        void saveDescription()
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault()
+                        void saveAndPreview()
+                      }
+                    }}
+                  />
+                }
+              >
+                <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4" style={{ transform: "translateZ(0)" }}>
                   <Show
                     when={(detail()?.description ?? props.task.description).trim()}
-                    fallback={
-                      <div class="text-12-regular text-text-weaker">{language.t("projectTask.noDescription")}</div>
-                    }
+                    fallback={<Empty text={language.t("projectTask.noDescription")} />}
                   >
                     <Markdown text={detail()?.description ?? props.task.description} />
                   </Show>
                 </div>
-              }
-            >
-              <textarea
-                class="min-h-40 resize-y rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-13-regular text-text-strong outline-none focus:border-border-focus"
-                value={state.draft}
-                onInput={(event) => setState({ draft: event.currentTarget.value, dirty: true })}
-              />
+              </Show>
             </Show>
-          </section>
+          </div>
 
-          <Show when={detail()}>
+          <Show when={state.mode === "edit"}>
+            <div class="flex items-center justify-between gap-3">
+              <div class="flex items-center gap-2 text-11-regular text-text-weak">
+                <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">⌘</span>
+                <span>+</span>
+                <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">
+                  {language.t("common.key.enter")}
+                </span>
+                <span>{language.t("trellis.tasks.save")}</span>
+                <span class="mx-1 text-text-subtle">·</span>
+                <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">Esc</span>
+                <span>{language.t("trellis.tasks.saveAndPreview")}</span>
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  class="rounded-md border border-border-weak-base bg-background-base px-3 py-1.5 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={state.pending}
+                  onClick={() => void saveAndPreview()}
+                >
+                  {language.t("trellis.tasks.preview")}
+                </button>
+                <button
+                  type="button"
+                  class="rounded-md bg-surface-interactive-base px-4 py-1.5 text-12-medium text-text-on-interactive transition-colors hover:bg-surface-interactive-base-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={state.pending || !state.dirty}
+                  onClick={() => void saveDescription()}
+                >
+                  {state.pending ? language.t("trellis.tasks.saving") : language.t("trellis.tasks.save")}
+                </button>
+              </div>
+            </div>
+          </Show>
+
+          <Show when={state.mode === "preview" ? detail() : undefined}>
             {(task) => (
-              <section class="flex flex-col gap-2">
+              <section class="flex max-h-[28vh] min-h-0 flex-col gap-2 overflow-hidden">
                 <div class="text-12-medium text-text-base">
                   {language.t("projectTask.sessions.title")} ({task().sessionCount})
                 </div>
@@ -438,7 +599,7 @@ function ProjectTaskDetailDialog(props: {
                     <div class="text-12-regular text-text-weaker">{language.t("projectTask.sessions.empty")}</div>
                   }
                 >
-                  <div class="flex flex-col gap-2">
+                  <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                     <For each={task().sessions}>
                       {(session) => (
                         <div class="rounded-xl border border-border-weak-base bg-background-stronger px-3 py-2">

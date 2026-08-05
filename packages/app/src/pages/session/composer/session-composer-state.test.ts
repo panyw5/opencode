@@ -146,7 +146,10 @@ describe("todoState", () => {
     expect(todoState({ count: 2, done: false, live: false })).toBe("open")
   })
 
-  test("clears completed todos when the session is no longer live", () => {
-    expect(todoState({ count: 2, done: true, live: false })).toBe("clear")
+  test("hides completed todos when the session is no longer live without clearing cache", () => {
+    // Was "clear" which wiped globalSync.session_todo / sync.todo to [].
+    // That made the session todo float empty while project-task dashboard
+    // (reading DB) still showed 5/5. Hide the dock only; keep the cache.
+    expect(todoState({ count: 2, done: true, live: false })).toBe("hide")
   })
 })

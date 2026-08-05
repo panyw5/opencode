@@ -158,6 +158,8 @@ export const layer = Layer.effect(
           })
         }
         yield* sessions.setMountedTask({ sessionID: input.sessionID, taskID: input.taskID })
+        // Default-on: mounting a task enables context injection unless the user later opts out.
+        yield* sessions.setInjectTaskContext({ sessionID: input.sessionID, enabled: true })
         const updated = yield* ProjectTaskRepository.get(input.taskID)
         if (!updated) return yield* new NotFoundError({ taskID: input.taskID })
         yield* emit(dir, { type: Event.Updated.type, properties: updated })

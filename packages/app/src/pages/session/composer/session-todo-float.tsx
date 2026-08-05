@@ -1,9 +1,10 @@
 import type { Todo } from "@opencode-ai/sdk/v2"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
-import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, on, onCleanup, Show, untrack } from "solid-js"
 import { SessionProjectTaskMount } from "@/components/session/session-project-task-mount"
 import { useLanguage } from "@/context/language"
+import { useSync } from "@/context/sync"
 import { TodoList } from "@/pages/session/composer/session-todo-list"
 import { composerEnabled, composerProbe } from "@/testing/session-composer"
 
@@ -14,6 +15,7 @@ export function SessionTodoFloat(props: {
   expandLabel: string
 }) {
   const language = useLanguage()
+  const sync = useSync()
   const [shown, setShown] = createSignal(false)
 
   const total = createMemo(() => props.todos.length)
@@ -27,6 +29,25 @@ export function SessionTodoFloat(props: {
 
   const e2e = composerEnabled()
   const probe = composerProbe(props.sessionID)
+
+  // When the float opens, force-refresh todos from the server. Recovers from
+  // stale empty cache left by the old "clear on complete" path without waiting
+  // for a full session re-navigation. Only track open/session — not todo list
+  // length — so a successful refresh cannot re-trigger itself.
+  createEffect(
+    on(
+      () => [shown(), props.sessionID] as const,
+      ([open, id]) => {
+        if (!open || !id) return
+        const localCount = untrack(() => props.todos.length)
+        console.log(`[session-todo-float] open force-refresh session=${id} localCount=${localCount}`)
+        void sync.session.todo(id, { force: true }).catch((err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err)
+          console.warn(`[session-todo-float] force-refresh failed session=${id} err=${msg}`)
+        })
+      },
+    ),
+  )
 
   createEffect(() => {
     if (!e2e) return

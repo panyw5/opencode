@@ -148,7 +148,11 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     if (test.on && test.todos !== undefined) return test.todos
     const id = params.id
     if (!id) return []
-    return globalSync.data.session_todo[id] ?? []
+    // Prefer global session_todo (event + shared cache), fall back to per-directory
+    // child store. Never treat a missing key as loaded-empty.
+    const fromGlobal = globalSync.data.session_todo[id]
+    if (fromGlobal !== undefined) return fromGlobal
+    return sync.data.todo[id] ?? []
   })
 
   const done = createMemo(
@@ -234,18 +238,6 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
     }, closeMs())
   }
 
-  // Keep stale turn todos from reopening if the model never clears them.
-  const clear = () => {
-    if (test.on && test.todos !== undefined) {
-      setTest("todos", [])
-      return
-    }
-    const id = params.id
-    if (!id) return
-    globalSync.todo.set(id, [])
-    sync.set("todo", id, [])
-  }
-
   createEffect(
     on(
       () => [todos().length, done(), live()] as const,
@@ -259,17 +251,16 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
           live: active,
         })
 
+        // hide: no todos, or all completed while idle — close dock UI only.
+        // Keep session_todo cache intact so the float / project-task panel can
+        // still show completed items (previously "clear" wiped the store).
         if (next === "hide") {
           if (timer) window.clearTimeout(timer)
           timer = undefined
           setStore({ dock: false, closing: false, opening: false })
-          return
-        }
-
-        if (next === "clear") {
-          if (timer) window.clearTimeout(timer)
-          timer = undefined
-          clear()
+          console.log(
+            `[composer-todo] state=hide session=${params.id ?? "none"} count=${count} done=${complete} live=${active}`,
+          )
           return
         }
 

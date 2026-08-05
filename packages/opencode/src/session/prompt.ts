@@ -1937,7 +1937,7 @@ export const layer = Layer.effect(
             ])
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
             // Opt-in project-task context: only when the session has a mounted task
-            // AND injectTaskContext is enabled (default off).
+            // AND injectTaskContext is enabled (default on).
             if (session.injectTaskContext && session.mountedTaskID) {
               const detail = yield* ProjectTaskRepository.detail(session.mountedTaskID)
               if (detail) system.push(formatProjectTaskSystemContext(detail))
