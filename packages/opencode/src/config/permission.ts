@@ -26,6 +26,7 @@ const InputObject = Schema.StructWithRest(
     todowrite: Schema.optional(Action),
     project_task_create: Schema.optional(Action),
     project_task_list: Schema.optional(Action),
+    project_task_get: Schema.optional(Action),
     project_task_mount: Schema.optional(Action),
     question: Schema.optional(Action),
     webfetch: Schema.optional(Action),

@@ -855,6 +855,7 @@ export type Session = {
     diff?: string
   }
   mountedTaskID?: string
+  injectTaskContext?: boolean
 }
 
 export type Prompt = {
@@ -980,6 +981,7 @@ export type PermissionConfig =
       todowrite?: PermissionActionConfig
       project_task_create?: PermissionActionConfig
       project_task_list?: PermissionActionConfig
+      project_task_get?: PermissionActionConfig
       project_task_mount?: PermissionActionConfig
       question?: PermissionActionConfig
       webfetch?: PermissionActionConfig
@@ -1701,6 +1703,7 @@ export type GlobalSession = {
     diff?: string
   }
   mountedTaskID?: string
+  injectTaskContext?: boolean
   project: ProjectSummary | null
 }
 
@@ -2392,6 +2395,7 @@ export type SyncEventSessionUpdated = {
         diff?: string
       } | null
       mountedTaskID?: string | null
+      injectTaskContext?: boolean | null
     }
   }
 }
@@ -6900,6 +6904,7 @@ export type SessionUpdateData = {
   body?: {
     title?: string
     permission?: PermissionRuleset
+    injectTaskContext?: boolean
     time?: {
       archived?: number | null
     }

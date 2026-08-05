@@ -1,3 +1,5 @@
 List project-level tasks for the current project.
 
-Returns title, status, sessionCount, and aggregated todo progress for each task. Use this to choose a taskID before mounting with project_task_mount.
+Returns title, status, sessionCount, and aggregated todo progress for each task.
+Use project_task_get with a taskID to see linked sessions and each session's todos.
+Use project_task_mount to attach a task to the current session.

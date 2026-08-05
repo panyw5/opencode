@@ -3627,6 +3627,7 @@ export class Session2 extends HeyApiClient {
       workspace?: string
       title?: string
       permission?: PermissionRuleset
+      injectTaskContext?: boolean
       time?: {
         archived?: number | null
       }
@@ -3643,6 +3644,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "body", key: "title" },
             { in: "body", key: "permission" },
+            { in: "body", key: "injectTaskContext" },
             { in: "body", key: "time" },
           ],
         },

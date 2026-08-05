@@ -132,8 +132,15 @@ export const layer = Layer.effect(
         Effect.mapError(() => new SessionNotFoundError({ sessionID: input.sessionID })),
       )
       const pid = yield* projectID()
+      const dir = yield* directory()
       if (session.projectID !== pid) {
-        return yield* new InvalidMountError({ message: "Session does not belong to the current project" })
+        // eslint-disable-next-line no-console
+        console.debug(
+          `[project-task] mount rejected: session project mismatch sessionID=${input.sessionID} sessionProject=${session.projectID} instanceProject=${pid} directory=${dir}`,
+        )
+        return yield* new InvalidMountError({
+          message: `Session project (${session.projectID}) does not match instance project (${pid}) for directory ${dir}`,
+        })
       }
 
       if (input.taskID) {
@@ -141,10 +148,18 @@ export const layer = Layer.effect(
         if (task.status === "archived" || task.time.archived != null) {
           return yield* new InvalidMountError({ message: "Cannot mount an archived project task" })
         }
+        if (task.projectID !== session.projectID) {
+          // eslint-disable-next-line no-console
+          console.debug(
+            `[project-task] mount rejected: task project mismatch taskID=${input.taskID} taskProject=${task.projectID} sessionProject=${session.projectID}`,
+          )
+          return yield* new InvalidMountError({
+            message: `Task project (${task.projectID}) does not match session project (${session.projectID})`,
+          })
+        }
         yield* sessions.setMountedTask({ sessionID: input.sessionID, taskID: input.taskID })
         const updated = yield* ProjectTaskRepository.get(input.taskID)
         if (!updated) return yield* new NotFoundError({ taskID: input.taskID })
-        const dir = yield* directory()
         yield* emit(dir, { type: Event.Updated.type, properties: updated })
         return updated
       }
@@ -154,7 +169,6 @@ export const layer = Layer.effect(
       if (!previous) return null
       const updated = yield* ProjectTaskRepository.get(previous)
       if (updated) {
-        const dir = yield* directory()
         yield* emit(dir, { type: Event.Updated.type, properties: updated })
       }
       return updated ?? null

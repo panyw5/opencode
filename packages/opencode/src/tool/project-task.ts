@@ -3,6 +3,7 @@ import * as Tool from "./tool"
 import DESCRIPTION_CREATE from "./project_task_create.txt"
 import DESCRIPTION_LIST from "./project_task_list.txt"
 import DESCRIPTION_MOUNT from "./project_task_mount.txt"
+import DESCRIPTION_GET from "./project_task_get.txt"
 import { ProjectTask } from "@/project-task/service"
 import { ProjectTaskID, Status } from "@/project-task/schema"
 
@@ -30,6 +31,10 @@ const MountParams = Schema.Struct({
   unmount: Schema.optional(Schema.Boolean).annotate({
     description: "If true, unmount any project task from this session",
   }),
+})
+
+const GetParams = Schema.Struct({
+  taskID: Schema.String.annotate({ description: "Project task ID to load" }),
 })
 
 export const ProjectTaskCreateTool = Tool.define<typeof CreateParams, { task: unknown }, ProjectTask.Service>(
@@ -114,5 +119,32 @@ export const ProjectTaskMountTool = Tool.define<typeof MountParams, { taskID: st
           }
         }),
     } satisfies Tool.DefWithoutID<typeof MountParams, { taskID: string | null }>
+  }),
+)
+
+export const ProjectTaskGetTool = Tool.define<typeof GetParams, { taskID: string }, ProjectTask.Service>(
+  "project_task_get",
+  Effect.gen(function* () {
+    const tasks = yield* ProjectTask.Service
+    return {
+      description: DESCRIPTION_GET,
+      parameters: GetParams,
+      execute: (params, ctx) =>
+        Effect.gen(function* () {
+          yield* ctx.ask({
+            permission: "project_task_get",
+            patterns: ["*"],
+            always: ["*"],
+            metadata: {},
+          })
+          const taskID = ProjectTaskID.make(params.taskID.trim())
+          const detail = yield* tasks.detail(taskID)
+          return {
+            title: `Project task: ${detail.title}`,
+            output: JSON.stringify(detail, null, 2),
+            metadata: { taskID },
+          }
+        }),
+    } satisfies Tool.DefWithoutID<typeof GetParams, { taskID: string }>
   }),
 )

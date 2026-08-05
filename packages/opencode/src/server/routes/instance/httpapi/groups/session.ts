@@ -48,6 +48,7 @@ export const StatusMap = Schema.Record(Schema.String, SessionStatus.Info)
 export const UpdatePayload = Schema.Struct({
   title: Schema.optional(Schema.String),
   permission: Schema.optional(Permission.Ruleset),
+  injectTaskContext: Schema.optional(Schema.Boolean),
   time: Schema.optional(
     Schema.Struct({
       archived: Schema.optional(Schema.NullOr(Session.ArchivedTimestamp)),

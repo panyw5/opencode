@@ -1,19 +1,24 @@
 import type { ProjectTask } from "@opencode-ai/sdk/v2/client"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
-import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { createEffect, createMemo, For, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
+import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
-export function SessionProjectTaskMount() {
-  const sdk = useGlobalSDK()
+export function SessionProjectTaskMount(props: {
+  /** Compact icon trigger (header) vs full row for status panel. */
+  variant?: "icon" | "panel"
+}) {
+  const variant = () => props.variant ?? "icon"
+  // Directory-bound client so project-task APIs resolve the same project as the session.
+  const sdk = useSDK()
+  const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const sync = useSync()
   const { params } = useSessionLayout()
@@ -24,6 +29,13 @@ export function SessionProjectTaskMount() {
     tasks: [] as ProjectTask[],
     error: "",
   })
+  const [triggerWidth, setTriggerWidth] = createSignal(0)
+  let triggerEl: HTMLButtonElement | undefined
+
+  const measureTrigger = () => {
+    if (!triggerEl) return
+    setTriggerWidth(Math.round(triggerEl.getBoundingClientRect().width))
+  }
 
   const sessionID = createMemo(() => params.id)
   const session = createMemo(() => {
@@ -32,17 +44,21 @@ export function SessionProjectTaskMount() {
     return sync.session.get(id)
   })
   const mountedID = createMemo(() => session()?.mountedTaskID)
+  const injectContext = createMemo(() => !!session()?.injectTaskContext)
   const mountedTitle = createMemo(() => {
     const id = mountedID()
     if (!id) return undefined
     return state.tasks.find((task) => task.id === id)?.title
   })
 
-  async function loadTasks() {
-    setState({ loading: true, error: "" })
+  async function loadTasks(options?: { silent?: boolean }) {
+    if (!options?.silent) setState({ loading: true, error: "" })
     try {
       const result = await sdk.client.projectTask.list({})
-      setState({ tasks: (result.data ?? []).filter((task) => task.status !== "archived"), error: "" })
+      setState({
+        tasks: (result.data ?? []).filter((task) => task.status !== "archived"),
+        error: "",
+      })
     } catch (error) {
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
@@ -50,10 +66,25 @@ export function SessionProjectTaskMount() {
     }
   }
 
+  // Keep list warm so dashboard create/update is visible without reopening.
+  createEffect(() => {
+    sessionID()
+    sdk.directory
+    void loadTasks({ silent: true })
+  })
+
   createEffect(() => {
     if (!state.open) return
     void loadTasks()
   })
+
+  const stop = globalSDK.listenAll((event) => {
+    const type = event.details.type
+    if (type.startsWith("project-task.") || type === "session.updated" || type === "sync") {
+      void loadTasks({ silent: true })
+    }
+  })
+  onCleanup(stop)
 
   async function mount(taskID: string) {
     const id = sessionID()
@@ -94,82 +125,146 @@ export function SessionProjectTaskMount() {
     }
   }
 
+  async function setInject(enabled: boolean) {
+    const id = sessionID()
+    if (!id) return
+    setState({ pending: true, error: "" })
+    try {
+      await sdk.client.session.update({
+        sessionID: id,
+        injectTaskContext: enabled,
+      })
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setState("pending", false)
+    }
+  }
+
+  const menu = (
+    <DropdownMenu
+      gutter={4}
+      placement="bottom-start"
+      open={state.open}
+      onOpenChange={(open) => {
+        if (open) measureTrigger()
+        setState("open", open)
+      }}
+    >
+      <DropdownMenu.Trigger
+        as="button"
+        type="button"
+        ref={(el: HTMLButtonElement) => {
+          triggerEl = el
+          measureTrigger()
+        }}
+        class={
+          variant() === "panel"
+            ? "flex w-full items-center justify-between gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left text-13-regular text-text-strong transition-colors hover:bg-surface-base-hover"
+            : "inline-flex items-center gap-1 rounded-md border border-border-weak-base bg-surface-raised-base px-2 py-1 text-12-medium text-text-strong transition-colors hover:bg-surface-raised-base-hover data-[expanded]:bg-surface-raised-base-active"
+        }
+        classList={{
+          "border-border-brand-base": !!mountedID(),
+        }}
+        aria-label={
+          mountedTitle()
+            ? language.t("projectTask.mount.mounted", { title: mountedTitle()! })
+            : language.t("projectTask.mount.none")
+        }
+      >
+        <span class="flex min-w-0 items-center gap-2">
+          <Icon name="checklist" size="small" class={mountedID() ? "text-icon-brand-base" : "text-icon-weak"} />
+          <span class="min-w-0 truncate">
+            {mountedTitle() ?? language.t("projectTask.mount.none")}
+          </span>
+        </span>
+        <Icon name="chevron-down" size="small" class="shrink-0 text-icon-weak" />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          class="box-border max-w-none"
+          style={{
+            width: triggerWidth() > 0 ? `${triggerWidth()}px` : undefined,
+            "min-width": triggerWidth() > 0 ? `${triggerWidth()}px` : "14rem",
+          }}
+        >
+          <DropdownMenu.Group>
+            <DropdownMenu.GroupLabel class="!px-2 !py-1">
+              {language.t("projectTask.mount.menuTitle")}
+            </DropdownMenu.GroupLabel>
+            <Show when={state.loading}>
+              <div class="flex items-center gap-2 px-2 py-2 text-12-regular text-text-weak">
+                <Spinner class="size-3.5" />
+                {language.t("projectTask.loading")}
+              </div>
+            </Show>
+            <Show when={state.error}>
+              <div class="px-2 py-2 text-12-regular text-text-danger">{state.error}</div>
+            </Show>
+            <Show when={!state.loading && state.tasks.length === 0}>
+              <div class="px-2 py-2 text-12-regular text-text-weak">{language.t("projectTask.mount.empty")}</div>
+            </Show>
+            <For each={state.tasks}>
+              {(task) => (
+                <DropdownMenu.Item disabled={state.pending} class="gap-2" onSelect={() => void mount(task.id)}>
+                  <Icon
+                    name={mountedID() === task.id ? "check-small" : "checklist"}
+                    size="small"
+                    class={mountedID() === task.id ? "text-icon-brand-base" : "text-icon-weak"}
+                  />
+                  <div class="min-w-0 flex-1">
+                    <DropdownMenu.ItemLabel class="truncate">{task.title}</DropdownMenu.ItemLabel>
+                    <div class="truncate text-11-regular text-text-weaker">
+                      {task.progress.total > 0
+                        ? `${task.progress.completed}/${task.progress.total}`
+                        : task.status}
+                    </div>
+                  </div>
+                </DropdownMenu.Item>
+              )}
+            </For>
+          </DropdownMenu.Group>
+          <Show when={mountedID()}>
+            <DropdownMenu.Separator />
+            <DropdownMenu.Item disabled={state.pending} onSelect={() => void unmount()}>
+              <Icon name="close" size="small" class="text-icon-weak" />
+              <DropdownMenu.ItemLabel>{language.t("projectTask.mount.unmount")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          </Show>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu>
+  )
+
   return (
     <Show when={sessionID()}>
-      <DropdownMenu
-        gutter={4}
-        placement="bottom-end"
-        open={state.open}
-        onOpenChange={(open) => setState("open", open)}
+      <Show
+        when={variant() === "panel"}
+        fallback={menu}
       >
-        <Tooltip placement="bottom" value={language.t("projectTask.mount.tooltip")}>
-          <DropdownMenu.Trigger
-            as={IconButton}
-            icon="checklist"
-            variant="ghost"
-            class="rounded-md"
-            classList={{
-              "bg-surface-raised-base-active": !!mountedID(),
-            }}
-            aria-label={
-              mountedTitle()
-                ? language.t("projectTask.mount.mounted", { title: mountedTitle()! })
-                : language.t("projectTask.mount.none")
-            }
-          />
-        </Tooltip>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content class="min-w-56 max-w-72">
-            <DropdownMenu.Group>
-              <DropdownMenu.GroupLabel class="!px-2 !py-1">
-                {language.t("projectTask.mount.menuTitle")}
-              </DropdownMenu.GroupLabel>
-              <Show when={state.loading}>
-                <div class="flex items-center gap-2 px-2 py-2 text-12-regular text-text-weak">
-                  <Spinner class="size-3.5" />
-                  {language.t("projectTask.loading")}
-                </div>
-              </Show>
-              <Show when={state.error}>
-                <div class="px-2 py-2 text-12-regular text-text-danger">{state.error}</div>
-              </Show>
-              <Show when={!state.loading && state.tasks.length === 0}>
-                <div class="px-2 py-2 text-12-regular text-text-weak">{language.t("projectTask.mount.empty")}</div>
-              </Show>
-              <For each={state.tasks}>
-                {(task) => (
-                  <DropdownMenu.Item
-                    disabled={state.pending}
-                    class="gap-2"
-                    onSelect={() => void mount(task.id)}
-                  >
-                    <Icon
-                      name={mountedID() === task.id ? "check-small" : "checklist"}
-                      size="small"
-                      class={mountedID() === task.id ? "text-icon-brand-base" : "text-icon-weak"}
-                    />
-                    <div class="min-w-0 flex-1">
-                      <DropdownMenu.ItemLabel class="truncate">{task.title}</DropdownMenu.ItemLabel>
-                      <div class="truncate text-11-regular text-text-weaker">
-                        {task.progress.total > 0
-                          ? `${task.progress.completed}/${task.progress.total}`
-                          : task.status}
-                      </div>
-                    </div>
-                  </DropdownMenu.Item>
-                )}
-              </For>
-            </DropdownMenu.Group>
-            <Show when={mountedID()}>
-              <DropdownMenu.Separator />
-              <DropdownMenu.Item disabled={state.pending} onSelect={() => void unmount()}>
-                <Icon name="close" size="small" class="text-icon-weak" />
-                <DropdownMenu.ItemLabel>{language.t("projectTask.mount.unmount")}</DropdownMenu.ItemLabel>
-              </DropdownMenu.Item>
-            </Show>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
+        <div data-component="session-project-task-mount" class="flex flex-col gap-2 px-3 py-3">
+          <div class="text-13-medium text-text-strong">{language.t("projectTask.mount.sectionTitle")}</div>
+          <p class="text-12-regular text-text-weak">{language.t("projectTask.mount.sectionHint")}</p>
+          {menu}
+          <label class="mt-1 flex cursor-pointer items-start gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2">
+            <input
+              type="checkbox"
+              class="mt-0.5"
+              checked={injectContext()}
+              disabled={state.pending || !mountedID()}
+              onChange={(event) => void setInject(event.currentTarget.checked)}
+            />
+            <span class="min-w-0">
+              <span class="block text-12-medium text-text-strong">{language.t("projectTask.inject.title")}</span>
+              <span class="block text-11-regular text-text-weak">{language.t("projectTask.inject.hint")}</span>
+            </span>
+          </label>
+        </div>
+      </Show>
     </Show>
   )
 }

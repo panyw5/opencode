@@ -1,0 +1,3 @@
+Get a project-level task with linked sessions and each session's todos/progress.
+
+Use this to inspect what work is attached to a task: linked sessions, todo lists, and aggregate completion. Prefer this over guessing from chat history.

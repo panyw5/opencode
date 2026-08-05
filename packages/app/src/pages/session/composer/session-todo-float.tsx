@@ -2,6 +2,7 @@ import type { Todo } from "@opencode-ai/sdk/v2"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js"
+import { SessionProjectTaskMount } from "@/components/session/session-project-task-mount"
 import { useLanguage } from "@/context/language"
 import { TodoList } from "@/pages/session/composer/session-todo-list"
 import { composerEnabled, composerProbe } from "@/testing/session-composer"
@@ -18,13 +19,19 @@ export function SessionTodoFloat(props: {
   const total = createMemo(() => props.todos.length)
   const done = createMemo(() => props.todos.filter((todo) => todo.status === "completed").length)
   const inProgress = createMemo(() => props.todos.some((todo) => todo.status === "in_progress"))
-  const badge = createMemo(() => language.t("session.todo.badge", { done: done(), total: total() }))
+  const badge = createMemo(() =>
+    total() > 0
+      ? language.t("session.todo.badge", { done: done(), total: total() })
+      : language.t("session.todo.title"),
+  )
 
   const e2e = composerEnabled()
   const probe = composerProbe(props.sessionID)
 
   createEffect(() => {
     if (!e2e) return
+    // Always report mounted so e2e can open the panel for project-task controls
+    // even when the session has no todos yet.
     probe.set({
       mounted: true,
       collapsed: !shown(),
@@ -89,8 +96,13 @@ export function SessionTodoFloat(props: {
               onClick={() => setShown(false)}
             />
           </div>
-          <div class="min-h-0 overflow-y-auto no-scrollbar py-2">
-            <TodoList todos={props.todos} open={shown()} maxHeight="540px" />
+          <div class="min-h-0 overflow-y-auto no-scrollbar">
+            <div class="border-b border-border-weaker-base">
+              <SessionProjectTaskMount variant="panel" />
+            </div>
+            <div class="py-2">
+              <TodoList todos={props.todos} open={shown()} maxHeight="420px" />
+            </div>
           </div>
         </div>
       </Popover>

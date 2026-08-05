@@ -89,6 +89,7 @@ export function toPartialRow(info: DeepPartial<Session.Info>) {
     revert: grab(info, "revert"),
     permission: grab(info, "permission"),
     mounted_task_id: grab(info, "mountedTaskID"),
+    inject_task_context: grab(info, "injectTaskContext"),
     time_created: grab(info, "time", (v) => grab(v, "created")),
     time_updated: grab(info, "time", (v) => grab(v, "updated")),
     time_compacting: grab(info, "time", (v) => grab(v, "compacting")),

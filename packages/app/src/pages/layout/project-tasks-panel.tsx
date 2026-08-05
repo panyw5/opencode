@@ -206,9 +206,9 @@ function ProjectTaskCard(props: {
 function ProjectTaskDetailDialog(props: {
   task: ProjectTask
   directory: string
+  client: ReturnType<ReturnType<typeof useGlobalSDK>["createClient"]>
   onChanged: () => void | Promise<void>
 }): JSX.Element {
-  const sdk = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
   const navigate = useNavigate()
@@ -225,7 +225,7 @@ function ProjectTaskDetailDialog(props: {
   async function load() {
     setState({ loading: true, error: "" })
     try {
-      const result = await sdk.client.projectTask.detail({ taskID: props.task.id })
+      const result = await props.client.projectTask.detail({ taskID: props.task.id })
       if (result.data) {
         setState({
           detail: result.data,
@@ -244,7 +244,7 @@ function ProjectTaskDetailDialog(props: {
     if (!window.confirm(language.t("projectTask.archive.confirm", { title: props.task.title }))) return
     setState({ pending: true, error: "" })
     try {
-      await sdk.client.projectTask.archive({ taskID: props.task.id })
+      await props.client.projectTask.archive({ taskID: props.task.id })
       await props.onChanged()
       dialog.close()
     } catch (error) {
@@ -256,7 +256,7 @@ function ProjectTaskDetailDialog(props: {
   async function saveDescription() {
     setState({ pending: true, error: "" })
     try {
-      const result = await sdk.client.projectTask.update({
+      const result = await props.client.projectTask.update({
         taskID: props.task.id,
         projectTaskUpdateInput: { description: state.draft },
       })
@@ -273,7 +273,7 @@ function ProjectTaskDetailDialog(props: {
   async function setStatus(status: ProjectTaskStatus) {
     setState({ pending: true, error: "" })
     try {
-      const result = await sdk.client.projectTask.update({
+      const result = await props.client.projectTask.update({
         taskID: props.task.id,
         projectTaskUpdateInput: { status },
       })
@@ -498,10 +498,13 @@ export function ProjectTasksPanel(props: {
   mobile?: boolean
   onBack: () => void
 }): JSX.Element {
-  const sdk = useGlobalSDK()
+  const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
   const dir = createMemo(() => props.directory())
+  const client = createMemo(() =>
+    globalSDK.createClient({ directory: dir().replace(/\\/g, "/"), throwOnError: true }),
+  )
   const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "" })
   let request = 0
 
@@ -513,7 +516,7 @@ export function ProjectTasksPanel(props: {
     }
     if (!options?.silent) setState({ loading: true, error: "" })
     try {
-      const result = await sdk.client.projectTask.list({})
+      const result = await client().projectTask.list({})
       if (current !== request) return
       setState({ tasks: result.data ?? [], error: "" })
     } catch (error) {
@@ -527,14 +530,19 @@ export function ProjectTasksPanel(props: {
 
   function open(task: ProjectTask) {
     dialog.show(() => (
-      <ProjectTaskDetailDialog task={task} directory={dir()} onChanged={() => load({ silent: true })} />
+      <ProjectTaskDetailDialog
+        task={task}
+        directory={dir()}
+        client={client()}
+        onChanged={() => load({ silent: true })}
+      />
     ))
   }
 
   async function archive(task: ProjectTask) {
     if (!window.confirm(language.t("projectTask.archive.confirm", { title: task.title }))) return
     try {
-      await sdk.client.projectTask.archive({ taskID: task.id })
+      await client().projectTask.archive({ taskID: task.id })
       await load({ silent: true })
     } catch (error) {
       setState("error", errorMessage(error, language.t("common.requestFailed")))
@@ -543,7 +551,7 @@ export function ProjectTasksPanel(props: {
 
   async function setInProgress(task: ProjectTask) {
     try {
-      await sdk.client.projectTask.update({
+      await client().projectTask.update({
         taskID: task.id,
         projectTaskUpdateInput: { status: "in_progress" },
       })
@@ -554,7 +562,7 @@ export function ProjectTasksPanel(props: {
   }
 
   const createTask = async (name: string, content: string) => {
-    await sdk.client.projectTask.create({
+    await client().projectTask.create({
       projectTaskCreateInput: {
         title: name,
         description: content,
@@ -568,8 +576,7 @@ export function ProjectTasksPanel(props: {
     const root = dir()
     if (!root) return
     const searchFilesAndDirectories = async (query: string) => {
-      const client = sdk.createClient({ directory: root, throwOnError: true })
-      const result = await client.find.files({ query, dirs: "true" })
+      const result = await client().find.files({ query, dirs: "true" })
       return result.data ?? []
     }
     dialog.show(() => (
@@ -586,7 +593,7 @@ export function ProjectTasksPanel(props: {
     void load()
   })
 
-  const stop = sdk.listenAll((event) => {
+  const stop = globalSDK.listenAll((event) => {
     if (!event.details.type.startsWith("project-task.")) return
     void load({ silent: true })
   })

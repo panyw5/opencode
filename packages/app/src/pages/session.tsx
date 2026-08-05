@@ -2560,14 +2560,12 @@ export default function Page() {
                 diffs={diffs()}
                 childSessionIDs={apiChildSessions().map((session) => session.id)}
               />
-              <Show when={composer.todos().length > 0}>
-                <SessionTodoFloat
-                  sessionID={params.id}
-                  todos={composer.todos()}
-                  collapseLabel={language.t("session.todo.collapse")}
-                  expandLabel={language.t("session.todo.expand")}
-                />
-              </Show>
+              <SessionTodoFloat
+                sessionID={params.id}
+                todos={composer.todos()}
+                collapseLabel={language.t("session.todo.collapse")}
+                expandLabel={language.t("session.todo.expand")}
+              />
             </Show>
           </div>
 

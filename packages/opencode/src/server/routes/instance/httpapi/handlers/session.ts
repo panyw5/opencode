@@ -267,6 +267,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           yield* promptSvc.cancel(ctx.params.sessionID)
         }
       }
+      if (ctx.payload.injectTaskContext !== undefined) {
+        yield* session.setInjectTaskContext({
+          sessionID: ctx.params.sessionID,
+          enabled: ctx.payload.injectTaskContext,
+        })
+      }
       return yield* requireSession(ctx.params.sessionID)
     })
 

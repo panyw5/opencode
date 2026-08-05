@@ -55,6 +55,8 @@ export const SessionTable = sqliteTable(
     mounted_task_id: text()
       .$type<ProjectTaskID>()
       .references(() => ProjectTaskTable.id, { onDelete: "set null" }),
+    /** When true, inject mounted project-task context into each LLM turn. Default false. */
+    inject_task_context: integer({ mode: "boolean" }).notNull().default(false),
     ...Timestamps,
     time_compacting: integer(),
     time_archived: integer(),

@@ -9,7 +9,12 @@ import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { TaskTranscriptTool } from "./task_transcript"
 import { TodoWriteTool } from "./todo"
-import { ProjectTaskCreateTool, ProjectTaskListTool, ProjectTaskMountTool } from "./project-task"
+import {
+  ProjectTaskCreateTool,
+  ProjectTaskGetTool,
+  ProjectTaskListTool,
+  ProjectTaskMountTool,
+} from "./project-task"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
 import { InvalidTool } from "./invalid"
@@ -133,6 +138,7 @@ export const layer: Layer.Layer<
     const todo = yield* TodoWriteTool
     const projectTaskCreate = yield* ProjectTaskCreateTool
     const projectTaskList = yield* ProjectTaskListTool
+    const projectTaskGet = yield* ProjectTaskGetTool
     const projectTaskMount = yield* ProjectTaskMountTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
@@ -254,6 +260,7 @@ export const layer: Layer.Layer<
           todo: Tool.init(todo),
           project_task_create: Tool.init(projectTaskCreate),
           project_task_list: Tool.init(projectTaskList),
+          project_task_get: Tool.init(projectTaskGet),
           project_task_mount: Tool.init(projectTaskMount),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
@@ -285,6 +292,7 @@ export const layer: Layer.Layer<
             tool.todo,
             tool.project_task_create,
             tool.project_task_list,
+            tool.project_task_get,
             tool.project_task_mount,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),

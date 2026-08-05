@@ -99,6 +99,23 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
       if (content && content.contains(node)) return true
       const trigger = state.triggerRef
       if (trigger && trigger.contains(node)) return true
+      // Nested overlays portaled outside the popover content (e.g. DropdownMenu)
+      // must not count as "outside" dismiss — otherwise focus/click on the menu
+      // closes the parent popover (todo float + mount task selector).
+      if (node instanceof Element) {
+        if (
+          node.closest(
+            [
+              '[data-component="dropdown-menu-content"]',
+              '[data-component="dropdown-menu-sub-content"]',
+              '[data-component="select-content"]',
+              '[data-component="combobox-content"]',
+            ].join(","),
+          )
+        ) {
+          return true
+        }
+      }
       return false
     }
 

@@ -43,7 +43,11 @@ export const projectTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "projec
           Effect.catchTags({
             "ProjectTask.NotFoundError": () => Effect.fail(notFound()),
             "ProjectTask.SessionNotFoundError": () => Effect.fail(notFound()),
-            "ProjectTask.InvalidMountError": () => Effect.fail(badRequest()),
+            "ProjectTask.InvalidMountError": (error) => {
+              // eslint-disable-next-line no-console
+              console.debug(`[project-task] mount bad request: ${error.message}`)
+              return Effect.fail(badRequest())
+            },
           }),
         ),
       )

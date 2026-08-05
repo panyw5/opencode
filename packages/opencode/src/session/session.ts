@@ -135,6 +135,8 @@ export function fromRow(row: SessionRow): Info {
   }
 
   if (row.mounted_task_id !== null) result.mountedTaskID = row.mounted_task_id
+  // Always include so clients can clear a previously-true value on reconcile.
+  result.injectTaskContext = !!row.inject_task_context
 
   return result
 }
@@ -170,6 +172,7 @@ export function toRow(info: Info) {
     revert: info.revert ?? null,
     permission: info.permission,
     mounted_task_id: info.mountedTaskID ?? null,
+    inject_task_context: info.injectTaskContext ?? false,
     time_created: info.time.created,
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
@@ -258,6 +261,8 @@ export const Info = Schema.Struct({
   permission: optionalOmitUndefined(Permission.Ruleset),
   revert: optionalOmitUndefined(Revert),
   mountedTaskID: optionalOmitUndefined(ProjectTaskID),
+  /** Opt-in: inject mounted project task context into each LLM turn (default false/omitted). */
+  injectTaskContext: optionalOmitUndefined(Schema.Boolean),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
@@ -359,6 +364,7 @@ const UpdatedInfo = Schema.Struct({
   permission: Schema.optional(Schema.NullOr(Permission.Ruleset)),
   revert: Schema.optional(Schema.NullOr(Revert)),
   mountedTaskID: Schema.optional(Schema.NullOr(ProjectTaskID)),
+  injectTaskContext: Schema.optional(Schema.NullOr(Schema.Boolean)),
 })
 
 const UpdatedEventSchema = Schema.Struct({
@@ -544,6 +550,7 @@ export interface Interface {
   readonly setArchived: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
   readonly setMountedTask: (input: { sessionID: SessionID; taskID: ProjectTaskID | null }) => Effect.Effect<void>
+  readonly setInjectTaskContext: (input: { sessionID: SessionID; enabled: boolean }) => Effect.Effect<void>
   readonly setRevert: (input: {
     sessionID: SessionID
     revert: Info["revert"]
@@ -885,6 +892,13 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { mountedTaskID: input.taskID, time: { updated: Date.now() } })
     })
 
+    const setInjectTaskContext = Effect.fn("Session.setInjectTaskContext")(function* (input: {
+      sessionID: SessionID
+      enabled: boolean
+    }) {
+      yield* patch(input.sessionID, { injectTaskContext: input.enabled, time: { updated: Date.now() } })
+    })
+
     const setRevert = Effect.fn("Session.setRevert")(function* (input: {
       sessionID: SessionID
       revert: Info["revert"]
@@ -1108,6 +1122,7 @@ export const layer: Layer.Layer<
       setArchived,
       setPermission,
       setMountedTask,
+      setInjectTaskContext,
       setRevert,
       clearRevert,
       setSummary,

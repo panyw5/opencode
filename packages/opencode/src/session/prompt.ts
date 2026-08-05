@@ -15,6 +15,8 @@ import { Bus } from "../bus"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
+import * as ProjectTaskRepository from "@/project-task/repository"
+import { formatProjectTaskSystemContext } from "@/project-task/context"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
@@ -1934,6 +1936,12 @@ export const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
+            // Opt-in project-task context: only when the session has a mounted task
+            // AND injectTaskContext is enabled (default off).
+            if (session.injectTaskContext && session.mountedTaskID) {
+              const detail = yield* ProjectTaskRepository.detail(session.mountedTaskID)
+              if (detail) system.push(formatProjectTaskSystemContext(detail))
+            }
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
