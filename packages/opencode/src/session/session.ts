@@ -33,6 +33,7 @@ import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { ProjectID } from "../project/schema"
+import { ProjectTaskID } from "../project-task/schema"
 import { WorkspaceID } from "../control-plane/schema"
 import { SessionID, MessageID, PartID } from "./schema"
 import { ModelID, ProviderID } from "@/provider/schema"
@@ -133,6 +134,8 @@ export function fromRow(row: SessionRow): Info {
     if (row.summary_diffs !== null) result.summary.diffs = row.summary_diffs
   }
 
+  if (row.mounted_task_id !== null) result.mountedTaskID = row.mounted_task_id
+
   return result
 }
 
@@ -166,6 +169,7 @@ export function toRow(info: Info) {
     tokens_cache_write: (info.tokens ?? EmptyTokens).cache.write,
     revert: info.revert ?? null,
     permission: info.permission,
+    mounted_task_id: info.mountedTaskID ?? null,
     time_created: info.time.created,
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
@@ -253,6 +257,7 @@ export const Info = Schema.Struct({
   time: Time,
   permission: optionalOmitUndefined(Permission.Ruleset),
   revert: optionalOmitUndefined(Revert),
+  mountedTaskID: optionalOmitUndefined(ProjectTaskID),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
 
@@ -353,6 +358,7 @@ const UpdatedInfo = Schema.Struct({
   time: Schema.optional(UpdatedTime),
   permission: Schema.optional(Schema.NullOr(Permission.Ruleset)),
   revert: Schema.optional(Schema.NullOr(Revert)),
+  mountedTaskID: Schema.optional(Schema.NullOr(ProjectTaskID)),
 })
 
 const UpdatedEventSchema = Schema.Struct({
@@ -537,6 +543,7 @@ export interface Interface {
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
+  readonly setMountedTask: (input: { sessionID: SessionID; taskID: ProjectTaskID | null }) => Effect.Effect<void>
   readonly setRevert: (input: {
     sessionID: SessionID
     revert: Info["revert"]
@@ -871,6 +878,13 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { permission: [...input.permission], time: { updated: Date.now() } })
     })
 
+    const setMountedTask = Effect.fn("Session.setMountedTask")(function* (input: {
+      sessionID: SessionID
+      taskID: ProjectTaskID | null
+    }) {
+      yield* patch(input.sessionID, { mountedTaskID: input.taskID, time: { updated: Date.now() } })
+    })
+
     const setRevert = Effect.fn("Session.setRevert")(function* (input: {
       sessionID: SessionID
       revert: Info["revert"]
@@ -1093,6 +1107,7 @@ export const layer: Layer.Layer<
       setTitle,
       setArchived,
       setPermission,
+      setMountedTask,
       setRevert,
       clearRevert,
       setSummary,

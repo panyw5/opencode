@@ -1,0 +1,5 @@
+Create a project-level task for the current project.
+
+Use this when the user wants a durable project task (not a session-local todo list). Project tasks can be mounted onto sessions; each session keeps its own todos via todowrite.
+
+After creating a task, you may mount the current session onto it with project_task_mount.

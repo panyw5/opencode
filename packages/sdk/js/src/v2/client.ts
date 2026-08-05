@@ -26,11 +26,7 @@ function rewrite(request: Request, values: { directory?: string; workspace?: str
   ] as const) {
     const rawHeader = request.headers.get(name)
     const fallback = key === "directory" ? values.directory : values.workspace
-    const value = pick(
-      rawHeader,
-      fallback,
-      key === "directory" ? encodeURIComponent : undefined,
-    )
+    const value = pick(rawHeader, fallback, key === "directory" ? encodeURIComponent : undefined)
     // eslint-disable-next-line no-console
     if (key === "directory") {
       console.log(

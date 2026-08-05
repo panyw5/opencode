@@ -13,3 +13,4 @@ export {
 export { SessionShareTable } from "../share/share.sql"
 export { WorkspaceTable } from "../control-plane/workspace.sql"
 export { ScheduledTaskTable, ScheduledTaskRunTable } from "../scheduled-task/scheduled-task.sql"
+export { ProjectTaskTable } from "../project-task/project-task.sql"

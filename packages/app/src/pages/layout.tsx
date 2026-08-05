@@ -124,6 +124,7 @@ import {
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
 import { TrellisTasksPanel } from "./layout/trellis-tasks-panel"
+import { ProjectTasksPanel } from "./layout/project-tasks-panel"
 import { ScheduledTasksPanel } from "./layout/scheduled-tasks-panel"
 
 const QUICK_ASSISTANT_DIR = "quick-assistant"
@@ -154,7 +155,7 @@ export default function Layout(props: ParentProps) {
       workspaceBranchName: {} as Record<string, Record<string, string>>,
       workspaceExpanded: {} as Record<string, boolean>,
       gettingStartedDismissed: false,
-      sidebarPanel: "project" as "project" | "tasks" | "scheduled",
+      sidebarPanel: "project" as "project" | "tasks" | "scheduled" | "projectTasks",
     }),
   )
 
@@ -214,6 +215,7 @@ export default function Layout(props: ParentProps) {
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
   const tasksPanelActive = createMemo(() => store.sidebarPanel === "tasks")
   const scheduledPanelActive = createMemo(() => store.sidebarPanel === "scheduled")
+  const projectTasksPanelActive = createMemo(() => store.sidebarPanel === "projectTasks")
   const [pendingSessionSelection, setPendingSessionSelection] = createSignal<
     { directory: string; id: string } | undefined
   >()
@@ -1321,6 +1323,15 @@ export default function Layout(props: ParentProps) {
         onSelect: () => openTasksPanel(),
       },
       {
+        id: "projectTask.open",
+        title: language.t("command.projectTask.open"),
+        description: language.t("command.projectTask.open.description"),
+        keywords: kw("command.projectTask.open", "command.projectTask.open.description"),
+        category: language.t("command.category.view"),
+        disabled: !params.dir,
+        onSelect: () => openProjectTasksPanel(),
+      },
+      {
         id: "page.find",
         title: language.t("command.page.find"),
         description: language.t("command.page.find.description"),
@@ -1692,6 +1703,12 @@ export default function Layout(props: ParentProps) {
   function openTasksPanel() {
     if (!params.dir) return
     setStore("sidebarPanel", "tasks")
+    layout.sidebar.open()
+  }
+
+  function openProjectTasksPanel() {
+    if (!params.dir) return
+    setStore("sidebarPanel", "projectTasks")
     layout.sidebar.open()
   }
 
@@ -3387,7 +3404,7 @@ export default function Layout(props: ParentProps) {
                     fallback={
                       <>
                         <div class="shrink-0 py-4 px-3">
-                          <div class="grid grid-cols-5 gap-2">
+                          <div class="grid grid-cols-6 gap-2">
                             <Tooltip placement="bottom" value={language.t("command.session.new")}>
                               <IconButton
                                 icon="new-session"
@@ -3401,6 +3418,16 @@ export default function Layout(props: ParentProps) {
                                   console.debug(`[sidebar-project] new-session root=${dir} source=sidebar-button`)
                                   navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
                                 }}
+                              />
+                            </Tooltip>
+                            <Tooltip placement="bottom" value={language.t("projectTask.title")}>
+                              <IconButton
+                                icon="checklist"
+                                variant="ghost"
+                                size="large"
+                                class="sidebar-action-button h-10 w-full rounded-xl"
+                                aria-label={language.t("projectTask.title")}
+                                onClick={openProjectTasksPanel}
                               />
                             </Tooltip>
                             <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
@@ -3465,7 +3492,7 @@ export default function Layout(props: ParentProps) {
                   >
                     <>
                       <div class="shrink-0 py-4 px-3">
-                        <div class="grid grid-cols-5 gap-2">
+                        <div class="grid grid-cols-6 gap-2">
                           <Tooltip placement="bottom" value={language.t("workspace.new")}>
                             <IconButton
                               icon="plus-small"
@@ -3478,6 +3505,16 @@ export default function Layout(props: ParentProps) {
                                 if (!item) return
                                 createWorkspace(item)
                               }}
+                            />
+                          </Tooltip>
+                          <Tooltip placement="bottom" value={language.t("projectTask.title")}>
+                            <IconButton
+                              icon="checklist"
+                              variant="ghost"
+                              size="large"
+                              class="sidebar-action-button h-10 w-full rounded-xl"
+                              aria-label={language.t("projectTask.title")}
+                              onClick={openProjectTasksPanel}
                             />
                           </Tooltip>
                           <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
@@ -3700,6 +3737,13 @@ export default function Layout(props: ParentProps) {
         scheduledPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ScheduledTasksPanel
             projectID={() => sidebarProject()?.id ?? ""}
+            directory={() => sidebarProject()?.root ?? routeDir()}
+            width={panel}
+            mobile={mobile}
+            onBack={() => setStore("sidebarPanel", "project")}
+          />
+        ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
+          <ProjectTasksPanel
             directory={() => sidebarProject()?.root ?? routeDir()}
             width={panel}
             mobile={mobile}

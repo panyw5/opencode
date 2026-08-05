@@ -1,11 +1,13 @@
 import { sqliteTable, text, integer, index, primaryKey, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { ProjectTable } from "../project/project.sql"
+import { ProjectTaskTable } from "../project-task/project-task.sql"
 import type { MessageV2 } from "./message-v2"
 import type { SessionMessage } from "@opencode-ai/core/session-message"
 import type { Prompt } from "@opencode-ai/core/session-prompt"
 import type { Snapshot } from "../snapshot"
 import type { Permission } from "../permission"
 import type { ProjectID } from "../project/schema"
+import type { ProjectTaskID } from "../project-task/schema"
 import type { SessionID, MessageID, PartID } from "./schema"
 import type { WorkspaceID } from "../control-plane/schema"
 import { Timestamps } from "../storage/schema.sql"
@@ -50,6 +52,9 @@ export const SessionTable = sqliteTable(
       providerID: string
       variant?: string
     }>(),
+    mounted_task_id: text()
+      .$type<ProjectTaskID>()
+      .references(() => ProjectTaskTable.id, { onDelete: "set null" }),
     ...Timestamps,
     time_compacting: integer(),
     time_archived: integer(),
@@ -74,6 +79,7 @@ export const SessionTable = sqliteTable(
     index("session_workspace_idx").on(table.workspace_id),
     index("session_workspace_parent_time_idx").on(table.workspace_id, table.parent_id, table.time_updated, table.id),
     index("session_parent_idx").on(table.parent_id),
+    index("session_mounted_task_idx").on(table.mounted_task_id),
   ],
 )
 

@@ -44,6 +44,8 @@ import type {
   ExperimentalConsoleSwitchOrgResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
+  ExperimentalSessionBackgroundErrors,
+  ExperimentalSessionBackgroundResponses,
   ExperimentalSessionContentSearchActionErrors,
   ExperimentalSessionContentSearchActionResponses,
   ExperimentalSessionContentSearchErrors,
@@ -140,6 +142,25 @@ import type {
   ProjectInitGitResponses,
   ProjectListErrors,
   ProjectListResponses,
+  ProjectTaskArchiveErrors,
+  ProjectTaskArchiveResponses,
+  ProjectTaskCreateErrors,
+  ProjectTaskCreateInput,
+  ProjectTaskCreateResponses,
+  ProjectTaskDetailErrors,
+  ProjectTaskDetailResponses,
+  ProjectTaskGetErrors,
+  ProjectTaskGetResponses,
+  ProjectTaskListErrors,
+  ProjectTaskListResponses,
+  ProjectTaskMountErrors,
+  ProjectTaskMountInput,
+  ProjectTaskMountResponses,
+  ProjectTaskUnmountErrors,
+  ProjectTaskUnmountResponses,
+  ProjectTaskUpdateErrors,
+  ProjectTaskUpdateInput,
+  ProjectTaskUpdateResponses,
   ProjectUpdateErrors,
   ProjectUpdateResponses,
   Prompt,
@@ -1099,6 +1120,42 @@ export class Session extends HeyApiClient {
       ThrowOnError
     >({
       url: "/experimental/session",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Background subagents
+   *
+   * Detach any synchronous subagents currently blocking the session and continue them in the background.
+   */
+  public background<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ExperimentalSessionBackgroundResponses,
+      ExperimentalSessionBackgroundErrors,
+      ThrowOnError
+    >({
+      url: "/experimental/session/{sessionID}/background",
       ...options,
       ...params,
     })
@@ -4825,6 +4882,223 @@ export class ScheduledTask extends HeyApiClient {
   }
 }
 
+export class ProjectTask extends HeyApiClient {
+  /**
+   * List project tasks
+   *
+   * List project-level tasks for the current project, including todo progress summaries.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      includeArchived?: "true" | "false"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "includeArchived" }] }])
+    return (options?.client ?? this.client).get<ProjectTaskListResponses, ProjectTaskListErrors, ThrowOnError>({
+      url: "/project-task",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Create project task
+   *
+   * Create a project-level task that sessions can mount.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      projectTaskCreateInput?: ProjectTaskCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "projectTaskCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<ProjectTaskCreateResponses, ProjectTaskCreateErrors, ThrowOnError>({
+      url: "/project-task",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Archive project task
+   *
+   * Archive a project task and unmount it from all sessions.
+   */
+  public archive<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "taskID" }] }])
+    return (options?.client ?? this.client).delete<ProjectTaskArchiveResponses, ProjectTaskArchiveErrors, ThrowOnError>(
+      {
+        url: "/project-task/{taskID}",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * Get project task
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "taskID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ProjectTaskGetResponses, ProjectTaskGetErrors, ThrowOnError>({
+      url: "/project-task/{taskID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update project task
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+      projectTaskUpdateInput?: ProjectTaskUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "taskID" },
+            { key: "projectTaskUpdateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<ProjectTaskUpdateResponses, ProjectTaskUpdateErrors, ThrowOnError>({
+      url: "/project-task/{taskID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get project task detail
+   *
+   * Retrieve a project task with linked sessions and each session's todos.
+   */
+  public detail<ThrowOnError extends boolean = false>(
+    parameters: {
+      taskID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "taskID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ProjectTaskDetailResponses, ProjectTaskDetailErrors, ThrowOnError>({
+      url: "/project-task/{taskID}/detail",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Unmount project task from session
+   *
+   * Clear the project task mount for a session.
+   */
+  public unmount<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).delete<ProjectTaskUnmountResponses, ProjectTaskUnmountErrors, ThrowOnError>(
+      {
+        url: "/session/{sessionID}/project-task",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * Mount project task on session
+   *
+   * Mount a project task onto a session (replaces any previous mount).
+   */
+  public mount<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      projectTaskMountInput?: ProjectTaskMountInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { key: "projectTaskMountInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).put<ProjectTaskMountResponses, ProjectTaskMountErrors, ThrowOnError>({
+      url: "/session/{sessionID}/project-task",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class History extends HeyApiClient {
   /**
    * List sync events
@@ -5897,6 +6171,11 @@ export class OpencodeClient extends HeyApiClient {
   private _scheduledTask?: ScheduledTask
   get scheduledTask(): ScheduledTask {
     return (this._scheduledTask ??= new ScheduledTask({ client: this.client }))
+  }
+
+  private _projectTask?: ProjectTask
+  get projectTask(): ProjectTask {
+    return (this._projectTask ??= new ProjectTask({ client: this.client }))
   }
 
   private _sync?: Sync

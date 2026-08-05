@@ -23,6 +23,7 @@ import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
 import { dict as enDict } from "@/i18n/en"
 import { OPEN_APPS, apps, getOpenPlan, type OpenApp, type OS } from "./open-app"
+import { SessionProjectTaskMount } from "./session-project-task-mount"
 
 const detectOS = (platform: ReturnType<typeof usePlatform>): OS => {
   if (platform.platform === "desktop" && platform.os) return platform.os
@@ -204,6 +205,7 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
             <div class="flex items-center gap-2">
+              <SessionProjectTaskMount />
               <Show when={projectDirectory()}>
                 <div class="hidden xl:flex items-center">
                   <Show

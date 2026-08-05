@@ -11,6 +11,7 @@ export type Event =
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta
+  | EventTodoUpdated
   | EventPermissionAsked
   | EventPermissionReplied
   | EventSessionDiff
@@ -20,7 +21,6 @@ export type Event =
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
-  | EventTodoUpdated
   | EventTuiPromptAppend
   | EventTuiCommandExecute
   | EventTuiToastShow1
@@ -37,6 +37,9 @@ export type Event =
   | EventBackgroundShellCreated
   | EventBackgroundShellUpdated
   | EventBackgroundShellExited
+  | EventProjectTaskCreated
+  | EventProjectTaskUpdated
+  | EventProjectTaskDeleted
   | EventVcsBranchUpdated
   | EventWorkspaceReady
   | EventWorkspaceFailed
@@ -125,6 +128,21 @@ export type InvalidRequestError = {
   message: string
   kind?: string
   field?: string
+}
+
+export type Todo = {
+  /**
+   * Brief description of the task
+   */
+  content: string
+  /**
+   * Current status of the task: pending, in_progress, completed, cancelled
+   */
+  status: string
+  /**
+   * Priority level of the task: high, medium, low
+   */
+  priority: string
 }
 
 export type PermissionRequest = {
@@ -298,21 +316,6 @@ export type QuestionRejected = {
   requestID: string
 }
 
-export type Todo = {
-  /**
-   * Brief description of the task
-   */
-  content: string
-  /**
-   * Current status of the task: pending, in_progress, completed, cancelled
-   */
-  status: string
-  /**
-   * Priority level of the task: high, medium, low
-   */
-  priority: string
-}
-
 export type EventTuiPromptAppend = {
   id: string
   type: "tui.prompt.append"
@@ -417,6 +420,32 @@ export type BackgroundShell = {
   startedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   endedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   outputTail?: string
+}
+
+export type ProjectTaskStatus = "open" | "in_progress" | "done" | "archived"
+
+export type ProjectTaskProgress = {
+  total: number
+  completed: number
+  inProgress: number
+  pending: number
+  cancelled: number
+}
+
+export type ProjectTask = {
+  id: string
+  projectID: string
+  title: string
+  description: string
+  status: ProjectTaskStatus
+  priority?: string
+  sessionCount: number
+  progress: ProjectTaskProgress
+  time: {
+    created: number
+    updated: number
+    archived?: number
+  }
 }
 
 export type OutputFormatText = {
@@ -825,6 +854,7 @@ export type Session = {
     snapshot?: string
     diff?: string
   }
+  mountedTaskID?: string
 }
 
 export type Prompt = {
@@ -948,6 +978,9 @@ export type PermissionConfig =
       task?: PermissionRuleConfig
       external_directory?: PermissionRuleConfig
       todowrite?: PermissionActionConfig
+      project_task_create?: PermissionActionConfig
+      project_task_list?: PermissionActionConfig
+      project_task_mount?: PermissionActionConfig
       question?: PermissionActionConfig
       webfetch?: PermissionActionConfig
       websearch?: PermissionActionConfig
@@ -1232,6 +1265,7 @@ export type Config = {
   model?: string
   small_model?: string
   default_agent?: string
+  subagent_depth?: number
   username?: string
   mode?: {
     build?: AgentConfig
@@ -1342,6 +1376,7 @@ export type GlobalEvent = {
     | EventLspClientDiagnostics
     | EventLspUpdated
     | EventMessagePartDelta
+    | EventTodoUpdated
     | EventPermissionAsked
     | EventPermissionReplied
     | EventSessionDiff
@@ -1351,7 +1386,6 @@ export type GlobalEvent = {
     | EventQuestionAsked
     | EventQuestionReplied
     | EventQuestionRejected
-    | EventTodoUpdated
     | EventTuiPromptAppend
     | EventTuiCommandExecute
     | EventTuiToastShow
@@ -1368,6 +1402,9 @@ export type GlobalEvent = {
     | EventBackgroundShellCreated
     | EventBackgroundShellUpdated
     | EventBackgroundShellExited
+    | EventProjectTaskCreated
+    | EventProjectTaskUpdated
+    | EventProjectTaskDeleted
     | EventVcsBranchUpdated
     | EventWorkspaceReady
     | EventWorkspaceFailed
@@ -1663,6 +1700,7 @@ export type GlobalSession = {
     snapshot?: string
     diff?: string
   }
+  mountedTaskID?: string
   project: ProjectSummary | null
 }
 
@@ -2046,6 +2084,55 @@ export type ScheduledTaskUpdateInput = {
   enabled?: boolean
 }
 
+export type ProjectTaskCreateInput = {
+  title: string
+  description?: string
+  status?: ProjectTaskStatus
+  priority?: string
+}
+
+export type ProjectTaskSessionTodos = {
+  sessionID: string
+  title: string
+  directory: string
+  parentID?: string
+  time: {
+    created: number
+    updated: number
+    archived?: number
+  }
+  progress: ProjectTaskProgress
+  todos: Array<Todo>
+}
+
+export type ProjectTaskDetail = {
+  id: string
+  projectID: string
+  title: string
+  description: string
+  status: ProjectTaskStatus
+  priority?: string
+  sessionCount: number
+  progress: ProjectTaskProgress
+  time: {
+    created: number
+    updated: number
+    archived?: number
+  }
+  sessions: Array<ProjectTaskSessionTodos>
+}
+
+export type ProjectTaskUpdateInput = {
+  title?: string
+  description?: string
+  status?: ProjectTaskStatus
+  priority?: string
+}
+
+export type ProjectTaskMountInput = {
+  taskID: string
+}
+
 export type V2SessionsResponse = {
   items: Array<SessionInfo>
   cursor: {
@@ -2304,6 +2391,7 @@ export type SyncEventSessionUpdated = {
         snapshot?: string
         diff?: string
       } | null
+      mountedTaskID?: string | null
     }
   }
 }
@@ -2772,6 +2860,15 @@ export type EventMessagePartDelta = {
   }
 }
 
+export type EventTodoUpdated = {
+  id: string
+  type: "todo.updated"
+  properties: {
+    sessionID: string
+    todos: Array<Todo>
+  }
+}
+
 export type EventPermissionAsked = {
   id: string
   type: "permission.asked"
@@ -2846,15 +2943,6 @@ export type EventQuestionRejected = {
   id: string
   type: "question.rejected"
   properties: QuestionRejected
-}
-
-export type EventTodoUpdated = {
-  id: string
-  type: "todo.updated"
-  properties: {
-    sessionID: string
-    todos: Array<Todo>
-  }
 }
 
 export type EventMcpToolsChanged = {
@@ -2954,6 +3042,26 @@ export type EventBackgroundShellExited = {
   type: "background.shell.exited"
   properties: {
     info: BackgroundShell
+  }
+}
+
+export type EventProjectTaskCreated = {
+  id: string
+  type: "project-task.created"
+  properties: ProjectTask
+}
+
+export type EventProjectTaskUpdated = {
+  id: string
+  type: "project-task.updated"
+  properties: ProjectTask
+}
+
+export type EventProjectTaskDeleted = {
+  id: string
+  type: "project-task.deleted"
+  properties: {
+    taskID: string
   }
 }
 
@@ -4928,6 +5036,38 @@ export type ExperimentalSessionListResponses = {
 }
 
 export type ExperimentalSessionListResponse = ExperimentalSessionListResponses[keyof ExperimentalSessionListResponses]
+
+export type ExperimentalSessionBackgroundData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/experimental/session/{sessionID}/background"
+}
+
+export type ExperimentalSessionBackgroundErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ExperimentalSessionBackgroundError =
+  ExperimentalSessionBackgroundErrors[keyof ExperimentalSessionBackgroundErrors]
+
+export type ExperimentalSessionBackgroundResponses = {
+  /**
+   * Backgrounded subagents
+   */
+  200: boolean
+}
+
+export type ExperimentalSessionBackgroundResponse =
+  ExperimentalSessionBackgroundResponses[keyof ExperimentalSessionBackgroundResponses]
 
 export type ExperimentalSessionContentSearchData = {
   body?: never
@@ -8045,6 +8185,250 @@ export type ScheduledTaskRunNowResponses = {
 }
 
 export type ScheduledTaskRunNowResponse = ScheduledTaskRunNowResponses[keyof ScheduledTaskRunNowResponses]
+
+export type ProjectTaskListData = {
+  body?: never
+  path?: never
+  query?: {
+    includeArchived?: "true" | "false"
+  }
+  url: "/project-task"
+}
+
+export type ProjectTaskListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProjectTaskListError = ProjectTaskListErrors[keyof ProjectTaskListErrors]
+
+export type ProjectTaskListResponses = {
+  /**
+   * Project tasks
+   */
+  200: Array<ProjectTask>
+}
+
+export type ProjectTaskListResponse = ProjectTaskListResponses[keyof ProjectTaskListResponses]
+
+export type ProjectTaskCreateData = {
+  body?: ProjectTaskCreateInput
+  path?: never
+  query?: never
+  url: "/project-task"
+}
+
+export type ProjectTaskCreateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+}
+
+export type ProjectTaskCreateError = ProjectTaskCreateErrors[keyof ProjectTaskCreateErrors]
+
+export type ProjectTaskCreateResponses = {
+  /**
+   * Created project task
+   */
+  200: ProjectTask
+}
+
+export type ProjectTaskCreateResponse = ProjectTaskCreateResponses[keyof ProjectTaskCreateResponses]
+
+export type ProjectTaskArchiveData = {
+  body?: never
+  path: {
+    taskID: string
+  }
+  query?: never
+  url: "/project-task/{taskID}"
+}
+
+export type ProjectTaskArchiveErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ProjectTaskArchiveError = ProjectTaskArchiveErrors[keyof ProjectTaskArchiveErrors]
+
+export type ProjectTaskArchiveResponses = {
+  /**
+   * Archived project task
+   */
+  200: ProjectTask
+}
+
+export type ProjectTaskArchiveResponse = ProjectTaskArchiveResponses[keyof ProjectTaskArchiveResponses]
+
+export type ProjectTaskGetData = {
+  body?: never
+  path: {
+    taskID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/project-task/{taskID}"
+}
+
+export type ProjectTaskGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ProjectTaskGetError = ProjectTaskGetErrors[keyof ProjectTaskGetErrors]
+
+export type ProjectTaskGetResponses = {
+  /**
+   * Project task
+   */
+  200: ProjectTask
+}
+
+export type ProjectTaskGetResponse = ProjectTaskGetResponses[keyof ProjectTaskGetResponses]
+
+export type ProjectTaskUpdateData = {
+  body?: ProjectTaskUpdateInput
+  path: {
+    taskID: string
+  }
+  query?: never
+  url: "/project-task/{taskID}"
+}
+
+export type ProjectTaskUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ProjectTaskUpdateError = ProjectTaskUpdateErrors[keyof ProjectTaskUpdateErrors]
+
+export type ProjectTaskUpdateResponses = {
+  /**
+   * Updated project task
+   */
+  200: ProjectTask
+}
+
+export type ProjectTaskUpdateResponse = ProjectTaskUpdateResponses[keyof ProjectTaskUpdateResponses]
+
+export type ProjectTaskDetailData = {
+  body?: never
+  path: {
+    taskID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/project-task/{taskID}/detail"
+}
+
+export type ProjectTaskDetailErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ProjectTaskDetailError = ProjectTaskDetailErrors[keyof ProjectTaskDetailErrors]
+
+export type ProjectTaskDetailResponses = {
+  /**
+   * Project task detail
+   */
+  200: ProjectTaskDetail
+}
+
+export type ProjectTaskDetailResponse = ProjectTaskDetailResponses[keyof ProjectTaskDetailResponses]
+
+export type ProjectTaskUnmountData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/session/{sessionID}/project-task"
+}
+
+export type ProjectTaskUnmountErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ProjectTaskUnmountError = ProjectTaskUnmountErrors[keyof ProjectTaskUnmountErrors]
+
+export type ProjectTaskUnmountResponses = {
+  /**
+   * Previously mounted project task
+   */
+  200: ProjectTask
+}
+
+export type ProjectTaskUnmountResponse = ProjectTaskUnmountResponses[keyof ProjectTaskUnmountResponses]
+
+export type ProjectTaskMountData = {
+  body?: ProjectTaskMountInput
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/session/{sessionID}/project-task"
+}
+
+export type ProjectTaskMountErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ProjectTaskMountError = ProjectTaskMountErrors[keyof ProjectTaskMountErrors]
+
+export type ProjectTaskMountResponses = {
+  /**
+   * Mounted project task
+   */
+  200: ProjectTask
+}
+
+export type ProjectTaskMountResponse = ProjectTaskMountResponses[keyof ProjectTaskMountResponses]
 
 export type SyncStartData = {
   body?: never

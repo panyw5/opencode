@@ -41,6 +41,7 @@ import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { SessionPrompt } from "@/session/prompt"
 import { ScheduledTask } from "@/scheduled-task/service"
+import { ProjectTask } from "@/project-task/service"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
@@ -80,6 +81,7 @@ import { ptyConnectRoute, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
 import { sessionHandlers } from "./handlers/session"
 import { scheduledTaskHandlers } from "./handlers/scheduled-task"
+import { projectTaskHandlers } from "./handlers/project-task"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
 import { v2Handlers } from "./handlers/v2"
@@ -144,6 +146,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     providerHandlers,
     sessionHandlers,
     scheduledTaskHandlers,
+    projectTaskHandlers,
     syncHandlers,
     v2Handlers,
     tuiHandlers,
@@ -196,6 +199,7 @@ export function createRoutes(
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
   return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, uiRoute).pipe(
     Layer.provide(ScheduledTask.layer),
+    Layer.provide(ProjectTask.layer),
     Layer.provide([
       errorLayer,
       compressionLayer,

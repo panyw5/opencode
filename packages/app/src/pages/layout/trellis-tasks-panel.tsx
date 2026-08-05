@@ -1,6 +1,6 @@
 import { createEffect, createResource, createMemo, createSignal, For, Show, onCleanup, type Accessor, type JSX } from "solid-js"
 import { useFilteredList } from "@opencode-ai/ui/hooks"
-import { Icon, type IconName } from "@opencode-ai/ui/icon"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -26,13 +26,15 @@ import {
   createPrdDocumentState,
   prdPreviewTitle,
 } from "./trellis-prd-document"
-
-const labelStatus = (status: string) =>
-  status
-    .split(/[-_\s]+/)
-    .filter(Boolean)
-    .map((part) => part.slice(0, 1).toUpperCase() + part.slice(1))
-    .join(" ") || "Unknown"
+import {
+  Empty,
+  ErrorCard,
+  TaskCardActionButton,
+  TaskCardShell,
+  TaskPanelShell,
+  labelStatus,
+  progressKindForStatus,
+} from "./task-panel-shared"
 
 const meta = (task: TrellisTask) =>
   [task.priority, task.assignee, task.package].filter((item): item is string => !!item)
@@ -44,22 +46,6 @@ const rank = (task: TrellisTask) => {
   if (task.status === "review") return 3
   if (task.completedAt || task.status === "done" || task.status === "completed") return 5
   return 4
-}
-
-const progressIcon = (task: TrellisTask): IconName => {
-  if (task.completedAt || task.status === "done" || task.status === "completed") return "progress-complete"
-  if (task.status === "review") return "progress-three-quarter"
-  if (task.status === "in_progress" || task.status === "implementing") return "progress-half"
-  if (task.status === "planning") return "progress-quarter"
-  return "progress-empty"
-}
-
-const progressColor = (task: TrellisTask): string => {
-  if (task.completedAt || task.status === "done" || task.status === "completed") return "text-icon-success-base"
-  if (task.status === "review") return "text-icon-warning-base"
-  if (task.status === "in_progress" || task.status === "implementing") return "text-icon-brand-base"
-  if (task.status === "planning") return "text-icon-info-base"
-  return "text-icon-base"
 }
 
 const PRD_AUTOSAVE_DELAY = 700
@@ -184,115 +170,52 @@ function TaskCard(props: {
 }): JSX.Element {
   const language = useLanguage()
   const [pending, setPending] = createSignal<"current" | "archive" | undefined>()
-  const done = createMemo(
-    () => props.task.completedAt || props.task.status === "done" || props.task.status === "completed",
-  )
   const items = createMemo(() => meta(props.task))
   const folderName = createMemo(() => getFilename(props.task.path))
-  const icon = createMemo(() => progressIcon(props.task))
-  const iconColor = createMemo(() => progressColor(props.task))
   const canAct = createMemo(() => pending() === undefined)
-
-  const onKeyDown: JSX.EventHandlerUnion<HTMLDivElement, KeyboardEvent> = (event) => {
-    if (event.target !== event.currentTarget) return
-    if (event.key !== "Enter" && event.key !== " ") return
-    event.preventDefault()
-    void props.onOpen(props.task)
-  }
-
-  const setCurrent: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (event) => {
-    event.stopPropagation()
-    setPending("current")
-    Promise.resolve(props.onSetCurrent(props.task)).finally(() => {
-      setPending(undefined)
-    })
-  }
-
-  const insert: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (event) => {
-    event.stopPropagation()
-    props.onInsert(props.task)
-  }
-
-  const archive: JSX.EventHandlerUnion<HTMLButtonElement, MouseEvent> = (event) => {
-    event.stopPropagation()
-    setPending("archive")
-    Promise.resolve(props.onArchive(props.task)).finally(() => {
-      setPending(undefined)
-    })
-  }
+  const progressKind = createMemo(() =>
+    progressKindForStatus(props.task.status, { current: props.task.current, completedAt: props.task.completedAt }),
+  )
 
   return (
-    <div
+    <TaskCardShell
       data-component="trellis-task-item"
-      role="button"
-      tabIndex={0}
-      class="group/task w-full rounded-xl border border-border-weak-base bg-background-stronger px-3 py-3 text-left transition-colors hover:bg-surface-base-hover"
-      classList={{ "border-border-brand-base bg-surface-interactive-selected/40": props.task.current }}
-      onClick={() => props.onOpen(props.task)}
-      onKeyDown={onKeyDown}
-    >
-      <div class="flex items-start gap-3">
-        <div
-          class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base"
-          classList={{ [iconColor()]: true, "text-icon-brand-base": props.task.current }}
-        >
-          <Icon name={icon()} size="small" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <div class="min-w-0 truncate text-14-medium text-text-strong">{folderName()}</div>
-            <span class="shrink-0 rounded-full bg-surface-base/20 px-2 py-0.5 text-11-medium text-text-base">
-              {props.task.worktreeName}
-            </span>
-            <Show when={props.task.current}>
-              <span class="shrink-0 rounded-full bg-surface-info-base px-2 py-0.5 text-11-medium text-text-strong">
-                {language.t("trellis.tasks.current")}
-              </span>
-            </Show>
-          </div>
-          <div class="mt-1 truncate text-12-regular text-text-base">{props.task.title}</div>
-          <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-12-regular">
-            <span class="rounded-md bg-surface-base/20 px-1.5 py-0.5 text-text-strong">
-              {labelStatus(props.task.status)}
-            </span>
-            <For each={items()}>
-              {(item) => <span class="rounded-md bg-surface-base/20 px-1.5 py-0.5 text-text-base">{item}</span>}
-            </For>
-          </div>
-          <div class="mt-2 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              class="flex items-center gap-1 rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover"
-              onClick={insert}
-            >
-              <Icon name="arrow-right" size="small" />
-              {language.t("trellis.tasks.insert")}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base transition-colors hover:bg-surface-base-hover disabled:cursor-not-allowed disabled:opacity-50"
-              disabled={props.task.current || !canAct()}
-              onClick={setCurrent}
-            >
-              {pending() === "current" ? language.t("common.loading") : language.t("trellis.tasks.setCurrent")}
-            </button>
-            <button
-              type="button"
-              class="rounded-md border px-2 py-1 text-12-medium transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-              style={{
-                "background-color": "color-mix(in srgb, var(--surface-critical-base) 68%, var(--background-base))",
-                "border-color": "color-mix(in srgb, var(--surface-critical-base) 72%, var(--background-base))",
-                color: "var(--text-on-critical-base)",
-              }}
-              disabled={!canAct()}
-              onClick={archive}
-            >
-              {pending() === "archive" ? language.t("common.loading") : language.t("trellis.tasks.archive")}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+      title={folderName()}
+      subtitle={props.task.title}
+      active={props.task.current}
+      activeBadge={props.task.current ? language.t("trellis.tasks.current") : undefined}
+      progressKind={progressKind()}
+      badges={[props.task.worktreeName]}
+      statusLabel={labelStatus(props.task.status)}
+      meta={items()}
+      onOpen={() => void props.onOpen(props.task)}
+      actions={
+        <>
+          <TaskCardActionButton icon="arrow-right" onClick={() => props.onInsert(props.task)}>
+            {language.t("trellis.tasks.insert")}
+          </TaskCardActionButton>
+          <TaskCardActionButton
+            disabled={props.task.current || !canAct()}
+            onClick={() => {
+              setPending("current")
+              Promise.resolve(props.onSetCurrent(props.task)).finally(() => setPending(undefined))
+            }}
+          >
+            {pending() === "current" ? language.t("common.loading") : language.t("trellis.tasks.setCurrent")}
+          </TaskCardActionButton>
+          <TaskCardActionButton
+            danger
+            disabled={!canAct()}
+            onClick={() => {
+              setPending("archive")
+              Promise.resolve(props.onArchive(props.task)).finally(() => setPending(undefined))
+            }}
+          >
+            {pending() === "archive" ? language.t("common.loading") : language.t("trellis.tasks.archive")}
+          </TaskCardActionButton>
+        </>
+      }
+    />
   )
 }
 
@@ -1076,103 +999,51 @@ export function TrellisTasksPanel(props: {
   }
 
   return (
-    <div
-      data-component="sidebar-panel"
-      class="flex h-full min-h-0 min-w-0 flex-col rounded-tl-[12px] border-l border-t border-border-weaker-base bg-background-base px-3"
-      style={{ width: props.mobile ? undefined : `${props.width()}px` }}
+    <TaskPanelShell
+      mobile={props.mobile}
+      width={props.width}
+      title={language.t("trellis.tasks.title")}
+      backLabel={language.t("trellis.tasks.back")}
+      onBack={props.onBack}
+      newLabel={language.t("trellis.tasks.new.button")}
+      onNew={newTask}
+      newDisabled={!dir() || !platform.createTrellisTask}
+      refreshLabel={language.t("trellis.tasks.refresh")}
+      onRefresh={() => void refetch()}
+      refreshDisabled={!dir() || !platform.listTrellisTasks || data.loading}
     >
-      <div class="shrink-0 px-1 py-3">
-        <div class="flex items-start justify-between gap-2 py-1 pl-2">
-          <div class="min-w-0">
-            <div class="flex items-center gap-2">
-              <Tooltip placement="bottom" value={language.t("trellis.tasks.back")}>
-                <IconButton
-                  icon="arrow-left"
-                  variant="ghost"
-                  size="large"
-                  class="-ml-1 rounded-lg"
-                  aria-label={language.t("trellis.tasks.back")}
-                  onClick={props.onBack}
-                />
-              </Tooltip>
-              <div class="text-14-medium text-text-strong">{language.t("trellis.tasks.title")}</div>
-            </div>
-          </div>
-          <div class="flex shrink-0 items-center gap-1">
-            <Tooltip placement="bottom" value={language.t("trellis.tasks.new.button")}>
-              <IconButton
-                icon="plus"
-                variant="ghost"
-                size="large"
-                class="rounded-lg"
-                disabled={!dir() || !platform.createTrellisTask}
-                aria-label={language.t("trellis.tasks.new.button")}
-                onClick={newTask}
-              />
-            </Tooltip>
-            <Tooltip placement="bottom" value={language.t("trellis.tasks.refresh")}>
-              <IconButton
-                icon="refresh"
-                variant="ghost"
-                size="large"
-                class="rounded-lg"
-                disabled={!dir() || !platform.listTrellisTasks || data.loading}
-                aria-label={language.t("trellis.tasks.refresh")}
-                onClick={() => void refetch()}
-              />
-            </Tooltip>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex-1 min-h-0 overflow-y-auto no-scrollbar px-1 pb-4">
-        <Show when={platform.listTrellisTasks} fallback={<Empty text={language.t("trellis.tasks.desktopOnly")} />}>
-          <Show when={dir()} fallback={<Empty text={language.t("trellis.tasks.noProject")} />}>
-            <Show when={!data.loading} fallback={<Empty text={language.t("trellis.tasks.loading")} />}>
-              <Show
-                when={!data.error}
-                fallback={<ErrorCard err={errorMessage(data.error, language.t("common.requestFailed"))} />}
-              >
-                <Show when={tasks().length > 0} fallback={<Empty text={language.t("trellis.tasks.empty")} />}>
-                  <div class="flex flex-col gap-2">
-                    <Show when={actionError()}>
-                      {(err) => <ErrorCard err={err()} />}
-                    </Show>
-                    <For each={tasks()}>
-                      {(task) => (
-                        <TaskCard
-                          task={task}
-                          onOpen={open}
-                          onInsert={insert}
-                          onSetCurrent={setCurrent}
-                          onArchive={archive}
-                        />
-                      )}
-                    </For>
-                  </div>
-                </Show>
-                <Show when={skipped() > 0}>
-                  <div class="mt-2 rounded-lg border border-border-warning-base bg-surface-warning-base px-3 py-2 text-12-regular text-text-strong">
-                    {language.t("trellis.tasks.skipped", { count: skipped() })}
-                  </div>
-                </Show>
+      <Show when={platform.listTrellisTasks} fallback={<Empty text={language.t("trellis.tasks.desktopOnly")} />}>
+        <Show when={dir()} fallback={<Empty text={language.t("trellis.tasks.noProject")} />}>
+          <Show when={!data.loading} fallback={<Empty text={language.t("trellis.tasks.loading")} />}>
+            <Show
+              when={!data.error}
+              fallback={<ErrorCard err={errorMessage(data.error, language.t("common.requestFailed"))} />}
+            >
+              <Show when={tasks().length > 0} fallback={<Empty text={language.t("trellis.tasks.empty")} />}>
+                <div class="flex flex-col gap-2">
+                  <Show when={actionError()}>{(err) => <ErrorCard err={err()} />}</Show>
+                  <For each={tasks()}>
+                    {(task) => (
+                      <TaskCard
+                        task={task}
+                        onOpen={open}
+                        onInsert={insert}
+                        onSetCurrent={setCurrent}
+                        onArchive={archive}
+                      />
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={skipped() > 0}>
+                <div class="mt-2 rounded-lg border border-border-warning-base bg-surface-warning-base px-3 py-2 text-12-regular text-text-strong">
+                  {language.t("trellis.tasks.skipped", { count: skipped() })}
+                </div>
               </Show>
             </Show>
           </Show>
         </Show>
-      </div>
-    </div>
-  )
-}
-
-function Empty(props: { text: string }): JSX.Element {
-  return <div class="px-4 py-10 text-center text-14-regular text-text-base">{props.text}</div>
-}
-
-function ErrorCard(props: { err: string }): JSX.Element {
-  return (
-    <div class="rounded-xl border border-border-critical-base bg-surface-critical-base px-3 py-3 text-13-regular text-text-strong">
-      {props.err}
-    </div>
+      </Show>
+    </TaskPanelShell>
   )
 }

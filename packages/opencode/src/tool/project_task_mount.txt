@@ -1,0 +1,6 @@
+Mount or unmount a project-level task on the current session.
+
+- Pass taskID to mount that project task onto this session (replaces any previous mount).
+- Pass taskID as empty string or omit with unmount=true to clear the mount.
+
+Each session can mount at most one project task. Session todos (todowrite) stay local to the session and appear under the project task in the project task manager.

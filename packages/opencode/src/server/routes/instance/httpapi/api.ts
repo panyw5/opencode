@@ -18,6 +18,7 @@ import { PtyApi, PtyConnectApi } from "./groups/pty"
 import { QuestionApi } from "./groups/question"
 import { SessionApi } from "./groups/session"
 import { ScheduledTaskApi } from "./groups/scheduled-task"
+import { ProjectTaskApi } from "./groups/project-task"
 import { SyncApi } from "./groups/sync"
 import { TuiApi } from "./groups/tui"
 import { WorkspaceApi } from "./groups/workspace"
@@ -49,6 +50,7 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(ProviderApi)
   .addHttpApi(SessionApi)
   .addHttpApi(ScheduledTaskApi)
+  .addHttpApi(ProjectTaskApi)
   .addHttpApi(SyncApi)
   .addHttpApi(V2Api)
   .addHttpApi(TuiApi)
