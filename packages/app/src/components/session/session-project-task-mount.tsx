@@ -248,7 +248,6 @@ export function SessionProjectTaskMount(props: {
       >
         <div data-component="session-project-task-mount" class="flex flex-col gap-2 px-3 py-3">
           <div class="text-13-medium text-text-strong">{language.t("projectTask.mount.sectionTitle")}</div>
-          <p class="text-12-regular text-text-weak">{language.t("projectTask.mount.sectionHint")}</p>
           {menu}
           <label class="mt-1 flex cursor-pointer items-start gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2">
             <input

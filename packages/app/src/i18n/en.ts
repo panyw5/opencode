@@ -45,7 +45,6 @@ export const dict = {
   "projectTask.mount.tooltip": "Mount project task",
   "projectTask.mount.menuTitle": "Mount project task",
   "projectTask.mount.sectionTitle": "Mounted project task",
-  "projectTask.mount.sectionHint": "Choose a project task for this session. Context injection is on by default.",
   "projectTask.mount.none": "No project task mounted",
   "projectTask.mount.mounted": "Mounted: {{title}}",
   "projectTask.mount.empty": "No open project tasks. Create one from the sidebar.",

@@ -30,7 +30,6 @@ export const dict = {
   "projectTask.mount.tooltip": "关联项目任务",
   "projectTask.mount.menuTitle": "关联项目任务",
   "projectTask.mount.sectionTitle": "关联项目任务",
-  "projectTask.mount.sectionHint": "为当前会话选择一个项目任务。默认注入上下文。",
   "projectTask.mount.none": "未关联项目任务",
   "projectTask.mount.mounted": "已关联：{{title}}",
   "projectTask.mount.empty": "暂无开放的项目任务。请在侧边栏创建。",
