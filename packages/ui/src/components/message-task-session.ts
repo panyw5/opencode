@@ -21,6 +21,59 @@ export function taskElapsedSeconds(input: { start?: number; end?: number; now?: 
   return Math.max(0, Math.floor((stop - input.start) / 1000))
 }
 
+/**
+ * Resolve the wall-clock span shown on a task tool card.
+ *
+ * Background tasks complete the parent tool part almost immediately (end ≈ start),
+ * while the child session keeps running. Prefer the child session's lifecycle so
+ * the duration badge keeps ticking and settles on the real completion time.
+ */
+export function taskElapsedBounds(input: {
+  toolStatus?: "pending" | "running" | "completed" | "error"
+  toolStart?: number
+  toolEnd?: number
+  background?: boolean
+  childCreated?: number
+  /** Latest assistant message completion time in the child session. */
+  childCompleted?: number
+  /** Session.time.updated for the child (fallback end when messages are missing). */
+  childUpdated?: number
+  /** True when the child session is still busy/retrying. */
+  childBusy?: boolean
+}): { start?: number; end?: number } {
+  const toolLive = input.toolStatus === "pending" || input.toolStatus === "running"
+  const toolStart = typeof input.toolStart === "number" ? input.toolStart : undefined
+  const toolEnd = !toolLive && typeof input.toolEnd === "number" ? input.toolEnd : undefined
+  const start = toolStart ?? (typeof input.childCreated === "number" ? input.childCreated : undefined)
+  if (typeof start !== "number") return {}
+
+  if (toolLive || input.childBusy) {
+    return { start, end: undefined }
+  }
+
+  if (typeof input.childCompleted === "number") {
+    return { start, end: Math.max(start, input.childCompleted) }
+  }
+
+  // Background tools often finish in a few ms while the child keeps working.
+  // Prefer session.updated over the instantaneous tool end; if even that is
+  // missing/stale, keep counting live rather than freezing at 0s.
+  if (
+    input.background === true &&
+    typeof toolStart === "number" &&
+    typeof toolEnd === "number" &&
+    toolEnd - toolStart < 2_000
+  ) {
+    if (typeof input.childUpdated === "number" && input.childUpdated > start + 2_000) {
+      return { start, end: input.childUpdated }
+    }
+    return { start, end: undefined }
+  }
+
+  if (typeof toolEnd === "number") return { start, end: Math.max(start, toolEnd) }
+  return { start, end: undefined }
+}
+
 function taskTitleMatches(session: Session, description: string | undefined): boolean {
   if (!description) return false
   const title = text(session.title)

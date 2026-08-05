@@ -4,6 +4,7 @@ import { groupParts, reasoningPartStreaming } from "./message-part-order"
 import {
   isTaskResume,
   resolveTaskChildSessionId,
+  taskElapsedBounds,
   taskElapsedSeconds,
   taskSessionIndex,
   taskSessionNeighbors,
@@ -217,6 +218,69 @@ describe("message-part taskElapsedSeconds", () => {
 
   test("does not render a duration before the task has started", () => {
     expect(taskElapsedSeconds({ now: 7_999 })).toBeUndefined()
+  })
+})
+
+describe("message-part taskElapsedBounds", () => {
+  test("keeps counting while the parent tool is still running", () => {
+    expect(
+      taskElapsedBounds({
+        toolStatus: "running",
+        toolStart: 1_000,
+      }),
+    ).toEqual({ start: 1_000, end: undefined })
+  })
+
+  test("uses tool end for normal foreground completions", () => {
+    expect(
+      taskElapsedBounds({
+        toolStatus: "completed",
+        toolStart: 1_000,
+        toolEnd: 61_000,
+      }),
+    ).toEqual({ start: 1_000, end: 61_000 })
+  })
+
+  test("does not freeze at 0s for background tools that complete immediately", () => {
+    // Real session data: background task tool ends ~80ms after start.
+    expect(
+      taskElapsedBounds({
+        toolStatus: "completed",
+        toolStart: 1_000,
+        toolEnd: 1_083,
+        background: true,
+        childCreated: 1_000,
+        childBusy: true,
+      }),
+    ).toEqual({ start: 1_000, end: undefined })
+  })
+
+  test("settles on child assistant completion for finished background tasks", () => {
+    expect(
+      taskElapsedBounds({
+        toolStatus: "completed",
+        toolStart: 1_000,
+        toolEnd: 1_083,
+        background: true,
+        childCreated: 1_000,
+        childCompleted: 301_000,
+        childBusy: false,
+      }),
+    ).toEqual({ start: 1_000, end: 301_000 })
+  })
+
+  test("falls back to child.updated when messages are unavailable", () => {
+    expect(
+      taskElapsedBounds({
+        toolStatus: "completed",
+        toolStart: 1_000,
+        toolEnd: 1_083,
+        background: true,
+        childCreated: 1_000,
+        childUpdated: 420_000,
+        childBusy: false,
+      }),
+    ).toEqual({ start: 1_000, end: 420_000 })
   })
 })
 

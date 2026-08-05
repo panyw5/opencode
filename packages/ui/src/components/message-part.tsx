@@ -75,6 +75,7 @@ import { activeStreamingAssistantMessageID } from "./message-part-stream"
 import {
   isTaskResume,
   resolveTaskChildSessionId,
+  taskElapsedBounds,
   taskElapsedSeconds,
   taskSessionBadge,
   taskSessionIndex,
@@ -2542,13 +2543,59 @@ ToolRegistry.register({
         !!props.onBackgroundTask,
     )
     const [backgrounding, setBackgrounding] = createSignal(false)
+    const childMessages = createMemo(() => {
+      const sessionId = childSessionId()
+      if (!sessionId) return []
+      return data.store.message?.[sessionId] ?? []
+    })
+    const childParts = createMemo(() => childMessages().flatMap((message) => data.store.part?.[message.id] ?? []))
+    const childStatus = createMemo(() => {
+      const sessionId = childSessionId()
+      if (!sessionId) return undefined
+      return data.store.session_status?.[sessionId]
+    })
+    const childSession = createMemo(() => {
+      const sessionId = childSessionId()
+      if (!sessionId) return undefined
+      return data.store.session?.find((session) => session.id === sessionId)
+    })
+    const childLastCompleted = createMemo(() => {
+      let latest: number | undefined
+      for (const message of childMessages()) {
+        if (message.role !== "assistant") continue
+        const completed = message.time.completed
+        if (typeof completed !== "number") continue
+        latest = latest === undefined ? completed : Math.max(latest, completed)
+      }
+      return latest
+    })
+    // Background task tools complete the parent part almost immediately; prefer the
+    // child session span so the duration badge keeps counting and settles correctly.
     const taskTime = createMemo(() => {
       const state = props.part?.state
-      if (!state || state.status === "pending") return undefined
-      return {
-        start: state.time.start,
-        end: state.status === "running" ? undefined : state.time.end,
-      }
+      const toolStatus = state?.status
+      const toolStart =
+        state && toolStatus !== "pending" && typeof state.time.start === "number" ? state.time.start : undefined
+      const toolEnd =
+        state &&
+        toolStatus !== "pending" &&
+        toolStatus !== "running" &&
+        "time" in state &&
+        typeof state.time.end === "number"
+          ? state.time.end
+          : undefined
+      const status = childStatus()
+      const childBusy = status?.type === "busy" || status?.type === "retry"
+      return taskElapsedBounds({
+        toolStatus,
+        toolStart,
+        toolEnd,
+        background: props.metadata?.background === true,
+        childCreated: childSession()?.time.created,
+        childCompleted: childLastCompleted(),
+        childUpdated: childSession()?.time.updated,
+        childBusy,
+      })
     })
     const [taskNow, setTaskNow] = createSignal(Date.now())
     createEffect(
@@ -2599,17 +2646,6 @@ ToolRegistry.register({
       return childSessionId()
     })
     const href = createMemo(() => sessionLink(childSessionId(), loc.pathname, data.sessionHref))
-    const childMessages = createMemo(() => {
-      const sessionId = childSessionId()
-      if (!sessionId) return []
-      return data.store.message?.[sessionId] ?? []
-    })
-    const childParts = createMemo(() => childMessages().flatMap((message) => data.store.part?.[message.id] ?? []))
-    const childStatus = createMemo(() => {
-      const sessionId = childSessionId()
-      if (!sessionId) return undefined
-      return data.store.session_status?.[sessionId]
-    })
     const childStats = createMemo(() => {
       const parts = childParts()
       const toolParts = parts.filter((part): part is ToolPart => part.type === "tool")
