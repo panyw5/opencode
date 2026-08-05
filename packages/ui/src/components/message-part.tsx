@@ -2631,6 +2631,8 @@ ToolRegistry.register({
         errorTools: errorTools.length,
       }
     })
+    // Primary status = child lifecycle only. Tool-level failures (e.g. READ not found)
+    // are a secondary metric and must not hijack the status while the agent is still busy.
     const statusLabel = createMemo(() => {
       const sessionId = childSessionId()
       if (!sessionId) {
@@ -2640,13 +2642,16 @@ ToolRegistry.register({
         return "no session"
       }
       const stats = childStats()
-      if (stats.errorTools > 0) return `${stats.errorTools} error${stats.errorTools === 1 ? "" : "s"}`
       if (childStatus()?.type === "retry") return "retrying"
       if (childStatus()?.type === "busy") {
         if (stats.outputs > 0) return "streaming"
         if (stats.tools > 0) return "using tools"
         return "running"
       }
+      // Hard failures only after the session is no longer busy/retrying.
+      const last = childMessages().at(-1)
+      if (last?.role === "assistant" && last.error !== undefined) return "error"
+      if (props.status === "error") return "error"
       if (stats.outputs > 0) return "complete"
       if (stats.tools > 0) return "tools complete"
       if (stats.messages > 0) return "started"
@@ -2655,10 +2660,11 @@ ToolRegistry.register({
     const statItems = createMemo(() => {
       const stats = childStats()
       const elapsed = taskElapsed()
+      const status = statusLabel()
       return [
-        { label: statusLabel(), kind: "status" },
+        { label: status, kind: status === "error" ? "error" : "status" },
         ...(elapsed === undefined ? [] : [{ label: i18n.t("ui.message.duration.seconds", { count: elapsed }), kind: "time" }]),
-        { label: `${stats.errorTools} error`, kind: "error" },
+        ...(stats.errorTools > 0 ? [{ label: `${stats.errorTools} error`, kind: "error" }] : []),
         { label: `${stats.messages} msg`, kind: "message" },
         { label: `${stats.tools} tool`, kind: "tool" },
         ...(stats.runningTools > 0 ? [{ label: `${stats.runningTools} running`, kind: "running" }] : []),
@@ -2768,7 +2774,7 @@ ToolRegistry.register({
               <span
                 data-slot="subagent-task-stat"
                 data-kind={item.kind}
-                data-primary={index() === 0 ? "true" : undefined}
+                data-primary={index() === 0 && item.kind !== "error" ? "true" : undefined}
               >
                 {item.label}
               </span>
