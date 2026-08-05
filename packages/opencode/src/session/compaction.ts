@@ -20,6 +20,7 @@ import { serviceUse } from "@/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionEvent } from "@opencode-ai/core/session-event"
+import { clearTaskContextFullInject } from "@/project-task/inject-state"
 
 const log = Log.create({ service: "session.compaction" })
 
@@ -576,6 +577,8 @@ export const layer = Layer.effect(
             include: selected.tail_start_id,
           })
         }
+        // History was summarized — next project-task inject must re-send FULL brief.
+        clearTaskContextFullInject(input.sessionID)
         yield* bus.publish(Event.Compacted, { sessionID: input.sessionID })
       }
       return result

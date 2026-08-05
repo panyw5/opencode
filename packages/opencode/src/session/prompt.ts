@@ -16,7 +16,8 @@ import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import * as ProjectTaskRepository from "@/project-task/repository"
-import { formatProjectTaskSystemContext } from "@/project-task/context"
+import { decideProjectTaskInject } from "@/project-task/context"
+import { getTaskContextInjectState, setTaskContextInjectState } from "@/project-task/inject-state"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { ToolRegistry } from "@/tool/registry"
 import { MCP } from "../mcp"
@@ -1936,11 +1937,25 @@ export const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
-            // Opt-in project-task context: only when the session has a mounted task
-            // AND injectTaskContext is enabled (default on).
+            // Project-task context (when inject enabled + mounted):
+            // - First time this session sees the *current* mounted task ID → FULL brief
+            //   (covers mid-session mount and mid-session task switch)
+            // - Same task already FULL-injected → DELTA if changed, else skip
+            // - Compaction clears fullInjectedTaskID so the next turn re-FULLs
             if (session.injectTaskContext && session.mountedTaskID) {
               const detail = yield* ProjectTaskRepository.detail(session.mountedTaskID)
-              if (detail) system.push(formatProjectTaskSystemContext(detail))
+              if (detail) {
+                const injectState = getTaskContextInjectState(sessionID)
+                const decision = decideProjectTaskInject({ detail, state: injectState })
+                if (decision.mode !== "skip") {
+                  system.push(decision.text)
+                  setTaskContextInjectState(sessionID, decision.next)
+                  // eslint-disable-next-line no-console
+                  console.debug(
+                    `[project-task] inject mode=${decision.mode} sessionID=${sessionID} taskID=${detail.id} fullIds=${injectState.fullInjectedTaskIDs.join(",") || "none"}`,
+                  )
+                }
+              }
             }
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)

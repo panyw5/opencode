@@ -57,6 +57,21 @@ export const SessionTable = sqliteTable(
       .references(() => ProjectTaskTable.id, { onDelete: "set null" }),
     /** When true, inject mounted project-task context into each LLM turn. Default true. */
     inject_task_context: integer({ mode: "boolean" }).notNull().default(true),
+    /**
+     * Server-side bookkeeping for project-task context injection.
+     * Not exposed on Session.Info.
+     *
+     * Shape: `{ fullInjectedTaskIDs: string[], snapshots: Record<taskID, snapshot> }`
+     * Tracks which task IDs already received a FULL brief on this session
+     * (mid-mount / task-switch safe), plus per-task snapshots for deltas.
+     */
+    task_context_inject: text({ mode: "json" }).$type<{
+      fullInjectedTaskIDs?: string[]
+      snapshots?: Record<string, unknown>
+      /** @deprecated legacy single-task fields, still read by normalizeInjectState */
+      fullInjectedTaskID?: string | null
+      snapshot?: unknown | null
+    }>(),
     ...Timestamps,
     time_compacting: integer(),
     time_archived: integer(),
