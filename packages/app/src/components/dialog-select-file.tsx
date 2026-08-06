@@ -551,7 +551,7 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   })
 
   return (
-    <Dialog class="pt-4 !max-h-[480px]" transition>
+    <Dialog size={filesOnly() ? "large" : undefined} class="pt-4 !max-h-[480px]" transition>
       <List
         search={{
           placeholder: commandsOnly()
@@ -574,16 +574,18 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
         {(item) => (
           <Switch
             fallback={
-              <div class="w-full flex items-center justify-between rounded-md pl-1">
+              <div class="w-full flex items-center justify-between gap-4 rounded-md pl-1">
                 <div class="flex items-center gap-x-3 grow min-w-0">
                   <FileIcon node={{ path: item.path ?? "", type: "file" }} class="shrink-0 size-4" />
-                  <div class="flex items-center text-14-regular">
-                    <span class="text-text-weak whitespace-nowrap overflow-hidden overflow-ellipsis truncate min-w-0">
-                      {getDirectory(item.path ?? "")}
-                    </span>
-                    <span class="text-text-strong whitespace-nowrap">{getFilename(item.path ?? "")}</span>
-                  </div>
+                  <span class="text-14-regular text-text-strong whitespace-nowrap truncate min-w-0">
+                    {getFilename(item.path ?? "")}
+                  </span>
                 </div>
+                <Show when={getDirectory(item.path ?? "") !== "/"}>
+                  <span class="text-14-regular text-text-weak whitespace-nowrap overflow-hidden overflow-ellipsis truncate shrink min-w-0 max-w-[55%] text-right">
+                    {getDirectory(item.path ?? "")}
+                  </span>
+                </Show>
               </div>
             }
           >
