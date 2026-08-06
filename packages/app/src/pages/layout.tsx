@@ -2783,6 +2783,18 @@ export default function Layout(props: ParentProps) {
   const side = createMemo(() => Math.max(state.previewSidebarWidth ?? layout.sidebar.width(), 244))
   const dragSide = createMemo(() => Math.max(state.previewSidebarWidth ?? layout.sidebar.width(), 244))
   const panel = createMemo(() => Math.max(side() - 64, 0))
+  // Keep the floating list above main while width collapses (300ms). Dropping
+  // z-index immediately on close hides the transition under the main pane.
+  const SIDEBAR_WIDTH_MS = 300
+  const [sidebarElevated, setSidebarElevated] = createSignal(layout.sidebar.opened())
+  createEffect(() => {
+    if (layout.sidebar.opened()) {
+      setSidebarElevated(true)
+      return
+    }
+    const id = window.setTimeout(() => setSidebarElevated(false), SIDEBAR_WIDTH_MS)
+    onCleanup(() => clearTimeout(id))
+  })
   const drag = {
     click: false,
     frame: 0,
@@ -3808,17 +3820,20 @@ export default function Layout(props: ParentProps) {
               classList={{
                 "hidden xl:block": true,
                 "absolute inset-y-0 left-0": true,
-                // Floating overlay: stay under main when collapsed so the panel
-                // hit area does not steal clicks; rise above main when open.
-                "z-10": !layout.sidebar.opened(),
-                "z-30": layout.sidebar.opened(),
+                // Floating overlay: under main when fully collapsed so the panel
+                // hit area does not steal clicks; above main while open/closing
+                // so the width transition is visible.
+                "z-10": !sidebarElevated(),
+                "z-30": sidebarElevated(),
                 "pointer-events-none": state.sizing,
               }}
               style={{
                 // Collapse to the rail only when closed so no full-width
                 // chrome slab appears ahead of the session list.
                 width: layout.sidebar.opened() ? `${side()}px` : "4rem",
-                transition: state.sizing ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+                transition: state.sizing
+                  ? undefined
+                  : `width ${SIDEBAR_WIDTH_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`,
               }}
               ref={(el) => {
                 setState("nav", el)
@@ -3828,6 +3843,15 @@ export default function Layout(props: ParentProps) {
             </nav>
 
             <Show when={layout.sidebar.opened()}>
+              {/* Click-outside dismiss: covers main (z-20) while the floating
+                  session list (z-30) and resize handle (z-40) stay above. */}
+              <div
+                data-component="sidebar-dismiss-overlay"
+                aria-hidden="true"
+                class="hidden xl:block absolute inset-0 z-[25]"
+                style={{ left: `${side()}px` }}
+                onClick={() => layout.sidebar.close()}
+              />
               {/* Soft right-edge elevation as a sibling (not box-shadow) so the
                   parent overflow-x-hidden does not clip the floating cue. */}
               <div
