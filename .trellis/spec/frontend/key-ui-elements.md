@@ -1,20 +1,3 @@
-
-## 圆角缺口
-会话列表左上和右上由于巨型圆角产生的四分之一圆缺口的样式说明。
-
-### 选择器
-
-- 左上缺口：[data-component="sidebar-nav-desktop"] 的背景，内部 [data-component="sidebar-panel"] 有左上圆角，露出父容器。
-- 右上缺口：main 的左上圆角露出 app-root 背景；Arc 中由 --canvas-base 控制。
-- 会话列表表面：[data-component="sidebar-panel"]，使用 --color-border-weaker-base。
-- 顶栏：[data-component="titlebar"]，使用 --border-strong-base。
-
-### 配色方案
-
-- 圆角露出色取决于父元素，不是圆角元素本身；应先确认实际承载背景的层级。
-- 两个缺口可独立配色：左上与顶栏相接，匹配 --border-strong-base；右上位于会话列表与主内容之间，匹配 --color-border-weaker-base。
-- 不要用单一全局画布色强行统一所有缺口；按视觉相邻的表面选择 token，层级关系会更自然。
-
 ## 动态状态指示器
 
 ### 会话进行中的扩散波纹
@@ -38,3 +21,20 @@
 
 - `@media (prefers-reduced-motion: reduce)` 会覆盖动画。若一个状态动画必须与项目图标进行中状态保持一致，不要为该组件添加额外的 reduced-motion 禁用规则；否则系统设置开启“减少动态效果”时会只留下固定图形。
 - 在 DevTools 验证运行时 DOM，而不是只检查源码。停止状态应包含 `data-component="prompt-stop-halo"` 和 `data-slot="prompt-stop-halo-ripple"`；只有旧的单个 halo 节点表示应用仍在运行旧的前端包，需要重启或刷新。
+
+## 圆角凹接 ScoopJoin
+
+浮层/主栏贴 rail 时，左上 `border-radius` 会挖出一块月牙。`ScoopJoin` 用与 rail/titlebar 同色的色块垫在圆角后方，形成连续凹弧，而不是透出 canvas。
+
+- 组件：`packages/app/src/pages/layout/scoop-join.tsx`，`data-component="scoop-join"`
+- 尺寸与 Arc 色：`packages/ui/src/styles/arc.css`（默认 12px；Arc 下 `--radius-2xl` + `border-strong-base`）
+- 放在圆角面板**后面**（更低 z-index），面板本身保留 `rounded-tl`
+- 只调定位；不要复制第二套 scoop DOM 或独立 data-component
+
+```tsx
+// 侧栏 session panel（贴 rail 内侧）
+<ScoopJoin class="left-0 z-0" />
+
+// 主内容（贴 rail 右缘；侧栏浮层打开时会被盖住）
+<ScoopJoin class="hidden xl:block z-[15]" style={{ left: "4rem" }} />
+```
