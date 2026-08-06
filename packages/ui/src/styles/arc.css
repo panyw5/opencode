@@ -13,7 +13,8 @@
  * Activated via html[data-theme="arc"]. Other themes are unaffected.
  *
  * Layout strategy: pixel structure of the layout (rail width, nav absolute
- * positioning, --main-left calc) is intentionally preserved. Visual card
+ * positioning, main docked to the rail) is intentionally preserved. The
+ * session list floats over main instead of pushing it. Visual card
  * separation is achieved purely via background + radius + shadow, not via
  * margin/padding that would shift hit zones or affect e2e selectors.
  */
@@ -150,14 +151,10 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="titlebar"] {
 
 /* SidebarPanel: remove the light border separator (drew a hard line
      between rail and panel since both are now the same mauve color).
-     Drop the panel's top-left radius entirely — the panel sits flush
-     against the rail (same color), so any inward radius here just cuts
-     a wedge of canvas-color through the unified sidebar surface. The
-     outer wrapper [data-component="sidebar-nav-desktop"] still rounds
-     the visible right edge against the canvas. */
+     Top-left scoop radius is intentional — filled by sidebar-panel-scoop
+     with rail/titlebar chrome so the arc joins continuously. */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-panel"] {
   border: none !important;
-  border-top-left-radius: 0 !important;
 }
 
 /* ───────────────────────────────────────────────────────────── */
@@ -203,16 +200,40 @@ html[data-theme="arc"] [data-component="sidebar-rail"] {
   border: none;
 }
 
-/* Session sidebar nav — its background is exposed through the rounded
-   top-left edge of the inner panel, so it must match the titlebar rather
-   than the sidebar surface. */
-html[data-theme="arc"] [data-component="sidebar-nav-desktop"],
+/* Desktop session nav is a transparent layout shell: rail + panel own the
+   paint. A solid nav fill used to flash as a full-width underlayer during
+   the floating open animation (before the real panel finished expanding). */
+html[data-theme="arc"] [data-component="sidebar-nav-desktop"] {
+  background-color: transparent;
+  box-shadow: none;
+  border: none;
+}
+
+/* Mobile drawer still needs its own solid chrome. */
 html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
   background-color: var(--border-strong-base);
   border-top-right-radius: var(--radius-xl);
   border-bottom-right-radius: var(--radius-xl);
   box-shadow: none;
   border: none;
+}
+
+/* Scoop fills: chrome patches under top-left radii so concave joins
+   read as continuous arc into rail/titlebar, not a canvas hole.
+   - sidebar-panel-scoop: under session list panel (sidebar open)
+   - main-pane-scoop: under main pane (sidebar collapsed)
+   Size matches the corresponding top-left border-radius. */
+[data-component="sidebar-panel-scoop"],
+[data-component="main-pane-scoop"] {
+  width: 12px;
+  height: 12px;
+}
+
+html[data-theme="arc"] [data-component="sidebar-panel-scoop"],
+html[data-theme="arc"] [data-component="main-pane-scoop"] {
+  width: var(--radius-2xl);
+  height: var(--radius-2xl);
+  background-color: var(--border-strong-base);
 }
 
 /* Conversation list panel inside the sidebar.
@@ -222,10 +243,19 @@ html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
    on ancestor elements don't propagate to the bg-* utility. The
    data-component selector here has higher specificity than the
    Tailwind class; !important guards against utility-layer ordering
-   surprises. */
+   surprises.
+
+   Multi-layer rounded rect rule (rail | panel | main):
+   - Top-left: scoop radius + chrome fill → continuous arc into rail/titlebar
+   - Left edge (below scoop): square, flush to rail
+   - Right edge: outer radius only, floats against main */
 html[data-theme="arc"] [data-component="sidebar-panel"] {
   background-color: var(--color-border-weaker-base) !important;
   border: none !important;
+  border-top-left-radius: var(--radius-2xl) !important;
+  border-bottom-left-radius: 0 !important;
+  border-top-right-radius: var(--radius-xl) !important;
+  border-bottom-right-radius: var(--radius-xl) !important;
 }
 
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-panel"] {

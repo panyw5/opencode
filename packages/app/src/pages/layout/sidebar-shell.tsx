@@ -332,13 +332,28 @@ export const SidebarContent = (props: {
           panel = el
         }}
         classList={{
-          "relative z-10 flex-1 flex h-full min-h-0 min-w-0 overflow-hidden arc-sidebar-scope transition-[transform,opacity] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[transform,opacity] motion-reduce:transition-none": true,
-          "translate-x-0 opacity-100": expanded(),
-          "-translate-x-full opacity-0 pointer-events-none": !expanded(),
+          // Layout slot only — no full-width paint. Open/close is the nav width.
+          // Scoop fill below paints chrome under the panel's top-left radius so
+          // the concave join is intentional (rail/titlebar color), not a hole
+          // into the main pane.
+          "relative z-10 flex-1 flex h-full min-h-0 min-w-0 overflow-hidden arc-sidebar-scope": true,
+          "pointer-events-none": !expanded(),
         }}
         aria-hidden={!expanded()}
       >
-        {props.renderPanel()}
+        {/*
+          Scoop join fill: sits behind the panel's rounded top-left.
+          Panel border-radius clips its own bg, revealing this chrome patch
+          as a continuous arc into the rail/titlebar surface.
+        */}
+        <div
+          data-component="sidebar-panel-scoop"
+          aria-hidden="true"
+          class="pointer-events-none absolute top-0 left-0 z-0 bg-background-base"
+        />
+        <div class="relative z-[1] flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {props.renderPanel()}
+        </div>
       </div>
     </div>
   )

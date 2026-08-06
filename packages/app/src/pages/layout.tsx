@@ -3240,18 +3240,22 @@ export default function Layout(props: ParentProps) {
       <div
         data-component="sidebar-panel"
         classList={{
-          "flex flex-col min-h-0 min-w-0 box-border overflow-hidden rounded-tl-[12px] px-3": true,
+          // Scoop join (merged desktop): top-left radius reveals the chrome
+          // patch behind (sidebar-panel-scoop), forming a continuous arc into
+          // the rail/titlebar. Right radii float against the main pane.
+          // Non-merged: keep a single top-left card radius.
+          "relative z-[1] flex flex-col min-h-0 min-w-0 box-border overflow-hidden px-3": true,
+          // Scoop join: top-left radius + chrome fill behind (see shell scoop).
+          "rounded-tl-[12px]": !panelProps.mobile,
+          "rounded-tr-[12px] rounded-br-[12px]": merged() && !panelProps.mobile,
           "border border-b-0 border-border-weak-base": !merged(),
           "border-l border-t border-border-weaker-base": merged(),
           "bg-background-base": merged(),
           "bg-background-stronger": !merged(),
-          "flex-1 min-w-0": panelProps.mobile,
+          // Desktop: fill the shell slot; open/close is driven by the nav
+          // width so we never paint a 0→N width underlayer behind content.
+          "flex-1 min-w-0": true,
           "max-w-full": panelProps.mobile,
-          "will-change-[width]": !panelProps.mobile && !state.sizing,
-        }}
-        style={{
-          width: panelProps.mobile ? undefined : layout.sidebar.opened() ? `${panel()}px` : "0px",
-          transition: panelProps.mobile || state.sizing ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
         <Show
@@ -3805,10 +3809,18 @@ export default function Layout(props: ParentProps) {
               classList={{
                 "hidden xl:block": true,
                 "absolute inset-y-0 left-0": true,
-                "z-10": true,
+                // Floating overlay: stay under main when collapsed so the panel
+                // hit area does not steal clicks; rise above main when open.
+                "z-10": !layout.sidebar.opened(),
+                "z-30": layout.sidebar.opened(),
                 "pointer-events-none": state.sizing,
               }}
-              style={{ width: `${side()}px` }}
+              style={{
+                // Collapse to the rail only when closed so no full-width
+                // chrome slab appears ahead of the session list.
+                width: layout.sidebar.opened() ? `${side()}px` : "4rem",
+                transition: state.sizing ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+              }}
               ref={(el) => {
                 setState("nav", el)
               }}
@@ -3817,8 +3829,15 @@ export default function Layout(props: ParentProps) {
             </nav>
 
             <Show when={layout.sidebar.opened()}>
+              {/* Soft right-edge elevation as a sibling (not box-shadow) so the
+                  parent overflow-x-hidden does not clip the floating cue. */}
               <div
-                class="hidden xl:block absolute inset-y-0 z-30 w-0 overflow-visible"
+                aria-hidden="true"
+                class="hidden xl:block pointer-events-none absolute inset-y-0 z-30 w-4 bg-gradient-to-r from-black/15 to-transparent"
+                style={{ left: `${side()}px` }}
+              />
+              <div
+                class="hidden xl:block absolute inset-y-0 z-40 w-0 overflow-visible"
                 style={{ left: `${dragSide()}px` }}
                 onPointerDown={() => {
                   setState("sizing", true)
@@ -3848,6 +3867,17 @@ export default function Layout(props: ParentProps) {
               data-component="layout-top-divider"
               class="hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
               style={{ left: "calc(4rem + 12px)" }}
+            />
+
+            {/* Main scoop join: chrome under main's top-left radius (same role
+                as sidebar-panel-scoop). When the session list is open the
+                floating panel covers this corner; when collapsed it fills the
+                arc into the rail so canvas does not show through. */}
+            <div
+              data-component="main-pane-scoop"
+              aria-hidden="true"
+              class="hidden xl:block pointer-events-none absolute top-0 z-[15] bg-background-base"
+              style={{ left: "4rem" }}
             />
 
             <div class="xl:hidden">
@@ -3932,13 +3962,10 @@ export default function Layout(props: ParentProps) {
             <div
               classList={{
                 "absolute inset-0": true,
-                "xl:inset-y-0 xl:right-0 xl:left-[var(--main-left)]": true,
+                // Always dock to the project rail (4rem). The session list
+                // floats over this pane instead of pushing it sideways.
+                "xl:inset-y-0 xl:right-0 xl:left-16": true,
                 "z-20": true,
-                "will-change-[left]": !state.sizing && !onConfigRoute(),
-              }}
-              style={{
-                "--main-left": layout.sidebar.opened() ? `${side()}px` : "4rem",
-                transition: state.sizing || onConfigRoute() ? undefined : "left 300ms cubic-bezier(0.16, 1, 0.3, 1)",
               }}
             >
               <main
