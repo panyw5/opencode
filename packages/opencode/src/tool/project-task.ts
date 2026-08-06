@@ -4,16 +4,22 @@ import DESCRIPTION_CREATE from "./project_task_create.txt"
 import DESCRIPTION_LIST from "./project_task_list.txt"
 import DESCRIPTION_MOUNT from "./project_task_mount.txt"
 import DESCRIPTION_GET from "./project_task_get.txt"
+import DESCRIPTION_UPDATE from "./project_task_update.txt"
 import { ProjectTask } from "@/project-task/service"
 import { ProjectTaskID, Status } from "@/project-task/schema"
+
+/** Create may only start open or in_progress — done/archived require update. */
+const CreateStatus = Schema.Literals(["open", "in_progress"]).annotate({
+  description: "Initial status: open or in_progress only. Use project_task_update for done/archived.",
+})
 
 const CreateParams = Schema.Struct({
   title: Schema.String.annotate({ description: "Short project task title" }),
   description: Schema.optional(Schema.String).annotate({
     description: "Longer description / acceptance notes",
   }),
-  status: Schema.optional(Status).annotate({
-    description: "Initial status: open, in_progress, done, or archived",
+  status: Schema.optional(CreateStatus).annotate({
+    description: "Initial status: open (default) or in_progress. Never done/archived on create.",
   }),
   priority: Schema.optional(Schema.String).annotate({ description: "Optional priority label" }),
 })
@@ -35,6 +41,20 @@ const MountParams = Schema.Struct({
 
 const GetParams = Schema.Struct({
   taskID: Schema.String.annotate({ description: "Project task ID to load" }),
+})
+
+const UpdateParams = Schema.Struct({
+  taskID: Schema.String.annotate({ description: "Existing project task ID to update" }),
+  title: Schema.optional(Schema.String).annotate({ description: "New title" }),
+  description: Schema.optional(Schema.String).annotate({
+    description: "New description / acceptance notes",
+  }),
+  status: Schema.optional(Status).annotate({
+    description: "New status: open, in_progress, done, or archived",
+  }),
+  priority: Schema.optional(Schema.NullOr(Schema.String)).annotate({
+    description: "New priority label, or null to clear",
+  }),
 })
 
 export const ProjectTaskCreateTool = Tool.define<typeof CreateParams, { task: unknown }, ProjectTask.Service>(
@@ -146,5 +166,49 @@ export const ProjectTaskGetTool = Tool.define<typeof GetParams, { taskID: string
           }
         }),
     } satisfies Tool.DefWithoutID<typeof GetParams, { taskID: string }>
+  }),
+)
+
+export const ProjectTaskUpdateTool = Tool.define<typeof UpdateParams, { task: unknown }, ProjectTask.Service>(
+  "project_task_update",
+  Effect.gen(function* () {
+    const tasks = yield* ProjectTask.Service
+    return {
+      description: DESCRIPTION_UPDATE,
+      parameters: UpdateParams,
+      execute: (params, ctx) =>
+        Effect.gen(function* () {
+          yield* ctx.ask({
+            permission: "project_task_update",
+            patterns: ["*"],
+            always: ["*"],
+            metadata: {},
+          })
+          const taskID = ProjectTaskID.make(params.taskID.trim())
+          if (
+            params.title === undefined &&
+            params.description === undefined &&
+            params.status === undefined &&
+            params.priority === undefined
+          ) {
+            return {
+              title: "No project task fields to update",
+              output: JSON.stringify({ error: "Provide at least one of title, description, status, priority" }, null, 2),
+              metadata: { task: null },
+            }
+          }
+          const task = yield* tasks.update(taskID, {
+            title: params.title,
+            description: params.description,
+            status: params.status,
+            priority: params.priority,
+          })
+          return {
+            title: `Updated project task: ${task.title}`,
+            output: JSON.stringify(task, null, 2),
+            metadata: { task },
+          }
+        }),
+    } satisfies Tool.DefWithoutID<typeof UpdateParams, { task: unknown }>
   }),
 )

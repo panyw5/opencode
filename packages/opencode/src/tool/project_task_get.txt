@@ -1,3 +1,15 @@
-Get a project-level task with linked sessions and each session's todos/progress.
+Get one project-level task with linked sessions and each session's todos/progress.
 
-Use this to inspect what work is attached to a task: linked sessions, todo lists, and aggregate completion. Prefer this over guessing from chat history.
+## When to use
+- Inspect a known taskID before updating, mounting, or reporting status
+- See which sessions are mounted and their todo progress
+- Prefer this over guessing from chat history
+
+## When NOT to use
+- Discovering which tasks exist → `project_task_list` first
+- Creating a new task → `project_task_create` only after list shows no match
+- Changing fields → `project_task_update` with the same taskID
+
+## Rules
+- Always use a real taskID from list/create/mount output
+- If work is done, call `project_task_update` on this taskID — do NOT create a second task

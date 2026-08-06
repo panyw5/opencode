@@ -19,6 +19,7 @@ import { buildRequestParts } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { sessionHookControlCommand, sessionHookControlInput } from "@/pages/session/session-hook-controls"
+import { takePendingProjectTaskMount } from "@/components/session/pending-project-task-mount"
 
 type PendingPrompt = {
   abort: AbortController
@@ -691,6 +692,49 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
         local.session.promote(sessionDirectory, session.id)
         layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+
+        // Apply project-task selection made on the new-session screen before navigate.
+        // Pending is keyed by the UI directory (sdk.directory), which may differ from
+        // sessionDirectory when creating a worktree session.
+        const pendingMount =
+          takePendingProjectTaskMount(currentDirectory) ??
+          (sessionDirectory !== currentDirectory
+            ? takePendingProjectTaskMount(sessionDirectory)
+            : undefined)
+        if (pendingMount?.taskID) {
+          const taskID = pendingMount.taskID
+          const inject = pendingMount.inject
+          console.log(
+            `[submit] apply pending project-task mount session=${session.id} task=${taskID} inject=${inject} uiDir=${currentDirectory} sessionDir=${sessionDirectory}`,
+          )
+          await client.projectTask
+            .mount({
+              sessionID: session.id,
+              projectTaskMountInput: { taskID },
+            })
+            .catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err)
+              console.warn(`[submit] pending project-task mount failed session=${session!.id} err=${msg}`)
+              showToast({
+                variant: "error",
+                title: language.t("common.requestFailed"),
+                description: msg,
+              })
+            })
+          // mount enables inject by default; honor explicit opt-out from the new-session UI
+          if (!inject) {
+            await client.session
+              .update({
+                sessionID: session.id,
+                injectTaskContext: false,
+              })
+              .catch((err: unknown) => {
+                const msg = err instanceof Error ? err.message : String(err)
+                console.warn(`[submit] pending inject=false failed session=${session!.id} err=${msg}`)
+              })
+          }
+        }
+
         performance.mark("submit:navigate:start")
         navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
         performance.mark("submit:navigate:end")

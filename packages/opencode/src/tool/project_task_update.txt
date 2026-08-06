@@ -1,0 +1,25 @@
+Update an EXISTING project-level task (title, description, status, priority).
+
+This is the only correct way to mark a task done, change goals, or retitle.
+Never use `project_task_create` to "finish" or replace an existing task.
+
+## When to use
+- Status changes: open → in_progress → done (or archived when retiring the work item)
+- Edit description / acceptance criteria / title / priority
+- User says the project task is finished, blocked, or needs rewording
+
+## When NOT to use
+- Task does not exist yet → `project_task_create`
+- Only attaching this session → `project_task_mount`
+- Per-session step checklist → `todowrite` (do not encode every micro-step as project status)
+
+## Rules
+- Always pass the real `taskID` from list/get/create/mount
+- Completing work: `status=done` on the SAME taskID — NEVER create a second task with the same title
+- Archiving/retiring: `status=archived` (or archive API via product UI) — do not invent a done duplicate
+- Prefer small, intentional field updates; omit fields you are not changing
+
+## Flow
+1. `project_task_list` or use known taskID
+2. Optional `project_task_get` if you need current description/sessions
+3. `project_task_update` with only changed fields

@@ -1,5 +1,18 @@
 List project-level tasks for the current project.
 
-Returns title, status, sessionCount, and aggregated todo progress for each task.
-Use project_task_get with a taskID to see linked sessions and each session's todos.
-Use project_task_mount to attach a task to the current session.
+Returns title, status, sessionCount, and aggregated session-todo progress for each task.
+
+## When to use
+- Before creating a task (check for duplicates / existing coverage)
+- Before mounting or updating — discover taskIDs
+- User asks what project tasks exist or their progress
+
+## When NOT to use
+- You already have the taskID and need full detail → `project_task_get`
+- Changing a task → `project_task_update` (after list/get if needed)
+- Session-only checklist → `todowrite`
+
+## Rules
+- Prefer list before `project_task_create` when unsure whether a task already exists
+- Use returned `id` values for `get` / `mount` / `update` — do not invent IDs
+- Archived tasks are hidden unless `includeArchived=true`

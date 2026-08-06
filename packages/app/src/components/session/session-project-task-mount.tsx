@@ -1,15 +1,20 @@
-import type { ProjectTask } from "@opencode-ai/sdk/v2/client"
+import type { ProjectTask, Session } from "@opencode-ai/sdk/v2/client"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createStore, produce } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
 import { useSync } from "@/context/sync"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import {
+  pendingProjectTaskMount,
+  setPendingProjectTaskMount,
+} from "@/components/session/pending-project-task-mount"
+import { Binary } from "@opencode-ai/core/util/binary"
 
 export function SessionProjectTaskMount(props: {
   /** Compact icon trigger (header) vs full row for status panel. */
@@ -38,18 +43,40 @@ export function SessionProjectTaskMount(props: {
   }
 
   const sessionID = createMemo(() => params.id)
+  const directory = createMemo(() => sdk.directory)
   const session = createMemo(() => {
     const id = sessionID()
     if (!id) return undefined
     return sync.session.get(id)
   })
-  const mountedID = createMemo(() => session()?.mountedTaskID)
-  const injectContext = createMemo(() => !!session()?.injectTaskContext)
+  // Existing session: server state. New session: local pending selection.
+  const pending = createMemo(() => pendingProjectTaskMount(directory()))
+  const mountedID = createMemo(() => session()?.mountedTaskID ?? pending().taskID)
+  // Product default: inject ON. Missing/undefined → true (legacy events / new session).
+  const injectContext = createMemo(() => {
+    if (!sessionID()) return pending().inject
+    const value = session()?.injectTaskContext
+    if (value === undefined || value === null) return true
+    return !!value
+  })
   const mountedTitle = createMemo(() => {
     const id = mountedID()
     if (!id) return undefined
     return state.tasks.find((task) => task.id === id)?.title
   })
+
+  /** Optimistic local patch so the checkbox reflects mount/inject without waiting for SSE. */
+  const patchSession = (sessionID: string, patch: Partial<Session>) => {
+    sync.set(
+      produce((draft) => {
+        const match = Binary.search(draft.session as Session[], sessionID, (s) => s.id)
+        if (!match.found) return
+        const current = draft.session[match.index]
+        if (!current) return
+        draft.session[match.index] = { ...current, ...patch }
+      }),
+    )
+  }
 
   async function loadTasks(options?: { silent?: boolean }) {
     if (!options?.silent) setState({ loading: true, error: "" })
@@ -69,7 +96,7 @@ export function SessionProjectTaskMount(props: {
   // Keep list warm so dashboard create/update is visible without reopening.
   createEffect(() => {
     sessionID()
-    sdk.directory
+    directory()
     void loadTasks({ silent: true })
   })
 
@@ -88,13 +115,23 @@ export function SessionProjectTaskMount(props: {
 
   async function mount(taskID: string) {
     const id = sessionID()
-    if (!id) return
+    if (!id) {
+      // New session: stash selection; inject defaults ON unless user already toggled it off.
+      const inject = pending().inject
+      setPendingProjectTaskMount(directory(), { taskID, inject })
+      console.log(`[project-task-mount] pending select task=${taskID} inject=${inject} directory=${directory()}`)
+      setState("open", false)
+      return
+    }
     setState({ pending: true, error: "" })
     try {
       await sdk.client.projectTask.mount({
         sessionID: id,
         projectTaskMountInput: { taskID },
       })
+      // Mount enables inject server-side; patch local store so the checkbox is checked immediately.
+      patchSession(id, { mountedTaskID: taskID, injectTaskContext: true })
+      console.log(`[project-task-mount] mounted task=${taskID} session=${id} inject=true`)
       setState("open", false)
     } catch (error) {
       showToast({
@@ -109,10 +146,16 @@ export function SessionProjectTaskMount(props: {
 
   async function unmount() {
     const id = sessionID()
-    if (!id) return
+    if (!id) {
+      setPendingProjectTaskMount(directory(), { taskID: undefined })
+      console.log(`[project-task-mount] pending clear directory=${directory()}`)
+      setState("open", false)
+      return
+    }
     setState({ pending: true, error: "" })
     try {
       await sdk.client.projectTask.unmount({ sessionID: id })
+      patchSession(id, { mountedTaskID: undefined })
       setState("open", false)
     } catch (error) {
       showToast({
@@ -127,13 +170,18 @@ export function SessionProjectTaskMount(props: {
 
   async function setInject(enabled: boolean) {
     const id = sessionID()
-    if (!id) return
+    if (!id) {
+      setPendingProjectTaskMount(directory(), { inject: enabled })
+      console.log(`[project-task-mount] pending inject=${enabled} directory=${directory()}`)
+      return
+    }
     setState({ pending: true, error: "" })
     try {
       await sdk.client.session.update({
         sessionID: id,
         injectTaskContext: enabled,
       })
+      patchSession(id, { injectTaskContext: enabled })
     } catch (error) {
       showToast({
         variant: "error",
@@ -241,29 +289,24 @@ export function SessionProjectTaskMount(props: {
   )
 
   return (
-    <Show when={sessionID()}>
-      <Show
-        when={variant() === "panel"}
-        fallback={menu}
-      >
-        <div data-component="session-project-task-mount" class="flex flex-col gap-2 px-3 py-3">
-          <div class="text-13-medium text-text-strong">{language.t("projectTask.mount.sectionTitle")}</div>
-          {menu}
-          <label class="mt-1 flex cursor-pointer items-start gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2">
-            <input
-              type="checkbox"
-              class="mt-0.5"
-              checked={injectContext()}
-              disabled={state.pending || !mountedID()}
-              onChange={(event) => void setInject(event.currentTarget.checked)}
-            />
-            <span class="min-w-0">
-              <span class="block text-12-medium text-text-strong">{language.t("projectTask.inject.title")}</span>
-              <span class="block text-11-regular text-text-weak">{language.t("projectTask.inject.hint")}</span>
-            </span>
-          </label>
-        </div>
-      </Show>
+    <Show when={variant() === "panel"} fallback={menu}>
+      <div data-component="session-project-task-mount" class="flex flex-col gap-2 px-3 py-3">
+        <div class="text-13-medium text-text-strong">{language.t("projectTask.mount.sectionTitle")}</div>
+        {menu}
+        <label class="mt-1 flex cursor-pointer items-start gap-2 rounded-lg border border-border-weak-base bg-background-base px-3 py-2">
+          <input
+            type="checkbox"
+            class="mt-0.5"
+            checked={injectContext()}
+            disabled={state.pending || !mountedID()}
+            onChange={(event) => void setInject(event.currentTarget.checked)}
+          />
+          <span class="min-w-0">
+            <span class="block text-12-medium text-text-strong">{language.t("projectTask.inject.title")}</span>
+            <span class="block text-11-regular text-text-weak">{language.t("projectTask.inject.hint")}</span>
+          </span>
+        </label>
+      </div>
     </Show>
   )
 }

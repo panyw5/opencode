@@ -1,4 +1,5 @@
 import type { Todo } from "@opencode-ai/sdk/v2"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, untrack } from "solid-js"
@@ -86,6 +87,7 @@ export function SessionTodoFloat(props: {
         }}
         trigger={
           <>
+            <Icon name="checklist" size="small" class="text-icon-weak" />
             <Show when={inProgress()}>
               <span
                 class="size-1.5 rounded-full bg-icon-warning-base"

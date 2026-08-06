@@ -92,6 +92,13 @@ export const layer = Layer.effect(
     const create: Interface["create"] = Effect.fn("ProjectTask.create")(function* (input) {
       const title = input.title.trim()
       if (!title) return yield* new InvalidMountError({ message: "Project task title is required" })
+      // Lifecycle: create starts open/in_progress only. Completing uses update/archive.
+      if (input.status === "done" || input.status === "archived") {
+        return yield* new InvalidMountError({
+          message:
+            "Cannot create a project task with status done/archived. Create as open/in_progress, then use project_task_update on the same taskID.",
+        })
+      }
       const pid = yield* projectID()
       const dir = yield* directory()
       const task = yield* ProjectTaskRepository.create(pid, {

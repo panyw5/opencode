@@ -14,6 +14,7 @@ import {
   ProjectTaskGetTool,
   ProjectTaskListTool,
   ProjectTaskMountTool,
+  ProjectTaskUpdateTool,
 } from "./project-task"
 import { WebFetchTool } from "./webfetch"
 import { WriteTool } from "./write"
@@ -140,6 +141,7 @@ export const layer: Layer.Layer<
     const projectTaskList = yield* ProjectTaskListTool
     const projectTaskGet = yield* ProjectTaskGetTool
     const projectTaskMount = yield* ProjectTaskMountTool
+    const projectTaskUpdate = yield* ProjectTaskUpdateTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -262,6 +264,7 @@ export const layer: Layer.Layer<
           project_task_list: Tool.init(projectTaskList),
           project_task_get: Tool.init(projectTaskGet),
           project_task_mount: Tool.init(projectTaskMount),
+          project_task_update: Tool.init(projectTaskUpdate),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
@@ -294,6 +297,7 @@ export const layer: Layer.Layer<
             tool.project_task_list,
             tool.project_task_get,
             tool.project_task_mount,
+            tool.project_task_update,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.codex_consult,

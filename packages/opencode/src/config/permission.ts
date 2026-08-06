@@ -28,6 +28,7 @@ const InputObject = Schema.StructWithRest(
     project_task_list: Schema.optional(Action),
     project_task_get: Schema.optional(Action),
     project_task_mount: Schema.optional(Action),
+    project_task_update: Schema.optional(Action),
     question: Schema.optional(Action),
     webfetch: Schema.optional(Action),
     websearch: Schema.optional(Action),

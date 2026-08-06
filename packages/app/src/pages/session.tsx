@@ -2560,6 +2560,10 @@ export default function Page() {
                 diffs={diffs()}
                 childSessionIDs={apiChildSessions().map((session) => session.id)}
               />
+            </Show>
+            {/* Always show on desktop session routes (including new session) so users can
+                mount a project task before the first message creates the session. */}
+            <Show when={platform.platform === "desktop"}>
               <SessionTodoFloat
                 sessionID={params.id}
                 todos={composer.todos()}
