@@ -14,6 +14,7 @@ import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Icon } from "@opencode-ai/ui/icon"
 import { type LocalProject } from "@/context/layout"
+import { ScoopJoin } from "./scoop-join"
 
 export type SidebarExtraAgent = {
   id: string
@@ -341,16 +342,7 @@ export const SidebarContent = (props: {
         }}
         aria-hidden={!expanded()}
       >
-        {/*
-          Scoop join fill: sits behind the panel's rounded top-left.
-          Panel border-radius clips its own bg, revealing this chrome patch
-          as a continuous arc into the rail/titlebar surface.
-        */}
-        <div
-          data-component="sidebar-panel-scoop"
-          aria-hidden="true"
-          class="pointer-events-none absolute top-0 left-0 z-0 bg-background-base"
-        />
+        <ScoopJoin class="left-0 z-0" />
         <div class="relative z-[1] flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {props.renderPanel()}
         </div>

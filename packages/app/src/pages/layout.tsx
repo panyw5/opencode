@@ -123,6 +123,7 @@ import {
 } from "./layout/sidebar-workspace"
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
+import { ScoopJoin } from "./layout/scoop-join"
 import { TrellisTasksPanel } from "./layout/trellis-tasks-panel"
 import { ProjectTasksPanel } from "./layout/project-tasks-panel"
 import { ScheduledTasksPanel } from "./layout/scheduled-tasks-panel"
@@ -3240,12 +3241,10 @@ export default function Layout(props: ParentProps) {
       <div
         data-component="sidebar-panel"
         classList={{
-          // Scoop join (merged desktop): top-left radius reveals the chrome
-          // patch behind (sidebar-panel-scoop), forming a continuous arc into
-          // the rail/titlebar. Right radii float against the main pane.
-          // Non-merged: keep a single top-left card radius.
+          // Scoop join (merged desktop): top-left radius reveals ScoopJoin
+          // chrome, forming a continuous arc into the rail/titlebar. Right
+          // radii float against the main pane.
           "relative z-[1] flex flex-col min-h-0 min-w-0 box-border overflow-hidden px-3": true,
-          // Scoop join: top-left radius + chrome fill behind (see shell scoop).
           "rounded-tl-[12px]": !panelProps.mobile,
           "rounded-tr-[12px] rounded-br-[12px]": merged() && !panelProps.mobile,
           "border border-b-0 border-border-weak-base": !merged(),
@@ -3869,16 +3868,9 @@ export default function Layout(props: ParentProps) {
               style={{ left: "calc(4rem + 12px)" }}
             />
 
-            {/* Main scoop join: chrome under main's top-left radius (same role
-                as sidebar-panel-scoop). When the session list is open the
-                floating panel covers this corner; when collapsed it fills the
-                arc into the rail so canvas does not show through. */}
-            <div
-              data-component="main-pane-scoop"
-              aria-hidden="true"
-              class="hidden xl:block pointer-events-none absolute top-0 z-[15] bg-background-base"
-              style={{ left: "4rem" }}
-            />
+            {/* Same ScoopJoin as the session panel: fills main's top-left
+                radius when the list is collapsed (panel covers it when open). */}
+            <ScoopJoin class="hidden xl:block z-[15]" style={{ left: "4rem" }} />
 
             <div class="xl:hidden">
               <div

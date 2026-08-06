@@ -151,8 +151,8 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="titlebar"] {
 
 /* SidebarPanel: remove the light border separator (drew a hard line
      between rail and panel since both are now the same mauve color).
-     Top-left scoop radius is intentional — filled by sidebar-panel-scoop
-     with rail/titlebar chrome so the arc joins continuously. */
+     Top-left scoop radius is intentional — filled by ScoopJoin
+     ([data-component="scoop-join"]) with rail/titlebar chrome. */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-panel"] {
   border: none !important;
 }
@@ -218,19 +218,14 @@ html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
   border: none;
 }
 
-/* Scoop fills: chrome patches under top-left radii so concave joins
-   read as continuous arc into rail/titlebar, not a canvas hole.
-   - sidebar-panel-scoop: under session list panel (sidebar open)
-   - main-pane-scoop: under main pane (sidebar collapsed)
-   Size matches the corresponding top-left border-radius. */
-[data-component="sidebar-panel-scoop"],
-[data-component="main-pane-scoop"] {
+/* ScoopJoin: shared chrome patch under top-left radii (session panel when
+   open, main pane when collapsed). Size matches --radius-2xl / 12px. */
+[data-component="scoop-join"] {
   width: 12px;
   height: 12px;
 }
 
-html[data-theme="arc"] [data-component="sidebar-panel-scoop"],
-html[data-theme="arc"] [data-component="main-pane-scoop"] {
+html[data-theme="arc"] [data-component="scoop-join"] {
   width: var(--radius-2xl);
   height: var(--radius-2xl);
   background-color: var(--border-strong-base);
