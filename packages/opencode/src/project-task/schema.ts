@@ -31,9 +31,16 @@ export const Info = Schema.Struct({
   id: ProjectTaskID,
   projectID: ProjectID,
   title: Schema.String,
+  /**
+   * Description body loaded from `descriptionPath` (not stored inline in DB for new tasks).
+   */
   description: Schema.String,
+  /**
+   * Project-relative path to the description markdown file
+   * (default `.tasks/<taskID>/description.md`).
+   */
+  descriptionPath: Schema.String,
   status: Status,
-  priority: optionalOmitUndefined(Schema.String),
   sessionCount: NonNegativeInt,
   progress: Progress,
   time: Schema.Struct({
@@ -67,17 +74,17 @@ export type Detail = Types.DeepMutable<Schema.Schema.Type<typeof Detail>>
 
 export const CreateInput = Schema.Struct({
   title: Schema.String,
+  /** Initial description body written to `.tasks/<id>/description.md`. */
   description: Schema.optional(Schema.String),
   status: Schema.optional(Status),
-  priority: Schema.optional(Schema.String),
 }).annotate({ identifier: "ProjectTaskCreateInput" })
 export type CreateInput = Types.DeepMutable<Schema.Schema.Type<typeof CreateInput>>
 
 export const UpdateInput = Schema.Struct({
   title: Schema.optional(Schema.String),
+  /** When set, overwrites the description file at `descriptionPath`. */
   description: Schema.optional(Schema.String),
   status: Schema.optional(Status),
-  priority: Schema.optional(Schema.NullOr(Schema.String)),
 }).annotate({ identifier: "ProjectTaskUpdateInput" })
 export type UpdateInput = Types.DeepMutable<Schema.Schema.Type<typeof UpdateInput>>
 

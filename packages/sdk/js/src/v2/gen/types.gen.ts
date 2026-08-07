@@ -436,9 +436,11 @@ export type ProjectTask = {
   id: string
   projectID: string
   title: string
+  /** Description body loaded from descriptionPath. */
   description: string
+  /** Project-relative path, e.g. `.tasks/<taskID>/description.md`. */
+  descriptionPath: string
   status: ProjectTaskStatus
-  priority?: string
   sessionCount: number
   progress: ProjectTaskProgress
   time: {
@@ -2091,7 +2093,6 @@ export type ProjectTaskCreateInput = {
   title: string
   description?: string
   status?: ProjectTaskStatus
-  priority?: string
 }
 
 export type ProjectTaskSessionTodos = {
@@ -2113,8 +2114,8 @@ export type ProjectTaskDetail = {
   projectID: string
   title: string
   description: string
+  descriptionPath: string
   status: ProjectTaskStatus
-  priority?: string
   sessionCount: number
   progress: ProjectTaskProgress
   time: {
@@ -2129,7 +2130,6 @@ export type ProjectTaskUpdateInput = {
   title?: string
   description?: string
   status?: ProjectTaskStatus
-  priority?: string
 }
 
 export type ProjectTaskMountInput = {

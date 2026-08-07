@@ -5,7 +5,6 @@ export type TaskContextSnapshot = {
   taskID: string
   title: string
   status: string
-  priority: string | null
   description: string
   progress: {
     total: number
@@ -125,7 +124,6 @@ export function buildTaskContextSnapshot(detail: Detail): TaskContextSnapshot {
     taskID: detail.id,
     title: detail.title,
     status: detail.status,
-    priority: detail.priority ?? null,
     description: detail.description.trim(),
     progress: {
       total: detail.progress.total,
@@ -144,7 +142,6 @@ function snapshotsEqual(a: TaskContextSnapshot, b: TaskContextSnapshot): boolean
     a.taskID !== b.taskID ||
     a.title !== b.title ||
     a.status !== b.status ||
-    a.priority !== b.priority ||
     a.description !== b.description ||
     a.sessionCount !== b.sessionCount ||
     a.progress.total !== b.progress.total ||
@@ -178,7 +175,6 @@ export function formatProjectTaskFullContext(detail: Detail): string {
     `Title: ${detail.title}`,
     `Status: ${detail.status}`,
   ]
-  if (detail.priority) lines.push(`Priority: ${detail.priority}`)
   lines.push(`Todo progress (all linked sessions): ${progressLine(detail.progress)}`)
   if (detail.description.trim()) {
     lines.push("", "Description:", detail.description.trim())
@@ -217,9 +213,6 @@ export function formatProjectTaskDeltaContext(
 
   if (prev.title !== next.title) lines.push(`- title: ${prev.title} → ${next.title}`)
   if (prev.status !== next.status) lines.push(`- status: ${prev.status} → ${next.status}`)
-  if (prev.priority !== next.priority) {
-    lines.push(`- priority: ${prev.priority ?? "(none)"} → ${next.priority ?? "(none)"}`)
-  }
   if (prev.description !== next.description) {
     lines.push("- description changed:")
     lines.push(next.description || "(empty)")

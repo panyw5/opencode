@@ -3,6 +3,10 @@ Create a NEW durable project-level task for the current project.
 Project tasks outlive a single session and can be mounted onto one or more sessions.
 Session-local step checklists belong in `todowrite`, not in project-task titles.
 
+Description is stored as a user-visible file at `.tasks/<taskID>/description.md`
+(DB keeps only the relative path). Agents may put other task-related files under
+`.tasks/<taskID>/`.
+
 ## When to use
 - User wants a new project-scoped work item (goals, acceptance criteria, multi-session work)
 - You already ran `project_task_list` (or know no open/in_progress task covers this work)

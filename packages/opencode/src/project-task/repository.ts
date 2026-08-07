@@ -5,6 +5,7 @@ import { SessionID } from "@/session/schema"
 import type { Todo } from "@/session/todo"
 import { Effect } from "effect"
 import { ProjectTaskTable } from "./project-task.sql"
+import { descriptionRelativePath } from "./description-file"
 import {
   CreateInput,
   Detail,
@@ -26,6 +27,20 @@ const emptyProgress = (): Progress => ({
   cancelled: 0,
 })
 
+let descriptionPathColumnReady = false
+
+/** Older DBs may lack description_path; add it once per process. */
+export function ensureDescriptionPathColumn(): void {
+  if (descriptionPathColumnReady) return
+  Database.use((db) => {
+    const columns = db.all("PRAGMA table_info(project_task)") as Array<{ name: string }>
+    if (!columns.some((column) => column.name === "description_path")) {
+      db.run("ALTER TABLE project_task ADD COLUMN description_path text")
+    }
+  })
+  descriptionPathColumnReady = true
+}
+
 export function accumulateTodo(progress: Progress, status: string): void {
   progress.total += 1
   if (status === "completed") progress.completed += 1
@@ -34,14 +49,17 @@ export function accumulateTodo(progress: Progress, status: string): void {
   else progress.pending += 1
 }
 
-function taskBaseFromRow(row: TaskRow): Omit<Info, "sessionCount" | "progress"> {
+/** Row → Info shell. `description` is filled later from the file (or legacy column during migrate). */
+function taskBaseFromRow(row: TaskRow, descriptionContent: string): Omit<Info, "sessionCount" | "progress"> {
+  const descriptionPath =
+    (typeof row.description_path === "string" && row.description_path.trim()) || descriptionRelativePath(row.id)
   return {
     id: row.id,
     projectID: row.project_id,
     title: row.title,
-    description: row.description,
+    description: descriptionContent,
+    descriptionPath,
     status: row.status,
-    ...(row.priority ? { priority: row.priority } : {}),
     time: {
       created: row.time_created,
       updated: row.time_updated,
@@ -50,49 +68,113 @@ function taskBaseFromRow(row: TaskRow): Omit<Info, "sessionCount" | "progress"> 
   }
 }
 
+export type TaskRowMeta = {
+  id: ProjectTaskID
+  projectID: ProjectID
+  title: string
+  status: Status
+  /** Relative path stored in DB (may be empty before migrate). */
+  descriptionPath: string | null
+  /** Legacy inline body (may be non-empty before migrate). */
+  legacyDescription: string
+  time: Info["time"]
+  sessionCount: number
+  progress: Progress
+}
+
+function rowMeta(row: TaskRow, sessionCount: number, progress: Progress): TaskRowMeta {
+  return {
+    id: row.id,
+    projectID: row.project_id,
+    title: row.title,
+    status: row.status,
+    descriptionPath: row.description_path?.trim() ? row.description_path : null,
+    legacyDescription: row.description ?? "",
+    time: {
+      created: row.time_created,
+      updated: row.time_updated,
+      ...(row.time_archived != null ? { archived: row.time_archived } : {}),
+    },
+    sessionCount,
+    progress,
+  }
+}
+
+export function toInfo(meta: TaskRowMeta, descriptionContent: string): Info {
+  const descriptionPath = meta.descriptionPath?.trim() || descriptionRelativePath(meta.id)
+  return {
+    id: meta.id,
+    projectID: meta.projectID,
+    title: meta.title,
+    description: descriptionContent,
+    descriptionPath,
+    status: meta.status,
+    sessionCount: meta.sessionCount,
+    progress: meta.progress,
+    time: meta.time,
+  }
+}
+
 export function create(projectID: ProjectID, input: CreateInput, now = Date.now()): Effect.Effect<Info> {
   return Effect.sync(() => {
+    ensureDescriptionPathColumn()
     const id = ProjectTaskID.ascending()
     const status = (input.status ?? "open") as Status
+    const descriptionPath = descriptionRelativePath(id)
     const row: typeof ProjectTaskTable.$inferInsert = {
       id,
       project_id: projectID,
       title: input.title.trim(),
-      description: input.description?.trim() ?? "",
+      // Body lives in the file; DB keeps path only for new rows.
+      description: "",
+      description_path: descriptionPath,
       status,
-      priority: input.priority?.trim() || null,
       time_created: now,
       time_updated: now,
       time_archived: status === "archived" ? now : null,
     }
     Database.use((db) => db.insert(ProjectTaskTable).values(row).run())
     return {
-      ...taskBaseFromRow(row as TaskRow),
+      ...taskBaseFromRow(row as TaskRow, input.description?.trim() ?? ""),
       sessionCount: 0,
       progress: emptyProgress(),
     }
   })
 }
 
-export function get(id: ProjectTaskID): Effect.Effect<Info | undefined> {
+export function getRow(id: ProjectTaskID): Effect.Effect<TaskRowMeta | undefined> {
   return Effect.sync(() => {
+    ensureDescriptionPathColumn()
     const row = Database.use((db) => db.select().from(ProjectTaskTable).where(eq(ProjectTaskTable.id, id)).get())
     if (!row) return undefined
     const aggregates = aggregatesForTasks([id])
     const agg = aggregates.get(id) ?? { sessionCount: 0, progress: emptyProgress() }
+    return rowMeta(row, agg.sessionCount, agg.progress)
+  })
+}
+
+export function get(id: ProjectTaskID): Effect.Effect<Info | undefined> {
+  return Effect.sync(() => {
+    ensureDescriptionPathColumn()
+    const row = Database.use((db) => db.select().from(ProjectTaskTable).where(eq(ProjectTaskTable.id, id)).get())
+    if (!row) return undefined
+    const aggregates = aggregatesForTasks([id])
+    const agg = aggregates.get(id) ?? { sessionCount: 0, progress: emptyProgress() }
+    // Prefer legacy body only until service migrates; callers that need file should use getRow + hydrate.
     return {
-      ...taskBaseFromRow(row),
+      ...taskBaseFromRow(row, row.description ?? ""),
       sessionCount: agg.sessionCount,
       progress: agg.progress,
     }
   })
 }
 
-export function list(input: {
+export function listRows(input: {
   projectID: ProjectID
   includeArchived?: boolean
-}): Effect.Effect<Info[]> {
+}): Effect.Effect<TaskRowMeta[]> {
   return Effect.sync(() => {
+    ensureDescriptionPathColumn()
     const conditions = [eq(ProjectTaskTable.project_id, input.projectID)]
     if (!input.includeArchived) conditions.push(isNull(ProjectTaskTable.time_archived))
     const rows = Database.use((db) =>
@@ -107,17 +189,28 @@ export function list(input: {
     const aggregates = aggregatesForTasks(rows.map((row) => row.id))
     return rows.map((row) => {
       const agg = aggregates.get(row.id) ?? { sessionCount: 0, progress: emptyProgress() }
-      return {
-        ...taskBaseFromRow(row),
-        sessionCount: agg.sessionCount,
-        progress: agg.progress,
-      }
+      return rowMeta(row, agg.sessionCount, agg.progress)
     })
   })
 }
 
-export function update(id: ProjectTaskID, input: UpdateInput, now = Date.now()): Effect.Effect<Info | undefined> {
+export function list(input: {
+  projectID: ProjectID
+  includeArchived?: boolean
+}): Effect.Effect<Info[]> {
+  return Effect.gen(function* () {
+    const rows = yield* listRows(input)
+    return rows.map((meta) => toInfo(meta, meta.legacyDescription))
+  })
+}
+
+export function update(
+  id: ProjectTaskID,
+  input: UpdateInput & { descriptionPath?: string; clearLegacyDescription?: boolean },
+  now = Date.now(),
+): Effect.Effect<Info | undefined> {
   return Effect.sync(() => {
+    ensureDescriptionPathColumn()
     return Database.transaction((db) => {
       const current = db.select().from(ProjectTaskTable).where(eq(ProjectTaskTable.id, id)).get()
       if (!current) return undefined
@@ -126,8 +219,9 @@ export function update(id: ProjectTaskID, input: UpdateInput, now = Date.now()):
         time_updated: now,
       }
       if (input.title !== undefined) values.title = input.title.trim()
-      if (input.description !== undefined) values.description = input.description
-      if (input.priority !== undefined) values.priority = input.priority?.trim() || null
+      // Description body is file-backed; only path / legacy clear go to DB.
+      if (input.descriptionPath !== undefined) values.description_path = input.descriptionPath
+      if (input.clearLegacyDescription) values.description = ""
       if (input.status !== undefined) {
         values.status = input.status
         if (input.status === "archived") {
@@ -143,7 +237,7 @@ export function update(id: ProjectTaskID, input: UpdateInput, now = Date.now()):
       const aggregates = aggregatesForTasks([id])
       const agg = aggregates.get(id) ?? { sessionCount: 0, progress: emptyProgress() }
       return {
-        ...taskBaseFromRow(row),
+        ...taskBaseFromRow(row, input.description ?? row.description ?? ""),
         sessionCount: agg.sessionCount,
         progress: agg.progress,
       }
@@ -151,9 +245,28 @@ export function update(id: ProjectTaskID, input: UpdateInput, now = Date.now()):
   })
 }
 
+/** Persist path after migrate and optionally clear legacy inline description. */
+export function setDescriptionPath(
+  id: ProjectTaskID,
+  descriptionPath: string,
+  opts?: { clearLegacy?: boolean },
+  now = Date.now(),
+): Effect.Effect<void> {
+  return Effect.sync(() => {
+    ensureDescriptionPathColumn()
+    const values: Partial<typeof ProjectTaskTable.$inferInsert> = {
+      description_path: descriptionPath,
+      time_updated: now,
+    }
+    if (opts?.clearLegacy) values.description = ""
+    Database.use((db) => db.update(ProjectTaskTable).set(values).where(eq(ProjectTaskTable.id, id)).run())
+  })
+}
+
 /** Soft-archive: set status archived and clear session mounts. */
 export function archive(id: ProjectTaskID, now = Date.now()): Effect.Effect<Info | undefined> {
   return Effect.sync(() => {
+    ensureDescriptionPathColumn()
     return Database.transaction((db) => {
       const current = db.select().from(ProjectTaskTable).where(eq(ProjectTaskTable.id, id)).get()
       if (!current) return undefined
@@ -172,7 +285,7 @@ export function archive(id: ProjectTaskID, now = Date.now()): Effect.Effect<Info
       const row = db.select().from(ProjectTaskTable).where(eq(ProjectTaskTable.id, id)).get()
       if (!row) return undefined
       return {
-        ...taskBaseFromRow(row),
+        ...taskBaseFromRow(row, row.description ?? ""),
         sessionCount: 0,
         progress: emptyProgress(),
       }
@@ -180,8 +293,9 @@ export function archive(id: ProjectTaskID, now = Date.now()): Effect.Effect<Info
   })
 }
 
-export function detail(id: ProjectTaskID): Effect.Effect<Detail | undefined> {
+export function detailRow(id: ProjectTaskID): Effect.Effect<(TaskRowMeta & { sessions: SessionTodoBundle[] }) | undefined> {
   return Effect.sync(() => {
+    ensureDescriptionPathColumn()
     const row = Database.use((db) => db.select().from(ProjectTaskTable).where(eq(ProjectTaskTable.id, id)).get())
     if (!row) return undefined
 
@@ -247,11 +361,18 @@ export function detail(id: ProjectTaskID): Effect.Effect<Detail | undefined> {
     }
 
     return {
-      ...taskBaseFromRow(row),
-      sessionCount: bundles.length,
-      progress,
+      ...rowMeta(row, bundles.length, progress),
       sessions: bundles,
     }
+  })
+}
+
+export function detail(id: ProjectTaskID): Effect.Effect<Detail | undefined> {
+  return Effect.gen(function* () {
+    const row = yield* detailRow(id)
+    if (!row) return undefined
+    const info = toInfo(row, row.legacyDescription)
+    return { ...info, sessions: row.sessions }
   })
 }
 
@@ -308,6 +429,7 @@ function aggregatesForTasks(taskIDs: ProjectTaskID[]): Map<ProjectTaskID, { sess
 
 export function existsInProject(id: ProjectTaskID, projectID: ProjectID): Effect.Effect<boolean> {
   return Effect.sync(() => {
+    ensureDescriptionPathColumn()
     const row = Database.use((db) =>
       db
         .select({ id: ProjectTaskTable.id })

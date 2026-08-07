@@ -13,9 +13,15 @@ export const ProjectTaskTable = sqliteTable(
       .notNull()
       .references(() => ProjectTable.id, { onDelete: "cascade" }),
     title: text().notNull(),
+    /**
+     * Legacy inline description. New writes keep this empty; content lives in
+     * `description_path` (typically `.tasks/<taskID>/description.md`).
+     */
     description: text().notNull().default(""),
+    /** Project-relative path to the user-visible description markdown file. */
+    description_path: text(),
     status: text().$type<Status>().notNull().default("open"),
-    priority: text(),
+    // Legacy priority column may still exist in older DBs; not mapped or used.
     time_archived: integer(),
     ...Timestamps,
   },

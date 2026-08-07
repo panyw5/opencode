@@ -164,7 +164,8 @@ function ProjectTaskCard(props: {
       completedAt: props.task.time.archived != null ? String(props.task.time.archived) : null,
     }),
   )
-  // One capsule row: real status + todo progress + sessions (+ priority).
+  // Last-row chips: task status (lifecycle) + session-todo progress + session count.
+  // Status and todo progress are intentionally separate (multi-session work).
   const meta = createMemo(() => {
     const items: string[] = [
       projectTaskStatusLabel(props.task.status, language.t),
@@ -173,7 +174,6 @@ function ProjectTaskCard(props: {
     if (props.task.sessionCount > 0) {
       items.push(language.t("projectTask.sessions.count", { count: props.task.sessionCount }))
     }
-    if (props.task.priority) items.push(props.task.priority)
     return items
   })
   // "In progress" is only meaningful for open tasks — hide when already in_progress/done/archived.

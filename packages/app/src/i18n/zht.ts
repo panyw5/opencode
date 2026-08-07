@@ -567,7 +567,7 @@ export const dict = {
 
   "session.messages.jumpToLatest": "跳到最新",
   "session.context.addToContext": "將 {{selection}} 新增到上下文",
-  "session.todo.title": "待辦事項",
+  "session.todo.title": "會話任務",
   "session.todo.collapse": "折疊",
   "session.todo.expand": "展開",
   "session.followupDock.summary.one": "{{count}} 則佇列訊息",

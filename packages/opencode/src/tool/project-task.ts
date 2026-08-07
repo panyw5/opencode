@@ -16,12 +16,12 @@ const CreateStatus = Schema.Literals(["open", "in_progress"]).annotate({
 const CreateParams = Schema.Struct({
   title: Schema.String.annotate({ description: "Short project task title" }),
   description: Schema.optional(Schema.String).annotate({
-    description: "Longer description / acceptance notes",
+    description:
+      "Longer description / acceptance notes. Written to `.tasks/<taskID>/description.md` (see descriptionPath).",
   }),
   status: Schema.optional(CreateStatus).annotate({
     description: "Initial status: open (default) or in_progress. Never done/archived on create.",
   }),
-  priority: Schema.optional(Schema.String).annotate({ description: "Optional priority label" }),
 })
 
 const ListParams = Schema.Struct({
@@ -47,13 +47,10 @@ const UpdateParams = Schema.Struct({
   taskID: Schema.String.annotate({ description: "Existing project task ID to update" }),
   title: Schema.optional(Schema.String).annotate({ description: "New title" }),
   description: Schema.optional(Schema.String).annotate({
-    description: "New description / acceptance notes",
+    description: "New description body; overwrites `.tasks/<taskID>/description.md`",
   }),
   status: Schema.optional(Status).annotate({
     description: "New status: open, in_progress, done, or archived",
-  }),
-  priority: Schema.optional(Schema.NullOr(Schema.String)).annotate({
-    description: "New priority label, or null to clear",
   }),
 })
 
@@ -76,7 +73,6 @@ export const ProjectTaskCreateTool = Tool.define<typeof CreateParams, { task: un
             title: params.title,
             description: params.description,
             status: params.status,
-            priority: params.priority,
           })
           return {
             title: `Created project task: ${task.title}`,
@@ -185,15 +181,10 @@ export const ProjectTaskUpdateTool = Tool.define<typeof UpdateParams, { task: un
             metadata: {},
           })
           const taskID = ProjectTaskID.make(params.taskID.trim())
-          if (
-            params.title === undefined &&
-            params.description === undefined &&
-            params.status === undefined &&
-            params.priority === undefined
-          ) {
+          if (params.title === undefined && params.description === undefined && params.status === undefined) {
             return {
               title: "No project task fields to update",
-              output: JSON.stringify({ error: "Provide at least one of title, description, status, priority" }, null, 2),
+              output: JSON.stringify({ error: "Provide at least one of title, description, status" }, null, 2),
               metadata: { task: null },
             }
           }
@@ -201,7 +192,6 @@ export const ProjectTaskUpdateTool = Tool.define<typeof UpdateParams, { task: un
             title: params.title,
             description: params.description,
             status: params.status,
-            priority: params.priority,
           })
           return {
             title: `Updated project task: ${task.title}`,

@@ -1,11 +1,14 @@
-Update an EXISTING project-level task (title, description, status, priority).
+Update an EXISTING project-level task (title, description, status).
 
 This is the only correct way to mark a task done, change goals, or retitle.
 Never use `project_task_create` to "finish" or replace an existing task.
 
+Updating `description` overwrites `.tasks/<taskID>/description.md` (see task.descriptionPath).
+You may also edit that file directly with write tools.
+
 ## When to use
 - Status changes: open → in_progress → done (or archived when retiring the work item)
-- Edit description / acceptance criteria / title / priority
+- Edit description / acceptance criteria / title
 - User says the project task is finished, blocked, or needs rewording
 
 ## When NOT to use

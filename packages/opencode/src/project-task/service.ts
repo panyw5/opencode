@@ -6,6 +6,11 @@ import { SessionID } from "@/session/schema"
 import { Context, Effect, Layer, Schema } from "effect"
 import * as ProjectTaskRepository from "./repository"
 import {
+  descriptionRelativePath,
+  ensureDescriptionFile,
+  writeDescriptionFile,
+} from "./description-file"
+import {
   CreateInput,
   Detail,
   Info,
@@ -60,18 +65,46 @@ export const layer = Layer.effect(
       return ctx.directory
     })
 
+    const hydrate = Effect.fn("ProjectTask.hydrate")(function* (meta: ProjectTaskRepository.TaskRowMeta) {
+      const dir = yield* directory()
+      const ensured = yield* Effect.promise(() =>
+        ensureDescriptionFile({
+          projectDirectory: dir,
+          taskID: meta.id,
+          descriptionPath: meta.descriptionPath,
+          legacyDescription: meta.legacyDescription,
+          persist: (next) => {
+            Effect.runSync(
+              ProjectTaskRepository.setDescriptionPath(meta.id, next.descriptionPath, {
+                clearLegacy: next.clearLegacy,
+              }),
+            )
+          },
+        }),
+      )
+      return ProjectTaskRepository.toInfo(
+        { ...meta, descriptionPath: ensured.descriptionPath },
+        ensured.content,
+      )
+    })
+
     const find = Effect.fn("ProjectTask.find")(function* (id: ProjectTaskID) {
-      const task = yield* ProjectTaskRepository.get(id)
-      if (!task) return yield* new NotFoundError({ taskID: id })
-      return task
+      const meta = yield* ProjectTaskRepository.getRow(id)
+      if (!meta) return yield* new NotFoundError({ taskID: id })
+      return yield* hydrate(meta)
     })
 
     const list: Interface["list"] = Effect.fn("ProjectTask.list")(function* (input) {
       const pid = yield* projectID()
-      return yield* ProjectTaskRepository.list({
+      const rows = yield* ProjectTaskRepository.listRows({
         projectID: pid,
         includeArchived: input?.includeArchived,
       })
+      const out: Info[] = []
+      for (const row of rows) {
+        out.push(yield* hydrate(row))
+      }
+      return out
     })
 
     const get: Interface["get"] = Effect.fn("ProjectTask.get")(function* (id) {
@@ -82,17 +115,17 @@ export const layer = Layer.effect(
     })
 
     const detail: Interface["detail"] = Effect.fn("ProjectTask.detail")(function* (id) {
-      const task = yield* ProjectTaskRepository.detail(id)
-      if (!task) return yield* new NotFoundError({ taskID: id })
+      const row = yield* ProjectTaskRepository.detailRow(id)
+      if (!row) return yield* new NotFoundError({ taskID: id })
       const pid = yield* projectID()
-      if (task.projectID !== pid) return yield* new NotFoundError({ taskID: id })
-      return task
+      if (row.projectID !== pid) return yield* new NotFoundError({ taskID: id })
+      const info = yield* hydrate(row)
+      return { ...info, sessions: row.sessions }
     })
 
     const create: Interface["create"] = Effect.fn("ProjectTask.create")(function* (input) {
       const title = input.title.trim()
       if (!title) return yield* new InvalidMountError({ message: "Project task title is required" })
-      // Lifecycle: create starts open/in_progress only. Completing uses update/archive.
       if (input.status === "done" || input.status === "archived") {
         return yield* new InvalidMountError({
           message:
@@ -101,37 +134,59 @@ export const layer = Layer.effect(
       }
       const pid = yield* projectID()
       const dir = yield* directory()
+      const body = input.description?.trim() ?? ""
+      // Repository assigns id + description_path; write file before/after insert.
       const task = yield* ProjectTaskRepository.create(pid, {
         ...input,
         title,
+        description: body,
       })
-      yield* emit(dir, { type: Event.Created.type, properties: task })
-      return task
+      yield* Effect.promise(() => writeDescriptionFile(dir, task.descriptionPath, body))
+      // Return with body already known (file write succeeded).
+      const created: Info = { ...task, description: body }
+      yield* emit(dir, { type: Event.Created.type, properties: created })
+      return created
     })
 
     const update: Interface["update"] = Effect.fn("ProjectTask.update")(function* (id, input) {
-      yield* get(id)
+      const current = yield* get(id)
       if (input.title !== undefined && !input.title.trim()) {
         return yield* new InvalidMountError({ message: "Project task title is required" })
       }
       const dir = yield* directory()
-      const task = yield* ProjectTaskRepository.update(id, input)
+
+      if (input.description !== undefined) {
+        const rel = current.descriptionPath || descriptionRelativePath(id)
+        yield* Effect.promise(() => writeDescriptionFile(dir, rel, input.description!))
+        yield* ProjectTaskRepository.setDescriptionPath(id, rel, { clearLegacy: true })
+      }
+
+      const task = yield* ProjectTaskRepository.update(id, {
+        title: input.title,
+        status: input.status,
+        // Pass through body so returned Info has correct description when only status/title change.
+        description: input.description !== undefined ? input.description : current.description,
+        descriptionPath: current.descriptionPath || descriptionRelativePath(id),
+        clearLegacyDescription: input.description !== undefined,
+      })
       if (!task) return yield* new NotFoundError({ taskID: id })
-      yield* emit(dir, { type: Event.Updated.type, properties: task })
-      return task
+
+      const hydrated = yield* get(id)
+      yield* emit(dir, { type: Event.Updated.type, properties: hydrated })
+      return hydrated
     })
 
     const archive: Interface["archive"] = Effect.fn("ProjectTask.archive")(function* (id) {
       const current = yield* detail(id)
       const dir = yield* directory()
-      // Clear mounts through Session so clients receive session.updated.
       for (const linked of current.sessions) {
         yield* sessions.setMountedTask({ sessionID: linked.sessionID, taskID: null })
       }
       const task = yield* ProjectTaskRepository.update(id, { status: "archived" })
       if (!task) return yield* new NotFoundError({ taskID: id })
-      yield* emit(dir, { type: Event.Updated.type, properties: task })
-      return task
+      const hydrated = yield* get(id)
+      yield* emit(dir, { type: Event.Updated.type, properties: hydrated })
+      return hydrated
     })
 
     const mount: Interface["mount"] = Effect.fn("ProjectTask.mount")(function* (input) {
@@ -167,8 +222,7 @@ export const layer = Layer.effect(
         yield* sessions.setMountedTask({ sessionID: input.sessionID, taskID: input.taskID })
         // Default-on: mounting a task enables context injection unless the user later opts out.
         yield* sessions.setInjectTaskContext({ sessionID: input.sessionID, enabled: true })
-        const updated = yield* ProjectTaskRepository.get(input.taskID)
-        if (!updated) return yield* new NotFoundError({ taskID: input.taskID })
+        const updated = yield* get(input.taskID)
         yield* emit(dir, { type: Event.Updated.type, properties: updated })
         return updated
       }
@@ -176,11 +230,11 @@ export const layer = Layer.effect(
       const previous = session.mountedTaskID
       yield* sessions.setMountedTask({ sessionID: input.sessionID, taskID: null })
       if (!previous) return null
-      const updated = yield* ProjectTaskRepository.get(previous)
+      const updated = yield* get(previous).pipe(Effect.catch(() => Effect.succeed(null)))
       if (updated) {
         yield* emit(dir, { type: Event.Updated.type, properties: updated })
       }
-      return updated ?? null
+      return updated
     })
 
     return Service.of({
