@@ -196,7 +196,8 @@ export function formatProjectTaskFullContext(detail: Detail): string {
   if (detail.sessions.length > FULL_SESSION_LIMIT) {
     lines.push(`… and ${detail.sessions.length - FULL_SESSION_LIMIT} more sessions`)
   }
-  lines.push("</project-task-context>")
+  // Blank line ends the markdown list so the closing tag is not a list-item continuation.
+  lines.push("", "</project-task-context>")
   return lines.join("\n")
 }
 
@@ -280,7 +281,8 @@ export function formatProjectTaskDeltaContext(
     lines.push(`- snapshot changed (progress ${progressLine(next.progress)}, sessions ${next.sessionCount})`)
   }
 
-  lines.push("</project-task-context>")
+  // Blank line ends any trailing markdown list so the closing tag stays top-level.
+  lines.push("", "</project-task-context>")
   return lines.join("\n")
 }
 
@@ -294,13 +296,66 @@ export function formatProjectTaskDeltaContext(
  *
  * Compaction should clear inject state so the next turn re-FULLs.
  */
+/** Metadata.kind for durable user-message parts shown in the InjectedPrompt UI. */
+export const PROJECT_TASK_INJECTION_KIND = "project-task-injection" as const
+
+export function isProjectTaskInjectionPart(part: {
+  type: string
+  synthetic?: boolean
+  metadata?: Record<string, unknown> | null
+}): boolean {
+  return (
+    part.type === "text" &&
+    !!part.synthetic &&
+    part.metadata?.kind === PROJECT_TASK_INJECTION_KIND
+  )
+}
+
+/** True if this session history already has a durable inject part for the given task. */
+export function hasProjectTaskInjectionPart(
+  messages: Array<{ parts: Array<{ type: string; synthetic?: boolean; metadata?: Record<string, unknown> | null }> }>,
+  taskID: string,
+): boolean {
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (!isProjectTaskInjectionPart(part)) continue
+      if (part.metadata?.taskID === taskID) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Drop FULL bookkeeping for a task so the next decide() re-sends a FULL brief.
+ * Used when bookkeeping claims FULL but no durable part exists (abort / desync).
+ */
+export function clearTaskFromInjectState(state: TaskContextInjectState, taskID: string): TaskContextInjectState {
+  const normalized = normalizeInjectState(state)
+  const { [taskID]: _removed, ...snapshots } = normalized.snapshots
+  return {
+    fullInjectedTaskIDs: normalized.fullInjectedTaskIDs.filter((id) => id !== taskID),
+    snapshots,
+  }
+}
+
 export function decideProjectTaskInject(input: {
   detail: Detail
   state: TaskContextInjectState | null | undefined
+  /**
+   * When false, bookkeeping that claims FULL is treated as stale (no durable part in
+   * history). Forces a re-FULL so the model and UI both receive the brief again.
+   */
+  hasDurablePart?: boolean
 }): InjectDecision {
   const snapshot = buildTaskContextSnapshot(input.detail)
-  const state = normalizeInjectState(input.state)
+  let state = normalizeInjectState(input.state)
   const taskID = input.detail.id
+
+  // Bookkeeping without a durable message part → recover with FULL.
+  if (input.hasDurablePart === false && state.fullInjectedTaskIDs.includes(taskID)) {
+    state = clearTaskFromInjectState(state, taskID)
+  }
+
   const alreadyFullForThisTask = state.fullInjectedTaskIDs.includes(taskID)
 
   if (!alreadyFullForThisTask) {

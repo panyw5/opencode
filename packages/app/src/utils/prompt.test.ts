@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Part } from "@opencode-ai/sdk/v2"
-import { commandInvocationFromParts, extractPromptFromParts } from "./prompt"
+import { commandInvocationFromParts, extractPromptFromParts, injectionPreviewFromParts } from "./prompt"
 
 describe("extractPromptFromParts", () => {
   test("restores multiple uploaded attachments", () => {
@@ -75,5 +75,42 @@ describe("commandInvocationFromParts", () => {
     ] satisfies Part[]
 
     expect(commandInvocationFromParts(parts)).toBe("/research")
+  })
+})
+
+describe("injectionPreviewFromParts", () => {
+  test("returns scheduled-injection text for the user-message menu", () => {
+    const parts = [
+      {
+        id: "text_1",
+        type: "text",
+        text: "搜索最新的新闻。",
+        synthetic: true,
+        metadata: {
+          kind: "scheduled-injection",
+          taskID: "task_1",
+          taskName: "新闻搜刮",
+        },
+        sessionID: "ses_1",
+        messageID: "msg_1",
+      },
+    ] satisfies Part[]
+
+    expect(injectionPreviewFromParts(parts)).toBe("搜索最新的新闻。")
+  })
+
+  test("ignores non-injection synthetic text", () => {
+    const parts = [
+      {
+        id: "text_1",
+        type: "text",
+        text: "Background shell completed",
+        synthetic: true,
+        sessionID: "ses_1",
+        messageID: "msg_1",
+      },
+    ] satisfies Part[]
+
+    expect(injectionPreviewFromParts(parts)).toBeUndefined()
   })
 })

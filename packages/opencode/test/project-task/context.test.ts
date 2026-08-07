@@ -50,6 +50,14 @@ describe("formatProjectTaskFullContext", () => {
     expect(text).toContain("</project-task-context>")
   })
 
+  test("closes the linked-session list before the closing tag (markdown indent)", () => {
+    const text = formatProjectTaskFullContext(makeDetail())
+    // Without a blank line, Markdown treats "</project-task-context>" as a list-item
+    // continuation and the UI shows it nested under the last session bullet.
+    expect(text).toMatch(/\n\n<\/project-task-context>\s*$/)
+    expect(text).not.toMatch(/todos\n<\/project-task-context>/)
+  })
+
   test("legacy alias still returns full brief", () => {
     const text = formatProjectTaskSystemContext(makeDetail())
     expect(text).toContain('mode="full"')
@@ -73,8 +81,24 @@ describe("decideProjectTaskInject", () => {
     expect(first.mode).toBe("full")
     if (first.mode !== "full") return
 
-    const second = decideProjectTaskInject({ detail, state: first.next })
+    const second = decideProjectTaskInject({ detail, state: first.next, hasDurablePart: true })
     expect(second.mode).toBe("skip")
+  })
+
+  test("FULL bookkeeping without durable part re-sends FULL (abort recovery)", () => {
+    const detail = makeDetail()
+    const first = decideProjectTaskInject({ detail, state: null })
+    expect(first.mode).toBe("full")
+    if (first.mode !== "full") return
+
+    const recovered = decideProjectTaskInject({
+      detail,
+      state: first.next,
+      hasDurablePart: false,
+    })
+    expect(recovered.mode).toBe("full")
+    if (recovered.mode !== "full") return
+    expect(recovered.text).toContain('mode="full"')
   })
 
   test("todo progress change after FULL → DELTA", () => {
@@ -99,7 +123,7 @@ describe("decideProjectTaskInject", () => {
       ],
     })
 
-    const second = decideProjectTaskInject({ detail: updated, state: first.next })
+    const second = decideProjectTaskInject({ detail: updated, state: first.next, hasDurablePart: true })
     expect(second.mode).toBe("delta")
     if (second.mode !== "delta") return
     expect(second.text).toContain('mode="delta"')
@@ -130,7 +154,7 @@ describe("decideProjectTaskInject", () => {
     const b1 = decideProjectTaskInject({ detail: taskB, state: a1.next })
     if (b1.mode !== "full") throw new Error("expected full B")
 
-    const a2 = decideProjectTaskInject({ detail: taskA, state: b1.next })
+    const a2 = decideProjectTaskInject({ detail: taskA, state: b1.next, hasDurablePart: true })
     expect(a2.mode).toBe("skip")
   })
 
@@ -151,7 +175,7 @@ describe("decideProjectTaskInject", () => {
     const first = decideProjectTaskInject({ detail, state: null })
     if (first.mode !== "full") throw new Error("expected full")
 
-    const remount = decideProjectTaskInject({ detail, state: first.next })
+    const remount = decideProjectTaskInject({ detail, state: first.next, hasDurablePart: true })
     expect(remount.mode).toBe("skip")
   })
 

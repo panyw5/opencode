@@ -1,0 +1,94 @@
+[data-component="injected-prompt"] {
+  width: min(82%, 64ch);
+  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 8px;
+  background: var(--surface-inset-base);
+  overflow: hidden;
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-trigger"] {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--text-weak);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-trigger"]:hover {
+  background: var(--surface-weaker);
+  color: var(--text-base);
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-trigger"]::before {
+  content: "▸";
+  flex: 0 0 auto;
+  color: var(--text-weaker);
+  transition: transform 0.15s ease;
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-trigger"][data-expanded]::before {
+  transform: rotate(90deg);
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-title"] {
+  min-width: 0;
+  flex: 1 1 auto;
+  font-size: var(--font-size-small);
+  font-weight: var(--font-weight-medium);
+  color: inherit;
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-summary"] {
+  flex: 0 0 auto;
+  font-size: var(--font-size-small);
+  color: var(--text-weaker);
+  white-space: nowrap;
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-preview"] {
+  padding: 6px 12px 10px 30px;
+  color: var(--text-weaker);
+  font-family: var(--font-family-mono);
+  font-feature-settings: var(--font-family-mono--font-feature-settings);
+  font-size: var(--font-size-small);
+  line-height: var(--line-height-large);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-content"] {
+  max-height: 360px;
+  overflow-y: auto;
+  border-top: 1px solid var(--border-weaker-base);
+  padding: 8px 12px;
+  scrollbar-width: thin;
+  font-family: var(--font-family-mono);
+  font-feature-settings: var(--font-family-mono--font-feature-settings);
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-content"] [data-component="markdown"] {
+  font-family: inherit;
+  font-feature-settings: inherit;
+  font-size: var(--font-size-small);
+  color: var(--text-weak);
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-content"] [data-component="markdown"] > :first-child {
+  margin-top: 0;
+}
+
+[data-component="injected-prompt"] [data-slot="injected-prompt-content"] [data-component="markdown"] > :last-child {
+  margin-bottom: 0;
+}

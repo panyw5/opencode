@@ -141,6 +141,8 @@ export const dict = {
   "ui.message.injection.hookPrompt": "훅 삽입 프롬프트",
   "ui.message.injection.commandPrompt": "{{command}} 명령 프롬프트",
   "ui.message.injection.slashCommandPrompt": "슬래시 명령 프롬프트",
+  "ui.message.injection.scheduledPrompt": "{{name}} 예약 작업 삽입 프롬프트",
+  "ui.message.injection.scheduledPromptFallback": "예약 작업 삽입 프롬프트",
   "ui.message.injection.prompt": "삽입된 프롬프트",
   "ui.message.injection.part.one": "{{count}}개 부분",
   "ui.message.injection.part.other": "{{count}}개 부분",

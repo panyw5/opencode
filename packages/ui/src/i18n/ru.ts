@@ -140,6 +140,8 @@ export const dict = {
   "ui.message.injection.hookPrompt": "Промпт, добавленный хуком",
   "ui.message.injection.commandPrompt": "Промпт команды {{command}}",
   "ui.message.injection.slashCommandPrompt": "Промпт slash-команды",
+  "ui.message.injection.scheduledPrompt": "Промпт задачи по расписанию {{name}}",
+  "ui.message.injection.scheduledPromptFallback": "Промпт, добавленный задачей по расписанию",
   "ui.message.injection.prompt": "Добавленный промпт",
   "ui.message.injection.part.one": "{{count}} часть",
   "ui.message.injection.part.other": "{{count}} частей",

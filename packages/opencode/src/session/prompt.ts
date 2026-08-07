@@ -16,7 +16,11 @@ import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
 import * as ProjectTaskRepository from "@/project-task/repository"
-import { decideProjectTaskInject } from "@/project-task/context"
+import {
+  decideProjectTaskInject,
+  hasProjectTaskInjectionPart,
+  PROJECT_TASK_INJECTION_KIND,
+} from "@/project-task/context"
 import { getTaskContextInjectState, setTaskContextInjectState } from "@/project-task/inject-state"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { ToolRegistry } from "@/tool/registry"
@@ -1848,6 +1852,64 @@ export const layer = Layer.effect(
             Effect.provideService(Session.Service, sessions),
           )
 
+          // Project-task context: durable synthetic part on the current user message so
+          // (1) the model receives it via toModelMessages and (2) the UI can render
+          // InjectedPrompt. Prefer this over system-only inject (invisible + easy to skip).
+          if (session.injectTaskContext && session.mountedTaskID) {
+            const taskID = session.mountedTaskID
+            const detail = yield* ProjectTaskRepository.detail(taskID)
+            if (detail) {
+              const injectState = getTaskContextInjectState(sessionID)
+              const hasDurablePart = hasProjectTaskInjectionPart(msgs, detail.id)
+              const decision = decideProjectTaskInject({
+                detail,
+                state: injectState,
+                hasDurablePart,
+              })
+              yield* slog.info("project-task inject decide", {
+                taskID: detail.id,
+                title: detail.title,
+                mode: decision.mode,
+                hasDurablePart,
+                injectEnabled: !!session.injectTaskContext,
+                fullIds: injectState.fullInjectedTaskIDs.join(",") || "none",
+              })
+              if (decision.mode !== "skip") {
+                const userMsg = msgs.findLast((m) => m.info.role === "user")
+                if (userMsg) {
+                  const part = yield* sessions.updatePart({
+                    id: PartID.ascending(),
+                    messageID: userMsg.info.id,
+                    sessionID,
+                    type: "text",
+                    text: decision.text,
+                    synthetic: true,
+                    metadata: {
+                      kind: PROJECT_TASK_INJECTION_KIND,
+                      mode: decision.mode,
+                      taskID: detail.id,
+                      taskName: detail.title,
+                    },
+                  })
+                  userMsg.parts.push(part)
+                  // Bookkeeping only after the durable part exists (survives abort/retry).
+                  setTaskContextInjectState(sessionID, decision.next)
+                  yield* slog.info("project-task inject applied", {
+                    taskID: detail.id,
+                    mode: decision.mode,
+                    partID: part.id,
+                    messageID: userMsg.info.id,
+                    chars: decision.text.length,
+                  })
+                } else {
+                  yield* slog.warn("project-task inject skipped — no user message", { taskID: detail.id })
+                }
+              }
+            } else {
+              yield* slog.warn("project-task inject skipped — task detail missing", { taskID })
+            }
+          }
+
           const msg: MessageV2.Assistant = {
             id: MessageID.ascending(),
             parentID: lastUser.id,
@@ -1937,26 +1999,9 @@ export const layer = Layer.effect(
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
-            // Project-task context (when inject enabled + mounted):
-            // - First time this session sees the *current* mounted task ID → FULL brief
-            //   (covers mid-session mount and mid-session task switch)
-            // - Same task already FULL-injected → DELTA if changed, else skip
-            // - Compaction clears fullInjectedTaskID so the next turn re-FULLs
-            if (session.injectTaskContext && session.mountedTaskID) {
-              const detail = yield* ProjectTaskRepository.detail(session.mountedTaskID)
-              if (detail) {
-                const injectState = getTaskContextInjectState(sessionID)
-                const decision = decideProjectTaskInject({ detail, state: injectState })
-                if (decision.mode !== "skip") {
-                  system.push(decision.text)
-                  setTaskContextInjectState(sessionID, decision.next)
-                  // eslint-disable-next-line no-console
-                  console.debug(
-                    `[project-task] inject mode=${decision.mode} sessionID=${sessionID} taskID=${detail.id} fullIds=${injectState.fullInjectedTaskIDs.join(",") || "none"}`,
-                  )
-                }
-              }
-            }
+            // Project-task context is attached as a durable user-message synthetic part
+            // earlier in the loop (see project-task inject above), so it is already in
+            // modelMsgs via toModelMessages — do not also push into system.
             const format = lastUser.format ?? { type: "text" as const }
             if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({

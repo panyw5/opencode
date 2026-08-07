@@ -123,6 +123,10 @@ export function TaskPanelShell(props: {
   )
 }
 
+/** Shared chip chrome for meta labels and non-danger action buttons on task cards. */
+export const TASK_CARD_CHIP_CLASS =
+  "inline-flex items-center gap-1 rounded-md border border-border-weak-base bg-background-base px-2 py-1 text-12-medium text-text-base"
+
 export function TaskCardShell(props: {
   title: string
   subtitle?: string
@@ -130,7 +134,13 @@ export function TaskCardShell(props: {
   activeBadge?: string
   progressKind: TaskProgressKind
   badges?: string[]
-  statusLabel: string
+  /** Optional status capsule (e.g. Trellis). Prefer folding status into `meta` for project tasks. */
+  statusLabel?: string
+  /**
+   * Meta capsules (status / progress / sessions / …).
+   * Always rendered on the **last row** together with `actions` (not a middle row).
+   * Uses the same chip style as TaskCardActionButton (non-danger).
+   */
   meta?: string[]
   onOpen: () => void
   actions?: JSX.Element
@@ -138,6 +148,16 @@ export function TaskCardShell(props: {
 }): JSX.Element {
   const icon = () => progressIconName(props.progressKind)
   const iconColor = () => progressColorClass(props.progressKind, { active: props.active })
+  const capsules = () => {
+    const items: string[] = []
+    if (props.statusLabel?.trim()) items.push(props.statusLabel.trim())
+    for (const item of props.meta ?? []) {
+      const text = item.trim()
+      if (text) items.push(text)
+    }
+    return items
+  }
+  const hasFooter = () => capsules().length > 0 || !!props.actions
 
   const onKeyDown: JSX.EventHandlerUnion<HTMLDivElement, KeyboardEvent> = (event) => {
     if (event.target !== event.currentTarget) return
@@ -184,14 +204,17 @@ export function TaskCardShell(props: {
           <Show when={props.subtitle}>
             <div class="mt-1 truncate text-12-regular text-text-base">{props.subtitle}</div>
           </Show>
-          <div class="mt-1.5 flex flex-wrap items-center gap-1.5 text-12-regular">
-            <span class="rounded-md bg-surface-base/20 px-1.5 py-0.5 text-text-strong">{props.statusLabel}</span>
-            <For each={props.meta ?? []}>
-              {(item) => <span class="rounded-md bg-surface-base/20 px-1.5 py-0.5 text-text-base">{item}</span>}
-            </For>
-          </div>
-          <Show when={props.actions}>
-            <div class="mt-2 flex flex-wrap items-center gap-2" onClick={(event) => event.stopPropagation()}>
+          {/* Last row: meta + actions share the same chip style and spacing. */}
+          <Show when={hasFooter()}>
+            <div
+              class="mt-2 flex flex-wrap items-center gap-2"
+              onClick={(event) => {
+                if ((event.target as HTMLElement | null)?.closest("button")) event.stopPropagation()
+              }}
+            >
+              <For each={capsules()}>
+                {(item) => <span class={TASK_CARD_CHIP_CLASS}>{item}</span>}
+              </For>
               {props.actions}
             </div>
           </Show>
@@ -201,7 +224,7 @@ export function TaskCardShell(props: {
   )
 }
 
-/** Compact action button matching Trellis task card actions. */
+/** Compact action button; default chrome matches meta chips via TASK_CARD_CHIP_CLASS. */
 export function TaskCardActionButton(props: {
   children: JSX.Element
   onClick: (event: MouseEvent) => void
@@ -212,9 +235,9 @@ export function TaskCardActionButton(props: {
   return (
     <button
       type="button"
-      class="flex items-center gap-1 rounded-md border px-2 py-1 text-12-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+      class={`${TASK_CARD_CHIP_CLASS} transition-colors disabled:cursor-not-allowed disabled:opacity-50`}
       classList={{
-        "border-border-weak-base bg-background-base text-text-base hover:bg-surface-base-hover": !props.danger,
+        "hover:bg-surface-base-hover": !props.danger,
       }}
       style={
         props.danger

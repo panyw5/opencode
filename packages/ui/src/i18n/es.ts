@@ -141,6 +141,8 @@ export const dict = {
   "ui.message.injection.hookPrompt": "Prompt inyectado por hook",
   "ui.message.injection.commandPrompt": "Prompt del comando {{command}}",
   "ui.message.injection.slashCommandPrompt": "Prompt de comando slash",
+  "ui.message.injection.scheduledPrompt": "Prompt de tarea programada {{name}}",
+  "ui.message.injection.scheduledPromptFallback": "Prompt inyectado por tarea programada",
   "ui.message.injection.prompt": "Prompt inyectado",
   "ui.message.injection.part.one": "{{count}} parte",
   "ui.message.injection.part.other": "{{count}} partes",

@@ -63,6 +63,7 @@ import { Spinner } from "./spinner"
 import { animate } from "motion"
 import { attached, inline, kind } from "./message-file"
 import { skillText } from "./message-skill"
+import { InjectedPromptFromParts } from "./injected-prompt"
 import { hookName, isCustomHookTool, normalizeTool } from "./tool-meta"
 export { normalizeTool } from "./tool-meta"
 import {
@@ -1233,7 +1234,6 @@ export function UserMessageDisplay(props: {
     busy: undefined as "fork" | "revert" | undefined,
   })
   const [expanded, setExpanded] = createSignal(false)
-  const [injectionExpanded, setInjectionExpanded] = createSignal(false)
   const copied = () => state.copied
   const busy = () => state.busy
 
@@ -1265,67 +1265,6 @@ export function UserMessageDisplay(props: {
   })
 
   const skillTemplatePart = createMemo(() => skillText(props.parts))
-
-  const injectionParts = createMemo(() =>
-    props.parts.filter((part): part is TextPart => {
-      if (part.type !== "text" || !(part as TextPart).synthetic) return false
-      const kind = (part as TextPart).metadata?.kind
-      return kind === "hook-injection" || kind === "command-injection"
-    }),
-  )
-  const injectionText = createMemo(() =>
-    injectionParts()
-      .map((part) => part.text)
-      .join("\n\n"),
-  )
-  // The server can deliver injected text before the local pending placeholder is cleared.
-  // Once any injected text exists, prefer the completed summary over the transient status.
-  const injectionPending = createMemo(
-    () => injectionText().trim().length === 0 && injectionParts().some((part) => part.metadata?.pending === true),
-  )
-  const injectionPreview = createMemo(() => {
-    const text = injectionText().trim().replace(/\s+/g, " ")
-    if (text.length <= 180) return text
-    return text.slice(0, 180) + "…"
-  })
-  const injectionCommand = createMemo(() => {
-    const commands = new Set(
-      injectionParts()
-        .filter((part) => part.metadata?.kind === "command-injection")
-        .map((part) => part.metadata?.command)
-        .filter((value): value is string => typeof value === "string" && value.length > 0),
-    )
-    return commands.size === 1 ? [...commands][0] : undefined
-  })
-  const injectionHook = createMemo(() => {
-    const hooks = new Set(
-      injectionParts()
-        .filter((part) => part.metadata?.kind === "hook-injection")
-        .map((part) => part.metadata?.hook)
-        .filter((value): value is string => typeof value === "string" && value.length > 0),
-    )
-    return hooks.size > 0 ? [...hooks].join(", ") : undefined
-  })
-  const injectionTitle = createMemo(() => {
-    const kinds = new Set(injectionParts().map((part) => part.metadata?.kind))
-    if (kinds.size === 1 && kinds.has("hook-injection")) {
-      const hook = injectionHook()
-      return hook
-        ? i18n.t("ui.message.injection.hookPrompt", { hook })
-        : i18n.t("ui.message.injection.hookPromptFallback")
-    }
-    if (kinds.size === 1 && kinds.has("command-injection")) {
-      const command = injectionCommand()
-      return command
-        ? i18n.t("ui.message.injection.commandPrompt", { command: "/" + command })
-        : i18n.t("ui.message.injection.slashCommandPrompt")
-    }
-    return i18n.t("ui.message.injection.prompt")
-  })
-  const injectionSummary = createMemo(() => {
-    const chars = injectionText().length.toLocaleString()
-    return i18n.t("ui.message.injection.chars", { count: chars })
-  })
 
   const files = createMemo(() => (props.parts?.filter((p) => p.type === "file") as FilePart[]) ?? [])
 
@@ -1560,38 +1499,16 @@ export function UserMessageDisplay(props: {
           </div>
         </>
       </Show>
-      <Show when={injectionParts().length > 0}>
-        <div data-slot="user-message-hook-injection">
-          <button
-            data-slot="user-message-hook-injection-trigger"
-            data-expanded={injectionExpanded() ? "true" : undefined}
-            onClick={() => setInjectionExpanded(!injectionExpanded())}
-            onMouseDown={(e) => e.preventDefault()}
-          >
-            <span data-slot="user-message-hook-injection-title">{injectionTitle()}</span>
-            <span data-slot="user-message-hook-injection-summary">
-              {injectionPending() ? i18n.t("ui.message.injection.injecting") : injectionSummary()}
-            </span>
-          </button>
-          <Show when={!injectionExpanded() && injectionPreview()}>
-            <div data-slot="user-message-hook-injection-preview">{injectionPreview()}</div>
-          </Show>
-          <Show when={injectionExpanded()}>
-            <div data-slot="user-message-hook-injection-content">
-              <Markdown
-                text={preserveLineBreaks(escapeHtmlTags(injectionText()))}
-                cacheKey={`injection:${props.message.id}`}
-                stage={props.markdownStage}
-                onStage={props.onMarkdownStage}
-                eager={props.markdownEager}
-                viewport={props.markdownViewport}
-                highlight={props.markdownHighlight}
-                math={props.markdownMath}
-              />
-            </div>
-          </Show>
-        </div>
-      </Show>
+      <InjectedPromptFromParts
+        parts={props.parts}
+        cacheKey={`injection:${props.message.id}`}
+        markdownStage={props.markdownStage}
+        onMarkdownStage={props.onMarkdownStage}
+        markdownEager={props.markdownEager}
+        markdownViewport={props.markdownViewport}
+        markdownHighlight={props.markdownHighlight}
+        markdownMath={props.markdownMath}
+      />
       <Show when={skillTemplatePart()}>
         <BasicTool
           icon="console"

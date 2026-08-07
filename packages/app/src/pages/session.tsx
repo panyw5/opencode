@@ -85,7 +85,7 @@ import {
 import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import { collectSessionActiveSkills } from "@/pages/session/session-active-skills"
 import { Identifier } from "@/utils/id"
-import { commandInvocationFromParts, extractPromptFromParts } from "@/utils/prompt"
+import { commandInvocationFromParts, extractPromptFromParts, injectionPreviewFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { formatServerError } from "@/utils/server-errors"
 import type { Session } from "@opencode-ai/sdk/v2/client"
@@ -1949,6 +1949,12 @@ export default function Page() {
       .replace(/\s+/g, " ")
       .trim()
     if (text) return text
+
+    // Synthetic injections (scheduled task / hook / slash command) are hidden from
+    // extractPromptFromParts; surface their text so the menu does not fall back to "attachment".
+    const injection = injectionPreviewFromParts(parts)
+    if (injection) return injection
+
     return `[${language.t("common.attachment")}]`
   }
   const userMessageMenu = createMemo(() =>

@@ -142,6 +142,14 @@ function NewProjectTaskDialog(props: {
   )
 }
 
+function projectTaskStatusLabel(status: ProjectTaskStatus, t: ReturnType<typeof useLanguage>["t"]): string {
+  if (status === "open") return t("projectTask.status.open")
+  if (status === "in_progress") return t("projectTask.status.inProgress")
+  if (status === "done") return t("projectTask.status.done")
+  if (status === "archived") return t("projectTask.status.archived")
+  return labelStatus(status)
+}
+
 function ProjectTaskCard(props: {
   task: ProjectTask
   onOpen: (task: ProjectTask) => void
@@ -156,14 +164,22 @@ function ProjectTaskCard(props: {
       completedAt: props.task.time.archived != null ? String(props.task.time.archived) : null,
     }),
   )
+  // One capsule row: real status + todo progress + sessions (+ priority).
   const meta = createMemo(() => {
-    const items: string[] = [progressText(props.task)]
+    const items: string[] = [
+      projectTaskStatusLabel(props.task.status, language.t),
+      progressText(props.task),
+    ]
     if (props.task.sessionCount > 0) {
       items.push(language.t("projectTask.sessions.count", { count: props.task.sessionCount }))
     }
     if (props.task.priority) items.push(props.task.priority)
     return items
   })
+  // "In progress" is only meaningful for open tasks — hide when already in_progress/done/archived.
+  const canSetInProgress = createMemo(
+    () => props.task.status === "open" && canAct(),
+  )
 
   return (
     <TaskCardShell
@@ -171,25 +187,26 @@ function ProjectTaskCard(props: {
       title={props.task.title}
       subtitle={props.task.description.trim() || undefined}
       progressKind={progressKind()}
-      statusLabel={labelStatus(props.task.status)}
       meta={meta()}
       onOpen={() => props.onOpen(props.task)}
       actions={
         <>
-          <TaskCardActionButton
-            disabled={props.task.status === "in_progress" || !canAct()}
-            onClick={() => {
-              setPending("status")
-              Promise.resolve(props.onSetInProgress(props.task)).finally(() => setPending(undefined))
-            }}
-          >
-            {pending() === "status"
-              ? language.t("common.loading")
-              : language.t("projectTask.status.inProgress")}
-          </TaskCardActionButton>
+          <Show when={canSetInProgress() || pending() === "status"}>
+            <TaskCardActionButton
+              disabled={!canSetInProgress()}
+              onClick={() => {
+                setPending("status")
+                Promise.resolve(props.onSetInProgress(props.task)).finally(() => setPending(undefined))
+              }}
+            >
+              {pending() === "status"
+                ? language.t("common.loading")
+                : language.t("projectTask.status.inProgress")}
+            </TaskCardActionButton>
+          </Show>
           <TaskCardActionButton
             danger
-            disabled={!canAct()}
+            disabled={!canAct() || props.task.status === "archived"}
             onClick={() => {
               setPending("archive")
               Promise.resolve(props.onArchive(props.task)).finally(() => setPending(undefined))

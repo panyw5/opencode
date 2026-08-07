@@ -66,6 +66,9 @@ export function commandInvocationFromParts(parts: Part[]): string | undefined {
   if (subtask?.command) return `/${subtask.command.trim()}`
 }
 
+/** Re-export shared injection preview (hook / command / scheduled task). */
+export { injectionPreviewFromParts } from "@opencode-ai/ui/injected-prompt-model"
+
 /**
  * Extract prompt content from message parts for restoring into the prompt input.
  * This is used by undo to restore the original user prompt.

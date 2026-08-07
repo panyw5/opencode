@@ -166,6 +166,8 @@ export const layer = Layer.effect(
           // session view can refresh before/while the prompt streams.
           yield* emitRun(task, { ...run, sessionID, status: "running" })
 
+          // Collapsible "计划任务注入提示词" via shared InjectedPrompt UI
+          // (synthetic + metadata.kind = scheduled-injection).
           yield* prompts.prompt({
             sessionID,
             agent: task.agent,
@@ -174,7 +176,18 @@ export const layer = Layer.effect(
               modelID: ModelID.make(task.model.modelID),
             },
             variant: task.model.variant,
-            parts: [{ type: "text", text: task.prompt }],
+            parts: [
+              {
+                type: "text" as const,
+                text: task.prompt,
+                synthetic: true,
+                metadata: {
+                  kind: "scheduled-injection",
+                  taskID: task.id,
+                  taskName: task.name,
+                },
+              },
+            ],
           })
           return { status: "ok" as const, sessionID }
         }).pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, true)),

@@ -140,6 +140,8 @@ export const dict = {
   "ui.message.injection.hookPrompt": "フック注入プロンプト",
   "ui.message.injection.commandPrompt": "{{command}} コマンドプロンプト",
   "ui.message.injection.slashCommandPrompt": "スラッシュコマンドプロンプト",
+  "ui.message.injection.scheduledPrompt": "{{name}} 定期タスク注入プロンプト",
+  "ui.message.injection.scheduledPromptFallback": "定期タスク注入プロンプト",
   "ui.message.injection.prompt": "注入プロンプト",
   "ui.message.injection.part.one": "{{count}} 部分",
   "ui.message.injection.part.other": "{{count}} 部分",
