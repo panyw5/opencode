@@ -286,18 +286,22 @@
     --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
   }
 
-  /* Arc keeps its warm purple-gray treatment in dark mode, while light mode
-     uses the same neutral gray hover/active rows as the default sidebar. */
+  /* Arc keeps its warm purple-gray treatment in dark mode. Light mode is also
+     light-on-dark chrome (Arc's light theme uses a light violet mauve sidebar
+     against a white main pane), so the light values here are the mauve scale
+     rather than the default sidebar's neutral grays: a near-white row
+     (#f1f1f1) only reached 1.04:1 against the mauve panel and read as a
+     missing state. Rows descend from the panel, matching arc.css. */
   html[data-theme="arc"] [data-component="sidebar-session"] {
-    --sidebar-session-accent: light-dark(#2f2f2f, #d4d0d6);
-    --sidebar-session-hover-bg: light-dark(#f1f1f1, #554750);
-    --sidebar-session-hover-border: light-dark(rgba(0, 0, 0, 0.03), rgba(212, 208, 214, 0.16));
-    --sidebar-session-hover-fg: light-dark(#2f2f2f, #d4d0d6);
-    --sidebar-session-hover-icon: light-dark(#8a8a8a, #d4d0d6);
-    --sidebar-session-active-bg-top: light-dark(#f1f1f1, #5d4f59);
-    --sidebar-session-active-bg-bottom: light-dark(#eeeeee, #534548);
-    --sidebar-session-active-border: light-dark(rgba(0, 0, 0, 0.03), rgba(212, 208, 214, 0.22));
-    --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.4));
+    --sidebar-session-accent: light-dark(#ffffff, #d4d0d6);
+    --sidebar-session-hover-bg: light-dark(var(--sidebar-chrome-hover), #554750);
+    --sidebar-session-hover-border: light-dark(rgba(255, 255, 255, 0.18), rgba(212, 208, 214, 0.16));
+    --sidebar-session-hover-fg: light-dark(#ffffff, #d4d0d6);
+    --sidebar-session-hover-icon: light-dark(#e4dfe8, #d4d0d6);
+    --sidebar-session-active-bg-top: light-dark(var(--sidebar-chrome-active), #5d4f59);
+    --sidebar-session-active-bg-bottom: light-dark(var(--sidebar-chrome-active), #534548);
+    --sidebar-session-active-border: light-dark(rgba(255, 255, 255, 0.24), rgba(212, 208, 214, 0.22));
+    --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.4));
   }
 
   [data-component="sidebar-session"]:hover,
@@ -341,8 +345,8 @@
   /* Arc: stronger overlay on active+hover */
   html[data-theme="arc"] [data-component="sidebar-session"][data-active="true"]:hover,
   html[data-theme="arc"] [data-component="sidebar-session"][data-active="true"]:has(:focus-visible) {
-    background: light-dark(#f1f1f1, linear-gradient(180deg, #645760, #5d4f59));
-    border-color: light-dark(rgba(0, 0, 0, 0.03), rgba(212, 208, 214, 0.28));
+    background: light-dark(var(--sidebar-chrome-active), linear-gradient(180deg, #645760, #5d4f59));
+    border-color: light-dark(rgba(255, 255, 255, 0.28), rgba(212, 208, 214, 0.28));
   }
 
   [data-component="sidebar-session-loading"] {

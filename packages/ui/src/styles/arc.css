@@ -32,6 +32,17 @@ html[data-theme="arc"] {
      panel identity against the darker main content pane. */
   --sidebar-card-bg: #4a3d47;
 
+  /* Chrome shades (rail / titlebar / scoop-join) and the sidebar's
+     hover / active fills. Dark mode keeps its existing appearance: the
+     chrome tracks --border-strong-base as before, and the interaction
+     fills match the values previously hardcoded in the dark scope. */
+  --sidebar-chrome-bg: var(--border-strong-base);
+  --sidebar-chrome-hover: #554750;
+  --sidebar-chrome-active: #4d4048;
+
+  /* Tile letters stay white on the deep dark-mode rail hues. */
+  --rail-letter-fg: #ffffff;
+
   /* Dock-prompt shell — solid, deeper purple-gray (was translucent #3d323b
      which washed out lighter than the canvas / tray). */
   --dock-shell-bg: #221c22;
@@ -64,14 +75,38 @@ html[data-theme="arc"][data-color-scheme="light"] {
      conversation-list surface in light mode. */
   --canvas-base: var(--color-border-weaker-base);
 
-  /* Sidebar card background — Arc Browser's signature dusty mauve.
-     Deliberately mid-tone (not light) so it reads as a distinct
-     "panel identity" against the white main pane, mirroring the
-     dark-sidebar / light-main contrast Arc is known for. */
-  --sidebar-card-bg: #756b7e;
+  /* Sidebar card background — Arc Browser's signature dusty mauve, kept light
+     and violet so light mode reads as light mode (not a second dark theme).
 
-  /* Dock-prompt shell — soft solid, slightly cooler than pure white */
-  --dock-shell-bg: #ebe6ef;
+     Lightness is constrained by the text ramp this chrome has to carry
+     (strong / base / weak + weak icons), all of which must clear WCAG AA.
+     White text on the requested #756682 is only 5.28:1, which does clear
+     4.5 — but the whole ramp then has to fit between 5.28 and 4.5, and
+     base/weak collapse to an OKLab distance of 0.003 (visually identical,
+     so the hierarchy stops communicating anything). Dropping OKLCH L by
+     0.03 to #6c5d79 lifts white to 6.04:1 and restores real separation
+     (base/weak distance 0.047) while staying in the same light violet
+     family. Hue and chroma are unchanged from the requested color. */
+  --sidebar-card-bg: #6c5d79;
+
+  /* Rail / titlebar / scoop-join share the panel value so the chrome reads as
+     one continuous face (the scoop radius arcs between them).
+
+     Interaction fills DESCEND from the panel. This is the load-bearing part:
+     the panel must stay the lightest surface in the scope, because the text
+     ramp is verified against the lightest surface. Ascending fills (the
+     previous #aaa2b1 / #8b8294) dropped a hovered icon from 3.39:1 to
+     1.58:1 — least readable exactly under the pointer. */
+  --sidebar-chrome-bg: #6c5d79;
+  --sidebar-chrome-hover: #5e4f6a;
+  --sidebar-chrome-active: #544660;
+
+  /* Dock-prompt shell — soft solid, slightly cooler than pure white. Light
+     enough that the main pane's own text tokens still clear AA on it: at the
+     previous #ebe6ef, text-weak landed on 4.49:1 and text-weaker on 4.09:1.
+     Raising lightness fixes both without touching the shared text tokens
+     (which also have to work against the white main pane). */
+  --dock-shell-bg: #f6f1fa;
 
   /* Floating card elevation (subtle violet-tinged warm shadow) */
   --card-elevation:
@@ -83,12 +118,12 @@ html[data-theme="arc"][data-color-scheme="light"] {
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
   /* Per-project rail hues — flat mid-saturated tones (no gradient).
-     The previous low-saturation cream pastels had too little
-     lightness/saturation contrast against #756B7E and all blurred
-     into "various washed creams". A flat fill (instead of a top-to-
-     bottom gradient) reads cleaner: the tile becomes a single
-     confident color block, and the white letter on top has the
-     best possible contrast across the whole face. */
+     A flat fill reads cleaner: the tile becomes a single confident
+     color block. These light-mode hues are intentionally bright, so
+     the tile letter is dark ink (--rail-letter-fg) rather than white:
+     white on these pastels only reached 2.2–3.5:1, while dark ink
+     clears 4.5:1 on all six without desaturating the hues. */
+  --rail-letter-fg: #252129;
   --rail-hue-1: #7889b5; /* indigo */
   --rail-hue-2: #87a886; /* sage */
   --rail-hue-3: #c98ead; /* rose */
@@ -97,64 +132,96 @@ html[data-theme="arc"][data-color-scheme="light"] {
   --rail-hue-6: #a691c1; /* lavender */
 }
 
-/* Keep Arc's sidebar surface treatment local. Text and icon tokens are not
-   overridden here: the conversation list uses the normal light-theme
-   semantic colors, while control interaction colors are scoped to buttons
-   below. This prevents chrome styling from changing session-title contrast. */
+/* Arc's light-mode chrome is a light violet mauve panel, so this scope has
+   inverted polarity relative to the rest of the light theme: text and icons
+   must be light-on-dark. The default light-theme semantic tokens (text-base
+   #4A4458, icon-base #847CA0) are dark-on-light and only reach ~2:1 here, so
+   they are overridden below.
+
+   Every value is contrast-verified against the LIGHTEST surface in this scope
+   (the panel itself, since all state fills descend from it):
+     text-strong 6.04  text-base 5.31  text-weak 4.60  icon-weak 3.16
+   and each level is further apart than 4.5 alone would require, so the ramp
+   still reads as a hierarchy rather than three shades of white.
+
+   Both the raw --token and the --color-* alias are set for each entry, because
+   button.css / icon-button.css read raw var() while Tailwind utilities
+   (e.g. hover:bg-surface-raised-base-hover, text-text-weak) read --color-*. */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-rail"],
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-nav-desktop"],
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-nav-mobile"],
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-panel"],
 html[data-theme="arc"][data-color-scheme="light"] [data-component="titlebar"] {
-  /* Mirror the session row hover bg onto the surface-base-hover /
-       surface-raised-base-hover tokens, scoped to the sidebar. Without
-       this, the ghost buttons inside the panel (new-session, bell-off,
-       archive, workspace-trigger, load-more) hover-fill with the theme
-       default near-white slab — too pale against the dusty mauve panel
-       and visually disconnected from how a session row reacts to hover.
-       Value matches --sidebar-session-hover-bg (light value in
-       index.css: #8B8294). Both --surface-* (consumed by button.css /
-       icon-button.css via raw var()) and --color-surface-* (consumed
-       by Tailwind utilities like hover:bg-surface-raised-base-hover)
-       are overridden so it doesn't matter which path the button took. */
-  --surface-base-hover: #8b8294;
-  --color-surface-base-hover: #8b8294;
-  --surface-raised-base-hover: #8b8294;
-  --color-surface-raised-base-hover: #8b8294;
-  --surface-base-active: #7d7589;
-  --color-surface-base-active: #7d7589;
-  --surface-raised-base-active: #7d7589;
-  --color-surface-raised-base-active: #7d7589;
+  /* Light-on-dark text ramp (verified on the panel, the lightest surface). */
+  --text-strong: #ffffff;
+  --color-text-strong: #ffffff;
+  --text-stronger: #ffffff;
+  --color-text-stronger: #ffffff;
+  --text-base: #f3eff6;
+  --color-text-base: #f3eff6;
+  --text-weak: #e4dfe8;
+  --color-text-weak: #e4dfe8;
+  /* text-weaker cannot go much dimmer than text-weak here: 4.5:1 on this panel
+     is reached at #e3dee7, so anything dimmer would fail as body text. The dim
+     end of the scale is carried by icon-weak below, which only needs 3:1. */
+  --text-weaker: #e3dee7;
+  --color-text-weaker: #e3dee7;
 
-    /* Task cards inside the tasks panel: their bg/border tokens must
-       resolve to semi-transparent whites so cards layer visibly on
-       the dusty-mauve sidebar instead of blending in with dark fills
-       from the default light-theme palette. Both the raw --token and
-       the --color-* alias are overridden (same two-pronged reason as
-       the text/icon overrides above).
+  --icon-base: #e4dfe8;
+  --color-icon-base: #e4dfe8;
+  --icon-hover: #f3eff6;
+  --color-icon-hover: #f3eff6;
+  --icon-active: #ffffff;
+  --color-icon-active: #ffffff;
+  --icon-strong-base: #ffffff;
+  --color-icon-strong-base: #ffffff;
+  --icon-weak-base: #bebac2;
+  --color-icon-weak-base: #bebac2;
+  --color-icon-weak: #bebac2;
 
-       bg-surface-panel is a custom utility (utilities.css) that reads
-       --surface-raised-base directly, NOT --surface-panel — so we
-       override --surface-raised-base here to cover both the task-card
-       status chips and any other component using that token inside
-       the sidebar. (The titlebar block below sets a weaker 0.06
-       value; this 0.10 wins for sidebar-panel descendants because
-       specificity is equal but source order is later.) */
-  --background-base: rgba(255, 255, 255, 0.06);
-  --color-background-base: rgba(255, 255, 255, 0.06);
-  --background-stronger: rgba(255, 255, 255, 0.1);
-  --color-background-stronger: rgba(255, 255, 255, 0.1);
-  --surface-raised-base: rgba(255, 255, 255, 0.1);
-  --color-surface-raised-base: rgba(255, 255, 255, 0.1);
-  --surface-info-base: rgba(255, 255, 255, 0.18);
-  --color-surface-info-base: rgba(255, 255, 255, 0.18);
-  --border-weak-base: rgba(255, 255, 255, 0.14);
-  --color-border-weak-base: rgba(255, 255, 255, 0.14);
+  /* Interaction fills descend from the panel (see --sidebar-chrome-* above). */
+  --surface-base-hover: var(--sidebar-chrome-hover);
+  --color-surface-base-hover: var(--sidebar-chrome-hover);
+  --surface-raised-base-hover: var(--sidebar-chrome-hover);
+  --color-surface-raised-base-hover: var(--sidebar-chrome-hover);
+  --surface-base-active: var(--sidebar-chrome-active);
+  --color-surface-base-active: var(--sidebar-chrome-active);
+  --surface-raised-base-active: var(--sidebar-chrome-active);
+  --color-surface-raised-base-active: var(--sidebar-chrome-active);
+
+  /* Task cards inside the tasks panel need their own layered face.
+
+     These overlays are BLACK-alpha, not white-alpha. A white overlay lightens
+     the card and therefore raises the lightest surface in this scope, which
+     directly eats the text ramp's headroom (an 8% white card already pushed
+     white text to 4.46:1 — below AA). Darkening instead keeps the panel as
+     the lightest surface, so the ramp above stays valid on card faces too,
+     while the card is still clearly distinct (1.16:1 against the panel).
+     Borders stay white-alpha: they carry no text.
+
+     bg-surface-panel (utilities.css) reads --surface-panel, so that token is
+     overridden too — without it the task-card face fell through to the global
+     rgba(0, 0, 0, 0.031) and sat at 1.05:1 against the panel, i.e. invisible.
+     --surface-raised-base is also set, for components that read it instead. */
+  --background-base: rgba(0, 0, 0, 0.07);
+  --color-background-base: rgba(0, 0, 0, 0.07);
+  --background-stronger: rgba(0, 0, 0, 0.1);
+  --color-background-stronger: rgba(0, 0, 0, 0.1);
+  --surface-panel: rgba(0, 0, 0, 0.12);
+  --color-surface-panel: rgba(0, 0, 0, 0.12);
+  --surface-raised-base: rgba(0, 0, 0, 0.1);
+  --color-surface-raised-base: rgba(0, 0, 0, 0.1);
+  --surface-info-base: rgba(0, 0, 0, 0.14);
+  --color-surface-info-base: rgba(0, 0, 0, 0.14);
+  --border-weak-base: rgba(255, 255, 255, 0.22);
+  --color-border-weak-base: rgba(255, 255, 255, 0.22);
 }
 
+/* Titlebar controls sit on a subtler face than the task cards, and it also
+   darkens rather than lightens, for the same headroom reason. */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="titlebar"] {
-  --surface-raised-base: rgba(255, 255, 255, 0.06);
-  --color-surface-raised-base: rgba(255, 255, 255, 0.06);
+  --surface-raised-base: rgba(0, 0, 0, 0.06);
+  --color-surface-raised-base: rgba(0, 0, 0, 0.06);
   --border-weak-base: transparent;
   --color-border-weak-base: transparent;
 }
@@ -183,9 +250,10 @@ html[data-theme="arc"] [data-component="app-root"] {
   background-color: var(--canvas-base);
 }
 
-/* Titlebar uses the stronger border token to separate the window chrome. */
+/* Titlebar carries the chrome fill so it reads as one family with the rail
+   and the session panel. */
 html[data-theme="arc"] [data-component="titlebar"] {
-  background-color: var(--border-strong-base);
+  background-color: var(--sidebar-chrome-bg);
 }
 
 /* Legacy 1px hairline that other themes draw across the area to the right
@@ -205,7 +273,7 @@ html[data-theme="arc"] [data-component="layout-top-divider"] {
    own right edges or it cuts a wedge of canvas color where it abuts the
    conversation panel (both are the same --sidebar-card-bg). */
 html[data-theme="arc"] [data-component="sidebar-rail"] {
-  background-color: var(--border-strong-base);
+  background-color: var(--sidebar-chrome-bg);
   box-shadow: none;
   border: none;
 }
@@ -221,7 +289,7 @@ html[data-theme="arc"] [data-component="sidebar-nav-desktop"] {
 
 /* Mobile drawer still needs its own solid chrome + cast shadow. */
 html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
-  background-color: var(--border-strong-base);
+  background-color: var(--sidebar-chrome-bg);
   border-top-right-radius: var(--radius-xl);
   border-bottom-right-radius: var(--radius-xl);
   box-shadow: var(--card-elevation);
@@ -260,7 +328,7 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-float
 html[data-theme="arc"] [data-component="scoop-join"] {
   width: var(--radius-2xl);
   height: var(--radius-2xl);
-  background-color: var(--border-strong-base);
+  background-color: var(--sidebar-chrome-bg);
 }
 
 /* Conversation list panel inside the sidebar.
@@ -275,9 +343,16 @@ html[data-theme="arc"] [data-component="scoop-join"] {
    Multi-layer rounded rect rule (rail | panel | main):
    - Top-left: scoop radius + chrome fill → continuous arc into rail/titlebar
    - Left edge (below scoop): square, flush to rail
-   - Right edge: outer radius only, floats against main */
+   - Right edge: outer radius only, floats against main
+
+   The fill is --sidebar-card-bg, the variable that names this surface. It
+   used to paint --color-border-weaker-base (a near-white #F0EBF8), which
+   silently diverged from the mauve identity --sidebar-card-bg described:
+   every white-alpha overlay and hover fill scoped to this panel had been
+   tuned for a dark face, so on the near-white face they collapsed to
+   ~1.02:1 and disappeared. */
 html[data-theme="arc"] [data-component="sidebar-panel"] {
-  background-color: var(--color-border-weaker-base) !important;
+  background-color: var(--sidebar-card-bg) !important;
   /* Keep the CSS border off so rail | panel stay one continuous face;
      material edge comes from --sidebar-panel-rim (hairline + inset). */
   border: none !important;
@@ -368,30 +443,40 @@ html[data-theme="arc"][data-color-scheme="light"] :is(button, [data-component="b
   --icon-strong-active: #342d3b;
 }
 
+/* Buttons inside the dark mauve chrome. These fills descend from the panel
+   for the same reason as the scoped surface tokens above: the previous
+   ascending values (#aaa2b1 / #9f96a7) were brighter than the panel, so a
+   hovered ghost icon dropped from 3.39:1 at rest to 1.58:1 — the control
+   became least readable exactly when the pointer was on it. Descending
+   fills keep the light-on-dark icon ramp valid in every state. */
 html[data-theme="arc"][data-color-scheme="light"]
   :is([data-component="sidebar-rail"], [data-component="sidebar-nav-desktop"], [data-component="sidebar-nav-mobile"], [data-component="sidebar-panel"], [data-component="titlebar"])
   :is(button, [data-component="button"], [data-component="icon-button"]) {
-  --surface-base-hover: #aaa2b1;
-  --color-surface-base-hover: #aaa2b1;
-  --surface-raised-base-hover: #aaa2b1;
-  --color-surface-raised-base-hover: #aaa2b1;
-  --surface-base-active: #9f96a7;
-  --color-surface-base-active: #9f96a7;
-  --surface-raised-base-active: #9f96a7;
-  --color-surface-raised-base-active: #9f96a7;
-  --button-secondary-hover: #aaa2b1;
-  --color-button-secondary-hover: #aaa2b1;
-  --button-ghost-hover: #aaa2b1;
-  --color-button-ghost-hover: #aaa2b1;
-  --button-ghost-hover2: #9f96a7;
-  --color-button-ghost-hover2: #9f96a7;
+  --surface-base-hover: var(--sidebar-chrome-hover);
+  --color-surface-base-hover: var(--sidebar-chrome-hover);
+  --surface-raised-base-hover: var(--sidebar-chrome-hover);
+  --color-surface-raised-base-hover: var(--sidebar-chrome-hover);
+  --surface-base-active: var(--sidebar-chrome-active);
+  --color-surface-base-active: var(--sidebar-chrome-active);
+  --surface-raised-base-active: var(--sidebar-chrome-active);
+  --color-surface-raised-base-active: var(--sidebar-chrome-active);
+  --button-secondary-hover: var(--sidebar-chrome-hover);
+  --color-button-secondary-hover: var(--sidebar-chrome-hover);
+  --button-ghost-hover: var(--sidebar-chrome-hover);
+  --color-button-ghost-hover: var(--sidebar-chrome-hover);
+  --button-ghost-hover2: var(--sidebar-chrome-active);
+  --color-button-ghost-hover2: var(--sidebar-chrome-active);
+  /* icon-strong-* are set light here; the light-mode button block above
+     points them at dark ink, which would be invisible on this chrome. */
+  --icon-strong-hover: #ffffff;
+  --icon-strong-active: #ffffff;
 }
 
-/* Task cards are clickable containers rather than buttons. Do not let them
-   inherit the sidebar button hover token, which is intentionally darker for
-   compact chrome controls. */
+/* Task cards are clickable containers rather than buttons. Keep them on the
+   same descending scale as the chrome controls above (the old #e5dfe8 was a
+   near-white slab tuned for the previous light panel). */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="trellis-task-item"]:hover {
-  background-color: #e5dfe8;
+  background-color: var(--sidebar-chrome-hover);
 }
 
 /* Dock-prompt: sync radius with cards + override hardcoded translucent dark
@@ -748,13 +833,15 @@ html[data-theme="arc"] [data-action="project-switch"] [data-component="avatar"] 
   border: none;
   background-color: transparent !important;
   border-radius: 0.75rem !important;
-  /* Force the letter to white across all rail-hues. The Avatar
-     component otherwise inherits `color: var(--avatar-fg)` set
-     via inline style from getAvatarColors() / the unloaded fallback
-     (light cream `--text-base`). With saturated rail-hue tiles,
-     pure white gives the most consistent contrast — and matches
-     how Discord/Slack solid-color tiles render their initials. */
-  color: #ffffff;
+  /* Force one letter color across all rail-hues. The Avatar component
+     otherwise inherits `color: var(--avatar-fg)` set via inline style from
+     getAvatarColors() / the unloaded fallback (light cream `--text-base`).
+
+     The color is per-mode (--rail-letter-fg): white on the deep dark-mode
+     hues, dark ink on the bright light-mode hues. White on the light hues
+     only reached 2.19–3.47:1; dark ink clears 4.5:1 on all six while
+     letting the hues stay as vivid as authored. */
+  color: var(--rail-letter-fg);
 }
 
 /* Unloaded projects: replace the per-project rail-hue tile with the
@@ -766,11 +853,14 @@ html[data-theme="arc"] [data-action="project-switch"]:has([data-loaded="false"])
   background: var(--background-stronger) !important;
 }
 
-/* Mute the letter on the placeholder so it reads as "pending"
-   rather than "active". Pure white competes with the colored
-   loaded tiles for visual weight; a 60%-opacity white sits back. */
+/* Mute the letter on the placeholder so it reads as "pending" rather than
+   "active", using the scoped weak text level instead of a translucent white.
+   The old rgba(255,255,255,0.55) was tuned for a light tile and composited
+   to 1.33:1 against it — the letter was effectively invisible. --text-weak is
+   already the "recede" level of this scope's ramp and is verified >=4.5:1 on
+   the placeholder fill. */
 html[data-theme="arc"] [data-action="project-switch"]:has([data-loaded="false"]) [data-component="avatar"] {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-weak);
 }
 
 /* Hover (not selected): subtle scale + soft drop, no ring. The 1.12
