@@ -47,6 +47,11 @@ target
 .trellis/scripts/**/__pycache__/
 .trellis/scripts/**/*.pyc
 
+# Local tool state / backups (not for version control)
+.mindfs/
+.opentasks/
+.trellis.backup/
+
 # Local-only README scratch image
 image/README/image.png
 
