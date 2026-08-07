@@ -37,7 +37,7 @@ export const Info = Schema.Struct({
   description: Schema.String,
   /**
    * Project-relative path to the description markdown file
-   * (default `.tasks/<taskID>/description.md`).
+   * (default `.opentasks/<taskID>/description.md`).
    */
   descriptionPath: Schema.String,
   status: Status,
@@ -74,7 +74,7 @@ export type Detail = Types.DeepMutable<Schema.Schema.Type<typeof Detail>>
 
 export const CreateInput = Schema.Struct({
   title: Schema.String,
-  /** Initial description body written to `.tasks/<id>/description.md`. */
+  /** Initial description body written to `.opentasks/<id>/description.md`. */
   description: Schema.optional(Schema.String),
   status: Schema.optional(Status),
 }).annotate({ identifier: "ProjectTaskCreateInput" })

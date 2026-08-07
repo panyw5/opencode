@@ -17,7 +17,7 @@ export const dict = {
   "projectTask.field.title": "标题",
   "projectTask.field.titlePlaceholder": "需要完成什么？",
   "projectTask.field.description": "描述",
-  "projectTask.field.descriptionPlaceholder": "目标、约束、验收标准…（保存在 .tasks/<任务ID>/description.md）",
+  "projectTask.field.descriptionPlaceholder": "目标、约束、验收标准…（保存在 .opentasks/<任务ID>/description.md）",
   "projectTask.field.status": "状态",
   "projectTask.status.open": "开放",
   "projectTask.status.inProgress": "进行中",

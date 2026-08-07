@@ -20,7 +20,7 @@ describe("project-task description files", () => {
     root = ""
   })
 
-  test("default path is .tasks/<taskID>/description.md", () => {
+  test("default path is .opentasks/<taskID>/description.md", () => {
     const id = ProjectTaskID.make("ptask_path_test")
     expect(descriptionRelativePath(id)).toBe(path.join(PROJECT_TASKS_ROOT, id, DESCRIPTION_FILENAME))
   })
@@ -63,3 +63,5 @@ describe("project-task description files", () => {
     expect(second.content).toBe("legacy body")
   })
 })
+
+

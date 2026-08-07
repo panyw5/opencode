@@ -438,7 +438,7 @@ export type ProjectTask = {
   title: string
   /** Description body loaded from descriptionPath. */
   description: string
-  /** Project-relative path, e.g. `.tasks/<taskID>/description.md`. */
+  /** Project-relative path, e.g. `.opentasks/<taskID>/description.md`. */
   descriptionPath: string
   status: ProjectTaskStatus
   sessionCount: number

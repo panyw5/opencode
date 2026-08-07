@@ -2,18 +2,21 @@ import path from "path"
 import { Filesystem } from "@/util/filesystem"
 import type { ProjectTaskID } from "./schema"
 
-/** Project-root folder for all project-task workspaces (user-visible, not under .opencode). */
-export const PROJECT_TASKS_ROOT = ".tasks"
+/**
+ * Project-root folder for all project-task workspaces (user-visible, not under .opencode).
+ * Prefixed to reduce collisions with generic task folders from other tools.
+ */
+export const PROJECT_TASKS_ROOT = ".opentasks"
 
 /** Canonical description filename inside each task folder. */
 export const DESCRIPTION_FILENAME = "description.md"
 
-/** Relative path: `.tasks/<taskID>/description.md` */
+/** Relative path: `.opentasks/<taskID>/description.md` */
 export function descriptionRelativePath(taskID: ProjectTaskID | string): string {
   return path.join(PROJECT_TASKS_ROOT, String(taskID), DESCRIPTION_FILENAME)
 }
 
-/** Task workspace folder: `.tasks/<taskID>/` (agents may add extra files here). */
+/** Task workspace folder: `.opentasks/<taskID>/` (agents may add extra files here). */
 export function taskWorkspaceRelativePath(taskID: ProjectTaskID | string): string {
   return path.join(PROJECT_TASKS_ROOT, String(taskID))
 }
@@ -42,7 +45,7 @@ export async function writeDescriptionFile(
 
 /**
  * Ensure a task has a description file and return `{ relativePath, content }`.
- * Migrates legacy DB-inline description into `.tasks/<id>/description.md` when needed.
+ * Migrates legacy DB-inline description into `.opentasks/<id>/description.md` when needed.
  */
 export async function ensureDescriptionFile(input: {
   projectDirectory: string
@@ -54,15 +57,13 @@ export async function ensureDescriptionFile(input: {
   /** Persist path/clear legacy callback after migrate or first ensure */
   persist?: (next: { descriptionPath: string; clearLegacy: boolean }) => void | Promise<void>
 }): Promise<{ descriptionPath: string; content: string }> {
-  const fallbackPath = descriptionRelativePath(input.taskID)
   const relativePath =
     typeof input.descriptionPath === "string" && input.descriptionPath.trim()
       ? input.descriptionPath.trim()
-      : fallbackPath
+      : descriptionRelativePath(input.taskID)
 
   const existing = await readDescriptionFile(input.projectDirectory, relativePath)
   if (existing !== undefined) {
-    // Path may have been missing in DB while file already exists.
     if (!input.descriptionPath?.trim()) {
       await input.persist?.({ descriptionPath: relativePath, clearLegacy: true })
     }

@@ -3,7 +3,7 @@ Update an EXISTING project-level task (title, description, status).
 This is the only correct way to mark a task done, change goals, or retitle.
 Never use `project_task_create` to "finish" or replace an existing task.
 
-Updating `description` overwrites `.tasks/<taskID>/description.md` (see task.descriptionPath).
+Updating `description` overwrites `.opentasks/<taskID>/description.md` (see task.descriptionPath).
 You may also edit that file directly with write tools.
 
 ## When to use

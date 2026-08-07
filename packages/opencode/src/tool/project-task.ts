@@ -17,7 +17,7 @@ const CreateParams = Schema.Struct({
   title: Schema.String.annotate({ description: "Short project task title" }),
   description: Schema.optional(Schema.String).annotate({
     description:
-      "Longer description / acceptance notes. Written to `.tasks/<taskID>/description.md` (see descriptionPath).",
+      "Longer description / acceptance notes. Written to `.opentasks/<taskID>/description.md` (see descriptionPath).",
   }),
   status: Schema.optional(CreateStatus).annotate({
     description: "Initial status: open (default) or in_progress. Never done/archived on create.",
@@ -47,7 +47,7 @@ const UpdateParams = Schema.Struct({
   taskID: Schema.String.annotate({ description: "Existing project task ID to update" }),
   title: Schema.optional(Schema.String).annotate({ description: "New title" }),
   description: Schema.optional(Schema.String).annotate({
-    description: "New description body; overwrites `.tasks/<taskID>/description.md`",
+    description: "New description body; overwrites `.opentasks/<taskID>/description.md`",
   }),
   status: Schema.optional(Status).annotate({
     description: "New status: open, in_progress, done, or archived",

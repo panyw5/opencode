@@ -15,7 +15,7 @@ export const ProjectTaskTable = sqliteTable(
     title: text().notNull(),
     /**
      * Legacy inline description. New writes keep this empty; content lives in
-     * `description_path` (typically `.tasks/<taskID>/description.md`).
+     * `description_path` (typically `.opentasks/<taskID>/description.md`).
      */
     description: text().notNull().default(""),
     /** Project-relative path to the user-visible description markdown file. */

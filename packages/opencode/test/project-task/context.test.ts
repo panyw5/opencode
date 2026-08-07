@@ -18,7 +18,7 @@ function makeDetail(overrides?: Partial<Detail>): Detail {
     projectID: ProjectID.make("proj_test"),
     title: "Ship mount UI",
     description: "Mount + inject context",
-    descriptionPath: ".tasks/ptask_test/description.md",
+    descriptionPath: ".opentasks/ptask_test/description.md",
     status: "in_progress",
     sessionCount: 1,
     progress: { total: 2, completed: 1, inProgress: 1, pending: 0, cancelled: 0 },
