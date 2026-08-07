@@ -1,6 +1,8 @@
 [data-component="injected-prompt"] {
   width: min(82%, 64ch);
   margin-left: auto;
+  /* Separate injected prompt from following tools / assistant content */
+  margin-bottom: 12px;
   display: flex;
   flex-direction: column;
   align-items: stretch;
