@@ -1657,7 +1657,7 @@ export const dict = {
   "config.custom.models.description": "添加、重命名或移除这个提供商暴露的模型 id。",
   "config.custom.models.add": "添加模型",
   "config.custom.models.id": "模型 ID",
-  "config.custom.models.name": "模型名称",
+  "config.custom.models.name": "模型标题",
   "config.custom.models.remove": "移除模型",
   "config.custom.models.test": "测试链接",
   "config.custom.models.test.running": "测试中…",

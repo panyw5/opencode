@@ -3321,10 +3321,22 @@ function CustomEditor(props: {
                 />
               </div>
               <div class="config-custom-model-list mb-3 flex flex-col gap-3">
+                {/*
+                  5-col grid shared with each row so header labels line up with
+                  the id / title fields (test button has its own fixed column).
+                  Icon slots are 24px to match default IconButton size.
+                */}
+                <div class="hidden gap-2 p-2 md:grid md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
+                  <div aria-hidden="true" />
+                  <div class="pl-3 text-12-medium text-text-weak">{language.t("config.custom.models.id")}</div>
+                  <div aria-hidden="true" />
+                  <div class="pl-3 text-12-medium text-text-weak">{language.t("config.custom.models.name")}</div>
+                  <div aria-hidden="true" />
+                </div>
                 <For each={props.form.models}>
                   {(item, idx) => (
                     <div class="rounded-xl border border-border-weak-base bg-surface-base/60 p-2" data-row={item.row}>
-                      <div class="config-custom-model-summary grid gap-2 md:grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                      <div class="config-custom-model-summary grid gap-2 md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
                         <IconButton
                           type="button"
                           icon={item.expanded ? "chevron-down" : "chevron-right"}
@@ -3337,26 +3349,22 @@ function CustomEditor(props: {
                               : language.t("provider.custom.models.config.expand")
                           }
                         />
-                        <div class="flex min-w-0 items-start gap-1.5">
-                          <div class="min-w-0 flex-1">
-                            <TextField
-                              label={language.t("config.custom.models.id")}
-                              hideLabel
-                              placeholder="模型 ID (如: gpt-4o, claude-3-opus)"
-                              value={item.id}
-                              onChange={(value) => props.onModel(idx(), "id", value)}
-                              validationState={item.err.id ? "invalid" : undefined}
-                              error={item.err.id}
-                            />
-                          </div>
-                          <TestProviderModelButton
-                            class="mt-1.5 shrink-0"
-                            baseURL={props.form.baseURL}
-                            apiKey={props.form.apiKey}
-                            modelId={item.id}
-                            headers={props.form.headers}
-                          />
-                        </div>
+                        <TextField
+                          label={language.t("config.custom.models.id")}
+                          hideLabel
+                          placeholder="模型 ID (如: gpt-4o, claude-3-opus)"
+                          value={item.id}
+                          onChange={(value) => props.onModel(idx(), "id", value)}
+                          validationState={item.err.id ? "invalid" : undefined}
+                          error={item.err.id}
+                        />
+                        <TestProviderModelButton
+                          class="mt-1.5 w-full justify-center"
+                          baseURL={props.form.baseURL}
+                          apiKey={props.form.apiKey}
+                          modelId={item.id}
+                          headers={props.form.headers}
+                        />
                         <TextField
                           label={language.t("config.custom.models.name")}
                           hideLabel
