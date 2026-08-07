@@ -308,12 +308,15 @@ html[data-theme="arc"] [data-component="sidebar-float-shadow"] {
   );
 }
 
+/* Arc's light sidebar is a mauve chrome panel against a white main pane, so the
+   cast still has to be readable where the two meet. Same contact alpha as dark,
+   widened so the stronger onset still eases out. */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-float-shadow"] {
-  width: 24px;
+  width: 30px;
   background: linear-gradient(
     to right,
-    rgba(0, 0, 0, 0.08) 0%,
-    rgba(0, 0, 0, 0.03) 45%,
+    rgba(0, 0, 0, 0.22) 0%,
+    rgba(0, 0, 0, 0.09) 45%,
     transparent 100%
   );
 }
