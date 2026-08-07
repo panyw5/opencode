@@ -89,17 +89,24 @@ html[data-theme="arc"][data-color-scheme="light"] {
      family. Hue and chroma are unchanged from the requested color. */
   --sidebar-card-bg: #6c5d79;
 
-  /* Rail / titlebar / scoop-join share the panel value so the chrome reads as
-     one continuous face (the scoop radius arcs between them).
+  /* Rail / titlebar / scoop-join sit one step BELOW the panel so the open
+     conversation panel reads as a distinct, slightly raised face instead of
+     dissolving into the surrounding chrome. (They used to share the panel
+     value, which made the boundary invisible.)
 
-     Interaction fills DESCEND from the panel. This is the load-bearing part:
-     the panel must stay the lightest surface in the scope, because the text
-     ramp is verified against the lightest surface. Ascending fills (the
-     previous #aaa2b1 / #8b8294) dropped a hovered icon from 3.39:1 to
+     This separation is deliberately done by darkening the chrome, never by
+     lightening the panel. The panel must stay the lightest surface in the
+     scope, because the light-on-dark text ramp is verified against it: at the
+     panel's #6c5d79 white is 6.04:1 and text-weak only 4.60:1, so there is
+     ~0.1 of headroom left. Lifting the panel to #857493 (ΔL +0.08) drops white
+     to 4.27:1 and takes the entire ramp below AA.
+
+     Interaction fills continue to DESCEND from the chrome. Ascending fills
+     (the previous #aaa2b1 / #8b8294) dropped a hovered icon from 3.39:1 to
      1.58:1 — least readable exactly under the pointer. */
-  --sidebar-chrome-bg: #6c5d79;
-  --sidebar-chrome-hover: #5e4f6a;
-  --sidebar-chrome-active: #544660;
+  --sidebar-chrome-bg: #5b4c68;
+  --sidebar-chrome-hover: #51435e;
+  --sidebar-chrome-active: #493b55;
 
   /* Dock-prompt shell — soft solid, slightly cooler than pure white. Light
      enough that the main pane's own text tokens still clear AA on it: at the
@@ -267,11 +274,11 @@ html[data-theme="arc"] [data-component="layout-top-divider"] {
   border-top-color: transparent;
 }
 
-/* Project rail — keeps its 64px slot and visually merges into the unified
-   sidebar surface. The outer wrapper (sidebar-nav-desktop) handles the
+/* Project rail — keeps its 64px slot and reads as the chrome face behind the
+   conversation panel. The outer wrapper (sidebar-nav-desktop) handles the
    right-edge rounding against the canvas; the rail must NOT round its
    own right edges or it cuts a wedge of canvas color where it abuts the
-   conversation panel (both are the same --sidebar-card-bg). */
+   conversation panel. */
 html[data-theme="arc"] [data-component="sidebar-rail"] {
   background-color: var(--sidebar-chrome-bg);
   box-shadow: none;
@@ -344,7 +351,9 @@ html[data-theme="arc"] [data-component="scoop-join"] {
    surprises.
 
    Multi-layer rounded rect rule (rail | panel | main):
-   - Top-left: scoop radius + chrome fill → continuous arc into rail/titlebar
+   - Top-left: scoop radius + chrome fill → arcs down into rail/titlebar. The
+     chrome is one step darker than the panel, so this arc now reads as a seam
+     between two faces rather than one continuous surface. That is intentional.
    - Left edge (below scoop): square, flush to rail
    - Right edge: outer radius only, floats against main
 
@@ -356,8 +365,8 @@ html[data-theme="arc"] [data-component="scoop-join"] {
    ~1.02:1 and disappeared. */
 html[data-theme="arc"] [data-component="sidebar-panel"] {
   background-color: var(--sidebar-card-bg) !important;
-  /* Keep the CSS border off so rail | panel stay one continuous face;
-     material edge comes from --sidebar-panel-rim (hairline + inset). */
+  /* No CSS border: the panel/rail boundary is carried by the fill difference
+     plus --sidebar-panel-rim (hairline + inset), not by a hard border line. */
   border: none !important;
   border-top-left-radius: var(--radius-2xl) !important;
   border-bottom-left-radius: 0 !important;
