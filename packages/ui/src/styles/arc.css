@@ -186,15 +186,19 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="titlebar"] {
   --color-icon-weak-base: #bebac2;
   --color-icon-weak: #bebac2;
 
-  /* Interaction fills descend from the panel (see --sidebar-chrome-* above). */
-  --surface-base-hover: var(--sidebar-chrome-hover);
-  --color-surface-base-hover: var(--sidebar-chrome-hover);
-  --surface-raised-base-hover: var(--sidebar-chrome-hover);
-  --color-surface-raised-base-hover: var(--sidebar-chrome-hover);
-  --surface-base-active: var(--sidebar-chrome-active);
-  --color-surface-base-active: var(--sidebar-chrome-active);
-  --surface-raised-base-active: var(--sidebar-chrome-active);
-  --color-surface-raised-base-active: var(--sidebar-chrome-active);
+  /* Interaction fills as black alpha, for the same reason as the chrome button
+     scope further down: this selector covers both the panel (#6c5d79) and the
+     rail/titlebar/nav-mobile chrome (#5b4c68), so an opaque fill can only
+     separate from one of them. --sidebar-chrome-hover measured 1.157:1 against
+     the rail it was painted on. */
+  --surface-base-hover: rgba(0, 0, 0, 0.165);
+  --color-surface-base-hover: rgba(0, 0, 0, 0.165);
+  --surface-raised-base-hover: rgba(0, 0, 0, 0.165);
+  --color-surface-raised-base-hover: rgba(0, 0, 0, 0.165);
+  --surface-base-active: rgba(0, 0, 0, 0.27);
+  --color-surface-base-active: rgba(0, 0, 0, 0.27);
+  --surface-raised-base-active: rgba(0, 0, 0, 0.27);
+  --color-surface-raised-base-active: rgba(0, 0, 0, 0.27);
 
   /* Task cards inside the tasks panel need their own layered face.
 
@@ -435,60 +439,88 @@ html[data-theme="arc"][data-color-scheme="dark"] [data-component="titlebar"] {
 
 /* The app color scheme can differ from the OS preference. Scope the light
    interaction palette to buttons so a dark system setting cannot make Arc's
-   light-mode controls inherit the sidebar's dark hover tokens. */
+   light-mode controls inherit the sidebar's dark hover tokens.
+
+   These are BLACK ALPHA overlays, not opaque fills. Arc light buttons sit on
+   at least seven different surfaces (white cards, #FBF9FE secondary buttons,
+   the #F5F2FA canvas, #EDE9F4 / #ECE7F2 / #E8E3F0 insets, the #f6f1fa dock),
+   so any single opaque value can only be tuned for one of them. The previous
+   opaque #f5f2f6 / #efebf1 were tuned near white and vanished elsewhere: on
+   the canvas hover measured 1.003:1 and on surface-base 1.077:1 — the state
+   simply did not render. An alpha overlay darkens whatever is underneath, so
+   one pair of values holds on every surface (0.085 clears 1.20:1 and 0.135
+   clears 1.35:1 on all seven).
+
+   Black rather than white: white would lighten these already very light
+   surfaces, which has nowhere to go (white-on-white) and inverts the
+   descending model the chrome scope below depends on. */
 html[data-theme="arc"][data-color-scheme="light"] :is(button, [data-component="button"], [data-component="icon-button"]) {
-  --surface-base-hover: #f5f2f6;
-  --color-surface-base-hover: #f5f2f6;
-  --surface-raised-base-hover: #f5f2f6;
-  --color-surface-raised-base-hover: #f5f2f6;
-  --surface-base-active: #efebf1;
-  --color-surface-base-active: #efebf1;
-  --surface-raised-base-active: #efebf1;
-  --color-surface-raised-base-active: #efebf1;
-  --button-secondary-hover: #f5f2f6;
-  --color-button-secondary-hover: #f5f2f6;
-  --button-ghost-hover: #f5f2f6;
-  --color-button-ghost-hover: #f5f2f6;
-  --button-ghost-hover2: #efebf1;
-  --color-button-ghost-hover2: #efebf1;
+  --surface-base-hover: rgba(0, 0, 0, 0.085);
+  --color-surface-base-hover: rgba(0, 0, 0, 0.085);
+  --surface-raised-base-hover: rgba(0, 0, 0, 0.085);
+  --color-surface-raised-base-hover: rgba(0, 0, 0, 0.085);
+  --surface-base-active: rgba(0, 0, 0, 0.135);
+  --color-surface-base-active: rgba(0, 0, 0, 0.135);
+  --surface-raised-base-active: rgba(0, 0, 0, 0.135);
+  --color-surface-raised-base-active: rgba(0, 0, 0, 0.135);
+  --button-secondary-hover: rgba(0, 0, 0, 0.085);
+  --color-button-secondary-hover: rgba(0, 0, 0, 0.085);
+  --button-ghost-hover: rgba(0, 0, 0, 0.085);
+  --color-button-ghost-hover: rgba(0, 0, 0, 0.085);
+  --button-ghost-hover2: rgba(0, 0, 0, 0.135);
+  --color-button-ghost-hover2: rgba(0, 0, 0, 0.135);
   --icon-strong-hover: #3d3544;
   --icon-strong-active: #342d3b;
 }
 
-/* Buttons inside the dark mauve chrome. These fills descend from the panel
-   for the same reason as the scoped surface tokens above: the previous
-   ascending values (#aaa2b1 / #9f96a7) were brighter than the panel, so a
-   hovered ghost icon dropped from 3.39:1 at rest to 1.58:1 — the control
-   became least readable exactly when the pointer was on it. Descending
-   fills keep the light-on-dark icon ramp valid in every state. */
+/* Buttons inside the dark mauve chrome. Also black alpha overlays, for a
+   second reason: this scope spans two different base fills — the panel
+   (#6c5d79) and the rail/titlebar/nav-mobile chrome (#5b4c68) — so a single
+   opaque value cannot separate from both. Pointing these at
+   --sidebar-chrome-hover worked only while the panel and the chrome shared one
+   colour; once the chrome was darkened to sit below the panel, that same fill
+   landed 1.157:1 from the rail it was painted on and the hover disappeared
+   there while still reading fine inside the panel.
+
+   Alphas are higher than the light scope above (0.165 / 0.27 vs 0.085 / 0.135)
+   because the same alpha yields far less relative luminance change over a dark
+   base: 0.085 over #5b4c68 is only 1.109:1.
+
+   Black, never white. White would raise these surfaces above the panel, which
+   is what the previous ascending fills (#aaa2b1 / #9f96a7) did — a hovered
+   ghost icon fell from 3.39:1 at rest to 1.58:1, least readable exactly under
+   the pointer. Measured for this change: a white overlay tuned to the same
+   perceivability floor breaks the light-on-dark ramp in 12 places, a black one
+   in none. */
 html[data-theme="arc"][data-color-scheme="light"]
   :is([data-component="sidebar-rail"], [data-component="sidebar-nav-desktop"], [data-component="sidebar-nav-mobile"], [data-component="sidebar-panel"], [data-component="titlebar"])
   :is(button, [data-component="button"], [data-component="icon-button"]) {
-  --surface-base-hover: var(--sidebar-chrome-hover);
-  --color-surface-base-hover: var(--sidebar-chrome-hover);
-  --surface-raised-base-hover: var(--sidebar-chrome-hover);
-  --color-surface-raised-base-hover: var(--sidebar-chrome-hover);
-  --surface-base-active: var(--sidebar-chrome-active);
-  --color-surface-base-active: var(--sidebar-chrome-active);
-  --surface-raised-base-active: var(--sidebar-chrome-active);
-  --color-surface-raised-base-active: var(--sidebar-chrome-active);
-  --button-secondary-hover: var(--sidebar-chrome-hover);
-  --color-button-secondary-hover: var(--sidebar-chrome-hover);
-  --button-ghost-hover: var(--sidebar-chrome-hover);
-  --color-button-ghost-hover: var(--sidebar-chrome-hover);
-  --button-ghost-hover2: var(--sidebar-chrome-active);
-  --color-button-ghost-hover2: var(--sidebar-chrome-active);
+  --surface-base-hover: rgba(0, 0, 0, 0.165);
+  --color-surface-base-hover: rgba(0, 0, 0, 0.165);
+  --surface-raised-base-hover: rgba(0, 0, 0, 0.165);
+  --color-surface-raised-base-hover: rgba(0, 0, 0, 0.165);
+  --surface-base-active: rgba(0, 0, 0, 0.27);
+  --color-surface-base-active: rgba(0, 0, 0, 0.27);
+  --surface-raised-base-active: rgba(0, 0, 0, 0.27);
+  --color-surface-raised-base-active: rgba(0, 0, 0, 0.27);
+  --button-secondary-hover: rgba(0, 0, 0, 0.165);
+  --color-button-secondary-hover: rgba(0, 0, 0, 0.165);
+  --button-ghost-hover: rgba(0, 0, 0, 0.165);
+  --color-button-ghost-hover: rgba(0, 0, 0, 0.165);
+  --button-ghost-hover2: rgba(0, 0, 0, 0.27);
+  --color-button-ghost-hover2: rgba(0, 0, 0, 0.27);
   /* icon-strong-* are set light here; the light-mode button block above
      points them at dark ink, which would be invisible on this chrome. */
   --icon-strong-hover: #ffffff;
   --icon-strong-active: #ffffff;
 }
 
-/* Task cards are clickable containers rather than buttons. Keep them on the
-   same descending scale as the chrome controls above (the old #e5dfe8 was a
-   near-white slab tuned for the previous light panel). */
+/* Task cards are clickable containers rather than buttons. Same black-alpha
+   treatment as the chrome controls above: they live inside the panel, and an
+   opaque --sidebar-chrome-hover here would be a fill tuned for a different
+   base (the old #e5dfe8 was a near-white slab from the previous light panel). */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="trellis-task-item"]:hover {
-  background-color: var(--sidebar-chrome-hover);
+  background-color: rgba(0, 0, 0, 0.165);
 }
 
 /* Dock-prompt: sync radius with cards + override hardcoded translucent dark
