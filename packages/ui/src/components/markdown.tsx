@@ -1301,16 +1301,6 @@ export function Markdown(
         if (fromEl.isEqualNode(toEl)) return false
         if (fromEl.getAttribute("data-opencode-math-tex") !== toEl.getAttribute("data-opencode-math-tex")) return true
         if (stable(fromEl) && stable(toEl) && fromEl.textContent === toEl.textContent) {
-          console.debug("[markdown] skip stable math subtree", {
-            key: local.cacheKey ?? "",
-            tag: fromEl.tagName,
-            text: local.text.length,
-          })
-          mark("skip-math", {
-            key: local.cacheKey ?? "",
-            tag: fromEl.tagName,
-            text: local.text.length,
-          })
           return false
         }
         return true
