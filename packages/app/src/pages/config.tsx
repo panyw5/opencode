@@ -47,6 +47,7 @@ import {
   validateCustomProvider,
 } from "@/components/dialog-custom-provider-form"
 import { FetchProviderModels } from "@/components/fetch-provider-models"
+import { TestProviderModelButton } from "@/components/test-provider-model-button"
 import { Link } from "@/components/link"
 import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject } from "@/context/layout"
@@ -3336,15 +3337,26 @@ function CustomEditor(props: {
                               : language.t("provider.custom.models.config.expand")
                           }
                         />
-                        <TextField
-                          label={language.t("config.custom.models.id")}
-                          hideLabel
-                          placeholder="模型 ID (如: gpt-4o, claude-3-opus)"
-                          value={item.id}
-                          onChange={(value) => props.onModel(idx(), "id", value)}
-                          validationState={item.err.id ? "invalid" : undefined}
-                          error={item.err.id}
-                        />
+                        <div class="flex min-w-0 items-start gap-1.5">
+                          <div class="min-w-0 flex-1">
+                            <TextField
+                              label={language.t("config.custom.models.id")}
+                              hideLabel
+                              placeholder="模型 ID (如: gpt-4o, claude-3-opus)"
+                              value={item.id}
+                              onChange={(value) => props.onModel(idx(), "id", value)}
+                              validationState={item.err.id ? "invalid" : undefined}
+                              error={item.err.id}
+                            />
+                          </div>
+                          <TestProviderModelButton
+                            class="mt-1.5 shrink-0"
+                            baseURL={props.form.baseURL}
+                            apiKey={props.form.apiKey}
+                            modelId={item.id}
+                            headers={props.form.headers}
+                          />
+                        </div>
                         <TextField
                           label={language.t("config.custom.models.name")}
                           hideLabel

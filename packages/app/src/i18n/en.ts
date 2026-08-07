@@ -1710,6 +1710,13 @@ export const dict = {
   "config.custom.models.id": "model id",
   "config.custom.models.name": "model name",
   "config.custom.models.remove": "Remove model",
+  "config.custom.models.test": "Test link",
+  "config.custom.models.test.running": "Testing…",
+  "config.custom.models.test.success": "Model link OK",
+  "config.custom.models.test.successDetail": "HTTP {{status}} · {{ms}}ms",
+  "config.custom.models.test.failed": "Model link failed",
+  "config.custom.models.test.envKey":
+    "API key is an {env:VAR} reference. Paste a bare key temporarily to run the browser curl test.",
   "config.custom.headers.title": "Headers",
   "config.custom.headers.description": "Optional request headers merged into provider options.headers.",
   "config.custom.headers.add": "Add header",
