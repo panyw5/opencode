@@ -40,7 +40,8 @@
       "markdown-list-enumeration": "#5266eb",
       "markdown-image": "#465bd1",
       "markdown-image-text": "#5266eb",
-      "markdown-code-block": "#363644"
+      "markdown-code-block": "#363644",
+      "text-weaker": "#72727b"
     }
   },
   "dark": {

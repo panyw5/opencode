@@ -16,12 +16,14 @@
       "diffDelete": "#f2a1a1"
     },
     "overrides": {
-      "syntax-comment": "#657b83",
-      "syntax-keyword": "#728600",
-      "syntax-string": "#1f8f88",
-      "syntax-primitive": "#268bd2",
-      "syntax-property": "#268bd2",
-      "syntax-constant": "#d33682"
+      "syntax-comment": "#5e747c",
+      "syntax-keyword": "#66780a",
+      "syntax-string": "#1b7d76",
+      "syntax-primitive": "#1b75b3",
+      "syntax-property": "#1b75b3",
+      "syntax-constant": "#cc2e7c",
+      "text-weaker": "#627378",
+      "text-interactive-base": "#1775b5"
     }
   },
   "dark": {

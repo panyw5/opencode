@@ -16,11 +16,11 @@
       "diffDelete": "#ff1744"
     },
     "overrides": {
-      "syntax-comment": "#757575",
-      "syntax-keyword": "#d500f9",
-      "syntax-string": "#00e676",
-      "syntax-primitive": "#00b0ff",
-      "syntax-property": "#ff9100",
+      "syntax-comment": "#696969",
+      "syntax-keyword": "#ae21ca",
+      "syntax-string": "#167a3f",
+      "syntax-primitive": "#1c70a0",
+      "syntax-property": "#9b5913",
       "syntax-constant": "#6200ff"
     }
   },
