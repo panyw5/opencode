@@ -165,13 +165,37 @@ function todoKey(t: { sessionID: string; content: string; status: string }) {
   return `${t.sessionID}\0${t.content}`
 }
 
+/** Shared ID hygiene rules for project-task inject briefs. */
+function projectTaskIdHygieneLines(): string[] {
+  return [
+    "CRITICAL — Task ID hygiene (do this every time you target a task):",
+    "1. Call `project_task_list` first and take the exact `id` from that tool's return value.",
+    "2. Use only that returned `id` for `project_task_get` / `project_task_update` / `project_task_mount`.",
+    "3. NEVER retype, guess, or hand-copy a taskID from chat, memory, or this brief — IDs are easy to mistype.",
+    "4. Matching by title alone is not enough: resolve title → id via `project_task_list` (or the list/get/create/mount tool result you just received).",
+  ]
+}
+
+/** Shared status rules — agents must not auto-complete project tasks. */
+function projectTaskStatusRulesLines(): string[] {
+  return [
+    "CRITICAL — Do NOT mark project tasks done on your own:",
+    "1. NEVER set status to `done` or `archived` just because implementation/todos look finished.",
+    "2. Only mark done when the user explicitly asks, or after you ask and they clearly approve.",
+    "3. Prefer reporting progress and asking \"mark this task done?\" over silently updating status.",
+    "4. Session todos (`todowrite`) may track local steps; project-task status is a user-owned decision.",
+  ]
+}
+
 /** Format a full project-task brief (first inject for a task on this session). */
 export function formatProjectTaskFullContext(detail: Detail): string {
   const lines: string[] = [
     '<project-task-context mode="full">',
     "The user mounted (or switched to) this project-level task on this session.",
     "This is the FULL working brief for this task. Later turns may only send deltas or omit context when unchanged.",
-    `Task ID: ${detail.id}`,
+    ...projectTaskIdHygieneLines(),
+    ...projectTaskStatusRulesLines(),
+    `Task ID (mounted; still prefer list-return when calling tools): ${detail.id}`,
     `Title: ${detail.title}`,
     `Status: ${detail.status}`,
   ]
@@ -209,6 +233,8 @@ export function formatProjectTaskDeltaContext(
     '<project-task-context mode="delta">',
     `Updates for mounted task ${detail.id} (${detail.title}) since the last inject.`,
     "Full brief was already provided earlier in this session — apply only these changes.",
+    "Before get/update/mount on any target task: call `project_task_list` and use the exact `id` from the tool return — do not hand-copy IDs.",
+    "Do NOT set status done/archived unless the user explicitly asks or clearly approves after you ask.",
   ]
 
   if (prev.title !== next.title) lines.push(`- title: ${prev.title} → ${next.title}`)

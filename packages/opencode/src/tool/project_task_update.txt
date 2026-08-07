@@ -7,7 +7,7 @@ Updating `description` overwrites `.opentasks/<taskID>/description.md` (see task
 You may also edit that file directly with write tools.
 
 ## When to use
-- Status changes: open → in_progress → done (or archived when retiring the work item)
+- Status changes: open → in_progress when actively working; done/archived ONLY with user direction
 - Edit description / acceptance criteria / title
 - User says the project task is finished, blocked, or needs rewording
 
@@ -15,14 +15,17 @@ You may also edit that file directly with write tools.
 - Task does not exist yet → `project_task_create`
 - Only attaching this session → `project_task_mount`
 - Per-session step checklist → `todowrite` (do not encode every micro-step as project status)
+- Marking done because code/todos "look finished" without user approval → ask first, do not update status
 
 ## Rules
-- Always pass the real `taskID` from list/get/create/mount
-- Completing work: `status=done` on the SAME taskID — NEVER create a second task with the same title
-- Archiving/retiring: `status=archived` (or archive API via product UI) — do not invent a done duplicate
+- Always pass the real `taskID` from the latest `project_task_list` / get / create / mount tool return
+- Prefer `project_task_list` first when resolving a target by title or when the id is not from a tool result you just received — do not hand-copy IDs from chat
+- NEVER proactively set `status=done` or `archived`. Only when the user explicitly requests it, or after you ask and they clearly approve
+- Completing work (when allowed): `status=done` on the SAME taskID — NEVER create a second task with the same title
+- Archiving/retiring (when allowed): `status=archived` (or archive API via product UI) — do not invent a done duplicate
 - Prefer small, intentional field updates; omit fields you are not changing
 
 ## Flow
-1. `project_task_list` or use known taskID
+1. `project_task_list` — get the exact target `id` from the return value (do not retype)
 2. Optional `project_task_get` if you need current description/sessions
 3. `project_task_update` with only changed fields

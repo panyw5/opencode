@@ -22,6 +22,7 @@ Description is stored as a user-visible file at `.opentasks/<taskID>/description
 ## Rules
 - Default status is `open`. Allowed on create: `open` or `in_progress` only
 - Do NOT create with status `done` or `archived` to "finish" work
+- Do NOT later mark tasks done on your own — only when the user explicitly asks or clearly approves after you ask (`project_task_update`)
 - After create, if the user is working on it now, `project_task_mount` this session onto the new taskID
 - Prefer short, stable titles; put goals/acceptance criteria in `description`
 

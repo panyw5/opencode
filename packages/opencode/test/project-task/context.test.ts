@@ -51,6 +51,21 @@ describe("formatProjectTaskFullContext", () => {
     expect(text).toContain("</project-task-context>")
   })
 
+  test("emphasizes project_task_list for accurate task IDs", () => {
+    const text = formatProjectTaskFullContext(makeDetail())
+    expect(text).toContain("project_task_list")
+    expect(text).toContain("Task ID hygiene")
+    expect(text).toContain("exact `id` from that tool's return value")
+    expect(text).toContain("NEVER retype")
+  })
+
+  test("forbids auto-marking project tasks done without user approval", () => {
+    const text = formatProjectTaskFullContext(makeDetail())
+    expect(text).toContain("Do NOT mark project tasks done on your own")
+    expect(text).toContain("user explicitly asks")
+    expect(text).toContain("clearly approve")
+  })
+
   test("closes the linked-session list before the closing tag (markdown indent)", () => {
     const text = formatProjectTaskFullContext(makeDetail())
     // Without a blank line, Markdown treats "</project-task-context>" as a list-item
@@ -207,5 +222,7 @@ describe("formatProjectTaskDeltaContext", () => {
     const prev = buildTaskContextSnapshot(makeDetail({ status: "in_progress" }))
     const text = formatProjectTaskDeltaContext(detail, prev)
     expect(text).toContain("status: in_progress → done")
+    expect(text).toContain("project_task_list")
+    expect(text).toContain("Do NOT set status done/archived unless the user explicitly asks")
   })
 })

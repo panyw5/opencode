@@ -14,5 +14,7 @@ Returns title, status, sessionCount, and aggregated session-todo progress for ea
 
 ## Rules
 - Prefer list before `project_task_create` when unsure whether a task already exists
+- ALWAYS call this before `get` / `mount` / `update` when you need a target task's id — copy the exact `id` from this tool's return value
+- NEVER retype or hand-copy taskIDs from chat/history/inject briefs (easy to mistype)
 - Use returned `id` values for `get` / `mount` / `update` — do not invent IDs
 - Archived tasks are hidden unless `includeArchived=true`

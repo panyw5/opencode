@@ -11,5 +11,6 @@ Get one project-level task with linked sessions and each session's todos/progres
 - Changing fields → `project_task_update` with the same taskID
 
 ## Rules
-- Always use a real taskID from list/create/mount output
-- If work is done, call `project_task_update` on this taskID — do NOT create a second task
+- Always use a real taskID from `project_task_list` / create / mount tool output (exact string from the return)
+- If you only know the title or an id from chat/inject text, call `project_task_list` first — do not hand-copy IDs
+- If the user asks to finish work, call `project_task_update` on this taskID — do NOT create a second task; do NOT mark done without user request or explicit approval

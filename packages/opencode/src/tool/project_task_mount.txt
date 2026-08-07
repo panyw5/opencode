@@ -14,6 +14,7 @@ Session todos (`todowrite`) stay local to the session and roll up under the moun
 - Session-only steps → `todowrite`
 
 ## Rules
-- Do NOT create a new task just to mount — list/get first, mount an existing id
+- Do NOT create a new task just to mount — `project_task_list` first, then mount the exact `id` from the list return
+- Never hand-copy taskIDs from chat or inject briefs — resolve via list (or create/mount tool return)
 - Pass `taskID` to mount; pass `unmount=true` (or omit/empty taskID) to clear
 - After mount, keep session work in `todowrite`; keep project-level status in `project_task_update`
