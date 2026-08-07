@@ -79,7 +79,7 @@ export const ProjectTaskCreateTool = Tool.define<typeof CreateParams, { task: un
             output: JSON.stringify(task, null, 2),
             metadata: { task },
           }
-        }),
+        }).pipe(Effect.orDie),
     } satisfies Tool.DefWithoutID<typeof CreateParams, { task: unknown }>
   }),
 )
@@ -133,7 +133,7 @@ export const ProjectTaskMountTool = Tool.define<typeof MountParams, { taskID: st
             output: JSON.stringify({ taskID, task: result }, null, 2),
             metadata: { taskID },
           }
-        }),
+        }).pipe(Effect.orDie),
     } satisfies Tool.DefWithoutID<typeof MountParams, { taskID: string | null }>
   }),
 )
@@ -160,7 +160,7 @@ export const ProjectTaskGetTool = Tool.define<typeof GetParams, { taskID: string
             output: JSON.stringify(detail, null, 2),
             metadata: { taskID },
           }
-        }),
+        }).pipe(Effect.orDie),
     } satisfies Tool.DefWithoutID<typeof GetParams, { taskID: string }>
   }),
 )
@@ -198,7 +198,7 @@ export const ProjectTaskUpdateTool = Tool.define<typeof UpdateParams, { task: un
             output: JSON.stringify(task, null, 2),
             metadata: { task },
           }
-        }),
+        }).pipe(Effect.orDie),
     } satisfies Tool.DefWithoutID<typeof UpdateParams, { task: unknown }>
   }),
 )

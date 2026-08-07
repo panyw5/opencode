@@ -56,7 +56,9 @@ export const projectTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "projec
           Effect.catchTags({
             "ProjectTask.NotFoundError": () => Effect.fail(notFound()),
             "ProjectTask.SessionNotFoundError": () => Effect.fail(notFound()),
-            "ProjectTask.InvalidMountError": () => Effect.fail(badRequest()),
+            // Unmount always passes taskID: null, so InvalidMountError is unreachable;
+            // map it to NotFound to stay within the endpoint's declared error set.
+            "ProjectTask.InvalidMountError": () => Effect.fail(notFound()),
           }),
         ),
       )
