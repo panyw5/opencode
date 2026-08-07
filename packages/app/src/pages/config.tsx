@@ -3328,9 +3328,15 @@ function CustomEditor(props: {
                 */}
                 <div class="hidden gap-2 p-2 md:grid md:grid-cols-[24px_minmax(0,1fr)_5.5rem_minmax(0,1fr)_24px]">
                   <div aria-hidden="true" />
-                  <div class="pl-3 text-12-medium text-text-weak">{language.t("config.custom.models.id")}</div>
+                  <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 pl-3">
+                    <span class="text-12-medium text-text-weak">{language.t("config.custom.models.id")}</span>
+                    <span class="text-11-regular text-text-weak/70">{language.t("config.custom.models.id.hint")}</span>
+                  </div>
                   <div aria-hidden="true" />
-                  <div class="pl-3 text-12-medium text-text-weak">{language.t("config.custom.models.name")}</div>
+                  <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 pl-3">
+                    <span class="text-12-medium text-text-weak">{language.t("config.custom.models.name")}</span>
+                    <span class="text-11-regular text-text-weak/70">{language.t("config.custom.models.name.hint")}</span>
+                  </div>
                   <div aria-hidden="true" />
                 </div>
                 <For each={props.form.models}>
