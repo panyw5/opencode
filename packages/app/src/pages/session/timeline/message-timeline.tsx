@@ -87,12 +87,18 @@ const boundaryTarget = (root: HTMLElement, target: EventTarget | null) => {
   return nested
 }
 
-function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSummaries: boolean }) {
+function TimelineThinkingRow(props: {
+  phase: "sending" | "thinking"
+  reasoningHeading?: string
+  showReasoningSummaries: boolean
+}) {
   const language = useLanguage()
+  const label = () =>
+    language.t(props.phase === "sending" ? "ui.sessionTurn.status.sending" : "ui.sessionTurn.status.thinking")
   return (
     <div data-slot="session-turn-thinking">
-      <TextShimmer text={language.t("ui.sessionTurn.status.thinking")} />
-      <Show when={!props.showReasoningSummaries}>
+      <TextShimmer text={label()} active={props.phase === "thinking"} />
+      <Show when={!props.showReasoningSummaries && props.phase === "thinking"}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
       </Show>
     </div>
@@ -690,6 +696,7 @@ export function MessageTimeline(props: {
           <TimelineRowFrame row={item}>
             <div class="w-full px-4 md:px-5">
               <TimelineThinkingRow
+                phase={item().phase}
                 reasoningHeading={item().reasoningHeading}
                 showReasoningSummaries={settings.general.showReasoningSummaries()}
               />

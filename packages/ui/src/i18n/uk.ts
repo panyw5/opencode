@@ -61,6 +61,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.searchingWeb": "Пошук в інтернеті",
   "ui.sessionTurn.status.makingEdits": "Внесення змін",
   "ui.sessionTurn.status.runningCommands": "Виконання команд",
+  "ui.sessionTurn.status.sending": "Надсилання",
   "ui.sessionTurn.status.thinking": "Міркування",
   "ui.sessionTurn.status.thinkingWithTopic": "Міркування — {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Збирання думок",

@@ -63,6 +63,7 @@ export const dict = {
   "ui.sessionTurn.status.searchingWeb": "Buscando en la web",
   "ui.sessionTurn.status.makingEdits": "Realizando ediciones",
   "ui.sessionTurn.status.runningCommands": "Ejecutando comandos",
+  "ui.sessionTurn.status.sending": "Enviando",
   "ui.sessionTurn.status.thinking": "Pensando",
   "ui.sessionTurn.status.thinkingWithTopic": "Pensando - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Recopilando pensamientos",

@@ -23,7 +23,7 @@ export type TimelineRowMap = {
     group: PartGroup
     previousAssistantPart: boolean
   }
-  Thinking: { userMessageID: string; reasoningHeading?: string }
+  Thinking: { userMessageID: string; phase: "sending" | "thinking"; reasoningHeading?: string }
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
   Error: { userMessageID: string; text: string }
@@ -51,6 +51,7 @@ export namespace TimelineRow {
   }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string
+    phase: "sending" | "thinking"
     reasoningHeading?: string
   }> {}
   export class DiffSummary extends Data.TaggedClass("DiffSummary")<{
@@ -196,14 +197,20 @@ export namespace Timeline {
     })
 
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
-      const heading = assistantMessages
-        .flatMap((message) => getMessageParts(message.id))
-        .map((part) => (part.type === "reasoning" && part.text ? reasoningHeading(part.text) : undefined))
+      const reasoningParts = assistantMessages.flatMap((message) =>
+        getMessageParts(message.id).filter((part) => part.type === "reasoning" && !!part.text?.trim()),
+      )
+      // Before the first reasoning token arrives the request is still in flight —
+      // surface "Sending" rather than "Thinking" so the label matches reality.
+      const hasReasoning = reasoningParts.length > 0
+      const heading = reasoningParts
+        .map((part) => (part.type === "reasoning" ? reasoningHeading(part.text) : undefined))
         .find((value): value is string => !!value)
 
       rows.push(
         new TimelineRow.Thinking({
           userMessageID: userMessage.id,
+          phase: hasReasoning ? "thinking" : "sending",
           reasoningHeading: heading,
         }),
       )

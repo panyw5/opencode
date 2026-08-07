@@ -67,6 +67,7 @@ export const dict = {
   "ui.sessionTurn.status.searchingWeb": "Pretraživanje weba",
   "ui.sessionTurn.status.makingEdits": "Pravljenje izmjena",
   "ui.sessionTurn.status.runningCommands": "Pokretanje komandi",
+  "ui.sessionTurn.status.sending": "Slanje",
   "ui.sessionTurn.status.thinking": "Razmišljanje",
   "ui.sessionTurn.status.thinkingWithTopic": "Razmišljanje - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Sređivanje misli",

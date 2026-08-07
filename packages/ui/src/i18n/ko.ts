@@ -63,6 +63,7 @@ export const dict = {
   "ui.sessionTurn.status.searchingWeb": "웹 검색 중",
   "ui.sessionTurn.status.makingEdits": "편집 수행 중",
   "ui.sessionTurn.status.runningCommands": "명령어 실행 중",
+  "ui.sessionTurn.status.sending": "전송 중",
   "ui.sessionTurn.status.thinking": "생각 중",
   "ui.sessionTurn.status.thinkingWithTopic": "생각 중 - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "생각 정리 중",

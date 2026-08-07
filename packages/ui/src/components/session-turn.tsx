@@ -476,6 +476,21 @@ export function SessionTurn(
       seconds: formatted.seconds,
     })
   })
+  // "Thinking" only after the first reasoning token; until then the request is still in flight.
+  const thinkingPhase = createMemo((): "sending" | "thinking" => {
+    if (!working()) return "thinking"
+    const hasReasoning = assistantList().some((message) =>
+      list(data.store.part?.[message.id], emptyParts).some(
+        (part) => part.type === "reasoning" && !!part.text?.trim(),
+      ),
+    )
+    return hasReasoning ? "thinking" : "sending"
+  })
+  const thinkingStatusLabel = createMemo(() =>
+    i18n.t(
+      thinkingPhase() === "sending" ? "ui.sessionTurn.status.sending" : "ui.sessionTurn.status.thinking",
+    ),
+  )
 
   const autoScroll = createAutoScroll({
     working,
@@ -700,13 +715,16 @@ export function SessionTurn(
                       fallback={<span>{i18n.t("ui.messagePart.reasoning.thought")}</span>}
                     >
                       <span data-slot="session-turn-thinking-status">
-                        <span data-slot="session-turn-thinking-label" data-shimmer="true">
-                          {i18n.t("ui.sessionTurn.status.thinking")}
+                        <span
+                          data-slot="session-turn-thinking-label"
+                          data-shimmer={thinkingPhase() === "thinking" ? "true" : "false"}
+                        >
+                          {thinkingStatusLabel()}
                         </span>
                         <span data-slot="session-turn-thinking-time">{thinkingElapsedLabel()}</span>
                       </span>
                     </Show>
-                    <Show when={!showReasoningSummaries()}>
+                    <Show when={!showReasoningSummaries() && thinkingPhase() === "thinking"}>
                       <Show
                         when={working()}
                         fallback={<span class="session-turn-thinking-heading">{summary().headingText}</span>}
