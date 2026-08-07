@@ -232,6 +232,20 @@
     box-shadow: none;
   }
 
+  /* Floating sidebar cast onto main. Sibling element (not box-shadow) because
+     the layout root uses overflow-x-hidden and would clip a real drop shadow.
+     Soft ease-out falloff: low contact alpha + longer width so the edge
+     does not read as a hard band (still pure black — no tinted mid stops). */
+  [data-component="sidebar-float-shadow"] {
+    width: 22px;
+    background: linear-gradient(
+      to right,
+      light-dark(rgba(0, 0, 0, 0.07), rgba(0, 0, 0, 0.22)) 0%,
+      light-dark(rgba(0, 0, 0, 0.025), rgba(0, 0, 0, 0.08)) 45%,
+      transparent 100%
+    );
+  }
+
   [data-component="sidebar-session"] {
     --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
     --sidebar-session-hover-bg: light-dark(#f1f1f1, #2c2924);

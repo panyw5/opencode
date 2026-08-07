@@ -3260,7 +3260,9 @@ export default function Layout(props: ParentProps) {
           "rounded-tl-[12px]": !panelProps.mobile,
           "rounded-tr-[12px] rounded-br-[12px]": merged() && !panelProps.mobile,
           "border border-b-0 border-border-weak-base": !merged(),
-          "border-l border-t border-border-weaker-base": merged(),
+          // Left/top stay weaker (flush to rail); right rim is stronger so the
+          // floating face reads against main. Arc overrides border via CSS.
+          "border-l border-t border-border-weaker-base border-r border-border-weak-base": merged(),
           "bg-background-base": merged(),
           "bg-background-stronger": !merged(),
           // Desktop: fill the shell slot; open/close is driven by the nav
@@ -3840,6 +3842,18 @@ export default function Layout(props: ParentProps) {
               }}
             >
               <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
+              {/* Cast shadow rides on the nav's right edge (left: 100%) so it
+                  tracks the CSS width transition on open/close. A layout
+                  sibling with an absolute `left` would jump to the final width
+                  on mount while the panel is still expanding. Kept outside
+                  contain-strict so paint containment cannot clip it. */}
+              <Show when={sidebarElevated()}>
+                <div
+                  data-component="sidebar-float-shadow"
+                  aria-hidden="true"
+                  class="pointer-events-none absolute inset-y-0 left-full"
+                />
+              </Show>
             </nav>
 
             <Show when={layout.sidebar.opened()}>
@@ -3851,13 +3865,6 @@ export default function Layout(props: ParentProps) {
                 class="hidden xl:block absolute inset-0 z-[25]"
                 style={{ left: `${side()}px` }}
                 onClick={() => layout.sidebar.close()}
-              />
-              {/* Soft right-edge elevation as a sibling (not box-shadow) so the
-                  parent overflow-x-hidden does not clip the floating cue. */}
-              <div
-                aria-hidden="true"
-                class="hidden xl:block pointer-events-none absolute inset-y-0 z-30 w-4 bg-gradient-to-r from-black/15 to-transparent"
-                style={{ left: `${side()}px` }}
               />
               <div
                 class="hidden xl:block absolute inset-y-0 z-40 w-0 overflow-visible"

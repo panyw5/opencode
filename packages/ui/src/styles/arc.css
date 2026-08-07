@@ -40,6 +40,11 @@ html[data-theme="arc"] {
   --card-elevation:
     0 0 0 0.5px rgba(167, 139, 250, 0.08), 0 1px 2px rgba(0, 0, 0, 0.5), 0 12px 32px rgba(0, 0, 0, 0.25);
 
+  /* Material edge for the floating session panel. No outer white ring /
+     right-edge inset highlight — those read as a glowing halo against
+     the main pane. Top inset only for a slight face highlight. */
+  --sidebar-panel-rim: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
   /* Per-project rail hues — flat mid-saturated tones (no gradient).
      A flat fill reads cleaner: the tile becomes a single confident
      color block, and the white letter on top has the best possible
@@ -71,6 +76,11 @@ html[data-theme="arc"][data-color-scheme="light"] {
   /* Floating card elevation (subtle violet-tinged warm shadow) */
   --card-elevation:
     0 0 0 0.5px rgba(107, 70, 229, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(107, 70, 229, 0.08);
+
+  /* Dark hairline against the light main pane (not a white glow). */
+  --sidebar-panel-rim:
+    0 0 0 0.5px rgba(0, 0, 0, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
 
   /* Per-project rail hues — flat mid-saturated tones (no gradient).
      The previous low-saturation cream pastels had too little
@@ -209,13 +219,35 @@ html[data-theme="arc"] [data-component="sidebar-nav-desktop"] {
   border: none;
 }
 
-/* Mobile drawer still needs its own solid chrome. */
+/* Mobile drawer still needs its own solid chrome + cast shadow. */
 html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
   background-color: var(--border-strong-base);
   border-top-right-radius: var(--radius-xl);
   border-bottom-right-radius: var(--radius-xl);
-  box-shadow: none;
+  box-shadow: var(--card-elevation);
   border: none;
+}
+
+/* Desktop float shadow under the open panel. Sibling of the nav so
+   overflow-x-hidden cannot clip it. Soft pure-black ease-out only. */
+html[data-theme="arc"] [data-component="sidebar-float-shadow"] {
+  width: 24px;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.22) 0%,
+    rgba(0, 0, 0, 0.07) 45%,
+    transparent 100%
+  );
+}
+
+html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-float-shadow"] {
+  width: 24px;
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.08) 0%,
+    rgba(0, 0, 0, 0.03) 45%,
+    transparent 100%
+  );
 }
 
 /* ScoopJoin: shared chrome patch under top-left radii (session panel when
@@ -246,11 +278,14 @@ html[data-theme="arc"] [data-component="scoop-join"] {
    - Right edge: outer radius only, floats against main */
 html[data-theme="arc"] [data-component="sidebar-panel"] {
   background-color: var(--color-border-weaker-base) !important;
+  /* Keep the CSS border off so rail | panel stay one continuous face;
+     material edge comes from --sidebar-panel-rim (hairline + inset). */
   border: none !important;
   border-top-left-radius: var(--radius-2xl) !important;
   border-bottom-left-radius: 0 !important;
   border-top-right-radius: var(--radius-xl) !important;
   border-bottom-right-radius: var(--radius-xl) !important;
+  box-shadow: var(--sidebar-panel-rim) !important;
 }
 
 html[data-theme="arc"][data-color-scheme="dark"] [data-component="sidebar-panel"] {
