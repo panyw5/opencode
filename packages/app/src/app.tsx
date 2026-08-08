@@ -113,7 +113,7 @@ function ConfigLoadingShell() {
                 <Icon name="chevron-left" size="small" />
               </div>
               <div class="min-w-0 text-center">
-                <div class="text-24-medium text-text-strong">{language.t("config.title")}</div>
+                <div class="text-20-medium text-text-strong">{language.t("config.title")}</div>
               </div>
             </div>
             <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
