@@ -13,6 +13,7 @@ import { Link } from "@/components/link"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
+import { JsonCodeField } from "@/components/json-code-field"
 import {
   OPENAI_COMPATIBLE,
   type FormState,
@@ -321,22 +322,37 @@ export function DialogCustomProvider(props: Props) {
                     />
                   </div>
                   <Show when={m.expanded}>
-                    <div class="grid grid-cols-[minmax(120px,0.8fr)_minmax(0,1.2fr)] gap-2 border-t border-border-weak-base pt-2">
+                    <div class="grid grid-cols-[minmax(120px,0.8fr)_minmax(0,1.2fr)] items-start gap-2 border-t border-border-weak-base pt-2">
                       <For each={m.config}>
                         {(config: ModelConfigRow, configIndex) => (
                           <>
                             <div class="min-w-0 break-all rounded-lg bg-surface-base px-2.5 py-2 font-mono text-[11px] leading-5 text-text-weak">
                               {config.key}
                             </div>
-                            <TextField
-                              label={config.key}
-                              hideLabel
-                              placeholder={modelConfigPlaceholder(config, language.t)}
-                              value={config.value}
-                              onChange={(v) => setModelConfig(i(), configIndex(), v)}
-                              validationState={m.err.config?.[config.key] ? "invalid" : undefined}
-                              error={m.err.config?.[config.key]}
-                            />
+                            <Show
+                              when={config.kind === "json"}
+                              fallback={
+                                <TextField
+                                  label={config.key}
+                                  hideLabel
+                                  placeholder={modelConfigPlaceholder(config, language.t)}
+                                  value={config.value}
+                                  onChange={(v) => setModelConfig(i(), configIndex(), v)}
+                                  validationState={m.err.config?.[config.key] ? "invalid" : undefined}
+                                  error={m.err.config?.[config.key]}
+                                />
+                              }
+                            >
+                              <JsonCodeField
+                                label={config.key}
+                                hideLabel
+                                placeholder={modelConfigPlaceholder(config, language.t)}
+                                value={config.value}
+                                onChange={(v) => setModelConfig(i(), configIndex(), v)}
+                                validationState={m.err.config?.[config.key] ? "invalid" : undefined}
+                                error={m.err.config?.[config.key]}
+                              />
+                            </Show>
                           </>
                         )}
                       </For>

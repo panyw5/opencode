@@ -58,6 +58,18 @@ describe("validateCustomProvider", () => {
     })
   })
 
+  test("pretty-prints existing object model config values for JSON fields", () => {
+    const rows = modelConfig({
+      options: { reasoningEffort: "high" },
+      headers: { "X-Test": "1" },
+    })
+    const options = rows.find((row) => row.key === "options")
+    const headers = rows.find((row) => row.key === "headers")
+    expect(options?.kind).toBe("json")
+    expect(options?.value).toBe('{\n  "reasoningEffort": "high"\n}')
+    expect(headers?.value).toBe('{\n  "X-Test": "1"\n}')
+  })
+
   test("parses optional model config values and omits blanks", () => {
     const result = validateCustomProvider({
       form: {

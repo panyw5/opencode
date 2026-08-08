@@ -47,8 +47,10 @@ import {
   validateCustomProvider,
 } from "@/components/dialog-custom-provider-form"
 import { FetchProviderModels } from "@/components/fetch-provider-models"
+import { JsonCodeField } from "@/components/json-code-field"
 import { TestProviderModelButton } from "@/components/test-provider-model-button"
 import { Link } from "@/components/link"
+import { paintCode } from "@/utils/paint-code"
 import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject } from "@/context/layout"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
@@ -782,69 +784,6 @@ async function loadMarketSkills(
     .sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path))
 }
 
-const key = new Set([
-  "as",
-  "async",
-  "await",
-  "break",
-  "case",
-  "catch",
-  "class",
-  "const",
-  "continue",
-  "debugger",
-  "declare",
-  "default",
-  "delete",
-  "do",
-  "else",
-  "enum",
-  "export",
-  "extends",
-  "finally",
-  "for",
-  "from",
-  "function",
-  "if",
-  "implements",
-  "import",
-  "in",
-  "instanceof",
-  "interface",
-  "let",
-  "new",
-  "of",
-  "return",
-  "satisfies",
-  "static",
-  "super",
-  "switch",
-  "throw",
-  "try",
-  "type",
-  "typeof",
-  "using",
-  "var",
-  "void",
-  "while",
-  "with",
-  "yield",
-])
-
-const prim = new Set(["true", "false", "null", "undefined", "NaN", "Infinity"])
-
-const punt = new Set(["(", ")", "[", "]", "{", "}", ".", ",", ";", ":", "?"])
-
-const safe = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;")
-
-const tint = (value: string, color: string) => `<span style="color:${color}">${safe(value)}</span>`
-
 function script(path?: string) {
   const ext = name(local(path ?? ""))
     .split(".")
@@ -852,35 +791,6 @@ function script(path?: string) {
     ?.toLowerCase()
   if (["js", "mjs", "cjs", "ts", "mts", "cts", "tsx", "jsx"].includes(ext ?? "")) return true
   return false
-}
-
-function color(value: string) {
-  if (value.startsWith("//") || value.startsWith("/*")) return "var(--syntax-comment)"
-  if (['"', "'", "`"].includes(value[0] ?? "")) return "var(--syntax-string)"
-  if (prim.has(value)) return "var(--syntax-primitive)"
-  if (/^\d/.test(value)) return "var(--syntax-constant)"
-  if (punt.has(value)) return "var(--syntax-punctuation)"
-  if (key.has(value)) return "var(--syntax-keyword)"
-  return "var(--text-base)"
-}
-
-function paintCode(raw: string) {
-  const rule =
-    /\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b[A-Za-z_$][\w$]*\b|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?n?\b|[()[\]{}.,;:?]/g
-
-  let at = 0
-  let out = ""
-
-  for (const hit of raw.matchAll(rule)) {
-    const idx = hit.index ?? 0
-    if (idx > at) out += safe(raw.slice(at, idx))
-    const value = hit[0]
-    out += tint(value, color(value))
-    at = idx + value.length
-  }
-
-  if (at < raw.length) out += safe(raw.slice(at))
-  return out || "&nbsp;"
 }
 
 function sourceKey(source?: string) {
@@ -3391,22 +3301,37 @@ function CustomEditor(props: {
                         />
                       </div>
                       <Show when={item.expanded}>
-                        <div class="mt-2 grid grid-cols-[minmax(150px,0.8fr)_minmax(0,1.2fr)] gap-2 border-t border-border-weak-base pt-2">
+                        <div class="mt-2 grid grid-cols-[minmax(150px,0.8fr)_minmax(0,1.2fr)] items-start gap-2 border-t border-border-weak-base pt-2">
                           <For each={item.config}>
                             {(config: ModelConfigRow, configIndex) => (
                               <>
                                 <div class="min-w-0 break-all rounded-lg bg-background-base px-2.5 py-2 font-mono text-[11px] leading-5 text-text-weak">
                                   {config.key}
                                 </div>
-                                <TextField
-                                  label={config.key}
-                                  hideLabel
-                                  placeholder={modelConfigPlaceholder(config, language.t)}
-                                  value={config.value}
-                                  onChange={(value) => props.onModelConfig(idx(), configIndex(), value)}
-                                  validationState={item.err.config?.[config.key] ? "invalid" : undefined}
-                                  error={item.err.config?.[config.key]}
-                                />
+                                <Show
+                                  when={config.kind === "json"}
+                                  fallback={
+                                    <TextField
+                                      label={config.key}
+                                      hideLabel
+                                      placeholder={modelConfigPlaceholder(config, language.t)}
+                                      value={config.value}
+                                      onChange={(value) => props.onModelConfig(idx(), configIndex(), value)}
+                                      validationState={item.err.config?.[config.key] ? "invalid" : undefined}
+                                      error={item.err.config?.[config.key]}
+                                    />
+                                  }
+                                >
+                                  <JsonCodeField
+                                    label={config.key}
+                                    hideLabel
+                                    placeholder={modelConfigPlaceholder(config, language.t)}
+                                    value={config.value}
+                                    onChange={(value) => props.onModelConfig(idx(), configIndex(), value)}
+                                    validationState={item.err.config?.[config.key] ? "invalid" : undefined}
+                                    error={item.err.config?.[config.key]}
+                                  />
+                                </Show>
                               </>
                             )}
                           </For>

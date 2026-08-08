@@ -149,7 +149,8 @@ function stringifyConfigValue(value: unknown) {
   if (value === undefined) return ""
   if (typeof value === "string") return value
   if (typeof value === "number" || typeof value === "boolean") return String(value)
-  return JSON.stringify(value)
+  // Pretty-print objects/arrays so JSON advanced fields open as multi-line.
+  return JSON.stringify(value, null, 2)
 }
 
 function setPath(output: Record<string, unknown>, path: string, value: unknown) {
