@@ -3003,12 +3003,13 @@ export default function Layout(props: ParentProps) {
       `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} navigated=${!hasCurrentSession && navigateWhenNoSession}`,
     )
     setSidebarProjectRoot(project.worktree)
+    warmProjectSessions(project.worktree)
     if (!hasCurrentSession && navigateWhenNoSession) {
+      // Config / non-session routes: open a new session for the project and
+      // still expand the session list so the rail click matches session-route UX.
       setSwitching(undefined)
       navigateWithSidebarReset(`/${base64Encode(project.worktree)}/session`)
-      return
     }
-    warmProjectSessions(project.worktree)
     layout.sidebar.open()
   }
 
