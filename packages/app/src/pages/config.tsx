@@ -3275,10 +3275,11 @@ function CustomEditor(props: {
                           error={item.err.id}
                         />
                         <TestProviderModelButton
-                          class="mt-1.5 w-full justify-center"
+                          class="flex h-8 w-full items-center justify-center"
                           baseURL={props.form.baseURL}
                           apiKey={props.form.apiKey}
                           modelId={item.id}
+                          npm={props.form.npm}
                           headers={props.form.headers}
                         />
                         <TextField
