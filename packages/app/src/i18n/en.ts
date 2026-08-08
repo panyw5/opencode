@@ -1717,6 +1717,7 @@ export const dict = {
   "config.custom.models.test.cancel": "Cancel test",
   "config.custom.models.test.cancelHint": "Click timer to cancel",
   "config.custom.models.test.path": "Request path",
+  "config.custom.models.test.timeout": "Timeout {{seconds}}s",
   "config.custom.models.test.success": "Model link OK",
   "config.custom.models.test.successDetail": "HTTP {{status}} · {{ms}}ms",
   "config.custom.models.test.failed": "Model link failed",

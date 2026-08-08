@@ -1666,6 +1666,7 @@ export const dict = {
   "config.custom.models.test.cancel": "取消测试",
   "config.custom.models.test.cancelHint": "点击读秒可取消",
   "config.custom.models.test.path": "请求路径",
+  "config.custom.models.test.timeout": "{{seconds}} 秒超时",
   "config.custom.models.test.success": "模型链接正常",
   "config.custom.models.test.successDetail": "HTTP {{status}} · {{ms}}ms",
   "config.custom.models.test.failed": "模型链接失败",

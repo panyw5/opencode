@@ -1,5 +1,8 @@
 export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
+/** Default probe timeout (30s). Shared so UI can display the same value. */
+export const TEST_PROVIDER_MODEL_TIMEOUT_MS = 30_000
+
 /** Wire protocol for the connectivity probe (mirrors custom-provider npm). */
 export type TestProviderProtocol = "openai-chat" | "anthropic-messages"
 
@@ -15,7 +18,7 @@ export type TestProviderModelInput = {
   headers?: Array<{ key: string; value: string }>
   /** Defaults to platform fetch / global fetch */
   fetchImpl?: FetchLike
-  /** Request timeout in ms (default 15000) */
+  /** Request timeout in ms (default {@link TEST_PROVIDER_MODEL_TIMEOUT_MS}) */
   timeoutMs?: number
   /** Optional external abort (e.g. user cancel). Composed with the timeout. */
   signal?: AbortSignal
@@ -152,7 +155,7 @@ export async function testProviderModel(input: TestProviderModelInput): Promise<
   }
 
   const doFetch = input.fetchImpl ?? fetch
-  const timeoutMs = input.timeoutMs ?? 15_000
+  const timeoutMs = input.timeoutMs ?? TEST_PROVIDER_MODEL_TIMEOUT_MS
   const controller = new AbortController()
   const onExternalAbort = () => controller.abort()
   input.signal?.addEventListener("abort", onExternalAbort, { once: true })

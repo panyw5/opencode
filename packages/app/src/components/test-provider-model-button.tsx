@@ -5,7 +5,12 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { createEffect, createSignal, onCleanup, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
-import { resolveTestProtocol, testEndpointUrl, testProviderModel } from "./test-provider-model"
+import {
+  resolveTestProtocol,
+  TEST_PROVIDER_MODEL_TIMEOUT_MS,
+  testEndpointUrl,
+  testProviderModel,
+} from "./test-provider-model"
 
 type Props = {
   baseURL: string
@@ -31,7 +36,18 @@ export function TestProviderModelButton(props: Props) {
   const [phase, setPhase] = createSignal<Phase>("idle")
   const [elapsedMs, setElapsedMs] = createSignal(0)
   const [resultMs, setResultMs] = createSignal(0)
-  const [probeUrl, setProbeUrl] = createSignal("")
+  /**
+   * Own hover state for the path tooltip.
+   *
+   * Shared `@opencode-ai/ui/tooltip` arms `block` on pointerdown (click) and
+   * refuses to reopen until the pointer fully leaves. That means after you click
+   * "Test link" the tooltip stays dead for the whole hover-while-testing period.
+   * Drive open/close only from our hover flag so:
+   *   - hover  → show (idle / testing / success)
+   *   - leave  → hide
+   *   - click  → does not pin or kill the tooltip
+   */
+  const [hovered, setHovered] = createSignal(false)
 
   let timer: ReturnType<typeof setInterval> | undefined
   let startedAt = 0
@@ -96,14 +112,16 @@ export function TestProviderModelButton(props: Props) {
     runId += 1
     abort?.abort()
     clearAbort()
-    setProbeUrl("")
     resetVisual()
   })
 
+  // Preview the exact probe URL from current baseURL + npm (available before first click).
+  const probeUrl = () => testEndpointUrl(props.baseURL, resolveTestProtocol(props.npm))
   const canStart = () => !!props.baseURL.trim() && !!props.modelId.trim()
   const isTesting = () => phase() === "testing"
-  const showPathTooltip = () => !!probeUrl()
-  const forcePathTooltip = () => isTesting() && !!probeUrl()
+  const hasPath = () => !!probeUrl()
+  // forceOpen only while the pointer is over us — never pin open for the whole test.
+  const tooltipForced = () => hasPath() && hovered()
 
   const runTest = async () => {
     if (isTesting()) {
@@ -121,10 +139,6 @@ export function TestProviderModelButton(props: Props) {
       })
       return
     }
-
-    const protocol = resolveTestProtocol(props.npm)
-    const url = testEndpointUrl(props.baseURL, protocol)
-    setProbeUrl(url)
 
     const id = (runId += 1)
     abort?.abort()
@@ -206,14 +220,19 @@ export function TestProviderModelButton(props: Props) {
 
   // Outer shell always owns row alignment (h-8 matches TextField input height).
   // Tooltip's `inactive` branch drops wrapper classes, so layout must live outside it.
+  // Hover is tracked on this shell so leave always clears forceOpen.
   return (
-    <div class={props.class ?? "flex h-8 w-full items-center justify-center"}>
+    <div
+      class={props.class ?? "flex h-8 w-full items-center justify-center"}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
+    >
       <Tooltip
         placement="top"
         gutter={6}
         openDelay={0}
-        forceOpen={forcePathTooltip()}
-        inactive={!showPathTooltip()}
+        forceOpen={tooltipForced()}
+        inactive={!hasPath()}
         class="flex h-full w-full items-center justify-center"
         contentClass="!max-w-[min(360px,80vw)]"
         value={
@@ -222,6 +241,11 @@ export function TestProviderModelButton(props: Props) {
               {language.t("config.custom.models.test.path")}
             </span>
             <span class="break-all font-mono text-[11px] leading-snug text-text-strong">{probeUrl()}</span>
+            <span class="text-[10px] text-text-weak">
+              {language.t("config.custom.models.test.timeout", {
+                seconds: String(TEST_PROVIDER_MODEL_TIMEOUT_MS / 1000),
+              })}
+            </span>
             <Show when={isTesting()}>
               <span class="text-[10px] text-text-weak">{language.t("config.custom.models.test.cancelHint")}</span>
             </Show>
@@ -243,7 +267,6 @@ export function TestProviderModelButton(props: Props) {
           aria-label={
             isTesting() ? language.t("config.custom.models.test.cancel") : language.t("config.custom.models.test")
           }
-          title={isTesting() ? language.t("config.custom.models.test.cancel") : undefined}
           aria-live="polite"
         >
           <Show when={phase() === "success"}>
