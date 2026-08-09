@@ -29,26 +29,44 @@ import type { FollowupDraft } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 
-function ComposerDockExit(props: { active: boolean; children: JSX.Element }) {
+function ComposerDockExit(props: {
+  active: boolean
+  children: JSX.Element
+  /** When false, snap open/closed without spring (e.g. first paint of prompt). Default true. */
+  animate?: boolean
+  onVisibleChange?: (visible: boolean) => void
+}) {
+  // Fade + height motion with bottom-aligned content:
+  // exit shrinks downward (top edge moves down); enter expands upward (top edge moves up).
   const [store, setStore] = createStore({
     height: 0,
     body: undefined as HTMLDivElement | undefined,
   })
   const progress = useSpring(() => (props.active ? 1 : 0), { visualDuration: 0.28, bounce: 0 })
-  const value = createMemo(() => Math.max(0, Math.min(1, progress())))
+  const animated = createMemo(() => props.animate !== false)
+  const value = createMemo(() => {
+    if (!animated()) return props.active ? 1 : 0
+    return Math.max(0, Math.min(1, progress()))
+  })
   const visible = createMemo(() => props.active || value() > 0.001)
+  const settledOpen = createMemo(() => props.active && value() > 0.98)
   const maxHeight = createMemo(() => {
-    if (props.active && store.height <= 0) return "none"
+    // Settled open: let content grow freely (multiline prompt, toolbars, etc.)
+    if (settledOpen()) return "none"
+    if (store.height <= 0) return animated() ? "0px" : props.active ? "none" : "0px"
     return `${Math.max(0, store.height * value())}px`
   })
 
+  const measure = (el: HTMLElement) => {
+    const next = Math.max(el.scrollHeight, el.getBoundingClientRect().height)
+    if (next > 0) setStore("height", next)
+  }
+
   createEffect(() => {
-    console.debug("[composer-dock-exit] state", {
-      active: props.active,
-      visible: visible(),
-      progress: value(),
-      hasBody: !!store.body,
-    })
+    props.onVisibleChange?.(visible())
+  })
+
+  createEffect(() => {
     const el = store.body
     if (!el) return
     let raf: number | undefined
@@ -56,19 +74,13 @@ function ComposerDockExit(props: { active: boolean; children: JSX.Element }) {
       if (raf !== undefined) cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
         raf = undefined
-        const next = el.getBoundingClientRect().height
-        if (next > 0) setStore("height", next)
+        measure(el)
       })
     }
     update()
     const observer = new ResizeObserver(update)
     observer.observe(el)
     onCleanup(() => {
-      console.debug("[composer-dock-exit] cleanup", {
-        active: props.active,
-        visible: visible(),
-        progress: value(),
-      })
       observer.disconnect()
       if (raf === undefined) return
       cancelAnimationFrame(raf)
@@ -79,7 +91,10 @@ function ComposerDockExit(props: { active: boolean; children: JSX.Element }) {
     <Show when={visible()}>
       <div
         style={{
-          overflow: props.active && value() > 0.98 ? "visible" : "hidden",
+          display: "flex",
+          "flex-direction": "column",
+          "justify-content": "flex-end",
+          overflow: settledOpen() ? "visible" : "hidden",
           "max-height": maxHeight(),
           opacity: `${value()}`,
           "pointer-events": props.active ? "auto" : "none",
@@ -88,8 +103,7 @@ function ComposerDockExit(props: { active: boolean; children: JSX.Element }) {
         <div
           ref={(el) => {
             setStore("body", el)
-            const next = el.getBoundingClientRect().height
-            if (next > 0) setStore("height", next)
+            measure(el)
           }}
         >
           {props.children}
@@ -636,6 +650,8 @@ export function SessionComposerRegion(props: {
   })
   const [heldQuestion, setHeldQuestion] = createSignal<QuestionRequest | undefined>()
   const [heldPermission, setHeldPermission] = createSignal<PermissionRequest | undefined>()
+  // Keep prompt hidden while dock exit fade is still on screen
+  const [exitVisible, setExitVisible] = createStore({ question: false, permission: false })
   const [backgroundShells, setBackgroundShells] = createSignal<BackgroundShellInfo[]>([])
   const [backgroundShellsLoading, setBackgroundShellsLoading] = createSignal(false)
   let timer: number | undefined
@@ -650,6 +666,15 @@ export function SessionComposerRegion(props: {
   createEffect(() => {
     const next = props.state.permissionRequest()
     if (next) setHeldPermission(() => next)
+  })
+
+  const promptCovered = createMemo(
+    () => props.state.blocked() || exitVisible.question || exitVisible.permission,
+  )
+  // Only animate prompt enter/exit after it has been covered once (avoid first-paint flash)
+  const [promptWasCovered, setPromptWasCovered] = createSignal(false)
+  createEffect(() => {
+    if (promptCovered()) setPromptWasCovered(true)
   })
 
   const clear = () => {
@@ -842,13 +867,19 @@ export function SessionComposerRegion(props: {
           "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,
         }}
       >
-        <ComposerDockExit active={!!props.state.questionRequest()}>
+        <ComposerDockExit
+          active={!!props.state.questionRequest()}
+          onVisibleChange={(visible) => setExitVisible("question", visible)}
+        >
           <Show when={heldQuestion()} keyed>
             {(request) => <SessionQuestionDock request={request} onSubmit={props.onResponseSubmit} />}
           </Show>
         </ComposerDockExit>
 
-        <ComposerDockExit active={!!props.state.permissionRequest()}>
+        <ComposerDockExit
+          active={!!props.state.permissionRequest()}
+          onVisibleChange={(visible) => setExitVisible("permission", visible)}
+        >
           <Show when={heldPermission()} keyed>
             {(request) => (
               <SessionPermissionDock
@@ -863,7 +894,7 @@ export function SessionComposerRegion(props: {
           </Show>
         </ComposerDockExit>
 
-        <Show when={!props.state.blocked()}>
+        <ComposerDockExit active={!promptCovered()} animate={promptWasCovered()}>
           <Show
             when={prompt.ready()}
             fallback={
@@ -1082,7 +1113,7 @@ export function SessionComposerRegion(props: {
               />
             </div>
           </Show>
-        </Show>
+        </ComposerDockExit>
       </div>
     </div>
   )
