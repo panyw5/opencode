@@ -497,7 +497,8 @@ export function MessageTimeline(props: {
     props.onHistoryScroll()
   }
 
-  const workingTurn = (userMessageID: string) => sessionStatus().type !== "idle" && activeMessageID() === userMessageID
+  // activeMessageID is sticky (debounced exit) so brief status blips do not flash the turn.
+  const workingTurn = (userMessageID: string) => activeMessageID() === userMessageID
   const turnDurationMs = (userMessageID: string) => {
     const user = messageByID().get(userMessageID)
     if (!user || user.role !== "user") return

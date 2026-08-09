@@ -18,6 +18,7 @@ import type { State, VcsCache } from "./types"
 import { cmp, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
 import { projectOwner } from "@/pages/layout/helpers"
+import { mergeSessionStatusRefresh } from "./session-status-refresh"
 
 // Minimal type for bootstrap - actual GlobalStore has more fields (rootByDomain, projectByDomain, etc.)
 // but bootstrap only needs to set these core fields
@@ -199,7 +200,13 @@ export async function bootstrapDirectory(input: {
       ),
     () =>
       retry(() =>
-        input.sdk.session.status().then((x) => input.setStore("session_status", reconcile(x.data ?? {}))),
+        // Boundary: directory bootstrap (start / reconnect / backend reload path).
+        input.sdk.session.status().then((x) =>
+          input.setStore(
+            "session_status",
+            reconcile(mergeSessionStatusRefresh(input.store.session_status, x.data ?? {}, input.store.message)),
+          ),
+        ),
       ),
     () =>
       retry(() =>

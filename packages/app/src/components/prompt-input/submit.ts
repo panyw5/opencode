@@ -2,7 +2,7 @@ import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useNavigate, useParams } from "@solidjs/router"
-import type { Accessor } from "solid-js"
+import { batch, type Accessor } from "solid-js"
 import type { FileSelection } from "@/context/file"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -180,18 +180,20 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   const customCommand = cmd && input.sync.data.command.find((item) => item.name === cmd)
   if (cmd && customCommand) {
     const messageID = input.messageID ?? Identifier.ascending("message")
-    setBusy()
-    addOptimisticCommandMessage({
-      sync: input.sync,
-      directory: input.draft.sessionDirectory,
-      sessionID: input.draft.sessionID,
-      messageID,
-      command: cmd,
-      arguments: tail.join(" "),
-      source: customCommand.source,
-      agent: input.draft.agent,
-      model: input.draft.model,
-      variant: input.draft.variant,
+    batch(() => {
+      setBusy()
+      addOptimisticCommandMessage({
+        sync: input.sync,
+        directory: input.draft.sessionDirectory,
+        sessionID: input.draft.sessionID,
+        messageID,
+        command: cmd,
+        arguments: tail.join(" "),
+        source: customCommand.source,
+        agent: input.draft.agent,
+        model: input.draft.model,
+        variant: input.draft.variant,
+      })
     })
     try {
       if (!(await wait())) {
@@ -285,10 +287,14 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     })
 
   performance.mark("submit:optimistic-add:start")
-  add()
+  // Batch message + busy so the timeline never renders the user bubble without
+  // the sticky "Sending" row (or vice versa) on separate frames.
+  batch(() => {
+    add()
+    setBusy()
+  })
   performance.mark("submit:optimistic-add:end")
   performance.measure("submit:optimistic-add", "submit:optimistic-add:start", "submit:optimistic-add:end")
-  setBusy()
 
   try {
     if (!(await wait())) {

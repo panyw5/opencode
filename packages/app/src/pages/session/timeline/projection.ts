@@ -1,7 +1,13 @@
 import { Binary } from "@opencode-ai/core/util/binary"
 import type { AssistantMessage, Message, Part, SessionStatus, UserMessage } from "@opencode-ai/sdk/v2"
-import { createMemo, mapArray, type Accessor } from "solid-js"
+import { createEffect, createMemo, createSignal, mapArray, onCleanup, untrack, type Accessor } from "solid-js"
 import { Timeline, TimelineRow } from "./rows"
+import {
+  advanceStickyActiveMessageID,
+  displayStatusForThinking,
+  latchThinkingPhase,
+  THINKING_STATUS_STICKY_MS,
+} from "./sticky-status"
 
 const emptyAssistantMessages: AssistantMessage[] = []
 
@@ -27,7 +33,7 @@ export function createTimelineProjection(input: {
     })
     return result
   })
-  const activeMessageID = createMemo(() => {
+  const rawActiveMessageID = createMemo(() => {
     const parentID = input.messages().findLast(
       (message): message is AssistantMessage => message.role === "assistant" && typeof message.time.completed !== "number",
     )?.parentID
@@ -41,6 +47,61 @@ export function createTimelineProjection(input: {
     if (input.status().type === "idle") return
     return input.messages().findLast((message) => message.role === "user")?.id
   })
+
+  // Debounce exit of the active turn so optimistic busy / status-refresh races do not
+  // unmount the "Sending" row for a frame (see SessionTurn stableWorking).
+  const [stickyActiveMessageID, setStickyActiveMessageID] = createSignal<string | undefined>()
+  let stickyClearAt: number | undefined
+  let stickyTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    const next = rawActiveMessageID()
+    // Do not track stickyActiveMessageID — writing it here would re-enter the effect.
+    const previous = untrack(() => stickyActiveMessageID())
+    const advanced = advanceStickyActiveMessageID({
+      previous,
+      next,
+      now: Date.now(),
+      clearAt: stickyClearAt,
+      stickyMs: THINKING_STATUS_STICKY_MS,
+    })
+    stickyClearAt = advanced.clearAt
+    if (advanced.id !== previous) setStickyActiveMessageID(advanced.id)
+
+    if (stickyTimer !== undefined) {
+      clearTimeout(stickyTimer)
+      stickyTimer = undefined
+    }
+    if (advanced.clearAt === undefined) return
+    const delay = Math.max(0, advanced.clearAt - Date.now())
+    stickyTimer = setTimeout(() => {
+      stickyTimer = undefined
+      const settled = advanceStickyActiveMessageID({
+        previous: stickyActiveMessageID(),
+        next: rawActiveMessageID(),
+        now: Date.now(),
+        clearAt: stickyClearAt,
+        stickyMs: THINKING_STATUS_STICKY_MS,
+      })
+      stickyClearAt = settled.clearAt
+      setStickyActiveMessageID(settled.id)
+    }, delay)
+  })
+  onCleanup(() => {
+    if (stickyTimer === undefined) return
+    clearTimeout(stickyTimer)
+    stickyTimer = undefined
+  })
+
+  // Exposed active id prefers the sticky latch so consumers (aria-hidden, etc.) stay stable.
+  const activeMessageID = createMemo(() => stickyActiveMessageID() ?? rawActiveMessageID())
+
+  const thinkingStatus = createMemo(() =>
+    displayStatusForThinking({
+      status: input.status().type,
+      stickyActive: !!stickyActiveMessageID(),
+    }),
+  )
+
   const messageRowMemos = createMemo(
     mapArray(input.userMessages, (userMessage, indexAccessor) =>
       createMemo((previous: TimelineRow.TimelineRow[] | undefined) =>
@@ -53,7 +114,7 @@ export function createTimelineProjection(input: {
             indexAccessor(),
             input.showReasoningSummaries(),
             input.showCustomHookParts(),
-            input.status().type,
+            thinkingStatus(),
             activeMessageID() === userMessage.id,
           ),
         ),
@@ -108,6 +169,17 @@ export function reuseTimelineRows(previous: TimelineRow.TimelineRow[] | undefine
   const next = rows.map((row) => {
     const existing = byKey.get(TimelineRow.key(row))
     if (!existing) return row
+    if (existing._tag === "Thinking" && row._tag === "Thinking") {
+      const phase = latchThinkingPhase(existing.phase, row.phase)
+      const reasoningHeading =
+        phase === "thinking" ? (row.reasoningHeading ?? existing.reasoningHeading) : row.reasoningHeading
+      const latched = new TimelineRow.Thinking({
+        userMessageID: row.userMessageID,
+        phase,
+        reasoningHeading,
+      })
+      return TimelineRow.equals(existing, latched) ? existing : latched
+    }
     return TimelineRow.equals(existing, row) ? existing : row
   })
   if (previous.length === next.length && previous.every((row, index) => row === next[index])) return previous

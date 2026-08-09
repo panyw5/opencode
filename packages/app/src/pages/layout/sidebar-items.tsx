@@ -19,10 +19,6 @@ import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
-import {
-  PROJECT_SESSION_STATUS_REFRESH_INTERVAL,
-  shouldRefreshProjectSessionStatus,
-} from "@/context/global-sync/session-status-refresh"
 import { working } from "../session/session-working"
 import {
   hasProjectPermissions,
@@ -128,19 +124,8 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
       if (stop !== undefined) window.clearTimeout(stop)
     })
   })
-  createEffect(() => {
-    if (!shouldRefreshProjectSessionStatus(hasActiveSession())) return
-
-    const directories = dirs()
-    const refresh = () => {
-      for (const directory of directories) {
-        void globalSync.project.refreshSessionStatus(directory)
-      }
-    }
-    refresh()
-    const timer = window.setInterval(refresh, PROJECT_SESSION_STATUS_REFRESH_INTERVAL)
-    onCleanup(() => window.clearInterval(timer))
-  })
+  // Session-status full-table refresh is boundary-only (bootstrap / reconnect / long
+  // visibility restore) in global-sync — not polled while the project has active work.
   const count = createMemo(() =>
     dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )

@@ -30,7 +30,11 @@ import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } fr
 import { createRefreshQueue } from "./global-sync/queue"
 import { clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
 import { loadRootSessions } from "./global-sync/session-load"
-import { authoritativeSessionStatusMap } from "./global-sync/session-status-refresh"
+import {
+  mergeSessionStatusRefresh,
+  shouldRefreshSessionStatusOnVisibility,
+  type SessionStatusRefreshReason,
+} from "./global-sync/session-status-refresh"
 import type { ProjectMeta } from "./global-sync/types"
 import { normalizeProviderList, sanitizeProject, stripProvider } from "./global-sync/utils"
 import { formatServerError, permissionNotice } from "@/utils/server-errors"
@@ -419,7 +423,10 @@ function createGlobalSync() {
     return next
   }
 
-  async function refreshSessionStatus(directory: string): Promise<void> {
+  async function refreshSessionStatus(
+    directory: string,
+    reason: SessionStatusRefreshReason = "manual",
+  ): Promise<void> {
     directory = storeKey(directory)
     if (!directory || isolated(directory)) return
     const pending = sessionStatusRefreshes.get(directory)
@@ -434,15 +441,20 @@ function createGlobalSync() {
       return raw(...input)
     }) as typeof child[1]
 
+    console.debug(`[global-sync] session-status refresh directory=${directory} reason=${reason}`)
     const promise = sdkFor(directory)
       .session.status()
       .then((x) => {
         if (rev(directory) !== mark || managerOf(directory).children[directory] !== child) return
-        setStore("session_status", reconcile(authoritativeSessionStatusMap(x.data)))
+        // Preserve optimistic busy when the server snapshot still reports idle for an
+        // in-flight send — a full replace here unmounts the timeline "Sending" label for a frame.
+        const local = child[0].session_status
+        const messages = child[0].message
+        setStore("session_status", reconcile(mergeSessionStatusRefresh(local, x.data, messages)))
       })
       .catch((err) => {
         console.debug(
-          `[global-sync] refresh session status failed directory=${directory} err=${err instanceof Error ? err.message : String(err)}`,
+          `[global-sync] refresh session status failed directory=${directory} reason=${reason} err=${err instanceof Error ? err.message : String(err)}`,
         )
       })
       .finally(() => {
@@ -452,6 +464,34 @@ function createGlobalSync() {
 
     sessionStatusRefreshes.set(directory, promise)
     return promise
+  }
+
+  /** Boundary-only: refresh status for every currently loaded directory store. */
+  function refreshLoadedSessionStatuses(reason: SessionStatusRefreshReason) {
+    forEachDirectory((directory) => {
+      if (!loaded.dir[directory]) return
+      void refreshSessionStatus(directory, reason)
+    })
+  }
+
+  // Long background → foreground: event stream may have stalled; reconcile once.
+  // Not a poll — only when hidden long enough (see SESSION_STATUS_VISIBILITY_REFRESH_MS).
+  let sessionStatusHiddenAt: number | undefined
+  if (typeof document !== "undefined") {
+    if (document.visibilityState === "hidden") sessionStatusHiddenAt = Date.now()
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        sessionStatusHiddenAt = Date.now()
+        return
+      }
+      const hiddenAt = sessionStatusHiddenAt
+      sessionStatusHiddenAt = undefined
+      if (hiddenAt === undefined) return
+      if (!shouldRefreshSessionStatusOnVisibility(Date.now() - hiddenAt)) return
+      refreshLoadedSessionStatuses("visibility")
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+    onCleanup(() => document.removeEventListener("visibilitychange", onVisibility))
   }
 
   async function loadSessions(
@@ -800,7 +840,10 @@ function createGlobalSync() {
 
   const projectApi = {
     loadSessions,
+    /** Full-table status pull for one directory. Prefer boundary reasons over polling. */
     refreshSessionStatus,
+    /** Reconcile status for all loaded directories (visibility / manual resync). */
+    refreshLoadedSessionStatuses,
     warm(directory: string) {
       void bootstrapInstance(directory)
     },

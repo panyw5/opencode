@@ -210,6 +210,8 @@ export namespace Timeline {
       rows.push(
         new TimelineRow.Thinking({
           userMessageID: userMessage.id,
+          // Phase is latched again in reuseTimelineRows so a blank reasoning part
+          // cannot flip the label back to "Sending" after "Thinking" has shown.
           phase: hasReasoning ? "thinking" : "sending",
           reasoningHeading: heading,
         }),
