@@ -247,8 +247,21 @@ function ProjectTaskDetailDialog(props: {
   const detail = createMemo(() => state.detail)
   const title = createMemo(() => detail()?.title ?? props.task.title)
   const status = createMemo(() => detail()?.status ?? props.task.status)
-  const contentH = createMemo(() =>
-    maximized() ? "calc(95vh - 200px)" : state.mode === "edit" ? "calc(90vh - 220px)" : "calc(90vh - 200px)",
+  // Prefer flex fill over fixed vh math: dialog-content only had max-height, so
+  // calc(90vh - Npx) children either overflowed or collapsed to the textarea default (2 rows).
+  const dialogContainerStyle = createMemo(() =>
+    maximized()
+      ? {
+          width: "90vw",
+          "max-width": "90vw",
+          height: "95vh",
+          "max-height": "95vh",
+        }
+      : {
+          width: "min(calc(100vw - 32px), 960px)",
+          height: "min(calc(100vh - 32px), 85vh)",
+          "max-height": "min(calc(100vh - 32px), 85vh)",
+        },
   )
 
   async function load() {
@@ -375,21 +388,24 @@ function ProjectTaskDetailDialog(props: {
 
   return (
     <>
+      {/* Attribute-only selector: task IDs can contain CSS-special chars that break value matchers. */}
       <style
         // eslint-disable-next-line solid/no-innerhtml
         innerHTML={`
-          [data-component="dialog"][data-project-task-dialog="${dialogKey()}"] [data-slot="dialog-container"] {
-            height: 90vh !important;
-            max-height: 90vh !important;
+          [data-component="dialog"][data-project-task-dialog] [data-slot="dialog-container"] {
+            display: flex;
+            flex-direction: column;
           }
-          [data-component="dialog"][data-project-task-dialog="${dialogKey()}"][data-maximized] [data-slot="dialog-container"] {
-            width: 90vw !important;
-            max-width: 90vw !important;
-            height: 95vh !important;
-            max-height: 95vh !important;
-          }
-          [data-component="dialog"][data-project-task-dialog="${dialogKey()}"] [data-slot="dialog-content"] {
+          [data-component="dialog"][data-project-task-dialog] [data-slot="dialog-content"] {
+            height: 100% !important;
+            max-height: 100% !important;
             overflow: hidden !important;
+          }
+          [data-component="dialog"][data-project-task-dialog] [data-slot="dialog-body"] {
+            min-height: 0;
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
           }
         `}
       />
@@ -424,6 +440,7 @@ function ProjectTaskDetailDialog(props: {
         }
         size="x-large"
         transition
+        containerStyle={dialogContainerStyle()}
         data-project-task-dialog={dialogKey()}
         data-maximized={maximized() ? "" : undefined}
         action={
@@ -491,10 +508,10 @@ function ProjectTaskDetailDialog(props: {
           </div>
         }
       >
-        <div data-component="project-task-detail" class="flex min-h-0 flex-1 flex-col gap-3 p-4">
+        <div data-component="project-task-detail" class="flex h-full min-h-0 flex-1 flex-col gap-3 p-4">
           <Show when={state.error}>{(err) => <ErrorCard err={err()} />}</Show>
 
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex shrink-0 flex-wrap items-center gap-2">
             <For each={["open", "in_progress", "done"] as ProjectTaskStatus[]}>
               {(value) => (
                 <button
@@ -522,7 +539,6 @@ function ProjectTaskDetailDialog(props: {
           <div
             class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"
             classList={{ "border-border-focus": state.mode === "edit" }}
-            style={{ height: contentH() }}
           >
             <Show when={state.loading}>
               <div class="flex flex-1 items-center justify-center gap-2 text-12-regular text-text-weak">
@@ -539,8 +555,7 @@ function ProjectTaskDetailDialog(props: {
                     autofocus
                     spellcheck={false}
                     placeholder={language.t("projectTask.field.descriptionPlaceholder")}
-                    class="min-h-0 flex-1 resize-none bg-transparent px-5 py-4 text-14-regular text-text-strong outline-none"
-                    style={{ height: contentH() }}
+                    class="box-border h-full min-h-0 w-full flex-1 resize-none bg-transparent px-5 py-4 text-14-regular text-text-strong outline-none"
                     onInput={(event) => {
                       const next = event.currentTarget.value
                       setState({ draft: next, dirty: next !== state.saved })
@@ -571,7 +586,7 @@ function ProjectTaskDetailDialog(props: {
           </div>
 
           <Show when={state.mode === "edit"}>
-            <div class="flex items-center justify-between gap-3">
+            <div class="flex shrink-0 items-center justify-between gap-3">
               <div class="flex items-center gap-2 text-11-regular text-text-weak">
                 <span class="rounded-md border border-border-weak-base bg-background-base px-1.5 py-0.5">⌘</span>
                 <span>+</span>
@@ -606,7 +621,7 @@ function ProjectTaskDetailDialog(props: {
 
           <Show when={state.mode === "preview" ? detail() : undefined}>
             {(task) => (
-              <section class="flex max-h-[28vh] min-h-0 flex-col gap-2 overflow-hidden">
+              <section class="flex max-h-[28vh] min-h-0 shrink-0 flex-col gap-2 overflow-hidden">
                 <div class="text-12-medium text-text-base">
                   {language.t("projectTask.sessions.title")} ({task().sessionCount})
                 </div>
