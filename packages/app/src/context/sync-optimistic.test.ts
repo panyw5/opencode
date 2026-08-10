@@ -147,7 +147,8 @@ describe("sync history display", () => {
   })
 
   test("reveals cached history without coupling it to prefetch count", () => {
-    expect(reveal({ cached: 200, page: 80, step: 200 })).toBe(200)
-    expect(reveal({ cached: 400, show: 200, page: 80, step: 200 })).toBe(400)
+    expect(reveal({ cached: 200, page: 80, step: 40 })).toBe(120)
+    expect(reveal({ cached: 400, show: 200, page: 80, step: 40 })).toBe(240)
+    expect(reveal({ cached: 100, page: 80, step: 40 })).toBe(100)
   })
 })

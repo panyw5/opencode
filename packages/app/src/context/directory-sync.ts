@@ -178,7 +178,7 @@ export const createDirSyncContext = (client: OpencodeClient, directory: string) 
   globalSync.project.warm(directory)
   const absolute = (path: string) => (current()[0].path.directory + "/" + path).replace("//", "/")
   const initialMessagePageSize = 80
-  const historyMessagePageSize = 200
+  const historyMessagePageSize = 40
   const inflight = new Map<string, Promise<void>>()
   const inflightDiff = new Map<string, Promise<void>>()
   const inflightTodo = new Map<string, Promise<void>>()

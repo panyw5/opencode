@@ -24,10 +24,11 @@ import {
   Message,
   MessageDivider,
   normalizeTool,
-  Part as MessagePart,
   type MessageProps,
   type UserActions,
 } from "@opencode-ai/ui/message-part"
+import { clearToolPartHydration } from "./deferred-tool-helpers"
+import { DeferredMessagePart } from "./deferred-tool-part"
 import { SessionRetry } from "@opencode-ai/ui/session-retry"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
@@ -250,6 +251,16 @@ export function MessageTimeline(props: {
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length || coldBottomMount ? 6 : 20)
 
   const sessionID = createMemo(() => params.id)
+  createEffect(
+    on(
+      sessionID,
+      (id, prev) => {
+        if (prev && prev !== id) clearToolPartHydration(prev)
+        if (!id) clearToolPartHydration()
+      },
+      { defer: true },
+    ),
+  )
   const sessionStatus = createMemo(() => {
     const id = sessionID()
     return id ? (sync.data.session_status[id] ?? idle) : idle
@@ -277,50 +288,103 @@ export function MessageTimeline(props: {
   const activeMessageID = projection.activeMessageID
   const lastAssistantGroupKey = projection.lastAssistantGroupKey
 
-  let prependAnchor: { key: string; offset: number } | undefined
+  type PrependAnchor = {
+    key: string
+    offset: number
+    scrollTop: number
+    contentHeight: number
+  }
+  let prependAnchor: PrependAnchor | undefined
   let prependLoading = false
+  let prependRestoreDone = false
   let prependAnchorFrame: number | undefined
+  // Prefer the virtual spacer height (full list) over the viewport scrollHeight.
+  const contentHeight = (root: HTMLDivElement) => virtualContent?.offsetHeight ?? root.scrollHeight
   const clearPrependAnchor = () => {
     prependAnchor = undefined
     prependLoading = false
+    prependRestoreDone = false
     if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
     prependAnchorFrame = undefined
   }
   const capturePrependAnchor = () => {
     prependLoading = true
+    prependRestoreDone = false
     const root = listRoot()
     if (!root) return
     const view = root.getBoundingClientRect()
+    const height = contentHeight(root)
     const anchor = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")]
       .map((element) => ({ element, rect: element.getBoundingClientRect() }))
       .filter((item) => item.rect.bottom > view.top && item.rect.top < view.bottom)
       .sort((a, b) => a.rect.top - b.rect.top)[0]
     const key = anchor?.element.dataset.timelineKey
-    if (anchor && key) prependAnchor = { key, offset: anchor.rect.top - view.top }
+    if (anchor && key) {
+      prependAnchor = {
+        key,
+        offset: anchor.rect.top - view.top,
+        scrollTop: root.scrollTop,
+        contentHeight: height,
+      }
+      return
+    }
+    // No mounted row (rare) — still pin by content growth so prepend does not jump to top.
+    prependAnchor = {
+      key: "",
+      offset: 0,
+      scrollTop: root.scrollTop,
+      contentHeight: height,
+    }
   }
   const restorePrependAnchor = (done: boolean) => {
-    if (done) prependLoading = false
+    // Keep prependLoading true until the pin loop settles, otherwise scroll events
+    // re-trigger history loads and the anchor is cleared mid-restore.
+    if (done) prependRestoreDone = true
     const root = listRoot()
     const saved = prependAnchor
-    if (!root || !saved) return
+    if (!root || !saved) {
+      if (done) clearPrependAnchor()
+      return
+    }
     if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
     let frames = 0
     let stable = 0
     const restore = () => {
       prependAnchorFrame = undefined
       const anchor = prependAnchor
-      if (!anchor) return
-      const element = root.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(anchor.key)}"]`)
-      const delta = element ? element.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset : 0
+      if (!anchor) {
+        if (prependRestoreDone) prependLoading = false
+        return
+      }
+      const height = contentHeight(root)
+      let delta = 0
+      if (anchor.key) {
+        const element = root.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(anchor.key)}"]`)
+        if (element) {
+          delta = element.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
+        } else {
+          // Anchor row not mounted yet (virtualizer range) — use total size growth.
+          delta = height - anchor.contentHeight
+        }
+      } else {
+        delta = height - anchor.contentHeight
+      }
       if (Math.abs(delta) > 0.5) {
         root.scrollTop += delta
+        anchor.scrollTop = root.scrollTop
+        anchor.contentHeight = height
         stable = 0
       } else {
+        anchor.contentHeight = height
         stable += 1
       }
       frames += 1
       if (stable >= 8 || frames >= 180) {
-        if (!prependLoading) prependAnchor = undefined
+        if (prependRestoreDone) {
+          prependAnchor = undefined
+          prependLoading = false
+          prependRestoreDone = false
+        }
         return
       }
       prependAnchorFrame = requestAnimationFrame(restore)
@@ -486,6 +550,9 @@ export function MessageTimeline(props: {
   const handleScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
     const root = event.currentTarget
     props.onScheduleScrollState(root)
+    // While history is prepended we programmatically adjust scrollTop. Those events
+    // must not clear the pin or request another page (that chain-loads to the top).
+    if (prependLoading) return
     if (!props.hasScrollGesture()) {
       props.onHistoryScroll()
       return
@@ -653,7 +720,8 @@ export function MessageTimeline(props: {
                     {(message) => (
                       <Show when={part()}>
                         {(part) => (
-                          <MessagePart
+                          <DeferredMessagePart
+                            sessionID={sessionID() ?? item().userMessageID}
                             part={part()}
                             message={message()}
                             defaultOpen={defaultOpen(part())}
@@ -674,7 +742,8 @@ export function MessageTimeline(props: {
               >
                 <For each={contextParts()}>
                   {(entry) => (
-                    <MessagePart
+                    <DeferredMessagePart
+                      sessionID={sessionID() ?? item().userMessageID}
                       part={entry.part}
                       message={entry.message}
                       defaultOpen={defaultOpen(entry.part)}
@@ -838,7 +907,7 @@ export function MessageTimeline(props: {
         }}
         onTouchStart={(event) => {
           touchGesture = event.touches[0]?.clientY
-          clearPrependAnchor()
+          if (!prependLoading) clearPrependAnchor()
         }}
         onTouchMove={(event) => {
           const next = event.touches[0]?.clientY

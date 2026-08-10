@@ -1882,11 +1882,29 @@ export default function Page() {
     debug("user-scroll", scroller, { mark: scrollMark })
   }
 
+  // One history page per "arrive at top" gesture. Re-arm only after the user leaves the edge,
+  // so a failed scroll pin cannot chain-load the entire session while stuck at scrollTop≈0.
+  const historyEdgePx = 200
+  let historyLoadInFlight = false
+  let historyEdgeArmed = true
+
+  createEffect(
+    on(
+      () => params.id,
+      () => {
+        historyLoadInFlight = false
+        historyEdgeArmed = true
+      },
+    ),
+  )
+
   const loadEarlier = async () => {
     const id = params.id
     if (!id) return
-    if (!historyMore() || historyLoading()) return
+    if (historyLoadInFlight || !historyMore() || historyLoading()) return
 
+    historyLoadInFlight = true
+    historyEdgeArmed = false
     historyAnchor.capture()
     try {
       while (true) {
@@ -1902,6 +1920,8 @@ export default function Page() {
     } catch (error) {
       historyAnchor.restore(true)
       throw error
+    } finally {
+      historyLoadInFlight = false
     }
   }
 
@@ -2518,7 +2538,12 @@ export default function Page() {
                         hasScrollGesture={hasScrollGesture}
                         onUserScroll={markUserScroll}
                         onHistoryScroll={() => {
-                          if (!autoScroll.userScrolled() || !scroller || scroller.scrollTop >= 200) return
+                          if (!autoScroll.userScrolled() || !scroller) return
+                          if (scroller.scrollTop >= historyEdgePx) {
+                            historyEdgeArmed = true
+                            return
+                          }
+                          if (!historyEdgeArmed || historyLoadInFlight) return
                           void loadEarlier()
                         }}
                         onAutoScrollInteraction={autoScroll.handleInteraction}
