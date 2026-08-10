@@ -157,9 +157,11 @@ export const layer = Layer.effect(
     })
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
-      yield* elog.info("cancel", { sessionID })
+      yield* elog.info("cancel start", { sessionID })
       yield* state.cancel(sessionID)
+      yield* elog.info("cancel runner+jobs done", { sessionID })
       yield* sessions.finalizeOrphanedAssistant(sessionID, { abortSource: "user-cancel" })
+      yield* elog.info("cancel finalize done", { sessionID })
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {

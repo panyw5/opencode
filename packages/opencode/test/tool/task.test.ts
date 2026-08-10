@@ -1022,6 +1022,50 @@ describe("tool.task", () => {
     }),
   )
 
+  background.instance("aborting a child session cancels its background job without self-deadlock", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const runState = yield* SessionRunState.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      // Production TaskTool wires onInterrupt → ops.cancel(childSessionID), which
+      // re-enters BackgroundJob.cancel for the same id. Stub that real path.
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: () => Effect.never,
+        cancel: (sessionID) => runState.cancel(sessionID),
+      }
+
+      const result = yield* def.execute(
+        {
+          description: "long child work",
+          prompt: "keep working",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const childID = SessionID.make(result.metadata.sessionId)
+      // User clicked Stop on the child session (not the parent).
+      yield* runState.cancel(childID).pipe(Effect.timeout("2 seconds"))
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+      expect(waited.timedOut).toBe(false)
+      expect(waited.info?.status).toBe("cancelled")
+    }),
+  )
+
   it.instance("cancelling a parent run recursively cancels descendant background tasks", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

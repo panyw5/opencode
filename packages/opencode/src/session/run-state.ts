@@ -74,14 +74,16 @@ export const layer = Layer.effect(
     })
 
     const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
-      yield* cancelBackgroundJobs(background, sessionID)
+      // Stop the session runner first so the agent loop cannot keep producing
+      // turns while background-job teardown (or a re-entrant cancel) is in flight.
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (!existing || !existing.busy) {
         yield* status.set(sessionID, { type: "idle" })
-        return
+      } else {
+        yield* existing.cancel
       }
-      yield* existing.cancel
+      yield* cancelBackgroundJobs(background, sessionID)
     })
 
     const ensureRunning = Effect.fn("SessionRunState.ensureRunning")(function* (

@@ -110,6 +110,41 @@ describe("background.job", () => {
     }),
   )
 
+  it.instance("cancel survives re-entrant cancel from onInterrupt (no self-deadlock)", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const started = yield* Deferred.make<void>()
+      const nestedCancelEntered = yield* Deferred.make<void>()
+      const nestedCancelFinished = yield* Deferred.make<void>()
+
+      const job = yield* jobs.start({
+        id: "job_reentrant_cancel",
+        type: "test",
+        run: Effect.gen(function* () {
+          yield* Deferred.succeed(started, undefined)
+          yield* Effect.never
+        }).pipe(
+          Effect.onInterrupt(() =>
+            Effect.gen(function* () {
+              yield* Deferred.succeed(nestedCancelEntered, undefined)
+              // Mirrors TaskTool: onInterrupt → SessionPrompt.cancel → BackgroundJob.cancel(same id)
+              yield* jobs.cancel("job_reentrant_cancel")
+              yield* Deferred.succeed(nestedCancelFinished, undefined)
+            }),
+          ),
+        ),
+      })
+
+      yield* Deferred.await(started)
+
+      const cancelled = yield* jobs.cancel(job.id).pipe(Effect.timeout("2 seconds"))
+      expect(cancelled?.status).toBe("cancelled")
+      yield* Deferred.await(nestedCancelEntered).pipe(Effect.timeout("1 second"))
+      yield* Deferred.await(nestedCancelFinished).pipe(Effect.timeout("1 second"))
+      expect((yield* jobs.get(job.id))?.status).toBe("cancelled")
+    }),
+  )
+
   it.instance("returns immutable snapshots", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service

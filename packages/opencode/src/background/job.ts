@@ -241,11 +241,18 @@ export const layer = Layer.effect(
       const job = (yield* SynchronizedRef.get((yield* InstanceState.get(state)).jobs)).get(id)
       if (!job) return
       if (job.info.status !== "running") return snapshot(job)
-      if (job.fiber) {
-        yield* Fiber.interrupt(job.fiber).pipe(Effect.ignore)
-        yield* Fiber.await(job.fiber).pipe(Effect.ignore)
-      }
+
+      // Mark cancelled before awaiting the fiber. Task runs register
+      // `Effect.onInterrupt(() => SessionPrompt.cancel(sessionID))`, and that
+      // cancel path re-enters BackgroundJob.cancel for the same id. If we
+      // still looked "running" while Fiber.await-ing ourselves, the nested
+      // cancel would deadlock and the session runner would never stop.
+      const fiber = job.fiber
       const info = yield* finish(id, "cancelled")
+      if (fiber) {
+        yield* Fiber.interrupt(fiber).pipe(Effect.ignore)
+        yield* Fiber.await(fiber).pipe(Effect.ignore)
+      }
       return info
     })
 
