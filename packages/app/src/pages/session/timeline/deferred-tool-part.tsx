@@ -1,45 +1,63 @@
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { Part as MessagePart, type MessagePartProps } from "@opencode-ai/ui/message-part"
-import type { ToolPart } from "@opencode-ai/sdk/v2"
 import {
   isToolPartHydrated,
   markToolPartHydrated,
   scheduleIdleHydrate,
   shouldDeferToolPart,
   toolHydrationKey,
-  toolPlaceholderCopy,
 } from "./deferred-tool-helpers"
 
+/** Fixed skeleton paint — no text, no path, no continuous animation (scroll-friendly). */
+const bone = "background-color: color-mix(in oklch, var(--text-weak) 18%, transparent); border-radius: 9999px;"
+
 /**
- * Same outer box as collapsed BasicTool / tool-collapsible:
- * padding 8+8 + trigger 32 (+ 1px borders from CSS) so measure stays stable across hydrate.
+ * Same outer box as collapsed BasicTool / tool-collapsible
+ * (padding 8+8 + trigger 32) so virtual row height stays stable across hydrate.
+ * Inner content is neutral gray bars only — no tool labels or paths.
  */
-function ToolPartPlaceholder(props: { part: ToolPart }) {
-  const copy = () => toolPlaceholderCopy(props.part)
+function ToolPartPlaceholder() {
   return (
     <div
       data-component="collapsible"
       class="tool-collapsible"
       data-tool-placeholder="true"
-      data-tool={props.part.tool}
       aria-hidden="true"
     >
-      <div data-slot="collapsible-trigger">
-        <div data-component="tool-trigger">
-          <div data-slot="basic-tool-tool-trigger-content">
-            <div data-slot="basic-tool-tool-indicator" />
-            <div data-slot="basic-tool-tool-info">
-              <div data-slot="basic-tool-tool-info-structured">
-                <div data-slot="basic-tool-tool-info-main">
-                  <span data-slot="basic-tool-tool-title" class="tool-exec">
-                    {copy().title}
-                  </span>
-                  <Show when={copy().subtitle}>
-                    {(subtitle) => <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>}
-                  </Show>
-                </div>
-              </div>
-            </div>
+      <div data-slot="collapsible-trigger" style={{ "pointer-events": "none" }}>
+        <div
+          data-slot="tool-skeleton"
+          style={{
+            display: "flex",
+            "align-items": "center",
+            gap: "8px",
+            width: "100%",
+            height: "32px",
+            "min-width": "0",
+          }}
+        >
+          <div
+            data-slot="tool-skeleton-icon"
+            style={{
+              width: "16px",
+              height: "16px",
+              "flex-shrink": "0",
+              "border-radius": "4px",
+              "background-color": "color-mix(in oklch, var(--text-weak) 18%, transparent)",
+            }}
+          />
+          <div
+            data-slot="tool-skeleton-lines"
+            style={{
+              display: "flex",
+              "align-items": "center",
+              gap: "8px",
+              "flex": "1 1 auto",
+              "min-width": "0",
+            }}
+          >
+            <div style={`width: 64px; height: 10px; flex-shrink: 0; ${bone}`} />
+            <div style={`width: min(220px, 45%); height: 8px; flex: 0 1 auto; opacity: 0.75; ${bone}`} />
           </div>
         </div>
       </div>
@@ -77,12 +95,8 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
     <Show
       when={hydrated()}
       fallback={
-        <div
-          data-slot="deferred-tool-part"
-          onPointerEnter={hydrate}
-          onFocusIn={hydrate}
-        >
-          <ToolPartPlaceholder part={props.part as ToolPart} />
+        <div data-slot="deferred-tool-part" onPointerEnter={hydrate} onFocusIn={hydrate}>
+          <ToolPartPlaceholder />
         </div>
       }
     >

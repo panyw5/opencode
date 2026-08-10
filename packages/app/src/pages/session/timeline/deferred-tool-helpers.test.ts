@@ -6,17 +6,12 @@ import {
   markToolPartHydrated,
   shouldDeferToolPart,
   toolHydrationKey,
-  toolPlaceholderCopy,
 } from "./deferred-tool-helpers"
 
 const tool = (input: {
   id?: string
   tool?: string
   status?: ToolPart["state"]["status"]
-  title?: string
-  description?: string
-  command?: string
-  defaultOpen?: boolean
 }): ToolPart =>
   ({
     id: input.id ?? "part_1",
@@ -31,15 +26,13 @@ const tool = (input: {
         : input.status === "running"
           ? {
               status: "running",
-              input: { description: input.description, command: input.command },
-              title: input.title,
+              input: {},
               time: { start: 1 },
             }
           : {
               status: "completed",
-              input: { description: input.description, command: input.command },
+              input: {},
               output: "ok",
-              title: input.title,
               metadata: {},
               time: { start: 1, end: 2 },
             },
@@ -61,27 +54,6 @@ describe("shouldDeferToolPart", () => {
 
   test("does not defer non-tool parts", () => {
     expect(shouldDeferToolPart({ id: "t1", type: "text", text: "hi" } as never)).toBe(false)
-  })
-})
-
-describe("toolPlaceholderCopy", () => {
-  test("prefers title and a short input preview without reading output", () => {
-    expect(
-      toolPlaceholderCopy(
-        tool({
-          status: "completed",
-          title: "Shell",
-          command: "wolframscript -code long",
-        }),
-      ),
-    ).toEqual({
-      title: "Shell",
-      subtitle: "wolframscript -code long",
-    })
-  })
-
-  test("falls back to the tool name", () => {
-    expect(toolPlaceholderCopy(tool({ status: "completed", tool: "write" })).title).toBe("write")
   })
 })
 

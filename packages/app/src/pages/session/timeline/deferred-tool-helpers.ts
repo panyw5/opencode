@@ -1,14 +1,6 @@
-import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
+import type { Part } from "@opencode-ai/sdk/v2"
 
 const hydratedKeys = new Set<string>()
-
-function normalizeTool(tool: string) {
-  const name = tool.trim().toLowerCase() || "tool"
-  if (name === "terminal") return "bash"
-  if (name === "read_file") return "read"
-  if (name === "web_search") return "websearch"
-  return name
-}
 
 export function toolHydrationKey(sessionID: string, partID: string) {
   return `${sessionID}\n${partID}`
@@ -40,29 +32,6 @@ export function shouldDeferToolPart(part: Part, defaultOpen?: boolean) {
   const status = part.state.status
   if (status === "pending" || status === "running") return false
   return true
-}
-
-export function toolPlaceholderCopy(part: ToolPart): { title: string; subtitle?: string } {
-  const tool = normalizeTool(part.tool)
-  const state = part.state
-  const input = (state.status === "pending" ? {} : (state.input ?? {})) as Record<string, unknown>
-  const title =
-    (state.status === "completed" || state.status === "running" || state.status === "error"
-      ? state.title?.trim()
-      : undefined) || tool
-
-  const keys = ["description", "command", "cmd", "filePath", "path", "query", "pattern", "name"]
-  let subtitle: string | undefined
-  for (const key of keys) {
-    const value = input[key]
-    if (typeof value !== "string") continue
-    const next = value.trim()
-    if (!next) continue
-    subtitle = next.length > 72 ? `${next.slice(0, 69)}...` : next
-    break
-  }
-
-  return { title, subtitle }
 }
 
 export function scheduleIdleHydrate(cb: () => void, timeout = 1200) {
