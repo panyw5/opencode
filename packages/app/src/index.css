@@ -538,7 +538,8 @@
   html[data-theme="chatgpt"] [data-component="card"][data-kind="tool-error-card"],
   html[data-theme="chatgpt"] [data-component="card"].error-card,
   html[data-theme="chatgpt"] [data-component="bash-output"],
-  html[data-theme="chatgpt"] [data-component="diagnostics"] {
+  html[data-theme="chatgpt"] [data-component="diagnostics"],
+  html[data-theme="chatgpt"] [data-component="injected-prompt"] {
     border-radius: var(--chatgpt-session-radius-md);
   }
 
@@ -578,7 +579,8 @@
   html[data-theme="arc"] [data-component="card"][data-kind="tool-error-card"],
   html[data-theme="arc"] [data-component="card"].error-card,
   html[data-theme="arc"] [data-component="bash-output"],
-  html[data-theme="arc"] [data-component="diagnostics"] {
+  html[data-theme="arc"] [data-component="diagnostics"],
+  html[data-theme="arc"] [data-component="injected-prompt"] {
     border-radius: var(--arc-session-radius-md);
   }
 
@@ -627,6 +629,7 @@
   html[data-theme="claude"] [data-component="card"].error-card,
   html[data-theme="claude"] [data-component="bash-output"],
   html[data-theme="claude"] [data-component="diagnostics"],
+  html[data-theme="claude"] [data-component="injected-prompt"],
   html[data-theme="claude"] [data-component="markdown"] .shiki,
   html[data-theme="claude"] [data-component="markdown"] img,
   html[data-theme="claude"] [data-slot="answer-image-thumbnail"] {
