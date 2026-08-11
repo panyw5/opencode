@@ -526,16 +526,16 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="trellis-task-
 /* Dock-prompt: sync radius with cards + override hardcoded translucent dark
    background that becomes muddy grey on light canvases */
 html[data-theme="arc"] [data-dock-surface="shell"] {
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
   background-color: var(--dock-shell-bg);
 }
 
 html[data-theme="arc"] [data-dock-surface="tray"] {
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-2xl);
 }
 
 html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
-  border-radius: var(--radius-2xl);
+  border-radius: var(--radius-4xl);
   /* Beat generic prompt-shell fill; keep Arc's deep solid panel. */
   background-color: var(--dock-shell-bg) !important;
   backdrop-filter: none !important;
@@ -591,13 +591,13 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="dock-prompt"]
   }
 }
 
-/* Buttons / cards / dialogs: bump radii to feel softer under arc */
+/* Buttons / cards / dialogs: bump radii to feel softer under arc — aligned with ChatGPT-style radii */
 html[data-theme="arc"] [data-component="button"] {
   border-radius: var(--radius-lg);
 }
 
 html[data-theme="arc"] [data-component="card"] {
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-2xl);
 }
 
 html[data-theme="arc"] [data-component="dialog"] {
@@ -605,7 +605,7 @@ html[data-theme="arc"] [data-component="dialog"] {
 }
 
 html[data-theme="arc"] [data-component="user-message"] [data-slot="user-message-text"] {
-  border-radius: 1.25rem;
+  border-radius: var(--radius-3xl);
 }
 
 /* ───────────────────────────────────────────────────────────── */

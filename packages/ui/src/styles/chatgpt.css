@@ -1,0 +1,69 @@
+/*
+ * ChatGPT Theme Effects
+ * Softer, more rounded corners matching chatgpt.com design
+ * Activated via html[data-theme="chatgpt"]
+ */
+
+/* ─── Radius tokens — ChatGPT uses larger, softer radii ─── */
+html[data-theme="chatgpt"] {
+  --radius-xs: 0.125rem; /*  2px — tiny badges, checkboxes      */
+  --radius-sm: 0.25rem; /*  4px — small chips, tags            */
+  --radius-md: 0.375rem; /*  6px — buttons, inputs             */
+  --radius-lg: 0.5rem; /*  8px — cards, panels                */
+  --radius-xl: 0.75rem; /* 12px — large cards, dialogs         */
+  --radius-2xl: 1rem; /* 16px — floating panels, menus       */
+  --radius-3xl: 1.25rem; /* 20px — user message bubbles         */
+  --radius-4xl: 1.75rem; /* 28px — composer / input box         */
+}
+
+/* ─── Buttons / cards / dialogs ─── */
+html[data-theme="chatgpt"] [data-component="button"] {
+  border-radius: var(--radius-lg);
+}
+
+html[data-theme="chatgpt"] [data-component="card"] {
+  border-radius: var(--radius-xl);
+}
+
+html[data-theme="chatgpt"] [data-component="dialog"] {
+  border-radius: var(--radius-2xl);
+}
+
+html[data-theme="chatgpt"] [data-component="user-message"] [data-slot="user-message-text"] {
+  border-radius: var(--radius-3xl);
+}
+
+/* ─── Composer / input — ChatGPT signature pill shape ─── */
+html[data-theme="chatgpt"] [data-dock-surface="shell"] {
+  border-radius: var(--radius-4xl);
+}
+
+html[data-theme="chatgpt"] [data-dock-surface="tray"] {
+  border-radius: var(--radius-4xl);
+}
+
+html[data-theme="chatgpt"] [data-dock-surface="tray"][data-dock-attach="top"] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* ─── Floating panels — menus, popovers, dropdowns ─── */
+html[data-theme="chatgpt"] [data-component="dropdown-menu-content"],
+html[data-theme="chatgpt"] [data-component="dropdown-menu-sub-content"],
+html[data-theme="chatgpt"] [data-component="context-menu-content"],
+html[data-theme="chatgpt"] [data-component="context-menu-sub-content"],
+html[data-theme="chatgpt"] [data-component="popover-content"],
+html[data-theme="chatgpt"] [data-component="hover-card-content"],
+html[data-theme="chatgpt"] [data-component="select-content"] {
+  border-radius: var(--radius-2xl);
+}
+
+/* ─── Tooltip — proportional smaller radius ─── */
+html[data-theme="chatgpt"] [data-component="tooltip"] {
+  border-radius: var(--radius-lg);
+}
+
+/* ─── Dialog content — prominent floating surface ─── */
+html[data-theme="chatgpt"] [data-component="dialog"] [data-slot="dialog-content"] {
+  border-radius: var(--radius-2xl);
+}

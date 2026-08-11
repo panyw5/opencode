@@ -48,6 +48,8 @@
   --radius-lg: 0.5rem;
   --radius-xl: 0.625rem;
   --radius-2xl: 1.25rem; /* 20px — for floating panel cards (Arc-style modernization) */
+  --radius-3xl: 1.5rem; /* 24px — user message bubbles (ChatGPT-style) */
+  --radius-4xl: 1.75rem; /* 28px — composer / input box (ChatGPT-style) */
 
   --shadow-xs:
     0 1px 2px -0.5px light-dark(hsl(0 0% 0% / 0.04), hsl(0 0% 0% / 0.06)),

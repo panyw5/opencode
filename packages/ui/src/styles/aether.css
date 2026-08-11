@@ -69,7 +69,7 @@ html[data-theme="aether"] [data-component="markdown"] a[data-file-link]:hover {
 html[data-theme="aether"] [data-component="collapsible"].tool-collapsible {
   background-color: #FDF1EB;
   border: 1px solid #F0CFC1;
-  border-radius: 10px;
+  border-radius: var(--radius-xl);
 }
 
 html[data-theme="aether"] [data-dock-surface="shell"] {
@@ -81,13 +81,13 @@ html[data-theme="aether"] [data-dock-surface="shell"] {
     0 0 0 0.5px rgba(193, 95, 60, 0.06),
     0 2px 8px -2px rgba(193, 95, 60, 0.08),
     0 4px 16px -4px rgba(193, 95, 60, 0.06);
-  border-radius: 16px;
+  border-radius: var(--radius-4xl);
 }
 
 html[data-theme="aether"] [data-dock-surface="tray"] {
   background-color: #FAF9F5;
   border: 1px solid #E8E2D8;
-  border-radius: 16px;
+  border-radius: var(--radius-4xl);
 }
 
 html[data-theme="aether"] [data-dock-surface="tray"][data-dock-attach="top"] {
