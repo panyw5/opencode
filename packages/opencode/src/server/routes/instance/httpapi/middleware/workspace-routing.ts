@@ -85,7 +85,12 @@ function selectedV2WorkspaceID(
 
 function defaultDirectory(request: HttpServerRequest.HttpServerRequest, url: URL): string {
   const fromQuery = url.searchParams.get("directory")
-  const fromHeader = request.headers["x-opencode-directory"]
+  let fromHeader = request.headers["x-opencode-directory"]
+  if (fromHeader) {
+    try {
+      fromHeader = decodeURIComponent(fromHeader)
+    } catch {}
+  }
   const fallback = process.cwd()
   const result = fromQuery || fromHeader || fallback
   // eslint-disable-next-line no-console

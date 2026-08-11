@@ -685,8 +685,12 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | AppProce
                 }
 
                 const step = 100
-                const patch = (file: string, before: string, after: string) =>
-                  formatPatch(structuredPatch(file, file, before, after, "", "", { context: Number.MAX_SAFE_INTEGER }))
+                const patch = (file: string, before: string, after: string) => {
+                  if (Buffer.byteLength(before) > limit || Buffer.byteLength(after) > limit) return undefined
+                  return formatPatch(
+                    structuredPatch(file, file, before, after, "", "", { context: Number.MAX_SAFE_INTEGER }),
+                  )
+                }
 
                 for (let i = 0; i < rows.length; i += step) {
                   const run = rows.slice(i, i + step)

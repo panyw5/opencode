@@ -799,6 +799,37 @@ it.instance(
 )
 
 it.instance(
+  "diffFull skips patch generation for text files that grow past the snapshot limit",
+  Effect.gen(function* () {
+    const tmp = yield* bootstrap()
+    const snapshot = yield* Snapshot.Service
+    const file = `${tmp.path}/large.txt`
+    yield* write(file, "base\n")
+    expect(yield* snapshot.track()).toBeTruthy()
+
+    yield* write(file, "before\n".repeat(300_000))
+    const before = yield* snapshot.track()
+    expect(before).toBeTruthy()
+
+    yield* write(file, "after\n".repeat(400_000))
+    const after = yield* snapshot.track()
+    expect(after).toBeTruthy()
+
+    const diffs = yield* snapshot.diffFull(before!, after!)
+    expect(diffs).toEqual([
+      {
+        file: "large.txt",
+        patch: undefined,
+        additions: 400_000,
+        deletions: 300_000,
+        status: "modified",
+      },
+    ])
+  }),
+  { git: true },
+)
+
+it.instance(
   "diffFull with a large interleaved mixed diff",
   Effect.gen(function* () {
     const tmp = yield* bootstrap()

@@ -483,14 +483,19 @@ describe("HttpApi workspace routing middleware", () => {
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped()
       const queryDir = path.join(dir, "query-target")
-      const headerDir = path.join(dir, "header-target")
+      const headerDir = path.join(dir, "header target")
       yield* serveRouteContextProbe
 
       // Without a selected workspace, the middleware falls back to request
       // directory hints before using the process cwd.
       const queryResponse = yield* HttpClient.get(`/probe?directory=${encodeURIComponent(queryDir)}`)
       const headerResponse = yield* HttpClientRequest.get("/probe").pipe(
-        HttpClientRequest.setHeader("x-opencode-directory", headerDir),
+        HttpClientRequest.setHeader("x-opencode-directory", encodeURIComponent(headerDir)),
+        HttpClient.execute,
+      )
+      const legacyHeaderDir = path.join(dir, "header%target")
+      const legacyHeaderResponse = yield* HttpClientRequest.get("/probe").pipe(
+        HttpClientRequest.setHeader("x-opencode-directory", legacyHeaderDir),
         HttpClient.execute,
       )
 
@@ -498,6 +503,8 @@ describe("HttpApi workspace routing middleware", () => {
       expect(yield* queryResponse.json).toEqual({ directory: queryDir })
       expect(headerResponse.status).toBe(200)
       expect(yield* headerResponse.json).toEqual({ directory: headerDir })
+      expect(legacyHeaderResponse.status).toBe(200)
+      expect(yield* legacyHeaderResponse.json).toEqual({ directory: legacyHeaderDir })
     }),
   )
 
