@@ -572,7 +572,7 @@
 }
 
 [data-component="reasoning-part"][data-mode="preview"] {
-  max-height: calc(var(--line-height-large, 1.6) * 3 * var(--font-size-large, 16px) + 4px);
+  height: calc(var(--line-height-large, 1.6) * 3 * var(--font-size-large, 16px) + 4px);
   overflow: hidden;
   position: relative;
 
