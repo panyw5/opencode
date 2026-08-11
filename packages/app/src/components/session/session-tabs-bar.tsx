@@ -572,7 +572,7 @@ function SessionTab(props: {
           class="flex shrink-0 items-center gap-0.5 rounded-md bg-surface-base-active px-1 text-10-medium text-text-weaker"
           aria-hidden="true"
         >
-          <Icon name="branch" size="small" />
+          <Icon name="branch" size="small" class="[transform:scaleY(-1)]" />
           {props.childCount}
         </span>
       </Show>
