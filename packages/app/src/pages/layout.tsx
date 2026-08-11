@@ -1902,10 +1902,8 @@ export default function Layout(props: ParentProps) {
       ? normalizeDirectory(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
       : ""
     if (normalizeDirectory(directory) !== quickAssistant) {
-      const title = globalSync
-        .child(directory, { bootstrap: false })[0]
-        .session.find((session) => session.id === id)?.title
-      layout.sessionBar.open(directory, id, title)
+      const session = globalSync.child(directory, { bootstrap: false })[0].session.find((session) => session.id === id)
+      layout.sessionBar.open(directory, id, session?.title, session ? (session.parentID ?? null) : undefined)
     }
     notification.session.markViewed(id)
     requestAnimationFrame(() => scrollToSession(id, `${directory}:${id}`))

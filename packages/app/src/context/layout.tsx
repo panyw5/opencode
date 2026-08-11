@@ -43,6 +43,7 @@ export type SessionBarTab = {
   directory: string
   id: string
   title?: string
+  parentID?: string | null
 }
 
 export const sessionBarKey = (tab: Pick<SessionBarTab, "directory" | "id">) => `${workspaceKey(tab.directory)}:${tab.id}`
@@ -677,21 +678,29 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       sessionBar: {
         all: createMemo(() => store.sessionBar?.all ?? []),
         /** Open (or focus) a session tab. Dedupes by directory+id, appends to the end. */
-        open(directory: string, id: string, title?: string) {
+        open(directory: string, id: string, title?: string, parentID?: string | null) {
           const key = workspaceKey(directory)
           const existing = (store.sessionBar?.all ?? []).find(
             (tab) => tab.id === id && workspaceKey(tab.directory) === key,
           )
           if (existing) {
-            if (title && existing.title !== title) {
+            if ((title && existing.title !== title) || (parentID !== undefined && existing.parentID !== parentID)) {
               setStore("sessionBar", "all", (prev) =>
-                (prev ?? []).map((tab) => (sessionBarKey(tab) === sessionBarKey(existing) ? { ...tab, title } : tab)),
+                (prev ?? []).map((tab) =>
+                  sessionBarKey(tab) === sessionBarKey(existing)
+                    ? {
+                        ...tab,
+                        title: title ?? tab.title,
+                        parentID: parentID === undefined ? tab.parentID : parentID,
+                      }
+                    : tab,
+                ),
               )
             }
             return
           }
           setStore("sessionBar", "all", (prev) => {
-            const next = [...(prev ?? []), { directory, id, title }]
+            const next = [...(prev ?? []), { directory, id, title, parentID }]
             if (next.length <= MAX_SESSION_BAR_TABS) return next
             // Bound the strip: drop the oldest (leftmost) tabs.
             return next.slice(next.length - MAX_SESSION_BAR_TABS)
@@ -703,24 +712,27 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             (prev ?? []).filter((tab) => !(tab.id === id && workspaceKey(tab.directory) === key)),
           )
         },
-        move(tabKey: string, to: number) {
-          setStore(
-            "sessionBar",
-            "all",
-            produce((draft) => {
-              if (!draft) return
-              const from = draft.findIndex((tab) => sessionBarKey(tab) === tabKey)
-              if (from === -1 || from === to) return
-              draft.splice(to, 0, draft.splice(from, 1)[0])
-            }),
-          )
+        setOrder(tabKeys: string[]) {
+          setStore("sessionBar", "all", (prev) => {
+            const all = prev ?? []
+            const byKey = new Map(all.map((tab) => [sessionBarKey(tab), tab] as const))
+            const ordered = tabKeys.flatMap((key) => {
+              const tab = byKey.get(key)
+              if (!tab) return []
+              byKey.delete(key)
+              return [tab]
+            })
+            return [...ordered, ...byKey.values()]
+          })
         },
-        setTitle(directory: string, id: string, title: string) {
+        setInfo(directory: string, id: string, info: { title?: string; parentID: string | null }) {
           const all = store.sessionBar?.all ?? []
           const index = all.findIndex((tab) => tab.id === id && workspaceKey(tab.directory) === workspaceKey(directory))
           if (index === -1) return
-          if (all[index]?.title === title) return
-          setStore("sessionBar", "all", index, "title", title)
+          const current = all[index]
+          const title = info.title ?? current?.title
+          if (current?.title === title && current?.parentID === info.parentID) return
+          setStore("sessionBar", "all", index, { ...current, title, parentID: info.parentID })
         },
       },
       projects: {

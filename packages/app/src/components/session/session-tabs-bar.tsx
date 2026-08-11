@@ -11,10 +11,12 @@ import {
 } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Popover } from "@opencode-ai/ui/popover"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 
 import { sessionBarKey, useLayout, type SessionBarTab } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
@@ -23,10 +25,10 @@ import { useSettings } from "@/context/settings"
 import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
-import { extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
+import { domainFromDirectory, extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { waitForMatch, workspaceKey } from "@/pages/layout/helpers"
-import { getTabReorderIndex } from "@/pages/session/helpers"
 import { working } from "@/pages/session/session-working"
+import { groupSessionTabs, reorderSessionTabGroups, type SessionTabGroup } from "./session-tab-groups"
 
 /**
  * Global session tabs bar. One tab per open session, across projects.
@@ -37,6 +39,7 @@ export function SessionTabsBar() {
   const layout = useLayout()
   const settings = useSettings()
   const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const command = useCommand()
   const server = useServer()
@@ -51,8 +54,35 @@ export function SessionTabsBar() {
   })
   let tabsViewport: HTMLDivElement | undefined
   let revealFrame: number | undefined
+  const metadataLoads = new Set<string>()
 
   const tabs = createMemo(() => layout.sessionBar.all())
+  const parentIDs = createMemo(() => {
+    const result = new Map<string, string>()
+    const directories = new Map<string, string>()
+    for (const tab of tabs()) {
+      directories.set(workspaceKey(tab.directory), tab.directory)
+      if (typeof tab.parentID === "string") result.set(sessionBarKey(tab), tab.parentID)
+    }
+
+    for (const directory of directories.values()) {
+      const [child] = globalSync.child(directory, { bootstrap: false })
+      for (const session of child.session ?? []) {
+        if (!session.parentID) continue
+        result.set(sessionBarKey({ directory, id: session.id }), session.parentID)
+      }
+    }
+    return result
+  })
+  const groups = createMemo(() =>
+    groupSessionTabs(tabs(), sessionBarKey, (tab) => {
+      const parentID = parentIDs().get(sessionBarKey(tab))
+      if (!parentID) return undefined
+      return sessionBarKey({ directory: tab.directory, id: parentID })
+    }),
+  )
+  const groupsByKey = createMemo(() => new Map(groups().map((group) => [sessionBarKey(group.tab), group] as const)))
+  const orderedTabs = createMemo(() => groups().flatMap((group) => [group.tab, ...group.children.map((item) => item.tab)]))
   const routeDir = createMemo(() => {
     const slug = params.dir
     if (!slug) return ""
@@ -87,6 +117,39 @@ export function SessionTabsBar() {
     }
   })
 
+  createEffect(() => {
+    for (const tab of tabs()) {
+      if (tab.parentID !== undefined) continue
+      const [child] = globalSync.child(tab.directory, { bootstrap: false })
+      if (child.sessions !== "ready") continue
+      const session = child.session.find((item) => item.id === tab.id)
+      if (session) {
+        layout.sessionBar.setInfo(tab.directory, tab.id, {
+          title: session.title,
+          parentID: session.parentID ?? null,
+        })
+        continue
+      }
+
+      const key = sessionBarKey(tab)
+      if (metadataLoads.has(key)) continue
+      metadataLoads.add(key)
+      void globalSDK
+        .forDomain(domainFromDirectory(tab.directory))
+        .client.session.get({ directory: tab.directory, sessionID: tab.id })
+        .then((result) => {
+          const value = result.data
+          if (!value) return
+          layout.sessionBar.setInfo(tab.directory, tab.id, {
+            title: value.title,
+            parentID: value.parentID ?? null,
+          })
+        })
+        .catch(() => undefined)
+        .finally(() => metadataLoads.delete(key))
+    }
+  })
+
   const open = async (tab: SessionBarTab) => {
     const href = `/${base64Encode(tab.directory)}/session/${tab.id}`
     // Tabs can point at sessions served by another server connection (extra agents).
@@ -118,7 +181,7 @@ export function SessionTabsBar() {
   }
 
   const close = (tab: SessionBarTab) => {
-    const all = tabs()
+    const all = orderedTabs()
     const index = all.findIndex((item) => sessionBarKey(item) === sessionBarKey(tab))
     if (index === -1) return
     const active = isActive(tab)
@@ -138,7 +201,7 @@ export function SessionTabsBar() {
   }
 
   const closeDraft = () => {
-    const last = tabs().at(-1)
+    const last = orderedTabs().at(-1)
     if (last) {
       void open(last)
       return
@@ -150,7 +213,7 @@ export function SessionTabsBar() {
   // (draft new-session page, home, config), previous lands on the last tab and
   // next on the first, matching the draft tab's visual position at the end.
   const switchBy = (delta: number) => {
-    const all = tabs()
+    const all = orderedTabs()
     if (all.length === 0) return
     const index = all.findIndex((tab) => isActive(tab))
     const target =
@@ -197,7 +260,7 @@ export function SessionTabsBar() {
     },
   ])
 
-  const keys = createMemo(() => tabs().map((tab) => sessionBarKey(tab)))
+  const keys = createMemo(() => groups().map((group) => sessionBarKey(group.tab)))
   const scrollTarget = createMemo(() => {
     const draft = draftDirectory()
     if (draft) return `draft:${workspaceKey(draft)}:${tabs().length}`
@@ -232,9 +295,10 @@ export function SessionTabsBar() {
   const handleDragOver = (event: DragEvent) => {
     const { draggable, droppable } = event
     if (!draggable || !droppable) return
-    const to = getTabReorderIndex(keys(), draggable.id.toString(), droppable.id.toString())
-    if (to === undefined) return
-    layout.sessionBar.move(draggable.id.toString(), to)
+    const reordered = reorderSessionTabGroups(groups(), draggable.id.toString(), droppable.id.toString(), sessionBarKey)
+    layout.sessionBar.setOrder(
+      reordered.flatMap((group) => [group.tab, ...group.children.map((item) => item.tab)]).map(sessionBarKey),
+    )
   }
 
   const handleDragEnd = () => {
@@ -260,13 +324,14 @@ export function SessionTabsBar() {
           <ConstrainDragYAxis />
           <div ref={tabsViewport} class="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
             <SortableProvider ids={keys()}>
-              <For each={tabs()}>
-                {(tab) => (
-                  <SessionTab
-                    tab={tab}
-                    active={isActive(tab)}
-                    onOpen={() => void open(tab)}
-                    onClose={() => close(tab)}
+              <For each={keys()}>
+                {(key) => (
+                  <SessionTabGroup
+                    tabKey={key}
+                    group={() => groupsByKey().get(key)}
+                    active={(tab) => isActive(tab)}
+                    onOpen={(tab) => void open(tab)}
+                    onClose={close}
                   />
                 )}
               </For>
@@ -299,105 +364,234 @@ const cleanTitle = (value: string) => {
   return stripped || value
 }
 
-function SessionTab(props: { tab: SessionBarTab; active: boolean; onOpen: () => void; onClose: () => void }) {
+function SessionTabGroup(props: {
+  tabKey: string
+  group: () => SessionTabGroup<SessionBarTab> | undefined
+  active: (tab: SessionBarTab) => boolean
+  onOpen: (tab: SessionBarTab) => void
+  onClose: (tab: SessionBarTab) => void
+}) {
+  const sortable = createSortable(props.tabKey)
+  const [state, setState] = createStore({ open: false })
+  let closeTimer: number | undefined
+  const group = () => {
+    const value = props.group()
+    if (!value) throw new Error(`Missing session tab group: ${props.tabKey}`)
+    return value
+  }
+
+  createEffect(() => {
+    if (group().children.length > 0) return
+    setState("open", false)
+  })
+
+  const cancelClose = () => {
+    if (closeTimer === undefined) return
+    window.clearTimeout(closeTimer)
+    closeTimer = undefined
+  }
+  const open = () => {
+    if (!group().children.length) return
+    cancelClose()
+    setState("open", true)
+  }
+  const close = () => {
+    cancelClose()
+    closeTimer = window.setTimeout(() => {
+      closeTimer = undefined
+      setState("open", false)
+    }, 150)
+  }
+  const groupActive = () => {
+    const value = group()
+    return props.active(value.tab) || value.children.some((item) => props.active(item.tab))
+  }
+  const trigger = () => (
+    <div class="flex h-full items-center" onMouseEnter={open} onMouseLeave={close} onFocusIn={open} onFocusOut={close}>
+      <SessionTab
+        tab={group().tab}
+        active={groupActive()}
+        relatedTabs={group().children.map((item) => item.tab)}
+        childCount={group().children.length}
+        preventPopoverToggle
+        onOpen={() => props.onOpen(group().tab)}
+        onClose={() => props.onClose(group().tab)}
+      />
+    </div>
+  )
+
+  onCleanup(cancelClose)
+
+  return (
+    <div use:sortable class="h-full flex items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
+      <Show when={group().children.length} fallback={trigger()}>
+        <Popover
+          open={state.open}
+          onOpenChange={(open) => setState("open", open)}
+          placement="bottom-start"
+          class="session-tab-children-popover"
+          trigger={trigger()}
+          triggerProps={{ role: "presentation", tabIndex: -1 }}
+        >
+          <div
+            data-component="session-tab-children"
+            class="session-child-agent-scrollbar flex max-h-80 min-w-56 flex-col gap-1.5 overflow-y-auto"
+            onMouseEnter={open}
+            onMouseLeave={close}
+            onFocusIn={open}
+            onFocusOut={close}
+          >
+            <For each={group().children}>
+              {(item) => (
+                <div class="flex min-w-0" style={{ "padding-left": `${(item.depth - 1) * 12}px` }}>
+                  <SessionTab
+                    tab={item.tab}
+                    active={props.active(item.tab)}
+                    nested
+                    onOpen={() => {
+                      setState("open", false)
+                      props.onOpen(item.tab)
+                    }}
+                    onClose={() => props.onClose(item.tab)}
+                  />
+                </div>
+              )}
+            </For>
+          </div>
+        </Popover>
+      </Show>
+    </div>
+  )
+}
+
+function SessionTab(props: {
+  tab: SessionBarTab
+  active: boolean
+  nested?: boolean
+  relatedTabs?: SessionBarTab[]
+  childCount?: number
+  preventPopoverToggle?: boolean
+  onOpen: () => void
+  onClose: () => void
+}) {
   const globalSync = useGlobalSync()
   const layout = useLayout()
   const language = useLanguage()
   const notification = useNotification()
-  const sortable = createSortable(sessionBarKey(props.tab))
   const [child] = globalSync.child(props.tab.directory, { bootstrap: false })
 
   const session = createMemo(() => (child.session ?? []).find((item) => item.id === props.tab.id))
-  const subagent = createMemo(() => !!session()?.parentID)
+  const subagent = createMemo(() => !!(session()?.parentID ?? props.tab.parentID))
   const title = createMemo(() => {
     const raw = session()?.title || props.tab.title
     if (!raw) return language.t("session.tab.session")
     return cleanTitle(raw)
   })
 
-  // Keep the persisted title fresh so the strip has good labels after a restart,
-  // before that project's sessions finish loading.
+  // Keep persisted tab metadata fresh so labels and parent grouping are available
+  // immediately after a restart, before project sessions finish loading.
   createEffect(() => {
-    const value = session()?.title
-    if (!value || value === props.tab.title) return
-    layout.sessionBar.setTitle(props.tab.directory, props.tab.id, value)
+    const value = session()
+    if (!value) return
+    if (value.title === props.tab.title && value.parentID === props.tab.parentID) return
+    layout.sessionBar.setInfo(props.tab.directory, props.tab.id, {
+      title: value.title,
+      parentID: value.parentID ?? null,
+    })
   })
 
-  const busy = createMemo(() => working(child.session_status[props.tab.id], child.message[props.tab.id]))
-  const unseen = createMemo(() => notification.session.unseenCount(props.tab.id))
+  const groupTabs = () => [props.tab, ...(props.relatedTabs ?? [])]
+  const busy = createMemo(() => groupTabs().some((tab) => working(child.session_status[tab.id], child.message[tab.id])))
+  const unseen = createMemo(() =>
+    groupTabs().reduce((total, tab) => total + notification.session.unseenCount(tab.id), 0),
+  )
 
   return (
-    <div use:sortable class="h-full flex items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
-      <div
-        role="button"
-        tabIndex={0}
-        data-component="session-tab"
-        data-active={props.active ? "true" : undefined}
-        data-subagent={subagent() ? "true" : undefined}
-        class="group relative flex h-7 max-w-52 min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
+    <div
+      role="button"
+      tabIndex={0}
+      data-component="session-tab"
+      data-active={props.active ? "true" : undefined}
+      data-subagent={subagent() ? "true" : undefined}
+      class="group relative flex min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
+      classList={{
+        "h-7 max-w-52": !props.nested,
+        "w-full max-w-72 py-1.5": !!props.nested,
+        "bg-surface-base-active text-text-strong": props.active,
+        "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
+      }}
+      onClick={(event) => {
+        if (props.preventPopoverToggle) event.stopPropagation()
+        props.onOpen()
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return
+        event.preventDefault()
+        if (props.preventPopoverToggle) event.stopPropagation()
+        props.onOpen()
+      }}
+      onMouseDown={(event) => {
+        if (event.button === 1) event.preventDefault()
+      }}
+      onAuxClick={(event) => {
+        if (event.button !== 1) return
+        event.preventDefault()
+        props.onClose()
+      }}
+    >
+      <Show
+        when={subagent()}
+        fallback={
+          <span class="session-tab-main-icon flex shrink-0" aria-hidden="true">
+            <Icon name="bubble-5" size="small" />
+          </span>
+        }
+      >
+        <span class="flex shrink-0 text-icon-weak [transform:scaleY(-1)]" aria-hidden="true">
+          <Icon name="branch" size="small" />
+        </span>
+      </Show>
+      <span class="min-w-0 flex-1 truncate">{title()}</span>
+      <Show when={busy()}>
+        <span
+          class="size-1.5 shrink-0 animate-pulse rounded-full"
+          style={{ "background-color": "var(--icon-base)" }}
+          aria-hidden
+        />
+      </Show>
+      <Show when={!busy() && unseen() > 0}>
+        <span
+          class="size-1.5 shrink-0 rounded-full"
+          style={{ "background-color": "var(--surface-info-base)" }}
+          aria-hidden
+        />
+      </Show>
+      <Show when={(props.childCount ?? 0) > 0}>
+        <span
+          data-slot="session-tab-child-count"
+          class="flex shrink-0 items-center gap-0.5 rounded-md bg-surface-base-active px-1 text-10-medium text-text-weaker"
+          aria-hidden="true"
+        >
+          <Icon name="branch" size="small" />
+          {props.childCount}
+        </span>
+      </Show>
+      <span
+        class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow]"
         classList={{
-          "bg-surface-base-active text-text-strong": props.active,
-          "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
+          "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
+          "opacity-100": props.active,
         }}
-        onClick={props.onOpen}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return
-          event.preventDefault()
-          props.onOpen()
-        }}
-        onMouseDown={(event) => {
-          if (event.button === 1) event.preventDefault()
-        }}
-        onAuxClick={(event) => {
-          if (event.button !== 1) return
-          event.preventDefault()
+        role="button"
+        tabIndex={-1}
+        aria-label={language.t("common.closeTab")}
+        onClick={(event) => {
+          event.stopPropagation()
           props.onClose()
         }}
       >
-        <Show
-          when={subagent()}
-          fallback={
-            <span class="session-tab-main-icon flex shrink-0" aria-hidden="true">
-              <Icon name="bubble-5" size="small" />
-            </span>
-          }
-        >
-          <span class="flex shrink-0 text-icon-weak [transform:scaleY(-1)]" aria-hidden="true">
-            <Icon name="branch" size="small" />
-          </span>
-        </Show>
-        <span class="min-w-0 truncate">{title()}</span>
-        <Show when={busy()}>
-          <span
-            class="size-1.5 shrink-0 animate-pulse rounded-full"
-            style={{ "background-color": "var(--icon-base)" }}
-            aria-hidden
-          />
-        </Show>
-        <Show when={!busy() && unseen() > 0}>
-          <span
-            class="size-1.5 shrink-0 rounded-full"
-            style={{ "background-color": "var(--surface-info-base)" }}
-            aria-hidden
-          />
-        </Show>
-        <span
-          class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-opacity hover:bg-surface-base-active hover:text-icon-strong-base"
-          classList={{
-            "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
-            "opacity-100": props.active,
-          }}
-          role="button"
-          tabIndex={-1}
-          aria-label={language.t("common.closeTab")}
-          onClick={(event) => {
-            event.stopPropagation()
-            props.onClose()
-          }}
-        >
-          <Icon name="close-small" size="small" />
-        </span>
-      </div>
+        <Icon name="close-small" size="small" />
+      </span>
     </div>
   )
 }
