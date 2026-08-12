@@ -986,6 +986,7 @@ export default function Page() {
       () => params.id,
       (id, prev) => {
         if (!id || id === prev) return
+        if (!prev) return
         setUi("renderOverlayStatus", "showing")
       },
     ),
