@@ -126,6 +126,7 @@ import { SidebarContent } from "./layout/sidebar-shell"
 import { ScoopJoin } from "./layout/scoop-join"
 import { ProjectTasksPanel } from "./layout/project-tasks-panel"
 import { ScheduledTasksPanel } from "./layout/scheduled-tasks-panel"
+import { AgentsMdDialog } from "@/components/agents-md-dialog"
 
 const QUICK_ASSISTANT_DIR = "quick-assistant"
 
@@ -3231,6 +3232,19 @@ export default function Layout(props: ParentProps) {
       )
     }
 
+    const openAgentsMd = () => {
+      const dir = worktree()
+      if (!dir) return
+      dialog.show(() => (
+        <AgentsMdDialog
+          directory={dir}
+          onSaved={() => {
+            void globalSync.project.loadSessions(dir, { silent: true })
+          }}
+        />
+      ))
+    }
+
     return (
       <div
         data-component="sidebar-panel"
@@ -3403,7 +3417,7 @@ export default function Layout(props: ParentProps) {
                     fallback={
                       <>
                         <div class="shrink-0 py-4 px-3">
-                          <div class="grid grid-cols-5 gap-2">
+                          <div class="grid grid-cols-6 gap-2">
                             <Tooltip placement="bottom" value={language.t("command.session.new")}>
                               <IconButton
                                 icon="new-session"
@@ -3420,6 +3434,16 @@ export default function Layout(props: ParentProps) {
                                 }}
                               />
                             </Tooltip>
+                            <Tooltip placement="bottom" value={language.t("sidebar.project.agentsMd")}>
+                              <IconButton
+                                icon="file"
+                                variant="ghost"
+                                size="large"
+                                class="sidebar-action-button h-10 w-full rounded-xl"
+                                aria-label={language.t("sidebar.project.agentsMd")}
+                                onClick={openAgentsMd}
+                              />
+                            </Tooltip>
                             <Tooltip placement="bottom" value={language.t("projectTask.title")}>
                               <IconButton
                                 icon="checklist"
@@ -3433,6 +3457,7 @@ export default function Layout(props: ParentProps) {
                             <Tooltip placement="bottom" value={language.t("scheduled.title")}>
                               <IconButton
                                 icon="clock"
+                                variant="ghost"
                                 size="large"
                                 class="sidebar-action-button h-10 w-full rounded-xl"
                                 aria-label={language.t("scheduled.title")}
@@ -3481,7 +3506,7 @@ export default function Layout(props: ParentProps) {
                   >
                     <>
                       <div class="shrink-0 py-4 px-3">
-                        <div class="grid grid-cols-5 gap-2">
+                        <div class="grid grid-cols-6 gap-2">
                           <Tooltip placement="bottom" value={language.t("workspace.new")}>
                             <IconButton
                               icon="plus-small"
@@ -3494,6 +3519,16 @@ export default function Layout(props: ParentProps) {
                                 if (!item) return
                                 createWorkspace(item)
                               }}
+                            />
+                          </Tooltip>
+                          <Tooltip placement="bottom" value={language.t("sidebar.project.agentsMd")}>
+                            <IconButton
+                              icon="file"
+                              variant="ghost"
+                              size="large"
+                              class="sidebar-action-button h-10 w-full rounded-xl"
+                              aria-label={language.t("sidebar.project.agentsMd")}
+                              onClick={openAgentsMd}
                             />
                           </Tooltip>
                           <Tooltip placement="bottom" value={language.t("projectTask.title")}>

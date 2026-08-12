@@ -13,6 +13,7 @@ export function MarkdownEditorField(props: {
   editable?: boolean
   busy?: boolean
   preview?: boolean
+  defaultMode?: MarkdownEditorMode
   placeholder?: string
   class?: string
   paint?: (value: string) => string
@@ -20,7 +21,7 @@ export function MarkdownEditorField(props: {
 }): JSX.Element {
   const settings = useSettings()
   const language = useLanguage()
-  const [mode, setMode] = createSignal<MarkdownEditorMode>("source")
+  const [mode, setMode] = createSignal<MarkdownEditorMode>(props.defaultMode ?? "source")
   let box: HTMLTextAreaElement | undefined
   let back: HTMLDivElement | undefined
   const html = createMemo(() => (props.paint ?? defaultPaint)(props.text))
