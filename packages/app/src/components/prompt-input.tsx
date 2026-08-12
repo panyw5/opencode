@@ -2335,7 +2335,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                 />
                               </Show>
                               <span class="truncate">
-                                {local.model.current()?.name ?? language.t("dialog.model.select.title")}
+                                {local.model.current()
+                                  ? `${local.model.current()!.provider?.id} / ${local.model.current()!.name}`
+                                  : language.t("dialog.model.select.title")}
                               </span>
                               <Icon name="chevron-down" size="small" class="shrink-0" />
                             </Button>
@@ -2407,7 +2409,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                               />
                             </Show>
                             <span class="truncate">
-                              {local.model.current()?.name ?? language.t("dialog.model.select.title")}
+                              {local.model.current()
+                                ? `${local.model.current()!.provider?.id} / ${local.model.current()!.name}`
+                                : language.t("dialog.model.select.title")}
                             </span>
                             <Icon name="chevron-down" size="small" class="shrink-0" />
                           </ModelSelectorPopover>
