@@ -40,31 +40,6 @@ export type ConfigTreeItem = {
   kind: "file" | "directory"
 }
 
-export type TrellisTask = {
-  id: string
-  name: string
-  title: string
-  status: string
-  priority?: string
-  assignee?: string
-  package?: string
-  parent?: string
-  children: string[]
-  createdAt?: string
-  completedAt?: string
-  path: string
-  worktreeRoot: string
-  worktreeName: string
-  current: boolean
-}
-
-export type TrellisTaskList = {
-  root: string
-  current?: string
-  skipped?: number
-  tasks: TrellisTask[]
-}
-
 export type OpenclawConfig = {
   enabled: boolean
   url?: string
@@ -378,18 +353,6 @@ export type Platform = {
 
   /** List known config files (desktop only) */
   listConfigFiles?(directory?: string | null): Promise<ConfigFile[]>
-
-  /** List Trellis tasks for a project directory (desktop only) */
-  listTrellisTasks?(directory: string): Promise<TrellisTaskList>
-
-  /** Create a Trellis task with a prd.md file (desktop only) */
-  createTrellisTask?(directory: string, name: string, content: string): Promise<string>
-
-  /** Mark a Trellis task as the current task (desktop only) */
-  setTrellisCurrentTask?(path: string): Promise<void>
-
-  /** Move a Trellis task into the Trellis archive folder (desktop only) */
-  archiveTrellisTask?(path: string): Promise<void>
 
   /** Read config file text (desktop only) */
   readConfigFile?(path: string): Promise<string | null>

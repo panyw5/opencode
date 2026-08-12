@@ -43,15 +43,12 @@ import type {
   OpenclawConfig,
   OpenclawDetection,
   OpenclawTest,
-  TrellisTask,
-  TrellisTaskList,
 } from "../preload/types"
 import {
   cliInstallDirectory,
   configRoot,
   resolveDesktopPath,
   tempMarkdownAttachmentPath,
-  trellisTaskFolderName,
 } from "./native-path"
 import { deployCli } from "./cli-deploy"
 
@@ -312,188 +309,6 @@ export async function createTempMarkdownAttachment(
   const target = tempMarkdownAttachmentPath(root, { id: randomUUID().slice(0, 8), now: new Date(), extension })
   await writeFile(target, content, { encoding: "utf8", flag: "wx" })
   return target
-}
-
-export async function listTrellisTasks(directory: string): Promise<TrellisTaskList> {
-  const root = resolve(directory)
-  registerAllowedRoot(root)
-  const tasks: TrellisTask[] = []
-  let skipped = 0
-  const worktrees = await listGitWorktrees(root)
-  const roots = worktrees.length > 0 ? worktrees : [root]
-  let current: string | undefined
-  for (const worktreeRoot of roots) {
-    const result = await listTrellisTasksInWorktree(worktreeRoot)
-    if (worktreeRoot === root) current = result.current
-    skipped += result.skipped
-    tasks.push(...result.tasks)
-  }
-  return { root, current, skipped, tasks }
-}
-
-export async function createTrellisTask(directory: string, name: string, content: string): Promise<string> {
-  const root = resolveDesktopPath(directory)
-  registerAllowedRoot(root)
-  const title = name.trim()
-  if (!title) throw new Error("Task name is required")
-
-  const folderName = trellisTaskFolderName(title)
-  const trellisRoot = join(root, ".trellis")
-  const tasksRoot = join(trellisRoot, "tasks")
-  const taskPath = join(tasksRoot, folderName)
-  registerAllowedRoot(trellisRoot)
-  await mkdir(tasksRoot, { recursive: true })
-  await mkdir(taskPath)
-
-  try {
-    await writeFile(join(taskPath, "prd.md"), content, { encoding: "utf8", flag: "wx" })
-    await writeFile(
-      join(taskPath, "task.json"),
-      JSON.stringify(
-        {
-          id: folderName,
-          name: title,
-          title,
-          status: "planning",
-          priority: "P2",
-          assignee: null,
-          package: null,
-          parent: null,
-          children: [],
-          createdAt: new Date().toISOString().slice(0, 10),
-        },
-        null,
-        2,
-      ) + "\n",
-      { encoding: "utf8", flag: "wx" },
-    )
-    return taskPath
-  } catch (error) {
-    await rm(taskPath, { recursive: true, force: true }).catch(() => undefined)
-    throw error
-  }
-}
-
-export async function setTrellisCurrentTask(path: string): Promise<void> {
-  const taskPath = assertTrellisTaskPath(path)
-  const trellisRoot = dirname(dirname(taskPath))
-  await writeFile(join(trellisRoot, ".current-task"), trellisTaskRef(taskPath), "utf8")
-}
-
-export async function archiveTrellisTask(path: string): Promise<void> {
-  const taskPath = assertTrellisTaskPath(path)
-  const taskName = basename(taskPath)
-  const tasksRoot = dirname(taskPath)
-  const archiveRoot = join(tasksRoot, "archive")
-  await mkdir(archiveRoot, { recursive: true })
-  await clearCurrentTrellisTaskIfMatches(taskPath)
-  await rename(taskPath, await uniqueArchivePath(archiveRoot, taskName))
-}
-
-async function listGitWorktrees(root: string) {
-  const result = await execFileAsync("git", ["-C", root, "worktree", "list", "--porcelain"], {
-    timeout: 3000,
-    windowsHide: true,
-  }).catch(() => undefined)
-  if (!result?.stdout) return []
-  const roots: string[] = []
-  for (const line of result.stdout.split(/\r?\n/)) {
-    if (!line.startsWith("worktree ")) continue
-    const worktreeRoot = resolve(line.slice("worktree ".length).trim())
-    if (worktreeRoot) roots.push(worktreeRoot)
-  }
-  return Array.from(new Set(roots))
-}
-
-function assertTrellisTaskPath(path: string): string {
-  const target = assertAllowedLocalPath(path)
-  if (basename(dirname(target)) !== "tasks") throw new Error(`Path is not a Trellis task: ${target}`)
-  if (basename(target) === "archive") throw new Error("Cannot operate on the Trellis archive folder")
-  return target
-}
-
-function trellisTaskRef(taskPath: string): string {
-  return `.trellis/tasks/${basename(taskPath)}`
-}
-
-async function uniqueArchivePath(archiveRoot: string, taskName: string): Promise<string> {
-  const first = join(archiveRoot, taskName)
-  if (!(await exists(first))) return first
-  for (let index = 1; index < 1000; index++) {
-    const candidate = join(archiveRoot, `${taskName}-${index}`)
-    if (!(await exists(candidate))) return candidate
-  }
-  throw new Error(`Unable to find available archive path for ${taskName}`)
-}
-
-async function clearCurrentTrellisTaskIfMatches(taskPath: string): Promise<void> {
-  const taskName = basename(taskPath)
-  const currentPath = join(dirname(dirname(taskPath)), ".current-task")
-  const current = await readFile(currentPath, "utf8")
-    .then((value) => value.trim())
-    .catch(() => undefined)
-  if (!current) return
-  if (
-    current === taskPath ||
-    current === taskName ||
-    current === trellisTaskRef(taskPath) ||
-    current === `tasks/${taskName}` ||
-    current.endsWith(`/${taskName}`) ||
-    current.endsWith(`\\${taskName}`)
-  ) {
-    await unlink(currentPath).catch(() => undefined)
-  }
-}
-
-async function listTrellisTasksInWorktree(worktreeRoot: string): Promise<{
-  current?: string
-  skipped: number
-  tasks: TrellisTask[]
-}> {
-  registerAllowedRoot(worktreeRoot)
-  const trellisRoot = join(worktreeRoot, ".trellis")
-  registerAllowedRoot(trellisRoot)
-  const tasksRoot = join(trellisRoot, "tasks")
-  const current = await readFile(join(trellisRoot, ".current-task"), "utf8")
-    .then((value) => value.trim())
-    .catch(() => undefined)
-  const folders = await readdir(tasksRoot, { withFileTypes: true }).catch(() => [])
-  const tasks: TrellisTask[] = []
-  let skipped = 0
-  for (const entry of folders) {
-    if (!entry.isDirectory() || entry.name === "archive") continue
-    const path = join(tasksRoot, entry.name)
-    const raw = await readFile(join(path, "task.json"), "utf8").catch(() => undefined)
-    if (!raw) {
-      skipped++
-      continue
-    }
-    try {
-      const data = JSON.parse(raw) as Partial<TrellisTask> & { id?: string; name?: string }
-      const id = data.id ?? entry.name
-      const name = data.name ?? id
-      tasks.push({
-        id: `${worktreeRoot}:${id}`,
-        name,
-        title: typeof data.title === "string" ? data.title : name,
-        status: typeof data.status === "string" ? data.status : "unknown",
-        priority: stringOrUndefined(data.priority),
-        assignee: stringOrUndefined(data.assignee),
-        package: stringOrUndefined(data.package),
-        parent: stringOrUndefined(data.parent),
-        children: Array.isArray(data.children) ? data.children.filter((value): value is string => typeof value === "string") : [],
-        createdAt: stringOrUndefined(data.createdAt),
-        completedAt: stringOrUndefined(data.completedAt),
-        path,
-        worktreeRoot,
-        worktreeName: basename(worktreeRoot),
-        current: Boolean(current && (current === path || current === entry.name || current.endsWith(`/${entry.name}`))),
-      })
-    } catch {
-      skipped++
-    }
-  }
-  return { current, skipped, tasks }
 }
 
 export function getOpenclawConfig(): OpenclawConfig {
@@ -975,8 +790,4 @@ function parseStoreObject<T extends object>(key: string, fallback: T): T {
   const value = getStore().get(key)
   if (!value || typeof value !== "object" || Array.isArray(value)) return fallback
   return { ...fallback, ...value } as T
-}
-
-function stringOrUndefined(value: unknown) {
-  return typeof value === "string" ? value : undefined
 }

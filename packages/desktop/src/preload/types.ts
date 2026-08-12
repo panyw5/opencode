@@ -78,31 +78,6 @@ export type ConfigTreeItem = {
   kind: "file" | "directory"
 }
 
-export type TrellisTask = {
-  id: string
-  name: string
-  title: string
-  status: string
-  priority?: string
-  assignee?: string
-  package?: string
-  parent?: string
-  children: string[]
-  createdAt?: string
-  completedAt?: string
-  path: string
-  worktreeRoot: string
-  worktreeName: string
-  current: boolean
-}
-
-export type TrellisTaskList = {
-  root: string
-  current?: string
-  skipped?: number
-  tasks: TrellisTask[]
-}
-
 export type OpenclawConfig = {
   enabled: boolean
   url?: string
@@ -291,10 +266,6 @@ export type ElectronAPI = {
   getConfigWorkspace: () => Promise<ConfigWorkspace>
   listConfigDirectory: (path: string) => Promise<ConfigTreeItem[]>
   listLocalDirectory: (path: string) => Promise<ConfigTreeItem[]>
-  listTrellisTasks: (directory: string) => Promise<TrellisTaskList>
-  createTrellisTask: (directory: string, name: string, content: string) => Promise<string>
-  setTrellisCurrentTask?: (path: string) => Promise<void>
-  archiveTrellisTask?: (path: string) => Promise<void>
   getOpenclawConfig: () => Promise<OpenclawConfig>
   setOpenclawConfig: (config: OpenclawConfig) => Promise<void>
   testOpenclawConfig: (config: OpenclawConfig) => Promise<OpenclawTest>

@@ -34,7 +34,6 @@ import {
   createTempMarkdownAttachment,
   deleteConfigFile,
   renameConfigFile,
-  archiveTrellisTask,
   detectOpenclawConfig,
   filterDirectories,
   getConfigWorkspace,
@@ -48,7 +47,6 @@ import {
   listConfigDirectory,
   listConfigFiles,
   listLocalDirectory,
-  listTrellisTasks,
   openInEditor,
   openInFinder,
   readConfigFile,
@@ -57,9 +55,7 @@ import {
   setGenericagentConfig,
   setHermesConfig,
   setOpenclawConfig,
-  setTrellisCurrentTask,
   writeConfigFile,
-  createTrellisTask,
 } from "./native"
 import { cliAgentDescriptors, getCliAgent, getCliAgentInfo, setCliAgent, testCliAgent } from "./cli-agents"
 
@@ -283,12 +279,6 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("get-config-workspace", () => getConfigWorkspace())
   ipcMain.handle("list-config-directory", (_event: IpcMainInvokeEvent, path: string) => listConfigDirectory(path))
   ipcMain.handle("list-local-directory", (_event: IpcMainInvokeEvent, path: string) => listLocalDirectory(path))
-  ipcMain.handle("list-trellis-tasks", (_event: IpcMainInvokeEvent, directory: string) => listTrellisTasks(directory))
-  ipcMain.handle("create-trellis-task", (_event: IpcMainInvokeEvent, directory: string, name: string, content: string) =>
-    createTrellisTask(directory, name, content),
-  )
-  ipcMain.handle("set-trellis-current-task", (_event: IpcMainInvokeEvent, path: string) => setTrellisCurrentTask(path))
-  ipcMain.handle("archive-trellis-task", (_event: IpcMainInvokeEvent, path: string) => archiveTrellisTask(path))
   ipcMain.handle("get-openclaw-config", () => getOpenclawConfig())
   ipcMain.handle("set-openclaw-config", (_event: IpcMainInvokeEvent, config) => setOpenclawConfig(config))
   ipcMain.handle("test-openclaw-config", (_event: IpcMainInvokeEvent, config) => testOpenclawBridge(config))

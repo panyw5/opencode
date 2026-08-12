@@ -124,7 +124,6 @@ import {
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
 import { ScoopJoin } from "./layout/scoop-join"
-import { TrellisTasksPanel } from "./layout/trellis-tasks-panel"
 import { ProjectTasksPanel } from "./layout/project-tasks-panel"
 import { ScheduledTasksPanel } from "./layout/scheduled-tasks-panel"
 
@@ -156,7 +155,7 @@ export default function Layout(props: ParentProps) {
       workspaceBranchName: {} as Record<string, Record<string, string>>,
       workspaceExpanded: {} as Record<string, boolean>,
       gettingStartedDismissed: false,
-      sidebarPanel: "project" as "project" | "tasks" | "scheduled" | "projectTasks",
+      sidebarPanel: "project" as "project" | "scheduled" | "projectTasks",
     }),
   )
 
@@ -214,7 +213,6 @@ export default function Layout(props: ParentProps) {
   // resolvers keep working, but the icon should not look "selected".
   const onConfigRoute = createMemo(() => /\/config(?:\/|$)/.test(location.pathname))
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
-  const tasksPanelActive = createMemo(() => store.sidebarPanel === "tasks")
   const scheduledPanelActive = createMemo(() => store.sidebarPanel === "scheduled")
   const projectTasksPanelActive = createMemo(() => store.sidebarPanel === "projectTasks")
   const [pendingSessionSelection, setPendingSessionSelection] = createSignal<
@@ -1315,15 +1313,6 @@ export default function Layout(props: ParentProps) {
         onSelect: () => layout.sidebar.toggle(),
       },
       {
-        id: "trellis.tasks.open",
-        title: language.t("command.trellis.tasks.open"),
-        description: language.t("command.trellis.tasks.open.description"),
-        keywords: kw("command.trellis.tasks.open", "command.trellis.tasks.open.description"),
-        category: language.t("command.category.view"),
-        disabled: !params.dir,
-        onSelect: () => openTasksPanel(),
-      },
-      {
         id: "projectTask.open",
         title: language.t("command.projectTask.open"),
         description: language.t("command.projectTask.open.description"),
@@ -1699,12 +1688,6 @@ export default function Layout(props: ParentProps) {
       }
       navigate(next)
     })
-  }
-
-  function openTasksPanel() {
-    if (!params.dir) return
-    setStore("sidebarPanel", "tasks")
-    layout.sidebar.open()
   }
 
   function openProjectTasksPanel() {
@@ -3420,7 +3403,7 @@ export default function Layout(props: ParentProps) {
                     fallback={
                       <>
                         <div class="shrink-0 py-4 px-3">
-                          <div class="grid grid-cols-6 gap-2">
+                          <div class="grid grid-cols-5 gap-2">
                             <Tooltip placement="bottom" value={language.t("command.session.new")}>
                               <IconButton
                                 icon="new-session"
@@ -3447,20 +3430,9 @@ export default function Layout(props: ParentProps) {
                                 onClick={openProjectTasksPanel}
                               />
                             </Tooltip>
-                            <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
-                              <IconButton
-                                icon="task"
-                                variant="ghost"
-                                size="large"
-                                class="sidebar-action-button h-10 w-full rounded-xl"
-                                aria-label={language.t("trellis.tasks.title")}
-                                onClick={openTasksPanel}
-                              />
-                            </Tooltip>
                             <Tooltip placement="bottom" value={language.t("scheduled.title")}>
                               <IconButton
                                 icon="clock"
-                                variant="ghost"
                                 size="large"
                                 class="sidebar-action-button h-10 w-full rounded-xl"
                                 aria-label={language.t("scheduled.title")}
@@ -3509,7 +3481,7 @@ export default function Layout(props: ParentProps) {
                   >
                     <>
                       <div class="shrink-0 py-4 px-3">
-                        <div class="grid grid-cols-6 gap-2">
+                        <div class="grid grid-cols-5 gap-2">
                           <Tooltip placement="bottom" value={language.t("workspace.new")}>
                             <IconButton
                               icon="plus-small"
@@ -3532,16 +3504,6 @@ export default function Layout(props: ParentProps) {
                               class="sidebar-action-button h-10 w-full rounded-xl"
                               aria-label={language.t("projectTask.title")}
                               onClick={openProjectTasksPanel}
-                            />
-                          </Tooltip>
-                          <Tooltip placement="bottom" value={language.t("trellis.tasks.title")}>
-                            <IconButton
-                              icon="task"
-                              variant="ghost"
-                              size="large"
-                              class="sidebar-action-button h-10 w-full rounded-xl"
-                              aria-label={language.t("trellis.tasks.title")}
-                              onClick={openTasksPanel}
                             />
                           </Tooltip>
                           <Tooltip placement="bottom" value={language.t("scheduled.title")}>
@@ -3761,13 +3723,6 @@ export default function Layout(props: ParentProps) {
           />
         ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ProjectTasksPanel
-            directory={() => sidebarProject()?.root ?? routeDir()}
-            width={panel}
-            mobile={mobile}
-            onBack={() => setStore("sidebarPanel", "project")}
-          />
-        ) : tasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
-          <TrellisTasksPanel
             directory={() => sidebarProject()?.root ?? routeDir()}
             width={panel}
             mobile={mobile}

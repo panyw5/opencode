@@ -80,7 +80,6 @@ import { working as sessionWorking } from "@/pages/session/session-working"
 import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputUndo } from "./prompt-input/input-undo"
 import { workspaceKey } from "@/pages/layout/helpers"
 import { uiPerfTriggerDown, uiPerfOpen } from "@/utils/ui-perf"
-import { TRELLIS_TASK_INSERT_EVENT } from "@/utils/trellis-task-insert"
 
 interface PromptInputProps {
   class?: string
@@ -1709,15 +1708,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       setCursorPosition(editorRef, newCursor)
       queueScroll()
     })
-  }
-
-  if (typeof window !== "undefined") {
-    const insertTrellisTask = (event: Event) => {
-      const text = (event as CustomEvent<{ text?: unknown }>).detail?.text
-      if (typeof text === "string") insertTextAtCursor(text)
-    }
-    window.addEventListener(TRELLIS_TASK_INSERT_EVENT, insertTrellisTask)
-    onCleanup(() => window.removeEventListener(TRELLIS_TASK_INSERT_EVENT, insertTrellisTask))
   }
 
   const buildSessionRefXml = (entry: SessionHistoryEntry) => {
