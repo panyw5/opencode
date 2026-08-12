@@ -35,6 +35,7 @@ import { ProviderID, ModelID } from "@/provider/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ProjectTask } from "@/project-task/service"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -53,6 +54,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(opts.plugin ?? Plugin.defaultLayer),
       Layer.provide(Question.defaultLayer),
       Layer.provide(Todo.defaultLayer),
+      Layer.provide(ProjectTask.defaultLayer),
       Layer.provide(Skill.defaultLayer),
       Layer.provide(Agent.defaultLayer),
       Layer.provide(Session.defaultLayer),
@@ -114,6 +116,15 @@ afterEach(async () => {
 })
 
 describe("tool.registry", () => {
+  it.instance("exposes scheduled task creation to agents", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("scheduled_task_create")
+    }),
+  )
+
   it.instance("hides repo research tools unless experimental", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

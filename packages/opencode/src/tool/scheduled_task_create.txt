@@ -1,0 +1,7 @@
+Create an unattended scheduled agent prompt for the current project.
+
+Use this tool when the user asks the agent to run a prompt once at a specific time or repeatedly on an interval or cron schedule. Use Unix milliseconds for `at` and `interval`, a five-field cron expression for `cron`, and an IANA timezone when the schedule must follow a specific locale.
+
+The tool derives the project, directory, current session, agent, and model from the active conversation. `existing_session` continues the current session on each run and is the default. `new_session` creates a separate session for every run.
+
+This tool creates the scheduled task; it does not run it immediately.

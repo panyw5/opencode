@@ -67,6 +67,7 @@ import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { SessionStatus } from "@/session/status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ScheduledTaskCreateTool } from "./scheduled-task"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -142,6 +143,7 @@ export const layer: Layer.Layer<
     const projectTaskGet = yield* ProjectTaskGetTool
     const projectTaskMount = yield* ProjectTaskMountTool
     const projectTaskUpdate = yield* ProjectTaskUpdateTool
+    const scheduledTaskCreate = yield* ScheduledTaskCreateTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -265,6 +267,7 @@ export const layer: Layer.Layer<
           project_task_get: Tool.init(projectTaskGet),
           project_task_mount: Tool.init(projectTaskMount),
           project_task_update: Tool.init(projectTaskUpdate),
+          scheduled_task_create: Tool.init(scheduledTaskCreate),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
@@ -278,9 +281,7 @@ export const layer: Layer.Layer<
           plan: Tool.init(plan),
         })
 
-        return {
-          custom,
-          builtin: [
+        const builtin = [
             tool.invalid,
             ...(questionEnabled ? [tool.question] : []),
             tool.shell,
@@ -298,6 +299,7 @@ export const layer: Layer.Layer<
             tool.project_task_get,
             tool.project_task_mount,
             tool.project_task_update,
+            tool.scheduled_task_create,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.codex_consult,
@@ -307,7 +309,12 @@ export const layer: Layer.Layer<
             tool.patch,
             ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
-          ],
+          ]
+        log.info("builtin tools initialized", { ids: builtin.map((item) => item.id) })
+
+        return {
+          custom,
+          builtin,
           task: tool.task,
           read: tool.read,
         }

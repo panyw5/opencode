@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
+import { BackgroundShell } from "@/background/shell"
 import { Bus } from "../../src/bus"
 import { Command } from "../../src/command"
 import { Config } from "@/config/config"
@@ -55,6 +56,8 @@ import { reply, TestLLMServer } from "../lib/llm-server"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { ScheduledTaskRepository } from "@/scheduled-task/repository"
+import { ProjectTask } from "@/project-task/service"
 
 void Log.init({ print: false })
 
@@ -180,6 +183,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     mcp,
     AppFileSystem.defaultLayer,
     BackgroundJob.defaultLayer,
+    BackgroundShell.defaultLayer,
     status,
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,
@@ -196,6 +200,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(ProjectTask.defaultLayer),
     Layer.provideMerge(todo),
     Layer.provideMerge(question),
     Layer.provideMerge(deps),
@@ -692,6 +697,57 @@ it.instance("glob tool keeps instance context during prompt runs", () =>
     expect(tool.state.output).toContain(file)
     expect(tool.state.output).not.toContain("No context found for instance")
     expect(result.parts.some((part) => part.type === "text" && part.text === "done")).toBe(true)
+  }),
+)
+
+it.instance("agent creates a scheduled task through the built-in tool", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Scheduled task tool",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Create an hourly project review" }],
+    })
+    yield* llm.tool("scheduled_task_create", {
+      name: "Hourly project review",
+      prompt: "Review the current project and summarize actionable findings",
+      schedule: { kind: "every", interval: 3_600_000 },
+    })
+    yield* llm.text("Scheduled task created")
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+    expect(yield* llm.calls).toBe(2)
+    expect(result.parts.some((part) => part.type === "text" && part.text === "Scheduled task created")).toBe(true)
+
+    const tasks = yield* ScheduledTaskRepository.list({ projectID: session.projectID })
+    expect(tasks).toHaveLength(1)
+    expect(tasks[0]).toMatchObject({
+      name: "Hourly project review",
+      prompt: "Review the current project and summarize actionable findings",
+      directory: session.directory,
+      projectID: session.projectID,
+      executionMode: "existing_session",
+      sessionID: session.id,
+      agent: "build",
+      model: { providerID: "test", modelID: "test-model" },
+      schedule: { kind: "every", interval: 3_600_000 },
+    })
+
+    const messages = yield* MessageV2.filterCompactedEffect(session.id)
+    const call = messages
+      .flatMap((message) => message.parts)
+      .find(
+        (part): part is CompletedToolPart =>
+          part.type === "tool" && part.tool === "scheduled_task_create" && part.state.status === "completed",
+      )
+    expect(call?.state.output).toContain(tasks[0]?.id)
   }),
 )
 

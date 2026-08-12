@@ -160,16 +160,32 @@ describe("experimental HttpApi", () => {
         expect(yield* json(consoleOrgs)).toEqual({ orgs: [] })
 
         expect(toolList.status).toBe(200)
-        expect(yield* json<unknown[]>(toolList)).toContainEqual(
+        const tools = yield* json<unknown[]>(toolList)
+        expect(tools).toContainEqual(
           expect.objectContaining({
             id: "bash",
             description: expect.any(String),
             parameters: expect.any(Object),
           }),
         )
+        expect(tools).toContainEqual(
+          expect.objectContaining({
+            id: "scheduled_task_create",
+            description: expect.any(String),
+            parameters: expect.objectContaining({
+              properties: expect.objectContaining({
+                name: expect.any(Object),
+                prompt: expect.any(Object),
+                schedule: expect.any(Object),
+              }),
+            }),
+          }),
+        )
 
         expect(toolIDs.status).toBe(200)
-        expect(yield* json(toolIDs)).toContain("bash")
+        const ids = yield* json<string[]>(toolIDs)
+        expect(ids).toContain("bash")
+        expect(ids).toContain("scheduled_task_create")
 
         expect(worktrees.status).toBe(200)
         expect(yield* json(worktrees)).toEqual([])

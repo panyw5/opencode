@@ -1,5 +1,4 @@
 import { Agent } from "@/agent/agent"
-import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
 import { Identifier } from "@/id/id"
 import { InstanceStore } from "@/project/instance-store"
@@ -9,9 +8,11 @@ import { SessionPrompt } from "@/session/prompt"
 import { SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
 import * as Log from "@opencode-ai/core/util/log"
-import { Cause, Context, Effect, Fiber, Layer, Schema, Scope } from "effect"
+import { Cause, Context, Effect, Fiber, Layer, Scope } from "effect"
 import { ScheduledTaskRepository } from "./repository"
 import { CreateInput, Info, NotFoundError, Run, ScheduledTaskID, ScheduledTaskRunID, UpdateInput } from "./schema"
+import { ScheduledTaskCreate } from "./create"
+import { Event } from "./event"
 import { markScheduledSessionTitle } from "./title"
 import { ScheduledTaskUnattended } from "./unattended"
 
@@ -33,13 +34,6 @@ const MAX_BUSY_RETRIES = 3
 const LEASE_MS = 60_000
 const LEASE_HEARTBEAT = "20 seconds"
 const MISSED_GRACE_MS = 5_000
-
-export const Event = {
-  Created: BusEvent.define("scheduled-task.created", Info),
-  Updated: BusEvent.define("scheduled-task.updated", Info),
-  Deleted: BusEvent.define("scheduled-task.deleted", Schema.Struct({ taskID: ScheduledTaskID })),
-  RunUpdated: BusEvent.define("scheduled-task.run-updated", Run),
-}
 
 export interface Interface {
   readonly list: (input?: { projectID?: string; enabled?: boolean }) => Effect.Effect<Info[]>
@@ -289,11 +283,7 @@ export const layer = Layer.effect(
     return Service.of({
       list: (input) => ScheduledTaskRepository.list(input),
       get: find,
-      create: Effect.fn("ScheduledTask.create")(function* (input) {
-        const task = yield* ScheduledTaskRepository.create(input)
-        yield* emit(task.directory, { type: Event.Created.type, properties: task })
-        return task
-      }),
+      create: ScheduledTaskCreate.create,
       update: Effect.fn("ScheduledTask.update")(function* (id, input) {
         const task = yield* ScheduledTaskRepository.update(id, input)
         if (!task) return yield* new NotFoundError({ taskID: id })
@@ -328,5 +318,7 @@ export const defaultLayer = layer.pipe(
     Agent.defaultLayer,
   ]),
 )
+
+export { Event } from "./event"
 
 export * as ScheduledTask from "./service"
