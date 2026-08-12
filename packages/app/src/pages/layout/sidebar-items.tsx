@@ -747,7 +747,7 @@ export const NewSessionItem = (props: {
       end
       class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
       onClick={() => {
-        if (layout.sidebar.opened()) return
+        layout.sidebar.close()
       }}
     >
       <div class="flex items-center gap-1 w-full">

@@ -3433,6 +3433,7 @@ export default function Layout(props: ParentProps) {
                                   if (!dir) return
                                   console.debug(`[sidebar-project] new-session root=${dir} source=sidebar-button`)
                                   navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
+                                  layout.sidebar.close()
                                 }}
                               />
                             </Tooltip>

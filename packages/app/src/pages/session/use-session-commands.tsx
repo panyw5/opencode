@@ -271,6 +271,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
           if (!directory) return
           console.debug(`[session-new] source=command directory=${directory} route-directory=${projectDirectory() || "none"}`)
           navigate(`/${base64Encode(directory)}/session`)
+          layout.sidebar.close()
         },
       }),
       fileCommand({
