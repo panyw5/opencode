@@ -85,6 +85,7 @@ export const dict = {
   "scheduled.history": "运行历史",
   "scheduled.history.empty": "该任务还没有运行记录。",
   "scheduled.openSession": "打开会话",
+  "scheduled.openLatestSession": "打开最近会话",
   "scheduled.unattended.title": "无人值守模式",
   "scheduled.unattended.accept": "我了解该任务将以无人值守模式运行",
   "scheduled.unattended.detail": "本次定时运行会自动允许工作区内的权限询问；外部目录访问和交互式问题会被拒绝。",

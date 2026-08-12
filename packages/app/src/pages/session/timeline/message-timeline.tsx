@@ -587,10 +587,12 @@ export function MessageTimeline(props: {
     const row = input.row
     const anchor = () => {
       const value = row()
+      if (!value) return false
       return value._tag === "CommentStrip" || (value._tag === "UserMessage" && value.anchor)
     }
     const previousAssistantPart = () => {
       const value = row()
+      if (!value) return false
       return value._tag === "AssistantPart" && value.previousAssistantPart
     }
     return (
@@ -883,7 +885,9 @@ export function MessageTimeline(props: {
         }}
       >
         <div ref={(value) => (element = value)} data-index={item().index}>
-          {renderTimelineRow(row)}
+          <Show when={row()} fallback={null}>
+            {(value) => renderTimelineRow(value)}
+          </Show>
         </div>
       </div>
     )

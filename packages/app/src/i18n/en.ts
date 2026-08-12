@@ -100,6 +100,7 @@ export const dict = {
   "scheduled.history": "Run history",
   "scheduled.history.empty": "This task has no runs yet.",
   "scheduled.openSession": "Open session",
+  "scheduled.openLatestSession": "Open latest session",
   "scheduled.unattended.title": "Unattended mode",
   "scheduled.unattended.accept": "I understand this task runs unattended",
   "scheduled.unattended.detail":

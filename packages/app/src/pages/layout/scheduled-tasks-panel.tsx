@@ -73,7 +73,9 @@ function ScheduledTaskCard(props: {
           </div>
         </div>
       </div>
-      <div class="line-clamp-2 text-12-regular text-text-base">{props.task.prompt}</div>
+      <div class="line-clamp-3 text-12-mono text-text-base">
+        {props.task.prompt.length > 200 ? props.task.prompt.slice(0, 200) + "…" : props.task.prompt}
+      </div>
       <Show when={props.task.lastError}>
         <div class="line-clamp-2 text-11-regular text-text-danger">{props.task.lastError}</div>
       </Show>
@@ -177,8 +179,12 @@ function ScheduledTaskDetailDialog(props: {
           <span class="mt-0.5 truncate text-12-regular text-text-weak">{state.task.directory}</span>
         </div>
       }
-      size="large"
+      size="x-large"
       transition
+      containerStyle={{
+        width: "min(calc(100vw - 32px), 1120px)",
+        height: "min(calc(100vh - 32px), 860px)",
+      }}
       action={
         <div class="flex items-center gap-1">
           <Tooltip value={language.t("scheduled.edit")}>
@@ -339,10 +345,10 @@ function ScheduledTaskDetailDialog(props: {
             >
               {state.task.enabled ? language.t("scheduled.disable") : language.t("scheduled.enable")}
             </Button>
-            <Show when={state.task.sessionID ?? state.runs.find((run) => run.sessionID)?.sessionID}>
+            <Show when={state.runs.find((run) => run.sessionID)?.sessionID ?? state.task.sessionID}>
               {(sessionID) => (
                 <Button icon="speech-bubble" variant="ghost" onClick={() => openSession(sessionID())}>
-                  {language.t("scheduled.openSession")}
+                  {language.t("scheduled.openLatestSession")}
                 </Button>
               )}
             </Show>
