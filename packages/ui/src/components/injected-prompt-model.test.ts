@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Part, TextPart } from "@opencode-ai/sdk/v2"
 import {
+  backgroundTaskInjectionPart,
   formatInjectionPreview,
   injectionPreviewFromParts,
   injectionTitleFromParts,
@@ -32,6 +33,7 @@ describe("injected-prompt-model", () => {
     expect(isInjectionKind("hook-injection")).toBe(true)
     expect(isInjectionKind("command-injection")).toBe(true)
     expect(isInjectionKind("project-task-injection")).toBe(true)
+    expect(isInjectionKind("background-task-injection")).toBe(true)
     expect(isInjectionKind("command-invocation")).toBe(false)
   })
 
@@ -45,6 +47,17 @@ describe("injected-prompt-model", () => {
         metadata: { kind: "scheduled-injection", taskName: "新闻" },
       }),
       text({
+        id: "background",
+        text: "Background task completed: inspect bug",
+        synthetic: true,
+        metadata: {
+          kind: "background-task-injection",
+          description: "inspect bug",
+          childSessionID: "ses_child",
+          state: "completed",
+        },
+      }),
+      text({
         id: "shell",
         text: "Background shell completed",
         synthetic: true,
@@ -52,10 +65,11 @@ describe("injected-prompt-model", () => {
     ]
 
     const selected = selectInjectionParts(parts)
-    expect(selected).toHaveLength(1)
-    expect(selected[0].text).toBe("搜索新闻")
+    expect(selected).toHaveLength(2)
+    expect(selected.map((part) => part.text)).toEqual(["搜索新闻", "Background task completed: inspect bug"])
     expect(isInjectionTextPart(parts[1]!)).toBe(true)
-    expect(isInjectionTextPart(parts[2]!)).toBe(false)
+    expect(isInjectionTextPart(parts[2]!)).toBe(true)
+    expect(isInjectionTextPart(parts[3]!)).toBe(false)
   })
 
   test("scheduledInjectionPart builds the payload shape", () => {
@@ -75,6 +89,82 @@ describe("injected-prompt-model", () => {
         taskName: "daily",
       },
     })
+  })
+
+  test("backgroundTaskInjectionPart builds the payload shape", () => {
+    expect(
+      backgroundTaskInjectionPart({
+        text: "Background task completed: inspect bug",
+        description: "inspect bug",
+        childSessionID: "ses_child",
+        state: "completed",
+      }),
+    ).toEqual({
+      type: "text",
+      text: "Background task completed: inspect bug",
+      synthetic: true,
+      metadata: {
+        kind: "background-task-injection",
+        description: "inspect bug",
+        childSessionID: "ses_child",
+        state: "completed",
+      },
+    })
+  })
+
+  test.each([
+    {
+      name: "completed with description",
+      metadata: { description: "inspect bug", state: "completed" },
+      title: "ui.message.injection.backgroundTaskCompleted:description=inspect bug",
+    },
+    {
+      name: "completed without description",
+      metadata: { state: "completed" },
+      title: "ui.message.injection.backgroundTaskCompletedFallback",
+    },
+    {
+      name: "failed with description",
+      metadata: { description: "inspect bug", state: "error" },
+      title: "ui.message.injection.backgroundTaskFailed:description=inspect bug",
+    },
+    {
+      name: "failed without description",
+      metadata: { state: "error" },
+      title: "ui.message.injection.backgroundTaskFailedFallback",
+    },
+    {
+      name: "unknown state",
+      metadata: { description: "inspect bug", state: "cancelled" },
+      title: "ui.message.injection.prompt",
+    },
+  ])("titles background task injections: $name", ({ metadata, title }) => {
+    const parts = selectInjectionParts([
+      text({
+        text: "body",
+        synthetic: true,
+        metadata: { kind: "background-task-injection", childSessionID: "ses_child", ...metadata },
+      }),
+    ])
+    expect(injectionTitleFromParts(parts, t)).toBe(title)
+  })
+
+  test("falls back when background task states conflict", () => {
+    const parts = selectInjectionParts([
+      text({
+        id: "completed",
+        text: "done",
+        synthetic: true,
+        metadata: { kind: "background-task-injection", description: "inspect bug", state: "completed" },
+      }),
+      text({
+        id: "failed",
+        text: "failed",
+        synthetic: true,
+        metadata: { kind: "background-task-injection", description: "inspect bug", state: "error" },
+      }),
+    ])
+    expect(injectionTitleFromParts(parts, t)).toBe("ui.message.injection.prompt")
   })
 
   test("titles scheduled injections with task name", () => {

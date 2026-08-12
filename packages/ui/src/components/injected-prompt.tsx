@@ -21,6 +21,7 @@ export {
   isInjectionPending,
   isInjectionTextPart,
   joinInjectionText,
+  backgroundTaskInjectionPart,
   scheduledInjectionPart,
   projectTaskInjectionPart,
   selectInjectionParts,

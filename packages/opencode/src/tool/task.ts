@@ -314,6 +314,12 @@ export const TaskTool = Tool.define(
                 state,
                 text,
               }),
+              metadata: {
+                kind: "background-task-injection",
+                description: params.description,
+                childSessionID: nextSession.id,
+                state,
+              },
             },
           ],
         })

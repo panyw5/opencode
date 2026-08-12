@@ -6,6 +6,7 @@ export const INJECTION_KINDS = [
   "command-injection",
   "scheduled-injection",
   "project-task-injection",
+  "background-task-injection",
 ] as const
 
 export type InjectionKind = (typeof INJECTION_KINDS)[number]
@@ -105,6 +106,23 @@ export function injectionTitleFromParts(parts: TextPart[], t: InjectionTitleTran
       : t("ui.message.injection.projectTaskPromptFallback")
   }
 
+  if (kinds.size === 1 && kinds.has("background-task-injection")) {
+    const descriptions = uniqueMetadataStrings(parts, "background-task-injection", "description")
+    const states = uniqueMetadataStrings(parts, "background-task-injection", "state")
+    const description = descriptions.length === 1 ? descriptions[0] : undefined
+    const state = states.length === 1 ? states[0] : undefined
+    if (state === "completed") {
+      return description
+        ? t("ui.message.injection.backgroundTaskCompleted", { description })
+        : t("ui.message.injection.backgroundTaskCompletedFallback")
+    }
+    if (state === "error") {
+      return description
+        ? t("ui.message.injection.backgroundTaskFailed", { description })
+        : t("ui.message.injection.backgroundTaskFailedFallback")
+    }
+  }
+
   return t("ui.message.injection.prompt")
 }
 
@@ -165,6 +183,36 @@ export function projectTaskInjectionPart(input: {
       taskID: input.taskID,
       taskName: input.taskName,
       ...(input.mode ? { mode: input.mode } : {}),
+    },
+  }
+}
+
+/** Build a text part payload for a background subagent result (backend / tests). */
+export function backgroundTaskInjectionPart(input: {
+  text: string
+  description: string
+  childSessionID: string
+  state: "completed" | "error"
+}): {
+  type: "text"
+  text: string
+  synthetic: true
+  metadata: {
+    kind: "background-task-injection"
+    description: string
+    childSessionID: string
+    state: "completed" | "error"
+  }
+} {
+  return {
+    type: "text",
+    text: input.text,
+    synthetic: true,
+    metadata: {
+      kind: "background-task-injection",
+      description: input.description,
+      childSessionID: input.childSessionID,
+      state: input.state,
     },
   }
 }

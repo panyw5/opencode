@@ -783,7 +783,25 @@ describe("tool.task", () => {
 
       yield* Deferred.succeed(done, undefined)
       expect((yield* jobs.wait({ id: result.metadata.sessionId })).info?.output).toBe("background done")
-      expect((yield* Deferred.await(injected)).parts[0]?.type).toBe("text")
+      const notification = yield* Deferred.await(injected)
+      expect(notification.sessionID).toBe(chat.id)
+      expect(notification.noReply).toBe(true)
+      const part = notification.parts[0]
+      expect(part?.type).toBe("text")
+      if (part?.type !== "text") throw new Error("background notification part not found")
+      expect(part.synthetic).toBe(true)
+      expect(part.metadata).toEqual({
+        kind: "background-task-injection",
+        description: "inspect bug",
+        childSessionID: result.metadata.sessionId,
+        state: "completed",
+      })
+      expect(part.text).toContain("Background task completed: inspect bug")
+      expect(part.text).toContain(`task_id: ${result.metadata.sessionId}`)
+      expect(part.text).toContain("state: completed")
+      expect(part.text).toContain("<task_result>")
+      expect(part.text).toContain("background done")
+      expect(part.text).toContain("</task_result>")
       expect(runs).toBe(1)
     }),
   )
@@ -859,6 +877,139 @@ describe("tool.task", () => {
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("completed")
       expect(waited.info?.output).toBe("background done")
+    }),
+  )
+
+  background.instance("background task failures inject a visible error payload", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const injected = yield* Deferred.make<SessionPrompt.PromptInput>()
+      const promptOps: TaskPromptOps = {
+        ...stubOps(),
+        prompt: (input) =>
+          input.sessionID === chat.id
+            ? Deferred.succeed(injected, input).pipe(Effect.as(reply(input, "injected")))
+            : Effect.fail(new Error("child exploded")),
+      }
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+      expect(waited.timedOut).toBe(false)
+      expect(waited.info?.status).toBe("error")
+      const notification = yield* Deferred.await(injected)
+      const part = notification.parts[0]
+      expect(part?.type).toBe("text")
+      if (part?.type !== "text") throw new Error("background error notification part not found")
+      expect(part.synthetic).toBe(true)
+      expect(part.metadata).toEqual({
+        kind: "background-task-injection",
+        description: "inspect bug",
+        childSessionID: result.metadata.sessionId,
+        state: "error",
+      })
+      expect(part.text).toContain("Background task failed: inspect bug")
+      expect(part.text).toContain(`task_id: ${result.metadata.sessionId}`)
+      expect(part.text).toContain("state: error")
+      expect(part.text).toContain("<task_error>")
+      expect(part.text).toContain("child exploded")
+      expect(part.text).toContain("</task_error>")
+    }),
+  )
+
+  background.instance("background completion notification persists in parent history", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const sessions = yield* Session.Service
+      const { chat, assistant } = yield* seed()
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+
+      const result = yield* def.execute(
+        {
+          description: "inspect bug",
+          prompt: "look into the cache key path",
+          subagent_type: "general",
+          background: true,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: {
+            promptOps: {
+              ...stubOps({ text: "background done" }),
+              prompt: (input) =>
+                input.noReply
+                  ? Effect.gen(function* () {
+                      const user = yield* sessions.updateMessage({
+                        id: input.messageID ?? MessageID.ascending(),
+                        role: "user",
+                        sessionID: input.sessionID,
+                        agent: input.agent ?? "build",
+                        model: input.model ?? ref,
+                        time: { created: Date.now() },
+                      })
+                      const parts = input.parts.map((part) => ({
+                        ...part,
+                        id: part.id ?? PartID.ascending(),
+                        messageID: user.id,
+                        sessionID: input.sessionID,
+                      }))
+                      yield* Effect.forEach(parts, (part) => sessions.updatePart(part), { discard: true })
+                      return { info: user, parts }
+                    })
+                  : Effect.succeed(reply(input, "background done")),
+              loop: () => Effect.never,
+            } satisfies TaskPromptOps,
+          },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
+
+      const waited = yield* jobs.wait({ id: result.metadata.sessionId, timeout: 1_000 })
+      expect(waited.timedOut).toBe(false)
+      const history = yield* sessions.messages({ sessionID: chat.id })
+      const persisted = history
+        .flatMap((message) => message.parts)
+        .find(
+          (part) =>
+            part.type === "text" &&
+            part.synthetic === true &&
+            part.metadata?.kind === "background-task-injection",
+        )
+      expect(persisted?.type).toBe("text")
+      if (persisted?.type !== "text") throw new Error("persisted background notification part not found")
+      expect(persisted.metadata).toEqual({
+        kind: "background-task-injection",
+        description: "inspect bug",
+        childSessionID: result.metadata.sessionId,
+        state: "completed",
+      })
+      expect(persisted.text).toContain("background done")
     }),
   )
 
