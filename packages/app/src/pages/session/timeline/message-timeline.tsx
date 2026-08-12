@@ -818,7 +818,7 @@ export function MessageTimeline(props: {
     const row = createMemo(() => timelineRowByKey().get(input.rowKey) ?? initialRow)
     const partMeasurements = createMemo(() => {
       const value = row()
-      if (value._tag !== "AssistantPart") return ""
+      if (!value || value._tag !== "AssistantPart") return ""
       if (value.group.type === "part")
         return partMeasurementKey(getMessagePart(value.group.ref.messageID, value.group.ref.partID))
       return value.group.refs.map((ref) => partMeasurementKey(getMessagePart(ref.messageID, ref.partID))).join("|")
