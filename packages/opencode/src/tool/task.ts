@@ -190,6 +190,7 @@ export const TaskTool = Tool.define(
       ]
       const { nextSession, metadata } = yield* Effect.uninterruptible(
         Effect.gen(function* () {
+          const created = !session
           const nextSession =
             session ??
             (yield* sessions.create({
@@ -198,11 +199,29 @@ export const TaskTool = Tool.define(
               permission,
               agent: next.name,
             }))
+
+          // Inherit mounted project-task from parent so the child session gets the same
+          // task brief (audience=subagent) via SessionPrompt inject. Resume paths keep
+          // whatever is already mounted on the child.
+          if (created && parent.mountedTaskID && parent.injectTaskContext !== false) {
+            yield* sessions.setMountedTask({
+              sessionID: nextSession.id,
+              taskID: parent.mountedTaskID,
+            })
+            yield* sessions.setInjectTaskContext({
+              sessionID: nextSession.id,
+              enabled: true,
+            })
+          }
+
           const metadata = {
             parentSessionId: ctx.sessionID,
             sessionId: nextSession.id,
             model,
             ...(runInBackground ? { background: true } : {}),
+            ...(created && parent.mountedTaskID
+              ? { mountedTaskID: parent.mountedTaskID }
+              : {}),
           }
 
           yield* ctx.metadata({

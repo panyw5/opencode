@@ -16,6 +16,7 @@ import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ProjectTask } from "@/project-task/service"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -40,6 +41,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     SessionStatus.defaultLayer,
     Truncate.defaultLayer,
     ToolRegistry.defaultLayer,
+    ProjectTask.defaultLayer,
     RuntimeFlags.layer(flags),
   )
 
@@ -593,6 +595,99 @@ describe("tool.task", () => {
         },
       },
     },
+  )
+
+  it.instance(
+    "new subagent session inherits parent mounted project task",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const projectTasks = yield* ProjectTask.Service
+        const { chat, assistant } = yield* seed()
+        const task = yield* projectTasks.create({
+          title: "Inherit mount",
+          description: "Child should see this task",
+        })
+        yield* projectTasks.mount({ sessionID: chat.id, taskID: task.id })
+
+        const parent = yield* sessions.get(chat.id)
+        expect(parent.mountedTaskID).toBe(task.id)
+        expect(parent.injectTaskContext).toBe(true)
+
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const result = yield* def.execute(
+          {
+            description: "child work",
+            prompt: "do the delegated slice",
+            subagent_type: "general",
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        const child = yield* sessions.get(result.metadata.sessionId)
+        expect(child.parentID).toBe(chat.id)
+        expect(child.mountedTaskID).toBe(task.id)
+        expect(child.injectTaskContext).toBe(true)
+        expect(result.metadata.mountedTaskID).toBe(task.id)
+      }),
+  )
+
+  it.instance(
+    "resume does not overwrite an existing child mount",
+    () =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const projectTasks = yield* ProjectTask.Service
+        const { chat, assistant } = yield* seed()
+        const parentTask = yield* projectTasks.create({ title: "Parent task" })
+        const otherTask = yield* projectTasks.create({ title: "Other task" })
+        yield* projectTasks.mount({ sessionID: chat.id, taskID: parentTask.id })
+
+        const child = yield* sessions.create({
+          parentID: chat.id,
+          title: "Existing child",
+          agent: "general",
+        })
+        // Child was previously pointed at a different task — resume must keep it.
+        yield* sessions.setMountedTask({ sessionID: child.id, taskID: otherTask.id })
+        yield* sessions.setInjectTaskContext({ sessionID: child.id, enabled: true })
+
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const result = yield* def.execute(
+          {
+            description: "resume child",
+            prompt: "continue",
+            subagent_type: "general",
+            task_id: child.id,
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        )
+
+        expect(result.metadata.sessionId).toBe(child.id)
+        const resumed = yield* sessions.get(child.id)
+        expect(resumed.mountedTaskID).toBe(otherTask.id)
+        expect(result.metadata.mountedTaskID).toBeUndefined()
+      }),
   )
 
   it.instance("rejects background execution when the experiment is disabled", () =>

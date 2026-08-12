@@ -1,4 +1,9 @@
 import type { Detail } from "./schema"
+import type { TaskWorkspaceFile } from "./description-file"
+import { descriptionRelativePath, taskWorkspaceRelativePath } from "./description-file"
+
+/** Who receives the inject brief — main session vs task/subagent child. */
+export type ProjectTaskInjectAudience = "parent" | "subagent"
 
 /** Fingerprint of last injected project-task context for a session. */
 export type TaskContextSnapshot = {
@@ -20,6 +25,11 @@ export type TaskContextSnapshot = {
     status: string
     content: string
   }>
+  /**
+   * Fingerprint of task-workspace files (path + bytes). Used so adding/removing
+   * files under `.opentasks/<id>/` triggers a delta inject.
+   */
+  workspaceFiles: Array<{ relativePath: string; bytes: number }>
 }
 
 /**
@@ -119,7 +129,10 @@ function collectOpenTodos(
   return out
 }
 
-export function buildTaskContextSnapshot(detail: Detail): TaskContextSnapshot {
+export function buildTaskContextSnapshot(
+  detail: Detail,
+  workspaceFiles: TaskWorkspaceFile[] = [],
+): TaskContextSnapshot {
   return {
     taskID: detail.id,
     title: detail.title,
@@ -134,7 +147,21 @@ export function buildTaskContextSnapshot(detail: Detail): TaskContextSnapshot {
     },
     sessionCount: detail.sessionCount,
     openTodos: collectOpenTodos(detail, FULL_SESSION_LIMIT, FULL_TODO_LIMIT),
+    workspaceFiles: workspaceFiles.map((f) => ({ relativePath: f.relativePath, bytes: f.bytes })),
   }
+}
+
+function workspaceFilesEqual(
+  a: TaskContextSnapshot["workspaceFiles"] | undefined,
+  b: TaskContextSnapshot["workspaceFiles"] | undefined,
+): boolean {
+  const left = a ?? []
+  const right = b ?? []
+  if (left.length !== right.length) return false
+  for (let i = 0; i < left.length; i++) {
+    if (left[i].relativePath !== right[i].relativePath || left[i].bytes !== right[i].bytes) return false
+  }
+  return true
 }
 
 function snapshotsEqual(a: TaskContextSnapshot, b: TaskContextSnapshot): boolean {
@@ -149,7 +176,8 @@ function snapshotsEqual(a: TaskContextSnapshot, b: TaskContextSnapshot): boolean
     a.progress.inProgress !== b.progress.inProgress ||
     a.progress.pending !== b.progress.pending ||
     a.progress.cancelled !== b.progress.cancelled ||
-    a.openTodos.length !== b.openTodos.length
+    a.openTodos.length !== b.openTodos.length ||
+    !workspaceFilesEqual(a.workspaceFiles, b.workspaceFiles)
   ) {
     return false
   }
@@ -187,12 +215,93 @@ function projectTaskStatusRulesLines(): string[] {
   ]
 }
 
-/** Format a full project-task brief (first inject for a task on this session). */
-export function formatProjectTaskFullContext(detail: Detail): string {
-  const lines: string[] = [
-    '<project-task-context mode="full">',
+function audienceIntroLines(audience: ProjectTaskInjectAudience): string[] {
+  if (audience === "subagent") {
+    return [
+      "You are a subagent working under a parent session that mounted this project-level task.",
+      "Focus on the delegated work for this task. Prefer reading task workspace files below when you need goals or notes.",
+      "Do not re-mount or unmount the project task unless the user (via the parent) explicitly requires it.",
+      "Do not spawn further subagents solely to re-load this task context — it is already injected here.",
+    ]
+  }
+  return [
     "The user mounted (or switched to) this project-level task on this session.",
     "This is the FULL working brief for this task. Later turns may only send deltas or omit context when unchanged.",
+    "When you dispatch a `task` subagent, it inherits this mount and receives a subagent-scoped brief automatically.",
+  ]
+}
+
+function formatWorkspaceFilesSection(detail: Detail, workspaceFiles: TaskWorkspaceFile[]): string[] {
+  const workspace = taskWorkspaceRelativePath(detail.id)
+  const descriptionPath =
+    (detail.descriptionPath?.trim() || descriptionRelativePath(detail.id)).replace(/\\/g, "/")
+
+  const lines: string[] = [
+    "",
+    "Task workspace files (project-relative; read with the Read tool when you need full content):",
+    `- workspace: ${workspace}/`,
+  ]
+
+  if (workspaceFiles.length === 0) {
+    lines.push(
+      `- ${descriptionPath} — Goals, constraints, and acceptance criteria (canonical task brief).`,
+      "  (No other files found under the task workspace yet. Agents may add notes here.)",
+    )
+    return lines
+  }
+
+  for (const file of workspaceFiles) {
+    const mark = file.isDescription ? " [canonical brief]" : ""
+    lines.push(`- ${file.relativePath}${mark} — ${file.summary}`)
+  }
+  return lines
+}
+
+function formatLinkedSessionsSection(detail: Detail): string[] {
+  const lines: string[] = ["", `Linked sessions: ${detail.sessionCount}`]
+  for (const session of detail.sessions.slice(0, FULL_SESSION_LIMIT)) {
+    lines.push(
+      `- ${session.title} (${session.sessionID}): ${session.progress.completed}/${session.progress.total} todos`,
+    )
+    const open = session.todos
+      .filter((t) => t.status === "pending" || t.status === "in_progress")
+      .slice(0, FULL_TODO_LIMIT)
+    for (const todo of open) {
+      lines.push(`    · [${todo.status}] ${todo.content}`)
+    }
+  }
+  if (detail.sessions.length > FULL_SESSION_LIMIT) {
+    lines.push(`… and ${detail.sessions.length - FULL_SESSION_LIMIT} more sessions`)
+  }
+  return lines
+}
+
+export type FormatProjectTaskContextInput = {
+  detail: Detail
+  /** Files under `.opentasks/<taskID>/` (paths + short summaries). */
+  workspaceFiles?: TaskWorkspaceFile[]
+  /** parent = main/orchestrator session; subagent = task-tool child session. */
+  audience?: ProjectTaskInjectAudience
+}
+
+/** Format a full project-task brief (first inject for a task on this session). */
+export function formatProjectTaskFullContext(
+  detailOrInput: Detail | FormatProjectTaskContextInput,
+  maybeFiles?: TaskWorkspaceFile[],
+): string {
+  // Support both new options object and legacy (detail, files?) call shapes used in tests.
+  const input: FormatProjectTaskContextInput =
+    detailOrInput && typeof detailOrInput === "object" && "detail" in detailOrInput
+      ? detailOrInput
+      : { detail: detailOrInput as Detail, workspaceFiles: maybeFiles }
+
+  const detail = input.detail
+  const workspaceFiles = input.workspaceFiles ?? []
+  const audience = input.audience ?? "parent"
+
+  const lines: string[] = [
+    `<project-task-state mode="full" audience="${audience}">`,
+    ...audienceIntroLines(audience),
     ...projectTaskIdHygieneLines(),
     ...projectTaskStatusRulesLines(),
     `Task ID (mounted; still prefer list-return when calling tools): ${detail.id}`,
@@ -203,21 +312,18 @@ export function formatProjectTaskFullContext(detail: Detail): string {
   if (detail.description.trim()) {
     lines.push("", "Description:", detail.description.trim())
   }
-  lines.push("", `Linked sessions: ${detail.sessionCount}`)
-  for (const session of detail.sessions.slice(0, FULL_SESSION_LIMIT)) {
+  lines.push(...formatWorkspaceFilesSection(detail, workspaceFiles))
+  // Parent keeps the multi-session rollup; subagents get a shorter view (still list count).
+  if (audience === "parent") {
+    lines.push(...formatLinkedSessionsSection(detail))
+  } else {
     lines.push(
-      `- ${session.title} (${session.sessionID}): ${session.progress.completed}/${session.progress.total} todos`,
+      "",
+      `Linked sessions (parent project task): ${detail.sessionCount}. Prefer this session's local todos for your step checklist.`,
     )
-    const open = session.todos.filter((t) => t.status === "pending" || t.status === "in_progress").slice(0, FULL_TODO_LIMIT)
-    for (const todo of open) {
-      lines.push(`    · [${todo.status}] ${todo.content}`)
-    }
-  }
-  if (detail.sessions.length > FULL_SESSION_LIMIT) {
-    lines.push(`… and ${detail.sessions.length - FULL_SESSION_LIMIT} more sessions`)
   }
   // Blank line ends the markdown list so the closing tag is not a list-item continuation.
-  lines.push("", "</project-task-context>")
+  lines.push("", "</project-task-state>")
   return lines.join("\n")
 }
 
@@ -225,12 +331,14 @@ export function formatProjectTaskFullContext(detail: Detail): string {
 export function formatProjectTaskDeltaContext(
   detail: Detail,
   prev: TaskContextSnapshot,
+  workspaceFiles: TaskWorkspaceFile[] = [],
+  audience: ProjectTaskInjectAudience = "parent",
 ): string | null {
-  const next = buildTaskContextSnapshot(detail)
+  const next = buildTaskContextSnapshot(detail, workspaceFiles)
   if (snapshotsEqual(prev, next)) return null
 
   const lines: string[] = [
-    '<project-task-context mode="delta">',
+    `<project-task-state mode="delta" audience="${audience}">`,
     `Updates for mounted task ${detail.id} (${detail.title}) since the last inject.`,
     "Full brief was already provided earlier in this session — apply only these changes.",
     "Before get/update/mount on any target task: call `project_task_list` and use the exact `id` from the tool return — do not hand-copy IDs.",
@@ -254,6 +362,20 @@ export function formatProjectTaskDeltaContext(
   }
   if (prev.sessionCount !== next.sessionCount) {
     lines.push(`- linked sessions: ${prev.sessionCount} → ${next.sessionCount}`)
+  }
+
+  if (!workspaceFilesEqual(prev.workspaceFiles, next.workspaceFiles)) {
+    lines.push("- task workspace files changed:")
+    if (workspaceFiles.length === 0) {
+      lines.push("    · (no files currently listed)")
+    } else {
+      for (const file of workspaceFiles.slice(0, 16)) {
+        lines.push(`    · ${file.relativePath} — ${file.summary}`)
+      }
+      if (workspaceFiles.length > 16) {
+        lines.push(`    · … and ${workspaceFiles.length - 16} more`)
+      }
+    }
   }
 
   const prevMap = new Map(prev.openTodos.map((t) => [todoKey(t), t]))
@@ -295,13 +417,13 @@ export function formatProjectTaskDeltaContext(
     }
   }
 
-  // If we only had structural equality miss with no listed lines beyond headers, still emit progress.
-  if (lines.length <= 3) {
+  // Header is 5 lines; if nothing concrete was listed, still emit a progress anchor.
+  if (lines.length <= 5) {
     lines.push(`- snapshot changed (progress ${progressLine(next.progress)}, sessions ${next.sessionCount})`)
   }
 
   // Blank line ends any trailing markdown list so the closing tag stays top-level.
-  lines.push("", "</project-task-context>")
+  lines.push("", "</project-task-state>")
   return lines.join("\n")
 }
 
@@ -365,8 +487,14 @@ export function decideProjectTaskInject(input: {
    * history). Forces a re-FULL so the model and UI both receive the brief again.
    */
   hasDurablePart?: boolean
+  /** Files under `.opentasks/<taskID>/` for path+summary inject. */
+  workspaceFiles?: TaskWorkspaceFile[]
+  /** parent (default) vs subagent child session. */
+  audience?: ProjectTaskInjectAudience
 }): InjectDecision {
-  const snapshot = buildTaskContextSnapshot(input.detail)
+  const workspaceFiles = input.workspaceFiles ?? []
+  const audience = input.audience ?? "parent"
+  const snapshot = buildTaskContextSnapshot(input.detail, workspaceFiles)
   let state = normalizeInjectState(input.state)
   const taskID = input.detail.id
 
@@ -380,7 +508,7 @@ export function decideProjectTaskInject(input: {
   if (!alreadyFullForThisTask) {
     return {
       mode: "full",
-      text: formatProjectTaskFullContext(input.detail),
+      text: formatProjectTaskFullContext({ detail: input.detail, workspaceFiles, audience }),
       next: withSnapshot(state, taskID, snapshot),
     }
   }
@@ -390,12 +518,12 @@ export function decideProjectTaskInject(input: {
     // Full flag set but snapshot missing/stale — re-send FULL to re-anchor.
     return {
       mode: "full",
-      text: formatProjectTaskFullContext(input.detail),
+      text: formatProjectTaskFullContext({ detail: input.detail, workspaceFiles, audience }),
       next: withSnapshot(state, taskID, snapshot),
     }
   }
 
-  const delta = formatProjectTaskDeltaContext(input.detail, prev)
+  const delta = formatProjectTaskDeltaContext(input.detail, prev, workspaceFiles, audience)
   if (!delta) return { mode: "skip" }
 
   return {
@@ -407,5 +535,5 @@ export function decideProjectTaskInject(input: {
 
 /** @deprecated Prefer decideProjectTaskInject / formatProjectTaskFullContext. Kept for callers expecting a single full block. */
 export function formatProjectTaskSystemContext(detail: Detail): string {
-  return formatProjectTaskFullContext(detail)
+  return formatProjectTaskFullContext({ detail })
 }

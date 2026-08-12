@@ -233,13 +233,14 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Instruction.defaultLayer),
     Layer.provide(SystemPrompt.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+    Layer.provide(ProjectTask.defaultLayer),
     Layer.provideMerge(deps),
     Layer.provide(summary),
   )
 }
 
 function makeHttp(input?: { processor?: "blocking" }) {
-  return Layer.mergeAll(TestLLMServer.layer, makePrompt(input))
+  return Layer.mergeAll(TestLLMServer.layer, ProjectTask.defaultLayer, makePrompt(input))
 }
 
 function makeHttpNoLLMServer(input?: { processor?: "blocking" }) {
@@ -658,6 +659,112 @@ it.instance("loop continues when finish is tool-calls", () =>
       expect(result.parts.some((part) => part.type === "text" && part.text === "second")).toBe(true)
       expect(result.info.finish).toBe("stop")
     }
+  }),
+)
+
+it.instance("mounted project task context flows into task subagent prompt", () =>
+  Effect.gen(function* () {
+    const { dir, llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const projectTasks = yield* ProjectTask.Service
+    const marker = "E2E_PROJECT_TASK_CONTEXT_MARKER_20260812"
+
+    const parent = yield* sessions.create({
+      title: "Project task context E2E",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    const task = yield* projectTasks.create({
+      title: "E2E subagent context inject",
+      description: [
+        marker,
+        "Verify a task-tool child receives mounted project-task context.",
+        "Acceptance: child sees description.md, prd.md, and audience=subagent.",
+      ].join("\n"),
+      status: "in_progress",
+    })
+    yield* writeText(
+      path.join(dir, ".opentasks", task.id, "prd.md"),
+      "# E2E PRD\n\nThe child must report PROJECT_TASK_PRD_MARKER_20260812.\n",
+    )
+    yield* projectTasks.mount({ sessionID: parent.id, taskID: task.id })
+
+    yield* prompt.prompt({
+      sessionID: parent.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "Delegate the controlled context inspection." }],
+    })
+
+    yield* llm.tool("task", {
+      description: "inspect injected task context",
+      prompt: "Report the project-task-state tag, task title, marker, and workspace file paths you received.",
+      subagent_type: "general",
+    })
+    yield* llm.text("child context inspected")
+    yield* llm.text("parent received child report")
+
+    const result = yield* prompt.loop({ sessionID: parent.id })
+    expect(result.parts.some((part) => part.type === "text" && part.text === "parent received child report")).toBe(
+      true,
+    )
+
+    const inputs = yield* llm.inputs
+    expect(inputs).toHaveLength(3)
+    const bodies = inputs.map((body) => JSON.stringify(body))
+    const childBody = bodies.find((body) => body.includes('audience=\\"subagent\\"'))
+
+    expect(childBody).toBeDefined()
+    expect(childBody).toContain("<project-task-state")
+    expect(childBody).toContain('audience=\\"subagent\\"')
+    expect(childBody).toContain("E2E subagent context inject")
+    expect(childBody).toContain(marker)
+    expect(childBody).toContain(`.opentasks/${task.id}/description.md`)
+    expect(childBody).toContain(`.opentasks/${task.id}/prd.md`)
+    expect(childBody).toContain("Product requirements / detailed PRD for this task.")
+
+    const parentMessages = yield* MessageV2.filterCompactedEffect(parent.id)
+    const parentInjected = parentMessages
+      .flatMap((message) => message.parts)
+      .find(
+        (part): part is MessageV2.TextPart =>
+          part.type === "text" &&
+          part.synthetic === true &&
+          part.metadata?.kind === "project-task-injection",
+      )
+    expect(parentInjected?.metadata?.audience).toBe("parent")
+    expect(parentInjected?.text).toContain(marker)
+    expect(parentInjected?.text).toContain(`.opentasks/${task.id}/description.md`)
+    expect(parentInjected?.text).toContain(`.opentasks/${task.id}/prd.md`)
+
+    const taskCall = parentMessages
+      .flatMap((message) => message.parts)
+      .find(
+        (part): part is CompletedToolPart =>
+          part.type === "tool" && part.tool === "task" && part.state.status === "completed",
+      )
+    const childID = taskCall?.state.metadata?.sessionId
+    expect(typeof childID).toBe("string")
+    if (typeof childID !== "string") return
+
+    const child = yield* sessions.get(SessionID.make(childID))
+    expect(child.parentID).toBe(parent.id)
+    expect(child.mountedTaskID).toBe(task.id)
+    expect(child.injectTaskContext).toBe(true)
+
+    const childMessages = yield* MessageV2.filterCompactedEffect(child.id)
+    const injected = childMessages
+      .flatMap((message) => message.parts)
+      .find(
+        (part): part is MessageV2.TextPart =>
+          part.type === "text" &&
+          part.synthetic === true &&
+          part.metadata?.kind === "project-task-injection",
+      )
+    expect(injected?.metadata?.audience).toBe("subagent")
+    expect(injected?.metadata?.taskID).toBe(task.id)
+    expect(injected?.text).toContain(marker)
+    expect(injected?.text).toContain(`.opentasks/${task.id}/prd.md`)
   }),
 )
 

@@ -15,12 +15,13 @@ import { Bus } from "../bus"
 import { SystemPrompt } from "./system"
 import { Instruction } from "./instruction"
 import { Plugin } from "../plugin"
-import * as ProjectTaskRepository from "@/project-task/repository"
+import { ProjectTask } from "@/project-task/service"
 import {
   decideProjectTaskInject,
   hasProjectTaskInjectionPart,
   PROJECT_TASK_INJECTION_KIND,
 } from "@/project-task/context"
+import { listTaskWorkspaceFiles } from "@/project-task/description-file"
 import { getTaskContextInjectState, setTaskContextInjectState } from "@/project-task/inject-state"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { ToolRegistry } from "@/tool/registry"
@@ -147,6 +148,7 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const question = yield* Question.Service
+    const projectTasks = yield* ProjectTask.Service
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -1857,21 +1859,33 @@ export const layer = Layer.effect(
           // Project-task context: durable synthetic part on the current user message so
           // (1) the model receives it via toModelMessages and (2) the UI can render
           // InjectedPrompt. Prefer this over system-only inject (invisible + easy to skip).
+          // Subagent sessions inherit mount from the parent via TaskTool; audience differs.
           if (session.injectTaskContext && session.mountedTaskID) {
             const taskID = session.mountedTaskID
-            const detail = yield* ProjectTaskRepository.detail(taskID)
-            if (detail) {
+            // Use the service (not the low-level repository) so description.md is
+            // hydrated from `.opentasks/<taskID>/description.md` before injection.
+            const detail = yield* projectTasks.detail(taskID).pipe(Effect.option)
+            const hydrated = Option.getOrUndefined(detail)
+            if (hydrated) {
               const injectState = getTaskContextInjectState(sessionID)
-              const hasDurablePart = hasProjectTaskInjectionPart(msgs, detail.id)
+              const hasDurablePart = hasProjectTaskInjectionPart(msgs, hydrated.id)
+              const audience = session.parentID ? ("subagent" as const) : ("parent" as const)
+              const workspaceFiles = yield* Effect.promise(() =>
+                listTaskWorkspaceFiles(ctx.directory, hydrated.id),
+              )
               const decision = decideProjectTaskInject({
-                detail,
+                detail: hydrated,
                 state: injectState,
                 hasDurablePart,
+                workspaceFiles,
+                audience,
               })
               yield* slog.info("project-task inject decide", {
-                taskID: detail.id,
-                title: detail.title,
+                taskID: hydrated.id,
+                title: hydrated.title,
                 mode: decision.mode,
+                audience,
+                workspaceFiles: workspaceFiles.length,
                 hasDurablePart,
                 injectEnabled: !!session.injectTaskContext,
                 fullIds: injectState.fullInjectedTaskIDs.join(",") || "none",
@@ -1889,22 +1903,24 @@ export const layer = Layer.effect(
                     metadata: {
                       kind: PROJECT_TASK_INJECTION_KIND,
                       mode: decision.mode,
-                      taskID: detail.id,
-                      taskName: detail.title,
+                      audience,
+                      taskID: hydrated.id,
+                      taskName: hydrated.title,
                     },
                   })
                   userMsg.parts.push(part)
                   // Bookkeeping only after the durable part exists (survives abort/retry).
                   setTaskContextInjectState(sessionID, decision.next)
                   yield* slog.info("project-task inject applied", {
-                    taskID: detail.id,
+                    taskID: hydrated.id,
                     mode: decision.mode,
+                    audience,
                     partID: part.id,
                     messageID: userMsg.info.id,
                     chars: decision.text.length,
                   })
                 } else {
-                  yield* slog.warn("project-task inject skipped — no user message", { taskID: detail.id })
+                  yield* slog.warn("project-task inject skipped — no user message", { taskID: hydrated.id })
                 }
               }
             } else {
@@ -2365,6 +2381,7 @@ export const defaultLayer = Layer.suspend(() =>
         LLM.defaultLayer,
         Reference.defaultLayer,
         Question.defaultLayer,
+        ProjectTask.defaultLayer,
         BackgroundShell.defaultLayer,
         Bus.layer,
         CrossSpawnSpawner.defaultLayer,

@@ -44,11 +44,60 @@ describe("formatProjectTaskFullContext", () => {
   test("includes title, status, progress, and open todos", () => {
     const text = formatProjectTaskFullContext(makeDetail())
     expect(text).toContain('mode="full"')
+    expect(text).toContain('audience="parent"')
     expect(text).toContain("Ship mount UI")
     expect(text).toContain("1/2 completed")
     expect(text).toContain("active item")
     expect(text).not.toContain("done item")
-    expect(text).toContain("</project-task-context>")
+    expect(text).toContain("</project-task-state>")
+  })
+
+  test("lists task workspace file paths and summaries", () => {
+    const text = formatProjectTaskFullContext({
+      detail: makeDetail(),
+      workspaceFiles: [
+        {
+          relativePath: ".opentasks/ptask_test/description.md",
+          name: "description.md",
+          isDescription: true,
+          summary: "Goals, constraints, and acceptance criteria (canonical task brief).",
+          bytes: 42,
+        },
+        {
+          relativePath: ".opentasks/ptask_test/prd.md",
+          name: "prd.md",
+          isDescription: false,
+          summary: "Product requirements / detailed PRD for this task.",
+          bytes: 100,
+        },
+      ],
+    })
+    expect(text).toContain("Task workspace files")
+    expect(text).toContain(".opentasks/ptask_test/description.md")
+    expect(text).toContain("[canonical brief]")
+    expect(text).toContain(".opentasks/ptask_test/prd.md")
+    expect(text).toContain("Product requirements")
+  })
+
+  test("subagent audience omits multi-session todo dump but keeps workspace paths", () => {
+    const text = formatProjectTaskFullContext({
+      detail: makeDetail(),
+      audience: "subagent",
+      workspaceFiles: [
+        {
+          relativePath: ".opentasks/ptask_test/description.md",
+          name: "description.md",
+          isDescription: true,
+          summary: "Goals, constraints, and acceptance criteria (canonical task brief).",
+          bytes: 10,
+        },
+      ],
+    })
+    expect(text).toContain('audience="subagent"')
+    expect(text).toContain("You are a subagent")
+    expect(text).toContain(".opentasks/ptask_test/description.md")
+    expect(text).not.toContain("active item")
+    expect(text).toContain("Linked sessions (parent project task): 1")
   })
 
   test("emphasizes project_task_list for accurate task IDs", () => {
@@ -68,15 +117,16 @@ describe("formatProjectTaskFullContext", () => {
 
   test("closes the linked-session list before the closing tag (markdown indent)", () => {
     const text = formatProjectTaskFullContext(makeDetail())
-    // Without a blank line, Markdown treats "</project-task-context>" as a list-item
+    // Without a blank line, Markdown treats "</project-task-state>" as a list-item
     // continuation and the UI shows it nested under the last session bullet.
-    expect(text).toMatch(/\n\n<\/project-task-context>\s*$/)
-    expect(text).not.toMatch(/todos\n<\/project-task-context>/)
+    expect(text).toMatch(/\n\n<\/project-task-state>\s*$/)
+    expect(text).not.toMatch(/todos\n<\/project-task-state>/)
   })
 
   test("legacy alias still returns full brief", () => {
     const text = formatProjectTaskSystemContext(makeDetail())
     expect(text).toContain('mode="full"')
+    expect(text).toContain("project-task-state")
   })
 })
 
@@ -224,5 +274,23 @@ describe("formatProjectTaskDeltaContext", () => {
     expect(text).toContain("status: in_progress → done")
     expect(text).toContain("project_task_list")
     expect(text).toContain("Do NOT set status done/archived unless the user explicitly asks")
+    expect(text).toContain("</project-task-state>")
+  })
+
+  test("reports workspace file changes", () => {
+    const detail = makeDetail()
+    const prev = buildTaskContextSnapshot(detail, [])
+    const files = [
+      {
+        relativePath: ".opentasks/ptask_test/prd.md",
+        name: "prd.md",
+        isDescription: false,
+        summary: "Product requirements / detailed PRD for this task.",
+        bytes: 50,
+      },
+    ]
+    const text = formatProjectTaskDeltaContext(detail, prev, files)
+    expect(text).toContain("task workspace files changed")
+    expect(text).toContain(".opentasks/ptask_test/prd.md")
   })
 })
