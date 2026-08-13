@@ -32,25 +32,11 @@ target
 .opencode/agents/
 .opencode/commands/
 .opencode/lib/
-!.opencode/lib/
-!.opencode/lib/trellis-context.js
 .opencode/plugin/
-
-# Trellis local state files
-.trellis/.gitignore
-.trellis/.template-hashes.json
-.trellis/.version
-.trellis/worktree.yaml
-.trellis/scripts/**/*.py
-.trellis/scripts/**/__init__.py
-.trellis/scripts/multi_agent/
-.trellis/scripts/**/__pycache__/
-.trellis/scripts/**/*.pyc
 
 # Local tool state / backups (not for version control)
 .mindfs/
 .opentasks/
-.trellis.backup/
 
 # Local-only README scratch image
 image/README/image.png
@@ -75,12 +61,6 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 *.tsbuildinfo
-
-# Trellis workflow (developer-specific)
-.trellis/workspace/
-.trellis/.developer
-.trellis/.current-task
-.trellis/tasks/
 
 # Python cache
 __pycache__/
