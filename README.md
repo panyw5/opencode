@@ -28,10 +28,8 @@
 <p align="center">
   <img src="image/README/1786602375333.png" width="32%" />
   <img src="image/README/1786602424940.png" width="32%" />
-  <img src="image/README/1770281479127.png" width="32%" />
+  <img src="image/README/1786603270669.png" width="32%" />
 </p>
-
-
 
 #### 智能体核心升级
 
@@ -114,6 +112,7 @@
 <img src="image/README/1774018220930.png" width="32%" />
 <img src="image/README/1774018327446.png" width="32%" />
 <img src="image/README/1774018439717.png" width="32%" />
+<img src="image/README/1770281479127.png" width="32%" />
 </p>
 
 ### ⌨️ 新增快捷键
