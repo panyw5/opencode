@@ -19,11 +19,35 @@ import { dict as tr } from "./tr"
 
 const locales = [ar, br, bs, da, de, es, fr, ja, ko, no, pl, ru, th, tr, zh, zht]
 const keys = ["command.session.previous.unseen", "command.session.next.unseen"] as const
+const searchIndexKeys = [
+  "settings.general.section.searchIndex",
+  "settings.general.searchIndex.title",
+  "settings.general.searchIndex.description",
+  "settings.general.searchIndex.status.loading",
+  "settings.general.searchIndex.status.disabled",
+  "settings.general.searchIndex.status.unavailable",
+  "settings.general.searchIndex.status.complete",
+  "settings.general.searchIndex.status.buildingUnknown",
+  "settings.general.searchIndex.status.building",
+  "settings.general.searchIndex.progress.label",
+  "settings.general.searchIndex.action.enable",
+  "settings.general.searchIndex.action.disable",
+  "settings.general.searchIndex.action.rebuild",
+] as const
 
 describe("i18n parity", () => {
   test("non-English locales translate targeted unseen session keys", () => {
     for (const locale of locales) {
       for (const key of keys) {
+        expect(locale[key]).toBeDefined()
+        expect(locale[key]).not.toBe(en[key])
+      }
+    }
+  })
+
+  test("non-English locales translate global search settings", () => {
+    for (const locale of locales) {
+      for (const key of searchIndexKeys) {
         expect(locale[key]).toBeDefined()
         expect(locale[key]).not.toBe(en[key])
       }

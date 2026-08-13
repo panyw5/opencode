@@ -4,7 +4,6 @@ import {
   createEffect,
   createMemo,
   createResource,
-  createSignal,
   onCleanup,
   onMount,
   type JSX,
@@ -35,6 +34,15 @@ let demoSoundState = {
 type ThemeOption = {
   id: string
   name: string
+}
+
+type SearchIndex = {
+  enabled: boolean
+  state: "disabled" | "running" | "paused" | "complete"
+  indexed: number
+  total: number
+  complete: boolean
+  known: boolean
 }
 
 let font: Promise<typeof import("@opencode-ai/ui/font-loader")> | undefined
@@ -84,16 +92,9 @@ export const SettingsGeneral: Component = () => {
 
   const [store, setStore] = createStore({
     checking: false,
+    searchIndex: undefined as SearchIndex | undefined,
+    searchIndexBusy: false,
   })
-  const [searchIndex, setSearchIndex] = createSignal<{
-    enabled: boolean
-    state: "disabled" | "running" | "paused" | "complete"
-    indexed: number
-    total: number
-    complete: boolean
-    known: boolean
-  }>()
-  const [searchIndexBusy, setSearchIndexBusy] = createSignal(false)
   const normalizeSearchIndex = (value: {
     enabled: boolean
     state: "disabled" | "running" | "paused" | "complete"
@@ -112,15 +113,15 @@ export const SettingsGeneral: Component = () => {
 
   const refreshSearchIndex = () =>
     globalSDK.client.experimental.session.contentSearchStatus({}).then((result) => {
-      if (result.data) setSearchIndex(normalizeSearchIndex(result.data))
+      if (result.data) setStore("searchIndex", normalizeSearchIndex(result.data))
     })
 
-  const manageSearchIndex = (action: "enable" | "pause" | "resume" | "rebuild" | "clear") => {
-    setSearchIndexBusy(true)
+  const manageSearchIndex = (action: "enable" | "rebuild" | "clear") => {
+    setStore("searchIndexBusy", true)
     void globalSDK.client.experimental.session
       .contentSearchAction({ action })
       .then((result) => {
-        if (result.data) setSearchIndex(normalizeSearchIndex(result.data))
+        if (result.data) setStore("searchIndex", normalizeSearchIndex(result.data))
       })
       .catch((error) => {
         showToast({
@@ -128,7 +129,7 @@ export const SettingsGeneral: Component = () => {
           description: error instanceof Error ? error.message : String(error),
         })
       })
-      .finally(() => setSearchIndexBusy(false))
+      .finally(() => setStore("searchIndexBusy", false))
   }
 
   createEffect(() => {
@@ -137,7 +138,7 @@ export const SettingsGeneral: Component = () => {
     const poll = () => {
       void refreshSearchIndex().finally(() => {
         if (disposed) return
-        const state = searchIndex()?.state
+        const state = store.searchIndex?.state
         timer = setTimeout(poll, state === "running" ? 1_000 : 10_000)
       })
     }
@@ -367,104 +368,84 @@ export const SettingsGeneral: Component = () => {
 
   const SearchIndexSection = () => {
     const progress = createMemo<JSX.Element>(() => {
-      const value = searchIndex()
-      if (!value) return <>Loading index status…</>
-      if (!value.enabled) return <>Disabled. Enable it to index visible session messages on this device.</>
-      if (!value.known) return <>Index status is unavailable.</>
+      const value = store.searchIndex
+      if (!value) return <>{language.t("settings.general.searchIndex.status.loading")}</>
+      if (!value.enabled) return <>{language.t("settings.general.searchIndex.status.disabled")}</>
+      if (!value.known) return <>{language.t("settings.general.searchIndex.status.unavailable")}</>
       if (value.complete)
         return (
-          <div class="flex flex-col gap-1.5 pt-1">
-            <span>Ready. {value.indexed.toLocaleString()} messages indexed.</span>
-            <div class="flex flex-wrap gap-x-3 gap-y-0.5">
-              <span>Indexed: {value.indexed.toLocaleString()}</span>
-              <span>Total: {value.total.toLocaleString()}</span>
-            </div>
-            <Progress value={1} maxValue={1} hideLabel>
-              Index complete
-            </Progress>
+          <div class="flex items-center gap-1.5 pt-1 text-text-success-base" data-status="complete">
+            <Icon name="circle-check" size="small" class="shrink-0 text-icon-success-base" />
+            <span>{language.t("settings.general.searchIndex.status.complete")}</span>
           </div>
         )
       if (value.total === 0)
         return (
           <div class="flex flex-col gap-1.5 pt-1">
-            <span>Preparing index.</span>
-            <div class="flex flex-wrap gap-x-3 gap-y-0.5">
-              <span>Indexed: {value.indexed.toLocaleString()}</span>
-              <span>Total: {value.total.toLocaleString()}</span>
-            </div>
-            <Progress hideLabel>Preparing index</Progress>
+            <span>{language.t("settings.general.searchIndex.status.buildingUnknown")}</span>
+            <Progress hideLabel>{language.t("settings.general.searchIndex.progress.label")}</Progress>
           </div>
         )
       const indexed = Math.min(value.indexed, value.total)
-      const percent = Math.floor((indexed / value.total) * 100)
       return (
         <div class="flex flex-col gap-1.5 pt-1">
           <span>
-            {indexed.toLocaleString()} / {value.total.toLocaleString()} messages indexed ({percent}%)
+            {language.t("settings.general.searchIndex.status.building", {
+              indexed: value.indexed.toLocaleString(language.intl()),
+              total: value.total.toLocaleString(language.intl()),
+            })}
           </span>
-          <div class="flex flex-wrap gap-x-3 gap-y-0.5">
-            <span>Indexed: {value.indexed.toLocaleString()}</span>
-            <span>Total: {value.total.toLocaleString()}</span>
-          </div>
           <Progress value={indexed} maxValue={value.total} hideLabel>
-            Index progress
+            {language.t("settings.general.searchIndex.progress.label")}
           </Progress>
         </div>
       )
     })
     return (
       <div class="flex flex-col gap-1">
-        <h3 class="text-14-medium text-text-strong pb-2">Global index</h3>
+        <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.general.section.searchIndex")}</h3>
         <SettingsList>
-          <SettingsRow title="Session content search" description={progress()}>
-            <div class="flex items-center gap-2">
-              <Show when={searchIndex() && !searchIndex()!.enabled}>
-                <Button
-                  size="small"
-                  variant="secondary"
-                  disabled={searchIndexBusy()}
-                  onClick={() => manageSearchIndex("enable")}
-                >
-                  Enable
-                </Button>
-              </Show>
-              <Show when={searchIndex()?.state === "running"}>
-                <Button
-                  size="small"
-                  variant="secondary"
-                  disabled={searchIndexBusy()}
-                  onClick={() => manageSearchIndex("pause")}
-                >
-                  Pause
-                </Button>
-              </Show>
-              <Show when={searchIndex()?.state === "paused"}>
-                <Button
-                  size="small"
-                  variant="secondary"
-                  disabled={searchIndexBusy()}
-                  onClick={() => manageSearchIndex("resume")}
-                >
-                  Resume
-                </Button>
-              </Show>
-              <Show when={searchIndex()?.enabled}>
-                <Button
-                  size="small"
-                  variant="ghost"
-                  disabled={searchIndexBusy()}
-                  onClick={() => manageSearchIndex("rebuild")}
-                >
-                  Rebuild
-                </Button>
-                <Button
-                  size="small"
-                  variant="ghost"
-                  disabled={searchIndexBusy()}
-                  onClick={() => manageSearchIndex("clear")}
-                >
-                  Clear and disable
-                </Button>
+          <SettingsRow
+            title={language.t("settings.general.searchIndex.title")}
+            description={
+              <div class="flex flex-col gap-1">
+                <span>{language.t("settings.general.searchIndex.description")}</span>
+                <div data-action="settings-search-index-status">{progress()}</div>
+              </div>
+            }
+          >
+            <div data-action="settings-search-index">
+              <Show
+                when={store.searchIndex?.enabled}
+                fallback={
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    disabled={!store.searchIndex || store.searchIndexBusy}
+                    onClick={() => manageSearchIndex("enable")}
+                  >
+                    {language.t("settings.general.searchIndex.action.enable")}
+                  </Button>
+                }
+              >
+                <div class="flex items-center gap-2">
+                  <Button
+                    size="small"
+                    variant="ghost"
+                    disabled={store.searchIndexBusy}
+                    onClick={() => manageSearchIndex("rebuild")}
+                  >
+                    {language.t("settings.general.searchIndex.action.rebuild")}
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    disabled={store.searchIndexBusy}
+                    onClick={() => manageSearchIndex("clear")}
+                  >
+                    {language.t("settings.general.searchIndex.action.disable")}
+                  </Button>
+                </div>
               </Show>
             </div>
           </SettingsRow>

@@ -34,6 +34,8 @@ export const settingsSoundsPermissionsSelector = '[data-action="settings-sounds-
 export const settingsSoundsErrorsSelector = '[data-action="settings-sounds-errors"]'
 export const settingsUpdatesStartupSelector = '[data-action="settings-updates-startup"]'
 export const settingsReleaseNotesSelector = '[data-action="settings-release-notes"]'
+export const settingsSearchIndexSelector = '[data-action="settings-search-index"]'
+export const settingsSearchIndexStatusSelector = '[data-action="settings-search-index-status"]'
 
 export const sidebarNavSelector = '[data-component="sidebar-nav-desktop"]'
 

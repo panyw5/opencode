@@ -1048,6 +1048,21 @@ export const dict = {
   "settings.general.section.sounds": "Sound effects",
   "settings.general.section.feed": "Feed",
   "settings.general.section.display": "Display",
+  "settings.general.section.searchIndex": "Global search",
+
+  "settings.general.searchIndex.title": "Global index",
+  "settings.general.searchIndex.description":
+    "Index session messages on this device so you can search across all sessions. Disabling clears the local index without deleting session content.",
+  "settings.general.searchIndex.status.loading": "Loading index status...",
+  "settings.general.searchIndex.status.disabled": "Session content index is disabled",
+  "settings.general.searchIndex.status.unavailable": "Session content index status is unavailable",
+  "settings.general.searchIndex.status.complete": "Session content index complete",
+  "settings.general.searchIndex.status.buildingUnknown": "Building session content index...",
+  "settings.general.searchIndex.status.building": "Building session content index ({{indexed}}/{{total}})",
+  "settings.general.searchIndex.progress.label": "Session content indexing progress",
+  "settings.general.searchIndex.action.enable": "Enable",
+  "settings.general.searchIndex.action.disable": "Disable",
+  "settings.general.searchIndex.action.rebuild": "Rebuild",
 
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the display language for OpenCode",

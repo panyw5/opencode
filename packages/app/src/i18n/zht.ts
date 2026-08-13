@@ -673,6 +673,21 @@ export const dict = {
   "settings.general.section.sounds": "音效",
   "settings.general.section.feed": "資訊流",
   "settings.general.section.display": "顯示",
+  "settings.general.section.searchIndex": "全域搜尋功能",
+
+  "settings.general.searchIndex.title": "全域索引",
+  "settings.general.searchIndex.description":
+    "在此裝置上為工作階段訊息建立索引，以便搜尋所有工作階段。停用後會清除本機索引，但不會刪除工作階段內容。",
+  "settings.general.searchIndex.status.loading": "正在載入索引狀態...",
+  "settings.general.searchIndex.status.disabled": "工作階段內容索引未啟用",
+  "settings.general.searchIndex.status.unavailable": "無法取得工作階段內容索引狀態",
+  "settings.general.searchIndex.status.complete": "工作階段內容索引已完成",
+  "settings.general.searchIndex.status.buildingUnknown": "正在建立工作階段內容索引...",
+  "settings.general.searchIndex.status.building": "工作階段內容索引建立中（{{indexed}}/{{total}}）",
+  "settings.general.searchIndex.progress.label": "工作階段內容索引進度",
+  "settings.general.searchIndex.action.enable": "啟用",
+  "settings.general.searchIndex.action.disable": "停用",
+  "settings.general.searchIndex.action.rebuild": "重建",
 
   "settings.general.row.language.title": "語言",
   "settings.general.row.language.description": "變更 OpenCode 的顯示語言",

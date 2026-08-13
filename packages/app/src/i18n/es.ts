@@ -648,6 +648,21 @@ export const dict = {
   "settings.general.section.sounds": "Efectos de sonido",
   "settings.general.section.feed": "Feed",
   "settings.general.section.display": "Pantalla",
+  "settings.general.section.searchIndex": "Búsqueda global",
+  "settings.general.searchIndex.title": "Índice global",
+  "settings.general.searchIndex.description":
+    "Indexa los mensajes de las sesiones en este dispositivo para buscar en todas las sesiones. Al deshabilitarlo se borra el índice local, pero no el contenido de las sesiones.",
+  "settings.general.searchIndex.status.loading": "Cargando el estado del índice...",
+  "settings.general.searchIndex.status.disabled": "El índice de contenido de las sesiones está deshabilitado",
+  "settings.general.searchIndex.status.unavailable": "El estado del índice de contenido de las sesiones no está disponible",
+  "settings.general.searchIndex.status.complete": "Índice de contenido de las sesiones completado",
+  "settings.general.searchIndex.status.buildingUnknown": "Creando el índice de contenido de las sesiones...",
+  "settings.general.searchIndex.status.building":
+    "Creando el índice de contenido de las sesiones ({{indexed}}/{{total}})",
+  "settings.general.searchIndex.progress.label": "Progreso de indexación del contenido de las sesiones",
+  "settings.general.searchIndex.action.enable": "Habilitar",
+  "settings.general.searchIndex.action.disable": "Deshabilitar",
+  "settings.general.searchIndex.action.rebuild": "Reconstruir",
 
   "settings.general.row.language.title": "Idioma",
   "settings.general.row.language.description": "Cambiar el idioma de visualización para OpenCode",

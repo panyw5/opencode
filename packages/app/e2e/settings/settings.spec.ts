@@ -8,6 +8,8 @@ import {
   settingsNotificationsErrorsSelector,
   settingsNotificationsPermissionsSelector,
   settingsReleaseNotesSelector,
+  settingsSearchIndexSelector,
+  settingsSearchIndexStatusSelector,
   settingsSoundsAgentSelector,
   settingsSoundsErrorsSelector,
   settingsSoundsPermissionsSelector,
@@ -50,6 +52,68 @@ test("changing language updates settings labels", async ({ page, gotoSession }) 
   await select.locator('[data-slot="select-select-trigger"]').click()
   await page.locator('[data-slot="select-select-item"]').filter({ hasText: "English" }).click()
   await expect(heading).toHaveText("General")
+})
+
+test("global search shows localized index progress and can be disabled", async ({ page, gotoSession }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("opencode.global.dat:language", JSON.stringify({ locale: "zh" }))
+  })
+
+  let state: "running" | "rebuilt" | "disabled" | "complete" = "running"
+  await page.route("**/experimental/session/search/status**", async (route) => {
+    if (route.request().method() === "POST") {
+      const body = route.request().postDataJSON() as { action: string }
+      state = body.action === "enable" ? "complete" : body.action === "rebuild" ? "rebuilt" : "disabled"
+    }
+    await route.fulfill({
+      json:
+        state === "running"
+          ? { enabled: true, state: "running", indexed: 25, total: 100, complete: false, known: true }
+          : state === "rebuilt"
+            ? { enabled: true, state: "running", indexed: 0, total: 100, complete: false, known: true }
+          : state === "complete"
+            ? { enabled: true, state: "complete", indexed: 100, total: 100, complete: true, known: true }
+            : { enabled: false, state: "disabled", indexed: 0, total: 0, complete: false, known: false },
+    })
+  })
+
+  await gotoSession()
+  await page.getByRole("button", { name: "设置" }).first().click()
+  const dialog = page.getByRole("dialog")
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByRole("heading", { name: "全局搜索功能" })).toBeVisible()
+  await expect(dialog.getByText("全局索引", { exact: true })).toBeVisible()
+
+  const status = dialog.locator(settingsSearchIndexStatusSelector)
+  await expect(status).toContainText("会话内容索引建立中（25/100）")
+  await expect(status.getByRole("progressbar")).toHaveAttribute("aria-valuenow", "25")
+
+  const control = dialog.locator(settingsSearchIndexSelector)
+  await expect(control.getByRole("button")).toHaveText(["重建", "禁用"])
+  await page.setViewportSize({ width: 600, height: 800 })
+  const statusBox = await status.boundingBox()
+  const controlBox = await control.boundingBox()
+  expect(statusBox).not.toBeNull()
+  expect(controlBox).not.toBeNull()
+  expect(
+    statusBox!.x < controlBox!.x + controlBox!.width &&
+      statusBox!.x + statusBox!.width > controlBox!.x &&
+      statusBox!.y < controlBox!.y + controlBox!.height &&
+      statusBox!.y + statusBox!.height > controlBox!.y,
+  ).toBe(false)
+  expect(await status.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+
+  await control.getByRole("button", { name: "重建" }).click()
+  await expect(status).toContainText("会话内容索引建立中（0/100）")
+  await expect(control.getByRole("button")).toHaveText(["重建", "禁用"])
+
+  await control.getByRole("button", { name: "禁用" }).click()
+  await expect(status).toContainText("会话内容索引未启用")
+  await expect(control.getByRole("button", { name: "启用" })).toBeVisible()
+
+  await control.getByRole("button", { name: "启用" }).click()
+  await expect(status.locator('[data-status="complete"]')).toContainText("会话内容索引已完成")
+  await expect(status.getByRole("progressbar")).toHaveCount(0)
 })
 
 test("changing color scheme persists in localStorage", async ({ page, gotoSession }) => {

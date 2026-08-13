@@ -920,6 +920,22 @@ export const dict = {
   "settings.general.section.sounds": "音效",
   "settings.general.section.feed": "动态",
   "settings.general.section.display": "显示",
+  "settings.general.section.searchIndex": "全局搜索功能",
+
+  "settings.general.searchIndex.title": "全局索引",
+  "settings.general.searchIndex.description":
+    "在此设备上为会话消息建立索引，以便搜索所有会话。禁用后会清除本地索引，但不会删除会话内容。",
+  "settings.general.searchIndex.status.loading": "正在加载索引状态...",
+  "settings.general.searchIndex.status.disabled": "会话内容索引未启用",
+  "settings.general.searchIndex.status.unavailable": "无法获取会话内容索引状态",
+  "settings.general.searchIndex.status.complete": "会话内容索引已完成",
+  "settings.general.searchIndex.status.buildingUnknown": "正在建立会话内容索引...",
+  "settings.general.searchIndex.status.building": "会话内容索引建立中（{{indexed}}/{{total}}）",
+  "settings.general.searchIndex.progress.label": "会话内容索引进度",
+  "settings.general.searchIndex.action.enable": "启用",
+  "settings.general.searchIndex.action.disable": "禁用",
+  "settings.general.searchIndex.action.rebuild": "重建",
+
   "settings.general.row.language.title": "语言",
   "settings.general.row.language.description": "更改 OpenCode 的显示语言",
   "settings.general.row.appearance.title": "外观",
