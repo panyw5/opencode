@@ -144,7 +144,7 @@ export const dict = {
   "command.session.jump": "Jump to session {{index}}",
   "command.session.archive": "Archive session",
   "command.session.recent": "Recent sessions",
-  "command.session.recent.description": "Open the 20 most recently active sessions in this project",
+  "command.session.recent.description": "Open the 20 most recently active sessions across projects",
   "session.recent.placeholder": "Search recent sessions...",
   "session.recent.empty": "No recent sessions",
   "command.sessionTabs.close": "Close session tab",

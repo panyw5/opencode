@@ -149,7 +149,7 @@ export const dict = {
   "command.session.jump": "跳转到第 {{index}} 个会话",
   "command.session.archive": "归档会话",
   "command.session.recent": "最近会话",
-  "command.session.recent.description": "打开当前项目中最近活跃的 20 个会话",
+  "command.session.recent.description": "打开所有项目中最近活跃的 20 个会话",
   "session.recent.placeholder": "搜索最近会话...",
   "session.recent.empty": "暂无最近会话",
   "command.sessionTabs.close": "关闭会话标签页",

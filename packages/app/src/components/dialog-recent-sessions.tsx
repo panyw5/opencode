@@ -4,30 +4,23 @@ import { List } from "@opencode-ai/ui/list"
 import { Icon } from "@opencode-ai/ui/icon"
 import { DateTime } from "luxon"
 import { createMemo, Show, type Accessor } from "solid-js"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { GlobalSession, Session } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { getFilename } from "@opencode-ai/core/util/path"
 
-const RECENT_LIMIT = 20
-
 export function DialogRecentSessions(props: {
-  sessions: Accessor<Session[]>
+  load: () => Promise<GlobalSession[]>
   currentSessionID?: Accessor<string | undefined>
   onSelect: (session: Session) => void
 }) {
   const dialog = useDialog()
   const language = useLanguage()
-
-  const items = createMemo(() =>
-    props
-      .sessions()
-      .toSorted((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
-      .slice(0, RECENT_LIMIT),
-  )
+  let pending: Promise<GlobalSession[]> | undefined
+  const items = () => (pending ??= props.load())
 
   const current = createMemo(() => props.currentSessionID?.())
 
-  const handleSelect = (session: Session | undefined) => {
+  const handleSelect = (session: GlobalSession | undefined) => {
     if (!session) return
     dialog.close()
     props.onSelect(session)
@@ -35,10 +28,11 @@ export function DialogRecentSessions(props: {
 
   return (
     <Dialog title={language.t("command.session.recent")}>
-      <List
+      <List<GlobalSession>
         search={{ placeholder: language.t("session.recent.placeholder"), autofocus: true }}
         emptyMessage={language.t("session.recent.empty")}
-        items={items()}
+        loadingMessage={language.t("common.loading")}
+        items={items}
         key={(item) => item.id}
         filterKeys={["title", "directory"]}
         onSelect={handleSelect}
@@ -49,7 +43,7 @@ export function DialogRecentSessions(props: {
             DateTime.fromMillis(item.time.updated ?? item.time.created)
               .setLocale(language.intl())
               .toRelative()
-          const workspace = () => getFilename(item.directory) || item.directory
+          const workspace = () => item.project?.name || getFilename(item.project?.worktree ?? item.directory) || item.directory
           return (
             <div class="w-full flex items-center justify-between rounded-md pl-1">
               <div class="flex items-center grow min-w-0">

@@ -62,6 +62,7 @@ import { triggerFileFind } from "@opencode-ai/ui/pierre/file-find"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
 import { DialogSelectFile, DialogSessionContentSearch } from "@/components/dialog-select-file"
+import { mergeRecentSessions, RECENT_SESSION_LIMIT } from "@/components/dialog-recent-sessions-utils"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { DialogSettings } from "@/components/dialog-settings"
 import { useCommand, type CommandOption } from "@/context/command"
@@ -1547,7 +1548,7 @@ export default function Layout(props: ParentProps) {
           dialog.show(
             () => (
               <DialogRecentSessions
-                sessions={currentSessions}
+                load={loadRecentSessions}
                 currentSessionID={() => params.id}
                 onSelect={navigateToSession}
               />
@@ -2005,6 +2006,21 @@ export default function Layout(props: ParentProps) {
     selectSession(session)
     setSwitching(undefined)
     navigateWithSidebarReset(`/${base64Encode(session.directory)}/session/${session.id}`)
+  }
+
+  async function loadRecentSessions() {
+    console.debug(`[recent-sessions] load start limit=${RECENT_SESSION_LIMIT}`)
+    try {
+      const result = await globalSDK.client.experimental.session.list({ roots: true, limit: RECENT_SESSION_LIMIT })
+      const sessions = mergeRecentSessions([result.data ?? []])
+      console.debug(
+        `[recent-sessions] load success sessions=${sessions.length} items=${sessions.map((session) => `${session.project?.worktree ?? "unknown"}:${session.directory}:${session.id}`).join("|") || "none"}`,
+      )
+      return sessions
+    } catch (error) {
+      console.error(`[recent-sessions] load failed err=${error instanceof Error ? error.message : String(error)}`)
+      return []
+    }
   }
 
   function openProject(directory: string, navigate = true) {
