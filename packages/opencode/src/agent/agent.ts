@@ -194,6 +194,7 @@ export const layer = Layer.effect(
                 codex_consult: "allow",
                 claude_consult: "allow",
                 grok_consult: "allow",
+                dsh_consult: "allow",
                 read: "allow",
                 external_directory: readonlyExternalDirectory,
               }),

@@ -1,7 +1,7 @@
 import type { CliAgentID, CliAgents, Platform } from "@/context/platform"
 
 /** Reserved @-mention names for desktop CLI consult advisors (must match backend). */
-export const CONSULT_MENTION_IDS = ["codex", "claude", "grok"] as const satisfies readonly CliAgentID[]
+export const CONSULT_MENTION_IDS = ["codex", "claude", "grok", "dsh"] as const satisfies readonly CliAgentID[]
 
 export type ConsultMentionID = (typeof CONSULT_MENTION_IDS)[number]
 

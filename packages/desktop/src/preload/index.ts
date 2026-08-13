@@ -120,6 +120,8 @@ const api: ElectronAPI = {
     set: (id, config) => ipcRenderer.invoke("cli-agents-set", id, config),
     test: (id, config) => ipcRenderer.invoke("cli-agents-test", id, config),
     info: (id, config) => ipcRenderer.invoke("cli-agents-info", id, config),
+    getDshHome: (config) => ipcRenderer.invoke("cli-agents-dsh-home-get", config),
+    setDshHome: (config, update) => ipcRenderer.invoke("cli-agents-dsh-home-set", config, update),
   },
   listExtraAgentServers: () => ipcRenderer.invoke("list-extra-agent-servers"),
   restartExtraAgent: (id) => ipcRenderer.invoke("restart-extra-agent", id),

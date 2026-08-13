@@ -1,9 +1,9 @@
 /** Reserved @-mention names that route to external CLI consult tools (not task/subagent). */
-export type ConsultMentionID = "codex" | "claude" | "grok"
+export type ConsultMentionID = "codex" | "claude" | "grok" | "dsh"
 
-export type ConsultMentionTool = "codex_consult" | "claude_consult" | "grok_consult"
+export type ConsultMentionTool = "codex_consult" | "claude_consult" | "grok_consult" | "dsh_consult"
 
-export const CONSULT_MENTION_IDS = ["codex", "claude", "grok"] as const satisfies readonly ConsultMentionID[]
+export const CONSULT_MENTION_IDS = ["codex", "claude", "grok", "dsh"] as const satisfies readonly ConsultMentionID[]
 
 export const CONSULT_MENTIONS: Record<
   ConsultMentionID,
@@ -12,6 +12,7 @@ export const CONSULT_MENTIONS: Record<
   codex: { tool: "codex_consult", label: "Codex" },
   claude: { tool: "claude_consult", label: "Claude" },
   grok: { tool: "grok_consult", label: "Grok" },
+  dsh: { tool: "dsh_consult", label: "DeepSeek" },
 }
 
 export function isConsultMention(name: string): name is ConsultMentionID {
@@ -19,7 +20,12 @@ export function isConsultMention(name: string): name is ConsultMentionID {
 }
 
 export function isConsultTool(tool: string): tool is ConsultMentionTool {
-  return tool === "codex_consult" || tool === "claude_consult" || tool === "grok_consult"
+  return (
+    tool === "codex_consult" ||
+    tool === "claude_consult" ||
+    tool === "grok_consult" ||
+    tool === "dsh_consult"
+  )
 }
 
 export function consultMentionFor(name: string) {

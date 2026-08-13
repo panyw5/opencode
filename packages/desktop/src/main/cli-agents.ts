@@ -2,6 +2,8 @@ import type { CliAgentConfig, CliAgentDescriptor, CliAgentID, CliAgentInfo, CliA
 import { getCliAgentConfig, setCliAgentConfig } from "./native"
 import { getClaudeInfo, testClaudeConfig } from "./claude-status"
 import { getCodexInfo, testCodexConfig } from "./codex-status"
+import { getDshHomeConfig, getDshInfo, setDshHomeConfig, testDshConfig } from "./dsh-status"
+import type { DshHomeUpdate } from "../preload/types"
 import { getGrokInfo, testGrokConfig } from "./grok-status"
 
 type CliAgentDefinition = {
@@ -47,6 +49,18 @@ const cliAgents: Record<CliAgentID, CliAgentDefinition> = {
     getInfo: getGrokInfo,
     test: testGrokConfig,
   },
+  dsh: {
+    descriptor: {
+      id: "dsh",
+      label: "DeepSeek",
+      command: "dsh",
+      sourceUrl: "https://github.com/deepseek-ai/deepseek-harness",
+      configHomeLabel: "DSH_HOME",
+      configHomePlaceholder: "~/.dsh",
+    },
+    getInfo: getDshInfo,
+    test: testDshConfig,
+  },
 }
 
 export const cliAgentDescriptors = Object.freeze(Object.values(cliAgents).map((agent) => agent.descriptor))
@@ -65,4 +79,12 @@ export function testCliAgent(id: CliAgentID, config: CliAgentConfig) {
 
 export function getCliAgentInfo(id: CliAgentID, config?: CliAgentConfig) {
   return cliAgents[id].getInfo(config)
+}
+
+export function getDshHome(config?: CliAgentConfig) {
+  return getDshHomeConfig(config)
+}
+
+export function setDshHome(config: CliAgentConfig, update: DshHomeUpdate) {
+  return setDshHomeConfig(config, update)
 }

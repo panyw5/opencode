@@ -1,6 +1,6 @@
 import type { SessionID } from "@/session/schema"
 
-export type AdvisorKind = "codex" | "claude" | "grok"
+export type AdvisorKind = "codex" | "claude" | "grok" | "dsh"
 
 export type AdvisorInterventionSnapshot = {
   available: true

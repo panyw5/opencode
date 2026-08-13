@@ -119,7 +119,7 @@ export type HermesTest = {
   logs: string[]
 }
 
-export type CliAgentID = "codex" | "claude" | "grok"
+export type CliAgentID = "codex" | "claude" | "grok" | "dsh"
 
 export type CliAgentConfig = {
   enabled: boolean
@@ -127,6 +127,30 @@ export type CliAgentConfig = {
   binaryPath?: string
   /** Optional CLI configuration home override. */
   configHome?: string
+}
+
+/** DeepSeek Harness home settings managed from the config page. */
+export type DshHomeConfig = {
+  home: string
+  settingsPath: string
+  credentialsPath: string
+  selection: { provider: string; model: string; baseURL?: string }
+  hasFileApiKey: boolean
+  apiKeyEnvSet: boolean
+  baseUrlEnvSet: boolean
+  settingsExists: boolean
+  credentialsExists: boolean
+}
+
+export type DshHomeUpdate = {
+  provider?: string
+  model?: string
+  /** Optional llm-deepseek baseURL; empty clears the settings override */
+  baseURL?: string
+  /** When non-empty, write DEEPSEEK_API_KEY into ~/.dsh/.credentials.yaml */
+  apiKey?: string
+  /** When true, remove DEEPSEEK_API_KEY from the credentials file */
+  clearApiKey?: boolean
 }
 
 export type CliAgentTest = {
@@ -150,6 +174,17 @@ export type CliAgentInfo = {
   details?: CliAgentDetail[]
   checkedAt?: number
   error?: string
+  /** Present for the DeepSeek (dsh) advisor. */
+  dsh?: {
+    provider: string
+    model: string
+    baseURL: string
+    hasFileApiKey: boolean
+    apiKeyEnvSet: boolean
+    baseUrlEnvSet: boolean
+    settingsPath: string
+    credentialsPath: string
+  }
 }
 
 export type CliAgentDescriptor = {
@@ -167,6 +202,10 @@ export type CliAgentsAPI = {
   set: (id: CliAgentID, config: CliAgentConfig) => Promise<void>
   test: (id: CliAgentID, config: CliAgentConfig) => Promise<CliAgentTest>
   info: (id: CliAgentID, config?: CliAgentConfig) => Promise<CliAgentInfo>
+  /** Read ~/.dsh settings + credentials presence for the dsh advisor. */
+  getDshHome?: (config?: CliAgentConfig) => Promise<DshHomeConfig>
+  /** Write provider/model and optional API key into ~/.dsh. */
+  setDshHome?: (config: CliAgentConfig, update: DshHomeUpdate) => Promise<DshHomeConfig>
 }
 
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"

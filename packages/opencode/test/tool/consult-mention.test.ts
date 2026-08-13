@@ -26,11 +26,14 @@ describe("consult-mention", () => {
     })
     expect(consultMentionFor("claude")?.tool).toBe("claude_consult")
     expect(consultMentionFor("grok")?.tool).toBe("grok_consult")
+    expect(consultMentionFor("dsh")?.tool).toBe("dsh_consult")
+    expect(consultMentionFor("dsh")?.label).toBe("DeepSeek")
     expect(consultMentionFor("planner")).toBeUndefined()
   })
 
   test("isConsultTool matches tool ids", () => {
     expect(isConsultTool("codex_consult")).toBe(true)
+    expect(isConsultTool("dsh_consult")).toBe(true)
     expect(isConsultTool("task")).toBe(false)
   })
 

@@ -57,7 +57,15 @@ import {
   setOpenclawConfig,
   writeConfigFile,
 } from "./native"
-import { cliAgentDescriptors, getCliAgent, getCliAgentInfo, setCliAgent, testCliAgent } from "./cli-agents"
+import {
+  cliAgentDescriptors,
+  getCliAgent,
+  getCliAgentInfo,
+  getDshHome,
+  setCliAgent,
+  setDshHome,
+  testCliAgent,
+} from "./cli-agents"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -297,6 +305,8 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("cli-agents-set", (_event: IpcMainInvokeEvent, id, config) => setCliAgent(id, config))
   ipcMain.handle("cli-agents-test", (_event: IpcMainInvokeEvent, id, config) => testCliAgent(id, config))
   ipcMain.handle("cli-agents-info", (_event: IpcMainInvokeEvent, id, config) => getCliAgentInfo(id, config))
+  ipcMain.handle("cli-agents-dsh-home-get", (_event: IpcMainInvokeEvent, config) => getDshHome(config))
+  ipcMain.handle("cli-agents-dsh-home-set", (_event: IpcMainInvokeEvent, config, update) => setDshHome(config, update))
   ipcMain.handle("list-extra-agent-servers", () => listExtraAgentServers())
   ipcMain.handle("restart-extra-agent", (_event: IpcMainInvokeEvent, id) => restartExtraAgent(id))
   ipcMain.handle("get-extra-agent-info", (_event: IpcMainInvokeEvent, id, config) => getExtraAgentInfo(id, config))

@@ -99,12 +99,32 @@ export type HermesTest = {
   logs: string[]
 }
 
-export type CliAgentID = "codex" | "claude" | "grok"
+export type CliAgentID = "codex" | "claude" | "grok" | "dsh"
 
 export type CliAgentConfig = {
   enabled: boolean
   binaryPath?: string
   configHome?: string
+}
+
+export type DshHomeConfig = {
+  home: string
+  settingsPath: string
+  credentialsPath: string
+  selection: { provider: string; model: string; baseURL?: string }
+  hasFileApiKey: boolean
+  apiKeyEnvSet: boolean
+  baseUrlEnvSet: boolean
+  settingsExists: boolean
+  credentialsExists: boolean
+}
+
+export type DshHomeUpdate = {
+  provider?: string
+  model?: string
+  baseURL?: string
+  apiKey?: string
+  clearApiKey?: boolean
 }
 
 export type CliAgentTest = {
@@ -128,6 +148,16 @@ export type CliAgentInfo = {
   details?: CliAgentDetail[]
   checkedAt?: number
   error?: string
+  dsh?: {
+    provider: string
+    model: string
+    baseURL: string
+    hasFileApiKey: boolean
+    apiKeyEnvSet: boolean
+    baseUrlEnvSet: boolean
+    settingsPath: string
+    credentialsPath: string
+  }
 }
 
 export type CliAgentDescriptor = {
@@ -145,6 +175,8 @@ export type CliAgents = {
   set(id: CliAgentID, config: CliAgentConfig): Promise<void> | void
   test(id: CliAgentID, config: CliAgentConfig): Promise<CliAgentTest>
   info(id: CliAgentID, config?: CliAgentConfig): Promise<CliAgentInfo>
+  getDshHome?(config?: CliAgentConfig): Promise<DshHomeConfig>
+  setDshHome?(config: CliAgentConfig, update: DshHomeUpdate): Promise<DshHomeConfig>
 }
 
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"

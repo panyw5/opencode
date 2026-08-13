@@ -22,6 +22,7 @@ import {
   CODEX_CONFIG_KEY,
   CUSTOM_EDITOR_PATH_KEY,
   DEFAULT_EDITOR_KEY,
+  DSH_CONFIG_KEY,
   GENERICAGENT_CONFIG_KEY,
   HERMES_CONFIG_KEY,
   GROK_CONFIG_KEY,
@@ -373,6 +374,7 @@ const cliAgentConfigKeys: Record<CliAgentID, string> = {
   codex: CODEX_CONFIG_KEY,
   claude: CLAUDE_CONFIG_KEY,
   grok: GROK_CONFIG_KEY,
+  dsh: DSH_CONFIG_KEY,
 }
 
 export function getCliAgentConfig(id: CliAgentID): CliAgentConfig {

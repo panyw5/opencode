@@ -1198,11 +1198,26 @@ function hmCfg(input?: HermesConfig) {
   }
 }
 
-function cliAgentCfg(input?: CliAgentConfig) {
+function cliAgentCfg(input?: CliAgentConfig & {
+  provider?: string
+  model?: string
+  baseURL?: string
+  hasFileApiKey?: boolean
+  apiKeyEnvSet?: boolean
+  baseUrlEnvSet?: boolean
+}) {
   return {
     enabled: input?.enabled ?? true,
     binaryPath: input?.binaryPath ?? "",
     configHome: input?.configHome ?? "",
+    provider: input?.provider ?? "deepseek-official",
+    model: input?.model ?? "deepseek-v4-flash",
+    baseURL: input?.baseURL ?? "",
+    apiKey: "",
+    clearApiKey: false,
+    hasFileApiKey: input?.hasFileApiKey ?? false,
+    apiKeyEnvSet: input?.apiKeyEnvSet ?? false,
+    baseUrlEnvSet: input?.baseUrlEnvSet ?? false,
     saving: false,
     testing: false,
     err: {} as Record<string, string>,
@@ -2742,11 +2757,11 @@ function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAge
         </Show>
       </div>
       <div class="mt-4 grid gap-3 md:grid-cols-2">
-        <InfoCell label="Install status" value={install()} />
-        <InfoCell label="Version" value={value(props.info?.version)} />
-        <InfoCell label="Binary path" value={value(props.info?.binaryPath)} />
+        <InfoCell label={language.t("config.claws.info.installStatus")} value={install()} />
+        <InfoCell label={language.t("config.claws.info.version")} value={value(props.info?.version)} />
+        <InfoCell label={language.t("config.claws.info.binaryPath")} value={value(props.info?.binaryPath)} />
         <InfoCell label={props.descriptor.configHomeLabel} value={value(props.info?.configHome)} />
-        <InfoCell label="Config path" value={value(props.info?.configPath)} />
+        <InfoCell label={language.t("config.claws.info.configPath")} value={value(props.info?.configPath)} />
         <For each={props.info?.details ?? []}>{(detail) => <InfoCell label={detail.label} value={detail.value} />}</For>
       </div>
       <Show when={props.info?.error}>
@@ -2765,13 +2780,25 @@ function CliAgentEditor(props: {
   dirty: boolean
   busy: boolean
   canTest: boolean
-  onChange: (key: "enabled" | "binaryPath" | "configHome", value: string | boolean) => void
+  onChange: (
+    key: "enabled" | "binaryPath" | "configHome" | "provider" | "model" | "baseURL" | "apiKey" | "clearApiKey",
+    value: string | boolean,
+  ) => void
   onSave: () => void
   onTest: () => void
   onRefresh: () => void
 }) {
   const language = useLanguage()
   const settings = useSettings()
+  const isDsh = () => props.descriptor.id === "dsh"
+  const apiKeyStatus = () => {
+    if (props.form.clearApiKey) return language.t("config.claws.dsh.apiKeyStatus.willClear")
+    if (props.form.apiKey.trim()) return language.t("config.claws.dsh.apiKeyStatus.willWrite")
+    if (props.form.hasFileApiKey && props.form.apiKeyEnvSet) return language.t("config.claws.dsh.apiKeyStatus.fileAndEnv")
+    if (props.form.hasFileApiKey) return language.t("config.claws.dsh.apiKeyStatus.file")
+    if (props.form.apiKeyEnvSet) return language.t("config.claws.dsh.apiKeyStatus.env")
+    return language.t("config.claws.dsh.apiKeyStatus.none")
+  }
 
   return (
     <div class="flex h-full min-h-0 flex-col">
@@ -2797,8 +2824,10 @@ function CliAgentEditor(props: {
             <div class="grid gap-4 lg:grid-cols-2">
               <TextField
                 type="text"
-                label={`${props.descriptor.label} binary`}
-                description={`Optional path or command name. Leave empty to use \`${props.descriptor.command}\` on PATH.`}
+                label={language.t("config.claws.cliAgent.binary", { label: props.descriptor.label })}
+                description={language.t("config.claws.cliAgent.binaryDescription", {
+                  command: props.descriptor.command,
+                })}
                 placeholder={props.descriptor.command}
                 value={props.form.binaryPath}
                 disabled={props.busy || props.form.saving || props.form.testing}
@@ -2807,13 +2836,77 @@ function CliAgentEditor(props: {
               <TextField
                 type="text"
                 label={props.descriptor.configHomeLabel}
-                description="Optional config home override."
+                description={language.t("config.claws.cliAgent.configHomeDescription")}
                 placeholder={props.descriptor.configHomePlaceholder}
                 value={props.form.configHome}
                 disabled={props.busy || props.form.saving || props.form.testing}
                 onChange={(value) => props.onChange("configHome", value)}
               />
             </div>
+
+            <Show when={isDsh()}>
+              <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
+                <div class="text-13-medium text-text-strong">{language.t("config.claws.dsh.title")}</div>
+                <div class="mt-1 text-12-regular text-text-weak">{language.t("config.claws.dsh.description")}</div>
+                <div class="mt-4 grid gap-4 lg:grid-cols-2">
+                  <TextField
+                    type="text"
+                    label={language.t("config.claws.dsh.field.provider")}
+                    description={language.t("config.claws.dsh.field.providerDescription")}
+                    placeholder="deepseek-official"
+                    value={props.form.provider}
+                    disabled={props.busy || props.form.saving || props.form.testing}
+                    onChange={(value) => props.onChange("provider", value)}
+                  />
+                  <TextField
+                    type="text"
+                    label={language.t("config.claws.dsh.field.model")}
+                    description={language.t("config.claws.dsh.field.modelDescription")}
+                    placeholder="deepseek-v4-flash"
+                    value={props.form.model}
+                    disabled={props.busy || props.form.saving || props.form.testing}
+                    onChange={(value) => props.onChange("model", value)}
+                  />
+                </div>
+                <div class="mt-4 grid gap-4">
+                  <TextField
+                    type="text"
+                    label={language.t("config.claws.dsh.field.baseURL")}
+                    description={
+                      props.form.baseUrlEnvSet
+                        ? language.t("config.claws.dsh.field.baseURLDescriptionEnv")
+                        : language.t("config.claws.dsh.field.baseURLDescription")
+                    }
+                    placeholder={language.t("config.claws.dsh.field.baseURLPlaceholder")}
+                    value={props.form.baseURL}
+                    disabled={props.busy || props.form.saving || props.form.testing}
+                    onChange={(value) => props.onChange("baseURL", value)}
+                  />
+                  <TextField
+                    type="password"
+                    label={language.t("config.claws.dsh.field.apiKey")}
+                    description={language.t("config.claws.dsh.field.apiKeyDescription", { status: apiKeyStatus() })}
+                    placeholder={
+                      props.form.hasFileApiKey
+                        ? language.t("config.claws.dsh.field.apiKeyPlaceholderKeep")
+                        : language.t("config.claws.dsh.field.apiKeyPlaceholder")
+                    }
+                    value={props.form.apiKey}
+                    disabled={props.busy || props.form.saving || props.form.testing || props.form.clearApiKey}
+                    onChange={(value) => props.onChange("apiKey", value)}
+                  />
+                  <label class="inline-flex items-center gap-2 text-13-regular text-text-base">
+                    <input
+                      type="checkbox"
+                      checked={props.form.clearApiKey}
+                      disabled={props.busy || props.form.saving || props.form.testing || !props.form.hasFileApiKey}
+                      onChange={(event) => props.onChange("clearApiKey", event.currentTarget.checked)}
+                    />
+                    {language.t("config.claws.dsh.field.clearApiKey")}
+                  </label>
+                </div>
+              </div>
+            </Show>
 
             <div class="flex w-full flex-wrap items-center justify-end gap-2">
               <Button
@@ -3939,6 +4032,16 @@ export default function ConfigPage() {
                 const info = await cliAgents.info(id, config)
                 if (run !== cliAgentsRun || infoRun !== cliAgentInfoRuns[id]) return
                 setCliAgentInfo(id, info)
+                if (id === "dsh" && info.dsh) {
+                  setState("cliAgents", id, "provider", info.dsh.provider || "deepseek-official")
+                  setState("cliAgents", id, "model", info.dsh.model || "deepseek-v4-flash")
+                  setState("cliAgents", id, "baseURL", info.dsh.baseURL || "")
+                  setState("cliAgents", id, "hasFileApiKey", info.dsh.hasFileApiKey)
+                  setState("cliAgents", id, "apiKeyEnvSet", info.dsh.apiKeyEnvSet)
+                  setState("cliAgents", id, "baseUrlEnvSet", info.dsh.baseUrlEnvSet)
+                  setState("cliAgents", id, "apiKey", "")
+                  setState("cliAgents", id, "clearApiKey", false)
+                }
                 setCliAgentLoading(id, "info", false)
               }),
             )
@@ -5235,11 +5338,17 @@ export default function ConfigPage() {
     const config = cliAgentConfigs[id]
     const form = state.cliAgents[id]
     if (!config || !form || state.section !== "claws") return false
-    return (
+    const baseDirty =
       form.enabled !== (config.enabled ?? true) ||
       form.binaryPath.trim() !== (config.binaryPath?.trim() ?? "") ||
       form.configHome.trim() !== (config.configHome?.trim() ?? "")
-    )
+    if (id !== "dsh") return baseDirty
+    const info = cliAgentInfo[id]?.dsh
+    const providerDirty = form.provider.trim() !== (info?.provider?.trim() || "deepseek-official")
+    const modelDirty = form.model.trim() !== (info?.model?.trim() || "deepseek-v4-flash")
+    const baseUrlDirty = form.baseURL.trim() !== (info?.baseURL?.trim() || "")
+    const keyDirty = !!form.apiKey.trim() || form.clearApiKey
+    return baseDirty || providerDirty || modelDirty || baseUrlDirty || keyDirty
   }
 
   const hmDirty = createMemo(() => {
@@ -6175,9 +6284,19 @@ export default function ConfigPage() {
     }
   }
 
-  function setCliAgent(id: CliAgentID, key: "enabled" | "binaryPath" | "configHome", value: string | boolean) {
+  function setCliAgent(
+    id: CliAgentID,
+    key: "enabled" | "binaryPath" | "configHome" | "provider" | "model" | "baseURL" | "apiKey" | "clearApiKey",
+    value: string | boolean,
+  ) {
     if (!state.cliAgents[id]) setState("cliAgents", id, cliAgentCfg())
     setState("cliAgents", id, key, value)
+    if (key === "apiKey" && typeof value === "string" && value.trim()) {
+      setState("cliAgents", id, "clearApiKey", false)
+    }
+    if (key === "clearApiKey" && value === true) {
+      setState("cliAgents", id, "apiKey", "")
+    }
     setState("cliAgents", id, "test", undefined)
   }
 
@@ -6190,6 +6309,16 @@ export default function ConfigPage() {
       const info = await platform.cliAgents.info(id, cliAgentInput(id))
       if (run !== cliAgentInfoRuns[id]) return
       setCliAgentInfo(id, info)
+      if (id === "dsh" && info.dsh) {
+        setState("cliAgents", id, "provider", info.dsh.provider || "deepseek-official")
+        setState("cliAgents", id, "model", info.dsh.model || "deepseek-v4-flash")
+        setState("cliAgents", id, "baseURL", info.dsh.baseURL || "")
+        setState("cliAgents", id, "hasFileApiKey", info.dsh.hasFileApiKey)
+        setState("cliAgents", id, "apiKeyEnvSet", info.dsh.apiKeyEnvSet)
+        setState("cliAgents", id, "baseUrlEnvSet", info.dsh.baseUrlEnvSet)
+        setState("cliAgents", id, "apiKey", "")
+        setState("cliAgents", id, "clearApiKey", false)
+      }
     } catch (error) {
       if (run !== cliAgentInfoRuns[id]) return
       const message = error instanceof Error ? error.message : String(error)
@@ -6210,6 +6339,17 @@ export default function ConfigPage() {
     try {
       await platform.cliAgents.set(id, config)
       setCliAgentConfigs(id, config)
+      if (id === "dsh" && platform.cliAgents.setDshHome) {
+        await platform.cliAgents.setDshHome(config, {
+          provider: form.provider.trim() || "deepseek-official",
+          model: form.model.trim() || "deepseek-v4-flash",
+          baseURL: form.baseURL.trim(),
+          apiKey: form.apiKey.trim() || undefined,
+          clearApiKey: form.clearApiKey || undefined,
+        })
+        setState("cliAgents", id, "apiKey", "")
+        setState("cliAgents", id, "clearApiKey", false)
+      }
       showToast({ variant: "success", title: t("common.save"), description: descriptor?.label ?? id })
       await refreshCliAgentInfo(id)
     } catch (error) {

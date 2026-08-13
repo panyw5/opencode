@@ -29,6 +29,7 @@ import { Parameters as Write } from "../../src/tool/write"
 import { Parameters as CodexConsult } from "../../src/tool/codex_consult"
 import { Parameters as ClaudeConsult } from "../../src/tool/claude_consult"
 import { Parameters as GrokConsult } from "../../src/tool/grok_consult"
+import { Parameters as DshConsult } from "../../src/tool/dsh_consult"
 
 const parse = <S extends Schema.Decoder<unknown>>(schema: S, input: unknown): S["Type"] =>
   Schema.decodeUnknownSync(schema)(input)
@@ -60,6 +61,7 @@ describe("tool parameters", () => {
     test("codex_consult", () => expect(toJsonSchema(CodexConsult)).toMatchSnapshot())
     test("claude_consult", () => expect(toJsonSchema(ClaudeConsult)).toMatchSnapshot())
     test("grok_consult", () => expect(toJsonSchema(GrokConsult)).toMatchSnapshot())
+    test("dsh_consult", () => expect(toJsonSchema(DshConsult)).toMatchSnapshot())
 
     test("inlines named child schemas for provider compatibility", () => {
       const schema = toJsonSchema(Question)

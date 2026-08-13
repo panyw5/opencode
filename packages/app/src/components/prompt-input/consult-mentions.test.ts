@@ -6,7 +6,7 @@ import {
   loadReadyConsultMentions,
 } from "./consult-mentions"
 
-function descriptor(id: "codex" | "claude" | "grok", label?: string): CliAgentDescriptor {
+function descriptor(id: "codex" | "claude" | "grok" | "dsh", label?: string): CliAgentDescriptor {
   return {
     id,
     label: label ?? id,
@@ -46,30 +46,41 @@ describe("consult-mentions", () => {
     expect(isConsultMentionID("codex")).toBe(true)
     expect(isConsultMentionID("claude")).toBe(true)
     expect(isConsultMentionID("grok")).toBe(true)
+    expect(isConsultMentionID("dsh")).toBe(true)
     expect(isConsultMentionID("explore")).toBe(false)
   })
 
   test("filterAgentsForConsultMentions hides reserved names", () => {
-    const agents = [{ name: "explore" }, { name: "codex" }, { name: "planner" }]
+    const agents = [{ name: "explore" }, { name: "codex" }, { name: "dsh" }, { name: "planner" }]
     expect(filterAgentsForConsultMentions(agents).map((a) => a.name)).toEqual(["explore", "planner"])
   })
 
   test("loadReadyConsultMentions returns only enabled + installed", async () => {
     const api = mockCliAgents({
-      list: [descriptor("codex", "Codex"), descriptor("claude", "Claude"), descriptor("grok", "Grok")],
+      list: [
+        descriptor("codex", "Codex"),
+        descriptor("claude", "Claude"),
+        descriptor("grok", "Grok"),
+        descriptor("dsh", "DeepSeek"),
+      ],
       get: {
         codex: { enabled: true },
         claude: { enabled: false },
         grok: { enabled: true },
+        dsh: { enabled: true },
       },
       info: {
         codex: { sourceUrl: "x", installed: true },
         claude: { sourceUrl: "x", installed: true },
         grok: { sourceUrl: "x", installed: false },
+        dsh: { sourceUrl: "x", installed: true },
       },
     })
     const ready = await loadReadyConsultMentions(api)
-    expect(ready).toEqual([{ id: "codex", name: "codex", display: "Codex" }])
+    expect(ready).toEqual([
+      { id: "codex", name: "codex", display: "Codex" },
+      { id: "dsh", name: "dsh", display: "DeepSeek" },
+    ])
   })
 
   test("loadReadyConsultMentions returns empty without api", async () => {

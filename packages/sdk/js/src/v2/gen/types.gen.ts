@@ -991,6 +991,7 @@ export type PermissionConfig =
       codex_consult?: PermissionActionConfig
       claude_consult?: PermissionActionConfig
       grok_consult?: PermissionActionConfig
+      dsh_consult?: PermissionActionConfig
       repo_clone?: PermissionRuleConfig
       repo_overview?: PermissionRuleConfig
       lsp?: PermissionRuleConfig

@@ -530,6 +530,12 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
         title: i18n.t("ui.tool.grok"),
         subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.session_id),
       }
+    case "dsh_consult":
+      return {
+        icon: "brain",
+        title: i18n.t("ui.tool.dsh"),
+        subtitle: text(metadata.preview) ?? text(input.prompt) ?? text(metadata.profile),
+      }
     case "bash":
     case "hook":
     case "exec":
@@ -3499,6 +3505,7 @@ function codexAssistantText(metadata: Record<string, any>, output?: string): str
       .replace(/^<codex_consult>[\s\S]*?<\/codex_consult>\s*/m, "")
       .replace(/^<claude_consult>[\s\S]*?<\/claude_consult>\s*/m, "")
       .replace(/^<grok_consult>[\s\S]*?<\/grok_consult>\s*/m, "")
+      .replace(/^<dsh_consult>[\s\S]*?<\/dsh_consult>\s*/m, "")
       .trim()
     return body || output.trim()
   }
@@ -4242,6 +4249,116 @@ ToolRegistry.register({
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={stopSession}
                 aria-label={i18n.t("ui.tool.grok.stop")}
+              />
+            </Tooltip>
+          </Show>
+        </span>
+      </div>
+    )
+
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta />
+  },
+})
+
+ToolRegistry.register({
+  name: "dsh_consult",
+  render(props) {
+    const data = useData()
+    const dialog = useDialog()
+    const i18n = useI18n()
+    const running = createMemo(() => props.status === "pending" || props.status === "running")
+    const prompt = createMemo(() => (typeof props.input.prompt === "string" ? props.input.prompt : ""))
+    const profile = createMemo(() =>
+      typeof props.metadata.profile === "string" ? props.metadata.profile : "headless",
+    )
+    const subtitle = createMemo(() => {
+      if (running()) return i18n.t("ui.tool.dsh.running")
+      if (typeof props.metadata.preview === "string" && props.metadata.preview.trim()) {
+        return props.metadata.preview.split("\n").find((line) => line.trim())?.slice(0, 80)
+      }
+      const first = prompt()
+        .split("\n")
+        .find((line) => line.trim())
+      return first?.slice(0, 80)
+    })
+
+    const openViewer = (event?: MouseEvent) => {
+      event?.stopPropagation()
+      event?.preventDefault()
+      dialog.show(() => (
+        <CodexSessionDialog
+          title={i18n.t("ui.tool.dsh.dialog.title")}
+          prompt={() => (typeof props.input.prompt === "string" ? props.input.prompt : "")}
+          threadId={() => undefined}
+          model={() => undefined}
+          sandbox={() => profile()}
+          sessionID={() => props.part?.sessionID}
+          intervention={() => undefined}
+          running={() => props.status === "pending" || props.status === "running"}
+          messages={() =>
+            codexChatMessages(
+              typeof props.input.prompt === "string" ? props.input.prompt : "",
+              props.metadata ?? {},
+              props.output,
+              props.status === "pending" || props.status === "running",
+              {
+                user: i18n.t("ui.tool.dsh.role.user"),
+                assistant: i18n.t("ui.tool.dsh.role.assistant"),
+                system: i18n.t("ui.tool.dsh.role.system"),
+              },
+            )
+          }
+          runningLabel={() => i18n.t("ui.tool.dsh.running")}
+          emptyLabel={() => i18n.t("ui.tool.dsh.empty")}
+          emptyRunningLabel={() => i18n.t("ui.tool.dsh.empty.running")}
+          streamingLabel={() => i18n.t("ui.tool.dsh.streaming")}
+          assistantAvatar="D"
+          idChipPrefix="profile"
+        />
+      ))
+    }
+
+    const stopSession = (event: MouseEvent) => {
+      event.stopPropagation()
+      event.preventDefault()
+      const sessionID = props.part?.sessionID
+      if (!sessionID || !data.abortSession) return
+      void data.abortSession(sessionID)
+    }
+
+    const trigger = () => (
+      <div data-slot="basic-tool-tool-info-structured">
+        <div data-slot="basic-tool-tool-info-main">
+          <span data-slot="basic-tool-tool-title" class="tool-interact">
+            <TextShimmer text={i18n.t("ui.tool.dsh")} active={running()} />
+          </span>
+          <Show when={subtitle()}>
+            <span data-slot="basic-tool-tool-subtitle">{subtitle()}</span>
+          </Show>
+          <Show when={profile()}>
+            <span data-slot="basic-tool-tool-arg">{profile()}</span>
+          </Show>
+        </div>
+        <span data-slot="basic-tool-tool-action" data-component="tool-action">
+          <Tooltip value={i18n.t("ui.tool.dsh.view")} placement="top" gutter={4} lazyMount>
+            <IconButton
+              icon="eye"
+              size="normal"
+              variant="ghost"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={openViewer}
+              aria-label={i18n.t("ui.tool.dsh.view")}
+            />
+          </Tooltip>
+          <Show when={running() && !!data.abortSession && !!props.part?.sessionID}>
+            <Tooltip value={i18n.t("ui.tool.dsh.stop")} placement="top" gutter={4} lazyMount>
+              <IconButton
+                icon="stop"
+                size="normal"
+                variant="ghost"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={stopSession}
+                aria-label={i18n.t("ui.tool.dsh.stop")}
               />
             </Tooltip>
           </Show>

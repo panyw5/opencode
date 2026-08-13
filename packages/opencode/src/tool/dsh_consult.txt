@@ -1,0 +1,21 @@
+- Consult DeepSeek Harness (dsh) as an external coding advisor via the local `dsh` CLI
+- Spawns a one-shot headless agent: `dsh --profile headless "<prompt>"`
+- Returns the final assistant text on stdout (no streaming JSON transcript)
+- Use when you want an independent DeepSeek Harness judgment without making it the primary executor
+
+When to use:
+  - Architecture review, alternative approach, risk analysis
+  - Second opinion on a plan, bug diagnosis, or design trade-off
+  - Implementation-oriented advice from a full DeepSeek coding agent
+
+When NOT to use:
+  - Simple file reads/searches you can do with read/grep/glob
+  - When the user did not ask for external consultation and local tools suffice
+  - When you need mid-turn intervention streaming (dsh headless is one-shot only)
+
+Usage notes:
+  - Provide a self-contained prompt: goal, relevant absolute paths, constraints, and desired output format
+  - dsh starts cold — it cannot see this conversation unless you put the context in `prompt`
+  - Defaults to the current project directory; optional `working_directory` overrides cwd
+  - Requires `dsh` on PATH (`npm i -g @deepseek-ai/dsh`) and `DEEPSEEK_API_KEY` (or credentials under ~/.dsh)
+  - Headless dsh is a full coding agent; prefer analysis-scoped prompts unless the user wants implementation
