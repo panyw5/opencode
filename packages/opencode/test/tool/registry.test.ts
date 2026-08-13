@@ -122,6 +122,10 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).toContain("scheduled_task_create")
+      expect(ids).toContain("scheduled_task_list")
+      expect(ids).toContain("scheduled_task_get")
+      expect(ids).toContain("scheduled_task_update")
+      expect(ids).toContain("scheduled_task_delete")
     }),
   )
 

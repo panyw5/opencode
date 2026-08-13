@@ -1,0 +1,3 @@
+Fetch a single scheduled task by ID.
+
+Use this tool when the user asks about the details of one specific scheduled task, such as its current schedule, prompt, execution mode, or last run status. Obtain the task ID from scheduled_task_list.

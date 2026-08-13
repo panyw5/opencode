@@ -186,6 +186,10 @@ describe("experimental HttpApi", () => {
         const ids = yield* json<string[]>(toolIDs)
         expect(ids).toContain("bash")
         expect(ids).toContain("scheduled_task_create")
+        expect(ids).toContain("scheduled_task_list")
+        expect(ids).toContain("scheduled_task_get")
+        expect(ids).toContain("scheduled_task_update")
+        expect(ids).toContain("scheduled_task_delete")
 
         expect(worktrees.status).toBe(200)
         expect(yield* json(worktrees)).toEqual([])

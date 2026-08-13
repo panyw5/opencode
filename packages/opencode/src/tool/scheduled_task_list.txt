@@ -1,0 +1,5 @@
+List scheduled tasks for the current project.
+
+Use this tool when the user asks to see, inspect, or manage their scheduled tasks, or when another scheduled-task tool needs an existing task ID. The listing is scoped to the active project.
+
+Optionally pass `enabled` to filter to only enabled or only disabled tasks.

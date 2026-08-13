@@ -5,7 +5,13 @@ import { ScheduledTaskRunTable, ScheduledTaskTable } from "@/scheduled-task/sche
 import { Database } from "@/storage/db"
 import { MessageID } from "@/session/schema"
 import { Session } from "@/session/session"
-import { ScheduledTaskCreateTool } from "@/tool/scheduled-task"
+import {
+  ScheduledTaskCreateTool,
+  ScheduledTaskDeleteTool,
+  ScheduledTaskGetTool,
+  ScheduledTaskListTool,
+  ScheduledTaskUpdateTool,
+} from "@/tool/scheduled-task"
 import type { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
 import * as Log from "@opencode-ai/core/util/log"
@@ -130,6 +136,206 @@ describe("tool.scheduled_task_create", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       expect(yield* ScheduledTaskRepository.list()).toEqual([])
+    }),
+  )
+})
+
+describe("tool.scheduled_task_list", () => {
+  it.instance("lists tasks scoped to the active project", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskListTool
+      const tool = yield* info.init()
+      const requests: Parameters<Tool.Context["ask"]>[0][] = []
+      const { session, ctx } = yield* context((request) =>
+        Effect.sync(() => {
+          requests.push(request)
+        }),
+      )
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Listed task",
+        prompt: "Do the thing",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const result = yield* tool.execute({}, ctx)
+      const list = JSON.parse(result.output) as Array<{ id: string }>
+
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.permission).toBe("scheduled_task_list")
+      expect(result.metadata.count).toBe(1)
+      expect(list[0]?.id).toBe(existing.id)
+    }),
+  )
+})
+
+describe("tool.scheduled_task_get", () => {
+  it.instance("gets a task by id", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskGetTool
+      const tool = yield* info.init()
+      const requests: Parameters<Tool.Context["ask"]>[0][] = []
+      const { session, ctx } = yield* context((request) =>
+        Effect.sync(() => {
+          requests.push(request)
+        }),
+      )
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Gettable task",
+        prompt: "Do the thing",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const result = yield* tool.execute({ taskID: existing.id }, ctx)
+      const task = JSON.parse(result.output) as { id: string; name: string }
+
+      expect(requests[0]?.permission).toBe("scheduled_task_get")
+      expect(task.id).toBe(existing.id)
+      expect(task.name).toBe("Gettable task")
+    }),
+  )
+})
+
+describe("tool.scheduled_task_update", () => {
+  it.instance("updates a task's prompt, schedule, and enabled state", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskUpdateTool
+      const tool = yield* info.init()
+      const requests: Parameters<Tool.Context["ask"]>[0][] = []
+      const { session, ctx } = yield* context((request) =>
+        Effect.sync(() => {
+          requests.push(request)
+        }),
+      )
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Old name",
+        prompt: "Old prompt",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const result = yield* tool.execute(
+        {
+          taskID: existing.id,
+          name: "New name",
+          prompt: "New prompt",
+          schedule: { kind: "every", interval: 86_400_000 },
+          enabled: false,
+        },
+        ctx,
+      )
+      const task = JSON.parse(result.output) as { name: string; prompt: string; enabled: boolean }
+
+      expect(requests[0]?.permission).toBe("scheduled_task_update")
+      expect(task.name).toBe("New name")
+      expect(task.prompt).toBe("New prompt")
+      expect(task.schedule).toEqual({ kind: "every", interval: 86_400_000 })
+      expect(task.enabled).toBe(false)
+      expect((yield* ScheduledTaskRepository.get(existing.id))?.name).toBe("New name")
+    }),
+  )
+
+  it.instance("does not update when permission is rejected", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskUpdateTool
+      const tool = yield* info.init()
+      const { session, ctx } = yield* context(() => Effect.fail(new Error("rejected")))
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Untouched",
+        prompt: "Old prompt",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const exit = yield* tool
+        .execute({ taskID: existing.id, name: "Changed" }, ctx)
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect((yield* ScheduledTaskRepository.get(existing.id))?.name).toBe("Untouched")
+    }),
+  )
+})
+
+describe("tool.scheduled_task_delete", () => {
+  it.instance("deletes a task by id", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskDeleteTool
+      const tool = yield* info.init()
+      const requests: Parameters<Tool.Context["ask"]>[0][] = []
+      const { session, ctx } = yield* context((request) =>
+        Effect.sync(() => {
+          requests.push(request)
+        }),
+      )
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Doomed task",
+        prompt: "Do the thing",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const result = yield* tool.execute({ taskID: existing.id }, ctx)
+
+      expect(requests[0]?.permission).toBe("scheduled_task_delete")
+      expect((yield* ScheduledTaskRepository.get(existing.id))).toBeUndefined()
+      expect(result.metadata.taskID).toBe(existing.id)
+    }),
+  )
+
+  it.instance("does not delete when permission is rejected", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskDeleteTool
+      const tool = yield* info.init()
+      const { session, ctx } = yield* context(() => Effect.fail(new Error("rejected")))
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Keep me",
+        prompt: "Do the thing",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const exit = yield* tool.execute({ taskID: existing.id }, ctx).pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* ScheduledTaskRepository.get(existing.id)).toBeDefined()
     }),
   )
 })

@@ -67,7 +67,7 @@ import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { SessionStatus } from "@/session/status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { ScheduledTaskCreateTool } from "./scheduled-task"
+import { ScheduledTaskCreateTool, ScheduledTaskDeleteTool, ScheduledTaskGetTool, ScheduledTaskListTool, ScheduledTaskUpdateTool } from "./scheduled-task"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -144,6 +144,10 @@ export const layer: Layer.Layer<
     const projectTaskMount = yield* ProjectTaskMountTool
     const projectTaskUpdate = yield* ProjectTaskUpdateTool
     const scheduledTaskCreate = yield* ScheduledTaskCreateTool
+    const scheduledTaskList = yield* ScheduledTaskListTool
+    const scheduledTaskGet = yield* ScheduledTaskGetTool
+    const scheduledTaskUpdate = yield* ScheduledTaskUpdateTool
+    const scheduledTaskDelete = yield* ScheduledTaskDeleteTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -268,6 +272,10 @@ export const layer: Layer.Layer<
           project_task_mount: Tool.init(projectTaskMount),
           project_task_update: Tool.init(projectTaskUpdate),
           scheduled_task_create: Tool.init(scheduledTaskCreate),
+          scheduled_task_list: Tool.init(scheduledTaskList),
+          scheduled_task_get: Tool.init(scheduledTaskGet),
+          scheduled_task_update: Tool.init(scheduledTaskUpdate),
+          scheduled_task_delete: Tool.init(scheduledTaskDelete),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
@@ -300,6 +308,10 @@ export const layer: Layer.Layer<
             tool.project_task_mount,
             tool.project_task_update,
             tool.scheduled_task_create,
+            tool.scheduled_task_list,
+            tool.scheduled_task_get,
+            tool.scheduled_task_update,
+            tool.scheduled_task_delete,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.codex_consult,
