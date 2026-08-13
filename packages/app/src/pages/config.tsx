@@ -8483,6 +8483,37 @@ function SkillMarketProjectInstallMenu(props: {
   )
 }
 
+function fuzzyTermScore(term: string, target: string): number {
+  if (!target) return 0
+  let qi = 0
+  let score = 0
+  let streak = 0
+  for (let ti = 0; ti < target.length && qi < term.length; ti++) {
+    if (target[ti] === term[qi]) {
+      qi++
+      streak++
+      score += streak * 4
+    } else {
+      streak = 0
+      score -= 1
+    }
+  }
+  return qi === term.length ? score : 0
+}
+
+function fuzzySearchScore(query: string, target: string): number {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  if (!terms.length) return 1
+  const t = target.toLowerCase()
+  let total = 0
+  for (const term of terms) {
+    const score = fuzzyTermScore(term, t)
+    if (score <= 0) return 0
+    total += score
+  }
+  return total / terms.length
+}
+
 function SkillMarket(props: {
   repos: SkillMarketRepo[]
   selected: string
@@ -8505,6 +8536,24 @@ function SkillMarket(props: {
   const language = useLanguage()
   const dialog = useDialog()
   const platform = usePlatform()
+  const [marketQuery, setMarketQuery] = createSignal("")
+  const filteredSkills = createMemo(() => {
+    const query = marketQuery()
+    if (!query.trim()) return props.skills
+    return props.skills
+      .map((item) => {
+        const score = Math.max(
+          fuzzySearchScore(query, item.name) * 2,
+          fuzzySearchScore(query, item.description),
+          fuzzySearchScore(query, item.path),
+          fuzzySearchScore(query, item.repoLabel),
+        )
+        return score > 0 ? { item, score } : undefined
+      })
+      .filter((entry): entry is { item: SkillMarketItem; score: number } => !!entry)
+      .sort((a, b) => b.score - a.score)
+      .map((entry) => entry.item)
+  })
   const selectedRepo = () => props.repos.find((item) => item.id === props.selected)
   const errorText = () => {
     const err = props.error
@@ -8627,12 +8676,11 @@ function SkillMarket(props: {
           </Button>
         </div>
       </div>
-      <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-4">
-        <div class="grid gap-4 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <div class="flex min-h-0 flex-col gap-3">
-            <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-              {language.t("config.skills.market.repositories")}
-            </div>
+      <div class="flex min-h-0 flex-1 gap-4 px-5 py-4">
+        <div class="flex w-[320px] shrink-0 min-h-0 flex-col gap-3">
+          <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+            {language.t("config.skills.market.repositories")}
+          </div>
             <div class="rounded-xl border border-border-weak-base bg-background-base p-3">
               <div class="text-13-medium text-text-strong">{language.t("config.skills.market.custom.title")}</div>
               <div class="mt-2">
@@ -8665,51 +8713,53 @@ function SkillMarket(props: {
                 </Button>
               </div>
             </div>
-            <div class="flex flex-col gap-2">
-              <For each={props.repos}>
-                {(repo) => (
-                  <div
-                    class="rounded-xl border px-3 py-3 text-left transition-colors"
-                    classList={{
-                      "border-border-base bg-surface-base-active": props.selected === repo.id,
-                      "border-border-weak-base bg-background-base hover:border-border-strong hover:bg-surface-base-hover":
-                        props.selected !== repo.id,
-                    }}
-                  >
-                    <div class="flex items-start justify-between gap-3">
-                      <button
-                        type="button"
-                        class="min-w-0 flex-1 text-left"
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          props.onSelect(repo.id)
-                        }}
-                      >
-                        <div class="truncate text-13-medium text-text-strong">{repo.label}</div>
-                        <div class="mt-1 line-clamp-2 text-12-regular text-text-weak">{repo.description}</div>
-                        <div class="mt-2 break-all font-mono text-[11px] leading-5 text-text-weak">{repo.repo}</div>
-                      </button>
-                      <button
-                        type="button"
-                        class="shrink-0 text-text-weak transition-colors hover:text-text-base"
-                        aria-label={language.t("config.skills.market.openRepo")}
-                        onClick={(event) => {
-                          event.preventDefault()
-                          event.stopPropagation()
-                          platform.openLink(repo.url)
-                        }}
-                      >
-                        <Icon name="link" size="small" />
-                      </button>
+            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
+              <div class="flex flex-col gap-2">
+                <For each={props.repos}>
+                  {(repo) => (
+                    <div
+                      class="rounded-xl border px-3 py-3 text-left transition-colors"
+                      classList={{
+                        "border-border-base bg-surface-base-active": props.selected === repo.id,
+                        "border-border-weak-base bg-background-base hover:border-border-strong hover:bg-surface-base-hover":
+                          props.selected !== repo.id,
+                      }}
+                    >
+                      <div class="flex items-start justify-between gap-3">
+                        <button
+                          type="button"
+                          class="min-w-0 flex-1 text-left"
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            props.onSelect(repo.id)
+                          }}
+                        >
+                          <div class="truncate text-13-medium text-text-strong">{repo.label}</div>
+                          <div class="mt-1 line-clamp-2 text-12-regular text-text-weak">{repo.description}</div>
+                          <div class="mt-2 break-all font-mono text-[11px] leading-5 text-text-weak">{repo.repo}</div>
+                        </button>
+                        <button
+                          type="button"
+                          class="shrink-0 text-text-weak transition-colors hover:text-text-base"
+                          aria-label={language.t("config.skills.market.openRepo")}
+                          onClick={(event) => {
+                            event.preventDefault()
+                            event.stopPropagation()
+                            platform.openLink(repo.url)
+                          }}
+                        >
+                          <Icon name="link" size="small" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </For>
+                  )}
+                </For>
+              </div>
             </div>
           </div>
 
-          <div class="min-w-0">
+          <div class="flex min-h-0 min-w-0 flex-1 flex-col">
             <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div class="min-w-0">
                 <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
@@ -8717,10 +8767,30 @@ function SkillMarket(props: {
                 </div>
               </div>
               <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                {props.skills.length}
+                {filteredSkills().length}
               </div>
             </div>
 
+            <div class="mb-3 flex h-8 items-center gap-2 rounded-lg border border-border-weak-base bg-surface-base px-3">
+              <Icon name="magnifying-glass" class="shrink-0 text-icon-weak-base" />
+              <input
+                type="text"
+                value={marketQuery()}
+                onInput={(event) => setMarketQuery(event.currentTarget.value)}
+                placeholder={language.t("config.skills.market.search.placeholder")}
+                class="min-w-0 flex-1 bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak"
+              />
+              <Show when={marketQuery()}>
+                <IconButton
+                  icon="close-small"
+                  variant="ghost"
+                  class="size-5 rounded"
+                  onClick={() => setMarketQuery("")}
+                />
+              </Show>
+            </div>
+
+            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto">
             <Show
               when={!props.loading}
               fallback={<SkillMarketLoading meta={props.loadMeta} />}
@@ -8742,15 +8812,17 @@ function SkillMarket(props: {
                 }
               >
                 <Show
-                  when={props.skills.length > 0}
+                  when={filteredSkills().length > 0}
                   fallback={
                     <div class="rounded-xl border border-border-weak-base bg-background-base p-4 text-13-regular text-text-weak">
-                      {language.t("config.skills.market.empty")}
+                      {props.skills.length > 0
+                        ? language.t("config.skills.market.search.noResults")
+                        : language.t("config.skills.market.empty")}
                     </div>
                   }
                 >
                   <div class="grid gap-3 lg:grid-cols-2">
-                    <For each={props.skills}>
+                    <For each={filteredSkills()}>
                       {(item) => {
                         const isInstalled = () => installed(item, "global") || installed(item, "project")
                         return (
@@ -8815,9 +8887,9 @@ function SkillMarket(props: {
                 </Show>
               </Show>
             </Show>
+            </div>
           </div>
         </div>
       </div>
-    </div>
   )
 }

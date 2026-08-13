@@ -1534,6 +1534,8 @@ export const dict = {
   "config.skills.market.skills": "Skills",
   "config.skills.market.reload": "Reload",
   "config.skills.market.openRepo": "Open repository",
+  "config.skills.market.search.placeholder": "Search skills...",
+  "config.skills.market.search.noResults": "No skills match your search.",
   "config.skills.market.loadFailed": "Failed to load skills",
   "config.skills.market.loadTimeout":
     "Loading timed out after {{seconds}} seconds. Check your network and try reloading.",

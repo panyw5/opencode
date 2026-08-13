@@ -1494,6 +1494,8 @@ export const dict = {
   "config.skills.market.skills": "技能",
   "config.skills.market.reload": "重新载入",
   "config.skills.market.openRepo": "打开仓库",
+  "config.skills.market.search.placeholder": "搜索技能...",
+  "config.skills.market.search.noResults": "没有找到匹配的技能。",
   "config.skills.market.loadFailed": "技能载入失败",
   "config.skills.market.loadTimeout": "加载超过 {{seconds}} 秒已超时。请检查网络后重试。",
   "config.skills.market.loading.title": "正在加载 {{repo}}",
