@@ -251,6 +251,37 @@ $$`
     expect(html).not.toContain("$a+b$")
   })
 
+  test("protects inline math that compares two letter variables", () => {
+    const markdown = `写 $f_M>0$ 对 $2M<n<60M^2$。更精确：$N_{n,i}$ 的零点随 $i$ 变化，后写 $>0.304$，最小值为 $0.782$。`
+
+    const html = protectMathExpressions(markdown)
+    const texes = [...html.matchAll(/data-opencode-math-tex="([^"]*)"/g)].map((match) =>
+      match[1]
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&#92;/g, "\\")
+        .replace(/&#124;/g, "|"),
+    )
+
+    expect(texes).toEqual(["f_M>0", "2M<n<60M^2", "N_{n,i}", "i", ">0.304", "0.782"])
+    expect(html).not.toContain("$2M")
+    expect(html).not.toContain("$f_M")
+    expect(html).not.toContain("$N_")
+  })
+
+  test("does not swallow later math when a later greater-than exists", () => {
+    const markdown = `若 $x<y$ 且 $a>0$，则 $i<n$。`
+
+    const html = protectMathExpressions(markdown)
+    const texes = [...html.matchAll(/data-opencode-math-tex="([^"]*)"/g)].map((match) =>
+      match[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">"),
+    )
+
+    expect(texes).toEqual(["x<y", "a>0", "i<n"])
+    expect(html).not.toContain("$x<y$")
+    expect(html).not.toContain("$a>0$")
+  })
+
   test("escapes pipes in protected math so GFM tables keep cell boundaries", async () => {
     const markdown = `| 对象 | 性质 |
 |------|------|

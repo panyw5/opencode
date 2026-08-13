@@ -594,18 +594,69 @@ function escapedDollar(text: string, at: number) {
   return slash % 2 === 1
 }
 
+function isHtmlTagNameChar(ch: string | undefined) {
+  if (!ch) return false
+  const code = ch.charCodeAt(0)
+  return (
+    (code >= 65 && code <= 90) ||
+    (code >= 97 && code <= 122) ||
+    (code >= 48 && code <= 57) ||
+    ch === "-"
+  )
+}
+
+function isHtmlTagWs(ch: string | undefined) {
+  return ch === " " || ch === "\t" || ch === "\n" || ch === "\r" || ch === "\f"
+}
+
+// Only skip well-formed HTML so math like $2M<n<60M^2$ is not treated as a tag.
+// A previous heuristic treated "<" + letter as a tag and then scanned to any
+// later ">", which swallowed the rest of the paragraph when a later $a>0$ existed.
 function htmlTagEnd(text: string, at: number) {
   if (text[at] !== "<") return
+
+  if (text.startsWith("<!--", at)) {
+    const close = text.indexOf("-->", at + 4)
+    if (close === -1) return
+    return close + 2
+  }
+
   const next = text[at + 1]
   if (!next) return
-  if (next === "/") {
-    if (!/[A-Za-z]/.test(text[at + 2] ?? "")) return
-  } else if (next !== "!" && next !== "?" && !/[A-Za-z]/.test(next)) {
-    return
+  if (next === "!" || next === "?") {
+    const close = text.indexOf(">", at + 1)
+    if (close === -1) return
+    return close
   }
-  const close = text.indexOf(">", at + 1)
-  if (close === -1) return
-  return close
+
+  let i = at + 1
+  const closing = text[i] === "/"
+  if (closing) i++
+
+  if (!/[A-Za-z]/.test(text[i] ?? "")) return
+  i++
+  while (isHtmlTagNameChar(text[i])) i++
+
+  if (closing) {
+    while (isHtmlTagWs(text[i])) i++
+    if (text[i] !== ">") return
+    return i
+  }
+
+  const afterName = text[i]
+  if (afterName !== ">" && afterName !== "/" && !isHtmlTagWs(afterName)) return
+
+  while (i < text.length) {
+    const ch = text[i]
+    if (ch === ">") return i
+    if (ch === '"' || ch === "'") {
+      const close = text.indexOf(ch, i + 1)
+      if (close === -1) return
+      i = close + 1
+      continue
+    }
+    i++
+  }
 }
 
 function rawInlineMathEnd(text: string, from: number) {
