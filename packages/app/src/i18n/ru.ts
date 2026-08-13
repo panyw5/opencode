@@ -36,6 +36,10 @@ export const dict = {
   "command.session.previous.unseen": "Предыдущая непрочитанная сессия",
   "command.session.next.unseen": "Следующая непрочитанная сессия",
   "command.session.archive": "Архивировать сессию",
+  "command.session.recent": "Недавние сессии",
+  "command.session.recent.description": "Открыть 20 последних активных сессий в этом проекте",
+  "session.recent.placeholder": "Поиск недавних сессий...",
+  "session.recent.empty": "Нет недавних сессий",
 
   "command.palette": "Палитра команд",
 

@@ -36,6 +36,10 @@ export const dict = {
   "command.session.previous.unseen": "Prethodna nepročitana sesija",
   "command.session.next.unseen": "Sljedeća nepročitana sesija",
   "command.session.archive": "Arhiviraj sesiju",
+  "command.session.recent": "Nedavne sesije",
+  "command.session.recent.description": "Otvori 20 najaktivnijih sesija u ovom projektu",
+  "session.recent.placeholder": "Pretraži nedavne sesije...",
+  "session.recent.empty": "Nema nedavnih sesija",
 
   "command.palette": "Paleta komandi",
 

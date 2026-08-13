@@ -70,6 +70,7 @@ import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { DialogEditProject } from "@/components/dialog-edit-project"
 import { DialogSelectTheme } from "@/components/dialog-select-theme"
 import { DialogSwitchProject } from "@/components/dialog-switch-project"
+import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import { DebugBar } from "@/components/debug-bar"
 import { QuickAssistant } from "@/components/quick-assistant"
 import { Titlebar } from "@/components/titlebar"
@@ -1531,6 +1532,32 @@ export default function Layout(props: ParentProps) {
             const editor = (await platform.getDefaultEditor()) || "vscode"
             await platform.openInEditor(editor, dir)
           }
+        },
+      },
+      {
+        id: "session.recent",
+        title: language.t("command.session.recent"),
+        description: language.t("command.session.recent.description"),
+        keywords: kw("command.session.recent", "command.session.recent.description"),
+        category: language.t("command.category.session"),
+        slash: "recent",
+        suggested: currentSessions().length > 0,
+        disabled: !params.dir,
+        onSelect: () => {
+          dialog.show(
+            () => (
+              <DialogRecentSessions
+                sessions={currentSessions}
+                currentSessionID={() => params.id}
+                onSelect={navigateToSession}
+              />
+            ),
+            undefined,
+            {
+              modal: false,
+              preventScroll: false,
+            },
+          )
         },
       },
       {

@@ -40,6 +40,10 @@ export const dict = {
   "command.session.previous.unseen": "Önceki okunmamış oturum",
   "command.session.next.unseen": "Sonraki okunmamış oturum",
   "command.session.archive": "Oturumu arşivle",
+  "command.session.recent": "Son oturumlar",
+  "command.session.recent.description": "Bu projedeki en son aktif 20 oturumu aç",
+  "session.recent.placeholder": "Son oturumlarda ara...",
+  "session.recent.empty": "Son oturum yok",
 
   "command.palette": "Komut paleti",
 

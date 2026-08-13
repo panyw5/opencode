@@ -39,6 +39,10 @@ export const dict = {
   "command.session.previous.unseen": "Forrige uleste økt",
   "command.session.next.unseen": "Neste uleste økt",
   "command.session.archive": "Arkiver sesjon",
+  "command.session.recent": "Nylige sesjoner",
+  "command.session.recent.description": "Åpne de 20 nyligst aktive sesjonene i dette prosjektet",
+  "session.recent.placeholder": "Søk i nylige sesjoner...",
+  "session.recent.empty": "Ingen nylige sesjoner",
 
   "command.palette": "Kommandopalett",
 

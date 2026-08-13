@@ -36,6 +36,10 @@ export const dict = {
   "command.session.previous.unseen": "Sesión no leída anterior",
   "command.session.next.unseen": "Siguiente sesión no leída",
   "command.session.archive": "Archivar sesión",
+  "command.session.recent": "Sesiones recientes",
+  "command.session.recent.description": "Abrir las 20 sesiones más activas recientemente en este proyecto",
+  "session.recent.placeholder": "Buscar sesiones recientes...",
+  "session.recent.empty": "No hay sesiones recientes",
 
   "command.palette": "Paleta de comandos",
 

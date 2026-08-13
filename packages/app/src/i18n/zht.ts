@@ -40,6 +40,10 @@ export const dict = {
   "command.session.previous.unseen": "上一個未讀會話",
   "command.session.next.unseen": "下一個未讀會話",
   "command.session.archive": "封存工作階段",
+  "command.session.recent": "最近工作階段",
+  "command.session.recent.description": "開啟目前專案中最近活躍的 20 個工作階段",
+  "session.recent.placeholder": "搜尋最近工作階段...",
+  "session.recent.empty": "沒有最近工作階段",
 
   "command.palette": "命令面板",
 

@@ -36,6 +36,10 @@ export const dict = {
   "command.session.previous.unseen": "เซสชันที่ยังไม่ได้อ่านก่อนหน้า",
   "command.session.next.unseen": "เซสชันที่ยังไม่ได้อ่านถัดไป",
   "command.session.archive": "จัดเก็บเซสชัน",
+  "command.session.recent": "เซสชันล่าสุด",
+  "command.session.recent.description": "เปิด 20 เซสชันที่ใช้งานล่าสุดในโปรเจกต์นี้",
+  "session.recent.placeholder": "ค้นหาเซสชันล่าสุด...",
+  "session.recent.empty": "ไม่มีเซสชันล่าสุด",
 
   "command.palette": "คำสั่งค้นหา",
 
