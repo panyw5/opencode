@@ -96,7 +96,7 @@ import {
   useChannelMiddleItems,
 } from "./config-channels"
 
-const CORE_SECTIONS = ["agents-md", "providers", "agents", "skills", "plugins", "mcp", "commands", "channels", "claws"] as const
+const CORE_SECTIONS = ["providers", "agents-md", "agents", "skills", "plugins", "mcp", "commands", "channels", "claws"] as const
 type CoreSection = (typeof CORE_SECTIONS)[number]
 type Section = CoreSection | (string & {})
 
@@ -1266,6 +1266,8 @@ const CONFIG_MIDDLE_ITEM_ACTIVE_CLASS =
   "border-border-base bg-surface-base-active shadow-[inset_0_1px_0_color-mix(in_srgb,white_7%,transparent)]"
 const CONFIG_MIDDLE_ITEM_INACTIVE_CLASS =
   "border-border-weak-base/70 bg-background-base/45 hover:border-border-base hover:bg-surface-base/85"
+const CONFIG_PANE_FOCUS_CLASS =
+  "relative z-[1] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-strong)_22%,transparent),inset_0_0_0_3px_color-mix(in_srgb,var(--text-strong)_8%,transparent)]"
 
 function ListButton(props: {
   active: boolean
@@ -3416,8 +3418,8 @@ export default function ConfigPage() {
   const [query] = useSearchParams<{ section?: string; pick?: string }>()
   const initialSection = (() => {
     const section = query.section
-    if (typeof section !== "string" || !isKnownSection(section)) return "" as Section
-    if (section === "claws" && platform.platform !== "desktop") return "" as Section
+    if (typeof section !== "string" || !isKnownSection(section)) return "providers" as Section
+    if (section === "claws" && platform.platform !== "desktop") return "providers" as Section
     return section as Section
   })()
   const initialPick = initialSection && typeof query.pick === "string" ? query.pick : ""
@@ -3437,6 +3439,8 @@ export default function ConfigPage() {
   const [state, setState] = createStore({
     section: initialSection,
     pick: initialPick,
+    focusPane: "left" as "left" | "middle" | "right",
+    focusVisible: false,
     doc: "",
     text: "",
     saved: "",
@@ -5466,6 +5470,166 @@ export default function ConfigPage() {
     void open(item)
   }
 
+  function sidebarSections() {
+    return CORE_SECTIONS.filter((section) => section !== "claws" || clawsSectionEnabled())
+  }
+
+  function isTypingTarget(target: EventTarget | null) {
+    if (!(target instanceof HTMLElement)) return false
+    if (target.isContentEditable) return true
+    const tag = target.tagName
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true
+    return !!target.closest("[contenteditable='true'], input, textarea, select, [role='textbox']")
+  }
+
+  function selectMiddlePick(id: string) {
+    if (!id) return
+    if (state.section === "claws") {
+      selectClaw(id)
+      return
+    }
+    if (id === CUSTOM_NEW || id.startsWith("provider:")) {
+      setState("pick", id)
+      return
+    }
+    if (id === MCP_NEW || id.startsWith("mcp:")) {
+      setState("pick", id)
+      return
+    }
+    if (id.startsWith("channel:")) {
+      setState("pick", id)
+      return
+    }
+    if (id === COMMAND_NEW || id === SKILL_NEW) {
+      setState("pick", id)
+      return
+    }
+    const item = docs().get(id)
+    if (item) {
+      void open(item)
+      return
+    }
+    setState("pick", id)
+  }
+
+  function moveMiddle(delta: number) {
+    const list = picks(state.section)
+    if (list.length === 0) return
+    const current = list.indexOf(state.pick)
+    const index = current < 0 ? 0 : (current + delta + list.length) % list.length
+    selectMiddlePick(list[index] ?? "")
+  }
+
+  function moveLeft(delta: number) {
+    const list = sidebarSections()
+    if (list.length === 0) return
+    const current = list.indexOf(state.section as CoreSection)
+    const index = current < 0 ? 0 : (current + delta + list.length) % list.length
+    const next = list[index]
+    if (!next) return
+    void jump(next)
+  }
+
+  function blurTypingTarget() {
+    const active = document.activeElement
+    if (active instanceof HTMLElement && isTypingTarget(active)) active.blur()
+  }
+
+  function setKeyboardFocus(pane: "left" | "middle" | "right") {
+    batch(() => {
+      setState("focusPane", pane)
+      setState("focusVisible", true)
+    })
+  }
+
+  function clearKeyboardFocus(pane?: "left" | "middle" | "right") {
+    batch(() => {
+      if (pane) setState("focusPane", pane)
+      setState("focusVisible", false)
+    })
+  }
+
+  function handleConfigKeyDown(event: KeyboardEvent) {
+    if (event.defaultPrevented || event.isComposing) return
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+
+    const key = event.key
+    if (key !== "ArrowUp" && key !== "ArrowDown" && key !== "ArrowLeft" && key !== "ArrowRight" && key !== "Enter") {
+      return
+    }
+
+    // Allow Escape-style leave from right pane inputs via ArrowLeft only when caret is at start
+    if (isTypingTarget(event.target)) {
+      if (key === "ArrowLeft" && state.focusPane === "right") {
+        const target = event.target
+        if (
+          (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) &&
+          target.selectionStart === 0 &&
+          target.selectionEnd === 0
+        ) {
+          event.preventDefault()
+          target.blur()
+          setKeyboardFocus("middle")
+        }
+      }
+      return
+    }
+
+    if (key === "ArrowUp" || key === "ArrowDown") {
+      event.preventDefault()
+      const delta = key === "ArrowDown" ? 1 : -1
+      if (state.focusPane === "left") {
+        setKeyboardFocus("left")
+        moveLeft(delta)
+      } else if (state.focusPane === "middle") {
+        setKeyboardFocus("middle")
+        moveMiddle(delta)
+      } else {
+        setKeyboardFocus("right")
+      }
+      return
+    }
+
+    if (key === "ArrowLeft") {
+      event.preventDefault()
+      if (state.focusPane === "right") {
+        blurTypingTarget()
+        setKeyboardFocus("middle")
+        return
+      }
+      if (state.focusPane === "middle") {
+        setKeyboardFocus("left")
+      } else {
+        setKeyboardFocus("left")
+      }
+      return
+    }
+
+    if (key === "ArrowRight" || key === "Enter") {
+      if (state.focusPane === "right") return
+      event.preventDefault()
+      if (state.focusPane === "left") {
+        const list = picks(state.section)
+        if (list.length === 0) {
+          if (state.section === "claws") setKeyboardFocus("right")
+          else setKeyboardFocus("left")
+          return
+        }
+        if (!list.includes(state.pick)) selectMiddlePick(list[0] ?? "")
+        setKeyboardFocus("middle")
+        return
+      }
+      if (state.focusPane === "middle") {
+        setKeyboardFocus("right")
+      }
+    }
+  }
+
+  onMount(() => {
+    window.addEventListener("keydown", handleConfigKeyDown)
+    onCleanup(() => window.removeEventListener("keydown", handleConfigKeyDown))
+  })
+
   function selectClaw(id: string) {
     batch(() => {
       setState("section", "claws")
@@ -6794,7 +6958,13 @@ export default function ConfigPage() {
   return (
     <div class="size-full overflow-hidden bg-background-base">
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
-        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] xl:w-[200px] xl:border-r xl:border-b-0">
+        <aside
+          class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] transition-shadow duration-150 xl:w-[200px] xl:border-r xl:border-b-0"
+          classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "left" }}
+          data-config-pane="left"
+          data-focused={state.focusVisible && state.focusPane === "left" ? "true" : undefined}
+          onMouseDown={() => clearKeyboardFocus("left")}
+        >
           <div class="flex h-full min-h-0 flex-col">
             <div class="relative border-b border-border-weak-base px-3 py-4">
               <button
@@ -6812,59 +6982,59 @@ export default function ConfigPage() {
             <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
               <div class="flex flex-col gap-1.5">
                 <SectionButton
-                  current={state.section === "agents-md"}
-                  title="AGENTS.md"
-                  icon={sectionIcon("agents-md")}
-                  onClick={() => jump("agents-md")}
-                />
-                <SectionButton
                   current={state.section === "providers"}
                   title={t("config.providers.title")}
                   icon={sectionIcon("providers")}
-                  onClick={() => jump("providers")}
+                  onClick={() => void jump("providers")}
+                />
+                <SectionButton
+                  current={state.section === "agents-md"}
+                  title="AGENTS.md"
+                  icon={sectionIcon("agents-md")}
+                  onClick={() => void jump("agents-md")}
                 />
                 <SectionButton
                   current={state.section === "agents"}
                   title={t("config.agents.title")}
                   icon={sectionIcon("agents")}
-                  onClick={() => jump("agents")}
+                  onClick={() => void jump("agents")}
                 />
                 <SectionButton
                   current={state.section === "skills"}
                   title={t("config.skills.title")}
                   icon={sectionIcon("skills")}
-                  onClick={() => jump("skills")}
+                  onClick={() => void jump("skills")}
                 />
                 <SectionButton
                   current={state.section === "plugins"}
                   title={t("config.plugins.title")}
                   icon={sectionIcon("plugins")}
-                  onClick={() => jump("plugins")}
+                  onClick={() => void jump("plugins")}
                 />
                 <SectionButton
                   current={state.section === "mcp"}
                   title={t("config.mcp.title")}
                   icon={sectionIcon("mcp")}
-                  onClick={() => jump("mcp")}
+                  onClick={() => void jump("mcp")}
                 />
                 <SectionButton
                   current={state.section === "commands"}
                   title={t("config.commands.title")}
                   icon={sectionIcon("commands")}
-                  onClick={() => jump("commands")}
+                  onClick={() => void jump("commands")}
                 />
                 <SectionButton
                   current={state.section === "channels"}
                   title={t("config.channels.title")}
                   icon={sectionIcon("channels")}
-                  onClick={() => jump("channels")}
+                  onClick={() => void jump("channels")}
                 />
                 {clawsSectionEnabled() && (
                   <SectionButton
                     current={state.section === "claws"}
                     title={t("config.claws.title")}
                     icon={sectionIcon("claws")}
-                    onClick={() => jump("claws")}
+                    onClick={() => void jump("claws")}
                   />
                 )}
               </div>
@@ -6873,7 +7043,13 @@ export default function ConfigPage() {
         </aside>
 
         <div class="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
-          <section class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base-active)_72%,transparent),color-mix(in_srgb,var(--surface-base)_88%,transparent))] backdrop-blur xl:w-[400px] xl:border-r xl:border-b-0">
+          <section
+            class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base-active)_72%,transparent),color-mix(in_srgb,var(--surface-base)_88%,transparent))] backdrop-blur transition-shadow duration-150 xl:w-[400px] xl:border-r xl:border-b-0"
+            classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "middle" }}
+            data-config-pane="middle"
+            data-focused={state.focusVisible && state.focusPane === "middle" ? "true" : undefined}
+            onMouseDown={() => clearKeyboardFocus("middle")}
+          >
             <div class="flex h-full min-h-0 flex-col">
               <div class="px-4 py-4">
                 <Switch>
@@ -7725,7 +7901,13 @@ export default function ConfigPage() {
             </div>
           </section>
 
-          <main class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background-base)_92%,var(--surface-base)_8%),var(--background-base))]">
+          <main
+            class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background-base)_92%,var(--surface-base)_8%),var(--background-base))] transition-shadow duration-150"
+            classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "right" }}
+            data-config-pane="right"
+            data-focused={state.focusVisible && state.focusPane === "right" ? "true" : undefined}
+            onMouseDown={() => clearKeyboardFocus("right")}
+          >
             <Switch>
               <Match when={state.section === "providers"}>
                 <Show

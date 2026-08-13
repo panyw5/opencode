@@ -61,8 +61,8 @@ const Scheduled = lazy(() => import("@/pages/scheduled"))
 const Loading = () => <div class="size-full" />
 
 const CONFIG_FALLBACK_SECTIONS = [
-  { id: "agents-md", label: "AGENTS.md", icon: "review" },
   { id: "providers", key: "config.providers.title", icon: "providers" },
+  { id: "agents-md", label: "AGENTS.md", icon: "review" },
   { id: "agents", key: "config.agents.title", icon: "robot" },
   { id: "skills", key: "config.skills.title", icon: "book" },
   { id: "plugins", key: "config.plugins.title", icon: "code" },
