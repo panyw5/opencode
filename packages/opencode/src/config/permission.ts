@@ -34,6 +34,8 @@ const InputObject = Schema.StructWithRest(
     scheduled_task_get: Schema.optional(Action),
     scheduled_task_update: Schema.optional(Action),
     scheduled_task_delete: Schema.optional(Action),
+    scheduled_task_run_now: Schema.optional(Action),
+    scheduled_task_runs: Schema.optional(Action),
     question: Schema.optional(Action),
     webfetch: Schema.optional(Action),
     websearch: Schema.optional(Action),

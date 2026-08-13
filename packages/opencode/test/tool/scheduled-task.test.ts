@@ -10,10 +10,14 @@ import {
   ScheduledTaskDeleteTool,
   ScheduledTaskGetTool,
   ScheduledTaskListTool,
+  ScheduledTaskRunsTool,
+  ScheduledTaskRunNowTool,
   ScheduledTaskUpdateTool,
 } from "@/tool/scheduled-task"
 import type { Tool } from "@/tool/tool"
 import { Truncate } from "@/tool/truncate"
+import { ScheduledTask } from "@/scheduled-task/service"
+import type { Run } from "@/scheduled-task/schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect, Exit, Layer } from "effect"
 import { disposeAllInstances } from "../fixture/fixture"
@@ -336,6 +340,120 @@ describe("tool.scheduled_task_delete", () => {
 
       expect(Exit.isFailure(exit)).toBe(true)
       expect(yield* ScheduledTaskRepository.get(existing.id)).toBeDefined()
+    }),
+  )
+})
+
+describe("tool.scheduled_task_run_now", () => {
+  it.instance("returns a graceful message when the runner is unavailable", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskRunNowTool
+      const tool = yield* info.init()
+      const requests: Parameters<Tool.Context["ask"]>[0][] = []
+      const { session, ctx } = yield* context((request) =>
+        Effect.sync(() => {
+          requests.push(request)
+        }),
+      )
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Run me now",
+        prompt: "Do the thing",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const result = yield* tool.execute({ taskID: existing.id }, ctx)
+      const output = JSON.parse(result.output) as { error?: string }
+
+      expect(requests[0]?.permission).toBe("scheduled_task_run_now")
+      expect(output.error).toContain("not available")
+      expect(result.metadata.run).toBeNull()
+    }),
+  )
+
+  it.instance("starts a run through the scheduled task service", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskRunNowTool
+      const tool = yield* info.init()
+      const { session, ctx } = yield* context(() => Effect.void)
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Run me now",
+        prompt: "Do the thing",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+      const run = { id: existing.id, taskID: existing.id, scheduledAt: Date.now(), status: "running", attempt: 0 } as unknown as Run
+
+      const result = yield* tool.execute({ taskID: existing.id }, ctx).pipe(
+        Effect.provide(
+          Layer.mock(ScheduledTask.Service, {
+            runNow: (id) => Effect.succeed({ ...run, taskID: id }),
+            runs: () => Effect.succeed([]),
+          }),
+        ),
+      )
+
+      expect(JSON.parse(result.output)).toEqual(run)
+      expect(result.metadata.run).toEqual(run)
+    }),
+  )
+})
+
+describe("tool.scheduled_task_runs", () => {
+  it.instance("returns run history through the scheduled task service", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskRunsTool
+      const tool = yield* info.init()
+      const requests: Parameters<Tool.Context["ask"]>[0][] = []
+      const { session, ctx } = yield* context((request) =>
+        Effect.sync(() => {
+          requests.push(request)
+        }),
+      )
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "History task",
+        prompt: "Do the thing",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+      const run = {
+        id: existing.id,
+        taskID: existing.id,
+        scheduledAt: Date.now(),
+        status: "ok",
+        attempt: 0,
+        time: { created: Date.now(), finished: Date.now() },
+      } as unknown as Run
+
+      const result = yield* tool.execute({ taskID: existing.id }, ctx).pipe(
+        Effect.provide(
+          Layer.mock(ScheduledTask.Service, {
+            runs: () => Effect.succeed([run]),
+          }),
+        ),
+      )
+
+      expect(requests[0]?.permission).toBe("scheduled_task_runs")
+      expect(result.metadata.count).toBe(1)
+      expect(JSON.parse(result.output)).toEqual([run])
     }),
   )
 })

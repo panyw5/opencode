@@ -68,7 +68,15 @@ import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { SessionStatus } from "@/session/status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
-import { ScheduledTaskCreateTool, ScheduledTaskDeleteTool, ScheduledTaskGetTool, ScheduledTaskListTool, ScheduledTaskUpdateTool } from "./scheduled-task"
+import {
+  ScheduledTaskCreateTool,
+  ScheduledTaskDeleteTool,
+  ScheduledTaskGetTool,
+  ScheduledTaskListTool,
+  ScheduledTaskRunsTool,
+  ScheduledTaskRunNowTool,
+  ScheduledTaskUpdateTool,
+} from "./scheduled-task"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -149,6 +157,8 @@ export const layer: Layer.Layer<
     const scheduledTaskGet = yield* ScheduledTaskGetTool
     const scheduledTaskUpdate = yield* ScheduledTaskUpdateTool
     const scheduledTaskDelete = yield* ScheduledTaskDeleteTool
+    const scheduledTaskRunNow = yield* ScheduledTaskRunNowTool
+    const scheduledTaskRuns = yield* ScheduledTaskRunsTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -278,6 +288,8 @@ export const layer: Layer.Layer<
           scheduled_task_get: Tool.init(scheduledTaskGet),
           scheduled_task_update: Tool.init(scheduledTaskUpdate),
           scheduled_task_delete: Tool.init(scheduledTaskDelete),
+          scheduled_task_run_now: Tool.init(scheduledTaskRunNow),
+          scheduled_task_runs: Tool.init(scheduledTaskRuns),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
@@ -315,6 +327,8 @@ export const layer: Layer.Layer<
             tool.scheduled_task_get,
             tool.scheduled_task_update,
             tool.scheduled_task_delete,
+            tool.scheduled_task_run_now,
+            tool.scheduled_task_runs,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.codex_consult,

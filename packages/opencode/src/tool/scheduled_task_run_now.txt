@@ -1,0 +1,3 @@
+Run an existing scheduled task immediately, outside its schedule.
+
+Use this tool when the user asks to trigger a scheduled task right now, on demand, or to test a task before its next scheduled occurrence. Obtain the task ID from scheduled_task_list. The task runs through the same execution path as its normal schedule.

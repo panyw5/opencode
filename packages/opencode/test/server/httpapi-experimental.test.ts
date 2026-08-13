@@ -190,6 +190,8 @@ describe("experimental HttpApi", () => {
         expect(ids).toContain("scheduled_task_get")
         expect(ids).toContain("scheduled_task_update")
         expect(ids).toContain("scheduled_task_delete")
+        expect(ids).toContain("scheduled_task_run_now")
+        expect(ids).toContain("scheduled_task_runs")
 
         expect(worktrees.status).toBe(200)
         expect(yield* json(worktrees)).toEqual([])

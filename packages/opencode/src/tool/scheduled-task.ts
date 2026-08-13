@@ -3,10 +3,9 @@ import { ScheduledTaskCreate } from "@/scheduled-task/create"
 import { ScheduledTaskMutate } from "@/scheduled-task/mutate"
 import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ScheduledTaskID, type Info, type Run } from "@/scheduled-task/schema"
-import { ScheduledTask } from "@/scheduled-task/service"
 import { NonNegativeInt, PositiveInt } from "@opencode-ai/core/schema"
 import * as Log from "@opencode-ai/core/util/log"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import DESCRIPTION from "./scheduled_task_create.txt"
 import DESCRIPTION_LIST from "./scheduled_task_list.txt"
 import DESCRIPTION_GET from "./scheduled_task_get.txt"
@@ -17,6 +16,14 @@ import DESCRIPTION_RUNS from "./scheduled_task_runs.txt"
 import * as Tool from "./tool"
 
 const log = Log.create({ service: "tool.scheduled-task" })
+
+// The scheduler execution service is resolved lazily. Statically importing it
+// here would form a cycle (service -> session/prompt -> tool/registry -> this
+// file), so we load it only when a run-now / runs tool actually executes.
+const scheduledTaskService = () =>
+  Effect.promise(() => import("@/scheduled-task/service")).pipe(
+    Effect.flatMap((mod) => Effect.serviceOption(mod.ScheduledTask.Service)),
+  )
 
 const Text = Schema.Trim.check(Schema.isNonEmpty())
 
@@ -303,4 +310,95 @@ export const ScheduledTaskDeleteTool = Tool.define<typeof DeleteParameters, { ta
         }
       }).pipe(Effect.orDie),
   } satisfies Tool.DefWithoutID<typeof DeleteParameters, { taskID: string }>),
+)
+
+const RunNowParameters = Schema.Struct({
+  taskID: Text.annotate({ description: "ID of the scheduled task to run immediately" }),
+})
+
+export const ScheduledTaskRunNowTool = Tool.define<typeof RunNowParameters, { run: Run | null }, never>(
+  "scheduled_task_run_now",
+  Effect.succeed({
+    description: DESCRIPTION_RUN_NOW,
+    parameters: RunNowParameters,
+    execute: (params, ctx) =>
+      Effect.gen(function* () {
+        log.info("scheduled task run-now requested", { sessionID: ctx.sessionID, taskID: params.taskID })
+        yield* ctx.ask({
+          permission: "scheduled_task_run_now",
+          patterns: [params.taskID],
+          always: ["*"],
+          metadata: { taskID: params.taskID },
+        })
+        const taskID = ScheduledTaskID.make(params.taskID)
+        const existing = yield* ScheduledTaskRepository.get(taskID)
+        if (!existing) return notFoundOutput(params.taskID, { run: null })
+        const scheduled = Option.getOrUndefined(yield* scheduledTaskService())
+        if (!scheduled) {
+          return {
+            title: "Scheduled task runner unavailable",
+            output: JSON.stringify(
+              { error: "The scheduled task runner is not available in this environment" },
+              null,
+              2,
+            ),
+            metadata: { run: null },
+          }
+        }
+        const run = yield* scheduled.runNow(taskID)
+        log.info("scheduled task run-now completed", { sessionID: ctx.sessionID, taskID, runID: run.id })
+        return {
+          title: `Started scheduled task: ${existing.name}`,
+          output: JSON.stringify(run, null, 2),
+          metadata: { run },
+        }
+      }).pipe(Effect.orDie),
+  } satisfies Tool.DefWithoutID<typeof RunNowParameters, { run: Run | null }>),
+)
+
+const RunsParameters = Schema.Struct({
+  taskID: Text.annotate({ description: "ID of the scheduled task whose runs to list" }),
+  limit: Schema.optional(PositiveInt).annotate({
+    description: "Maximum number of runs to return. Defaults to 100.",
+  }),
+})
+
+export const ScheduledTaskRunsTool = Tool.define<typeof RunsParameters, { count: number }, never>(
+  "scheduled_task_runs",
+  Effect.succeed({
+    description: DESCRIPTION_RUNS,
+    parameters: RunsParameters,
+    execute: (params, ctx) =>
+      Effect.gen(function* () {
+        log.info("scheduled task runs requested", { sessionID: ctx.sessionID, taskID: params.taskID })
+        yield* ctx.ask({
+          permission: "scheduled_task_runs",
+          patterns: [params.taskID],
+          always: ["*"],
+          metadata: { taskID: params.taskID },
+        })
+        const taskID = ScheduledTaskID.make(params.taskID)
+        const existing = yield* ScheduledTaskRepository.get(taskID)
+        if (!existing) return notFoundOutput(params.taskID, { count: 0 })
+        const scheduled = Option.getOrUndefined(yield* scheduledTaskService())
+        if (!scheduled) {
+          return {
+            title: "Scheduled task runner unavailable",
+            output: JSON.stringify(
+              { error: "The scheduled task runner is not available in this environment" },
+              null,
+              2,
+            ),
+            metadata: { count: 0 },
+          }
+        }
+        const runs = yield* scheduled.runs(taskID, params.limit)
+        log.info("scheduled task runs completed", { sessionID: ctx.sessionID, taskID, count: runs.length })
+        return {
+          title: `${runs.length} runs for ${existing.name}`,
+          output: JSON.stringify(runs, null, 2),
+          metadata: { count: runs.length },
+        }
+      }).pipe(Effect.orDie),
+  } satisfies Tool.DefWithoutID<typeof RunsParameters, { count: number }>),
 )

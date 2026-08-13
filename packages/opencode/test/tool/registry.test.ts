@@ -126,6 +126,8 @@ describe("tool.registry", () => {
       expect(ids).toContain("scheduled_task_get")
       expect(ids).toContain("scheduled_task_update")
       expect(ids).toContain("scheduled_task_delete")
+      expect(ids).toContain("scheduled_task_run_now")
+      expect(ids).toContain("scheduled_task_runs")
     }),
   )
 
