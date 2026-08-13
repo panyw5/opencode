@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createMediaQuery } from "@solid-primitives/media"
 import { Tabs } from "@opencode-ai/ui/tabs"
@@ -65,6 +65,33 @@ export function SessionSidePanel(props: {
   })
   const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
 
+  // Mounting the code viewer (Pierre shadow DOM) is expensive: rendering a
+  // multi-thousand-line file blocks the main thread for hundreds of ms. If we
+  // mount it synchronously when the panel opens, the CSS width transition
+  // freezes for the duration. Instead, mount the heavy file content only after
+  // the open animation has finished, so the animation frames stay smooth.
+  const PANEL_ANIMATION_MS = 320
+  const [fileActive, setFileActive] = createSignal(false)
+  let openTimer: ReturnType<typeof setTimeout> | undefined
+  createEffect(() => {
+    if (filePreviewOpen()) {
+      if (openTimer === undefined) {
+        openTimer = setTimeout(() => {
+          openTimer = undefined
+          setFileActive(true)
+        }, PANEL_ANIMATION_MS)
+      }
+      return
+    }
+    if (openTimer !== undefined) {
+      clearTimeout(openTimer)
+      openTimer = undefined
+    }
+    setFileActive(false)
+  })
+  onCleanup(() => {
+    if (openTimer !== undefined) clearTimeout(openTimer)
+  })
   const diffFiles = createMemo(() =>
     props
       .diffs()
@@ -331,7 +358,16 @@ export function SessionSidePanel(props: {
                       </Tabs.Content>
                     </Show>
 
-                    <Show when={activeFileTab()} keyed>
+                    <Show when={!fileActive() && activeFileTab()}>
+                      <Tabs.Content value={activeTab()} class="flex flex-col h-full overflow-hidden">
+                        <div class="flex-1 flex items-center justify-center text-13-regular text-text-weak">
+                          {language.t("common.loading")}
+                          {language.t("common.loading.ellipsis")}
+                        </div>
+                      </Tabs.Content>
+                    </Show>
+
+                    <Show when={fileActive() && activeFileTab()} keyed>
                       {(tab) => <FileTabContent tab={tab} />}
                     </Show>
                   </Show>
