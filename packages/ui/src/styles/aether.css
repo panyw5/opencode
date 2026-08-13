@@ -205,11 +205,11 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-component="dock-prompt
    dark background (#1A1714). Uses rgba (not color-mix) so the alpha
    falloff stays smooth with no hard edge. */
 html[data-theme="aether"][data-color-scheme="light"] [data-component="sidebar-float-shadow"] {
-  --sidebar-float-shadow-start: rgba(193, 95, 60, 0.14);
-  --sidebar-float-shadow-mid: rgba(193, 95, 60, 0.05);
+  --sidebar-float-shadow-start: rgba(193, 95, 60, 0.09);
+  --sidebar-float-shadow-mid: rgba(193, 95, 60, 0.03);
 }
 
 html[data-theme="aether"][data-color-scheme="dark"] [data-component="sidebar-float-shadow"] {
-  --sidebar-float-shadow-start: rgba(0, 0, 0, 0.16);
-  --sidebar-float-shadow-mid: rgba(0, 0, 0, 0.06);
+  --sidebar-float-shadow-start: rgba(0, 0, 0, 0.1);
+  --sidebar-float-shadow-mid: rgba(0, 0, 0, 0.03);
 }

@@ -310,11 +310,12 @@ html[data-theme="arc"] [data-component="sidebar-nav-mobile"] {
 /* Desktop float shadow under the open panel. Sibling of the nav so
    overflow-x-hidden cannot clip it. Soft pure-black ease-out only. */
 html[data-theme="arc"] [data-component="sidebar-float-shadow"] {
-  width: 24px;
+  --sidebar-float-shadow-radius: var(--radius-xl);
+  width: 16px;
   background: linear-gradient(
     to right,
-    rgba(0, 0, 0, 0.22) 0%,
-    rgba(0, 0, 0, 0.07) 45%,
+    rgba(0, 0, 0, 0.14) 0%,
+    rgba(0, 0, 0, 0.04) 45%,
     transparent 100%
   );
 }
@@ -323,11 +324,11 @@ html[data-theme="arc"] [data-component="sidebar-float-shadow"] {
    cast still has to be readable where the two meet. Same contact alpha as dark,
    widened so the stronger onset still eases out. */
 html[data-theme="arc"][data-color-scheme="light"] [data-component="sidebar-float-shadow"] {
-  width: 30px;
+  width: 20px;
   background: linear-gradient(
     to right,
-    rgba(0, 0, 0, 0.22) 0%,
-    rgba(0, 0, 0, 0.09) 45%,
+    rgba(0, 0, 0, 0.14) 0%,
+    rgba(0, 0, 0, 0.04) 45%,
     transparent 100%
   );
 }

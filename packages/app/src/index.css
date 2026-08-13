@@ -255,9 +255,21 @@
      of reading as a hard band. Pure-black themes get a white glow override
      below. Themes can override the gradient stops via the CSS variables. */
   [data-component="sidebar-float-shadow"] {
-    --sidebar-float-shadow-start: rgba(0, 0, 0, 0.22);
-    --sidebar-float-shadow-mid: rgba(0, 0, 0, 0.09);
-    width: 30px;
+    --sidebar-float-shadow-start: rgba(0, 0, 0, 0.14);
+    --sidebar-float-shadow-mid: rgba(0, 0, 0, 0.04);
+    --sidebar-float-shadow-radius: 12px;
+    top: var(--sidebar-float-shadow-radius) !important;
+    bottom: var(--sidebar-float-shadow-radius) !important;
+    width: 20px;
+    --sidebar-float-shadow-fade: 24px;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      black var(--sidebar-float-shadow-fade),
+      black calc(100% - var(--sidebar-float-shadow-fade)),
+      transparent 100%
+    );
+    mask-repeat: no-repeat;
     background: linear-gradient(
       to right,
       var(--sidebar-float-shadow-start) 0%,
@@ -267,9 +279,9 @@
   }
 
   [data-color-scheme="dark"] [data-component="sidebar-float-shadow"] {
-    --sidebar-float-shadow-start: rgba(0, 0, 0, 0.22);
-    --sidebar-float-shadow-mid: rgba(0, 0, 0, 0.08);
-    width: 22px;
+    --sidebar-float-shadow-start: rgba(0, 0, 0, 0.14);
+    --sidebar-float-shadow-mid: rgba(0, 0, 0, 0.04);
+    width: 16px;
   }
 
   /* Pure-black / near-black themes: rgba(0,0,0) is invisible on #000, so use
@@ -284,8 +296,8 @@
   html[data-theme="flexoki"][data-color-scheme="dark"] [data-component="sidebar-float-shadow"],
   html[data-theme="vesper"][data-color-scheme="dark"] [data-component="sidebar-float-shadow"],
   html[data-theme="ayu"][data-color-scheme="dark"] [data-component="sidebar-float-shadow"] {
-    --sidebar-float-shadow-start: rgba(255, 255, 255, 0.08);
-    --sidebar-float-shadow-mid: rgba(255, 255, 255, 0.02);
+    --sidebar-float-shadow-start: rgba(255, 255, 255, 0.05);
+    --sidebar-float-shadow-mid: rgba(255, 255, 255, 0.012);
   }
 
   [data-component="sidebar-session"] {

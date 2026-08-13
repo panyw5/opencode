@@ -3842,6 +3842,18 @@ export default function Layout(props: ParentProps) {
                   data-component="sidebar-float-shadow"
                   aria-hidden="true"
                   class="pointer-events-none absolute inset-y-0 left-full"
+                  ref={(el) => {
+                    if (!import.meta.env.DEV) return
+                    requestAnimationFrame(() => {
+                      const panelEl = el.closest("nav")?.querySelector<HTMLElement>('[data-component="sidebar-panel"]')
+                      const shadowStyle = getComputedStyle(el)
+                      const panelStyle = panelEl ? getComputedStyle(panelEl) : undefined
+                      const rect = el.getBoundingClientRect()
+                      console.debug(
+                        `[sidebar-float-shadow] x=${rect.x.toFixed(1)} y=${rect.y.toFixed(1)} width=${rect.width.toFixed(1)} height=${rect.height.toFixed(1)} radius=${shadowStyle.borderTopLeftRadius || "none"} panel-radius=${panelStyle?.borderTopRightRadius ?? "missing"} mask=${shadowStyle.maskImage}`,
+                      )
+                    })
+                  }}
                 />
               </Show>
             </nav>
