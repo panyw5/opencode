@@ -11,7 +11,13 @@ import {
   shouldShowMarkdownMathBottomCopy,
   upgradeStreamingMath,
 } from "./markdown"
-import { normalizeCodeLanguage, protectMathExpressions, renderMathExpressions } from "../context/marked"
+import {
+  healPunctuationEmphasis,
+  normalizeCodeLanguage,
+  prepareMarkdown,
+  protectMathExpressions,
+  renderMathExpressions,
+} from "../context/marked"
 
 describe("markdown fileLink", () => {
   test("parses relative file paths", () => {
@@ -305,6 +311,55 @@ $$`
     expect(parsed.match(/<tr>/g)?.length).toBe(4)
     expect(html).toContain("katex")
     expect(html).not.toContain("katex-error")
+  })
+})
+
+describe("markdown punctuation emphasis", () => {
+  test("closes strong when the marker follows CJK punctuation and a letter", async () => {
+    const markdown = "**复核结论先行：**Grok 的总体方向是对的"
+    const marked = new Marked()
+    const html = await marked.parse(prepareMarkdown(markdown))
+
+    expect(html).toContain("<strong>复核结论先行：</strong>")
+    expect(html).toContain("Grok")
+    expect(html).not.toContain("**复核结论先行：**")
+  })
+
+  test("closes strong and emphasis for ASCII punctuation without a following space", async () => {
+    const marked = new Marked()
+    const strong = await marked.parse(prepareMarkdown("**hello:**world"))
+    const em = await marked.parse(prepareMarkdown("*斜体：*后面"))
+    const underscore = await marked.parse(prepareMarkdown("__加粗：__后面"))
+
+    expect(strong).toContain("<strong>hello:</strong>")
+    expect(strong).toContain("world")
+    expect(em).toContain("<em>斜体：</em>")
+    expect(em).toContain("后面")
+    expect(underscore).toContain("<strong>加粗：</strong>")
+    expect(underscore).toContain("后面")
+  })
+
+  test("does not invent emphasis when there is no opener", () => {
+    expect(healPunctuationEmphasis("text：**后面")).toBe("text：**后面")
+  })
+
+  test("leaves already-valid emphasis and code spans alone", async () => {
+    const marked = new Marked()
+    const list = await marked.parse(prepareMarkdown("- **P7：确有真正的归纳缺口。**"))
+    const code = healPunctuationEmphasis("见 `**复核结论先行：**Grok`")
+
+    expect(list).toContain("<strong>P7：确有真正的归纳缺口。</strong>")
+    expect(code).toBe("见 `**复核结论先行：**Grok`")
+  })
+
+  test("heals multiple stuck closers on one line", async () => {
+    const marked = new Marked()
+    const html = await marked.parse(prepareMarkdown("**a：**b **c：**d"))
+
+    expect(html).toContain("<strong>a：</strong>")
+    expect(html).toContain("<strong>c：</strong>")
+    expect(html).not.toContain("**a：**")
+    expect(html).not.toContain("**c：**")
   })
 })
 

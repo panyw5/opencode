@@ -588,6 +588,10 @@ export function protectMathExpressions(markdown: string): string {
     .join("")
 }
 
+export function prepareMarkdown(markdown: string): string {
+  return healPunctuationEmphasis(protectMathExpressions(markdown))
+}
+
 function escapedDollar(text: string, at: number) {
   let slash = 0
   for (let i = at - 1; i >= 0 && text[i] === "\\"; i--) slash++
@@ -728,6 +732,95 @@ function protectInlineMath(text: string) {
 
   if (from === 0) return text
   return out + text.slice(from)
+}
+
+const asciiPunctuation = new Set("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~")
+
+function isMarkdownPunctuation(ch: string | undefined) {
+  if (!ch) return false
+  if (asciiPunctuation.has(ch)) return true
+  return /\p{P}/u.test(ch)
+}
+
+function isMarkdownWhitespace(ch: string | undefined) {
+  if (!ch) return false
+  return (
+    ch === " " ||
+    ch === "\t" ||
+    ch === "\n" ||
+    ch === "\r" ||
+    ch === "\f" ||
+    ch === "\v" ||
+    /\p{Zs}/u.test(ch)
+  )
+}
+
+// CommonMark will not close **text：**Grok because the closer is preceded by
+// punctuation and followed by a letter. Insert a comment so the closer is
+// followed by punctuation and marked can pair it.
+export function healPunctuationEmphasis(markdown: string): string {
+  const block = /(```[\s\S]*?```|~~~[\s\S]*?~~~)/g
+  const parts = markdown.split(block)
+  return parts.map((part, i) => (i % 2 === 1 ? part : healPunctuationEmphasisInText(part))).join("")
+}
+
+function healPunctuationEmphasisInText(text: string): string {
+  const inserts: number[] = []
+  const open: { mark: "*" | "_"; size: number }[] = []
+
+  for (let i = 0; i < text.length; i++) {
+    const code = inlineCodeEnd(text, i)
+    if (code) {
+      i = code - 1
+      continue
+    }
+
+    const tag = htmlTagEnd(text, i)
+    if (tag !== undefined) {
+      i = tag
+      continue
+    }
+
+    if (escapedDollar(text, i)) continue
+
+    const mark = text[i]
+    if (mark !== "*" && mark !== "_") continue
+
+    let size = 1
+    while (text[i + size] === mark) size++
+
+    const before = text[i - 1]
+    const after = text[i + size]
+    const precededByWs = i === 0 || isMarkdownWhitespace(before)
+    const followedByWs = after === undefined || isMarkdownWhitespace(after)
+    const stuck = isMarkdownPunctuation(before) && after !== undefined && !followedByWs && !isMarkdownPunctuation(after)
+
+    let remaining = size
+    if (!precededByWs) {
+      for (let j = open.length - 1; j >= 0 && remaining > 0; j--) {
+        const opener = open[j]
+        if (opener.mark !== mark) continue
+        const used = Math.min(remaining, opener.size)
+        remaining -= used
+        opener.size -= used
+        if (opener.size === 0) open.splice(j, 1)
+        if (stuck) inserts.push(i + size)
+        if (remaining === 0) break
+      }
+    }
+
+    if (remaining > 0 && !followedByWs) {
+      open.push({ mark, size: remaining })
+    }
+
+    i += size - 1
+  }
+
+  if (inserts.length === 0) return text
+  const unique = [...new Set(inserts)].sort((a, b) => b - a)
+  let out = text
+  for (const at of unique) out = `${out.slice(0, at)}<!-- -->${out.slice(at)}`
+  return out
 }
 
 function renderMathInText(text: string, output: MathOutput): string {
@@ -954,21 +1047,21 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
     if (native) {
       return {
         async parse(markdown: string): Promise<string> {
-          const html = await native(protectMathExpressions(markdown))
+          const html = await native(prepareMarkdown(markdown))
           const withMath = renderMathExpressions(html, output)
           return highlightCodeBlocks(withMath)
         },
         async parseNoMath(markdown: string): Promise<string> {
-          const html = await native(protectMathExpressions(markdown))
+          const html = await native(prepareMarkdown(markdown))
           return highlightCodeBlocks(html)
         },
         async parseFast(markdown: string): Promise<string> {
           // Keep the first paint in-process; native IPC is too expensive per message.
-          return fastParser.parse(protectMathExpressions(markdown))
+          return fastParser.parse(prepareMarkdown(markdown))
         },
         async parseLite(markdown: string): Promise<string> {
           // Large previews still mount with the local lightweight parser, then upgrade later.
-          return liteParser.parse(protectMathExpressions(markdown))
+          return liteParser.parse(prepareMarkdown(markdown))
         },
         renderMath(html: string) {
           return renderMathExpressions(html, output)
@@ -981,18 +1074,18 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
 
     return {
       async parse(markdown: string): Promise<string> {
-        const html = await fullParser.parse(protectMathExpressions(markdown))
+        const html = await fullParser.parse(prepareMarkdown(markdown))
         return renderMathExpressions(html, output)
       },
       async parseNoMath(markdown: string): Promise<string> {
-        return noMathParser.parse(protectMathExpressions(markdown))
+        return noMathParser.parse(prepareMarkdown(markdown))
       },
       async parseFast(markdown: string): Promise<string> {
-        return fastParser.parse(protectMathExpressions(markdown))
+        return fastParser.parse(prepareMarkdown(markdown))
       },
       async parseLite(markdown: string): Promise<string> {
         // The lite path skips KaTeX/shiki so large file previews can mount before block-by-block upgrades run.
-        return liteParser.parse(protectMathExpressions(markdown))
+        return liteParser.parse(prepareMarkdown(markdown))
       },
       renderMath(html: string) {
         return renderMathExpressions(html, output)
