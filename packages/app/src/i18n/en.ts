@@ -132,6 +132,8 @@ export const dict = {
   "command.server.switch": "Switch server",
   "command.server.reloadBackend": "Reload backend",
   "command.server.reloadBackend.description": "Restart the local backend and reload config, skills, and hooks",
+  "command.app.reloadFrontend": "Reload frontend",
+  "command.app.reloadFrontend.description": "Reload the application interface",
   "config.reloadBackend.loading": "Reloading backend...",
   "command.settings.open": "Open settings",
   "command.session.previous": "Previous session",

@@ -135,6 +135,8 @@ export const dict = {
   "command.server.switch": "切换服务器",
   "command.server.reloadBackend": "重载后端",
   "command.server.reloadBackend.description": "重启本地后端，并重新加载配置、技能和 hooks",
+  "command.app.reloadFrontend": "重载前端",
+  "command.app.reloadFrontend.description": "重新加载应用界面",
   "config.reloadBackend.loading": "正在重载后端...",
 
   "command.settings.open": "打开设置",

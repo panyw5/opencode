@@ -177,7 +177,8 @@ export async function runTerminal(page: Page, input: { cmd: string; token: strin
 
 export async function openPalette(page: Page, key = "K") {
   await defocus(page)
-  await page.keyboard.press(`${modKey}+${key}`)
+  const modifier = await page.evaluate(() => (/Mac|iPod|iPhone|iPad/.test(navigator.platform) ? "Meta" : "Control"))
+  await page.keyboard.press(`${modifier}+${key}`)
 
   const dialog = page.getByRole("dialog")
   await expect(dialog).toBeVisible()

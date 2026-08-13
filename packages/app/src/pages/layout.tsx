@@ -61,7 +61,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { triggerFileFind } from "@opencode-ai/ui/pierre/file-find"
 import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
-import { DialogSessionContentSearch } from "@/components/dialog-select-file"
+import { DialogSelectFile, DialogSessionContentSearch } from "@/components/dialog-select-file"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { DialogSettings } from "@/components/dialog-settings"
 import { useCommand, type CommandOption } from "@/context/command"
@@ -1306,6 +1306,30 @@ export default function Layout(props: ParentProps) {
   command.register("layout", () => {
     const commands: CommandOption[] = [
       {
+        id: "command.palette",
+        title: language.t("command.palette"),
+        description: language.t("palette.search.commands"),
+        keywords: kw("command.palette"),
+        category: language.t("command.category.view"),
+        keybind: "mod+shift+p",
+        onSelect: (source) => {
+          console.debug(`[command-palette] open source=${source ?? "unknown"} scope=layout`)
+          dialog.show(
+            () => (
+              <DialogSelectFile
+                mode="commands"
+                defaultCommandIds={location.pathname === "/" ? ["server.reloadBackend", "app.reloadFrontend"] : undefined}
+              />
+            ),
+            undefined,
+            {
+              modal: false,
+              preventScroll: false,
+            },
+          )
+        },
+      },
+      {
         id: "sidebar.toggle",
         title: language.t("command.sidebar.toggle"),
         keywords: kw("command.sidebar.toggle"),
@@ -1407,6 +1431,21 @@ export default function Layout(props: ParentProps) {
         category: language.t("command.category.server"),
         disabled: !platform.reloadBackend || reloadingBackend(),
         onSelect: () => void reloadBackendFromCommand(),
+      },
+      {
+        id: "app.reloadFrontend",
+        title: language.t("command.app.reloadFrontend"),
+        description: language.t("command.app.reloadFrontend.description"),
+        keywords: kw("command.app.reloadFrontend", "command.app.reloadFrontend.description"),
+        category: language.t("command.category.view"),
+        onSelect: () => {
+          console.debug(`[command-palette] reload frontend platform=${platform.platform}`)
+          if (platform.runDesktopMenuAction) {
+            void platform.runDesktopMenuAction("view.reload")
+            return
+          }
+          window.location.reload()
+        },
       },
       {
         id: "settings.open",

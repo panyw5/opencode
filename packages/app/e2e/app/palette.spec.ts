@@ -4,7 +4,7 @@ import { closeDialog, openPalette } from "../actions"
 test("search palette opens and closes", async ({ page, gotoSession }) => {
   await gotoSession()
 
-  const dialog = await openPalette(page)
+  const dialog = await openPalette(page, "Shift+P")
 
   await page.keyboard.press("Escape")
   await expect(dialog).toHaveCount(0)

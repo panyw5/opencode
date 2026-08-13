@@ -21,6 +21,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { decode64 } from "@/utils/base64"
 import { getRelativeTime } from "@/utils/time"
+import { pickCommandOptions } from "./dialog-select-file-utils"
 
 type EntryType = "command" | "file" | "session" | "content"
 
@@ -136,6 +137,7 @@ const createSessionEntry = (
 function createCommandEntries(props: {
   filesOnly: () => boolean
   commandsOnly: () => boolean
+  defaultCommandIds?: () => readonly string[]
   command: ReturnType<typeof useCommand>
   language: ReturnType<typeof useLanguage>
 }) {
@@ -157,12 +159,9 @@ function createCommandEntries(props: {
 
   const picks = createMemo(() => {
     const all = allowed()
-    const order = new Map<string, number>(COMMON_COMMAND_IDS.map((id, index) => [id, index]))
-    const picked = all.filter((option) => order.has(option.id))
-    const base = picked.length ? picked : all.slice(0, ENTRY_LIMIT)
-    const sorted = picked.length ? [...base].sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)) : base
+    const ids = props.defaultCommandIds?.() ?? COMMON_COMMAND_IDS
     const category = props.language.t("palette.group.commands")
-    return sorted.map((option) => createCommandEntry(option, category))
+    return pickCommandOptions(all, ids).map((option) => createCommandEntry(option, category))
   })
 
   return { allowed, list, picks }
@@ -414,7 +413,99 @@ function createContentSearchEntries(props: {
   return { results, loading, error, index, search }
 }
 
-export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFile?: (path: string) => void }) {
+export function DialogSelectFile(props: {
+  mode?: DialogSelectFileMode
+  onOpenFile?: (path: string) => void
+  defaultCommandIds?: readonly string[]
+}) {
+  if (props.mode === "commands") return <DialogCommandPalette defaultCommandIds={props.defaultCommandIds} />
+  return <DialogSelectFileWithSessionContext mode={props.mode} onOpenFile={props.onOpenFile} />
+}
+
+function DialogCommandPalette(props: { defaultCommandIds?: readonly string[] }) {
+  const command = useCommand()
+  const language = useLanguage()
+  const dialog = useDialog()
+  const filesOnly = () => false
+  const commandsOnly = () => true
+  const commandEntries = createCommandEntries({
+    filesOnly,
+    commandsOnly,
+    defaultCommandIds: () => props.defaultCommandIds ?? COMMON_COMMAND_IDS,
+    command,
+    language,
+  })
+  const state = { cleanup: undefined as (() => void) | void, committed: false }
+  const [grouped, setGrouped] = createSignal(false)
+
+  console.debug("[command-palette] dialog mount mode=commands")
+
+  const items = (text: string) => {
+    const query = text.trim()
+    setGrouped(query.length > 0)
+    const next = query ? commandEntries.list() : commandEntries.picks()
+    if (!query) console.debug(`[command-palette] default ids=${next.map((item) => item.option?.id).join(",")}`)
+    return next
+  }
+
+  const handleMove = (item: Entry | undefined) => {
+    state.cleanup?.()
+    if (!item || item.type !== "command") return
+    state.cleanup = item.option?.onHighlight?.()
+  }
+
+  const handleSelect = (item: Entry | undefined) => {
+    if (!item || item.type !== "command") return
+    state.committed = true
+    state.cleanup = undefined
+    dialog.close()
+    item.option?.onSelect?.("palette")
+  }
+
+  onCleanup(() => {
+    if (state.committed) return
+    state.cleanup?.()
+  })
+
+  return (
+    <Dialog class="pt-4 !max-h-[480px]" transition>
+      <List
+        search={{
+          placeholder: language.t("palette.search.commands"),
+          autofocus: true,
+          hideIcon: true,
+        }}
+        emptyMessage={language.t("palette.empty")}
+        loadingMessage={language.t("common.loading")}
+        items={items}
+        key={(item) => item.id}
+        filterKeys={["title", "description", "category", "keywords"]}
+        groupBy={grouped() ? (item) => item.category : () => ""}
+        onMove={handleMove}
+        onSelect={handleSelect}
+      >
+        {(item) => (
+          <div class="w-full flex items-center justify-between gap-4">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-14-regular text-text-strong whitespace-nowrap">{item.title}</span>
+              <Show when={item.description}>
+                <span class="text-14-regular text-text-weak truncate">{item.description}</span>
+              </Show>
+            </div>
+            <Show when={item.keybind}>
+              <Keybind class="rounded-[4px]">{formatKeybind(item.keybind ?? "", language.t)}</Keybind>
+            </Show>
+          </div>
+        )}
+      </List>
+    </Dialog>
+  )
+}
+
+function DialogSelectFileWithSessionContext(props: {
+  mode?: Exclude<DialogSelectFileMode, "commands">
+  onOpenFile?: (path: string) => void
+}) {
   const command = useCommand()
   const language = useLanguage()
   const layout = useLayout()
@@ -425,10 +516,9 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   const globalSync = useGlobalSync()
   const { params, tabs, view } = useSessionLayout()
   const filesOnly = () => props.mode === "files"
-  const commandsOnly = () => props.mode === "commands"
   const state = { cleanup: undefined as (() => void) | void, committed: false }
   const [grouped, setGrouped] = createSignal(false)
-  const commandEntries = createCommandEntries({ filesOnly, commandsOnly, command, language })
+  const commandEntries = createCommandEntries({ filesOnly, commandsOnly: () => false, command, language })
   const fileEntries = createFileEntries({ file, tabs, language })
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
@@ -466,11 +556,6 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
   const items = async (text: string) => {
     const query = text.trim()
     setGrouped(query.length > 0)
-
-    if (commandsOnly()) {
-      if (!query) return commandEntries.picks()
-      return commandEntries.list()
-    }
 
     if (!query && filesOnly()) {
       const loaded = file.tree.state("")?.loaded
@@ -554,11 +639,7 @@ export function DialogSelectFile(props: { mode?: DialogSelectFileMode; onOpenFil
     <Dialog size={filesOnly() ? "large" : undefined} class="pt-4 !max-h-[480px]" transition>
       <List
         search={{
-          placeholder: commandsOnly()
-            ? language.t("palette.search.commands")
-            : filesOnly()
-              ? language.t("session.header.searchFiles")
-              : language.t("palette.search.placeholder"),
+          placeholder: filesOnly() ? language.t("session.header.searchFiles") : language.t("palette.search.placeholder"),
           autofocus: true,
           hideIcon: true,
         }}

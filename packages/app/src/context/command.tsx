@@ -371,6 +371,9 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
 
     const run = (id: string, source?: CommandSource) => {
       const option = optionMap().get(id)
+      if (id === PALETTE_ID) {
+        console.debug(`[command-palette] run source=${source ?? "unknown"} registered=${!!option}`)
+      }
       option?.onSelect?.(source)
     }
 
@@ -392,6 +395,9 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       if (editable && !isPalette && !isAllowedEditableKeybind(option?.id) && !modified && !isTab) return
 
       if (isPalette) {
+        console.debug(
+          `[command-palette] keydown key=${event.key} meta=${event.metaKey} ctrl=${event.ctrlKey} shift=${event.shiftKey} alt=${event.altKey}`,
+        )
         event.preventDefault()
         showPalette()
         return

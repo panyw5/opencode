@@ -287,18 +287,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             preventScroll: false,
           }),
       }),
-      fileCommand({
-        id: "command.palette",
-        title: language.t("command.palette"),
-        description: language.t("palette.search.commands"),
-        keywords: kw("command.palette"),
-        keybind: "mod+shift+p",
-        onSelect: () =>
-          dialog.show(() => <DialogSelectFile mode="commands" />, undefined, {
-            modal: false,
-            preventScroll: false,
-          }),
-      }),
       projectCommand({
         id: "project.copyPath",
         title: language.t("command.project.copyPath"),
