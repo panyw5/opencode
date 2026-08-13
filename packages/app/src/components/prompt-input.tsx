@@ -25,6 +25,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Select } from "@opencode-ai/ui/select"
+import { useTheme } from "@opencode-ai/ui/theme/context"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ModelSelectorPopover } from "@/components/dialog-select-model"
 import { DialogSelectModelUnpaid } from "@/components/dialog-select-model-unpaid"
@@ -409,6 +410,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const command = useCommand()
   const permission = usePermission()
   const language = useLanguage()
+  const theme = useTheme()
+  const claudeTheme = createMemo(() => theme.themeId() === "claude")
   type DictKey = keyof typeof enDict
   const kw = (...keys: DictKey[]) => (language.locale() === "en" ? undefined : keys.map((k) => enDict[k]).join(" "))
   const platform = usePlatform()
@@ -2164,7 +2167,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       tabIndex={store.mode === "normal" ? undefined : -1}
                       aria-label={language.t("prompt.action.attachFile")}
                     >
-                      <Icon name="link" class="size-5" />
+                      <Icon name={claudeTheme() ? "plus" : "link"} class="size-5" />
                     </Button>
                   </TooltipKeybind>
                   <Show when={platform.createTempMarkdownAttachment}>
@@ -2532,7 +2535,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     form={formID}
                     disabled={store.mode !== "normal" || store.submitting || (!prompt.dirty() && !working() && commentCount() === 0)}
                     tabIndex={store.mode === "normal" ? undefined : -1}
-                    icon={working() ? "stop" : store.submitting ? "arrow-sync" : "arrow-up-bold"}
+                    icon={
+                      working()
+                        ? "stop"
+                        : store.submitting
+                          ? "arrow-sync"
+                          : claudeTheme()
+                            ? "arrow-up"
+                            : "arrow-up-bold"
+                    }
                     variant="primary"
                     iconSize={working() ? "normal" : "medium"}
                     class="relative z-1 size-10 rounded-full shadow-xs-border"

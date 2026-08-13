@@ -1,0 +1,190 @@
+@font-face {
+  font-family: "Fira Code";
+  src: url("../assets/fonts/FiraCodeNerdFontMono-Regular.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Fira Code";
+  src: url("../assets/fonts/FiraCodeNerdFontMono-Bold.woff2") format("woff2");
+  font-display: swap;
+  font-style: normal;
+  font-weight: 700;
+}
+
+html[data-theme="claude"] {
+  --claude-font-family: "Fira Code", "Fira Code Nerd Font", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --claude-message-font-size: calc(var(--font-size-base) + 1px);
+  --claude-session-radius-lg: 16px;
+  --claude-session-radius-md: 10px;
+  --claude-session-radius-sm: 8px;
+  --font-family-sans: var(--claude-font-family);
+  --font-family-mono: var(--claude-font-family);
+  --font-family-sans--font-feature-settings: "calt" 1, "liga" 1;
+  --font-family-mono--font-feature-settings: "calt" 1, "liga" 1;
+}
+
+html[data-theme="claude"] [data-component="button"] {
+  border-radius: var(--claude-session-radius-sm);
+}
+
+html[data-theme="claude"] [data-component="button"][data-size="small"] {
+  height: 26px;
+  padding-inline: 9px;
+  gap: 6px;
+}
+
+html[data-theme="claude"] [data-component="button"][data-size="normal"] {
+  height: 30px;
+  padding-inline: 10px;
+  gap: 6px;
+}
+
+html[data-theme="claude"] [data-component="button"][data-size="large"] {
+  height: 34px;
+  padding: 6px 12px;
+  gap: 7px;
+}
+
+html[data-theme="claude"] [data-component="icon-button"] {
+  border-radius: var(--claude-session-radius-sm);
+}
+
+html[data-theme="claude"] [data-component="icon"] [data-slot="icon-svg"] * {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+html[data-theme="claude"] [data-component="sidebar-rail"] [data-component="icon-button"][data-size="large"] {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+html[data-theme="claude"] [data-action="project-switch"] {
+  border-radius: 12px;
+}
+
+html[data-theme="claude"] [data-component="project-rail-label"] {
+  padding: 5px 10px;
+  border-radius: 7px;
+}
+
+html[data-theme="claude"] [data-component="user-message"] {
+  font-size: var(--claude-message-font-size);
+  line-height: 1.55;
+}
+
+html[data-theme="claude"] [data-component="user-message"] [data-slot="user-message-body"],
+html[data-theme="claude"] [data-component="user-message"] [data-slot="user-message-attachments"] {
+  max-width: min(82%, 58ch);
+}
+
+html[data-theme="claude"] [data-component="user-message"] [data-slot="user-message-text"] {
+  padding: 10px 14px;
+  border-radius: var(--claude-session-radius-lg);
+  border-color: light-dark(#e8e6dc, #30302e);
+  background: light-dark(#f0eee6, #1f1e1d);
+  box-shadow:
+    inset 0 1px 0 light-dark(rgba(255, 255, 255, 0.48), rgba(255, 255, 255, 0.03)),
+    0 10px 24px -22px light-dark(rgba(48, 48, 46, 0.26), rgba(0, 0, 0, 0.48));
+}
+
+html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] {
+  font-size: var(--claude-message-font-size);
+  line-height: 1.65;
+}
+
+html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] h1 {
+  font-size: 1.32em;
+  line-height: 1.35;
+}
+
+html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] h2 {
+  font-size: 1.18em;
+  line-height: 1.4;
+}
+
+html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] h3 {
+  font-size: 1.08em;
+  line-height: 1.45;
+}
+
+html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] h1,
+html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] h2,
+html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] h3 {
+  font-weight: 700;
+  margin-top: 1.75rem;
+  margin-bottom: 0.65rem;
+}
+
+html[data-theme="claude"] [data-component="collapsible"].tool-collapsible,
+html[data-theme="claude"] [data-component="card"][data-kind="tool-error-card"],
+html[data-theme="claude"] [data-component="card"].error-card,
+html[data-theme="claude"] [data-component="bash-output"],
+html[data-theme="claude"] [data-component="diagnostics"],
+html[data-theme="claude"] [data-component="injected-prompt"],
+html[data-theme="claude"] [data-component="markdown"] .shiki,
+html[data-theme="claude"] [data-component="markdown"] img,
+html[data-theme="claude"] [data-slot="answer-image-thumbnail"] {
+  border-radius: var(--claude-session-radius-md);
+}
+
+html[data-theme="claude"] [data-component="user-message"] [data-slot="user-message-attachment"],
+html[data-theme="claude"] [data-component="user-message"] [data-slot="user-message-attachment-image"] {
+  border-radius: var(--claude-session-radius-sm);
+}
+
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-dock-surface="shell"][data-slot="prompt-shell"],
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-dock-surface="tray"] {
+  border-radius: 24px;
+}
+
+html[data-theme="claude"]
+  [data-component="session-prompt-dock"]
+  [data-dock-surface="tray"][data-dock-attach="top"] {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-slot="prompt-editor-scroll"] {
+  font-size: var(--claude-message-font-size);
+  line-height: 1.55;
+}
+
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-component="prompt-input"],
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-slot="prompt-placeholder"] {
+  font-family: var(--claude-font-family) !important;
+  font-size: var(--claude-message-font-size);
+  line-height: 1.55;
+}
+
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-slot="prompt-actions"] {
+  gap: 6px;
+}
+
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-attach"],
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-markdown-attachment"],
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-expand"] {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-submit"] {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+html[data-theme="claude"] [data-component="dropdown-menu-content"],
+html[data-theme="claude"] [data-component="dropdown-menu-sub-content"],
+html[data-theme="claude"] [data-component="context-menu-content"],
+html[data-theme="claude"] [data-component="context-menu-sub-content"],
+html[data-theme="claude"] [data-component="popover-content"],
+html[data-theme="claude"] [data-component="hover-card-content"],
+html[data-theme="claude"] [data-component="select-content"] {
+  border-radius: 10px;
+}
