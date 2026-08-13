@@ -5,5 +5,4 @@
   - SEND MESSAGES YOURSELF
   - VERIFY RECEIVED MESSAGES YOURSELF
   - ADD LOGS YOURSELF
-
-
+- **DO NOT** modify TUI in the project: all the user requests are directed ONLY towards the **electron desktop app**
