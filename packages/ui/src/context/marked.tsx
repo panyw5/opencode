@@ -648,7 +648,15 @@ function htmlTagEnd(text: string, at: number) {
   }
 
   const afterName = text[i]
-  if (afterName !== ">" && afterName !== "/" && !isHtmlTagWs(afterName)) return
+  if (afterName === ">") return i
+  // Self-closing only: <br/>. Math like $0<j/24<1$ is not a tag.
+  if (afterName === "/") {
+    i++
+    while (isHtmlTagWs(text[i])) i++
+    if (text[i] === ">") return i
+    return
+  }
+  if (!isHtmlTagWs(afterName)) return
 
   while (i < text.length) {
     const ch = text[i]

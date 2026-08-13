@@ -625,7 +625,7 @@ export function markdownCacheMode(input: {
   chunked?: boolean
   math: "full" | "defer"
 }) {
-  return ["math-protect-v7", input.highlight ?? "full", input.math ?? "full", input.chunked ? "chunked" : "plain"].join(
+  return ["math-protect-v8", input.highlight ?? "full", input.math ?? "full", input.chunked ? "chunked" : "plain"].join(
     ":",
   )
 }

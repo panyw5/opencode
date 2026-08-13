@@ -275,6 +275,29 @@ $$`
     expect(html).not.toContain("$N_")
   })
 
+  test("protects inline math that compares a variable over a number", () => {
+    const markdown = `由于 $0<j/24<1$，允许的整数是
+
+$$
+m=0,1,\\ldots,M.
+$$
+
+因此完整的主 Rademacher 扇区确实形如`
+
+    const html = protectMathExpressions(markdown)
+    const texes = [...html.matchAll(/data-opencode-math-tex="([^"]*)"/g)].map((match) =>
+      match[1]
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&#92;/g, "\\"),
+    )
+
+    expect(texes).toEqual(["0<j/24<1", "m=0,1,\\ldots,M."])
+    expect(html).not.toContain("$0<j")
+    expect(html).not.toContain("$$")
+    expect(html.match(/data-opencode-math-style="display"/g)?.length).toBe(1)
+  })
+
   test("does not swallow later math when a later greater-than exists", () => {
     const markdown = `若 $x<y$ 且 $a>0$，则 $i<n$。`
 
