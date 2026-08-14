@@ -330,6 +330,24 @@
     background-color: var(--surface-base-active);
   }
 
+  /* "+" (open file) in the file preview tab bar. Default background matches the
+     tabs-list ::after strip (--background-base) so it reads as part of the empty
+     track and stays visually distinct from the file-preview tab pills. */
+  [data-component="icon-button"].file-preview-open-button[data-variant="ghost"] {
+    background-color: var(--background-base);
+    transition:
+      background-color 140ms ease-out,
+      color 140ms ease-out;
+  }
+
+  [data-component="icon-button"].file-preview-open-button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
+    background-color: var(--surface-base-hover);
+  }
+
+  [data-component="icon-button"].file-preview-open-button[data-variant="ghost"]:active:not(:disabled) {
+    background-color: var(--surface-base-active);
+  }
+
   html[data-theme="aether"] [data-component="sidebar-session"] {
     --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
     --sidebar-session-hover-bg: light-dark(#F8E4D8, #2c2924);

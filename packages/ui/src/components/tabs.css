@@ -32,7 +32,6 @@
       display: block;
       flex-grow: 1;
       height: 100%;
-      border-bottom: 1px solid var(--border-weak-base);
       background-color: var(--background-base);
     }
 

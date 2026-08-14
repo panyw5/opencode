@@ -306,7 +306,7 @@ export function SessionSidePanel(props: {
                         <SortableProvider ids={openedTabs()}>
                           <For each={openedTabs()}>{(tab) => <SortableTab tab={tab} onTabClose={tabs().close} />}</For>
                         </SortableProvider>
-                        <div class="h-full shrink-0 flex items-center justify-center px-3">
+                        <div class="h-full shrink-0 flex items-center justify-center bg-background-base">
                           <TooltipKeybind
                             title={language.t("command.file.open")}
                             keybind={command.keybind("file.open")}
@@ -316,7 +316,7 @@ export function SessionSidePanel(props: {
                               icon="plus-small"
                               variant="ghost"
                               iconSize="large"
-                              class="!rounded-md"
+                              class="file-preview-open-button !rounded-md h-12 w-14 !aspect-auto"
                               onClick={() =>
                                 dialog.show(() => <DialogSelectFile mode="files" onOpenFile={showAllFiles} />)
                               }
