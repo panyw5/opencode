@@ -555,21 +555,36 @@ html[data-theme="arc"] [data-component="dock-prompt"][data-kind="question"] {
   }
 
   [data-slot="option-description"] {
-    color: light-dark(#5b21b6, #c084d0);
+    color: light-dark(#5b21b6, var(--text-base));
   }
 
   [data-slot="question-option"]:hover:not([data-picked="true"]) {
     background-color: light-dark(var(--color-surface-raised-base-hover), rgba(255, 255, 255, 0.06));
   }
 
+  [data-slot="question-option"]:active:not([data-picked="true"]) {
+    background-color: light-dark(#c4b5fd, rgba(192, 132, 208, 0.34));
+    border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
+
+    [data-slot="option-label"],
+    [data-slot="option-description"] {
+      color: light-dark(var(--text-strong), #ffffff);
+    }
+  }
+
   [data-slot="question-option"][data-focused="true"]:not([data-picked="true"]) {
-    background-color: light-dark(#ddd6fe, rgba(192, 132, 208, 0.15));
+    background-color: light-dark(#ddd6fe, rgba(192, 132, 208, 0.26));
     border-color: light-dark(#a78bfa, rgba(192, 132, 208, 0.4));
   }
 
   [data-slot="question-option"][data-picked="true"] {
-    background-color: light-dark(#c4b5fd, rgba(192, 132, 208, 0.22));
+    background-color: light-dark(#c4b5fd, rgba(192, 132, 208, 0.34));
     border-color: light-dark(#8b5cf6, rgba(192, 132, 208, 0.5));
+
+    [data-slot="option-label"],
+    [data-slot="option-description"] {
+      color: light-dark(var(--text-strong), #ffffff);
+    }
   }
 
   [data-slot="question-option-box"][data-picked="true"] {

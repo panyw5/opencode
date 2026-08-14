@@ -117,18 +117,31 @@ html[data-theme="aether"][data-color-scheme="dark"] [data-dock-surface="tray"] {
 /* Question options — keep Aether's dark selection state warm. */
 html[data-theme="aether"][data-color-scheme="dark"] [data-component="dock-prompt"][data-kind="question"] {
   [data-slot="question-option"]:hover:not([data-picked="true"]) {
-    background-color: rgba(217, 119, 87, 0.08);
+    background-color: rgba(217, 119, 87, 0.18);
   }
 
   [data-slot="question-option"][data-focused="true"]:not([data-picked="true"]) {
-    background-color: rgba(217, 119, 87, 0.14);
+    background-color: rgba(217, 119, 87, 0.28);
     border-color: rgba(217, 119, 87, 0.4);
   }
 
+  [data-slot="question-option"]:active:not([data-picked="true"]) {
+    background-color: rgba(217, 119, 87, 0.36);
+    border-color: rgba(217, 119, 87, 0.5);
+  }
+
   [data-slot="question-option"][data-picked="true"] {
-    background-color: rgba(217, 119, 87, 0.2);
+    background-color: rgba(217, 119, 87, 0.3);
     border-color: rgba(217, 119, 87, 0.45);
     box-shadow: none;
+
+    [data-slot="option-label"] {
+      color: var(--text-strong);
+    }
+
+    [data-slot="option-description"] {
+      color: var(--text-base);
+    }
   }
 
   [data-slot="question-option-box"][data-picked="true"] {

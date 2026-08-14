@@ -1,7 +1,7 @@
 [data-component="tabs"] {
   --tabs-bar-height: 48px;
   --tabs-compact-pill-height: 24px;
-  --tabs-compact-pill-radius: 8px;
+  --tabs-compact-pill-radius: 0;
   --tabs-compact-pill-padding-x: 8px;
 
   width: 100%;
@@ -136,7 +136,7 @@
     }
   }
 
-  #review-panel &[data-variant="normal"][data-orientation="horizontal"] {
+  #session-side-panel &[data-variant="normal"][data-orientation="horizontal"] {
     background-color: var(--background-stronger);
 
     [data-slot="tabs-list"] {
@@ -288,6 +288,11 @@
       &:hover:not(:disabled):not(:has([data-selected])) {
         color: var(--text-base);
         background-color: var(--surface-base-hover);
+      }
+
+      &:active:not(:disabled):not(:has([data-selected])) {
+        color: var(--text-strong);
+        background-color: var(--surface-base-active);
       }
 
       /*

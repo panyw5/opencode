@@ -165,6 +165,17 @@ html[data-theme="claude"] [data-component="session-prompt-dock"] [data-slot="pro
   gap: 6px;
 }
 
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-component="dock-prompt"][data-kind="question"]
+  [data-slot="question-option"][data-picked="true"] {
+  background-color: color-mix(in srgb, var(--surface-interactive-base) 82%, black);
+
+  [data-slot="option-label"],
+  [data-slot="option-description"] {
+    color: var(--text-on-interactive-base);
+  }
+}
+
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-attach"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-markdown-attachment"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-expand"] {

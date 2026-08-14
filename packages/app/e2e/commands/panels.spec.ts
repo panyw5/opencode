@@ -10,7 +10,7 @@ const expanded = async (el: { getAttribute: (name: string) => Promise<string | n
 test("review panel can be toggled via keybind", async ({ page, gotoSession }) => {
   await gotoSession()
 
-  const reviewPanel = page.locator("#review-panel")
+  const reviewPanel = page.locator("#session-side-panel")
 
   const treeToggle = page.getByRole("button", { name: "Toggle file tree" }).first()
   await expect(treeToggle).toBeVisible()
