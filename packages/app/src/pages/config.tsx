@@ -61,6 +61,8 @@ import {
   type CliAgentID,
   type CliAgentInfo,
   type ConfigWorkspace,
+  type DshPluginEntry,
+  type DshPluginInventory,
   type ExtraAgentInfo,
   type GenericagentConfig,
   type HermesConfig,
@@ -1202,6 +1204,7 @@ function cliAgentCfg(input?: CliAgentConfig & {
   provider?: string
   model?: string
   baseURL?: string
+  apiKey?: string
   hasFileApiKey?: boolean
   apiKeyEnvSet?: boolean
   baseUrlEnvSet?: boolean
@@ -1213,7 +1216,8 @@ function cliAgentCfg(input?: CliAgentConfig & {
     provider: input?.provider ?? "deepseek-official",
     model: input?.model ?? "deepseek-v4-flash",
     baseURL: input?.baseURL ?? "",
-    apiKey: "",
+    apiKey: input?.apiKey ?? "",
+    secret: true,
     clearApiKey: false,
     hasFileApiKey: input?.hasFileApiKey ?? false,
     apiKeyEnvSet: input?.apiKeyEnvSet ?? false,
@@ -2771,6 +2775,234 @@ function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAge
   )
 }
 
+function shortPluginName(name?: string, id?: string) {
+  if (name?.trim()) {
+    const parts = name.split("/")
+    return parts[parts.length - 1] || name
+  }
+  return id || ""
+}
+
+function isPluginHardDisabled(plugin: DshPluginEntry) {
+  return plugin.disabled === true
+}
+
+function isPluginConditionallyDisabled(plugin: DshPluginEntry) {
+  return typeof plugin.disabled === "string" && plugin.disabled.length > 0
+}
+
+function DshPluginInventoryCard(props: {
+  inventory?: DshPluginInventory
+  loading?: boolean
+  togglingId?: string
+  query: string
+  showDisabled: boolean
+  expandedId?: string
+  canLoad: boolean
+  canToggle: boolean
+  onQuery: (value: string) => void
+  onToggleDisabled: (value: boolean) => void
+  onExpand: (id?: string) => void
+  onLoad: () => void
+  onSetEnabled?: (id: string, enabled: boolean) => void
+}) {
+  const language = useLanguage()
+  const filtered = createMemo(() => {
+    const inventory = props.inventory
+    if (!inventory) return [] as DshPluginEntry[]
+    const query = props.query.trim().toLowerCase()
+    return inventory.plugins.filter((plugin) => {
+      if (!props.showDisabled && isPluginHardDisabled(plugin)) return false
+      if (!query) return true
+      const haystack = [plugin.id, plugin.name, plugin.source, plugin.configPreview]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+      return haystack.includes(query)
+    })
+  })
+  const enabledCount = createMemo(
+    () => props.inventory?.plugins.filter((plugin) => !isPluginHardDisabled(plugin)).length ?? 0,
+  )
+  const disabledCount = createMemo(
+    () => props.inventory?.plugins.filter((plugin) => isPluginHardDisabled(plugin)).length ?? 0,
+  )
+
+  return (
+    <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-13-medium text-text-strong">{language.t("config.claws.dsh.plugins.title")}</div>
+          <div class="mt-1 text-12-regular text-text-weak">{language.t("config.claws.dsh.plugins.description")}</div>
+        </div>
+        <Button
+          size="small"
+          variant="secondary"
+          icon="refresh"
+          disabled={!props.canLoad || props.loading}
+          onClick={props.onLoad}
+        >
+          {props.loading
+            ? language.t("config.claws.dsh.plugins.loading")
+            : language.t("config.claws.dsh.plugins.load")}
+        </Button>
+      </div>
+
+      <Show when={props.inventory || props.loading}>
+        <div class="mt-4 flex flex-wrap items-center gap-3 text-12-regular text-text-weak">
+          <span>
+            {language.t("config.claws.dsh.plugins.summary", {
+              total: String(props.inventory?.plugins.length ?? 0),
+              enabled: String(enabledCount()),
+              disabled: String(disabledCount()),
+              profile: props.inventory?.profile ?? "headless",
+            })}
+          </span>
+          <Show when={props.inventory?.sources?.length}>
+            <span>
+              {language.t("config.claws.dsh.plugins.sources", {
+                sources: (props.inventory?.sources ?? []).slice(0, 4).join(" · "),
+              })}
+            </span>
+          </Show>
+        </div>
+      </Show>
+
+      <Show when={props.inventory?.error}>
+        {(error) => <div class="mt-3 text-12-regular text-text-danger-base">{error()}</div>}
+      </Show>
+
+      <Show when={props.inventory && !props.inventory.error}>
+        <div class="mt-4 grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+          <TextField
+            type="text"
+            label={language.t("config.claws.dsh.plugins.search")}
+            description={language.t("config.claws.dsh.plugins.searchDescription")}
+            placeholder={language.t("config.claws.dsh.plugins.searchPlaceholder")}
+            value={props.query}
+            disabled={props.loading}
+            onChange={props.onQuery}
+          />
+          <label class="inline-flex items-center gap-2 pb-2 text-13-regular text-text-base">
+            <input
+              type="checkbox"
+              checked={props.showDisabled}
+              disabled={props.loading}
+              onChange={(event) => props.onToggleDisabled(event.currentTarget.checked)}
+            />
+            {language.t("config.claws.dsh.plugins.showDisabled")}
+          </label>
+        </div>
+
+        <div class="mt-4 max-h-[28rem] overflow-y-auto">
+          <Show
+            when={filtered().length > 0}
+            fallback={
+              <div class="rounded-xl border border-border-weak-base px-4 py-6 text-12-regular text-text-weak">
+                {language.t("config.claws.dsh.plugins.empty")}
+              </div>
+            }
+          >
+            <div class="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <For each={filtered()}>
+                {(plugin) => {
+                  const open = () => props.expandedId === plugin.id
+                  const hardDisabled = () => isPluginHardDisabled(plugin)
+                  const conditional = () => isPluginConditionallyDisabled(plugin)
+                  const busy = () => props.togglingId === plugin.id || props.loading
+                  const badge = () => {
+                    if (hardDisabled()) return language.t("config.claws.dsh.plugins.badge.disabled")
+                    if (conditional()) return language.t("config.claws.dsh.plugins.badge.conditional")
+                    return language.t("config.claws.dsh.plugins.badge.enabled")
+                  }
+                  return (
+                    <div
+                      class="min-w-0 overflow-hidden rounded-[10px] border border-border-weak-base bg-background-base"
+                      classList={{ "border-border-strong-base shadow-sm": open() }}
+                    >
+                      <div class="flex items-center gap-2 px-3 py-2.5">
+                        <button
+                          type="button"
+                          class="min-w-0 flex-1 text-left"
+                          onClick={() => props.onExpand(open() ? undefined : plugin.id)}
+                        >
+                          <div class="truncate text-13-medium text-text-strong" title={plugin.name || plugin.id}>
+                            {shortPluginName(plugin.name, plugin.id)}
+                          </div>
+                          <div class="mt-0.5 truncate text-11-regular text-text-weak" title={plugin.id}>
+                            {plugin.id}
+                          </div>
+                        </button>
+                        <span
+                          class="shrink-0 rounded-full px-2 py-0.5 text-11-medium"
+                          classList={{
+                            "bg-surface-secondary text-text-success-base": !hardDisabled() && !conditional(),
+                            "bg-surface-danger-base/15 text-text-danger-base": hardDisabled(),
+                            "bg-surface-secondary text-text-weak": conditional() && !hardDisabled(),
+                          }}
+                        >
+                          {badge()}
+                        </span>
+                        <Button
+                          size="small"
+                          variant="secondary"
+                          disabled={!props.canToggle || busy() || conditional()}
+                          onClick={() => props.onSetEnabled?.(plugin.id, hardDisabled())}
+                        >
+                          {busy()
+                            ? language.t("config.claws.dsh.plugins.toggling")
+                            : hardDisabled()
+                              ? language.t("config.claws.dsh.plugins.enable")
+                              : language.t("config.claws.dsh.plugins.disable")}
+                        </Button>
+                        <button
+                          type="button"
+                          class="shrink-0 text-text-weak"
+                          onClick={() => props.onExpand(open() ? undefined : plugin.id)}
+                          aria-label={open() ? "collapse" : "expand"}
+                        >
+                          <Icon name={open() ? "chevron-down" : "chevron-right"} size="small" />
+                        </button>
+                      </div>
+                      <Show when={open()}>
+                        <div class="border-t border-border-weak-base bg-surface-base px-3 py-3">
+                          <Show when={plugin.source}>
+                            <div class="mb-2 truncate text-11-regular text-text-weak">
+                              {language.t("config.claws.dsh.plugins.source", { source: plugin.source! })}
+                            </div>
+                          </Show>
+                          <Show when={plugin.name}>
+                            <div class="mb-2 break-all text-11-regular text-text-weak">{plugin.name}</div>
+                          </Show>
+                          <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                            {language.t("config.claws.dsh.plugins.config")}
+                          </div>
+                          <pre class="mt-2 overflow-x-auto whitespace-pre-wrap break-all text-12-regular text-text-base">
+                            {plugin.configPreview || language.t("config.claws.dsh.plugins.noConfig")}
+                          </pre>
+                          <Show when={conditional()}>
+                            <div class="mt-2 text-11-regular text-text-weak">
+                              {language.t("config.claws.dsh.plugins.conditionalHint")}
+                            </div>
+                          </Show>
+                        </div>
+                      </Show>
+                    </div>
+                  )
+                }}
+              </For>
+            </div>
+          </Show>
+        </div>
+      </Show>
+
+      <Show when={!props.inventory && !props.loading}>
+        <div class="mt-4 text-12-regular text-text-weak">{language.t("config.claws.dsh.plugins.hint")}</div>
+      </Show>
+    </div>
+  )
+}
+
 function CliAgentEditor(props: {
   item?: ClawItem
   descriptor: CliAgentDescriptor
@@ -2780,6 +3012,12 @@ function CliAgentEditor(props: {
   dirty: boolean
   busy: boolean
   canTest: boolean
+  plugins?: DshPluginInventory
+  pluginsLoading?: boolean
+  pluginsTogglingId?: string
+  pluginsQuery?: string
+  pluginsShowDisabled?: boolean
+  pluginsExpandedId?: string
   onChange: (
     key: "enabled" | "binaryPath" | "configHome" | "provider" | "model" | "baseURL" | "apiKey" | "clearApiKey",
     value: string | boolean,
@@ -2787,6 +3025,13 @@ function CliAgentEditor(props: {
   onSave: () => void
   onTest: () => void
   onRefresh: () => void
+  onToggleSecret?: () => void
+  onCopyApiKey?: () => void
+  onLoadPlugins?: () => void
+  onPluginsQuery?: (value: string) => void
+  onPluginsShowDisabled?: (value: boolean) => void
+  onPluginsExpand?: (id?: string) => void
+  onSetPluginEnabled?: (id: string, enabled: boolean) => void
 }) {
   const language = useLanguage()
   const settings = useSettings()
@@ -2882,19 +3127,54 @@ function CliAgentEditor(props: {
                     disabled={props.busy || props.form.saving || props.form.testing}
                     onChange={(value) => props.onChange("baseURL", value)}
                   />
-                  <TextField
-                    type="password"
-                    label={language.t("config.claws.dsh.field.apiKey")}
-                    description={language.t("config.claws.dsh.field.apiKeyDescription", { status: apiKeyStatus() })}
-                    placeholder={
-                      props.form.hasFileApiKey
-                        ? language.t("config.claws.dsh.field.apiKeyPlaceholderKeep")
-                        : language.t("config.claws.dsh.field.apiKeyPlaceholder")
-                    }
-                    value={props.form.apiKey}
-                    disabled={props.busy || props.form.saving || props.form.testing || props.form.clearApiKey}
-                    onChange={(value) => props.onChange("apiKey", value)}
-                  />
+                  <div class="space-y-2">
+                    <div class="text-12-medium text-text-weak">{language.t("config.claws.dsh.field.apiKey")}</div>
+                    <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
+                      <div class="flex items-center gap-2">
+                        <input
+                          type={props.form.secret ? "password" : "text"}
+                          placeholder={
+                            props.form.hasFileApiKey || props.form.apiKeyEnvSet
+                              ? language.t("config.claws.dsh.field.apiKeyPlaceholderKeep")
+                              : language.t("config.claws.dsh.field.apiKeyPlaceholder")
+                          }
+                          value={props.form.apiKey}
+                          disabled={props.busy || props.form.saving || props.form.testing || props.form.clearApiKey}
+                          class="min-w-0 flex-1 bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak disabled:opacity-50"
+                          onInput={(event) => props.onChange("apiKey", event.currentTarget.value)}
+                        />
+                        <IconButton
+                          type="button"
+                          icon={props.form.secret ? "eye" : "close-small"}
+                          variant="ghost"
+                          disabled={props.busy || props.form.saving || props.form.testing || props.form.clearApiKey}
+                          onClick={() => props.onToggleSecret?.()}
+                          aria-label={
+                            props.form.secret
+                              ? language.t("config.claws.dsh.field.apiKeyShow")
+                              : language.t("config.claws.dsh.field.apiKeyHide")
+                          }
+                        />
+                        <IconButton
+                          type="button"
+                          icon="copy"
+                          variant="ghost"
+                          disabled={
+                            props.busy ||
+                            props.form.saving ||
+                            props.form.testing ||
+                            props.form.clearApiKey ||
+                            !props.form.apiKey.trim()
+                          }
+                          onClick={() => props.onCopyApiKey?.()}
+                          aria-label={language.t("config.claws.dsh.field.apiKeyCopy")}
+                        />
+                      </div>
+                    </div>
+                    <div class="text-12-regular text-text-weak">
+                      {language.t("config.claws.dsh.field.apiKeyDescription", { status: apiKeyStatus() })}
+                    </div>
+                  </div>
                   <label class="inline-flex items-center gap-2 text-13-regular text-text-base">
                     <input
                       type="checkbox"
@@ -2906,6 +3186,22 @@ function CliAgentEditor(props: {
                   </label>
                 </div>
               </div>
+
+              <DshPluginInventoryCard
+                inventory={props.plugins}
+                loading={props.pluginsLoading}
+                togglingId={props.pluginsTogglingId}
+                query={props.pluginsQuery ?? ""}
+                showDisabled={props.pluginsShowDisabled ?? true}
+                expandedId={props.pluginsExpandedId}
+                canLoad={!!props.onLoadPlugins}
+                canToggle={!!props.onSetPluginEnabled}
+                onQuery={(value) => props.onPluginsQuery?.(value)}
+                onToggleDisabled={(value) => props.onPluginsShowDisabled?.(value)}
+                onExpand={(id) => props.onPluginsExpand?.(id)}
+                onLoad={() => props.onLoadPlugins?.()}
+                onSetEnabled={(id, enabled) => props.onSetPluginEnabled?.(id, enabled)}
+              />
             </Show>
 
             <div class="flex w-full flex-wrap items-center justify-end gap-2">
@@ -3163,6 +3459,7 @@ function CustomEditor(props: {
   onDelete: () => void
   onCreate: () => void
   onSecret: () => void
+  onCopyApiKey?: () => void
   onAddFetchedModel: (id: string, name: string) => void
 }) {
   const language = useLanguage()
@@ -3291,7 +3588,7 @@ function CustomEditor(props: {
               />
             </div>
 
-            <div class="space-y-2">
+              <div class="space-y-2">
               <div class="text-12-medium text-text-weak">{language.t("config.custom.field.apiKey")}</div>
               <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
                 <div class="flex items-center gap-2">
@@ -3308,6 +3605,14 @@ function CustomEditor(props: {
                     variant="ghost"
                     onClick={props.onSecret}
                     aria-label={props.form.secret ? "Show API key" : "Hide API key"}
+                  />
+                  <IconButton
+                    type="button"
+                    icon="copy"
+                    variant="ghost"
+                    disabled={!props.form.apiKey.trim()}
+                    onClick={props.onCopyApiKey}
+                    aria-label={language.t("config.custom.field.apiKeyCopy")}
                   />
                 </div>
               </div>
@@ -3915,10 +4220,19 @@ export default function ConfigPage() {
   const [cliAgentConfigs, setCliAgentConfigs] = createStore<Partial<Record<CliAgentID, CliAgentConfig>>>({})
   const [cliAgentInfo, setCliAgentInfo] = createStore<Partial<Record<CliAgentID, CliAgentInfo>>>({})
   const [cliAgentLoading, setCliAgentLoading] = createStore<Partial<Record<CliAgentID, { config: boolean; info: boolean }>>>({})
+  const [dshPlugins, setDshPlugins] = createStore({
+    inventory: undefined as DshPluginInventory | undefined,
+    loading: false,
+    togglingId: undefined as string | undefined,
+    query: "",
+    showDisabled: true,
+    expandedId: undefined as string | undefined,
+  })
   let openclawConfigRun = 0
   let genericagentConfigRun = 0
   let hermesConfigRun = 0
   let cliAgentsRun = 0
+  let dshPluginsRun = 0
   const cliAgentInfoRuns: Partial<Record<CliAgentID, number>> = {}
 
   createEffect(
@@ -4039,8 +4353,15 @@ export default function ConfigPage() {
                   setState("cliAgents", id, "hasFileApiKey", info.dsh.hasFileApiKey)
                   setState("cliAgents", id, "apiKeyEnvSet", info.dsh.apiKeyEnvSet)
                   setState("cliAgents", id, "baseUrlEnvSet", info.dsh.baseUrlEnvSet)
-                  setState("cliAgents", id, "apiKey", "")
                   setState("cliAgents", id, "clearApiKey", false)
+                  setState("cliAgents", id, "secret", true)
+                  if (cliAgents.getDshApiKey) {
+                    const key = await cliAgents.getDshApiKey(config).catch(() => undefined)
+                    if (run !== cliAgentsRun || infoRun !== cliAgentInfoRuns[id]) return
+                    setState("cliAgents", id, "apiKey", key ?? "")
+                  } else {
+                    setState("cliAgents", id, "apiKey", "")
+                  }
                 }
                 setCliAgentLoading(id, "info", false)
               }),
@@ -6316,8 +6637,15 @@ export default function ConfigPage() {
         setState("cliAgents", id, "hasFileApiKey", info.dsh.hasFileApiKey)
         setState("cliAgents", id, "apiKeyEnvSet", info.dsh.apiKeyEnvSet)
         setState("cliAgents", id, "baseUrlEnvSet", info.dsh.baseUrlEnvSet)
-        setState("cliAgents", id, "apiKey", "")
         setState("cliAgents", id, "clearApiKey", false)
+        setState("cliAgents", id, "secret", true)
+        if (platform.cliAgents.getDshApiKey) {
+          const key = await platform.cliAgents.getDshApiKey(cliAgentInput(id)).catch(() => undefined)
+          if (run !== cliAgentInfoRuns[id]) return
+          setState("cliAgents", id, "apiKey", key ?? "")
+        } else {
+          setState("cliAgents", id, "apiKey", "")
+        }
       }
     } catch (error) {
       if (run !== cliAgentInfoRuns[id]) return
@@ -6325,6 +6653,98 @@ export default function ConfigPage() {
       showToast({ title: language.t("common.requestFailed"), description: message })
     } finally {
       if (run === cliAgentInfoRuns[id]) setCliAgentLoading(id, "info", false)
+    }
+  }
+
+  function toggleDshSecret() {
+    if (!state.cliAgents.dsh) setState("cliAgents", "dsh", cliAgentCfg())
+    setState("cliAgents", "dsh", "secret", (value) => !value)
+  }
+
+  async function copyDshApiKey() {
+    const value = state.cliAgents.dsh?.apiKey?.trim()
+    if (!value) return
+    try {
+      await navigator.clipboard.writeText(value)
+      showToast({ variant: "success", title: language.t("session.share.copy.copied") })
+    } catch (error) {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  async function copyCustomApiKey() {
+    const value = state.custom.apiKey?.trim()
+    if (!value) return
+    try {
+      await navigator.clipboard.writeText(value)
+      showToast({ variant: "success", title: language.t("session.share.copy.copied") })
+    } catch (error) {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  async function loadDshPlugins() {
+    if (!platform.cliAgents?.listDshPlugins) return
+    const run = ++dshPluginsRun
+    setDshPlugins("loading", true)
+    try {
+      const inventory = await platform.cliAgents.listDshPlugins(cliAgentInput("dsh"), "headless")
+      if (run !== dshPluginsRun) return
+      setDshPlugins("inventory", inventory)
+      setDshPlugins("expandedId", undefined)
+      if (inventory.error) {
+        showToast({ title: language.t("common.requestFailed"), description: inventory.error })
+      }
+    } catch (error) {
+      if (run !== dshPluginsRun) return
+      const message = error instanceof Error ? error.message : String(error)
+      setDshPlugins("inventory", {
+        profile: "headless",
+        checkedAt: Date.now(),
+        plugins: [],
+        sources: [],
+        error: message,
+      })
+      showToast({ title: language.t("common.requestFailed"), description: message })
+    } finally {
+      if (run === dshPluginsRun) setDshPlugins("loading", false)
+    }
+  }
+
+  async function setDshPluginEnabled(id: string, enabled: boolean) {
+    if (!platform.cliAgents?.setDshPluginEnabled) return
+    setDshPlugins("togglingId", id)
+    try {
+      const inventory = await platform.cliAgents.setDshPluginEnabled(cliAgentInput("dsh"), {
+        profile: dshPlugins.inventory?.profile || "headless",
+        id,
+        enabled,
+      })
+      setDshPlugins("inventory", inventory)
+      if (inventory.error) {
+        showToast({ title: language.t("common.requestFailed"), description: inventory.error })
+        return
+      }
+      showToast({
+        variant: "success",
+        title: enabled
+          ? language.t("config.claws.dsh.plugins.enabledToast")
+          : language.t("config.claws.dsh.plugins.disabledToast"),
+        description: id,
+      })
+    } catch (error) {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setDshPlugins("togglingId", undefined)
     }
   }
 
@@ -8080,6 +8500,7 @@ export default function ConfigPage() {
                     onDelete={() => void deleteCustom()}
                     onCreate={createCustomProvider}
                     onSecret={toggleCustomSecret}
+                    onCopyApiKey={() => void copyCustomApiKey()}
                     onAddFetchedModel={addFetchedCustomModel}
                   />
                 </Show>
@@ -8136,10 +8557,37 @@ export default function ConfigPage() {
                           dirty={cliAgentDirty(descriptor().id)}
                           busy={cliAgentLoading[descriptor().id]?.config ?? false}
                           canTest={!!platform.cliAgents}
+                          plugins={descriptor().id === "dsh" ? dshPlugins.inventory : undefined}
+                          pluginsLoading={descriptor().id === "dsh" ? dshPlugins.loading : false}
+                          pluginsTogglingId={descriptor().id === "dsh" ? dshPlugins.togglingId : undefined}
+                          pluginsQuery={descriptor().id === "dsh" ? dshPlugins.query : ""}
+                          pluginsShowDisabled={descriptor().id === "dsh" ? dshPlugins.showDisabled : true}
+                          pluginsExpandedId={descriptor().id === "dsh" ? dshPlugins.expandedId : undefined}
                           onChange={(key, value) => setCliAgent(descriptor().id, key, value)}
                           onSave={() => void saveCliAgent(descriptor().id)}
                           onTest={() => void testCliAgent(descriptor().id)}
                           onRefresh={() => void refreshCliAgentInfo(descriptor().id)}
+                          onToggleSecret={descriptor().id === "dsh" ? () => toggleDshSecret() : undefined}
+                          onCopyApiKey={descriptor().id === "dsh" ? () => void copyDshApiKey() : undefined}
+                          onLoadPlugins={
+                            descriptor().id === "dsh" && platform.cliAgents?.listDshPlugins
+                              ? () => void loadDshPlugins()
+                              : undefined
+                          }
+                          onPluginsQuery={
+                            descriptor().id === "dsh" ? (value) => setDshPlugins("query", value) : undefined
+                          }
+                          onPluginsShowDisabled={
+                            descriptor().id === "dsh" ? (value) => setDshPlugins("showDisabled", value) : undefined
+                          }
+                          onPluginsExpand={
+                            descriptor().id === "dsh" ? (id) => setDshPlugins("expandedId", id) : undefined
+                          }
+                          onSetPluginEnabled={
+                            descriptor().id === "dsh" && platform.cliAgents?.setDshPluginEnabled
+                              ? (id, enabled) => void setDshPluginEnabled(id, enabled)
+                              : undefined
+                          }
                         />
                       )}
                     </Match>
