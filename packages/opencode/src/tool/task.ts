@@ -2,7 +2,6 @@ import * as Tool from "./tool"
 import DESCRIPTION from "./task.txt"
 import { ToolJsonSchema } from "./json-schema"
 import { BackgroundJob } from "@/background/job"
-import { Bus } from "@/bus"
 import { Session } from "@/session/session"
 import { SessionID, MessageID } from "../session/schema"
 import { MessageV2 } from "../session/message-v2"
@@ -11,7 +10,6 @@ import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
 import { SessionStatus } from "@/session/status"
 import { Config } from "@/config/config"
-import { TuiEvent } from "@/cli/cmd/tui/event"
 import { Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -108,7 +106,6 @@ export const TaskTool = Tool.define(
   Effect.gen(function* () {
     const agent = yield* Agent.Service
     const background = yield* BackgroundJob.Service
-    const bus = yield* Bus.Service
     const config = yield* Config.Service
     const sessions = yield* Session.Service
     const scope = yield* Scope.Scope
@@ -274,15 +271,6 @@ export const TaskTool = Tool.define(
             yield* Effect.sleep("300 millis")
             return yield* resumeWhenIdle(input)
           }
-          yield* bus.publish(TuiEvent.ToastShow, {
-            title: input.state === "completed" ? "Background task complete" : "Background task failed",
-            message:
-              input.state === "completed"
-                ? `Background task "${params.description}" finished. Resuming the main thread.`
-                : `Background task "${params.description}" failed. Resuming the main thread.`,
-            variant: input.state === "completed" ? "success" : "error",
-            duration: 5000,
-          })
           yield* ops
             .loop({ sessionID: ctx.sessionID })
             .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))

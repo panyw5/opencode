@@ -20,7 +20,6 @@ import { SessionApi } from "./groups/session"
 import { ScheduledTaskApi } from "./groups/scheduled-task"
 import { ProjectTaskApi } from "./groups/project-task"
 import { SyncApi } from "./groups/sync"
-import { TuiApi } from "./groups/tui"
 import { WorkspaceApi } from "./groups/workspace"
 import { V2Api } from "./groups/v2"
 import { Authorization } from "./middleware/authorization"
@@ -53,7 +52,6 @@ export const InstanceHttpApi = HttpApi.make("opencode-instance")
   .addHttpApi(ProjectTaskApi)
   .addHttpApi(SyncApi)
   .addHttpApi(V2Api)
-  .addHttpApi(TuiApi)
   .addHttpApi(WorkspaceApi)
   .middleware(SchemaErrorMiddleware)
 

@@ -45,7 +45,6 @@ function normalize(text: string): string {
 const TOP_LEVEL = [
   "acp",
   "mcp",
-  "attach",
   "run",
   "debug",
   "providers", // aliased to `auth`
@@ -61,8 +60,10 @@ const TOP_LEVEL = [
   "github",
   "pr",
   "session",
-  "plugin",
+  "desktop",
   "db",
+  "openclaw-serve",
+  "extra-agent-serve",
 ] as const
 
 // Subcommands worth pinning. Not exhaustive — the goal is one snapshot per

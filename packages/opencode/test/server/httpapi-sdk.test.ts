@@ -7,7 +7,6 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
-import { validateSession } from "../../src/cli/cmd/tui/validate-session"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
@@ -437,24 +436,6 @@ describe("HttpApi SDK", () => {
     ),
   )
 
-  serverPathParity("formats missing session validation errors for -s", (serverPath) =>
-    withStandardProject(serverPath, ({ directory }) =>
-      Effect.gen(function* () {
-        const sessionID = "ses_206f84f18ffeZ6hhD7pFYAiW5T"
-        const thrown = yield* captureThrown(() =>
-          validateSession({
-            url: "http://localhost",
-            directory,
-            sessionID,
-            fetch: serverFetch(serverPath),
-          }),
-        )
-        expect(errorMessage(thrown)).toBe(`Session not found: ${sessionID}`)
-        return errorMessage(thrown)
-      }),
-    ),
-  )
-
   httpapiInstance(
     "uses generated SDK basic auth behavior",
     { serverPath: "raw", setup: writeStandardFiles },
@@ -800,57 +781,6 @@ describe("HttpApi SDK", () => {
         expect(session.status).toBe(200)
         expect(prompt.status).toBe(200)
         expect(JSON.stringify(inputs[0])).toContain("project-rest-skill")
-      }),
-    ),
-  )
-
-  serverPathParity("matches generated SDK TUI validation and command routes", (serverPath) =>
-    withStandardProject(serverPath, ({ sdk }) =>
-      Effect.gen(function* () {
-        const session = yield* capture(() => sdk.session.create({ title: "tui" }))
-        const sessionID = String(record(session.data).id)
-        const appendPrompt = yield* capture(() => sdk.tui.appendPrompt({ text: "hello" }))
-        const openHelp = yield* capture(() => sdk.tui.openHelp())
-        const openSessions = yield* capture(() => sdk.tui.openSessions())
-        const openThemes = yield* capture(() => sdk.tui.openThemes())
-        const openModels = yield* capture(() => sdk.tui.openModels())
-        const submitPrompt = yield* capture(() => sdk.tui.submitPrompt())
-        const clearPrompt = yield* capture(() => sdk.tui.clearPrompt())
-        const executeCommand = yield* capture(() => sdk.tui.executeCommand({ command: "session_new" }))
-        const showToast = yield* capture(() => sdk.tui.showToast({ title: "SDK", message: "hello", variant: "info" }))
-        const selectSession = yield* capture(() => sdk.tui.selectSession({ sessionID }))
-        const missingSession = yield* capture(() => sdk.tui.selectSession({ sessionID: "ses_missing" }))
-        const invalidSession = yield* capture(() => sdk.tui.selectSession({ sessionID: "invalid_session_id" }))
-
-        return {
-          statuses: statuses({
-            session,
-            appendPrompt,
-            openHelp,
-            openSessions,
-            openThemes,
-            openModels,
-            submitPrompt,
-            clearPrompt,
-            executeCommand,
-            showToast,
-            selectSession,
-            missingSession,
-            invalidSession,
-          }),
-          data: {
-            appendPrompt: appendPrompt.data,
-            openHelp: openHelp.data,
-            openSessions: openSessions.data,
-            openThemes: openThemes.data,
-            openModels: openModels.data,
-            submitPrompt: submitPrompt.data,
-            clearPrompt: clearPrompt.data,
-            executeCommand: executeCommand.data,
-            showToast: showToast.data,
-            selectSession: selectSession.data,
-          },
-        }
       }),
     ),
   )

@@ -3,21 +3,17 @@
   "extends": "@tsconfig/bun/tsconfig.json",
   "compilerOptions": {
     "jsx": "preserve",
-    "jsxImportSource": "@opentui/solid",
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "types": [],
     "noUncheckedIndexedAccess": false,
     "customConditions": ["browser"],
     "paths": {
       "@/*": ["./src/*"],
-      "@tui/*": ["./src/cli/cmd/tui/*"],
       "@test/*": ["./test/*"]
     }
   },
   "exclude": [
     "test",
-    "src/config/migrate-tui-config.ts",
-    "src/config/tui-schema.ts",
     "src/effect/instance-context.ts",
     "src/file/time.ts",
     "src/filesystem/index.ts",

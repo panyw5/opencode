@@ -1386,63 +1386,6 @@ const scenarios: Scenario[] = [
       "status",
     ),
   http.protected
-    .post("/tui/append-prompt", "tui.appendPrompt")
-    .at((ctx) => ({ path: "/tui/append-prompt", headers: ctx.headers(), body: { text: "hello" } }))
-    .json(200, boolean, "status"),
-  http.protected
-    .post("/tui/select-session", "tui.selectSession.invalid")
-    .at((ctx) => ({ path: "/tui/select-session", headers: ctx.headers(), body: { sessionID: "invalid" } }))
-    .status(400),
-  http.protected.post("/tui/open-help", "tui.openHelp").json(200, boolean, "status"),
-  http.protected.post("/tui/open-sessions", "tui.openSessions").json(200, boolean, "status"),
-  http.protected.post("/tui/open-themes", "tui.openThemes").json(200, boolean, "status"),
-  http.protected.post("/tui/open-models", "tui.openModels").json(200, boolean, "status"),
-  http.protected.post("/tui/submit-prompt", "tui.submitPrompt").json(200, boolean, "status"),
-  http.protected.post("/tui/clear-prompt", "tui.clearPrompt").json(200, boolean, "status"),
-  http.protected
-    .post("/tui/execute-command", "tui.executeCommand")
-    .at((ctx) => ({ path: "/tui/execute-command", headers: ctx.headers(), body: { command: "agent_cycle" } }))
-    .json(200, boolean, "status"),
-  http.protected
-    .post("/tui/show-toast", "tui.showToast")
-    .at((ctx) => ({
-      path: "/tui/show-toast",
-      headers: ctx.headers(),
-      body: { title: "Exercise", message: "covered", variant: "info", duration: 1000 },
-    }))
-    .json(200, boolean, "status"),
-  http.protected
-    .post("/tui/publish", "tui.publish")
-    .at((ctx) => ({
-      path: "/tui/publish",
-      headers: ctx.headers(),
-      body: { type: "tui.prompt.append", properties: { text: "published" } },
-    }))
-    .json(200, boolean, "status"),
-  http.protected
-    .post("/tui/select-session", "tui.selectSession")
-    .seeded((ctx) => ctx.session({ title: "TUI select" }))
-    .at((ctx) => ({ path: "/tui/select-session", headers: ctx.headers(), body: { sessionID: ctx.state.id } }))
-    .json(200, boolean, "status"),
-  http.protected
-    .post("/tui/control/response", "tui.control.response")
-    .at((ctx) => ({ path: "/tui/control/response", headers: ctx.headers(), body: { ok: true } }))
-    .json(200, boolean, "status"),
-  http.protected
-    .get("/tui/control/next", "tui.control.next")
-    .mutating()
-    .seeded((ctx) => ctx.tuiRequest({ path: "/tui/exercise", body: { text: "queued" } }))
-    .json(
-      200,
-      (body) => {
-        object(body)
-        check(body.path === "/tui/exercise", "control next should return queued path")
-        object(body.body)
-        check(body.body.text === "queued", "control next should return queued body")
-      },
-      "status",
-    ),
-  http.protected
     .post("/global/upgrade", "global.upgrade")
     .global()
     .probe({ path: "/global/upgrade", body: { target: 1 } })

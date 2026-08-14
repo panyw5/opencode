@@ -77,7 +77,6 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { Question } from "@/question"
 import { LLMEvent } from "@opencode-ai/llm"
-import { TuiEvent } from "@/cli/cmd/tui/event"
 import { isScheduledSessionTitle, markScheduledSessionTitle } from "@/scheduled-task/title"
 
 // @ts-ignore
@@ -2133,15 +2132,6 @@ export const layer = Layer.effect(
         yield* Effect.sleep("300 millis")
         return yield* resumeWhenIdle(input)
       }
-      yield* bus.publish(TuiEvent.ToastShow, {
-        title: input.state === "completed" ? "Background shell complete" : "Background shell failed",
-        message:
-          input.state === "completed"
-            ? `Background shell "${input.description}" finished. Resuming the main thread.`
-            : `Background shell "${input.description}" failed. Resuming the main thread.`,
-        variant: input.state === "completed" ? "success" : "error",
-        duration: 5000,
-      })
       yield* loop({ sessionID: input.sessionID }).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
     })
 

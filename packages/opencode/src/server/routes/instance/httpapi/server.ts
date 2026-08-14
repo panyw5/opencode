@@ -83,7 +83,6 @@ import { sessionHandlers } from "./handlers/session"
 import { scheduledTaskHandlers } from "./handlers/scheduled-task"
 import { projectTaskHandlers } from "./handlers/project-task"
 import { syncHandlers } from "./handlers/sync"
-import { tuiHandlers } from "./handlers/tui"
 import { v2Handlers } from "./handlers/v2"
 import { workspaceHandlers } from "./handlers/workspace"
 import { instanceContextLayer, instanceRouterMiddleware } from "./middleware/instance-context"
@@ -149,7 +148,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     projectTaskHandlers,
     syncHandlers,
     v2Handlers,
-    tuiHandlers,
     workspaceHandlers,
   ]),
 )

@@ -5,20 +5,21 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 start ACP (Agent Client Protocol) server
 
-Options:
-  -h, --help         show help                                                             [boolean]
-  -v, --version      show version number                                                   [boolean]
-      --print-logs   print logs to stderr                                                  [boolean]
-      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure         run without external plugins                                          [boolean]
-      --port         port to listen on                                         [number] [default: 0]
-      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
+选项：
+  -h, --help         show help                                                                [布尔]
+  -v, --version      show version number                                                      [布尔]
+      --print-logs   print logs to stderr                                                     [布尔]
+      --log-level    log level                   [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                             [布尔]
+      --port         port to listen on                                            [数字] [默认值: 0]
+      --hostname     hostname to listen on                            [字符串] [默认值: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
-                                                                          [boolean] [default: false]
+                                                                              [布尔] [默认值: false]
       --mdns-domain  custom domain name for mDNS service (default: opencode.local)
-                                                                [string] [default: "opencode.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]
-      --cwd          working directory [string] [default: "<HOME>"]"
+                                                                 [字符串] [默认值: "opencode.local"]
+      --cors         additional domains to allow for CORS                        [数组] [默认值: []]
+      --cwd          working directory
+         [字符串] [默认值: "<HOME>"]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp --help 1`] = `
@@ -26,41 +27,19 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 manage MCP (Model Context Protocol) servers
 
-Commands:
+命令：
   opencode mcp add            add an MCP server
   opencode mcp list           list MCP servers and their status                        [aliases: ls]
   opencode mcp auth [name]    authenticate with an OAuth-enabled MCP server
   opencode mcp logout [name]  remove OAuth credentials for an MCP server
   opencode mcp debug <name>   debug OAuth connection for an MCP server
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
-`;
-
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode attach --help 1`] = `
-"opencode attach <url>
-
-attach to a running opencode server
-
-Positionals:
-  url  http://localhost:4096                                                     [string] [required]
-
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --dir         directory to run in                                                     [string]
-  -c, --continue    continue the last session                                              [boolean]
-  -s, --session     session id to continue                                                  [string]
-      --fork        fork the session when continuing (use with --continue or --session)    [boolean]
-  -p, --password    basic auth password (defaults to OPENCODE_SERVER_PASSWORD)              [string]
-  -u, --username    basic auth username (defaults to OPENCODE_SERVER_USERNAME or 'opencode')[string]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode run --help 1`] = `
@@ -68,51 +47,43 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 run opencode with a message
 
-Positionals:
-  message  message to send                                                     [array] [default: []]
+位置：
+  message  message to send                                                       [数组] [默认值: []]
 
-Options:
-  -h, --help                          show help                                            [boolean]
-  -v, --version                       show version number                                  [boolean]
-      --print-logs                    print logs to stderr                                 [boolean]
-      --log-level                     log level [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure                          run without external plugins                         [boolean]
-      --command                       the command to run, use message for args              [string]
-  -c, --continue                      continue the last session                            [boolean]
-  -s, --session                       session id to continue                                [string]
+选项：
+  -h, --help                          show help                                               [布尔]
+  -v, --version                       show version number                                     [布尔]
+      --print-logs                    print logs to stderr                                    [布尔]
+      --log-level                     log level  [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure                          run without external plugins                            [布尔]
+      --command                       the command to run, use message for args              [字符串]
+  -c, --continue                      continue the last session                               [布尔]
+  -s, --session                       session id to continue                                [字符串]
       --fork                          fork the session before continuing (requires --continue or
-                                      --session)                                           [boolean]
-      --share                         share the session                                    [boolean]
-  -m, --model                         model to use in the format of provider/model          [string]
-      --agent                         agent to use                                          [string]
+                                      --session)                                              [布尔]
+      --share                         share the session                                       [布尔]
+  -m, --model                         model to use in the format of provider/model          [字符串]
+      --agent                         agent to use                                          [字符串]
       --format                        format: default (formatted) or json (raw JSON events)
-                                          [string] [choices: "default", "json"] [default: "default"]
-  -f, --file                          file(s) to attach to message                           [array]
+                                            [字符串] [可选值: "default", "json"] [默认值: "default"]
+  -f, --file                          file(s) to attach to message                            [数组]
       --title                         title for the session (uses truncated prompt if no value
-                                      provided)                                             [string]
+                                      provided)                                             [字符串]
       --attach                        attach to a running opencode server (e.g.,
-                                      http://localhost:4096)                                [string]
+                                      http://localhost:4096)                                [字符串]
   -p, --password                      basic auth password (defaults to OPENCODE_SERVER_PASSWORD)
-                                                                                            [string]
+                                                                                            [字符串]
   -u, --username                      basic auth username (defaults to OPENCODE_SERVER_USERNAME or
-                                      'opencode')                                           [string]
+                                      'opencode')                                           [字符串]
       --dir                           directory to run in, path on remote server if attaching
-                                                                                            [string]
+                                                                                            [字符串]
       --port                          port for the local server (defaults to random port if no value
-                                      provided)                                             [number]
+                                      provided)                                               [数字]
       --variant                       model variant (provider-specific reasoning effort, e.g., high,
-                                      max, minimal)                                         [string]
-      --thinking                      show thinking blocks                                 [boolean]
-      --replay                        replay visible session history on interactive resume
-                                                                          [boolean] [default: false]
-      --replay-limit                  cap visible interactive replay to the newest N messages
-                                                                                            [number]
-  -i, --interactive                   run in direct interactive split-footer mode
-                                                                          [boolean] [default: false]
+                                      max, minimal)                                         [字符串]
+      --thinking                      show thinking blocks                                    [布尔]
       --dangerously-skip-permissions  auto-approve permissions that are not explicitly denied
-                                      (dangerous!)                        [boolean] [default: false]
-      --demo                          enable direct interactive demo slash commands; pass one as the
-                                      message to run it immediately       [boolean] [default: false]"
+                                      (dangerous!)                            [布尔] [默认值: false]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode debug --help 1`] = `
@@ -120,7 +91,7 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 debugging and troubleshooting tools
 
-Commands:
+命令：
   opencode debug config        show resolved configuration
   opencode debug lsp           LSP debugging utilities
   opencode debug rg            ripgrep debugging utilities
@@ -135,12 +106,12 @@ Commands:
   opencode debug paths         show global paths (data, config, cache, state)
   opencode debug wait          wait indefinitely (for debugging)
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers --help 1`] = `
@@ -148,17 +119,17 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 manage AI providers and credentials
 
-Commands:
+命令：
   opencode providers list         list providers and credentials                       [aliases: ls]
   opencode providers login [url]  log in to a provider
   opencode providers logout       log out from a configured provider
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent --help 1`] = `
@@ -166,16 +137,16 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 manage agents
 
-Commands:
+命令：
   opencode agent create  create a new agent
   opencode agent list    list all available agents
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode upgrade --help 1`] = `
@@ -183,17 +154,17 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 upgrade opencode to the latest or a specific version
 
-Positionals:
-  target  version to upgrade to, for ex '0.1.48' or 'v0.1.48'                               [string]
+位置：
+  target  version to upgrade to, for ex '0.1.48' or 'v0.1.48'                               [字符串]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]
   -m, --method      installation method to use
-                          [string] [choices: "curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"]"
+                           [字符串] [可选值: "curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode uninstall --help 1`] = `
@@ -201,16 +172,16 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 uninstall opencode and remove all related files
 
-Options:
-  -h, --help         show help                                                             [boolean]
-  -v, --version      show version number                                                   [boolean]
-      --print-logs   print logs to stderr                                                  [boolean]
-      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure         run without external plugins                                          [boolean]
-  -c, --keep-config  keep configuration files                             [boolean] [default: false]
-  -d, --keep-data    keep session data and snapshots                      [boolean] [default: false]
-      --dry-run      show what would be removed without removing          [boolean] [default: false]
-  -f, --force        skip confirmation prompts                            [boolean] [default: false]"
+选项：
+  -h, --help         show help                                                                [布尔]
+  -v, --version      show version number                                                      [布尔]
+      --print-logs   print logs to stderr                                                     [布尔]
+      --log-level    log level                   [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                             [布尔]
+  -c, --keep-config  keep configuration files                                 [布尔] [默认值: false]
+  -d, --keep-data    keep session data and snapshots                          [布尔] [默认值: false]
+      --dry-run      show what would be removed without removing              [布尔] [默认值: false]
+  -f, --force        skip confirmation prompts                                [布尔] [默认值: false]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode serve --help 1`] = `
@@ -218,19 +189,19 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 starts a headless opencode server
 
-Options:
-  -h, --help         show help                                                             [boolean]
-  -v, --version      show version number                                                   [boolean]
-      --print-logs   print logs to stderr                                                  [boolean]
-      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure         run without external plugins                                          [boolean]
-      --port         port to listen on                                         [number] [default: 0]
-      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
+选项：
+  -h, --help         show help                                                                [布尔]
+  -v, --version      show version number                                                      [布尔]
+      --print-logs   print logs to stderr                                                     [布尔]
+      --log-level    log level                   [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                             [布尔]
+      --port         port to listen on                                            [数字] [默认值: 0]
+      --hostname     hostname to listen on                            [字符串] [默认值: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
-                                                                          [boolean] [default: false]
+                                                                              [布尔] [默认值: false]
       --mdns-domain  custom domain name for mDNS service (default: opencode.local)
-                                                                [string] [default: "opencode.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]"
+                                                                 [字符串] [默认值: "opencode.local"]
+      --cors         additional domains to allow for CORS                        [数组] [默认值: []]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode web --help 1`] = `
@@ -238,19 +209,19 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 start opencode server and open web interface
 
-Options:
-  -h, --help         show help                                                             [boolean]
-  -v, --version      show version number                                                   [boolean]
-      --print-logs   print logs to stderr                                                  [boolean]
-      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure         run without external plugins                                          [boolean]
-      --port         port to listen on                                         [number] [default: 0]
-      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
+选项：
+  -h, --help         show help                                                                [布尔]
+  -v, --version      show version number                                                      [布尔]
+      --print-logs   print logs to stderr                                                     [布尔]
+      --log-level    log level                   [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                             [布尔]
+      --port         port to listen on                                            [数字] [默认值: 0]
+      --hostname     hostname to listen on                            [字符串] [默认值: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
-                                                                          [boolean] [default: false]
+                                                                              [布尔] [默认值: false]
       --mdns-domain  custom domain name for mDNS service (default: opencode.local)
-                                                                [string] [default: "opencode.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]"
+                                                                 [字符串] [默认值: "opencode.local"]
+      --cors         additional domains to allow for CORS                        [数组] [默认值: []]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode models --help 1`] = `
@@ -258,17 +229,17 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 list all available models
 
-Positionals:
-  provider  provider ID to filter models by                                                 [string]
+位置：
+  provider  provider ID to filter models by                                                 [字符串]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --verbose     use more verbose model output (includes metadata like costs)           [boolean]
-      --refresh     refresh the models cache from models.dev                               [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]
+      --verbose     use more verbose model output (includes metadata like costs)              [布尔]
+      --refresh     refresh the models cache from models.dev                                  [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode stats --help 1`] = `
@@ -276,17 +247,17 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 show token usage and cost statistics
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --days        show stats for the last N days (default: all time)                      [number]
-      --tools       number of tools to show (default: all)                                  [number]
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]
+      --days        show stats for the last N days (default: all time)                        [数字]
+      --tools       number of tools to show (default: all)                                    [数字]
       --models      show model statistics (default: hidden). Pass a number to show top N, otherwise
                     shows all
-      --project     filter by project (default: all projects, empty string: current project)[string]"
+      --project     filter by project (default: all projects, empty string: current project)[字符串]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode export --help 1`] = `
@@ -294,16 +265,16 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 export session data as JSON
 
-Positionals:
-  sessionID  session id to export                                                           [string]
+位置：
+  sessionID  session id to export                                                           [字符串]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --sanitize    redact sensitive transcript and file data                              [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]
+      --sanitize    redact sensitive transcript and file data                                 [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode import --help 1`] = `
@@ -311,15 +282,15 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 import session data from JSON file or URL
 
-Positionals:
-  file  path to JSON file or share URL                                           [string] [required]
+位置：
+  file  path to JSON file or share URL                                               [字符串] [必需]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github --help 1`] = `
@@ -327,16 +298,16 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 manage GitHub agent
 
-Commands:
+命令：
   opencode github install  install the GitHub agent
   opencode github run      run the GitHub agent
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode pr --help 1`] = `
@@ -344,15 +315,15 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 fetch and checkout a GitHub PR branch, then run opencode
 
-Positionals:
-  number  PR number to checkout                                                  [number] [required]
+位置：
+  number  PR number to checkout                                                        [数字] [必需]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session --help 1`] = `
@@ -360,34 +331,32 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 manage sessions
 
-Commands:
+命令：
   opencode session list                list sessions
   opencode session delete <sessionID>  delete a session
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode plugin --help 1`] = `
-"opencode plugin <module>
+exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode desktop --help 1`] = `
+"opencode desktop [directory]
 
-install plugin and update config
+open OpenCode desktop app with specified directory
 
-Positionals:
-  module  npm module name                                                        [string] [required]
+位置：
+  directory  directory to open (defaults to current directory)                [字符串] [默认值: "."]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-  -g, --global      install in global config                              [boolean] [default: false]
-  -f, --force       replace existing plugin version                       [boolean] [default: false]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db --help 1`] = `
@@ -395,21 +364,68 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 database tools
 
-Commands:
-  opencode db [query]     open an interactive sqlite3 shell or run a query                 [default]
+命令：
+  opencode db [query]     open an interactive sqlite3 shell or run a query                  [默认值]
   opencode db path        print the database path
   opencode db migrate     migrate JSON data to SQLite (merges with existing data)
 
-Positionals:
-  query  SQL query to execute                                                               [string]
+位置：
+  query  SQL query to execute                                                               [字符串]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --format      Output format                 [string] [choices: "json", "tsv"] [default: "tsv"]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]
+      --format      Output format                   [字符串] [可选值: "json", "tsv"] [默认值: "tsv"]"
+`;
+
+exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode openclaw-serve --help 1`] = `
+"opencode openclaw-serve
+
+start an OpenClaw gateway adapter server
+
+选项：
+  -h, --help           show help                                                              [布尔]
+  -v, --version        show version number                                                    [布尔]
+      --print-logs     print logs to stderr                                                   [布尔]
+      --log-level      log level                 [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure           run without external plugins                                           [布尔]
+      --port           port to listen on                                          [数字] [默认值: 0]
+      --hostname       hostname to listen on                          [字符串] [默认值: "127.0.0.1"]
+      --mdns           enable mDNS service discovery (defaults hostname to 0.0.0.0)
+                                                                              [布尔] [默认值: false]
+      --mdns-domain    custom domain name for mDNS service (default: opencode.local)
+                                                                 [字符串] [默认值: "opencode.local"]
+      --cors           additional domains to allow for CORS                      [数组] [默认值: []]
+      --gateway-url    OpenClaw gateway websocket or http url                               [字符串]
+      --gateway-host   OpenClaw gateway host                          [字符串] [默认值: "127.0.0.1"]
+      --gateway-port   OpenClaw gateway port                                  [数字] [默认值: 18789]
+      --gateway-token  OpenClaw gateway token                                               [字符串]"
+`;
+
+exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode extra-agent-serve --help 1`] = `
+"opencode extra-agent-serve
+
+start an extra-agent bridge server by id
+
+选项：
+  -h, --help         show help                                                                [布尔]
+  -v, --version      show version number                                                      [布尔]
+      --print-logs   print logs to stderr                                                     [布尔]
+      --log-level    log level                   [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                             [布尔]
+      --port         port to listen on                                            [数字] [默认值: 0]
+      --hostname     hostname to listen on                            [字符串] [默认值: "127.0.0.1"]
+      --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
+                                                                              [布尔] [默认值: false]
+      --mdns-domain  custom domain name for mDNS service (default: opencode.local)
+                                                                 [字符串] [默认值: "opencode.local"]
+      --cors         additional domains to allow for CORS                        [数组] [默认值: []]
+      --id           extra-agent id (e.g. openclaw, genericagent)                    [字符串] [必需]
+      --config       JSON-encoded bridge config (agent-specific, e.g. '{"gatewayUrl":"ws://..."}')
+                                                                                            [字符串]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp list --help 1`] = `
@@ -417,12 +433,12 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 list MCP servers and their status
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp add --help 1`] = `
@@ -430,12 +446,12 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 add an MCP server
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp auth --help 1`] = `
@@ -443,18 +459,18 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 authenticate with an OAuth-enabled MCP server
 
-Commands:
+命令：
   opencode mcp auth list  list OAuth-capable MCP servers and their auth status         [aliases: ls]
 
-Positionals:
-  name  name of the MCP server                                                              [string]
+位置：
+  name  name of the MCP server                                                              [字符串]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp logout --help 1`] = `
@@ -462,15 +478,15 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 remove OAuth credentials for an MCP server
 
-Positionals:
-  name  name of the MCP server                                                              [string]
+位置：
+  name  name of the MCP server                                                              [字符串]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers list --help 1`] = `
@@ -478,12 +494,12 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 list providers and credentials
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers login --help 1`] = `
@@ -491,17 +507,17 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 log in to a provider
 
-Positionals:
-  url  opencode auth provider                                                               [string]
+位置：
+  url  opencode auth provider                                                               [字符串]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-  -p, --provider    provider id or name to log in to (skips provider selection)             [string]
-  -m, --method      login method label (skips method selection)                             [string]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]
+  -p, --provider    provider id or name to log in to (skips provider selection)             [字符串]
+  -m, --method      login method label (skips method selection)                             [字符串]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers logout --help 1`] = `
@@ -509,12 +525,12 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 log out from a configured provider
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent create --help 1`] = `
@@ -522,19 +538,19 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 create a new agent
 
-Options:
-  -h, --help                  show help                                                    [boolean]
-  -v, --version               show version number                                          [boolean]
-      --print-logs            print logs to stderr                                         [boolean]
-      --log-level             log level         [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure                  run without external plugins                                 [boolean]
-      --path                  directory path to generate the agent file                     [string]
-      --description           what the agent should do                                      [string]
-      --mode                  agent mode            [string] [choices: "all", "primary", "subagent"]
+选项：
+  -h, --help                  show help                                                       [布尔]
+  -v, --version               show version number                                             [布尔]
+      --print-logs            print logs to stderr                                            [布尔]
+      --log-level             log level          [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure                  run without external plugins                                    [布尔]
+      --path                  directory path to generate the agent file                     [字符串]
+      --description           what the agent should do                                      [字符串]
+      --mode                  agent mode             [字符串] [可选值: "all", "primary", "subagent"]
       --permissions, --tools  comma-separated list of permissions to allow (default: all).
                               Available: "bash, read, edit, glob, grep, webfetch, task, todowrite,
-                              websearch, lsp, skill"                                        [string]
-  -m, --model                 model to use in the format of provider/model                  [string]"
+                              websearch, lsp, skill"                                        [字符串]
+  -m, --model                 model to use in the format of provider/model                  [字符串]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent list --help 1`] = `
@@ -542,12 +558,12 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 list all available agents
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session list --help 1`] = `
@@ -555,14 +571,14 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 list sessions
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-  -n, --max-count   limit to N most recent sessions                                         [number]
-      --format      output format             [string] [choices: "table", "json"] [default: "table"]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]
+  -n, --max-count   limit to N most recent sessions                                           [数字]
+      --format      output format               [字符串] [可选值: "table", "json"] [默认值: "table"]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session delete --help 1`] = `
@@ -570,15 +586,15 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 delete a session
 
-Positionals:
-  sessionID  session ID to delete                                                [string] [required]
+位置：
+  sessionID  session ID to delete                                                    [字符串] [必需]
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github install --help 1`] = `
@@ -586,12 +602,12 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 install the GitHub agent
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github run --help 1`] = `
@@ -599,14 +615,14 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 run the GitHub agent
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --event       GitHub mock event to run the agent for                                  [string]
-      --token       GitHub personal access token (github_pat_********)                      [string]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]
+      --event       GitHub mock event to run the agent for                                  [字符串]
+      --token       GitHub personal access token (github_pat_********)                      [字符串]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db path --help 1`] = `
@@ -614,10 +630,10 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 
 print the database path
 
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+选项：
+  -h, --help        show help                                                                 [布尔]
+  -v, --version     show version number                                                       [布尔]
+      --print-logs  print logs to stderr                                                      [布尔]
+      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                              [布尔]"
 `;
