@@ -62,8 +62,11 @@ import {
   getCliAgent,
   getCliAgentInfo,
   getDshHome,
+  getDshStoredApiKey,
+  listDshPluginInventory,
   setCliAgent,
   setDshHome,
+  setDshPluginEnabledState,
   testCliAgent,
 } from "./cli-agents"
 
@@ -307,6 +310,13 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("cli-agents-info", (_event: IpcMainInvokeEvent, id, config) => getCliAgentInfo(id, config))
   ipcMain.handle("cli-agents-dsh-home-get", (_event: IpcMainInvokeEvent, config) => getDshHome(config))
   ipcMain.handle("cli-agents-dsh-home-set", (_event: IpcMainInvokeEvent, config, update) => setDshHome(config, update))
+  ipcMain.handle("cli-agents-dsh-api-key-get", (_event: IpcMainInvokeEvent, config) => getDshStoredApiKey(config))
+  ipcMain.handle("cli-agents-dsh-plugins-list", (_event: IpcMainInvokeEvent, config, profile) =>
+    listDshPluginInventory(config, profile),
+  )
+  ipcMain.handle("cli-agents-dsh-plugin-set-enabled", (_event: IpcMainInvokeEvent, config, input) =>
+    setDshPluginEnabledState(config, input),
+  )
   ipcMain.handle("list-extra-agent-servers", () => listExtraAgentServers())
   ipcMain.handle("restart-extra-agent", (_event: IpcMainInvokeEvent, id) => restartExtraAgent(id))
   ipcMain.handle("get-extra-agent-info", (_event: IpcMainInvokeEvent, id, config) => getExtraAgentInfo(id, config))

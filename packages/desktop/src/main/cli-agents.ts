@@ -1,9 +1,24 @@
-import type { CliAgentConfig, CliAgentDescriptor, CliAgentID, CliAgentInfo, CliAgentTest } from "../preload/types"
+import type {
+  CliAgentConfig,
+  CliAgentDescriptor,
+  CliAgentID,
+  CliAgentInfo,
+  CliAgentTest,
+  DshHomeUpdate,
+  DshPluginInventory,
+} from "../preload/types"
 import { getCliAgentConfig, setCliAgentConfig } from "./native"
 import { getClaudeInfo, testClaudeConfig } from "./claude-status"
 import { getCodexInfo, testCodexConfig } from "./codex-status"
-import { getDshHomeConfig, getDshInfo, setDshHomeConfig, testDshConfig } from "./dsh-status"
-import type { DshHomeUpdate } from "../preload/types"
+import {
+  getDshApiKey,
+  getDshHomeConfig,
+  getDshInfo,
+  listDshPlugins,
+  setDshHomeConfig,
+  setDshPluginEnabled,
+  testDshConfig,
+} from "./dsh-status"
 import { getGrokInfo, testGrokConfig } from "./grok-status"
 
 type CliAgentDefinition = {
@@ -85,6 +100,21 @@ export function getDshHome(config?: CliAgentConfig) {
   return getDshHomeConfig(config)
 }
 
+export function getDshStoredApiKey(config?: CliAgentConfig) {
+  return getDshApiKey(config)
+}
+
 export function setDshHome(config: CliAgentConfig, update: DshHomeUpdate) {
   return setDshHomeConfig(config, update)
+}
+
+export function listDshPluginInventory(config?: CliAgentConfig, profile?: string): Promise<DshPluginInventory> {
+  return listDshPlugins(config, profile)
+}
+
+export function setDshPluginEnabledState(
+  config: CliAgentConfig | undefined,
+  input: { profile?: string; id: string; enabled: boolean },
+): Promise<DshPluginInventory> {
+  return setDshPluginEnabled(config, input)
 }

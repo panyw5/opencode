@@ -116,6 +116,22 @@ export async function writeDshModelSelection(
   await chmod(settingsPath, 0o600).catch(() => undefined)
 }
 
+/** Read DEEPSEEK_API_KEY from ~/.dsh/.credentials.yaml, falling back to process env. */
+export async function readDshApiKey(configHome?: string): Promise<string | undefined> {
+  const home = resolveDshHomePath(configHome)
+  const credentialsPath = join(home, ".credentials.yaml")
+  try {
+    const text = await readFile(credentialsPath, "utf8")
+    const map = parseCredentialsYaml(text)
+    const fileKey = map.get(DSH_API_KEY_REF)?.trim()
+    if (fileKey) return fileKey
+  } catch {
+    // missing or unreadable credentials file
+  }
+  const envKey = process.env.DEEPSEEK_API_KEY?.trim()
+  return envKey || undefined
+}
+
 export async function writeDshApiKey(configHome: string | undefined, apiKey: string): Promise<void> {
   const key = apiKey.trim()
   if (!key) throw new Error("API key must be non-empty")

@@ -153,6 +153,25 @@ export type DshHomeUpdate = {
   clearApiKey?: boolean
 }
 
+/** One plugin row from `dsh --profile <name> --dump-config`. */
+export type DshPluginEntry = {
+  id: string
+  name?: string
+  source?: string
+  disabled?: boolean | string
+  configPreview?: string
+}
+
+/** Result of listing the composed dsh plugin tree. */
+export type DshPluginInventory = {
+  profile: string
+  checkedAt: number
+  binaryPath?: string
+  plugins: DshPluginEntry[]
+  sources: string[]
+  error?: string
+}
+
 export type CliAgentTest = {
   ok: boolean
   logs: string[]
@@ -206,6 +225,15 @@ export type CliAgentsAPI = {
   getDshHome?: (config?: CliAgentConfig) => Promise<DshHomeConfig>
   /** Write provider/model and optional API key into ~/.dsh. */
   setDshHome?: (config: CliAgentConfig, update: DshHomeUpdate) => Promise<DshHomeConfig>
+  /** Read the stored DEEPSEEK_API_KEY (file, else env) for display/copy. */
+  getDshApiKey?: (config?: CliAgentConfig) => Promise<string | undefined>
+  /** List composed plugins via `dsh --profile <name> --dump-config`. */
+  listDshPlugins?: (config?: CliAgentConfig, profile?: string) => Promise<DshPluginInventory>
+  /** Enable/disable a plugin via the profile cordis.patch.yml. */
+  setDshPluginEnabled?: (
+    config: CliAgentConfig | undefined,
+    input: { profile?: string; id: string; enabled: boolean },
+  ) => Promise<DshPluginInventory>
 }
 
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
