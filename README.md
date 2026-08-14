@@ -18,6 +18,7 @@
   <img width="450" height="128" alt="image" src="https://github.com/NousResearch/hermes-agent/raw/main/assets/banner.png" />
 </p>
 
+<img src="image/README/1786703087225.png" width="100%" />
 
 <p align="center">
   <img src="image/README/1786602375333.png" width="32%" />
