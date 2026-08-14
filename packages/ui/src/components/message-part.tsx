@@ -3687,7 +3687,9 @@ function CodexSessionDialog(props: {
     working: props.running,
     overflowAnchor: "dynamic",
   })
-  const advisorBusy = () =>
+  // Send is blocked while the advisor is working or a message is already queued.
+  // The text field stays editable so the user can draft the next follow-up.
+  const sendBlocked = () =>
     intervention()?.busy === true || intervention()?.queued === true || interventionQueued() || interventionRequesting()
   const messages = () => {
     const server = props.messages()
@@ -3696,6 +3698,8 @@ function CodexSessionDialog(props: {
     )
     return [...server, ...local]
   }
+
+  const clearLocalQueued = () => setInterventionQueued(false)
 
   const requestIntervention = async (action: "start" | "message" | "finish") => {
     const sessionID = props.sessionID?.()
@@ -3728,17 +3732,20 @@ function CodexSessionDialog(props: {
           },
         ])
         setInterventionDraft("")
+        // Optimistic send-lock only until server metadata reflects busy/queued/waiting.
         setInterventionQueued(true)
       }
       if (action === "finish") {
         setInterventionActive(false)
-        setInterventionQueued(false)
+        clearLocalQueued()
       }
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       setInterventionError(message)
       if (action === "start") setInterventionActive(false)
+      // Never leave send permanently locked after a failed request.
+      clearLocalQueued()
       showToast({
         variant: "error",
         title: i18n.t("ui.tool.advisor.intervention.failed"),
@@ -3752,13 +3759,22 @@ function CodexSessionDialog(props: {
 
   const submitIntervention = (event: SubmitEvent) => {
     event.preventDefault()
-    if (!interventionDraft().trim() || advisorBusy() || !activeIntervention()) return
+    if (!interventionDraft().trim() || sendBlocked() || !activeIntervention()) return
     void requestIntervention("message")
   }
 
   createEffect(() => {
     const current = intervention()
-    if (!current?.queued || current.waitingForInput || current.busy) setInterventionQueued(false)
+    if (!current) return
+    // Drop optimistic lock once the server is processing, ready for input, or no longer queued.
+    if (current.busy || current.waitingForInput || current.queued !== true) clearLocalQueued()
+  })
+
+  // Safety net: never leave send permanently locked if metadata stalls.
+  createEffect(() => {
+    if (!interventionQueued()) return
+    const timer = setTimeout(() => clearLocalQueued(), 2_000)
+    return () => clearTimeout(timer)
   })
 
   return (
@@ -3858,7 +3874,7 @@ function CodexSessionDialog(props: {
                   type="button"
                   size="small"
                   variant="secondary"
-                  disabled={advisorBusy() || !props.running()}
+                  disabled={sendBlocked() || !props.running()}
                   onClick={() => void requestIntervention("start")}
                 >
                   {i18n.t("ui.tool.advisor.intervene")}
@@ -3872,7 +3888,6 @@ function CodexSessionDialog(props: {
                   value={interventionDraft()}
                   onChange={setInterventionDraft}
                   placeholder={i18n.t("ui.tool.advisor.intervention.placeholder")}
-                  disabled={advisorBusy()}
                 />
                 <div data-slot="codex-intervention-actions">
                   <IconButton
@@ -3882,18 +3897,18 @@ function CodexSessionDialog(props: {
                     size="large"
                     variant="primary"
                     aria-label={i18n.t("ui.tool.advisor.intervention.send")}
-                    disabled={!interventionDraft().trim() || advisorBusy() || !activeIntervention()}
+                    disabled={!interventionDraft().trim() || sendBlocked() || !activeIntervention()}
                   />
-                  <IconButton
+                  <Button
                     data-slot="codex-intervention-finish"
                     type="button"
-                    icon="close"
-                    size="large"
+                    size="small"
                     variant="secondary"
-                    aria-label={i18n.t("ui.tool.advisor.intervention.finish")}
                     disabled={interventionRequesting()}
                     onClick={() => void requestIntervention("finish")}
-                  />
+                  >
+                    {i18n.t("ui.tool.advisor.intervention.finish")}
+                  </Button>
                 </div>
               </form>
             </Show>
@@ -4293,7 +4308,7 @@ ToolRegistry.register({
           model={() => undefined}
           sandbox={() => profile()}
           sessionID={() => props.part?.sessionID}
-          intervention={() => undefined}
+          intervention={() => props.metadata.intervention}
           running={() => props.status === "pending" || props.status === "running"}
           messages={() =>
             codexChatMessages(

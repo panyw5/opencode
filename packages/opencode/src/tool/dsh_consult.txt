@@ -1,6 +1,7 @@
 - Consult DeepSeek Harness (dsh) as an external coding advisor via the local `dsh` CLI
-- Spawns a one-shot headless agent: `dsh --profile headless "<prompt>"`
+- Spawns a one-shot agent: `dsh --profile <profile> [--patch <file>...] "<prompt>"` (profile defaults to headless)
 - Returns the final assistant text on stdout (no streaming JSON transcript)
+- Supports mid-session user intervention in the desktop advisor dialog (follow-ups re-run with prior transcript context, same profile and patches)
 - Use when you want an independent DeepSeek Harness judgment without making it the primary executor
 
 When to use:
@@ -11,11 +12,13 @@ When to use:
 When NOT to use:
   - Simple file reads/searches you can do with read/grep/glob
   - When the user did not ask for external consultation and local tools suffice
-  - When you need mid-turn intervention streaming (dsh headless is one-shot only)
 
 Usage notes:
   - Provide a self-contained prompt: goal, relevant absolute paths, constraints, and desired output format
   - dsh starts cold — it cannot see this conversation unless you put the context in `prompt`
   - Defaults to the current project directory; optional `working_directory` overrides cwd
+  - `profile` selects the dsh plugin composition to boot (default "headless"); a custom profile changes which model adapters, tools, presets, and bundles mount
+  - `patch` accepts inline `cordis.patch.yml` YAML content (or a list) applied via `dsh --patch` after the profile layer, to override model/tools/persona/presets per consult without touching ~/.dsh
   - Requires `dsh` on PATH (`npm i -g @deepseek-ai/dsh`) and `DEEPSEEK_API_KEY` (or credentials under ~/.dsh)
-  - Headless dsh is a full coding agent; prefer analysis-scoped prompts unless the user wants implementation
+  - dsh is a full coding agent; prefer analysis-scoped prompts unless the user wants implementation
+  - Desktop intervention keeps the tool call open after the first answer; follow-ups are new runs with replayed history

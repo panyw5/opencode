@@ -324,7 +324,7 @@ exports[`tool parameters JSON Schema (wire shape) task 1`] = `
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
     "background": {
-      "description": "When true, launch the subagent in the background and return immediately",
+      "description": "Run the agent in the background. You will be notified when it completes. DO NOT sleep, poll, or proactively check on its progress",
       "type": "boolean",
     },
     "command": {
@@ -621,6 +621,24 @@ exports[`tool parameters JSON Schema (wire shape) dsh_consult 1`] = `
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "properties": {
+    "patch": {
+      "anyOf": [
+        {
+          "type": "string",
+        },
+        {
+          "items": {
+            "type": "string",
+          },
+          "type": "array",
+        },
+      ],
+      "description": "Inline cordis.patch.yml YAML content (or a list of such). Each entry is written to a temp file and applied via \`dsh --patch <file>\` after the profile layer, so this consult can dynamically override model, tools, persona, presets, or other config rows at boot without touching ~/.dsh. Entries layer in the order given. A patch that fails to apply fails the consult with the dsh error.",
+    },
+    "profile": {
+      "description": "dsh profile to boot (default "headless"). A profile is a named plugin composition; a custom profile changes which model adapters, tools, presets, and bundles mount for this consult. Must be a single token (no whitespace).",
+      "type": "string",
+    },
     "prompt": {
       "description": "Self-contained consultation prompt for DeepSeek Harness (dsh). Include goal, absolute paths, constraints, and the exact form of answer you need. dsh cannot see this conversation.",
       "type": "string",

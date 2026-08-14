@@ -645,7 +645,7 @@ export const layer = Layer.effect(
       } satisfies MessageV2.TextPart)
     })
 
-    /** Run @codex/@claude/@grok consults directly against the local CLI (no main-agent tool hop). */
+    /** Run @codex/@claude/@grok/@dsh consults directly against the local CLI (no main-agent tool hop). */
     const handleConsultMentions = Effect.fn("SessionPrompt.handleConsultMentions")(function* (input: {
       names: string[]
       model: Provider.Model
@@ -1485,7 +1485,7 @@ export const layer = Layer.effect(
         }
 
         if (part.type === "agent") {
-          // @codex/@claude/@grok are executed directly as consult tools (see handleConsultMentions).
+          // @codex/@claude/@grok/@dsh are executed directly as consult tools (see handleConsultMentions).
           // Do not inject task-tool synthetic text for reserved consult names.
           if (isConsultMention(part.name)) {
             return [{ ...part, messageID: info.id, sessionID: input.sessionID }]

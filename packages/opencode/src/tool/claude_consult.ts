@@ -7,7 +7,7 @@ import DESCRIPTION from "./claude_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
-import { registerAdvisorIntervention } from "./advisor-intervention"
+import { holdForIntervention, registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.claude_consult" })
@@ -511,7 +511,10 @@ export const ClaudeConsultTool = Tool.define(
             throw new Error("Claude returned an empty response")
           }
 
-          while (intervention?.isActive()) {
+          // Hold the tool open so the desktop dialog can still start intervention
+          // after the first answer lands (entry would otherwise be closed already).
+          const started = yield* Effect.promise(() => holdForIntervention(intervention, ctx.abort))
+          while (started && intervention?.isActive()) {
             const command = yield* Effect.promise(() => intervention.wait(ctx.abort))
             if (command.type === "abort") throw new Error("Claude consultation was aborted")
             if (command.type !== "message") break
@@ -526,15 +529,20 @@ export const ClaudeConsultTool = Tool.define(
             })
             intervention.setBusy(true)
             const messageCount = live.agentMessages.length
-            const next = yield* runProcess(
-              buildClaudeResumeArgs({
-                sessionId,
-                prompt: command.message,
-                workingDirectory,
-                model: params.model,
-              }),
-            )
-            intervention.setBusy(false)
+            let next: { exit: { kind: string; code: number | null }; stdout: string; stderr: string }
+            try {
+              next = yield* runProcess(
+                buildClaudeResumeArgs({
+                  sessionId,
+                  prompt: command.message,
+                  workingDirectory,
+                  model: params.model,
+                }),
+              )
+            } finally {
+              intervention.setBusy(false)
+              yield* publishMetadata(true)
+            }
             if (next.exit.kind === "abort") throw new Error("Claude consultation was aborted")
             if (next.exit.kind === "timeout") throw new Error(`Claude consultation timed out after ${timeoutMs}ms`)
             const nextParsed = parseClaudeJsonl(next.stdout)
@@ -543,8 +551,28 @@ export const ClaudeConsultTool = Tool.define(
               (live.agentMessages.slice(messageCount).at(-1) ?? nextParsed.finalResponse)?.trim() ||
               stripAnsi(next.stdout).trim() ||
               stripAnsi(next.stderr).trim()
-            if (nextError && !nextBody) throw new Error(`Claude failed: ${nextError}`)
-            if (!nextBody) throw new Error("Claude returned an empty response")
+            if (nextError && !nextBody) {
+              upsertTranscript(live, {
+                id: `intervention-error:${Date.now()}`,
+                kind: "error",
+                title: "Error",
+                text: clip(`Claude failed: ${nextError}`, MAX_TRANSCRIPT_TEXT),
+                status: "error",
+              })
+              yield* publishMetadata(true)
+              continue
+            }
+            if (!nextBody) {
+              upsertTranscript(live, {
+                id: `intervention-error:${Date.now()}`,
+                kind: "error",
+                title: "Error",
+                text: "Claude returned an empty response",
+                status: "error",
+              })
+              yield* publishMetadata(true)
+              continue
+            }
             if (!live.agentMessages.includes(nextBody)) live.agentMessages.push(nextBody)
             live.preview = nextBody
             if (

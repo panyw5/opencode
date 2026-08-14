@@ -1801,7 +1801,7 @@ describe("session.message-v2.latest", () => {
     expect(state.tasks[0]).toMatchObject({ type: "compaction", auto: true })
   })
 
-  test("reserved @codex/@claude/@grok agent parts surface as consult tasks", () => {
+  test("reserved @codex/@claude/@grok/@dsh agent parts surface as consult tasks", () => {
     const consultUser: MessageV2.WithParts = {
       info: userInfo(CONTINUE_USER),
       parts: [
@@ -1826,5 +1826,26 @@ describe("session.message-v2.latest", () => {
     const state = MessageV2.latest([consultUser])
     expect(state.user?.id).toBe(CONTINUE_USER)
     expect(state.tasks).toEqual([{ type: "consult", name: "codex" }])
+  })
+
+  test("reserved @dsh agent part surfaces as consult task", () => {
+    const consultUser: MessageV2.WithParts = {
+      info: userInfo(CONTINUE_USER),
+      parts: [
+        {
+          ...basePart(CONTINUE_USER, "t1"),
+          type: "text",
+          text: "second opinion",
+        },
+        {
+          ...basePart(CONTINUE_USER, "a1"),
+          type: "agent",
+          name: "dsh",
+        },
+      ] as MessageV2.Part[],
+    }
+
+    const state = MessageV2.latest([consultUser])
+    expect(state.tasks).toEqual([{ type: "consult", name: "dsh" }])
   })
 })

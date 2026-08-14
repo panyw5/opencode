@@ -7,7 +7,7 @@ import DESCRIPTION from "./grok_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
-import { registerAdvisorIntervention } from "./advisor-intervention"
+import { holdForIntervention, registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.grok_consult" })
@@ -361,21 +361,39 @@ export const GrokConsultTool = Tool.define(
           }
           if (!body) throw new Error("Grok Build returned an empty response")
 
+          // Hold the tool open so the desktop dialog can still start intervention
+          // after the first answer lands (entry would otherwise be closed already).
+          const started = yield* Effect.promise(() => holdForIntervention(intervention, ctx.abort))
           const activeIntervention = intervention
-          while (activeIntervention?.isActive()) {
+          while (started && activeIntervention?.isActive()) {
             const command = yield* Effect.promise(() => activeIntervention.wait(ctx.abort))
             if (command.type === "abort") throw new Error("Grok Build consultation was aborted")
             if (command.type !== "message") break
             if (!sessionId) throw new Error("Grok Build did not return a session id for intervention")
             upsertTranscript(live, { id: `intervention-user:${Date.now()}`, kind: "user", title: "User", text: command.message, status: "completed" })
             activeIntervention.setBusy(true)
-            result = yield* runProcess(buildGrokResumeArgs({ sessionId, prompt: command.message, workingDirectory, model: params.model }))
-            activeIntervention.setBusy(false)
+            try {
+              result = yield* runProcess(buildGrokResumeArgs({ sessionId, prompt: command.message, workingDirectory, model: params.model }))
+            } finally {
+              activeIntervention.setBusy(false)
+              yield* publishMetadata(true)
+            }
             if (result.exit.kind === "abort") throw new Error("Grok Build consultation was aborted")
             if (result.exit.kind === "timeout") throw new Error(`Grok Build consultation timed out after ${timeoutMs}ms`)
             const next = parseGrokJsonl(result.stdout)
-            body = live.assistantText.trim() || next.finalResponse || stripAnsi(result.stdout).trim() || stripAnsi(result.stderr).trim()
-            if (!body) throw new Error("Grok Build returned an empty response")
+            const nextBody = live.assistantText.trim() || next.finalResponse || stripAnsi(result.stdout).trim() || stripAnsi(result.stderr).trim()
+            if (!nextBody) {
+              upsertTranscript(live, {
+                id: `intervention-error:${Date.now()}`,
+                kind: "error",
+                title: "Error",
+                text: "Grok Build returned an empty response",
+                status: "error",
+              })
+              yield* publishMetadata(true)
+              continue
+            }
+            body = nextBody
             sessionId = live.sessionId ?? next.sessionId ?? sessionId
             yield* publishMetadata(true)
           }

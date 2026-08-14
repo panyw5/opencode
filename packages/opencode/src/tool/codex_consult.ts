@@ -7,7 +7,7 @@ import DESCRIPTION from "./codex_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
-import { registerAdvisorIntervention } from "./advisor-intervention"
+import { holdForIntervention, registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.codex_consult" })
@@ -97,6 +97,12 @@ export type CodexLiveState = {
   agentMessages: string[]
   transcript: CodexTranscriptItem[]
   preview?: string
+  /**
+   * Monotonic counter for each process run. `codex exec resume --json` restarts
+   * item ids at item_0 for every turn, so without a run prefix a follow-up
+   * turn's items would overwrite (not append) the first turn's transcript rows.
+   */
+  runSeq?: number
 }
 
 /** Build argv for a read-only one-shot `codex exec` (shared with tests). */
@@ -144,6 +150,11 @@ export function createCodexLiveState(): CodexLiveState {
   return { agentMessages: [], transcript: [] }
 }
 
+/** Namespace transcript ids per process run so resume turns never clobber prior rows. */
+export function codexSeqId(state: Pick<CodexLiveState, "runSeq">, id: string): string {
+  return state.runSeq ? `${state.runSeq}:${id}` : id
+}
+
 /** Apply one `codex exec --json` JSONL event into live state (for streaming + final parse). */
 export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boolean {
   const line = rawLine.trim()
@@ -163,7 +174,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
     if (state.threadId !== e.thread_id) {
       state.threadId = e.thread_id
       upsertTranscript(state, {
-        id: `thread:${e.thread_id}`,
+        id: codexSeqId(state, `thread:${e.thread_id}`),
         kind: "status",
         title: "Thread started",
         text: e.thread_id,
@@ -175,7 +186,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
 
   if (type === "turn.started") {
     upsertTranscript(state, {
-      id: `turn-start:${state.transcript.length}`,
+      id: codexSeqId(state, `turn-start:${state.transcript.length}`),
       kind: "status",
       title: "Turn started",
     })
@@ -197,7 +208,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
       state.agentMessages.push(text)
       state.preview = text
       upsertTranscript(state, {
-        id: `turn-message:${state.transcript.length}`,
+        id: codexSeqId(state, `turn-message:${state.transcript.length}`),
         kind: "message",
         title: "Assistant",
         text: clip(text, MAX_TRANSCRIPT_TEXT),
@@ -205,7 +216,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
       })
     }
     upsertTranscript(state, {
-      id: `turn-complete:${state.transcript.length}`,
+      id: codexSeqId(state, `turn-complete:${state.transcript.length}`),
       kind: "status",
       title: "Turn completed",
       text: state.usage ? `in=${state.usage.input_tokens} out=${state.usage.output_tokens}` : undefined,
@@ -223,7 +234,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
       state.error = "Codex turn failed"
     }
     upsertTranscript(state, {
-      id: `turn-failed:${state.transcript.length}`,
+      id: codexSeqId(state, `turn-failed:${state.transcript.length}`),
       kind: "error",
       title: "Turn failed",
       text: state.error,
@@ -235,7 +246,7 @@ export function applyCodexJsonlLine(state: CodexLiveState, rawLine: string): boo
     const item = e.item
     if (!item || typeof item !== "object") return false
     const it = item as Record<string, unknown>
-    const id = typeof it.id === "string" && it.id ? it.id : `item:${state.transcript.length}`
+    const id = typeof it.id === "string" && it.id ? codexSeqId(state, it.id) : `item:${state.transcript.length}`
     const itemType = typeof it.type === "string" ? it.type : ""
 
     if (itemType === "agent_message" && typeof it.text === "string" && it.text.trim()) {
@@ -491,6 +502,10 @@ export const CodexConsultTool = Tool.define(
                   }),
                 )
 
+                // Each process run gets its own namespace so resume turns cannot
+                // overwrite the first turn's transcript rows (ids restart at item_0).
+                live.runSeq = (live.runSeq ?? 0) + 1
+
                 let stdout = ""
                 let stderr = ""
                 let lineBuffer = ""
@@ -541,11 +556,25 @@ export const CodexConsultTool = Tool.define(
                 }
 
                 // Process exit can win the race before stdout's final JSONL chunk is consumed.
-                yield* Fiber.join(stdoutFiber)
-                yield* Fiber.join(stderrFiber)
+                yield* Fiber.join(stdoutFiber).pipe(
+                  Effect.timeout("10 seconds"),
+                  Effect.orElseSucceed(Effect.void),
+                )
+                yield* Fiber.join(stderrFiber).pipe(
+                  Effect.timeout("10 seconds"),
+                  Effect.orElseSucceed(Effect.void),
+                )
 
                 // Flush a final unterminated JSONL event, then make it visible immediately.
                 if (lineBuffer.trim()) applyCodexJsonlLine(live, lineBuffer)
+
+                // Safety net: replay every JSONL row from the captured stdout so a
+                // fast-exiting resume process can never drop the final agent_message.
+                // Replay is idempotent: agentMessages dedups by text and transcript
+                // rows are namespaced by runSeq (same id => update, no duplicates).
+                for (const raw of stdout.split(/\r?\n/)) {
+                  if (raw.trim()) applyCodexJsonlLine(live, raw)
+                }
                 yield* publishMetadata(true)
 
                 return { exit, stdout, stderr }
@@ -598,7 +627,10 @@ export const CodexConsultTool = Tool.define(
             throw new Error("Codex returned an empty response")
           }
 
-          while (intervention?.isActive()) {
+          // Hold the tool open so the desktop dialog can still start intervention
+          // after the first answer lands (entry would otherwise be closed already).
+          const started = yield* Effect.promise(() => holdForIntervention(intervention, ctx.abort))
+          while (started && intervention?.isActive()) {
             const command = yield* Effect.promise(() => intervention.wait(ctx.abort))
             if (command.type === "abort") throw new Error("Codex consultation was aborted")
             if (command.type !== "message") break
@@ -613,15 +645,20 @@ export const CodexConsultTool = Tool.define(
             })
             intervention.setBusy(true)
             const messageCount = live.agentMessages.length
-            const next = yield* runProcess(
-              buildCodexResumeArgs({
-                threadId,
-                prompt: command.message,
-                workingDirectory,
-                model: params.model,
-              }),
-            )
-            intervention.setBusy(false)
+            let next: { exit: { kind: string; code: number | null }; stdout: string; stderr: string }
+            try {
+              next = yield* runProcess(
+                buildCodexResumeArgs({
+                  threadId,
+                  prompt: command.message,
+                  workingDirectory,
+                  model: params.model,
+                }),
+              )
+            } finally {
+              intervention.setBusy(false)
+              yield* publishMetadata(true)
+            }
             if (next.exit.kind === "abort") throw new Error("Codex consultation was aborted")
             if (next.exit.kind === "timeout") throw new Error(`Codex consultation timed out after ${timeoutMs}ms`)
             const nextParsed = parseCodexJsonl(next.stdout)
@@ -630,8 +667,28 @@ export const CodexConsultTool = Tool.define(
               (live.agentMessages.slice(messageCount).at(-1) ?? nextParsed.finalResponse)?.trim() ||
               stripAnsi(next.stdout).trim() ||
               stripAnsi(next.stderr).trim()
-            if (nextError && !nextBody) throw new Error(`Codex failed: ${nextError}`)
-            if (!nextBody) throw new Error("Codex returned an empty response")
+            if (nextError && !nextBody) {
+              upsertTranscript(live, {
+                id: `intervention-error:${Date.now()}`,
+                kind: "error",
+                title: "Error",
+                text: clip(`Codex failed: ${nextError}`, MAX_TRANSCRIPT_TEXT),
+                status: "error",
+              })
+              yield* publishMetadata(true)
+              continue
+            }
+            if (!nextBody) {
+              upsertTranscript(live, {
+                id: `intervention-error:${Date.now()}`,
+                kind: "error",
+                title: "Error",
+                text: "Codex returned an empty response",
+                status: "error",
+              })
+              yield* publishMetadata(true)
+              continue
+            }
             if (!live.agentMessages.includes(nextBody)) live.agentMessages.push(nextBody)
             live.preview = nextBody
             if (

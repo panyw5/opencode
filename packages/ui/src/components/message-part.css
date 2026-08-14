@@ -1050,11 +1050,11 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   }
 
   [data-slot="codex-intervention-input"] textarea[data-slot="input-input"] {
-    min-height: 54px;
-    padding-right: 86px;
+    min-height: 40px; /* 初始单行；autoResize 随输入增高 */
+    padding-right: 150px;
     padding-bottom: 28px;
     font-family: var(--font-family-mono, ui-monospace, monospace);
-    font-size: 15px;
+    font-size: var(--font-size-base);
     line-height: 1.5;
   }
 
@@ -1063,6 +1063,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     right: 8px;
     bottom: 8px;
     display: flex;
+    align-items: center;
     gap: 6px;
   }
 
@@ -1077,16 +1078,22 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   }
 
   [data-slot="codex-intervention-finish"] {
-    border-color: color-mix(in srgb, var(--border-weak-base) 60%, var(--icon-critical-base, #ef4444));
-    background: color-mix(in srgb, var(--surface-base) 84%, var(--icon-critical-base, #ef4444));
-
-    [data-slot="icon-svg"] {
-      color: var(--icon-critical-base, #ef4444);
-    }
+    box-sizing: border-box;
+    min-height: 30px;
+    height: 30px;
+    line-height: 28px;
+    padding-inline: 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+    font-size: 12px;
+    border-color: var(--border-weak-base);
+    background: var(--button-secondary-base);
+    color: var(--text-strong);
 
     &:hover:not(:disabled) {
-      border-color: color-mix(in srgb, var(--border-weak-base) 35%, var(--icon-critical-base, #ef4444));
-      background: color-mix(in srgb, var(--surface-base) 74%, var(--icon-critical-base, #ef4444));
+      border-color: var(--border-strong-base, var(--border-weak-base));
+      background: var(--button-secondary-hover);
+      color: var(--text-strong);
     }
   }
 }

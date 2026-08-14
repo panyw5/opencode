@@ -25,6 +25,7 @@ import { NonNegativeInt } from "@opencode-ai/core/schema"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { MessageError } from "./message-error"
 import { AuthError, OutputLengthError } from "./message-error"
+import { isConsultMention } from "@/tool/consult-mention"
 export { AuthError, OutputLengthError } from "./message-error"
 
 /** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
@@ -1160,8 +1161,8 @@ export function latest(msgs: WithParts[]) {
     if (finished && m.info.id <= finished.id) return []
     return m.parts.flatMap((p): PendingTask[] => {
       if (p.type === "compaction" || p.type === "subtask") return [p]
-      // Reserved @codex/@claude/@grok agent parts are direct consult tasks (not task/subagent).
-      if (p.type === "agent" && (p.name === "codex" || p.name === "claude" || p.name === "grok")) {
+      // Reserved @codex/@claude/@grok/@dsh agent parts are direct consult tasks (not task/subagent).
+      if (p.type === "agent" && isConsultMention(p.name)) {
         return [{ type: "consult", name: p.name }]
       }
       return []
