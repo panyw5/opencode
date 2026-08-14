@@ -905,6 +905,7 @@ export const dict = {
 
   "settings.tab.general": "通用",
   "settings.tab.shortcuts": "快捷键",
+  "settings.tab.goConfig": "前往配置页",
 
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL 集成",

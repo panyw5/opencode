@@ -1,7 +1,9 @@
 import { Component } from "solid-js"
+import { useNavigate, useParams } from "@solidjs/router"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { Icon } from "@opencode-ai/ui/icon"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { SettingsGeneral } from "./settings-general"
@@ -13,6 +15,15 @@ import { SettingsAssistant } from "./settings-assistant"
 export const DialogSettings: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
+  const navigate = useNavigate()
+  const params = useParams()
+  const dialog = useDialog()
+
+  const openConfig = () => {
+    if (!params.dir) return
+    dialog.close()
+    navigate(`/${params.dir}/config`)
+  }
 
   return (
     <Dialog size="x-large" transition>
@@ -31,6 +42,10 @@ export const DialogSettings: Component = () => {
                     <Tabs.Trigger value="shortcuts">
                       <Icon name="keyboard" />
                       {language.t("settings.tab.shortcuts")}
+                    </Tabs.Trigger>
+                    <Tabs.Trigger value="config" onClick={openConfig}>
+                      <Icon name="settings-gear" />
+                      {language.t("settings.tab.goConfig")}
                     </Tabs.Trigger>
                   </div>
                 </div>
@@ -66,6 +81,7 @@ export const DialogSettings: Component = () => {
         <Tabs.Content value="shortcuts" class="no-scrollbar">
           <SettingsKeybinds />
         </Tabs.Content>
+        <Tabs.Content value="config" class="no-scrollbar" />
         <Tabs.Content value="providers" class="no-scrollbar">
           <SettingsProviders />
         </Tabs.Content>

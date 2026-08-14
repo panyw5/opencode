@@ -583,6 +583,7 @@ export const dict = {
   "settings.section.server": "Serveur",
   "settings.tab.general": "Général",
   "settings.tab.shortcuts": "Raccourcis",
+  "settings.tab.goConfig": "Aller à la configuration",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "Intégration WSL",
   "settings.desktop.wsl.description": "Exécuter le serveur OpenCode dans WSL sur Windows.",

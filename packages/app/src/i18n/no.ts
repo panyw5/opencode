@@ -642,6 +642,7 @@ export const dict = {
   "settings.section.server": "Server",
   "settings.tab.general": "Generelt",
   "settings.tab.shortcuts": "Snarveier",
+  "settings.tab.goConfig": "Gå til konfigurasjon",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL-integrasjon",
   "settings.desktop.wsl.description": "Kjør OpenCode-serveren i WSL på Windows.",

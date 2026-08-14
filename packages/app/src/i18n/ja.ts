@@ -573,6 +573,7 @@ export const dict = {
   "settings.section.server": "サーバー",
   "settings.tab.general": "一般",
   "settings.tab.shortcuts": "ショートカット",
+  "settings.tab.goConfig": "設定ページへ",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL連携",
   "settings.desktop.wsl.description": "WindowsのWSL環境でOpenCodeサーバーを実行します。",
