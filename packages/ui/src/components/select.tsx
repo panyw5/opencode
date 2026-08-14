@@ -146,8 +146,10 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
         </Kobalte.Item>
       )}
       onChange={(v) => {
+        // Select first so setTheme/setColorScheme can clear preview without a restore flash.
         local.onSelect?.(v ?? undefined)
-        stop()
+        state.cleanup = undefined
+        state.key = undefined
       }}
       onOpenChange={(open) => {
         const trace = debug()

@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, onMount } from "solid-js"
+import { createEffect, onCleanup, onMount, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "../context/helper"
 import oc2ThemeJson from "./themes/oc-2.json"
@@ -130,17 +130,16 @@ function getSystemMode(): "light" | "dark" {
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
 }
 
+let appliedKey = ""
+
 function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "dark") {
-  const start = performance.now()
-  console.debug("[theme] applyThemeCss start themeId=" + themeId + " mode=" + mode)
+  const key = themeId + ":" + mode
+  if (appliedKey === key && document.getElementById(THEME_STYLE_ID)?.textContent) return
+
   const isDark = mode === "dark"
   const variant = isDark ? theme.dark : theme.light
-  const resStart = performance.now()
   const tokens = resolveThemeVariant(variant, isDark)
-  console.debug("[theme] resolveThemeVariant took " + (performance.now() - resStart).toFixed(1) + "ms themeId=" + themeId + " mode=" + mode)
-  const cssStart = performance.now()
   const css = themeToCss(tokens)
-  console.debug("[theme] themeToCss took " + (performance.now() - cssStart).toFixed(1) + "ms cssLength=" + css.length + " themeId=" + themeId + " mode=" + mode)
 
   if (themeId !== "oc-2") {
     write(isDark ? STORAGE_KEYS.THEME_CSS_DARK : STORAGE_KEYS.THEME_CSS_LIGHT, css)
@@ -152,13 +151,11 @@ function applyThemeCss(theme: DesktopTheme, themeId: string, mode: "light" | "da
   ${css}
 }`
 
-  const domStart = performance.now()
   document.getElementById("oc-theme-preload")?.remove()
   ensureThemeStyleElement().textContent = fullCss
-  console.debug("[theme] DOM update took " + (performance.now() - domStart).toFixed(1) + "ms themeId=" + themeId + " mode=" + mode)
   document.documentElement.dataset.theme = themeId
   document.documentElement.dataset.colorScheme = mode
-  console.debug("[theme] applyThemeCss total took " + (performance.now() - start).toFixed(1) + "ms themeId=" + themeId + " mode=" + mode)
+  appliedKey = key
 }
 
 function cacheThemeVariants(theme: DesktopTheme, themeId: string) {
@@ -189,7 +186,18 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       previewScheme: null as ColorScheme | null,
     })
 
+    const setMode = (next: "light" | "dark") => {
+      if (store.mode === next) return
+      setStore("mode", next)
+    }
+
+    const setThemeId = (next: string) => {
+      if (store.themeId === next) return
+      setStore("themeId", next)
+    }
+
     const loads = new Map<string, Promise<DesktopTheme | undefined>>()
+    let previewEpoch = 0
 
     const load = (id: string) => {
       const next = normalize(id)
@@ -227,21 +235,14 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       return [...all, ...extra]
     }
 
-    const loadThemes = () => {
-      console.debug("[theme] loadThemes start count=" + themeIDs().length)
-      const batchStart = performance.now()
-      return Promise.all(themeIDs().map(load)).then((result) => {
-        console.debug("[theme] loadThemes done took " + (performance.now() - batchStart).toFixed(1) + "ms count=" + result.length)
-        return store.themes
-      })
-    }
+    const loadThemes = () => Promise.all(themeIDs().map(load)).then(() => store.themes)
 
     const onStorage = (e: StorageEvent) => {
       if (e.key === STORAGE_KEYS.THEME_ID && e.newValue) {
         const next = normalize(e.newValue)
         if (!next) return
         if (next !== "oc-2" && !knownThemes().has(next) && !store.themes[next]) return
-        setStore("themeId", next)
+        setThemeId(next)
         if (next === "oc-2") {
           clear()
           return
@@ -252,8 +253,9 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         })
       }
       if (e.key === STORAGE_KEYS.COLOR_SCHEME && e.newValue) {
+        const nextMode = e.newValue === "system" ? getSystemMode() : (e.newValue as "light" | "dark")
         setStore("colorScheme", e.newValue as ColorScheme)
-        setStore("mode", e.newValue === "system" ? getSystemMode() : (e.newValue as "light" | "dark"))
+        setMode(nextMode)
       }
     }
 
@@ -266,7 +268,7 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)")
       const onMedia = () => {
         if (store.colorScheme !== "system") return
-        setStore("mode", getSystemMode())
+        setMode(getSystemMode())
       }
       mediaQuery.addEventListener("change", onMedia)
       onCleanup(() => mediaQuery.removeEventListener("change", onMedia))
@@ -278,9 +280,9 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         write(STORAGE_KEYS.THEME_ID, savedTheme)
         clear()
       }
-      if (savedTheme !== store.themeId) setStore("themeId", savedTheme)
+      if (savedTheme !== store.themeId) setThemeId(savedTheme)
       if (savedScheme !== store.colorScheme) setStore("colorScheme", savedScheme)
-      setStore("mode", savedScheme === "system" ? getSystemMode() : savedScheme)
+      setMode(savedScheme === "system" ? getSystemMode() : savedScheme)
       void load(savedTheme).then((theme) => {
         if (!theme || store.themeId !== savedTheme) return
         cacheThemeVariants(theme, savedTheme)
@@ -288,14 +290,29 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     })
 
     createEffect(() => {
-      console.debug("[theme] createEffect applying themeId=" + store.themeId + " mode=" + store.mode)
-      const theme = store.themes[store.themeId]
-      if (!theme) { console.debug("[theme] createEffect theme not loaded yet, skipping"); return }
-      applyTheme(theme, store.themeId, store.mode)
+      const themeId = store.themeId
+      const mode = store.mode
+      const theme = store.themes[themeId]
+      // Intentionally do NOT track preview* here. Clearing preview must not flash the
+      // committed theme before the next preview/restore owns the DOM.
+      if (!theme) return
+      const previewing = untrack(() => !!(store.previewThemeId || store.previewScheme))
+      if (previewing) return
+      applyTheme(theme, themeId, mode)
     })
 
+    const clearPreviewState = () => {
+      previewEpoch += 1
+      if (store.previewThemeId !== null) setStore("previewThemeId", null)
+      if (store.previewScheme !== null) setStore("previewScheme", null)
+    }
+
+    const beginPreview = () => {
+      previewEpoch += 1
+      return previewEpoch
+    }
+
     const setTheme = (id: string) => {
-      console.debug("[theme] setTheme " + id)
       const next = normalize(id)
       if (!next) {
         console.warn(`Theme "${id}" not found`)
@@ -305,11 +322,16 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
         console.warn(`Theme "${id}" not found`)
         return
       }
+      // Committing a selection must drop live preview without restoring the old theme.
+      clearPreviewState()
       if (store.themeId === next) {
-        console.debug("[theme] setTheme skipped, already " + next)
+        void load(next).then((theme) => {
+          if (!theme || store.themeId !== next) return
+          applyTheme(theme, next, store.mode)
+        })
         return
       }
-      setStore("themeId", next)
+      setThemeId(next)
       if (next === "oc-2") {
         write(STORAGE_KEYS.THEME_ID, next)
         clear()
@@ -323,14 +345,18 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
     }
 
     const setColorScheme = (scheme: ColorScheme) => {
-      console.debug("[theme] setColorScheme " + scheme)
-      if (store.colorScheme === scheme) {
-        console.debug("[theme] setColorScheme skipped, already " + scheme)
+      const nextMode = scheme === "system" ? getSystemMode() : scheme
+      clearPreviewState()
+      if (store.colorScheme === scheme && store.mode === nextMode) {
+        void load(store.themeId).then((theme) => {
+          if (!theme) return
+          applyTheme(theme, store.themeId, nextMode)
+        })
         return
       }
       setStore("colorScheme", scheme)
       write(STORAGE_KEYS.COLOR_SCHEME, scheme)
-      setStore("mode", scheme === "system" ? getSystemMode() : scheme)
+      setMode(nextMode)
     }
 
     return {
@@ -345,49 +371,52 @@ export const { use: useTheme, provider: ThemeProvider } = createSimpleContext({
       setColorScheme,
       registerTheme: (theme: DesktopTheme) => setStore("themes", theme.id, theme),
       previewTheme: (id: string) => {
-        console.debug("[theme] previewTheme " + id)
         const next = normalize(id)
         if (!next) return
         if (next !== "oc-2" && !knownThemes().has(next) && !store.themes[next]) return
+        const epoch = beginPreview()
+        // Theme browse uses the committed mode. Drop scheme preview without restoring DOM.
+        if (store.previewScheme !== null) setStore("previewScheme", null)
         setStore("previewThemeId", next)
         void load(next).then((theme) => {
-          if (!theme || store.previewThemeId !== next) return
-          const mode = store.previewScheme
-            ? store.previewScheme === "system"
-              ? getSystemMode()
-              : store.previewScheme
-            : store.mode
-          applyTheme(theme, next, mode)
+          if (!theme || store.previewThemeId !== next || epoch !== previewEpoch) return
+          applyTheme(theme, next, store.mode)
         })
       },
       previewColorScheme: (scheme: ColorScheme) => {
-        console.debug("[theme] previewColorScheme " + scheme)
-        setStore("previewScheme", scheme)
         const mode = scheme === "system" ? getSystemMode() : scheme
-        const id = store.previewThemeId ?? store.themeId
+        const epoch = beginPreview()
+        // Scheme browse uses the committed theme. Drop theme preview without restoring DOM.
+        if (store.previewThemeId !== null) setStore("previewThemeId", null)
+        setStore("previewScheme", scheme)
+        const id = store.themeId
         void load(id).then((theme) => {
           if (!theme) return
-          if ((store.previewThemeId ?? store.themeId) !== id) return
-          if (store.previewScheme !== scheme) return
+          if (store.previewThemeId) return
+          if (store.previewScheme !== scheme || epoch !== previewEpoch) return
           applyTheme(theme, id, mode)
         })
       },
       commitPreview: () => {
-        if (store.previewThemeId) {
-          setTheme(store.previewThemeId)
-        }
-        if (store.previewScheme) {
-          setColorScheme(store.previewScheme)
-        }
-        setStore("previewThemeId", null)
-        setStore("previewScheme", null)
+        const themeId = store.previewThemeId
+        const scheme = store.previewScheme
+        clearPreviewState()
+        if (themeId) setTheme(themeId)
+        if (scheme) setColorScheme(scheme)
       },
       cancelPreview: () => {
-        setStore("previewThemeId", null)
-        setStore("previewScheme", null)
-        void load(store.themeId).then((theme) => {
-          if (!theme) return
-          applyTheme(theme, store.themeId, store.mode)
+        if (!store.previewThemeId && !store.previewScheme) return
+        clearPreviewState()
+        const epoch = previewEpoch
+        // Defer restore so a same-tick / next-tick preview can supersede and avoid flicker.
+        queueMicrotask(() => {
+          if (epoch !== previewEpoch) return
+          if (store.previewThemeId || store.previewScheme) return
+          void load(store.themeId).then((theme) => {
+            if (!theme || epoch !== previewEpoch) return
+            if (store.previewThemeId || store.previewScheme) return
+            applyTheme(theme, store.themeId, store.mode)
+          })
         })
       },
     }

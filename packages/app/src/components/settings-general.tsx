@@ -471,20 +471,23 @@ export const SettingsGeneral: Component = () => {
             label={(o) => o.label}
             onSelect={(option) => {
               if (!option) return
-              console.debug("[settings] setColorScheme " + option.value)
+              clearTimeout(previewPending)
               theme.setColorScheme(option.value)
             }}
             onHighlight={(option) => {
               clearTimeout(previewPending)
               if (!option) return
               previewPending = setTimeout(() => {
-                console.debug("[settings] previewColorScheme " + option.value)
                 theme.previewColorScheme(option.value)
               }, 80)
               return () => {
                 clearTimeout(previewPending)
-                theme.cancelPreview()
               }
+            }}
+            onOpenChange={(open) => {
+              if (open) return
+              clearTimeout(previewPending)
+              theme.cancelPreview()
             }}
             variant="secondary"
             size="small"
@@ -510,20 +513,23 @@ export const SettingsGeneral: Component = () => {
             label={(o) => o.name}
             onSelect={(option) => {
               if (!option) return
-              console.debug("[settings] setTheme " + option.id)
+              clearTimeout(previewPending)
               theme.setTheme(option.id)
             }}
             onHighlight={(option) => {
               clearTimeout(previewPending)
               if (!option) return
               previewPending = setTimeout(() => {
-                console.debug("[settings] previewTheme " + option.id)
                 theme.previewTheme(option.id)
               }, 80)
               return () => {
                 clearTimeout(previewPending)
-                theme.cancelPreview()
               }
+            }}
+            onOpenChange={(open) => {
+              if (open) return
+              clearTimeout(previewPending)
+              theme.cancelPreview()
             }}
             variant="secondary"
             size="small"
