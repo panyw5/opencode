@@ -6,7 +6,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import fuzzysort from "fuzzysort"
-import { formatKeybind, parseKeybind, useCommand } from "@/context/command"
+import { formatKeybind, keyFromEvent, parseKeybind, useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { SettingsList } from "./settings-list"
@@ -67,14 +67,6 @@ function isModifier(key: string) {
   return key === "Shift" || key === "Control" || key === "Alt" || key === "Meta"
 }
 
-function normalizeKey(key: string) {
-  if (key === ",") return "comma"
-  if (key === "+") return "plus"
-  if (key === " ") return "space"
-  if (key === "/") return "slash"
-  return key.toLowerCase()
-}
-
 function recordKeybind(event: KeyboardEvent) {
   if (isModifier(event.key)) return
 
@@ -88,7 +80,7 @@ function recordKeybind(event: KeyboardEvent) {
   if (event.altKey) parts.push("alt")
   if (event.shiftKey) parts.push("shift")
 
-  const key = normalizeKey(event.key)
+  const key = keyFromEvent(event)
   if (!key) return
   parts.push(key)
 

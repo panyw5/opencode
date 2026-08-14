@@ -78,6 +78,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       { type: "item", role: "about" },
       { type: "item", label: "Check for Updates...", action: "app.checkForUpdates", enabled: "updater" },
       { type: "item", label: "Settings", command: "settings.open", accelerator: { macos: "Cmd+," } },
+      { type: "item", label: "Open Config", command: "config.open", accelerator: { macos: "Cmd+Shift+," } },
       { type: "item", label: "Reload Webview", action: "view.reload" },
       { type: "item", label: "Restart", action: "app.relaunch" },
       { type: "item", label: "Export Logs...", command: "logs.export" },

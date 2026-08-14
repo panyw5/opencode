@@ -48,13 +48,34 @@ function normalizeKey(key: string) {
   return key.toLowerCase()
 }
 
+// Map layout-independent physical key codes to their unshifted base symbol so
+// that modifier+punctuation keybinds (e.g. `mod+shift+comma`) match the actual
+// keydown regardless of keyboard layout. On a US layout `Shift+,` produces
+// `<`, `Shift+;` produces `:`, etc., but `event.code` stays "Comma"/"Semicolon".
+const CODE_TO_KEY: Record<string, string> = {
+  Comma: ",",
+  Period: ".",
+  Semicolon: ";",
+  Slash: "/",
+  Backquote: "`",
+  Quote: "'",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+}
+
+export function keyFromEvent(event: Pick<KeyboardEvent, "key" | "code">): string {
+  const base = CODE_TO_KEY[event.code]
+  return base ? normalizeKey(base) : normalizeKey(event.key)
+}
+
 function signature(key: string, ctrl: boolean, meta: boolean, shift: boolean, alt: boolean) {
   const mask = (ctrl ? 1 : 0) | (meta ? 2 : 0) | (shift ? 4 : 0) | (alt ? 8 : 0)
   return `${key}:${mask}`
 }
 
 function signatureFromEvent(event: KeyboardEvent) {
-  return signature(normalizeKey(event.key), event.ctrlKey, event.metaKey, event.shiftKey, event.altKey)
+  return signature(keyFromEvent(event), event.ctrlKey, event.metaKey, event.shiftKey, event.altKey)
 }
 
 function isAllowedEditableKeybind(id: string | undefined) {
@@ -161,7 +182,7 @@ export function parseKeybind(config: string): Keybind[] {
 }
 
 export function matchKeybind(keybinds: Keybind[], event: KeyboardEvent): boolean {
-  const eventKey = normalizeKey(event.key)
+  const eventKey = keyFromEvent(event)
 
   for (const kb of keybinds) {
     const keyMatch = kb.key === eventKey

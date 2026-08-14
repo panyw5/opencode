@@ -1458,6 +1458,15 @@ export default function Layout(props: ParentProps) {
         onSelect: () => openSettings(),
       },
       {
+        id: "config.open",
+        title: language.t("command.config.open"),
+        keywords: kw("command.config.open"),
+        category: language.t("command.category.settings"),
+        keybind: "mod+shift+comma",
+        disabled: !params.dir,
+        onSelect: () => openConfig(),
+      },
+      {
         id: "project.openInFinder",
         title:
           platform.os === "macos"

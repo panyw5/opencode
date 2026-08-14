@@ -51,6 +51,28 @@ describe("command keybind helpers", () => {
     ).toBe(true)
   })
 
+  test("matchKeybind matches shift punctuation via physical code", () => {
+    const comma = parseKeybind("ctrl+shift+comma")
+    const semicolon = parseKeybind("ctrl+shift+;")
+    const period = parseKeybind("ctrl+shift+.")
+
+    expect(matchKeybind(comma, new KeyboardEvent("keydown", { key: "<", code: "Comma", ctrlKey: true, shiftKey: true }))).toBe(true)
+    expect(
+      matchKeybind(semicolon, new KeyboardEvent("keydown", { key: ":", code: "Semicolon", ctrlKey: true, shiftKey: true })),
+    ).toBe(true)
+    expect(
+      matchKeybind(period, new KeyboardEvent("keydown", { key: ">", code: "Period", ctrlKey: true, shiftKey: true })),
+    ).toBe(true)
+    expect(matchKeybind(comma, new KeyboardEvent("keydown", { key: "<", code: "Comma", ctrlKey: true }))).toBe(false)
+  })
+
+  test("keyFromEvent falls back to the event key when code is unknown", () => {
+    expect(matchKeybind(parseKeybind("ctrl+comma"), new KeyboardEvent("keydown", { key: ",", ctrlKey: true }))).toBe(true)
+    expect(matchKeybind(parseKeybind("ctrl+a"), new KeyboardEvent("keydown", { key: "a", code: "KeyA", ctrlKey: true }))).toBe(
+      true,
+    )
+  })
+
   test("formatKeybind returns human readable output", () => {
     const display = formatKeybind("ctrl+alt+arrowup")
 

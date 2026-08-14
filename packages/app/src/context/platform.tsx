@@ -127,6 +127,23 @@ export type DshHomeUpdate = {
   clearApiKey?: boolean
 }
 
+export type DshPluginEntry = {
+  id: string
+  name?: string
+  source?: string
+  disabled?: boolean | string
+  configPreview?: string
+}
+
+export type DshPluginInventory = {
+  profile: string
+  checkedAt: number
+  binaryPath?: string
+  plugins: DshPluginEntry[]
+  sources: string[]
+  error?: string
+}
+
 export type CliAgentTest = {
   ok: boolean
   logs: string[]
@@ -177,6 +194,12 @@ export type CliAgents = {
   info(id: CliAgentID, config?: CliAgentConfig): Promise<CliAgentInfo>
   getDshHome?(config?: CliAgentConfig): Promise<DshHomeConfig>
   setDshHome?(config: CliAgentConfig, update: DshHomeUpdate): Promise<DshHomeConfig>
+  getDshApiKey?(config?: CliAgentConfig): Promise<string | undefined>
+  listDshPlugins?(config?: CliAgentConfig, profile?: string): Promise<DshPluginInventory>
+  setDshPluginEnabled?(
+    config: CliAgentConfig | undefined,
+    input: { profile?: string; id: string; enabled: boolean },
+  ): Promise<DshPluginInventory>
 }
 
 export type ExtraAgentId = "openclaw" | "hermes" | "genericagent"
