@@ -34,6 +34,7 @@ export const dict = {
   "command.provider.connect": "Sağlayıcı bağla",
   "command.server.switch": "Sunucu değiştir",
   "command.settings.open": "Ayarları aç",
+  "command.config.open": "Yapılandırmayı aç",
   "command.session.previous": "Önceki oturum",
   "command.session.next": "Sonraki oturum",
   "command.session.back": "Geri",

@@ -30,6 +30,7 @@ export const dict = {
   "command.provider.connect": "Tilslut udbyder",
   "command.server.switch": "Skift server",
   "command.settings.open": "Åbn indstillinger",
+  "command.config.open": "Åbn konfiguration",
   "command.session.previous": "Forrige session",
   "command.session.next": "Næste session",
   "command.session.back": "Tilbage",

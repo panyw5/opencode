@@ -33,6 +33,7 @@ export const dict = {
   "command.provider.connect": "Koble til leverandør",
   "command.server.switch": "Bytt server",
   "command.settings.open": "Åpne innstillinger",
+  "command.config.open": "Åpne konfigurasjon",
   "command.session.previous": "Forrige sesjon",
   "command.session.next": "Neste sesjon",
   "command.session.back": "Tilbake",

@@ -32,6 +32,7 @@ export const dict = {
   "command.provider.connect": "공급자 연결",
   "command.server.switch": "서버 전환",
   "command.settings.open": "설정 열기",
+  "command.config.open": "구성 열기",
   "command.session.previous": "이전 세션",
   "command.session.next": "다음 세션",
   "command.session.back": "뒤로",

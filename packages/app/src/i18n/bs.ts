@@ -30,6 +30,7 @@ export const dict = {
   "command.provider.connect": "Poveži provajdera",
   "command.server.switch": "Promijeni server",
   "command.settings.open": "Otvori postavke",
+  "command.config.open": "Otvori konfiguraciju",
   "command.session.previous": "Prethodna sesija",
   "command.session.next": "Sljedeća sesija",
   "command.session.back": "Nazad",

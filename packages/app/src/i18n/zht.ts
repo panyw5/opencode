@@ -34,6 +34,7 @@ export const dict = {
   "command.provider.connect": "連接提供者",
   "command.server.switch": "切換伺服器",
   "command.settings.open": "開啟設定",
+  "command.config.open": "開啟配置頁面",
   "command.session.previous": "上一個工作階段",
   "command.session.next": "下一個工作階段",
   "command.session.back": "返回",

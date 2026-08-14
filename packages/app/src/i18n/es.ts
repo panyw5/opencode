@@ -30,6 +30,7 @@ export const dict = {
   "command.provider.connect": "Conectar proveedor",
   "command.server.switch": "Cambiar servidor",
   "command.settings.open": "Abrir ajustes",
+  "command.config.open": "Abrir configuración",
   "command.session.previous": "Sesión anterior",
   "command.session.next": "Siguiente sesión",
   "command.session.back": "Volver",

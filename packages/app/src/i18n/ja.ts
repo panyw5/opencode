@@ -28,6 +28,7 @@ export const dict = {
   "command.provider.connect": "プロバイダーに接続",
   "command.server.switch": "サーバーの切り替え",
   "command.settings.open": "設定を開く",
+  "command.config.open": "設定ページを開く",
   "command.session.previous": "前のセッション",
   "command.session.next": "次のセッション",
   "command.session.back": "戻る",

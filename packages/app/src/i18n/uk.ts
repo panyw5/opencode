@@ -29,6 +29,7 @@ export const dict = {
   "command.provider.connect": "Підключити провайдера",
   "command.server.switch": "Перемкнути сервер",
   "command.settings.open": "Відкрити налаштування",
+  "command.config.open": "Відкрити конфігурацію",
   "command.session.previous": "Попередня сесія",
   "command.session.next": "Наступна сесія",
   "command.session.back": "Назад",
