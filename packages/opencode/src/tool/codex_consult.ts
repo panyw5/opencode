@@ -558,11 +558,11 @@ export const CodexConsultTool = Tool.define(
                 // Process exit can win the race before stdout's final JSONL chunk is consumed.
                 yield* Fiber.join(stdoutFiber).pipe(
                   Effect.timeout("10 seconds"),
-                  Effect.orElseSucceed(Effect.void),
+                  Effect.orElseSucceed(() => void 0),
                 )
                 yield* Fiber.join(stderrFiber).pipe(
                   Effect.timeout("10 seconds"),
-                  Effect.orElseSucceed(Effect.void),
+                  Effect.orElseSucceed(() => void 0),
                 )
 
                 // Flush a final unterminated JSONL event, then make it visible immediately.
