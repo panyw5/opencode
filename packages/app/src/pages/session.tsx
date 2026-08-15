@@ -408,6 +408,18 @@ export default function Page() {
       onNavigate: openSubagentSession,
     }
   })
+  const subagentPromptTitle = createMemo(() => {
+    const session = info()
+    if (!session?.parentID) return undefined
+    const raw = (session.title ?? "").trim()
+    if (!raw) return undefined
+    const cleaned = raw
+      .replace(/^\[im:[^\]]*\]\s*/, "")
+      .replace(/^\[scheduled\]\s*/, "")
+      .replace(/\s+\(@[^)]*\s+subagent\)$/i, "")
+      .trim()
+    return cleaned || raw
+  })
   const childAgentSessions = createMemo(() => {
     const id = params.id
     if (!id) return []
@@ -2786,6 +2798,7 @@ export default function Page() {
               if (message) scrollToMessage(message, "auto")
             }}
             subagentNavigation={subagentNavigation()}
+            subagentTitle={subagentPromptTitle()}
             setPromptDockRef={(el) => {
               promptDock = el
             }}

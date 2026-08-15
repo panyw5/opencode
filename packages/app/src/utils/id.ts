@@ -40,8 +40,8 @@ function generateID(prefix: Prefix, descending: boolean, given?: string): string
   return given
 }
 
-function create(prefix: Prefix, descending: boolean, timestamp?: number): string {
-  const currentTimestamp = timestamp ?? Date.now()
+function create(prefix: Prefix, descending: boolean): string {
+  const currentTimestamp = Date.now()
 
   if (currentTimestamp !== lastTimestamp) {
     lastTimestamp = currentTimestamp
@@ -56,12 +56,13 @@ function create(prefix: Prefix, descending: boolean, timestamp?: number): string
     now = ~now
   }
 
-  const timeBytes = new Uint8Array(6)
-  for (let i = 0; i < 6; i += 1) {
-    timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff))
+  // 64-bit time field: the previous 48-bit encoding of timestamp*4096 wraps every 2^36 ms.
+  const timeBytes = new Uint8Array(8)
+  for (let i = 0; i < 8; i += 1) {
+    timeBytes[i] = Number((now >> BigInt(56 - 8 * i)) & BigInt(0xff))
   }
 
-  return prefixes[prefix] + "_" + bytesToHex(timeBytes) + randomBase62(LENGTH - 12)
+  return prefixes[prefix] + "_" + bytesToHex(timeBytes) + randomBase62(LENGTH - 16)
 }
 
 function bytesToHex(bytes: Uint8Array): string {

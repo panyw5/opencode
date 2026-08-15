@@ -1776,6 +1776,16 @@ export const layer = Layer.effect(
 
           if (!lastUser) throw new Error("No user message found in stream. This should never happen.")
 
+          yield* slog.info("loop latest", {
+            lastUserID: lastUser.id,
+            lastUserCreated: lastUser.time.created,
+            lastAssistantID: lastAssistant?.id,
+            lastAssistantCreated: lastAssistant?.time.created,
+            lastAssistantParent: lastAssistant?.parentID,
+            lastAssistantFinish: lastAssistant?.finish,
+            lastAssistantCompleted: lastAssistant?.time.completed,
+          })
+
           const lastAssistantMsg = msgs.findLast(
             (msg) => msg.info.role === "assistant" && msg.info.id === lastAssistant?.id,
           )
@@ -1801,9 +1811,14 @@ export const layer = Layer.effect(
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
-            lastUser.id < lastAssistant.id
+            MessageV2.compareMessageInfo(lastUser, lastAssistant) < 0
           ) {
-            yield* slog.info("exiting loop")
+            yield* slog.info("exiting loop", {
+              lastUserID: lastUser.id,
+              lastUserCreated: lastUser.time.created,
+              lastAssistantID: lastAssistant.id,
+              lastAssistantCreated: lastAssistant.time.created,
+            })
             break
           }
 

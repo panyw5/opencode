@@ -61,20 +61,26 @@ export function create(prefix: string, direction: "descending" | "ascending", ti
 
   now = direction === "descending" ? ~now : now
 
-  const timeBytes = Buffer.alloc(6)
-  for (let i = 0; i < 6; i++) {
-    timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff))
+  // 64-bit time field: the previous 48-bit encoding of timestamp*4096 wraps every 2^36 ms.
+  const timeBytes = Buffer.alloc(8)
+  for (let i = 0; i < 8; i++) {
+    timeBytes[i] = Number((now >> BigInt(56 - 8 * i)) & BigInt(0xff))
   }
 
-  return prefix + "_" + timeBytes.toString("hex") + randomBase62(LENGTH - 12)
+  return prefix + "_" + timeBytes.toString("hex") + randomBase62(LENGTH - 16)
 }
 
 /** Extract timestamp from an ascending ID. Does not work with descending IDs. */
 export function timestamp(id: string): number {
-  const prefix = id.split("_")[0]
-  const hex = id.slice(prefix.length + 1, prefix.length + 13)
-  const encoded = BigInt("0x" + hex)
-  return Number(encoded / BigInt(0x1000))
+  const prefix = id.split("_")[0] ?? ""
+  const body = id.slice(prefix.length + (prefix ? 1 : 0))
+  const hex16 = body.slice(0, 16)
+  if (/^[0-9a-f]{16}$/i.test(hex16)) {
+    const value = Number(BigInt("0x" + hex16) / BigInt(0x1000))
+    if (Number.isFinite(value) && value >= 1_000_000_000_000 && value <= 10_000_000_000_000) return value
+  }
+  const hex12 = body.slice(0, 12)
+  return Number(BigInt("0x" + hex12) / BigInt(0x1000))
 }
 
 export * as Identifier from "./id"

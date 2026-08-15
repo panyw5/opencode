@@ -1828,6 +1828,32 @@ describe("session.message-v2.latest", () => {
     expect(state.tasks).toEqual([{ type: "consult", name: "codex" }])
   })
 
+  test("picks the newest user by created time when ids wrap", () => {
+    const olderUser: MessageV2.WithParts = {
+      info: { ...userInfo("msg_feaeca33f001old"), time: { created: 100 } },
+      parts: [{ ...basePart("msg_feaeca33f001old", "p1"), type: "text", text: "old" }] as MessageV2.Part[],
+    }
+    const olderAssistant: MessageV2.WithParts = {
+      info: {
+        ...assistantInfo("msg_febfb5db9001old", "msg_feaeca33f001old"),
+        finish: "stop",
+        time: { created: 101, completed: 102 },
+      } as MessageV2.Assistant,
+      parts: [],
+    }
+    const newerUser: MessageV2.WithParts = {
+      info: { ...userInfo("msg_003306f69001new"), time: { created: 200 } },
+      parts: [{ ...basePart("msg_003306f69001new", "p1"), type: "text", text: "new" }] as MessageV2.Part[],
+    }
+
+    const state = MessageV2.latest([newerUser, olderUser, olderAssistant])
+
+    expect(state.user?.id).toBe("msg_003306f69001new")
+    expect(state.assistant?.id).toBe("msg_febfb5db9001old")
+    expect(state.finished?.id).toBe("msg_febfb5db9001old")
+    expect(MessageV2.compareMessageInfo(state.user!, state.assistant!)).toBe(1)
+  })
+
   test("reserved @dsh agent part surfaces as consult task", () => {
     const consultUser: MessageV2.WithParts = {
       info: userInfo(CONTINUE_USER),

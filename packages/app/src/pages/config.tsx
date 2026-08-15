@@ -32,6 +32,7 @@ import { applyEdits, modify, parse } from "jsonc-parser"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { paint } from "@/components/prompt-input/expand"
 import { pair } from "@/components/dialog-prompt-editor-input"
+import { handleTextareaIndent, indent } from "@/components/markdown-editor-indent"
 import { DialogConnectProvider } from "@/components/dialog-connect-provider"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import {
@@ -1086,11 +1087,38 @@ function JsoncAgentEditor(props: {
           </div>
           <div class="flex flex-col gap-2">
             <label class="text-12-medium text-text-weak">{language.t("config.agents.field.prompt")}</label>
-            <textarea class="min-h-40 rounded-xl border border-border-weak-base bg-background-base p-3 text-13-regular text-text-base outline-none" value={form.prompt} onInput={(event) => setForm("prompt", event.currentTarget.value)} />
+            <textarea
+              class="min-h-40 rounded-xl border border-border-weak-base bg-background-base p-3 text-13-regular text-text-base outline-none"
+              value={form.prompt}
+              onInput={(event) => setForm("prompt", event.currentTarget.value)}
+              onKeyDown={(event) =>
+                handleTextareaIndent(event, form.prompt, (next) => setForm("prompt", next.text))
+              }
+            />
           </div>
           <div class="grid gap-4 lg:grid-cols-2">
-            <div class="flex flex-col gap-2"><label class="text-12-medium text-text-weak">{language.t("config.agents.field.permission")}</label><textarea class="min-h-36 rounded-xl border border-border-weak-base bg-background-base p-3 font-mono text-12-regular text-text-base outline-none" value={form.permission} onInput={(event) => setForm("permission", event.currentTarget.value)} /></div>
-            <div class="flex flex-col gap-2"><label class="text-12-medium text-text-weak">{language.t("config.agents.field.options")}</label><textarea class="min-h-36 rounded-xl border border-border-weak-base bg-background-base p-3 font-mono text-12-regular text-text-base outline-none" value={form.options} onInput={(event) => setForm("options", event.currentTarget.value)} /></div>
+            <div class="flex flex-col gap-2">
+              <label class="text-12-medium text-text-weak">{language.t("config.agents.field.permission")}</label>
+              <textarea
+                class="min-h-36 rounded-xl border border-border-weak-base bg-background-base p-3 font-mono text-12-regular text-text-base outline-none"
+                value={form.permission}
+                onInput={(event) => setForm("permission", event.currentTarget.value)}
+                onKeyDown={(event) =>
+                  handleTextareaIndent(event, form.permission, (next) => setForm("permission", next.text))
+                }
+              />
+            </div>
+            <div class="flex flex-col gap-2">
+              <label class="text-12-medium text-text-weak">{language.t("config.agents.field.options")}</label>
+              <textarea
+                class="min-h-36 rounded-xl border border-border-weak-base bg-background-base p-3 font-mono text-12-regular text-text-base outline-none"
+                value={form.options}
+                onInput={(event) => setForm("options", event.currentTarget.value)}
+                onKeyDown={(event) =>
+                  handleTextareaIndent(event, form.options, (next) => setForm("options", next.text))
+                }
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -1890,10 +1918,31 @@ function MarkdownField(props: {
     back.scrollLeft = box.scrollLeft
   }
 
-  const onPairKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
+  const applyEdit = (next: { text: string; start: number; end: number }) => {
+    props.onInput(next.text)
+    requestAnimationFrame(() => {
+      if (!box) return
+      box.setSelectionRange(next.start, next.end)
+      sync()
+    })
+  }
+
+  const onKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
     if (!props.editable) return
     if (event.metaKey || event.ctrlKey || event.altKey) return
     if (event.isComposing || event.keyCode === 229) return
+
+    if (event.key === "Tab") {
+      const next = indent({
+        text: props.text,
+        start: event.currentTarget.selectionStart ?? 0,
+        end: event.currentTarget.selectionEnd ?? 0,
+        shiftKey: event.shiftKey,
+      })
+      event.preventDefault()
+      if (next) applyEdit(next)
+      return
+    }
 
     const next = pair({
       text: props.text,
@@ -1903,12 +1952,7 @@ function MarkdownField(props: {
     })
     if (!next) return
     event.preventDefault()
-    props.onInput(next.text)
-    requestAnimationFrame(() => {
-      if (!box) return
-      box.setSelectionRange(next.start, next.end)
-      sync()
-    })
+    applyEdit(next)
   }
 
   createEffect(() => {
@@ -1960,7 +2004,7 @@ function MarkdownField(props: {
               value={props.text}
               onInput={(event) => props.onInput(event.currentTarget.value)}
               onScroll={sync}
-              onKeyDown={onPairKeyDown}
+              onKeyDown={onKeyDown}
             />
           </div>
         }
@@ -2178,6 +2222,10 @@ function Editor(props: {
                         readOnly={!props.item?.editable}
                         value={props.text}
                         onInput={(event) => props.onInput(event.currentTarget.value)}
+                        onKeyDown={(event) => {
+                          if (!props.item?.editable) return
+                          handleTextareaIndent(event, props.text, (next) => props.onInput(next.text))
+                        }}
                       />
                     }
                   >

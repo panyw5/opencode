@@ -11,6 +11,8 @@ import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { DialogPromptEditor } from "@/components/dialog-prompt-editor"
+import { MarkdownEditorField } from "@/components/markdown-editor-field"
+import { OpenInApp } from "@/components/open-in-app"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { errorMessage } from "./helpers"
@@ -247,6 +249,7 @@ function ProjectTaskDetailDialog(props: {
   const detail = createMemo(() => state.detail)
   const title = createMemo(() => detail()?.title ?? props.task.title)
   const status = createMemo(() => detail()?.status ?? props.task.status)
+  const prdPath = createMemo(() => `${props.directory.replace(/[\\/]+$/, "")}/.opentasks/${props.task.id}/prd.md`)
   // Prefer flex fill over fixed vh math: dialog-content only had max-height, so
   // calc(90vh - Npx) children either overflowed or collapsed to the textarea default (2 rows).
   const dialogContainerStyle = createMemo(() =>
@@ -275,6 +278,7 @@ function ProjectTaskDetailDialog(props: {
           saved: result.data.description,
           dirty: false,
         })
+      } else {
       }
     } catch (error) {
       setState("error", error instanceof Error ? error.message : String(error))
@@ -474,6 +478,7 @@ function ProjectTaskDetailDialog(props: {
                 {language.t("trellis.tasks.edit")}
               </button>
             </div>
+            <OpenInApp path={prdPath()} logPrefix={`project-task-editor taskID=${props.task.id}`} />
             <Tooltip placement="bottom" value={language.t("projectTask.archive")}>
               <IconButton
                 icon="archive"
@@ -550,20 +555,21 @@ function ProjectTaskDetailDialog(props: {
               <Show
                 when={state.mode === "preview"}
                 fallback={
-                  <textarea
-                    value={state.draft}
+                  <MarkdownEditorField
+                    text={state.draft}
+                    chrome={false}
                     autofocus
-                    spellcheck={false}
                     placeholder={language.t("projectTask.field.descriptionPlaceholder")}
-                    class="box-border h-full min-h-0 w-full flex-1 resize-none bg-transparent px-5 py-4 text-14-regular text-text-strong outline-none"
-                    onInput={(event) => {
-                      const next = event.currentTarget.value
-                      setState({ draft: next, dirty: next !== state.saved })
+                    class="min-h-0 flex-1 bg-transparent"
+                    onInput={(next) => {
+                      const dirty = next !== state.saved
+                      setState({ draft: next, dirty })
                     }}
                     onKeyDown={(event) => {
                       if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
                         event.preventDefault()
                         void saveDescription()
+                        return
                       }
                       if (event.key === "Escape") {
                         event.preventDefault()

@@ -17,6 +17,7 @@ import { resolveAtMenuLeft } from "@/components/at-menu-position"
 import { paint } from "@/components/prompt-input/expand"
 import { type AtOption } from "@/components/prompt-input/slash-popover"
 import { at, mention, pair } from "@/components/dialog-prompt-editor-input"
+import { indent } from "@/components/markdown-editor-indent"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 
 type DialogPromptEditorProps = {
@@ -449,6 +450,36 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
                 if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key === "Enter") {
                   event.preventDefault()
                   void save()
+                  return
+                }
+
+                if (
+                  event.key === "Tab" &&
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  !event.altKey &&
+                  !event.isComposing &&
+                  event.keyCode !== 229
+                ) {
+                  const start = event.currentTarget.selectionStart ?? 0
+                  const end = event.currentTarget.selectionEnd ?? 0
+                  const next = indent({
+                    text: state.text,
+                    start,
+                    end,
+                    shiftKey: event.shiftKey,
+                  })
+                  event.preventDefault()
+                  if (!next) return
+                  setState("text", next.text)
+                  props.onTextChange?.(next.text)
+                  setPopover(null)
+                  requestAnimationFrame(() => {
+                    if (!ref.box) return
+                    ref.box.setSelectionRange(next.start, next.end)
+                    sync()
+                    refreshAt()
+                  })
                   return
                 }
 

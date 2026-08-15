@@ -796,6 +796,7 @@ export const dict = {
   "session.childAgents.background": "Background",
   "session.childAgents.index": "#{{index}}",
   "session.childAgents.indexResume": "#{{index}} resume",
+  "session.childAgents.promptBadge": "Subagent: {{title}}",
   "session.todo.title": "Session tasks",
   "session.todo.collapse": "Collapse",
   "session.todo.expand": "Expand",

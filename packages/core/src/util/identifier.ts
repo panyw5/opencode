@@ -38,11 +38,11 @@ export namespace Identifier {
 
     now = descending ? ~now : now
 
-    const timeBytes = Buffer.alloc(6)
-    for (let i = 0; i < 6; i++) {
-      timeBytes[i] = Number((now >> BigInt(40 - 8 * i)) & BigInt(0xff))
+    const timeBytes = Buffer.alloc(8)
+    for (let i = 0; i < 8; i++) {
+      timeBytes[i] = Number((now >> BigInt(56 - 8 * i)) & BigInt(0xff))
     }
 
-    return timeBytes.toString("hex") + randomBase62(LENGTH - 12)
+    return timeBytes.toString("hex") + randomBase62(LENGTH - 16)
   }
 }

@@ -149,6 +149,10 @@ export const layer = Layer.effect(
     })
 
     const update: Interface["update"] = Effect.fn("ProjectTask.update")(function* (id, input) {
+      // Keep description content out of logs while making desktop save failures traceable.
+      console.debug(
+        `[project-task] update start taskID=${id} hasTitle=${String(input.title !== undefined)} hasStatus=${String(input.status !== undefined)} hasDescription=${String(input.description !== undefined)} descriptionLength=${input.description?.length ?? 0}`,
+      )
       const current = yield* get(id)
       if (input.title !== undefined && !input.title.trim()) {
         return yield* new InvalidMountError({ message: "Project task title is required" })
@@ -157,8 +161,10 @@ export const layer = Layer.effect(
 
       if (input.description !== undefined) {
         const rel = current.descriptionPath || descriptionRelativePath(id)
+        console.debug(`[project-task] update write-description taskID=${id} path=${rel} descriptionLength=${input.description.length}`)
         yield* Effect.promise(() => writeDescriptionFile(dir, rel, input.description!))
         yield* ProjectTaskRepository.setDescriptionPath(id, rel, { clearLegacy: true })
+        console.debug(`[project-task] update description-written taskID=${id} path=${rel}`)
       }
 
       const task = yield* ProjectTaskRepository.update(id, {
@@ -173,6 +179,9 @@ export const layer = Layer.effect(
 
       const hydrated = yield* get(id)
       yield* emit(dir, { type: Event.Updated.type, properties: hydrated })
+      console.debug(
+        `[project-task] update complete taskID=${id} status=${hydrated.status} descriptionLength=${hydrated.description.length}`,
+      )
       return hydrated
     })
 

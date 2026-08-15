@@ -1,6 +1,7 @@
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
 import type { Message } from "@opencode-ai/sdk/v2/client"
 import type { ImageAttachmentPart } from "@/context/prompt"
+import { sortMessages } from "@/utils/message-order"
 
 export type QuestionImage = ImageAttachmentPart
 
@@ -75,13 +76,16 @@ export function questionInvalidation(
   const messageID = request.tool?.messageID
   if (!messageID) return undefined
 
-  const index = messages.findIndex((message) => message.id === messageID)
+  const ordered = sortMessages(messages)
+  const index = ordered.findIndex((message) => message.id === messageID)
   if (index === -1) return undefined
 
-  const source = messages[index]
-  if (source?.role === "assistant" && source.error) return { type: "session-ended", messageID }
+  const source = ordered[index]
+  if (source?.role === "assistant" && source.error) {
+    return { type: "session-ended", messageID }
+  }
 
-  const newer = messages[index + 1]
+  const newer = ordered[index + 1]
   if (!newer) return undefined
   return { type: "superseded", messageID: newer.id }
 }

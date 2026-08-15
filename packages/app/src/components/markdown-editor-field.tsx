@@ -2,6 +2,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js"
 import { pair } from "@/components/dialog-prompt-editor-input"
+import { indent } from "@/components/markdown-editor-indent"
 import { paint as defaultPaint } from "@/components/prompt-input/expand"
 import { useLanguage } from "@/context/language"
 import { monoFontFamily, useSettings } from "@/context/settings"
@@ -16,8 +17,11 @@ export function MarkdownEditorField(props: {
   defaultMode?: MarkdownEditorMode
   placeholder?: string
   class?: string
+  chrome?: boolean
+  autofocus?: boolean
   paint?: (value: string) => string
   onInput: (value: string) => void
+  onKeyDown?: (event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) => void
 }): JSX.Element {
   const settings = useSettings()
   const language = useLanguage()
@@ -28,11 +32,51 @@ export function MarkdownEditorField(props: {
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
   const editable = createMemo(() => props.editable ?? true)
   const previewMode = createMemo(() => props.preview && mode() === "preview")
+  const chrome = createMemo(() => props.chrome ?? true)
 
   const sync = () => {
     if (!box || !back) return
     back.scrollTop = box.scrollTop
     back.scrollLeft = box.scrollLeft
+  }
+
+  const applyEdit = (next: { text: string; start: number; end: number }, reason: string) => {
+    console.debug(
+      `[markdown-editor-field] apply reason=${reason} start=${next.start} end=${next.end} length=${next.text.length}`,
+    )
+    props.onInput(next.text)
+    requestAnimationFrame(() => {
+      if (!box) return
+      box.setSelectionRange(next.start, next.end)
+      sync()
+    })
+  }
+
+  const onIndentKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
+    if (!editable()) return
+    if (event.key !== "Tab") return
+    if (event.metaKey || event.ctrlKey || event.altKey) return
+    if (event.isComposing || event.keyCode === 229) return
+
+    const start = event.currentTarget.selectionStart ?? 0
+    const end = event.currentTarget.selectionEnd ?? 0
+    console.debug(
+      `[markdown-editor-field] tab key shift=${String(event.shiftKey)} start=${start} end=${end} length=${props.text.length}`,
+    )
+
+    const next = indent({
+      text: props.text,
+      start,
+      end,
+      shiftKey: event.shiftKey,
+    })
+    // Always prevent default so Tab never leaves the editor for focus navigation.
+    event.preventDefault()
+    if (!next) {
+      console.debug("[markdown-editor-field] tab noop")
+      return
+    }
+    applyEdit(next, event.shiftKey ? "outdent" : "indent")
   }
 
   const onPairKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
@@ -48,12 +92,15 @@ export function MarkdownEditorField(props: {
     })
     if (!next) return
     event.preventDefault()
-    props.onInput(next.text)
-    requestAnimationFrame(() => {
-      if (!box) return
-      box.setSelectionRange(next.start, next.end)
-      sync()
-    })
+    applyEdit(next, "pair")
+  }
+
+  const onKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
+    onIndentKeyDown(event)
+    if (event.defaultPrevented) return
+    onPairKeyDown(event)
+    if (event.defaultPrevented) return
+    props.onKeyDown?.(event)
   }
 
   createEffect(() => {
@@ -67,7 +114,10 @@ export function MarkdownEditorField(props: {
 
   return (
     <div
-      class={`relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base shadow-xs-border-base ${props.class ?? ""}`}
+      data-component="markdown-editor-field"
+      class={`relative flex h-full min-h-0 flex-col overflow-hidden ${
+        chrome() ? "rounded-xl border border-border-weak-base bg-background-base shadow-xs-border-base" : ""
+      } ${props.class ?? ""}`}
     >
       <Show when={props.preview}>
         <MarkdownEditorModeToggle mode={mode()} onMode={setMode} />
@@ -95,6 +145,7 @@ export function MarkdownEditorField(props: {
               ref={(el) => {
                 box = el
               }}
+              autofocus={props.autofocus}
               class="config-scrollbar absolute inset-0 size-full min-h-0 resize-none overflow-auto bg-transparent px-4 py-3 text-13-mono leading-6 focus:outline-none"
               style={{
                 color: "transparent",
@@ -108,7 +159,7 @@ export function MarkdownEditorField(props: {
               placeholder=""
               onInput={(event) => props.onInput(event.currentTarget.value)}
               onScroll={sync}
-              onKeyDown={onPairKeyDown}
+              onKeyDown={onKeyDown}
             />
             <Show when={props.placeholder && props.text.length === 0}>
               <div

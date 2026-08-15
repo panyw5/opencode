@@ -1135,11 +1135,11 @@ export const filterCompactedEffect = Effect.fnUntraced(function* (sessionID: Ses
 
 // filterCompacted reorders messages for model consumption
 // ([compaction-user, summary, ...retained tail..., continue-user]), so array
-// position is not chronological. Derive each binding by max id (MessageID
-// is monotonic via MessageID.ascending) so a pre-compaction overflowing tail
-// assistant doesn't get mistaken for the most recent turn. tasks are
-// compaction/subtask/consult parts attached to user messages newer than the latest
-// finished assistant — i.e. unprocessed work.
+// position is not chronological. Message IDs are not a reliable clock either:
+// the 48-bit timestamp*4096 encoding wrapped on 2026-08-14, so a later user
+// message can have a smaller id than an earlier assistant. Order by
+// time.created, then id. tasks are compaction/subtask/consult parts attached
+// to user messages newer than the latest finished assistant.
 export type ConsultTask = {
   type: "consult"
   name: string
@@ -1147,18 +1147,32 @@ export type ConsultTask = {
 
 export type PendingTask = CompactionPart | SubtaskPart | ConsultTask
 
+export function compareMessageInfo(
+  a: { id: string; time?: { created?: number } },
+  b: { id: string; time?: { created?: number } },
+) {
+  const createdA = a.time?.created
+  const createdB = b.time?.created
+  if (typeof createdA === "number" && typeof createdB === "number" && createdA !== createdB) {
+    return createdA < createdB ? -1 : 1
+  }
+  if (a.id < b.id) return -1
+  if (a.id > b.id) return 1
+  return 0
+}
+
 export function latest(msgs: WithParts[]) {
   let user: User | undefined
   let assistant: Assistant | undefined
   let finished: Assistant | undefined
   for (const msg of msgs) {
     const info = msg.info
-    if (info.role === "user" && (!user || info.id > user.id)) user = info
-    if (info.role === "assistant" && (!assistant || info.id > assistant.id)) assistant = info
-    if (info.role === "assistant" && info.finish && (!finished || info.id > finished.id)) finished = info
+    if (info.role === "user" && (!user || compareMessageInfo(info, user) > 0)) user = info
+    if (info.role === "assistant" && (!assistant || compareMessageInfo(info, assistant) > 0)) assistant = info
+    if (info.role === "assistant" && info.finish && (!finished || compareMessageInfo(info, finished) > 0)) finished = info
   }
   const tasks = msgs.flatMap((m): PendingTask[] => {
-    if (finished && m.info.id <= finished.id) return []
+    if (finished && compareMessageInfo(m.info, finished) <= 0) return []
     return m.parts.flatMap((p): PendingTask[] => {
       if (p.type === "compaction" || p.type === "subtask") return [p]
       // Reserved @codex/@claude/@grok/@dsh agent parts are direct consult tasks (not task/subagent).

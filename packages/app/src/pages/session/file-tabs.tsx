@@ -1,13 +1,10 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
-import { AppIcon } from "@opencode-ai/ui/app-icon"
-import { Button } from "@opencode-ai/ui/button"
 import type { FileSearchHandle } from "@opencode-ai/ui/file"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Spinner } from "@opencode-ai/ui/spinner"
 import { cloneSelectedLineRange, previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { createLineCommentController } from "@opencode-ai/ui/line-comment-annotations"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -20,29 +17,11 @@ import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
-import { useServer } from "@/context/server"
 import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { fileContentCacheKey } from "@/pages/session/file-cache-key"
-import { apps, editor, getOpenPlan, type OpenApp, type OS } from "@/components/session/open-app"
-import { Persist, persisted } from "@/utils/persist"
-
-const detectOS = (platform: ReturnType<typeof usePlatform>): OS => {
-  if (platform.platform === "desktop" && platform.os) return platform.os
-  if (typeof navigator !== "object") return "unknown"
-  const value = navigator.platform || navigator.userAgent
-  if (/Mac/i.test(value)) return "macos"
-  if (/Win/i.test(value)) return "windows"
-  if (/Linux/i.test(value)) return "linux"
-  return "unknown"
-}
-
-const dirname = (target: string) => {
-  const idx = Math.max(target.lastIndexOf("/"), target.lastIndexOf("\\"))
-  if (idx < 0) return ""
-  return target.slice(0, idx)
-}
+import { OpenInApp } from "@/components/open-in-app"
 
 function FileCommentMenu(props: {
   moreLabel: string
@@ -84,7 +63,6 @@ export function FileTabContent(props: { tab: string }) {
   const prompt = usePrompt()
   const platform = usePlatform()
   const sdk = useSDK()
-  const server = useServer()
   const fileComponent = useFileComponent()
   const { sessionKey, tabs, view } = useSessionLayout()
   const activeFileTab = createSessionTabs({
@@ -117,152 +95,12 @@ export function FileTabContent(props: { tab: string }) {
   const pdf = createMemo(() => /\.pdf$/i.test(path() ?? ""))
   const contents = createMemo(() => state()?.content?.content ?? "")
   const cacheKey = createMemo(() => fileContentCacheKey(path() ?? "", contents()))
-  const os = createMemo(() => detectOS(platform))
   const fullPath = createMemo(() => {
     const p = path()
     if (!p) return
     return `${sdk.directory.replace(/[\\/]+$/, "")}/${p}`
   })
-  const fileManager = createMemo(() => {
-    if (os() === "macos") return { label: "session.header.open.finder", icon: "finder" as const }
-    if (os() === "windows") return { label: "session.header.open.fileExplorer", icon: "file-explorer" as const }
-    return { label: "session.header.open.fileManager", icon: "finder" as const }
-  })
-  const [exists, setExists] = createStore<Partial<Record<OpenApp, boolean>>>({
-    finder: true,
-  })
-  const [prefs, setPrefs] = persisted(Persist.global("open.app"), createStore({ app: "finder" as OpenApp }))
-  const [openRequest, setOpenRequest] = createStore({
-    app: undefined as OpenApp | undefined,
-  })
-  const appList = createMemo(() => apps(os()))
-  const openOptions = createMemo(() => {
-    return [
-      { id: "finder", label: language.t(fileManager().label), icon: fileManager().icon },
-      ...appList()
-        .filter((app) => exists[app.id])
-        .map((app) => ({ ...app, label: language.t(app.label) })),
-    ] as const
-  })
-  const currentOpenApp = createMemo(() => {
-    if (prefs.app === "finder") {
-      return { id: "finder", label: language.t(fileManager().label), icon: fileManager().icon } as const
-    }
-
-    const app = appList().find((item) => item.id === prefs.app)
-    if (!app) return
-    return { ...app, label: language.t(app.label) } as const
-  })
-  const currentOpenOption = createMemo(
-    () =>
-      openOptions().find((option) => option.id === prefs.app) ??
-      currentOpenApp() ??
-      openOptions()[0] ??
-      ({ id: "finder", label: language.t(fileManager().label), icon: fileManager().icon } as const),
-  )
-  const canOpenWith = createMemo(() => platform.platform === "desktop" && !!platform.openPath && server.isLocal())
-  const openingWith = createMemo(() => openRequest.app !== undefined)
-
-  createEffect(() => {
-    if (platform.platform !== "desktop") return
-    if (!platform.checkAppExists) return
-
-    const next = appList()
-
-    setExists(Object.fromEntries(next.map((app) => [app.id, undefined])) as Partial<Record<OpenApp, boolean>>)
-
-    void Promise.all(
-      next.map((app) =>
-        Promise.resolve(platform.checkAppExists?.(app.openWith))
-          .then((value) => Boolean(value))
-          .catch(() => false)
-          .then((ok) => [app.id, ok] as const),
-      ),
-    ).then((entries) => {
-      setExists(Object.fromEntries(entries) as Partial<Record<OpenApp, boolean>>)
-    })
-  })
-
-  const openWithApp = (app: OpenApp) => {
-    if (openingWith() || !canOpenWith() || !platform.openPath) return
-    if (!openOptions().some((option) => option.id === app)) return
-
-    const target = fullPath()
-    if (!target) return
-
-    setPrefs("app", app)
-    setOpenRequest("app", app)
-
-    const plan = getOpenPlan(app, openOptions(), !!platform.openInEditor)
-    const parent = dirname(target) || target
-    const value = editor(app) ? target : parent
-    const task =
-      plan.kind === "editor" && platform.openInEditor
-        ? platform.openInEditor(plan.editor, value)
-        : platform.openPath(value, plan.kind === "path" ? plan.app : undefined)
-
-    Promise.resolve(task)
-      .catch((err: unknown) => {
-        showToast({
-          variant: "error",
-          title: language.t("common.requestFailed"),
-          description: err instanceof Error ? err.message : String(err),
-        })
-      })
-      .finally(() => {
-        setOpenRequest("app", undefined)
-      })
-  }
-
-  const openWithAction = (
-    <Show when={canOpenWith()}>
-      <DropdownMenu gutter={4} placement="bottom-end">
-        <DropdownMenu.Trigger
-          as={Button}
-          variant="ghost"
-          size="small"
-          disabled={openingWith()}
-          class="h-8 rounded-md px-2 gap-1.5 disabled:!cursor-default"
-          aria-label={language.t("session.header.open.ariaLabel", { app: currentOpenOption().label })}
-        >
-          <div class="flex size-4 shrink-0 items-center justify-center [&_[data-component=app-icon]]:size-4">
-            <Show when={openingWith()} fallback={<AppIcon id={currentOpenOption().icon} />}>
-              <Spinner class="size-3.5" />
-            </Show>
-          </div>
-          <span class="hidden sm:inline text-12-regular">{language.t("session.header.openIn")}</span>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content class="[&_[data-slot=dropdown-menu-radio-item]]:pl-1">
-            <DropdownMenu.Group>
-              <DropdownMenu.GroupLabel class="!px-1 !py-1">
-                {language.t("session.header.openIn")}
-              </DropdownMenu.GroupLabel>
-              <DropdownMenu.RadioGroup class="mt-1" value={currentOpenOption().id}>
-                <For each={openOptions()}>
-                  {(option) => (
-                    <DropdownMenu.RadioItem
-                      value={option.id}
-                      disabled={openingWith()}
-                      onSelect={() => openWithApp(option.id)}
-                    >
-                      <div class="flex size-5 shrink-0 items-center justify-center [&_[data-component=app-icon]]:size-5">
-                        <AppIcon id={option.icon} />
-                      </div>
-                      <DropdownMenu.ItemLabel>{option.label}</DropdownMenu.ItemLabel>
-                      <DropdownMenu.ItemIndicator>
-                        <Icon name="check-small" size="small" class="text-icon-weak" />
-                      </DropdownMenu.ItemIndicator>
-                    </DropdownMenu.RadioItem>
-                  )}
-                </For>
-              </DropdownMenu.RadioGroup>
-            </DropdownMenu.Group>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
-    </Show>
-  )
+  const openWithAction = <OpenInApp path={fullPath()} logPrefix="file-preview" />
   const copyPath = () => {
     const target = fullPath()
     if (!target) return

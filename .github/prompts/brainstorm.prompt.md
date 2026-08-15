@@ -9,7 +9,7 @@ Guide AI through collaborative requirements discovery **before implementation**,
 * **Task-first** (capture ideas immediately)
 * **Action-before-asking** (reduce low-value questions)
 * **Research-first** for technical choices (avoid asking users to invent options)
-* **Diverge �?Converge** (expand thinking, then lock MVP)
+* **Diverge -> Converge** (expand thinking, then lock MVP)
 
 ---
 

@@ -614,6 +614,7 @@ export function SessionComposerRegion(props: {
     laterCount: number
     onNavigate: (sessionID: string) => void
   }
+  subagentTitle?: string
   setPromptDockRef: (el: HTMLDivElement) => void
 }) {
   const prompt = usePrompt()
@@ -739,6 +740,7 @@ export function SessionComposerRegion(props: {
   )
   const showPromptToolbar = createMemo(
     () =>
+      !!props.subagentTitle ||
       (childAgentMenu()?.entries.length ?? 0) > 0 ||
       (platform.platform === "desktop" && backgroundShells().length > 0) ||
       !!userMessageMenu() ||
@@ -955,6 +957,17 @@ export function SessionComposerRegion(props: {
                     "overflow-hidden": !!visibleSubagentNavigation(),
                   }}
                 >
+                  <Show when={props.subagentTitle} keyed>
+                    {(title) => (
+                      <span
+                        data-testid="subagent-session-prompt-badge"
+                        class="inline-flex min-w-0 max-w-full shrink items-center truncate rounded-full border border-border-weak-base bg-surface-base px-3 py-1 text-11-medium font-medium text-text-interactive-base shadow-sm"
+                        title={title}
+                      >
+                        {language.t("session.childAgents.promptBadge", { title })}
+                      </span>
+                    )}
+                  </Show>
                   <Show when={childAgentMenu()} keyed>
                     {(menu) => <SessionChildAgentMenu entries={menu.entries} onOpen={menu.onOpen} />}
                   </Show>

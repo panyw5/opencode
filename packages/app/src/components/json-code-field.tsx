@@ -1,5 +1,6 @@
 import { createEffect, createMemo, Show, type JSX } from "solid-js"
 import { pair } from "@/components/dialog-prompt-editor-input"
+import { indent } from "@/components/markdown-editor-indent"
 import { monoFontFamily, useSettings } from "@/context/settings"
 import { paintCode } from "@/utils/paint-code"
 
@@ -29,9 +30,30 @@ export function JsonCodeField(props: {
     back.scrollLeft = box.scrollLeft
   }
 
-  const onPairKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
+  const applyEdit = (next: { text: string; start: number; end: number }) => {
+    props.onChange(next.text)
+    requestAnimationFrame(() => {
+      if (!box) return
+      box.setSelectionRange(next.start, next.end)
+      sync()
+    })
+  }
+
+  const onKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
     if (event.metaKey || event.ctrlKey || event.altKey) return
     if (event.isComposing || event.keyCode === 229) return
+
+    if (event.key === "Tab") {
+      const next = indent({
+        text: props.value,
+        start: event.currentTarget.selectionStart ?? 0,
+        end: event.currentTarget.selectionEnd ?? 0,
+        shiftKey: event.shiftKey,
+      })
+      event.preventDefault()
+      if (next) applyEdit(next)
+      return
+    }
 
     const next = pair({
       text: props.value,
@@ -41,12 +63,7 @@ export function JsonCodeField(props: {
     })
     if (!next) return
     event.preventDefault()
-    props.onChange(next.text)
-    requestAnimationFrame(() => {
-      if (!box) return
-      box.setSelectionRange(next.start, next.end)
-      sync()
-    })
+    applyEdit(next)
   }
 
   createEffect(() => {
@@ -97,7 +114,7 @@ export function JsonCodeField(props: {
           value={props.value}
           onInput={(event) => props.onChange(event.currentTarget.value)}
           onScroll={sync}
-          onKeyDown={onPairKeyDown}
+          onKeyDown={onKeyDown}
         />
         <Show when={props.placeholder && props.value.length === 0}>
           <div

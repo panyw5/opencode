@@ -26,12 +26,12 @@ const request = (messageID?: string) =>
     questions: [],
   }) as QuestionRequest
 
-const message = (input: { id: string; role?: "assistant" | "user"; error?: boolean }) =>
+const message = (input: { id: string; role?: "assistant" | "user"; error?: boolean; created?: number }) =>
   ({
     id: input.id,
     sessionID: "ses_1",
     role: input.role ?? "assistant",
-    time: { created: 1 },
+    time: { created: input.created ?? 1 },
     error: input.error ? { message: "boom" } : undefined,
   }) as Message
 
@@ -164,9 +164,25 @@ describe("session question dock helpers", () => {
   })
 
   test("invalidates a question when a later message supersedes its source", () => {
-    expect(questionInvalidation(request("msg_z"), [message({ id: "msg_z" }), message({ id: "msg_a" })])).toEqual({
+    expect(
+      questionInvalidation(request("msg_z"), [
+        message({ id: "msg_z", created: 1 }),
+        message({ id: "msg_a", created: 2 }),
+      ]),
+    ).toEqual({
       type: "superseded",
       messageID: "msg_a",
+    })
+  })
+
+  test("does not treat an older descending-id message as newer than an ascending-id source", () => {
+    const newer = message({ id: "msg_001a0039f61410018IaCpOi16U", created: 1786767171905 })
+    const older = message({ id: "msg_ff9e07b9b001AqmZ4LvhS2Iue3", created: 1786603666374 })
+
+    expect(questionInvalidation(request(newer.id), [newer, older])).toBeUndefined()
+    expect(questionInvalidation(request(older.id), [newer, older])).toEqual({
+      type: "superseded",
+      messageID: newer.id,
     })
   })
 
