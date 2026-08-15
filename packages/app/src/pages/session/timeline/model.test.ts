@@ -31,6 +31,15 @@ describe("timeline model", () => {
     expect(selectVisibleUserMessages(users)).toBe(users)
   })
 
+  test("orders user turns by created time when ids wrap", () => {
+    const newer = { ...user("msg_00new"), time: { created: 200 } } as UserMessage
+    const older = { ...user("msg_feold"), time: { created: 100 } } as UserMessage
+    const users = selectUserMessages([newer, assistant("msg_a"), older])
+
+    expect(users.map((message) => message.id)).toEqual(["msg_feold", "msg_00new"])
+    expect(selectVisibleUserMessages(users, "msg_00new").map((message) => message.id)).toEqual(["msg_feold"])
+  })
+
   test("loads pages until a visible user turn is added", async () => {
     let loaded = 10
     let visible = 2

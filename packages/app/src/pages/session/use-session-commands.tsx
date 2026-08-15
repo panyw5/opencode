@@ -24,6 +24,7 @@ import { extractPromptFromParts } from "@/utils/prompt"
 import type { Message, UserMessage } from "@opencode-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { decode64 } from "@/utils/base64"
+import { compareMessages, resolveMessage } from "@/utils/message-order"
 import { dict as enDict } from "@/i18n/en"
 import { working as sessionWorking } from "./session-working"
 import { SESSION_HOOK_CONTROL_COMMANDS, sessionHookControlInput } from "./session-hook-controls"
@@ -551,7 +552,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             await sdk.client.session.abort({ sessionID }).catch(() => {})
           }
           const revert = info()?.revert?.messageID
-          const message = findLast(userMessages(), (x) => !revert || x.id < revert)
+          const boundary = revert ? resolveMessage(messages(), revert) ?? resolveMessage(userMessages(), revert) : undefined
+          const message = findLast(userMessages(), (x) => !boundary || compareMessages(x, boundary) < 0)
           if (!message) return
           await sdk.client.session.revert({ sessionID, messageID: message.id })
           const parts = sync.data.part[message.id]
@@ -559,7 +561,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             const restored = extractPromptFromParts(parts, { directory: sdk.directory })
             prompt.set(restored)
           }
-          const priorMessage = findLast(userMessages(), (x) => x.id < message.id)
+          const priorMessage = findLast(userMessages(), (x) => compareMessages(x, message) < 0)
           setActiveMessage(priorMessage)
         },
       }),
@@ -575,16 +577,20 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
           if (!sessionID) return
           const revertMessageID = info()?.revert?.messageID
           if (!revertMessageID) return
-          const nextMessage = userMessages().find((x) => x.id > revertMessageID)
+          const boundary =
+            resolveMessage(messages(), revertMessageID) ?? resolveMessage(userMessages(), revertMessageID) ?? {
+              id: revertMessageID,
+            }
+          const nextMessage = userMessages().find((x) => compareMessages(x, boundary) > 0)
           if (!nextMessage) {
             await sdk.client.session.unrevert({ sessionID })
             prompt.reset()
-            const lastMsg = findLast(userMessages(), (x) => x.id >= revertMessageID)
+            const lastMsg = findLast(userMessages(), (x) => compareMessages(x, boundary) >= 0)
             setActiveMessage(lastMsg)
             return
           }
           await sdk.client.session.revert({ sessionID, messageID: nextMessage.id })
-          const priorMsg = findLast(userMessages(), (x) => x.id < nextMessage.id)
+          const priorMsg = findLast(userMessages(), (x) => compareMessages(x, nextMessage) < 0)
           setActiveMessage(priorMsg)
         },
       }),

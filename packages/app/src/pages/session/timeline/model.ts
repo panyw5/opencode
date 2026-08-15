@@ -3,6 +3,7 @@ import { createMemo, createResource, onCleanup, untrack, type Accessor } from "s
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { compareMessages, resolveMessage, sortMessages } from "@/utils/message-order"
 import { same } from "@/utils/same"
 
 const emptyUserMessages: UserMessage[] = []
@@ -122,12 +123,14 @@ export function createTimelineModel(input: {
 }
 
 export function selectUserMessages(messages: Message[]) {
-  return messages.filter((message): message is UserMessage => message.role === "user")
+  return sortMessages(messages.filter((message): message is UserMessage => message.role === "user"))
 }
 
 export function selectVisibleUserMessages(messages: UserMessage[], revertMessageID?: string) {
   if (!revertMessageID) return messages
-  return messages.filter((message) => message.id < revertMessageID)
+  const boundary = resolveMessage(messages, revertMessageID)
+  if (!boundary) return messages.filter((message) => message.id < revertMessageID)
+  return messages.filter((message) => compareMessages(message, boundary) < 0)
 }
 
 export async function loadOlderTimeline(input: {

@@ -211,4 +211,15 @@ describe("clipMessages", () => {
 
     expect(clipMessages(list, 2).map((item) => item.id)).toEqual(["u2", "a2", "a3"])
   })
+
+  test("clips by created time when lexicographic ids wrap", () => {
+    const list = [
+      { ...msg("msg_00new", "user"), time: { created: 200 } },
+      { ...msg("msg_00new_a", "assistant"), time: { created: 201 } },
+      { ...msg("msg_feold", "user"), time: { created: 100 } },
+      { ...msg("msg_feold_a", "assistant"), time: { created: 101 } },
+    ] as Message[]
+
+    expect(clipMessages(list, 2).map((item) => item.id)).toEqual(["msg_00new", "msg_00new_a"])
+  })
 })

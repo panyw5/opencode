@@ -51,14 +51,19 @@ import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
 import {
   createCoalescedConnectedMeasure,
+  measureTimelineRowHeight,
   partMeasurementKey,
+  sameVirtualItemGeometry,
   shouldAdjustVirtualScroll,
+  shouldCommitVirtualRowHeight,
   timelineContentVersion,
   timelineMeasurementsMatchWidth,
+  timelineRowContentVisibility,
   virtualRowOverflow,
 } from "./measure"
 import { assistantCopySummary } from "./model"
 import { createTimelineProjection } from "./projection"
+import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
 
 const emptyMessages: MessageType[] = []
@@ -67,7 +72,7 @@ const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
 const timelineFallbackItemSize = 60
 // Snapshot sizes depend on the rendered row structure and Markdown strategy.
-const timelineMeasurementVersion = 2
+const timelineMeasurementVersion = 3
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
@@ -251,6 +256,12 @@ export function MessageTimeline(props: {
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length || coldBottomMount ? 6 : 20)
 
   const sessionID = createMemo(() => params.id)
+  const lagging = () =>
+    typeof window !== "undefined" && window.localStorage.getItem("opencode.session.lag.debug") === "1"
+  const timelineLag = (kind: string, fields: string) => {
+    if (!lagging()) return
+    console.debug(`[lag] timeline-${kind} sid=${sessionID() ?? "none"} ${fields}`)
+  }
   createEffect(
     on(
       sessionID,
@@ -267,7 +278,18 @@ export function MessageTimeline(props: {
   })
   const sessionMessages = createMemo(() => {
     const id = sessionID()
-    return id ? (sync.data.message[id] ?? emptyMessages) : emptyMessages
+    if (!id) return emptyMessages
+    const all = sync.data.message[id] ?? emptyMessages
+    if (all.length < 2) return all
+    const ordered = sortMessages(all)
+    if (all[0] && ordered[0] && all[0].id !== ordered[0].id) {
+      const first = ordered[0]
+      const last = ordered[ordered.length - 1]
+      console.debug(
+        `[timeline] message-order corrected sid=${id} n=${String(ordered.length)} first=${first.id}:${String(first.time.created)} last=${last.id}:${String(last.time.created)}`,
+      )
+    }
+    return ordered
   })
   const getMessageParts = (messageID: string) => sync.data.part[messageID] ?? emptyParts
   const getMessagePart = (messageID: string, partID: string) =>
@@ -287,6 +309,15 @@ export function MessageTimeline(props: {
   const assistantMessagesByParent = projection.assistantMessagesByParent
   const activeMessageID = projection.activeMessageID
   const lastAssistantGroupKey = projection.lastAssistantGroupKey
+  const activeAssistantRowIndex = createMemo(() => {
+    const activeID = activeMessageID()
+    const groupKey = activeID ? lastAssistantGroupKey().get(activeID) : undefined
+    if (!activeID || !groupKey) return
+    const index = timelineRows().findIndex(
+      (row) => row._tag === "AssistantPart" && row.userMessageID === activeID && row.group.key === groupKey,
+    )
+    return index >= 0 ? index : undefined
+  })
 
   type PrependAnchor = {
     key: string
@@ -414,21 +445,30 @@ export function MessageTimeline(props: {
     overscan: 50,
     paddingEnd: 64,
     rangeExtractor: (range) => {
-      const activeID = activeMessageID()
-      const activeRows = activeID
-        ? timelineRows().flatMap((row, index) =>
-            row._tag === "AssistantPart" && row.userMessageID === activeID ? [index] : [],
-          )
-        : []
       const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
-      return [...new Set([...resizePinnedIndexes, ...indexes, ...activeRows])].sort((a, b) => a - b)
+      const active = activeAssistantRowIndex()
+      return [...new Set([...resizePinnedIndexes, ...indexes, ...(active === undefined ? [] : [active])])].sort(
+        (a, b) => a - b,
+      )
     },
   })
   const resizeItem = virtualizer.resizeItem
   virtualizer.resizeItem = (index, size) => {
+    const profiling = lagging()
+    const started = profiling ? performance.now() : 0
     const item = virtualizer.measurementsCache[index]
     const previous = item ? (virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
     const root = listRoot()
+    const beforeScroll = profiling ? (root?.scrollTop ?? 0) : 0
+    const rowElement = profiling ? root?.querySelector<HTMLElement>(`[data-index="${index}"]`) : undefined
+    const rowTop = profiling && root && rowElement ? rowElement.getBoundingClientRect().top - root.getBoundingClientRect().top : 0
+    const stages = profiling
+      ? [...(rowElement?.querySelectorAll<HTMLElement>('[data-component="markdown"]') ?? [])]
+          .map((node) => `${node.dataset.markdownStage ?? "none"}/${node.dataset.markdownRenderedStage ?? "none"}`)
+          .join(",") || "none"
+      : "none"
+    const visibility = profiling && rowElement ? getComputedStyle(rowElement).contentVisibility : "none"
+    let pinned = 0
     if (root && previous !== undefined && Math.abs(size - previous) > root.clientHeight) {
       const view = root.getBoundingClientRect()
       resizePinnedIndexes = [...root.querySelectorAll<HTMLElement>("[data-index]")]
@@ -437,6 +477,7 @@ export function MessageTimeline(props: {
           return rect.bottom > view.top && rect.top < view.bottom
         })
         .map((element) => Number(element.dataset.index))
+      pinned = resizePinnedIndexes.length
       if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
       resizePinFrame = requestAnimationFrame(() => {
         resizePinFrame = requestAnimationFrame(() => {
@@ -446,14 +487,38 @@ export function MessageTimeline(props: {
       })
     }
     resizeItem(index, size)
+    const afterScroll = profiling ? (root?.scrollTop ?? 0) : 0
+    const duration = profiling ? performance.now() - started : 0
+    if (profiling && (duration >= 4 || pinned > 0 || Math.abs(size - (previous ?? size)) >= 1)) {
+      timelineLag(
+        "resize",
+        `index=${index} key=${String(item?.key ?? "none")} previous=${Math.round(previous ?? 0)} next=${Math.round(size)} delta=${Math.round(size - (previous ?? size))} rowTop=${Math.round(rowTop)} stages=${stages} visibility=${visibility} scrollBefore=${Math.round(beforeScroll)} scrollAfter=${Math.round(afterScroll)} scrollDelta=${Math.round(afterScroll - beforeScroll)} pinned=${pinned} rendered=${virtualizer.getVirtualItems().length} duration=${Math.round(duration)}`,
+      )
+      requestAnimationFrame(() => {
+        timelineLag(
+          "resize-frame",
+          `index=${index} key=${String(item?.key ?? "none")} scrollBefore=${Math.round(beforeScroll)} scrollFrame=${Math.round(root?.scrollTop ?? 0)} scrollDelta=${Math.round((root?.scrollTop ?? 0) - beforeScroll)}`,
+        )
+      })
+    }
   }
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    shouldAdjustVirtualScroll({
-      itemEnd: item.end,
-      scrollOffset: instance.getLogicalScrollOffset(),
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
+    const root = listRoot()
+    const scrollOffset = instance.getLogicalScrollOffset()
+    const adjust = shouldAdjustVirtualScroll({
+      itemStart: item.start,
+      scrollOffset,
       bottomAnchored: props.shouldAnchorBottom(),
       initializing: props.isInitialScrollSettling(),
     })
+    if (lagging() && Math.abs(delta) >= 1) {
+      timelineLag(
+        "resize-adjust",
+        `index=${item.index} key=${String(item.key)} delta=${Math.round(delta)} itemStart=${Math.round(item.start)} itemEnd=${Math.round(item.end)} scrollOffset=${Math.round(scrollOffset)} viewport=${Math.round(root?.clientHeight ?? 0)} adjust=${adjust} bottom=${props.shouldAnchorBottom()} initializing=${props.isInitialScrollSettling()}`,
+      )
+    }
+    return adjust
+  }
   const virtualItemByKey = createMemo(
     () =>
       new Map(
@@ -487,6 +552,7 @@ export function MessageTimeline(props: {
       })
     })
   })
+
   onCleanup(() => {
     clearPrependAnchor()
     timelineCache.set(ownerSessionKey, {
@@ -811,10 +877,15 @@ export function MessageTimeline(props: {
   function VirtualTimelineRow(input: { rowKey: string }) {
     let element: HTMLDivElement | undefined
     let resizeObserver: ResizeObserver | undefined
-    const [contentHeight, setContentHeight] = createSignal(0)
+    let markdownObserver: MutationObserver | undefined
     const initialItem = virtualItemByKey().get(input.rowKey)!
     const initialRow = timelineRowByKey().get(input.rowKey)!
-    const item = createMemo(() => virtualItemByKey().get(input.rowKey) ?? initialItem)
+    const [contentHeight, setContentHeight] = createSignal(initialItem.size)
+    const item = createMemo(
+      () => virtualItemByKey().get(input.rowKey) ?? initialItem,
+      initialItem,
+      { equals: sameVirtualItemGeometry },
+    )
     const row = createMemo(() => timelineRowByKey().get(input.rowKey) ?? initialRow)
     const partMeasurements = createMemo(() => {
       const value = row()
@@ -823,30 +894,84 @@ export function MessageTimeline(props: {
         return partMeasurementKey(getMessagePart(value.group.ref.messageID, value.group.ref.partID))
       return value.group.refs.map((ref) => partMeasurementKey(getMessagePart(ref.messageID, ref.partID))).join("|")
     })
+    const liveMeasured = () => {
+      const index = item().index
+      return (
+        timelineRowContentVisibility({
+          index,
+          activeIndex: activeAssistantRowIndex(),
+          lastIndex: timelineRows().length - 1,
+        }) === "visible"
+      )
+    }
     const measurement = createCoalescedConnectedMeasure({
       element: () => element,
-      measure: (target) => target.getBoundingClientRect().height,
+      measure: measureTimelineRowHeight,
       commit: (_target, height) => {
-        // TanStack skips measureElement updates during a user scroll. Dynamic
-        // Markdown and tool content must still claim their new row height, or
-        // the absolutely positioned following row clips it until scrolling ends.
+        // TanStack skips measureElement during scroll and may return a cached
+        // size. Streaming markdown must still claim the new row height or the
+        // page-level bottom lock chases an underestimated spacer.
+        const virtual = item().size
+        const live = liveMeasured()
+        if (!shouldCommitVirtualRowHeight({ next: height, previous: virtual, live })) {
+          setContentHeight(Math.max(height, contentHeight()))
+          if (lagging()) {
+            console.debug(
+              `[timeline] row-measure:skip-shrink key=${input.rowKey} index=${String(item().index)} height=${String(Math.round(height))} virtual=${String(Math.round(virtual))} delta=${String(Math.round(height - virtual))}`,
+            )
+          }
+          return
+        }
         setContentHeight(height)
         virtualizer.resizeItem(item().index, height)
+        const delta = height - virtual
+        if (lagging() && Math.abs(delta) > 1) {
+          console.debug(
+            `[timeline] row-measure key=${input.rowKey} index=${String(item().index)} height=${String(Math.round(height))} virtual=${String(Math.round(virtual))} delta=${String(Math.round(delta))} live=${String(live)}`,
+          )
+        }
       },
     })
-    const requestMeasure = () => {
-      if (element?.isConnected) setContentHeight(element.getBoundingClientRect().height)
+    const requestMeasure = (source: string) => {
+      if (element?.isConnected) {
+        const height = measureTimelineRowHeight(element)
+        setContentHeight(height)
+        if (lagging() && Math.abs(height - item().size) > 1) {
+          console.debug(
+            `[timeline] row-measure:request source=${source} key=${input.rowKey} index=${String(item().index)} height=${String(Math.round(height))} virtual=${String(Math.round(item().size))} delta=${String(Math.round(height - item().size))}`,
+          )
+        }
+      }
       measurement.request()
     }
 
     onMount(() => {
       if (!element) return
-      virtualizer.measureElement(element)
-      const height = element.getBoundingClientRect().height
+      const mountedElement = element
+      virtualizer.measureElement(mountedElement)
+      const height = measureTimelineRowHeight(mountedElement)
       setContentHeight(height)
       measurement.remember(height)
-      resizeObserver = new ResizeObserver(requestMeasure)
-      resizeObserver.observe(element)
+      resizeObserver = new ResizeObserver(() => requestMeasure("resize"))
+      resizeObserver.observe(mountedElement)
+      if (lagging()) {
+        markdownObserver = new MutationObserver((records) => {
+          for (const record of records) {
+            const target = record.target
+            if (!(target instanceof HTMLElement)) continue
+            timelineLag(
+              "markdown-stage",
+              `index=${item().index} key=${input.rowKey} attr=${record.attributeName ?? "none"} old=${record.oldValue ?? "none"} stage=${target.dataset.markdownStage ?? "none"} rendered=${target.dataset.markdownRenderedStage ?? "none"} rowSize=${Math.round(item().size)} contentHeight=${Math.round(contentHeight())} scrollTop=${Math.round(listRoot()?.scrollTop ?? 0)} visibility=${getComputedStyle(mountedElement).contentVisibility}`,
+            )
+          }
+        })
+        markdownObserver.observe(mountedElement, {
+          subtree: true,
+          attributes: true,
+          attributeOldValue: true,
+          attributeFilter: ["data-markdown-stage", "data-markdown-rendered-stage"],
+        })
+      }
     })
     createEffect(
       on(
@@ -854,7 +979,7 @@ export function MessageTimeline(props: {
         () => {
           if (!element) return
           virtualizer.measureElement(element)
-          const height = element.getBoundingClientRect().height
+          const height = measureTimelineRowHeight(element)
           setContentHeight(height)
           measurement.remember(height)
         },
@@ -864,11 +989,12 @@ export function MessageTimeline(props: {
     createEffect(() => {
       row()
       partMeasurements()
-      requestMeasure()
+      requestMeasure("content")
     })
     onCleanup(() => {
       measurement.cancel()
       resizeObserver?.disconnect()
+      markdownObserver?.disconnect()
     })
     return (
       <div

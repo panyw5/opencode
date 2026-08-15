@@ -64,6 +64,7 @@ import {
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
+import { shouldEaseLiveBottom } from "@/pages/session/timeline/measure"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
@@ -85,6 +86,7 @@ import {
 import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import { collectSessionActiveSkills } from "@/pages/session/session-active-skills"
 import { Identifier } from "@/utils/id"
+import { compareMessages, resolveMessage, sortMessages } from "@/utils/message-order"
 import { commandInvocationFromParts, extractPromptFromParts, injectionPreviewFromParts } from "@/utils/prompt"
 import { same } from "@/utils/same"
 import { formatServerError } from "@/utils/server-errors"
@@ -98,6 +100,7 @@ const emptyFollowups: (FollowupDraft & { id: string })[] = []
 const smoothBottomSnapDistance = 900
 const smoothBottomMaxStep = 180
 const smoothBottomEase = 0.32
+const smoothBottomMinDistance = 64
 
 type ChangeMode = "git" | "branch" | "session" | "turn"
 type VcsMode = "git" | "branch"
@@ -294,8 +297,16 @@ export default function Page() {
     const id = params.id
     if (!id) return []
     const all = sync.data.message[id] ?? []
+    const ordered = sortMessages(all)
+    if (ordered.length > 1 && all[0] && ordered[0] && all[0].id !== ordered[0].id) {
+      const first = ordered[0]
+      const last = ordered[ordered.length - 1]
+      console.debug(
+        `[session] message-order corrected sid=${id} n=${String(ordered.length)} first=${first.id}:${String(first.time.created)} last=${last.id}:${String(last.time.created)}`,
+      )
+    }
     const limit = explicitMessageLimit()
-    return clipMessages(all, limit)
+    return clipMessages(ordered, limit)
   })
   const [apiChildSessions, setApiChildSessions] = createSignal<Session[]>([])
   createEffect(
@@ -446,7 +457,9 @@ export default function Page() {
     () => {
       const revert = revertMessageID()
       if (!revert) return userMessages()
-      return userMessages().filter((m) => m.id < revert)
+      const boundary = resolveMessage(messages(), revert) ?? resolveMessage(userMessages(), revert)
+      if (!boundary) return userMessages().filter((m) => m.id < revert)
+      return userMessages().filter((m) => compareMessages(m, boundary) < 0)
     },
     emptyUserMessages,
     {
@@ -945,13 +958,16 @@ export default function Page() {
     const over = (e: PointerEvent) => watchLag("hover", e.target)
     const down = (e: PointerEvent) => watchLag("down", e.target)
     const click = (e: MouseEvent) => watchLag("click", e.target)
+    const wheel = (e: WheelEvent) => watchLag("wheel", e.target)
     el.addEventListener("pointerover", over, true)
     el.addEventListener("pointerdown", down, true)
     el.addEventListener("click", click, true)
+    el.addEventListener("wheel", wheel, true)
     onCleanup(() => {
       el.removeEventListener("pointerover", over, true)
       el.removeEventListener("pointerdown", down, true)
       el.removeEventListener("click", click, true)
+      el.removeEventListener("wheel", wheel, true)
     })
   })
 
@@ -1537,7 +1553,21 @@ export default function Page() {
     bottomThreshold: scrollBottomThreshold,
     resize: "off",
   })
-  const live = () => running() && ui.mode === "live" && !autoScroll.userScrolled()
+  // Optimistic user turns land while session status is still idle, so running()
+  // is false until the assistant message exists. Keep pinning across that gap.
+  let followBottom = false
+  const armFollowBottom = (source: string) => {
+    if (!followBottom) {
+      console.debug(`[session] follow-bottom arm source=${source}`)
+    }
+    followBottom = true
+  }
+  const clearFollowBottom = (source: string) => {
+    if (!followBottom) return
+    followBottom = false
+    console.debug(`[session] follow-bottom clear source=${source}`)
+  }
+  const live = () => (running() || followBottom) && ui.mode === "live" && !autoScroll.userScrolled()
   const enterLive = () => {
     if (ui.mode === "live") return
     setUi("mode", "live")
@@ -1561,12 +1591,19 @@ export default function Page() {
       debug("lock-bottom:skip", el, { source, dist: Math.round(dist) })
       return
     }
-    if (mode === "smooth" && Math.abs(dist) <= smoothBottomSnapDistance) {
+    const ease =
+      mode === "smooth" &&
+      shouldEaseLiveBottom(dist, { min: smoothBottomMinDistance, max: smoothBottomSnapDistance })
+    if (ease) {
       const step = Math.sign(dist) * Math.min(Math.max(Math.abs(dist) * smoothBottomEase, 1), smoothBottomMaxStep)
       el.scrollTop += step
     } else {
       el.scrollTop = next
     }
+    const gap = el.scrollHeight - el.clientHeight - el.scrollTop
+    console.debug(
+      `[session] lock-bottom source=${source} mode=${mode} ease=${String(ease)} dist=${String(Math.round(dist))} gap=${String(Math.round(gap))} live=${String(live())}`,
+    )
     debug("lock-bottom:write", el, { source, dist: Math.round(dist) })
   }
 
@@ -1584,6 +1621,11 @@ export default function Page() {
 
   const hasScrollTarget = () => !!location.hash || !!ui.pendingMessage || !!ui.seekingMessageId || !!store.messageId
   const settling = () => !!initialScrollKey && performance.now() < until && !hasScrollGesture()
+  const shouldPinBottom = () =>
+    (followBottom || running() || settling() || live()) &&
+    !autoScroll.userScrolled() &&
+    !hasScrollGesture() &&
+    !hasScrollTarget()
 
   const settle = (key: string) => {
     initialScrollFrame = undefined
@@ -1647,8 +1689,8 @@ export default function Page() {
     // ResizeObserver may deliver several row and total-size changes together.
     // Reconcile after those callbacks complete so this page-level follow logic
     // does not compete with the virtualizer in the same delivery cycle.
-    if ((live() || settling()) && !hasScrollTarget() && !hasScrollGesture()) {
-      lockBottom(root, "content:resize:lock-bottom", live() ? "smooth" : "auto")
+    if (shouldPinBottom()) {
+      lockBottom(root, "content:resize:lock-bottom")
     }
     debug("content-resize:after", root)
     scheduleScrollState(root)
@@ -1673,19 +1715,33 @@ export default function Page() {
   const updateScrollState = (el: HTMLDivElement) => {
     if (!el.isConnected || el.clientHeight <= 0 || el.scrollHeight <= 0) return
     debug("state:before", el)
-    if ((live() || settling()) && !hasScrollGesture() && !hasScrollTarget()) {
-      lockBottom(el, "state:live-lock", live() ? "smooth" : "auto")
+    if (shouldPinBottom()) {
+      lockBottom(el, "state:live-lock")
+    } else if (followBottom || running()) {
+      console.debug(
+        `[session] pin-skip sid=${params.id ?? "none"} running=${String(running())} follow=${String(followBottom)} live=${String(live())} userScrolled=${String(autoScroll.userScrolled())} gesture=${String(hasScrollGesture())} target=${String(hasScrollTarget())} gap=${String(Math.round(el.scrollHeight - el.clientHeight - el.scrollTop))}`,
+      )
     }
     const top = clamp(el)
     const max = el.scrollHeight - el.clientHeight
     const overflow = max > 1
-    const bottom = !overflow || max - top <= scrollBottomThreshold
+    const gap = max - top
+    const bottom = !overflow || gap <= scrollBottomThreshold
+
+    if ((live() || followBottom) && overflow && !bottom) {
+      console.debug(
+        `[session] scroll-state live-gap sid=${params.id ?? "none"} gap=${String(Math.round(gap))} overflow=${String(overflow)} bottom=${String(bottom)} follow=${String(followBottom)} running=${String(running())} virtual=${String(Math.round(content?.offsetHeight ?? 0))} scrollHeight=${String(Math.round(el.scrollHeight))}`,
+      )
+    }
 
     if (ui.scroll.overflow === overflow && ui.scroll.bottom === bottom) {
       debug("state:same", el, { nextOverflow: overflow, nextBottom: bottom })
       return
     }
     setUi("scroll", { overflow, bottom })
+    console.debug(
+      `[session] scroll-state update sid=${params.id ?? "none"} overflow=${String(overflow)} bottom=${String(bottom)} gap=${String(Math.round(gap))} live=${String(live())} follow=${String(followBottom)} running=${String(running())}`,
+    )
     debug("state:update", el, { nextOverflow: overflow, nextBottom: bottom })
   }
 
@@ -1727,10 +1783,16 @@ export default function Page() {
     setStore("messageId", undefined)
     setUi("seekingMessageId", undefined)
     clearMessageHash()
-
+    enterLive()
+    armFollowBottom("resume")
+    autoScroll.resume()
     scrollToEnd()
     const el = scroller
-    if (el) scheduleScrollState(el)
+    if (el) {
+      lockBottom(el, "resume:jump")
+      scheduleScrollState(el)
+    }
+    console.debug(`[session] resume-scroll live=${String(live())} follow=${String(followBottom)} running=${String(running())}`)
   }
 
   // When the user returns to the bottom, treat the active message as "latest".
@@ -1799,11 +1861,12 @@ export default function Page() {
       autoScroll.userScrolled,
       (scrolled) => {
         debug("user-scrolled:change", scroller, { scrolled })
-        if (!running()) return
         if (scrolled) {
-          enterAnchored()
+          clearFollowBottom("user-scrolled")
+          if (running()) enterAnchored()
           return
         }
+        if (!running()) return
         enterLive()
         setStore("messageId", undefined)
         clearMessageHash()
@@ -1817,9 +1880,14 @@ export default function Page() {
       running,
       (run) => {
         if (!run) return
-        if (!ui.scroll.bottom) return
         if (ui.seekingMessageId || store.messageId) return
+        if (autoScroll.userScrolled()) {
+          console.debug("[session] streaming follow skipped user-scrolled")
+          return
+        }
         console.debug("[session] streaming bottom follow enabled")
+        armFollowBottom("running")
+        enterLive()
         autoScroll.resume()
       },
       { defer: true },
@@ -2294,7 +2362,10 @@ export default function Page() {
       const sessionID = params.id
       if (!sessionID) return
 
-      const next = userMessages().find((item) => item.id > id)
+      const current = resolveMessage(userMessages(), id)
+      const next = current
+        ? userMessages().find((item) => compareMessages(item, current) > 0)
+        : userMessages().find((item) => item.id > id)
       const prev = prompt.current().slice()
       const last = info()?.revert
 
@@ -2366,8 +2437,10 @@ export default function Page() {
   const rolled = createMemo(() => {
     const id = revertMessageID()
     if (!id) return []
+    const boundary = resolveMessage(userMessages(), id) ?? resolveMessage(messages(), id)
+    if (!boundary) return []
     return userMessages()
-      .filter((item) => item.id >= id)
+      .filter((item) => compareMessages(item, boundary) >= 0)
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 
