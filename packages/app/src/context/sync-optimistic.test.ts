@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { applyOptimisticAdd, applyOptimisticRemove, mergeFetchedParts, mergeOptimisticPage, reveal, shown } from "./sync"
+import { createComputed, createRoot } from "solid-js"
+import { createStore } from "solid-js/store"
+import {
+  applyOptimisticAdd,
+  applyOptimisticRemove,
+  mergeFetchedParts,
+  mergeOptimisticPage,
+  reconcileFetchedParts,
+  reveal,
+  shown,
+} from "./sync"
 
 type Text = Extract<Part, { type: "text" }>
 
@@ -137,6 +147,25 @@ describe("sync optimistic reducers", () => {
     const cached = { ...fetched, text: "old stream" }
 
     expect(mergeFetchedParts([fetched], [cached])).toEqual([fetched])
+  })
+
+  test("does not invalidate unchanged part fields when a fetched snapshot is reconciled", () => {
+    const sessionID = "ses_1"
+    const messageID = "msg_1"
+    const original = textPart("prt_1", sessionID, messageID)
+    const [store, setStore] = createStore({ parts: [original] as Part[] })
+    let runs = 0
+
+    createRoot((dispose) => {
+      createComputed(() => {
+        store.parts[0]?.text
+        runs += 1
+      })
+      setStore("parts", reconcileFetchedParts([{ ...original }]))
+      dispose()
+    })
+
+    expect(runs).toBe(1)
   })
 })
 

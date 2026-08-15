@@ -9,6 +9,7 @@ import {
   getSessionPrefetchPromise,
   setSessionPrefetch,
 } from "./global-sync/session-prefetch"
+import { markSessionProfile } from "@/utils/session-profile"
 import { useGlobalSync } from "./global-sync"
 import { useSDK } from "./sdk"
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
@@ -117,6 +118,10 @@ export function mergeFetchedParts(fetched: Part[], cached: Part[] | undefined) {
     })
     return existing
   })
+}
+
+export function reconcileFetchedParts(parts: Part[]) {
+  return reconcile(parts, { key: "id", merge: true })
 }
 
 export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) {
@@ -350,9 +355,22 @@ const initialMessagePageSize = 80
       before?: string
     }) => {
       const directory = sdk.directory
+      const started = performance.now()
+      markSessionProfile(
+        input.sessionID,
+        "messages-request-start",
+        `limit=${String(input.limit)} before=${input.before ?? "none"}`,
+      )
       const messages = await retry(() =>
         input.client.session.messages({ sessionID: input.sessionID, limit: input.limit, before: input.before }),
-      )
+      ).catch((error) => {
+        markSessionProfile(
+          input.sessionID,
+          "messages-request-error",
+          `error=${error instanceof Error ? error.name : "unknown"}`,
+        )
+        throw error
+      })
       const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
       const session = items.map((x) => x.info).sort((a, b) => cmp(a.id, b.id))
       const part = items.map((message) => ({ id: message.info.id, part: sortParts(message.parts) }))
@@ -363,6 +381,11 @@ const initialMessagePageSize = 80
         cursor,
         complete: !cursor,
       }
+      markSessionProfile(
+        input.sessionID,
+        "messages-request-end",
+        `duration_ms=${String(Math.round((performance.now() - started) * 10) / 10)} count=${String(session.length)}`,
+      )
       return result
     }
 
@@ -404,6 +427,7 @@ const initialMessagePageSize = 80
           const [store] = globalSync.child(input.directory, { bootstrap: false })
           const cached = input.mode === "prepend" ? (store.message[input.sessionID] ?? []) : []
           const message = input.mode === "prepend" ? merge(cached, next.session) : next.session
+          markSessionProfile(input.sessionID, "store-commit", `count=${String(message.length)}`)
           batch(() => {
             input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
             for (const p of next.part) {
@@ -411,27 +435,7 @@ const initialMessagePageSize = 80
                 p.part.filter((x) => !SKIP_PARTS.has(x.type)),
                 store.part[p.id],
               )
-              if (filtered.length) input.setStore("part", p.id, filtered)
-            }
-            if ((meta.show[key] ?? 0) > message.length) setMeta("show", key, message.length)
-            setMeta("cursor", key, next.cursor)
-            setMeta("complete", key, next.complete)
-            setSessionPrefetch({
-              directory: input.directory,
-              sessionID: input.sessionID,
-              count: message.length,
-              cursor: next.cursor,
-              complete: next.complete,
-            })
-          })
-          batch(() => {
-            input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
-            for (const p of next.part) {
-              const filtered = mergeFetchedParts(
-                p.part.filter((x) => !SKIP_PARTS.has(x.type)),
-                store.part[p.id],
-              )
-              if (filtered.length) input.setStore("part", p.id, filtered)
+              if (filtered.length) input.setStore("part", p.id, reconcileFetchedParts(filtered))
             }
             if ((meta.show[key] ?? 0) > message.length) setMeta("show", key, message.length)
             setMeta("cursor", key, next.cursor)
@@ -559,6 +563,7 @@ const initialMessagePageSize = 80
           const client = sdk.client
           const [store, setStore] = globalSync.child(directory)
           const key = keyFor(directory, sessionID)
+          markSessionProfile(sessionID, "sync-enter", `force=${String(!!opts?.force)}`)
 
           touch(directory, setStore, sessionID)
 
@@ -574,9 +579,11 @@ const initialMessagePageSize = 80
           return runInflight(inflight, key, async () => {
             const pending = getSessionPrefetchPromise(directory, sessionID)
             if (pending) {
+              markSessionProfile(sessionID, "prefetch-wait-start")
               // Prefetch is an optimization — if it fails or hangs, fall through
               // to a direct fetch instead of blocking the session view forever.
               await Promise.race([pending, new Promise((r) => setTimeout(r, 5000))]).catch(() => {})
+              markSessionProfile(sessionID, "prefetch-wait-end")
               const seeded = getSessionPrefetch(directory, sessionID)
               if (seeded && store.message[sessionID] !== undefined && meta.complete[key] === undefined) {
                 batch(() => {
@@ -592,6 +599,7 @@ const initialMessagePageSize = 80
             const currentLength = store.message[sessionID]?.length ?? 0
             const currentShow = view(directory, sessionID)
             if (cached && hasSession && !opts?.force) {
+              markSessionProfile(sessionID, "sync-cache-hit")
               return
             }
 
@@ -617,7 +625,15 @@ const initialMessagePageSize = 80
                     limit,
                   })
 
-            await Promise.all([sessionReq, messagesReq])
+            await Promise.all([sessionReq, messagesReq]).catch((error) => {
+              markSessionProfile(
+                sessionID,
+                "sync-error",
+                `force=${String(!!opts?.force)} error=${error instanceof Error ? error.name : "unknown"}`,
+              )
+              throw error
+            })
+            markSessionProfile(sessionID, "sync-end", `force=${String(!!opts?.force)}`)
           })
         },
         async diff(sessionID: string, opts?: { force?: boolean }) {

@@ -18,6 +18,7 @@ import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
+import { ensureSessionProfile, startSessionProfile } from "@/utils/session-profile"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { working } from "../session/session-working"
 import {
@@ -316,12 +317,18 @@ const SessionRow = (props: {
       href={`/${base64Encode(props.session.directory)}/session/${props.session.id}`}
       class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
       onPointerDown={(event) => {
-        if (isPlainPrimaryPointer(event)) props.select()
+        if (isPlainPrimaryPointer(event)) {
+          startSessionProfile(props.session.id, "pointerdown")
+          props.select()
+        }
         props.warmPress()
       }}
       onFocus={props.warmFocus}
       onClick={(event) => {
-        if (isPlainPrimaryMouse(event)) props.select()
+        if (isPlainPrimaryMouse(event)) {
+          ensureSessionProfile(props.session.id, "click")
+          props.select()
+        }
         if (props.sidebarOpened()) return
       }}
     >

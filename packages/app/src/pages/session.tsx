@@ -36,6 +36,8 @@ import { promptLength } from "@/components/prompt-input/history"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
+import { markSessionProfile } from "@/utils/session-profile"
+import { shouldFinishInitialScroll, shouldRefreshStaleSession } from "@/pages/session/session-switch-performance"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -95,6 +97,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 const emptyUserMessages: UserMessage[] = []
 const scrollBottomThreshold = 16
 const settleMs = 1_500
+const sessionBackgroundDelayMs = 250
 const initialScrollRevealMs = 300
 const emptyFollowups: (FollowupDraft & { id: string })[] = []
 const smoothBottomSnapDistance = 900
@@ -317,22 +320,28 @@ export default function Page() {
         if (!id) return
 
         let cancelled = false
-        void sdk.client.session.children({ sessionID: id }).then(
-          (result) => {
-            if (cancelled) return
-            const children = result.data ?? []
-            setApiChildSessions(children)
-            if (children.length > 0) {
-              sync.set("session", (current) => mergeKnownSessions(current, children))
-            }
-          },
-          () => {
-            if (cancelled) return
-            setApiChildSessions([])
-          },
-        )
+        const timer = window.setTimeout(() => {
+          markSessionProfile(id, "children-request-start")
+          void sdk.client.session.children({ sessionID: id }).then(
+            (result) => {
+              if (cancelled) return
+              const children = result.data ?? []
+              setApiChildSessions(children)
+              if (children.length > 0) {
+                sync.set("session", (current) => mergeKnownSessions(current, children))
+              }
+              markSessionProfile(id, "children-request-end", `count=${String(children.length)}`)
+            },
+            () => {
+              if (cancelled) return
+              setApiChildSessions([])
+              markSessionProfile(id, "children-request-error")
+            },
+          )
+        }, sessionBackgroundDelayMs)
         onCleanup(() => {
           cancelled = true
+          window.clearTimeout(timer)
         })
       },
     ),
@@ -346,19 +355,26 @@ export default function Page() {
         if (!parentID) return
 
         let cancelled = false
-        void sdk.client.session.children({ sessionID: parentID }).then(
-          (result) => {
-            if (cancelled) return
-            const siblings = result.data ?? []
-            setApiSiblingSessions(siblings)
-          },
-          () => {
-            if (cancelled) return
-            setApiSiblingSessions([])
-          },
-        )
+        const id = params.id
+        const timer = window.setTimeout(() => {
+          if (id) markSessionProfile(id, "siblings-request-start")
+          void sdk.client.session.children({ sessionID: parentID }).then(
+            (result) => {
+              if (cancelled) return
+              const siblings = result.data ?? []
+              setApiSiblingSessions(siblings)
+              if (id) markSessionProfile(id, "siblings-request-end", `count=${String(siblings.length)}`)
+            },
+            () => {
+              if (cancelled) return
+              setApiSiblingSessions([])
+              if (id) markSessionProfile(id, "siblings-request-error")
+            },
+          )
+        }, sessionBackgroundDelayMs)
         onCleanup(() => {
           cancelled = true
+          window.clearTimeout(timer)
         })
       },
     ),
@@ -532,6 +548,7 @@ export default function Page() {
   let reviewFrame: number | undefined
   let refreshFrame: number | undefined
   let refreshTimer: number | undefined
+  let refreshRun = 0
   let diffFrame: number | undefined
   let diffTimer: number | undefined
   const vcsTask = new Map<VcsMode, Promise<void>>()
@@ -851,6 +868,7 @@ export default function Page() {
   }
 
   const debug = (src: string, el = scroller, extra: SessionLayoutMetrics = {}) => {
+    if (!lagging()) return
     const metrics = collectSessionLayoutMetrics({
       root: el,
       content,
@@ -866,7 +884,8 @@ export default function Page() {
   }
 
   createEffect(
-    on([() => sdk.directory, () => params.id] as const, ([, id]) => {
+    on([() => sdk.directory, () => params.id] as const, ([directory, id]) => {
+      const run = ++refreshRun
       if (refreshFrame !== undefined) cancelAnimationFrame(refreshFrame)
       if (refreshTimer !== undefined) window.clearTimeout(refreshTimer)
       refreshFrame = undefined
@@ -877,26 +896,43 @@ export default function Page() {
       const stale = !cached
         ? false
         : (() => {
-            const info = getSessionPrefetch(sdk.directory, id)
+            const info = getSessionPrefetch(directory, id)
             if (!info) return true
             return Date.now() - info.at > SESSION_PREFETCH_TTL
           })()
       const todos = untrack(() => sync.data.todo[id] !== undefined || globalSync.data.session_todo[id] !== undefined)
+      markSessionProfile(id, "route-effect", `cached=${String(cached)} stale=${String(stale)}`)
 
-      untrack(() => {
-        void sync.session.sync(id)
-      })
+      const initialSync = untrack(() => sync.session.sync(id))
 
       refreshFrame = requestAnimationFrame(() => {
         refreshFrame = undefined
         refreshTimer = window.setTimeout(() => {
           refreshTimer = undefined
-          if (params.id !== id) return
+          if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
           untrack(() => {
-            if (stale) void sync.session.sync(id, { force: true })
             void sync.session.todo(id, todos ? { force: true } : undefined)
           })
-        }, 0)
+          const refresh = () => {
+            if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
+            untrack(() => {
+              const current = getSessionPrefetch(directory, id)
+              const stillStale = shouldRefreshStaleSession({
+                wasStale: stale,
+                refreshedAt: current?.at,
+                now: Date.now(),
+                ttl: SESSION_PREFETCH_TTL,
+              })
+              if (stillStale) {
+                markSessionProfile(id, "stale-refresh-scheduled")
+                void sync.session.sync(id, { force: true })
+              } else if (stale) {
+                markSessionProfile(id, "stale-refresh-skipped", "reason=initial-sync")
+              }
+            })
+          }
+          void initialSync.then(refresh, refresh)
+        }, 500)
       })
     }),
   )
@@ -1665,9 +1701,17 @@ export default function Page() {
       root.style.visibility = ""
     }
 
-    if (performance.now() >= until) {
+    if (shouldFinishInitialScroll({ stableFrames: initialScrollStableFrames, now: performance.now(), deadline: until })) {
       initialScrollKey = undefined
       if (root.style.visibility === "hidden") root.style.visibility = ""
+      const id = params.id
+      if (id) {
+        markSessionProfile(
+          id,
+          "initial-scroll-settled",
+          `frames=${String(initialScrollStableFrames)} gap=${String(gapAfter)} height=${String(height)}`,
+        )
+      }
       return
     }
 
@@ -1807,6 +1851,8 @@ export default function Page() {
         initialScrollStableFrames = 0
         initialScrollHeight = undefined
         initialScrollRevealUntil = performance.now() + initialScrollRevealMs
+        const id = params.id
+        if (id) markSessionProfile(id, "messages-ready")
         if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
 
         // Synchronously scroll to bottom before the browser paints to prevent
@@ -2522,6 +2568,7 @@ export default function Page() {
   })
 
   onCleanup(() => {
+    refreshRun += 1
     document.removeEventListener("keydown", handleKeyDown)
     if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
     if (refreshFrame !== undefined) cancelAnimationFrame(refreshFrame)

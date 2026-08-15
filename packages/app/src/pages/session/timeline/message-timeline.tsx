@@ -71,6 +71,7 @@ const emptyParts: PartType[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
 const timelineFallbackItemSize = 60
+const overscanExpansionDelayMs = 750
 // Snapshot sizes depend on the rendered row structure and Markdown strategy.
 const timelineMeasurementVersion = 3
 
@@ -544,13 +545,13 @@ export function MessageTimeline(props: {
     props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
   })
 
+  let overscanTimer: number | undefined
   onMount(() => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const previousOverscan = renderOverscan()
-        if (previousOverscan < 20) setRenderOverscan(20)
-      })
-    })
+    overscanTimer = window.setTimeout(() => {
+      overscanTimer = undefined
+      const previousOverscan = renderOverscan()
+      if (previousOverscan < 20) setRenderOverscan(20)
+    }, overscanExpansionDelayMs)
   })
 
   onCleanup(() => {
@@ -563,6 +564,7 @@ export function MessageTimeline(props: {
     })
     while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
     if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
+    if (overscanTimer !== undefined) window.clearTimeout(overscanTimer)
     props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
