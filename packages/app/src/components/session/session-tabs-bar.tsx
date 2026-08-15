@@ -511,6 +511,8 @@ function SessionTab(props: {
       role="button"
       tabIndex={0}
       data-component="session-tab"
+      data-session-id={props.tab.id}
+      data-directory={props.tab.directory}
       data-active={props.active ? "true" : undefined}
       data-subagent={subagent() ? "true" : undefined}
       class="group relative flex min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"

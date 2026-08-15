@@ -15,6 +15,7 @@ import {
 } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useLayout, type LocalProject } from "@/context/layout"
+import { collectMissingAncestorTabs } from "@/components/session/session-bar-parent"
 import { useGlobalSync } from "@/context/global-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/core/util/encode"
@@ -99,6 +100,7 @@ import {
   workspaceKey,
 } from "./layout/helpers"
 import {
+  domainFromDirectory,
   extraAgentActive,
   enabledExtraAgents,
   extraAgentByDirectory,
@@ -1956,14 +1958,65 @@ export default function Layout(props: ParentProps) {
     )
   }
 
+  function openAncestorSessionTabs(directory: string, parentID: string, sessions: Session[]) {
+    const byID = new Map(sessions.map((session) => [session.id, session]))
+    const key = workspaceKey(directory)
+    const openIDs = new Set(
+      layout.sessionBar.all().filter((tab) => workspaceKey(tab.directory) === key).map((tab) => tab.id),
+    )
+    const chain = collectMissingAncestorTabs(openIDs, parentID, byID)
+    for (const item of chain.reverse()) {
+      layout.sessionBar.open(directory, item.id, item.title, item.parentID)
+    }
+    if (chain.length > 0) {
+      console.debug(
+        `[session-bar] opened ${chain.length} ancestor tab(s) for subagent session parent=${parentID} directory=${directory}`,
+      )
+    }
+  }
+
+  async function ensureSessionBarMeta(directory: string, id: string) {
+    console.debug(`[session-bar] ensure meta start directory=${directory} id=${id}`)
+    try {
+      const client = globalSDK.forDomain(domainFromDirectory(directory)).client
+      const seen = new Set<string>()
+      let currentID: string | undefined = id
+      while (currentID && !seen.has(currentID)) {
+        seen.add(currentID)
+        const result = await client.session.get({ directory, sessionID: currentID })
+        const value = result.data
+        if (!value) {
+          console.debug(`[session-bar] ensure meta miss directory=${directory} id=${currentID}`)
+          return
+        }
+        layout.sessionBar.setInfo(directory, currentID, {
+          title: value.title,
+          parentID: value.parentID ?? null,
+        })
+        console.debug(
+          `[session-bar] ensure meta ok id=${currentID} parentID=${value.parentID ?? "null"} title=${value.title?.slice(0, 40) ?? ""}`,
+        )
+        currentID = value.parentID
+      }
+    } catch (error) {
+      console.debug(`[session-bar] ensure meta error directory=${directory} id=${id}`, error)
+    }
+  }
+
   function syncSessionRoute(directory: string, id: string, root = activeProjectRoot(directory)) {
     rememberSessionRoute(directory, id, root)
     const quickAssistant = globalSync.data.path.config
       ? normalizeDirectory(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
       : ""
     if (normalizeDirectory(directory) !== quickAssistant) {
-      const session = globalSync.child(directory, { bootstrap: false })[0].session.find((session) => session.id === id)
+      const [store] = globalSync.child(directory, { bootstrap: false })
+      const session = store.session.find((session) => session.id === id)
       layout.sessionBar.open(directory, id, session?.title, session ? (session.parentID ?? null) : undefined)
+      if (session?.parentID) {
+        openAncestorSessionTabs(directory, session.parentID, store.session)
+      } else if (!session) {
+        void ensureSessionBarMeta(directory, id)
+      }
     }
     notification.session.markViewed(id)
     requestAnimationFrame(() => scrollToSession(id, `${directory}:${id}`))
