@@ -10,11 +10,11 @@ import {
 import { ConstrainDragXAxis } from "@/utils/solid-dnd"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import type { IconName } from "@opencode-ai/ui/icon"
-import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Icon } from "@opencode-ai/ui/icon"
 import { type LocalProject } from "@/context/layout"
 import { ScoopJoin } from "./scoop-join"
+import { RailTooltip } from "./rail-tooltip"
 
 export type SidebarExtraAgent = {
   id: string
@@ -53,6 +53,7 @@ export const SidebarContent = (props: {
   imChannelsLabel?: Accessor<string>
   onOpenImChannelsConfig?: () => void
   configLabel: Accessor<string>
+  configKeybind: Accessor<string | undefined>
   configActive: Accessor<boolean>
   onOpenConfig: () => void
   settingsLabel: Accessor<string>
@@ -148,16 +149,10 @@ export const SidebarContent = (props: {
                 <For each={props.projects()}>{(project) => props.renderProject(project)}</For>
               </SortableProvider>
               <div class="py-1.5">
-                <Tooltip
-                  placement={placement()}
-                  value={
-                    <div class="flex items-center gap-2">
-                      <span>{props.openProjectLabel}</span>
-                      <Show when={!props.mobile && !!props.openProjectKeybind()}>
-                        <span class="text-icon-base text-12-medium">{props.openProjectKeybind()}</span>
-                      </Show>
-                    </div>
-                  }
+                <RailTooltip
+                  mobile={props.mobile}
+                  title={typeof props.openProjectLabel === "string" ? props.openProjectLabel : ""}
+                  keybind={props.mobile ? undefined : props.openProjectKeybind()}
                 >
                   <IconButton
                     icon="plus"
@@ -166,7 +161,7 @@ export const SidebarContent = (props: {
                     onClick={props.onOpenProject}
                     aria-label={typeof props.openProjectLabel === "string" ? props.openProjectLabel : undefined}
                   />
-                </Tooltip>
+                </RailTooltip>
               </div>
             </div>
             <DragOverlay>{props.renderProjectOverlay()}</DragOverlay>
@@ -180,7 +175,7 @@ export const SidebarContent = (props: {
               placement={placement()}
               trigger={
                 <div onMouseEnter={handleMenuMouseEnter} onMouseLeave={handleMenuMouseLeave}>
-                  <Tooltip placement={placement()} value="GeneralAgent">
+                  <RailTooltip mobile={props.mobile} title="GeneralAgent" inactive={menuOpen()}>
                     <IconButton
                       icon={entryIcon()}
                       variant="ghost"
@@ -188,7 +183,7 @@ export const SidebarContent = (props: {
                       classList={{ "bg-surface-base-active": !!activeAgent() }}
                       aria-label="GeneralAgent"
                     />
-                  </Tooltip>
+                  </RailTooltip>
                 </div>
               }
             >
@@ -237,7 +232,7 @@ export const SidebarContent = (props: {
               placement={placement()}
               trigger={
                 <div onMouseEnter={handleImMenuMouseEnter} onMouseLeave={handleImMenuMouseLeave}>
-                  <Tooltip placement={placement()} value={props.imChannelsLabel?.() ?? "IM"}>
+                  <RailTooltip mobile={props.mobile} title={props.imChannelsLabel?.() ?? "IM"} inactive={imMenuOpen()}>
                     <IconButton
                       icon="speech-bubble"
                       variant="ghost"
@@ -245,7 +240,7 @@ export const SidebarContent = (props: {
                       classList={{ "bg-surface-base-active": !!activeImChannel() }}
                       aria-label={props.imChannelsLabel?.() ?? "IM"}
                     />
-                  </Tooltip>
+                  </RailTooltip>
                 </div>
               }
             >
@@ -297,7 +292,7 @@ export const SidebarContent = (props: {
               </div>
             </Popover>
           </Show>
-          <Tooltip placement={placement()} value={props.configLabel()}>
+          <RailTooltip mobile={props.mobile} title={props.configLabel()} keybind={props.configKeybind()}>
             <IconButton
               icon="sliders"
               variant="ghost"
@@ -306,8 +301,8 @@ export const SidebarContent = (props: {
               onClick={props.onOpenConfig}
               aria-label={props.configLabel()}
             />
-          </Tooltip>
-          <TooltipKeybind placement={placement()} title={props.settingsLabel()} keybind={props.settingsKeybind() ?? ""}>
+          </RailTooltip>
+          <RailTooltip mobile={props.mobile} title={props.settingsLabel()} keybind={props.settingsKeybind()}>
             <IconButton
               icon="settings-gear"
               variant="ghost"
@@ -315,8 +310,8 @@ export const SidebarContent = (props: {
               onClick={props.onOpenSettings}
               aria-label={props.settingsLabel()}
             />
-          </TooltipKeybind>
-          <Tooltip placement={placement()} value={props.helpLabel()}>
+          </RailTooltip>
+          <RailTooltip mobile={props.mobile} title={props.helpLabel()}>
             <IconButton
               icon="help"
               variant="ghost"
@@ -324,7 +319,7 @@ export const SidebarContent = (props: {
               onClick={props.onOpenHelp}
               aria-label={props.helpLabel()}
             />
-          </Tooltip>
+          </RailTooltip>
         </div>
       </div>
 
