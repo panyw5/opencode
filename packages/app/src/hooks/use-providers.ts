@@ -1,5 +1,4 @@
 import { useGlobalSync } from "@/context/global-sync"
-import { mainDomain } from "@/pages/layout/extra-agents"
 import { decode64 } from "@/utils/base64"
 import { useParams } from "@solidjs/router"
 import { createMemo } from "solid-js"
@@ -65,9 +64,3 @@ export function useProviders() {
   return providerAccessors(providers, config)
 }
 
-export function useMainProviders() {
-  const globalSync = useGlobalSync()
-  const providers = () => globalSync.data.rootByDomain[mainDomain]?.provider ?? globalSync.data.provider
-  const config = () => globalSync.data.rootByDomain[mainDomain]?.config ?? globalSync.data.config
-  return providerAccessors(providers, config)
-}

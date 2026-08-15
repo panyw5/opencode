@@ -799,16 +799,6 @@ export const NewSessionItem = (props: {
   )
 }
 
-export const SessionSkeleton = (props: { count?: number }): JSX.Element => {
-  const items = Array.from({ length: props.count ?? 4 }, (_, index) => index)
-  return (
-    <div class="flex flex-col gap-1">
-      <For each={items}>
-        {() => <div class="h-8 w-full rounded-lg bg-surface-raised-base opacity-60 animate-pulse" />}
-      </For>
-    </div>
-  )
-}
 
 export const SessionGroupHeader = (props: { label: string }): JSX.Element => (
   <div class="px-4 pt-3 pb-1 first:pt-1 flex justify-end">
