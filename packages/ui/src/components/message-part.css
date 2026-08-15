@@ -1915,7 +1915,8 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
       box-shadow: var(--shadow-xs-border-hover);
 
       [data-slot="option-label"],
-      [data-slot="option-description"] {
+      [data-slot="option-description"],
+      [data-slot="question-custom-input"] {
         color: var(--text-on-interactive-base);
       }
     }
