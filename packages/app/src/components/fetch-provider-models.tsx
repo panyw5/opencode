@@ -4,7 +4,20 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js"
 import { usePlatform } from "@/context/platform"
 
-type FetchedModel = { id: string }
+type FetchedModel = { id: string; name: string }
+
+function normalizeFetchedModel(raw: unknown): FetchedModel | undefined {
+  if (typeof raw === "string") {
+    const id = raw.trim()
+    return id ? { id, name: id } : undefined
+  }
+  if (!raw || typeof raw !== "object") return undefined
+  const rec = raw as Record<string, unknown>
+  const id = String(rec.id ?? rec.name ?? "").trim()
+  if (!id) return undefined
+  const name = String(rec.name ?? rec.display_name ?? rec.id ?? id).trim() || id
+  return { id, name }
+}
 
 type Props = {
   baseURL: string
@@ -35,7 +48,10 @@ export function FetchProviderModels(props: Props) {
   const filteredModels = createMemo(() => {
     const query = searchQuery().toLowerCase().trim()
     if (!query) return models()
-    return models().filter((model) => model.id.toLowerCase().includes(query))
+    return models().filter((model) => {
+      const haystack = `${model.id} ${model.name}`.toLowerCase()
+      return haystack.includes(query)
+    })
   })
 
   const canFetch = () => !!props.baseURL.trim() && !!props.apiKey.trim()
@@ -68,13 +84,12 @@ export function FetchProviderModels(props: Props) {
       const json = await res.json()
       let list: FetchedModel[] = []
       if (Array.isArray(json)) {
-        list = json.map((m: any) => ({ id: m.id ?? m.name ?? String(m) }))
+        list = json.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
       } else if (Array.isArray(json?.data)) {
-        list = json.data.map((m: any) => ({ id: m.id ?? m.name ?? String(m) }))
+        list = json.data.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
       } else if (Array.isArray(json?.models)) {
-        list = json.models.map((m: any) => ({ id: typeof m === "string" ? m : (m.id ?? m.name ?? String(m)) }))
+        list = json.models.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
       }
-      list = list.filter((m) => !!m.id)
       setModels(list)
       if (list.length === 0) setError("未找到模型")
     } catch (e) {
@@ -123,22 +138,26 @@ export function FetchProviderModels(props: Props) {
               {(model) => {
                 const added = () => props.existingModelIDs.has(model.id)
                 return (
-                  <div
-                    class="flex items-center gap-0.5 rounded-full bg-surface-secondary pl-2.5 pr-2.5 py-1 transition-colors"
+                  <button
+                    type="button"
+                    title={model.name !== model.id ? `${model.name} · ${model.id}` : model.id}
+                    disabled={added()}
+                    class="inline-flex h-7 max-w-full items-center gap-1 rounded-full border px-2.5 text-12-medium transition-colors"
                     classList={{
-                      "opacity-40": added(),
-                      "cursor-pointer hover:bg-surface-base-hover": !added(),
+                      "cursor-default border-border-weak-base bg-surface-secondary text-text-weak opacity-50": added(),
+                      "cursor-pointer border-border-base bg-background-base text-text-base hover:border-border-strong hover:bg-surface-base-hover":
+                        !added(),
                     }}
-                    onClick={() => !added() && props.onAdd(model.id, model.id)}
+                    onClick={() => !added() && props.onAdd(model.id, model.name)}
                   >
-                    <span class="text-12-regular text-text-base">{model.id}</span>
+                    <span class="truncate">{model.name}</span>
                     <Show when={!added()}>
-                      <span class="text-12-regular text-text-weak ml-0.5">+</span>
+                      <span class="text-text-weak">+</span>
                     </Show>
                     <Show when={added()}>
-                      <span class="text-12-regular text-text-weak ml-0.5">✓</span>
+                      <span class="text-text-weak">✓</span>
                     </Show>
-                  </div>
+                  </button>
                 )
               }}
             </For>

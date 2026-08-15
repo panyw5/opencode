@@ -1718,7 +1718,7 @@ export const dict = {
   "config.custom.field.apiKey": "API 密钥",
   "config.custom.field.apiKeyCopy": "复制 API 密钥",
   "config.custom.field.apiKeyDescription":
-    "裸 key 会写入 `opencode.jsonc` 的 provider options.apiKey。{env:VAR} 会写入 config env。",
+    "写入 ~/.config/opencode/opencode.jsonc 的 provider.options.apiKey",
   "config.custom.models.title": "模型",
   "config.custom.models.description": "添加、重命名或移除这个提供商暴露的模型 id。",
   "config.custom.models.add": "添加模型",

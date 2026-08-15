@@ -1770,7 +1770,7 @@ export const dict = {
   "config.custom.field.apiKey": "apiKey",
   "config.custom.field.apiKeyCopy": "Copy API key",
   "config.custom.field.apiKeyDescription":
-    "Bare keys are written into provider options.apiKey in `opencode.jsonc`. {env:VAR} is written into config env.",
+    "Written to provider.options.apiKey in ~/.config/opencode/opencode.jsonc",
   "config.custom.models.title": "Models",
   "config.custom.models.description": "Add, rename, or remove model ids exposed by this provider.",
   "config.custom.models.add": "Add model",

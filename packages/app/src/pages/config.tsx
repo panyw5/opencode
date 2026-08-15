@@ -3589,7 +3589,10 @@ function CustomEditor(props: {
             </div>
 
               <div class="space-y-2">
-              <div class="text-12-medium text-text-weak">{language.t("config.custom.field.apiKey")}</div>
+              <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
+                <span class="text-12-medium text-text-weak">{language.t("config.custom.field.apiKey")}</span>
+                <span class="text-11-regular text-text-weak/70">{language.t("config.custom.field.apiKeyDescription")}</span>
+              </div>
               <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
                 <div class="flex items-center gap-2">
                   <input
@@ -3616,7 +3619,6 @@ function CustomEditor(props: {
                   />
                 </div>
               </div>
-              <div class="text-12-regular text-text-weak">{language.t("config.custom.field.apiKeyDescription")}</div>
             </div>
 
             <div class="rounded-xl border border-border-weak-base bg-background-base p-4">
