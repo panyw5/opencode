@@ -649,6 +649,10 @@ export const layer = Layer.effect(
         if (!entry) continue
         pending.delete(id)
         yield* clearPersistedRequest(entry.info)
+        yield* bus.publish(Event.Rejected, {
+          sessionID: entry.info.sessionID,
+          requestID: entry.info.id,
+        })
         yield* Deferred.fail(entry.deferred, new RejectedError())
         count++
       }

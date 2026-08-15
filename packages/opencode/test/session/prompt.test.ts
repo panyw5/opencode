@@ -2677,3 +2677,104 @@ noLLMServer.instance(
     }),
   30_000,
 )
+
+it.instance(
+  "background inject expires superseded pending question and continues the session",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const question = yield* Question.Service
+      const status = yield* SessionStatus.Service
+
+      const session = yield* sessions.create({
+        title: "Background inject unblocks question",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "kick off a background task, then ask me something" }],
+      })
+
+      // Reply 1: the model asks a question, blocking the run on the tool.
+      yield* llm.tool("question", {
+        questions: [
+          {
+            question: "Keep going?",
+            header: "Next",
+            options: [
+              { label: "Yes", description: "continue" },
+              { label: "No", description: "stop" },
+            ],
+          },
+        ],
+      })
+      // Reply 2: consumed by the run resumed after the background inject.
+      yield* llm.text("resumed after background task result")
+
+      const runFiber = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+      yield* waitForBusy(session.id)
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const list = yield* question.list()
+          return list.some((q) => q.sessionID === session.id) ? (true as const) : undefined
+        }),
+        "question never became pending",
+      )
+
+      // Background task completion injects a synthetic prompt while the
+      // question tool blocks the run (noReply mirrors TaskTool inject).
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [
+          {
+            type: "text",
+            synthetic: true,
+            text: "Background task completed: <task_result>done</task_result>",
+            metadata: { kind: "background-task-injection", description: "side quest", state: "completed" },
+          },
+        ],
+      })
+
+      // The pending question is expired without any user interaction...
+      const list = yield* question.list()
+      expect(list.filter((q) => q.sessionID === session.id)).toHaveLength(0)
+
+      // ...and the previously blocked run unwinds on its own to idle.
+      yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const s = yield* status.get(session.id)
+          return s.type === "idle" ? (true as const) : undefined
+        }),
+        "session never returned to idle after question expiry",
+      )
+
+      // The blocked loop fiber finishes; its question tool part errored.
+      const first = yield* Fiber.await(runFiber)
+      expect(Exit.isSuccess(first)).toBe(true)
+
+      // resumeWhenIdle equivalent: a fresh loop delivers the injected message
+      // to the model without waiting for a manual skip.
+      const result = yield* prompt.loop({ sessionID: session.id })
+      expect(yield* llm.calls).toBe(2)
+      expect(result.info.role).toBe("assistant")
+      expect(result.parts.some((part) => part.type === "text" && part.text === "resumed after background task result"))
+        .toBe(true)
+
+      const inputs = yield* llm.inputs
+      expect(inputs).toHaveLength(2)
+      expect(JSON.stringify(inputs[1])).toContain("Background task completed")
+
+      const messages = yield* sessions.messages({ sessionID: session.id })
+      const questionPart = messages
+        .flatMap((message) => message.parts)
+        .find((part): part is MessageV2.ToolPart => part.type === "tool" && part.tool === "question")
+      expect(questionPart?.state.status).toBe("error")
+    }),
+  30_000,
+)

@@ -87,6 +87,10 @@ const decodeMessagePart = Schema.decodeUnknownExit(MessageV2.Part)
 
 const MAX_COMPACTION_RETRIES = 3
 
+// How long prompt() waits for a run, unblocked by expiring its superseded
+// question, to unwind and report idle.
+const SUPERSEDED_UNWIND_TIMEOUT_MS = 2000
+
 const STRUCTURED_OUTPUT_DESCRIPTION = `Use this tool to return your final response in the requested structured format.
 
 IMPORTANT:
@@ -1657,6 +1661,21 @@ export const layer = Layer.effect(
       return { info, parts }
     }, Effect.scoped)
 
+    // Bounded poll for the runner to report idle. Rejecting a superseded
+    // question unblocks the run that was awaiting its answer, so the run is
+    // guaranteed to unwind on its own; this only paces the caller until it does.
+    const waitForRunIdle = Effect.fn("SessionPrompt.waitForRunIdle")(function* (
+      sessionID: SessionID,
+      timeoutMs: number,
+    ) {
+      const deadline = Date.now() + timeoutMs
+      while (true) {
+        if ((yield* status.get(sessionID)).type === "idle") return true
+        if (Date.now() >= deadline) return false
+        yield* Effect.sleep("25 millis")
+      }
+    })
+
     const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
@@ -1686,6 +1705,29 @@ export const layer = Layer.effect(
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
       yield* sessions.touch(input.sessionID)
+
+      // The message written above may supersede a question that is still
+      // blocking the active run (e.g. a background task result injected while
+      // the question tool awaits an answer). The pre-write check above cannot
+      // see this yet, so expire again now. Rejecting the question unblocks the
+      // run without cancelling it (and without tearing down sibling background
+      // jobs); wait briefly for it to unwind so ensureRunning starts a fresh
+      // run for the new message instead of awaiting the stale one.
+      const superseded = yield* question.expireSuperseded({ sessionID: input.sessionID })
+      if (superseded > 0) {
+        yield* elog.info("expired superseded questions after writing prompt", {
+          sessionID: input.sessionID,
+          count: superseded,
+        })
+        if ((yield* status.get(input.sessionID)).type !== "idle") {
+          const settled = yield* waitForRunIdle(input.sessionID, SUPERSEDED_UNWIND_TIMEOUT_MS)
+          if (!settled) {
+            yield* elog.warn("run did not unwind after expiring superseded questions", {
+              sessionID: input.sessionID,
+            })
+          }
+        }
+      }
 
       const permissions: Permission.Rule[] = []
       for (const [t, enabled] of Object.entries(input.tools ?? {})) {
