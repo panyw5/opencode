@@ -5438,7 +5438,8 @@ export default function ConfigPage() {
     })
     for (const agent of cliAgentDescriptors()) {
       const config = cliAgentConfigs[agent.id]
-      const model = cliAgentInfo[agent.id]?.details?.find((detail) => detail.label === "Model")?.value
+      const info = cliAgentInfo[agent.id]
+      const model = info?.details?.find((detail) => detail.label === "Model")?.value ?? info?.dsh?.model
       items.push({
         id: `claw:${agent.id}`,
         label: agent.label,

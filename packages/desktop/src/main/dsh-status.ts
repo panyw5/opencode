@@ -13,7 +13,6 @@ import type {
 import { resolveDesktopPath } from "./native-path"
 import {
   clearDshApiKey,
-  DSH_DEFAULT_BASE_URL,
   DSH_DEFAULT_MODEL,
   DSH_DEFAULT_PROVIDER,
   readDshApiKey,
@@ -93,11 +92,6 @@ export async function getDshInfo(config?: CliAgentConfig): Promise<CliAgentInfo>
     info.configExists = home.settingsExists || home.credentialsExists
     info.details = details({
       "Config home": configHome,
-      Provider: home.selection.provider,
-      Model: home.selection.model,
-      "Base URL": home.selection.baseURL || (home.baseUrlEnvSet ? "DEEPSEEK_BASE_URL env" : DSH_DEFAULT_BASE_URL),
-      Credentials: home.hasFileApiKey ? "file key present" : "no file key",
-      "API key env": home.apiKeyEnvSet ? "DEEPSEEK_API_KEY set" : "not set",
     })
   } catch (error) {
     info.error = error instanceof Error ? error.message : String(error)
