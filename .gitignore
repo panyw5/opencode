@@ -67,3 +67,4 @@ __pycache__/
 
 # Manager run continuation
 .manager/
+packages/opencode/bin/.opencode

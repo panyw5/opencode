@@ -10,9 +10,6 @@
   "scripts": {
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "zod": "catalog:"
-  },
   "devDependencies": {
     "typescript": "catalog:",
     "@types/bun": "catalog:"
