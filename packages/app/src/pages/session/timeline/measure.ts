@@ -1,5 +1,22 @@
 import type { Part } from "@opencode-ai/sdk/v2"
 
+type VirtualItemGeometry = {
+  key: string | number | bigint
+  index: number
+  start: number
+  size: number
+}
+
+/** Ignores virtualizer object churn when a mounted row's geometry is unchanged. */
+export function sameVirtualItemGeometry(previous: VirtualItemGeometry, next: VirtualItemGeometry) {
+  return (
+    previous.key === next.key &&
+    previous.index === next.index &&
+    previous.start === next.start &&
+    previous.size === next.size
+  )
+}
+
 export function scheduleConnectedMeasure<T extends HTMLElement>(element: T, measure: (element: T) => void) {
   return requestAnimationFrame(() => {
     if (element.isConnected) measure(element)
@@ -52,14 +69,48 @@ export function virtualRowOverflow(contentHeight: number, virtualHeight: number)
   return contentHeight > virtualHeight + 0.5 ? "visible" : "clip"
 }
 
-/** Keeps a bottom-anchored stream pinned when its last virtual row grows. */
+/**
+ * Keeps a bottom-anchored stream pinned when its last virtual row grows.
+ * Uses the row start so a row whose top sits above the viewport is adjusted
+ * (content below stays fixed), while a row whose top is inside the viewport is
+ * left alone (its own top stays fixed).
+ */
 export function shouldAdjustVirtualScroll(input: {
-  itemEnd: number
+  itemStart: number
   scrollOffset: number
   bottomAnchored: boolean
   initializing: boolean
 }) {
-  return input.itemEnd <= input.scrollOffset || (input.bottomAnchored && !input.initializing)
+  return input.itemStart < input.scrollOffset || (input.bottomAnchored && !input.initializing)
+}
+
+/** Streaming rows must not use size containment or the virtualizer freezes their height. */
+export function timelineRowContentVisibility(input: {
+  index: number
+  activeIndex: number | undefined
+  lastIndex: number
+}) {
+  return input.index === input.activeIndex || input.index === input.lastIndex ? "visible" : "auto"
+}
+
+/**
+ * Ease only large live jumps. Small streaming deltas must snap, otherwise the
+ * jump-to-bottom control stays visible while follow-scroll lags the true bottom.
+ */
+export function shouldEaseLiveBottom(distance: number, input: { min: number; max: number }) {
+  const abs = Math.abs(distance)
+  return abs > input.min && abs <= input.max
+}
+
+/** Prefers the larger box so content-visibility cannot under-report a growing row. */
+export function measureTimelineRowHeight(element: HTMLElement) {
+  return Math.max(element.getBoundingClientRect().height, element.offsetHeight, element.scrollHeight)
+}
+
+/** A live row can grow immediately, but a transient short measure must not shrink it. */
+export function shouldCommitVirtualRowHeight(input: { next: number; previous: number; live: boolean }) {
+  if (!input.live) return true
+  return input.next + 0.5 >= input.previous
 }
 
 /** Keeps virtual row identity independent from the data that determines its height. */

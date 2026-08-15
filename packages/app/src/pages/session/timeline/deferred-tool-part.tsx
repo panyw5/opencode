@@ -73,21 +73,51 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
   const key = () => toolHydrationKey(props.sessionID, props.part.id)
   const deferrable = () => shouldDeferToolPart(props.part, props.defaultOpen)
   const [hydrated, setHydrated] = createSignal(!deferrable() || isToolPartHydrated(key()))
+  let placeholder: HTMLDivElement | undefined
 
-  const hydrate = () => {
+  const lagging = () =>
+    typeof window !== "undefined" && window.localStorage.getItem("opencode.session.lag.debug") === "1"
+  const tool = () => (props.part.type === "tool" ? props.part.tool : props.part.type)
+  const status = () => (props.part.type === "tool" ? props.part.state.status : "none")
+  const logHydrate = (phase: string, source: string, fields = "") => {
+    if (!lagging()) return
+    console.debug(
+      `[lag] tool-hydrate phase=${phase} source=${source} sid=${props.sessionID} part=${props.part.id} tool=${tool()} status=${status()}${fields ? ` ${fields}` : ""}`,
+    )
+  }
+
+  const hydrate = (source: "focus" | "idle" | "pointer" | "reactive") => {
     if (hydrated()) return
+    const profiling = lagging()
+    const started = profiling ? performance.now() : 0
+    const row = profiling ? placeholder?.closest<HTMLElement>("[data-timeline-key]") : undefined
+    const rowKey = row?.dataset.timelineKey ?? "none"
+    const before = row?.getBoundingClientRect().height ?? 0
+    if (profiling) logHydrate("start", source, `row=${rowKey} before=${Math.round(before)}`)
     markToolPartHydrated(key())
     setHydrated(true)
+    if (!profiling) return
+    const committed = performance.now()
+    logHydrate("commit", source, `row=${rowKey} sync=${Math.round(committed - started)} before=${Math.round(before)}`)
+    requestAnimationFrame(() => {
+      const after = row?.isConnected ? row.getBoundingClientRect().height : 0
+      const nodes = row?.isConnected ? row.querySelectorAll("*").length : 0
+      logHydrate(
+        "frame",
+        source,
+        `row=${rowKey} total=${Math.round(performance.now() - started)} before=${Math.round(before)} after=${Math.round(after)} delta=${Math.round(after - before)} nodes=${nodes}`,
+      )
+    })
   }
 
   createEffect(() => {
     // Live or force-open tools must never stay as a placeholder.
-    if (!deferrable()) hydrate()
+    if (!deferrable()) hydrate("reactive")
   })
 
   onMount(() => {
     if (hydrated()) return
-    const cancel = scheduleIdleHydrate(hydrate)
+    const cancel = scheduleIdleHydrate(() => hydrate("idle"))
     onCleanup(cancel)
   })
 
@@ -95,7 +125,12 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
     <Show
       when={hydrated()}
       fallback={
-        <div data-slot="deferred-tool-part" onPointerEnter={hydrate} onFocusIn={hydrate}>
+        <div
+          ref={(element) => (placeholder = element)}
+          data-slot="deferred-tool-part"
+          onPointerEnter={() => hydrate("pointer")}
+          onFocusIn={() => hydrate("focus")}
+        >
           <ToolPartPlaceholder />
         </div>
       }
