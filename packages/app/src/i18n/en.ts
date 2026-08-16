@@ -32,7 +32,7 @@ export const dict = {
   "projectTask.field.title": "Title",
   "projectTask.field.titlePlaceholder": "What needs to be done?",
   "projectTask.field.description": "Description",
-  "projectTask.field.descriptionPlaceholder": "Goals, constraints, acceptance criteria… (stored at .opentasks/<taskID>/description.md)",
+  "projectTask.field.descriptionPlaceholder": "Goals, constraints, acceptance criteria… (stored at .project-tasks/<taskID>/prd.md)",
   "projectTask.field.status": "Status",
   "projectTask.status.open": "Open",
   "projectTask.status.inProgress": "In progress",

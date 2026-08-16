@@ -8,6 +8,7 @@ import * as ProjectTaskRepository from "./repository"
 import {
   descriptionRelativePath,
   ensureDescriptionFile,
+  taskFilesAnchor,
   writeDescriptionFile,
 } from "./description-file"
 import {
@@ -65,8 +66,20 @@ export const layer = Layer.effect(
       return ctx.directory
     })
 
+    /**
+     * Directory task files resolve against (git worktree root when available).
+     * Subdirectory instances of one project share task rows; anchoring to the
+     * worktree keeps `.project-tasks/` identical no matter which subdirectory
+     * the instance was opened from. Non-git projects fall back to the instance
+     * directory (their worktree is "/").
+     */
+    const anchorDirectory = Effect.fn("ProjectTask.anchorDirectory")(function* () {
+      const ctx = yield* InstanceState.context
+      return taskFilesAnchor(ctx)
+    })
+
     const hydrate = Effect.fn("ProjectTask.hydrate")(function* (meta: ProjectTaskRepository.TaskRowMeta) {
-      const dir = yield* directory()
+      const dir = yield* anchorDirectory()
       const ensured = yield* Effect.promise(() =>
         ensureDescriptionFile({
           projectDirectory: dir,
@@ -120,7 +133,8 @@ export const layer = Layer.effect(
       const pid = yield* projectID()
       if (row.projectID !== pid) return yield* new NotFoundError({ taskID: id })
       const info = yield* hydrate(row)
-      return { ...info, sessions: row.sessions }
+      const anchor = yield* anchorDirectory()
+      return { ...info, sessions: row.sessions, workspaceDirectory: anchor }
     })
 
     const create: Interface["create"] = Effect.fn("ProjectTask.create")(function* (input) {
@@ -134,6 +148,7 @@ export const layer = Layer.effect(
       }
       const pid = yield* projectID()
       const dir = yield* directory()
+      const anchor = yield* anchorDirectory()
       const body = input.description?.trim() ?? ""
       // Repository assigns id + description_path; write file before/after insert.
       const task = yield* ProjectTaskRepository.create(pid, {
@@ -141,7 +156,7 @@ export const layer = Layer.effect(
         title,
         description: body,
       })
-      yield* Effect.promise(() => writeDescriptionFile(dir, task.descriptionPath, body))
+      yield* Effect.promise(() => writeDescriptionFile(anchor, task.descriptionPath, body))
       // Return with body already known (file write succeeded).
       const created: Info = { ...task, description: body }
       yield* emit(dir, { type: Event.Created.type, properties: created })
@@ -158,11 +173,12 @@ export const layer = Layer.effect(
         return yield* new InvalidMountError({ message: "Project task title is required" })
       }
       const dir = yield* directory()
+      const anchor = yield* anchorDirectory()
 
       if (input.description !== undefined) {
         const rel = current.descriptionPath || descriptionRelativePath(id)
         console.debug(`[project-task] update write-description taskID=${id} path=${rel} descriptionLength=${input.description.length}`)
-        yield* Effect.promise(() => writeDescriptionFile(dir, rel, input.description!))
+        yield* Effect.promise(() => writeDescriptionFile(anchor, rel, input.description!))
         yield* ProjectTaskRepository.setDescriptionPath(id, rel, { clearLegacy: true })
         console.debug(`[project-task] update description-written taskID=${id} path=${rel}`)
       }

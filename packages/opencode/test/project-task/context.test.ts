@@ -18,7 +18,7 @@ function makeDetail(overrides?: Partial<Detail>): Detail {
     projectID: ProjectID.make("proj_test"),
     title: "Ship mount UI",
     description: "Mount + inject context",
-    descriptionPath: ".opentasks/ptask_test/description.md",
+    descriptionPath: ".project-tasks/ptask_test/prd.md",
     status: "in_progress",
     sessionCount: 1,
     progress: { total: 2, completed: 1, inProgress: 1, pending: 0, cancelled: 0 },
@@ -57,26 +57,26 @@ describe("formatProjectTaskFullContext", () => {
       detail: makeDetail(),
       workspaceFiles: [
         {
-          relativePath: ".opentasks/ptask_test/description.md",
-          name: "description.md",
+          relativePath: ".project-tasks/ptask_test/prd.md",
+          name: "prd.md",
           isDescription: true,
           summary: "Goals, constraints, and acceptance criteria (canonical task brief).",
           bytes: 42,
         },
         {
-          relativePath: ".opentasks/ptask_test/prd.md",
-          name: "prd.md",
+          relativePath: ".project-tasks/ptask_test/notes.md",
+          name: "notes.md",
           isDescription: false,
-          summary: "Product requirements / detailed PRD for this task.",
+          summary: "Working notes captured while executing this task.",
           bytes: 100,
         },
       ],
     })
     expect(text).toContain("Task workspace files")
-    expect(text).toContain(".opentasks/ptask_test/description.md")
+    expect(text).toContain(".project-tasks/ptask_test/prd.md")
     expect(text).toContain("[canonical brief]")
-    expect(text).toContain(".opentasks/ptask_test/prd.md")
-    expect(text).toContain("Product requirements")
+    expect(text).toContain(".project-tasks/ptask_test/notes.md")
+    expect(text).toContain("Working notes")
   })
 
   test("subagent audience omits multi-session todo dump but keeps workspace paths", () => {
@@ -85,8 +85,8 @@ describe("formatProjectTaskFullContext", () => {
       audience: "subagent",
       workspaceFiles: [
         {
-          relativePath: ".opentasks/ptask_test/description.md",
-          name: "description.md",
+          relativePath: ".project-tasks/ptask_test/prd.md",
+          name: "prd.md",
           isDescription: true,
           summary: "Goals, constraints, and acceptance criteria (canonical task brief).",
           bytes: 10,
@@ -95,7 +95,7 @@ describe("formatProjectTaskFullContext", () => {
     })
     expect(text).toContain('audience="subagent"')
     expect(text).toContain("You are a subagent")
-    expect(text).toContain(".opentasks/ptask_test/description.md")
+    expect(text).toContain(".project-tasks/ptask_test/prd.md")
     expect(text).not.toContain("active item")
     expect(text).toContain("Linked sessions (parent project task): 1")
   })
@@ -282,15 +282,15 @@ describe("formatProjectTaskDeltaContext", () => {
     const prev = buildTaskContextSnapshot(detail, [])
     const files = [
       {
-        relativePath: ".opentasks/ptask_test/prd.md",
-        name: "prd.md",
+        relativePath: ".project-tasks/ptask_test/notes.md",
+        name: "notes.md",
         isDescription: false,
-        summary: "Product requirements / detailed PRD for this task.",
+        summary: "Working notes captured while executing this task.",
         bytes: 50,
       },
     ]
     const text = formatProjectTaskDeltaContext(detail, prev, files)
     expect(text).toContain("task workspace files changed")
-    expect(text).toContain(".opentasks/ptask_test/prd.md")
+    expect(text).toContain(".project-tasks/ptask_test/notes.md")
   })
 })

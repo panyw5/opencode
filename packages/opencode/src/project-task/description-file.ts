@@ -1,31 +1,52 @@
 import path from "path"
-import { readdir } from "fs/promises"
+import { mkdir, readdir, rename, rmdir } from "fs/promises"
 import { Filesystem } from "@/util/filesystem"
 import type { ProjectTaskID } from "./schema"
 
 /**
  * Project-root folder for all project-task workspaces (user-visible, not under .opencode).
- * Prefixed to reduce collisions with generic task folders from other tools.
+ * Dotted to keep it clearly tool-owned at the project root.
  */
-export const PROJECT_TASKS_ROOT = ".opentasks"
+export const PROJECT_TASKS_ROOT = ".project-tasks"
 
-/** Canonical description filename inside each task folder. */
-export const DESCRIPTION_FILENAME = "description.md"
+/** Canonical brief filename inside each task folder. */
+export const DESCRIPTION_FILENAME = "prd.md"
 
-/** Relative path: `.opentasks/<taskID>/description.md` */
+/** Pre-rename workspace root / brief filename; migrated into PROJECT_TASKS_ROOT on hydrate. */
+export const LEGACY_PROJECT_TASKS_ROOT = ".opentasks"
+export const LEGACY_DESCRIPTION_FILENAME = "description.md"
+
+/** Relative path: `.project-tasks/<taskID>/prd.md` */
 export function descriptionRelativePath(taskID: ProjectTaskID | string): string {
   return path.posix.join(PROJECT_TASKS_ROOT, String(taskID), DESCRIPTION_FILENAME)
 }
 
-/** Task workspace folder: `.opentasks/<taskID>/` (agents may add extra files here). */
+/** Legacy relative path: `.opentasks/<taskID>/description.md` (migrated on hydrate). */
+export function legacyDescriptionRelativePath(taskID: ProjectTaskID | string): string {
+  return path.posix.join(LEGACY_PROJECT_TASKS_ROOT, String(taskID), LEGACY_DESCRIPTION_FILENAME)
+}
+
+/** Task workspace folder: `.project-tasks/<taskID>/` (agents may add extra files here). */
 export function taskWorkspaceRelativePath(taskID: ProjectTaskID | string): string {
   return path.posix.join(PROJECT_TASKS_ROOT, String(taskID))
+}
+
+/**
+ * Anchor directory for task workspace files. projectID is derived from the git
+ * worktree, so every subdirectory instance of the same project shares task rows
+ * — files must resolve identically too, hence the worktree root. Non-git
+ * projects report worktree "/" (matches any path), so fall back to the
+ * instance directory there.
+ */
+export function taskFilesAnchor(ctx: { directory: string; worktree?: string | null }): string {
+  const worktree = ctx.worktree?.trim()
+  return worktree && worktree !== "/" ? worktree : ctx.directory
 }
 
 /** Known filenames under a task workspace → short purpose for inject briefs. */
 const KNOWN_TASK_FILE_SUMMARY: Record<string, string> = {
   [DESCRIPTION_FILENAME]: "Goals, constraints, and acceptance criteria (canonical task brief).",
-  "prd.md": "Product requirements / detailed PRD for this task.",
+  [LEGACY_DESCRIPTION_FILENAME]: "Legacy task brief from before the prd.md rename (superseded).",
   "notes.md": "Working notes captured while executing this task.",
   "research.md": "Research findings related to this task.",
   "plan.md": "Execution plan or checklist for this task.",
@@ -34,10 +55,10 @@ const KNOWN_TASK_FILE_SUMMARY: Record<string, string> = {
 }
 
 export type TaskWorkspaceFile = {
-  /** Project-relative path using `/` separators (e.g. `.opentasks/<id>/description.md`). */
+  /** Project-relative path using `/` separators (e.g. `.project-tasks/<id>/prd.md`). */
   relativePath: string
   name: string
-  /** True when this is the canonical description.md. */
+  /** True when this is the canonical prd.md. */
   isDescription: boolean
   /** One-line purpose for the model (known file or first markdown heading/line). */
   summary: string
@@ -72,8 +93,8 @@ function summarizeTaskFile(name: string, contentPreview: string | undefined): st
 }
 
 /**
- * List top-level files in `.opentasks/<taskID>/` for context injection.
- * Directories and hidden files are skipped. description.md is always preferred first.
+ * List top-level files in `.project-tasks/<taskID>/` for context injection.
+ * Directories and hidden files are skipped. prd.md is always preferred first.
  */
 export async function listTaskWorkspaceFiles(
   projectDirectory: string,
@@ -156,8 +177,64 @@ export async function writeDescriptionFile(
 }
 
 /**
+ * Move files from the legacy `.opentasks/<taskID>/` workspace into `.project-tasks/<taskID>/`.
+ * `description.md` is renamed to `prd.md`; other files keep their names. Files that already
+ * exist at the destination are never overwritten (canonical wins). Best-effort: errors are
+ * logged and skipped so hydrate never fails because of migration.
+ *
+ * Returns the canonical `prd.md` content when migration produced/kept one, else undefined.
+ */
+export async function migrateLegacyTaskWorkspace(
+  projectDirectory: string,
+  taskID: ProjectTaskID | string,
+): Promise<string | undefined> {
+  const legacyDir = absoluteFromProject(projectDirectory, path.posix.join(LEGACY_PROJECT_TASKS_ROOT, String(taskID)))
+  const canonicalDir = absoluteFromProject(projectDirectory, taskWorkspaceRelativePath(taskID))
+  if (!(await Filesystem.isDir(legacyDir))) return undefined
+
+  let names: string[] = []
+  try {
+    names = (await readdir(legacyDir)).filter((name) => name && !name.startsWith("."))
+  } catch (error) {
+    console.debug(`[project-task] legacy migrate readdir failed taskID=${taskID} dir=${legacyDir} error=${error}`)
+    return undefined
+  }
+
+  const moved: string[] = []
+  for (const name of names) {
+    const from = path.join(legacyDir, name)
+    const to = path.join(canonicalDir, name === LEGACY_DESCRIPTION_FILENAME ? DESCRIPTION_FILENAME : name)
+    if (await Filesystem.exists(to)) continue
+    try {
+      await mkdir(canonicalDir, { recursive: true })
+      await rename(from, to)
+      moved.push(name)
+    } catch (error) {
+      console.debug(`[project-task] legacy migrate move failed taskID=${taskID} file=${name} error=${error}`)
+    }
+  }
+
+  // Remove now-empty legacy dirs (task folder first, then the root); ignore failures.
+  try {
+    await rmdir(legacyDir)
+    await rmdir(absoluteFromProject(projectDirectory, LEGACY_PROJECT_TASKS_ROOT))
+  } catch {
+    /* left-overs stay visible under .opentasks/ */
+  }
+
+  const canonical = await readDescriptionFile(projectDirectory, descriptionRelativePath(taskID))
+  if (moved.length > 0 || canonical !== undefined) {
+    console.debug(
+      `[project-task] legacy migrate done taskID=${taskID} moved=${moved.join(",") || "none"} canonical=${canonical !== undefined}`,
+    )
+  }
+  return canonical
+}
+
+/**
  * Ensure a task has a description file and return `{ relativePath, content }`.
- * Migrates legacy DB-inline description into `.opentasks/<id>/description.md` when needed.
+ * Migrates legacy DB-inline description into `.project-tasks/<id>/prd.md` when needed, and
+ * relocates pre-rename `.opentasks/<id>/` workspaces (description.md → prd.md).
  */
 export async function ensureDescriptionFile(input: {
   projectDirectory: string
@@ -169,14 +246,26 @@ export async function ensureDescriptionFile(input: {
   /** Persist path/clear legacy callback after migrate or first ensure */
   persist?: (next: { descriptionPath: string; clearLegacy: boolean }) => void | Promise<void>
 }): Promise<{ descriptionPath: string; content: string }> {
-  const relativePath =
-    typeof input.descriptionPath === "string" && input.descriptionPath.trim()
-      ? input.descriptionPath.trim()
-      : descriptionRelativePath(input.taskID)
+  const canonical = descriptionRelativePath(input.taskID)
+  const legacyPath = legacyDescriptionRelativePath(input.taskID)
+  const stored = input.descriptionPath?.trim() ?? ""
+
+  // Rows created before the rename point at (or only have) the legacy workspace.
+  if (stored === legacyPath || (!stored && (await Filesystem.exists(absoluteFromProject(input.projectDirectory, legacyPath))))) {
+    const migrated = await migrateLegacyTaskWorkspace(input.projectDirectory, input.taskID)
+    if (migrated !== undefined) {
+      await input.persist?.({ descriptionPath: canonical, clearLegacy: true })
+      return { descriptionPath: canonical, content: migrated }
+    }
+  }
+
+  // Custom stored paths are respected; otherwise default to the canonical prd.md path
+  // (never recreate the legacy description.md location).
+  const relativePath = stored && stored !== legacyPath ? stored : canonical
 
   const existing = await readDescriptionFile(input.projectDirectory, relativePath)
   if (existing !== undefined) {
-    if (!input.descriptionPath?.trim()) {
+    if (!stored) {
       await input.persist?.({ descriptionPath: relativePath, clearLegacy: true })
     }
     return { descriptionPath: relativePath, content: existing }
@@ -186,7 +275,7 @@ export async function ensureDescriptionFile(input: {
   await writeDescriptionFile(input.projectDirectory, relativePath, legacy)
   await input.persist?.({
     descriptionPath: relativePath,
-    clearLegacy: legacy.length > 0 || !input.descriptionPath?.trim(),
+    clearLegacy: legacy.length > 0 || !stored,
   })
   return { descriptionPath: relativePath, content: legacy }
 }

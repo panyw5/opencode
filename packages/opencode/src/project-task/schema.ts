@@ -37,7 +37,7 @@ export const Info = Schema.Struct({
   description: Schema.String,
   /**
    * Project-relative path to the description markdown file
-   * (default `.opentasks/<taskID>/description.md`).
+   * (default `.project-tasks/<taskID>/prd.md`).
    */
   descriptionPath: Schema.String,
   status: Status,
@@ -69,12 +69,18 @@ export type SessionTodoBundle = Types.DeepMutable<Schema.Schema.Type<typeof Sess
 export const Detail = Schema.Struct({
   ...Info.fields,
   sessions: Schema.Array(SessionTodoBundle),
+  /**
+   * Absolute directory `descriptionPath` resolves against (git worktree root;
+   * instance directory for non-git projects). Lets clients build correct
+   * absolute file paths from subdirectory instances.
+   */
+  workspaceDirectory: Schema.optional(Schema.String),
 }).annotate({ identifier: "ProjectTaskDetail" })
 export type Detail = Types.DeepMutable<Schema.Schema.Type<typeof Detail>>
 
 export const CreateInput = Schema.Struct({
   title: Schema.String,
-  /** Initial description body written to `.opentasks/<id>/description.md`. */
+  /** Initial description body written to `.project-tasks/<id>/prd.md`. */
   description: Schema.optional(Schema.String),
   status: Schema.optional(Status),
 }).annotate({ identifier: "ProjectTaskCreateInput" })

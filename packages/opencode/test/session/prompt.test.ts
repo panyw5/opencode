@@ -679,13 +679,13 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       description: [
         marker,
         "Verify a task-tool child receives mounted project-task context.",
-        "Acceptance: child sees description.md, prd.md, and audience=subagent.",
+        "Acceptance: child sees prd.md, notes.md, and audience=subagent.",
       ].join("\n"),
       status: "in_progress",
     })
     yield* writeText(
-      path.join(dir, ".opentasks", task.id, "prd.md"),
-      "# E2E PRD\n\nThe child must report PROJECT_TASK_PRD_MARKER_20260812.\n",
+      path.join(dir, ".project-tasks", task.id, "notes.md"),
+      "# E2E Notes\n\nThe child must report PROJECT_TASK_PRD_MARKER_20260812.\n",
     )
     yield* projectTasks.mount({ sessionID: parent.id, taskID: task.id })
 
@@ -719,9 +719,9 @@ it.instance("mounted project task context flows into task subagent prompt", () =
     expect(childBody).toContain('audience=\\"subagent\\"')
     expect(childBody).toContain("E2E subagent context inject")
     expect(childBody).toContain(marker)
-    expect(childBody).toContain(`.opentasks/${task.id}/description.md`)
-    expect(childBody).toContain(`.opentasks/${task.id}/prd.md`)
-    expect(childBody).toContain("Product requirements / detailed PRD for this task.")
+    expect(childBody).toContain(`.project-tasks/${task.id}/prd.md`)
+    expect(childBody).toContain(`.project-tasks/${task.id}/notes.md`)
+    expect(childBody).toContain("Working notes captured while executing this task.")
 
     const parentMessages = yield* MessageV2.filterCompactedEffect(parent.id)
     const parentInjected = parentMessages
@@ -734,8 +734,8 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       )
     expect(parentInjected?.metadata?.audience).toBe("parent")
     expect(parentInjected?.text).toContain(marker)
-    expect(parentInjected?.text).toContain(`.opentasks/${task.id}/description.md`)
-    expect(parentInjected?.text).toContain(`.opentasks/${task.id}/prd.md`)
+    expect(parentInjected?.text).toContain(`.project-tasks/${task.id}/prd.md`)
+    expect(parentInjected?.text).toContain(`.project-tasks/${task.id}/notes.md`)
 
     const taskCall = parentMessages
       .flatMap((message) => message.parts)
@@ -764,7 +764,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
     expect(injected?.metadata?.audience).toBe("subagent")
     expect(injected?.metadata?.taskID).toBe(task.id)
     expect(injected?.text).toContain(marker)
-    expect(injected?.text).toContain(`.opentasks/${task.id}/prd.md`)
+    expect(injected?.text).toContain(`.project-tasks/${task.id}/notes.md`)
   }),
 )
 

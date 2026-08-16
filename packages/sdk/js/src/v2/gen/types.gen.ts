@@ -438,7 +438,7 @@ export type ProjectTask = {
   title: string
   /** Description body loaded from descriptionPath. */
   description: string
-  /** Project-relative path, e.g. `.opentasks/<taskID>/description.md`. */
+  /** Project-relative path, e.g. `.project-tasks/<taskID>/prd.md`. */
   descriptionPath: string
   status: ProjectTaskStatus
   sessionCount: number
@@ -2125,6 +2125,12 @@ export type ProjectTaskDetail = {
     archived?: number
   }
   sessions: Array<ProjectTaskSessionTodos>
+  /**
+   * Absolute directory `descriptionPath` resolves against (git worktree root;
+   * instance directory for non-git projects). Lets clients build correct
+   * absolute file paths from subdirectory instances.
+   */
+  workspaceDirectory?: string
 }
 
 export type ProjectTaskUpdateInput = {

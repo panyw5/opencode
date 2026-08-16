@@ -249,7 +249,13 @@ function ProjectTaskDetailDialog(props: {
   const detail = createMemo(() => state.detail)
   const title = createMemo(() => detail()?.title ?? props.task.title)
   const status = createMemo(() => detail()?.status ?? props.task.status)
-  const prdPath = createMemo(() => `${props.directory.replace(/[\\/]+$/, "")}/.opentasks/${props.task.id}/prd.md`)
+  // Prefer the hydrated anchor + descriptionPath (worktree-anchored, handles legacy/custom
+  // locations); before detail loads fall back to the panel directory + canonical prd.md path.
+  const prdPath = createMemo(() => {
+    const rel = detail()?.descriptionPath?.trim() || `.project-tasks/${props.task.id}/prd.md`
+    const anchor = (detail()?.workspaceDirectory?.trim() || props.directory).replace(/[\\/]+$/, "")
+    return `${anchor}/${rel.replace(/^\//, "")}`
+  })
   // Prefer flex fill over fixed vh math: dialog-content only had max-height, so
   // calc(90vh - Npx) children either overflowed or collapsed to the textarea default (2 rows).
   const dialogContainerStyle = createMemo(() =>

@@ -27,7 +27,7 @@ export type TaskContextSnapshot = {
   }>
   /**
    * Fingerprint of task-workspace files (path + bytes). Used so adding/removing
-   * files under `.opentasks/<id>/` triggers a delta inject.
+   * files under `.project-tasks/<id>/` triggers a delta inject.
    */
   workspaceFiles: Array<{ relativePath: string; bytes: number }>
 }
@@ -278,7 +278,7 @@ function formatLinkedSessionsSection(detail: Detail): string[] {
 
 export type FormatProjectTaskContextInput = {
   detail: Detail
-  /** Files under `.opentasks/<taskID>/` (paths + short summaries). */
+  /** Files under `.project-tasks/<taskID>/` (paths + short summaries). */
   workspaceFiles?: TaskWorkspaceFile[]
   /** parent = main/orchestrator session; subagent = task-tool child session. */
   audience?: ProjectTaskInjectAudience
@@ -487,7 +487,7 @@ export function decideProjectTaskInject(input: {
    * history). Forces a re-FULL so the model and UI both receive the brief again.
    */
   hasDurablePart?: boolean
-  /** Files under `.opentasks/<taskID>/` for path+summary inject. */
+  /** Files under `.project-tasks/<taskID>/` for path+summary inject. */
   workspaceFiles?: TaskWorkspaceFile[]
   /** parent (default) vs subagent child session. */
   audience?: ProjectTaskInjectAudience

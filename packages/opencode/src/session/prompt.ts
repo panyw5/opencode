@@ -21,7 +21,7 @@ import {
   hasProjectTaskInjectionPart,
   PROJECT_TASK_INJECTION_KIND,
 } from "@/project-task/context"
-import { listTaskWorkspaceFiles } from "@/project-task/description-file"
+import { listTaskWorkspaceFiles, taskFilesAnchor } from "@/project-task/description-file"
 import { getTaskContextInjectState, setTaskContextInjectState } from "@/project-task/inject-state"
 import MAX_STEPS from "../session/prompt/max-steps.txt"
 import { ToolRegistry } from "@/tool/registry"
@@ -1918,8 +1918,8 @@ export const layer = Layer.effect(
           // Subagent sessions inherit mount from the parent via TaskTool; audience differs.
           if (session.injectTaskContext && session.mountedTaskID) {
             const taskID = session.mountedTaskID
-            // Use the service (not the low-level repository) so description.md is
-            // hydrated from `.opentasks/<taskID>/description.md` before injection.
+            // Use the service (not the low-level repository) so the brief is
+            // hydrated from `.project-tasks/<taskID>/prd.md` before injection.
             const detail = yield* projectTasks.detail(taskID).pipe(Effect.option)
             const hydrated = Option.getOrUndefined(detail)
             if (hydrated) {
@@ -1927,7 +1927,7 @@ export const layer = Layer.effect(
               const hasDurablePart = hasProjectTaskInjectionPart(msgs, hydrated.id)
               const audience = session.parentID ? ("subagent" as const) : ("parent" as const)
               const workspaceFiles = yield* Effect.promise(() =>
-                listTaskWorkspaceFiles(ctx.directory, hydrated.id),
+                listTaskWorkspaceFiles(taskFilesAnchor(ctx), hydrated.id),
               )
               const decision = decideProjectTaskInject({
                 detail: hydrated,

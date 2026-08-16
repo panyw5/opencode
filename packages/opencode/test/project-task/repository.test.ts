@@ -95,7 +95,7 @@ describe("ProjectTaskRepository", () => {
     )
     expect(created.title).toBe("Ship project task manager")
     expect(created.descriptionPath.includes(created.id)).toBe(true)
-    expect(created.descriptionPath.endsWith("description.md")).toBe(true)
+    expect(created.descriptionPath.endsWith("prd.md")).toBe(true)
     expect(created.sessionCount).toBe(0)
     expect(created.progress.total).toBe(0)
 
