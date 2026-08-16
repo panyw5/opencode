@@ -1262,6 +1262,9 @@ export default function Layout(props: ParentProps) {
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
 
+    console.debug(
+      `[session-bar] archive close id=${session.id} directory=${session.directory} parentID=${session.parentID ?? "none"}`,
+    )
     layout.sessionBar.close(session.directory, session.id)
     await globalSDK.client.session.update({
       directory: session.directory,

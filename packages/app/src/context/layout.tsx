@@ -13,7 +13,7 @@ import { isExtraAgentDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { workspaceKey } from "@/pages/layout/helpers"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
-import { withParentSessionTab } from "@/components/session/session-bar-parent"
+import { removeSessionTabSubtree, withParentSessionTab } from "@/components/session/session-bar-parent"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_PANEL_WIDTH = 344
@@ -711,10 +711,24 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           })
         },
         close(directory: string, id: string) {
-          const key = workspaceKey(directory)
-          setStore("sessionBar", "all", (prev) =>
-            (prev ?? []).filter((tab) => !(tab.id === id && workspaceKey(tab.directory) === key)),
-          )
+          setStore("sessionBar", "all", (prev) => {
+            const next = removeSessionTabSubtree(prev ?? [], directory, id)
+            console.debug(
+              `[session-bar] store close id=${id} directory=${directory} before=${prev?.length ?? 0} after=${next.length}`,
+            )
+            return next
+          })
+        },
+        closeAll(targets: Array<Pick<SessionBarTab, "directory" | "id">>) {
+          const keys = new Set(targets.map((tab) => sessionBarKey(tab)))
+          if (keys.size === 0) return
+          setStore("sessionBar", "all", (prev) => {
+            const next = (prev ?? []).filter((tab) => !keys.has(sessionBarKey(tab)))
+            console.debug(
+              `[session-bar] store closeAll count=${keys.size} before=${prev?.length ?? 0} after=${next.length}`,
+            )
+            return next
+          })
         },
         setOrder(tabKeys: string[]) {
           setStore("sessionBar", "all", (prev) => {

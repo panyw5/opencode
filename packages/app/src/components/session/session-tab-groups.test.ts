@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { groupSessionTabs, reorderSessionTabGroups } from "./session-tab-groups"
+import { collectSessionTabSubtree, groupSessionTabs, reorderSessionTabGroups } from "./session-tab-groups"
 
 type Tab = {
   id: string
@@ -64,6 +64,70 @@ describe("groupSessionTabs", () => {
       { tab: { id: "a", parentID: "b" }, children: [] },
       { tab: { id: "b", parentID: "a" }, children: [] },
     ])
+  })
+})
+
+describe("collectSessionTabSubtree", () => {
+  test("includes the root and every open descendant", () => {
+    const tabs = [
+      { id: "other" },
+      { id: "parent" },
+      { id: "child-a", parentID: "parent" },
+      { id: "child-b", parentID: "parent" },
+      { id: "grand", parentID: "child-a" },
+    ]
+
+    expect(
+      collectSessionTabSubtree(
+        tabs,
+        (tab) => tab.id,
+        (tab) => tab.parentID,
+        "parent",
+      ).map((tab) => tab.id),
+    ).toEqual(["parent", "child-a", "grand", "child-b"])
+  })
+
+  test("closing a nested parent only collects that branch", () => {
+    const tabs = [
+      { id: "parent" },
+      { id: "child", parentID: "parent" },
+      { id: "grand", parentID: "child" },
+      { id: "sibling", parentID: "parent" },
+    ]
+
+    expect(
+      collectSessionTabSubtree(
+        tabs,
+        (tab) => tab.id,
+        (tab) => tab.parentID,
+        "child",
+      ).map((tab) => tab.id),
+    ).toEqual(["child", "grand"])
+  })
+
+  test("returns empty when the root tab is not open", () => {
+    expect(
+      collectSessionTabSubtree(
+        [{ id: "child", parentID: "parent" }],
+        (tab) => tab.id,
+        (tab) => tab.parentID,
+        "parent",
+      ),
+    ).toEqual([])
+  })
+
+  test("does not loop on cyclic parent links", () => {
+    expect(
+      collectSessionTabSubtree(
+        [
+          { id: "a", parentID: "b" },
+          { id: "b", parentID: "a" },
+        ],
+        (tab) => tab.id,
+        (tab) => tab.parentID,
+        "a",
+      ).map((tab) => tab.id),
+    ).toEqual(["a", "b"])
   })
 })
 

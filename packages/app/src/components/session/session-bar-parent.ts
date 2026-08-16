@@ -1,5 +1,6 @@
 import type { SessionBarTab } from "@/context/layout"
 import { workspaceKey } from "@/pages/layout/helpers"
+import { collectSessionTabSubtree } from "./session-tab-groups"
 
 export function withParentSessionTab(
   tabs: readonly SessionBarTab[],
@@ -50,4 +51,24 @@ export function collectMissingAncestorTabs(
     currentID = session?.parentID
   }
   return chain
+}
+
+/** Drop a tab and every open descendant so children never become independent tabs. */
+export function removeSessionTabSubtree(
+  tabs: readonly SessionBarTab[],
+  directory: string,
+  id: string,
+  parentIDOf: (tab: SessionBarTab) => string | undefined = (tab) =>
+    typeof tab.parentID === "string" ? tab.parentID : undefined,
+): SessionBarTab[] {
+  const key = workspaceKey(directory)
+  const subtree = collectSessionTabSubtree(
+    tabs.filter((tab) => workspaceKey(tab.directory) === key),
+    (tab) => tab.id,
+    parentIDOf,
+    id,
+  )
+  const closing = new Set(subtree.map((tab) => tab.id))
+  closing.add(id)
+  return tabs.filter((tab) => !(workspaceKey(tab.directory) === key && closing.has(tab.id)))
 }

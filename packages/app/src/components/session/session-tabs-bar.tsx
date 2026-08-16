@@ -28,7 +28,7 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { domainFromDirectory, extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { waitForMatch, workspaceKey } from "@/pages/layout/helpers"
 import { working } from "@/pages/session/session-working"
-import { groupSessionTabs, reorderSessionTabGroups, type SessionTabGroup } from "./session-tab-groups"
+import { collectSessionTabSubtree, groupSessionTabs, reorderSessionTabGroups, type SessionTabGroup } from "./session-tab-groups"
 
 /**
  * Global session tabs bar. One tab per open session, across projects.
@@ -182,21 +182,57 @@ export function SessionTabsBar() {
 
   const close = (tab: SessionBarTab) => {
     const all = orderedTabs()
-    const index = all.findIndex((item) => sessionBarKey(item) === sessionBarKey(tab))
-    if (index === -1) return
-    const active = isActive(tab)
-    const neighbor = all[index - 1] ?? all[index + 1]
-    layout.sessionBar.close(tab.directory, tab.id)
-    if (!active) return
+    const tabKey = sessionBarKey(tab)
+    const index = all.findIndex((item) => sessionBarKey(item) === tabKey)
+    if (index === -1) {
+      console.debug(`[session-bar] close skip missing tab id=${tab.id} directory=${tab.directory}`)
+      return
+    }
+
+    const parentByKey = parentIDs()
+    const subtree = collectSessionTabSubtree(
+      all,
+      sessionBarKey,
+      (item) => {
+        const parentID = parentByKey.get(sessionBarKey(item))
+        if (!parentID) return undefined
+        return sessionBarKey({ directory: item.directory, id: parentID })
+      },
+      tabKey,
+    )
+    const closing = subtree.length > 0 ? subtree : [tab]
+    const closingKeys = new Set(closing.map((item) => sessionBarKey(item)))
+    const viewingClosed = closing.some((item) => isActive(item))
+    const firstClosed = all.findIndex((item) => closingKeys.has(sessionBarKey(item)))
+    const lastClosed = all.findLastIndex((item) => closingKeys.has(sessionBarKey(item)))
+    const neighbor =
+      (firstClosed > 0 ? all[firstClosed - 1] : undefined) ??
+      all.slice(Math.max(lastClosed, index) + 1).find((item) => !closingKeys.has(sessionBarKey(item)))
+
+    console.debug(
+      `[session-bar] close parent=${tab.id} descendants=${closing
+        .filter((item) => sessionBarKey(item) !== tabKey)
+        .map((item) => item.id)
+        .join(",") || "none"} viewingClosed=${String(viewingClosed)} neighbor=${neighbor?.id ?? "none"}`,
+    )
+
+    layout.sessionBar.closeAll(closing)
+    if (!viewingClosed) {
+      console.debug(`[session-bar] close stay route id=${params.id ?? "none"}`)
+      return
+    }
     if (neighbor) {
+      console.debug(`[session-bar] close navigate neighbor id=${neighbor.id}`)
       void open(neighbor)
       return
     }
     // Closing the last tab leaves a fresh draft, mirroring the new-session page.
     if (params.dir) {
+      console.debug(`[session-bar] close navigate draft dir=${params.dir}`)
       navigate(`/${params.dir}/session`)
       return
     }
+    console.debug("[session-bar] close navigate home")
     navigate("/")
   }
 

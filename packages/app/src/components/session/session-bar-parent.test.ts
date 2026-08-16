@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { collectMissingAncestorTabs, withParentSessionTab } from "./session-bar-parent"
+import { collectMissingAncestorTabs, removeSessionTabSubtree, withParentSessionTab } from "./session-bar-parent"
 import type { SessionBarTab } from "@/context/layout"
 import { groupSessionTabs } from "./session-tab-groups"
 
@@ -51,6 +51,39 @@ describe("collectMissingAncestorTabs", () => {
   test("handles unknown parent ids without looping", () => {
     const chain = collectMissingAncestorTabs(new Set(), "ghost", new Map())
     expect(chain).toEqual([{ id: "ghost", title: undefined, parentID: undefined }])
+  })
+})
+
+describe("removeSessionTabSubtree", () => {
+  test("closing a parent removes nested children from the tab list", () => {
+    const next = removeSessionTabSubtree(
+      [tab("other"), tab("parent"), tab("child", "parent"), tab("grand", "child")],
+      "/proj",
+      "parent",
+    )
+    expect(next.map((item) => item.id)).toEqual(["other"])
+    expect(
+      groupSessionTabs(
+        next,
+        (item) => item.id,
+        (item) => (typeof item.parentID === "string" ? item.parentID : undefined),
+      ).map((group) => group.tab.id),
+    ).toEqual(["other"])
+  })
+
+  test("closing a nested child keeps the parent and siblings", () => {
+    const next = removeSessionTabSubtree(
+      [tab("parent"), tab("child", "parent"), tab("grand", "child"), tab("sibling", "parent")],
+      "/proj",
+      "child",
+    )
+    expect(next.map((item) => item.id)).toEqual(["parent", "sibling"])
+  })
+
+  test("does not close same-id tabs from another workspace", () => {
+    const other: SessionBarTab = { directory: "/other", id: "parent", title: "parent" }
+    const next = removeSessionTabSubtree([tab("parent"), tab("child", "parent"), other], "/proj", "parent")
+    expect(next).toEqual([other])
   })
 })
 

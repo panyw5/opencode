@@ -69,6 +69,44 @@ export function groupSessionTabs<T>(
   })
 }
 
+/** Root tab plus every open descendant, parent-first, cycle-safe. */
+export function collectSessionTabSubtree<T>(
+  tabs: readonly T[],
+  keyOf: (tab: T) => string,
+  parentKeyOf: (tab: T) => string | undefined,
+  rootKey: string,
+): T[] {
+  const byKey = new Map(tabs.map((tab) => [keyOf(tab), tab] as const))
+  if (!byKey.has(rootKey)) return []
+
+  const children = new Map<string, T[]>()
+  for (const tab of tabs) {
+    const parentKey = parentKeyOf(tab)
+    if (!parentKey || !byKey.has(parentKey)) continue
+    const list = children.get(parentKey)
+    if (list) {
+      list.push(tab)
+      continue
+    }
+    children.set(parentKey, [tab])
+  }
+
+  const result: T[] = []
+  const seen = new Set<string>()
+  const walk = (key: string) => {
+    if (seen.has(key)) return
+    seen.add(key)
+    const tab = byKey.get(key)
+    if (!tab) return
+    result.push(tab)
+    for (const child of children.get(key) ?? []) {
+      walk(keyOf(child))
+    }
+  }
+  walk(rootKey)
+  return result
+}
+
 export function reorderSessionTabGroups<T>(
   groups: readonly SessionTabGroup<T>[],
   from: string,
