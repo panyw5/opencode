@@ -9648,7 +9648,7 @@ function SkillMarket(props: {
                         const isInstalled = () => installed(item, "global") || installed(item, "project")
                         return (
                           <div
-                            class="flex min-h-[180px] flex-col rounded-xl border border-border-weak-base bg-background-base p-4 transition-colors hover:border-border-strong hover:bg-surface-base-hover"
+                            class="group relative flex min-h-[180px] flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base p-4 text-left transition-all duration-150 ease-out hover:-translate-y-0.5 hover:border-border-strong hover:bg-surface-base-hover hover:shadow-[0_10px_28px_-12px_color-mix(in_srgb,var(--border-strong-base)_55%,transparent)] focus:outline-none focus-visible:border-border-strong focus-visible:bg-surface-base-hover"
                             role="button"
                             tabindex="0"
                             onClick={() => openDetail(item)}
@@ -9658,20 +9658,41 @@ function SkillMarket(props: {
                               openDetail(item)
                             }}
                           >
-                            <div class="flex min-w-0 items-start justify-between gap-3">
-                              <div class="min-w-0">
-                                <div class="truncate text-14-medium text-text-strong">{item.name}</div>
-                                <div class="mt-1 line-clamp-3 text-12-regular text-text-weak">{item.description}</div>
+                            <div class="pointer-events-none absolute inset-0 rounded-[inherit]">
+                              <div class="absolute inset-x-0 top-0 h-px bg-[linear-gradient(90deg,transparent,color-mix(in_srgb,var(--surface-brand-base)_60%,transparent),transparent)] opacity-40 transition-opacity duration-150 group-hover:opacity-100" />
+                              <div class="absolute -right-8 -top-10 size-28 rounded-full bg-[radial-gradient(circle_at_center,color-mix(in_srgb,var(--surface-brand-base)_22%,transparent),transparent_70%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                              <div class="absolute inset-0 bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_9%,transparent),transparent_55%)] opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
+                            </div>
+                            <div class="relative flex min-w-0 items-start justify-between gap-3">
+                              <div class="flex min-w-0 items-start gap-2.5">
+                                <div class="flex size-9 shrink-0 items-center justify-center rounded-[10px] border border-border-weak-base bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_88%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-hover)_60%,transparent))] text-14-medium text-text-on-brand-strong shadow-sm transition-[transform] duration-150 ease-out group-hover:-rotate-3 group-hover:scale-105">
+                                  {item.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div class="min-w-0">
+                                  <div class="flex min-w-0 items-center gap-1.5">
+                                    <div class="truncate text-14-medium text-text-strong">{item.name}</div>
+                                    <Icon
+                                      name="arrow-right"
+                                      size="small"
+                                      class="shrink-0 text-icon-brand-base opacity-0 transition-[opacity,transform] duration-150 ease-out group-hover:translate-x-0.5 group-hover:opacity-100"
+                                    />
+                                  </div>
+                                  <div class="mt-1 line-clamp-3 text-12-regular text-text-weak">{item.description}</div>
+                                </div>
                               </div>
                               <Show when={isInstalled()}>
-                                <span class="shrink-0 rounded-full bg-surface-success-base px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-on-success-base">
+                                <span class="flex shrink-0 items-center gap-1 rounded-full bg-surface-success-base px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-on-success-base">
+                                  <Icon name="check-small" size="small" />
                                   {language.t("config.skills.market.installed")}
                                 </span>
                               </Show>
                             </div>
-                            <div class="mt-3 break-all font-mono text-[11px] leading-5 text-text-weak">{item.path}</div>
-                            <div class="mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
-                              <div class="text-[11px] text-text-weak">{item.repoLabel}</div>
+                            <div class="relative mt-3 break-all font-mono text-[11px] leading-5 text-text-weak">{item.path}</div>
+                            <div class="relative mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
+                              <div class="flex items-center gap-1.5 text-[11px] text-text-weak">
+                                <Icon name="github" size="small" class="text-icon-weak-base" />
+                                <span>{item.repoLabel}</span>
+                              </div>
                               <div class="flex flex-wrap items-center justify-end gap-2">
                                 <Button
                                   size="small"
