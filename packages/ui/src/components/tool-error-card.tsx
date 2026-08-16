@@ -9,7 +9,7 @@ import { Tooltip } from "./tooltip"
 import { useI18n } from "../context/i18n"
 import { ToolCallTime } from "./tool-call-time"
 
-export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
+export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant" | "part"> {
   tool: string
   error: string
   defaultOpen?: boolean
