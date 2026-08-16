@@ -86,9 +86,11 @@ export function FetchProviderModels(props: Props) {
       if (Array.isArray(json)) {
         list = json.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
       } else if (Array.isArray(json?.data)) {
-        list = json.data.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
+        const data = json?.data as unknown[]
+        list = data.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
       } else if (Array.isArray(json?.models)) {
-        list = json.models.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
+        const models = json?.models as unknown[]
+        list = models.map(normalizeFetchedModel).filter((m): m is FetchedModel => !!m)
       }
       setModels(list)
       if (list.length === 0) setError("未找到模型")

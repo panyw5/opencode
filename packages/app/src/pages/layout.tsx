@@ -1983,8 +1983,11 @@ export default function Layout(props: ParentProps) {
       let currentID: string | undefined = id
       while (currentID && !seen.has(currentID)) {
         seen.add(currentID)
-        const result = await client.session.get({ directory, sessionID: currentID })
-        const value = result.data
+        const result: Awaited<ReturnType<typeof client.session.get>> = await client.session.get({
+          directory,
+          sessionID: currentID,
+        })
+        const value: Session | undefined = result.data
         if (!value) {
           console.debug(`[session-bar] ensure meta miss directory=${directory} id=${currentID}`)
           return
