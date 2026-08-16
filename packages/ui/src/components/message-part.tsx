@@ -1743,6 +1743,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   defaultOpen={props.defaultOpen}
                   subtitle={taskSubtitle()}
                   href={taskHref()}
+                  part={part()}
                   onHrefClick={() => {
                     const id = taskId()
                     if (!id) return
@@ -3480,7 +3481,7 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="models" status={props.status} trigger={trigger()} hideDetails />
+    return <BasicTool icon="models" status={props.status} trigger={trigger()} hideDetails part={props.part} />
   },
 })
 
@@ -4044,7 +4045,7 @@ ToolRegistry.register({
     )
 
     // No expand panel: actions live only on the trigger row (view / stop).
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta />
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
   },
 })
 
@@ -4165,7 +4166,7 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta />
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
   },
 })
 
@@ -4281,7 +4282,7 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta />
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
   },
 })
 
@@ -4391,6 +4392,6 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta />
+    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
   },
 })

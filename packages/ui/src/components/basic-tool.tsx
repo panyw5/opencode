@@ -1,5 +1,6 @@
 import { createEffect, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { animate, type AnimationPlaybackControls } from "motion"
+import type { ToolPart } from "@opencode-ai/sdk/v2"
 import { useI18n } from "../context/i18n"
 import { createStore } from "solid-js/store"
 import { Collapsible } from "./collapsible"
@@ -7,6 +8,7 @@ import { Icon, type IconProps } from "./icon"
 import { Spinner } from "./spinner"
 import { TextShimmer } from "./text-shimmer"
 import { suppressAutoScrollResize } from "../hooks/create-auto-scroll"
+import { ToolCallTime } from "./tool-call-time"
 import { normalizeTool } from "./tool-meta"
 
 export type TriggerTitle = {
@@ -41,6 +43,7 @@ export interface BasicToolProps {
   locked?: boolean
   animated?: boolean
   onSubtitleClick?: () => void
+  part?: ToolPart
 }
 
 const SPRING = { type: "spring" as const, visualDuration: 0.35, bounce: 0 }
@@ -212,6 +215,7 @@ export function BasicTool(props: BasicToolProps) {
                 <Match when={true}>{props.trigger as JSX.Element}</Match>
               </Switch>
             </div>
+            <ToolCallTime part={props.part} />
           </div>
           <Show when={hasDetails() && !props.locked && !props.hideArrow}>
             <Collapsible.Arrow />
@@ -318,6 +322,7 @@ export function GenericTool(props: {
   hideDetails?: boolean
   input?: Record<string, unknown>
   output?: string
+  part?: ToolPart
 }) {
   const i18n = useI18n()
 
@@ -347,6 +352,7 @@ export function GenericTool(props: {
       icon={glyph(props.tool)}
       showPendingMeta
       status={props.status}
+      part={props.part}
       trigger={{
         title: i18n.t("ui.basicTool.called", { tool: props.tool }),
         subtitle: label(props.input),

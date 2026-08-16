@@ -1,4 +1,5 @@
 import { type ComponentProps, createMemo, Show, splitProps } from "solid-js"
+import type { ToolPart } from "@opencode-ai/sdk/v2"
 import { createStore } from "solid-js/store"
 import { Card, CardDescription } from "./card"
 import { Collapsible } from "./collapsible"
@@ -6,6 +7,7 @@ import { Icon } from "./icon"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
 import { useI18n } from "../context/i18n"
+import { ToolCallTime } from "./tool-call-time"
 
 export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   tool: string
@@ -14,6 +16,7 @@ export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "c
   subtitle?: string
   href?: string
   onHrefClick?: (event: MouseEvent) => void
+  part?: ToolPart
 }
 
 export function ToolErrorCard(props: ToolErrorCardProps) {
@@ -24,7 +27,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
   })
   const open = () => state.open
   const copied = () => state.copied
-  const [split, rest] = splitProps(props, ["tool", "error", "defaultOpen", "subtitle", "href", "onHrefClick"])
+  const [split, rest] = splitProps(props, ["tool", "error", "defaultOpen", "subtitle", "href", "onHrefClick", "part"])
   const name = createMemo(() => {
     const map: Record<string, string> = {
       read: "ui.tool.read",
@@ -117,6 +120,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
                   </div>
                 </div>
               </div>
+              <ToolCallTime part={split.part} />
             </div>
             <Collapsible.Arrow />
           </div>

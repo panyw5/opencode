@@ -189,4 +189,17 @@
     flex-shrink: 0;
     margin-left: auto;
   }
+
+  [data-slot="basic-tool-tool-time"] {
+    flex-shrink: 0;
+    margin-left: 8px;
+    font-family: var(--font-family-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    font-weight: var(--font-weight-regular);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+    color: var(--text-weak);
+    white-space: nowrap;
+  }
 }
