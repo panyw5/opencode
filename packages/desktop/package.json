@@ -15,6 +15,7 @@
     "dev": "electron-vite dev",
     "prebuild": "bun ./scripts/prebuild.ts",
     "build": "electron-vite build",
+    "profile:session-tabs": "bun ./scripts/profile-session-tabs.ts",
     "preview": "electron-vite preview",
     "package": "bun run build && electron-builder --config electron-builder.config.ts",
     "package:mac": "bun run build && electron-builder --mac --publish never --config electron-builder.config.ts",
