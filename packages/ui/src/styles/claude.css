@@ -48,6 +48,27 @@ html[data-theme="claude"] [data-component="button"][data-size="large"] {
   gap: 7px;
 }
 
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="select-select-trigger"].session-workspace-select[data-variant="secondary"] {
+  background-color: var(--surface-raised-base);
+}
+
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="select-select-trigger"].session-workspace-select[data-variant="secondary"]:hover:not(:disabled) {
+  background-color: var(--surface-raised-base-hover);
+}
+
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="select-select-trigger"].session-workspace-select[data-variant="secondary"]:active:not(:disabled),
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="select-select-trigger"].session-workspace-select[data-variant="secondary"][data-expanded],
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="select-select-trigger"].session-workspace-select[data-variant="secondary"][data-expanded]:hover:not(
+    :disabled
+  ) {
+  background-color: var(--surface-raised-base-active);
+}
+
 html[data-theme="claude"] [data-component="icon-button"] {
   border-radius: var(--claude-session-radius-sm);
 }

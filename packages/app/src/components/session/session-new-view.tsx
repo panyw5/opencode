@@ -295,10 +295,21 @@ export function NewSessionView(props: NewSessionViewProps) {
                       current={current()}
                       value={(item) => item.value}
                       label={(item) => getFilename(item.path) || item.path}
-                      onSelect={(item) => item && props.onWorktreeChange(item.value)}
+                      onOpenChange={(open) => {
+                        console.debug(
+                          `[session-new] workspace menu open=${open} theme=${document.documentElement.dataset.theme ?? "none"} scheme=${document.documentElement.dataset.colorScheme ?? "none"} current=${current()?.value ?? "none"}`,
+                        )
+                      }}
+                      onSelect={(item) => {
+                        if (!item) return
+                        console.debug(
+                          `[session-new] workspace select from=${current()?.value ?? "none"} to=${item.value} path=${item.path}`,
+                        )
+                        props.onWorktreeChange(item.value)
+                      }}
                       variant="secondary"
                       size="normal"
-                      class="w-full"
+                      class="session-workspace-select w-full"
                       valueClass="truncate text-left text-14-medium text-text-strong"
                       triggerStyle={{
                         width: "100%",
