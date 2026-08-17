@@ -135,7 +135,7 @@ const CurrentModelSummary: Component<{ model: ModelState; class?: string }> = (p
 
   return (
     <div
-      class={`mx-1 mb-2 rounded-md border px-2.5 py-2 ${props.class ?? ""}`}
+      class={`mx-1 mb-2 rounded-lg border px-3 py-2.5 ${props.class ?? ""}`}
       style={{
         "background-color": "var(--apple-light-alpha-5)",
         "border-color": "var(--border-weak-base)",
@@ -146,20 +146,15 @@ const CurrentModelSummary: Component<{ model: ModelState; class?: string }> = (p
         fallback={<div class="text-13-regular text-text-subtle">{language.t("dialog.model.select.title")}</div>}
       >
         {(item) => (
-          <div class="flex min-w-0 items-center gap-2">
-            <div class="flex size-5 shrink-0 items-center justify-center">
-              <ProviderIcon
-                id={modelProviderIconID(item())}
-                class="size-4 icon-strong-base"
-                aria-label={item().provider.name}
-              />
-            </div>
+          <div class="flex min-w-0 items-start gap-2.5">
+            <ProviderIcon
+              id={modelProviderIconID(item())}
+              class="mt-0.5 size-6 shrink-0 icon-strong-base"
+              aria-label={item().provider.name}
+            />
             <div class="min-w-0 flex-1">
-              <div class="flex min-w-0 items-center gap-1 text-16-medium font-semibold text-accent">
-                <span class="truncate">{item().provider.name}</span>
-                <span class="shrink-0 opacity-70">/</span>
-                <span class="truncate">{item().name}</span>
-              </div>
+              <div class="truncate text-16-medium font-semibold text-text-strong">{item().name}</div>
+              <div class="mt-0.5 truncate text-12-regular text-text-weak">{item().provider.name}</div>
             </div>
           </div>
         )}
