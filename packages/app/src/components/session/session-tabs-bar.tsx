@@ -487,7 +487,13 @@ function SessionTabGroup(props: {
     return props.active(value.tab) || value.children.some((item) => props.active(item.tab))
   }
   const trigger = () => (
-    <div class="flex h-full items-center" onMouseEnter={open} onMouseLeave={close} onFocusIn={open} onFocusOut={close}>
+    <div
+      class="flex h-full min-w-28 items-center"
+      onMouseEnter={open}
+      onMouseLeave={close}
+      onFocusIn={open}
+      onFocusOut={close}
+    >
       <SessionTab
         tab={group().tab}
         active={groupActive()}
@@ -508,7 +514,11 @@ function SessionTabGroup(props: {
   onCleanup(cancelClose)
 
   return (
-    <div use:sortable class="h-full flex items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
+    <div
+      use:sortable
+      class="h-full flex min-w-28 items-center"
+      classList={{ "opacity-0": sortable.isActiveDraggable }}
+    >
       <Show when={group().children.length} fallback={trigger()}>
         <Popover
           open={state.open}
@@ -516,7 +526,7 @@ function SessionTabGroup(props: {
           placement="bottom-start"
           class="session-tab-children-popover"
           trigger={trigger()}
-          triggerProps={{ role: "presentation", tabIndex: -1 }}
+          triggerProps={{ role: "presentation", tabIndex: -1, class: "min-w-28" }}
         >
           <div
             data-component="session-tab-children"
@@ -650,10 +660,10 @@ function SessionTab(props: {
         data-directory={props.tab.directory}
         data-active={props.active ? "true" : undefined}
         data-subagent={subagent() ? "true" : undefined}
-        class="group relative flex min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
+        class="group relative flex cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
         classList={{
-          "h-7 max-w-52": !props.nested,
-          "w-full max-w-72 py-1.5": !!props.nested,
+          "h-7 min-w-28 max-w-80": !props.nested,
+          "w-full min-w-0 max-w-72 py-1.5": !!props.nested,
           "bg-surface-base-active text-text-strong": props.active,
           "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
         }}
@@ -780,11 +790,11 @@ function DraftTab(props: { directory: string; closable: boolean; onClose: () => 
   const language = useLanguage()
 
   return (
-    <div class="h-full flex items-center">
+    <div class="h-full flex min-w-28 items-center">
       <div
         data-component="session-tab"
         data-active="true"
-        class="group relative flex h-7 max-w-52 min-w-0 cursor-default select-none items-center gap-1.5 rounded-[10px] bg-surface-base-active pl-3 pr-2 text-13-medium italic text-text-strong"
+        class="group relative flex h-7 min-w-28 max-w-80 cursor-default select-none items-center gap-1.5 rounded-[10px] bg-surface-base-active pl-3 pr-2 text-13-medium italic text-text-strong"
       >
         <span class="min-w-0 truncate">{language.t("command.session.new")}</span>
         <Show when={props.closable}>
