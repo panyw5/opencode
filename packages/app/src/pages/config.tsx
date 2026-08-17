@@ -99,7 +99,17 @@ import {
   useChannelMiddleItems,
 } from "./config-channels"
 
-const CORE_SECTIONS = ["providers", "agents-md", "agents", "skills", "plugins", "mcp", "commands", "channels", "claws"] as const
+const CORE_SECTIONS = [
+  "providers",
+  "agents-md",
+  "agents",
+  "skills",
+  "plugins",
+  "mcp",
+  "commands",
+  "channels",
+  "claws",
+] as const
 type CoreSection = (typeof CORE_SECTIONS)[number]
 type Section = CoreSection | (string & {})
 
@@ -1003,11 +1013,17 @@ function JsoncAgentEditor(props: {
           </div>
           <div class="mt-1 text-12-regular text-text-weak">{language.t("config.agents.jsonc.description")}</div>
         </div>
-        <SaveButton label={saving() ? language.t("config.agents.jsonc.saving") : language.t("common.save")} onClick={() => void save()} disabled={saving() || props.busy} />
+        <SaveButton
+          label={saving() ? language.t("config.agents.jsonc.saving") : language.t("common.save")}
+          onClick={() => void save()}
+          disabled={saving() || props.busy}
+        />
       </div>
       <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-5">
         <div class="mx-auto flex max-w-[920px] flex-col gap-6">
-          <Show when={error()}>{(message) => <div class="text-12-regular text-text-danger-base">{message()}</div>}</Show>
+          <Show when={error()}>
+            {(message) => <div class="text-12-regular text-text-danger-base">{message()}</div>}
+          </Show>
           <div class="grid gap-4 md:grid-cols-2">
             <div class="flex flex-col gap-2">
               <label class="text-12-medium text-text-weak">{language.t("config.agents.field.model")}</label>
@@ -1062,11 +1078,35 @@ function JsoncAgentEditor(props: {
                 {(value) => <span>{value || language.t("config.agents.field.default")}</span>}
               </Select>
             </div>
-            <TextField label={language.t("config.agents.field.temperature")} inputmode="decimal" value={form.temperature} onChange={(value) => setForm("temperature", value)} />
-            <TextField label={language.t("config.agents.field.topP")} inputmode="decimal" value={form.topP} onChange={(value) => setForm("topP", value)} />
-            <TextField label={language.t("config.agents.field.color")} placeholder="primary or #FF5733" value={form.color} onChange={(value) => setForm("color", value)} />
-            <TextField label={language.t("config.agents.field.steps")} inputmode="numeric" value={form.steps} onChange={(value) => setForm("steps", value)} />
-            <TextField label={language.t("config.agents.field.description")} value={form.description} onChange={(value) => setForm("description", value)} />
+            <TextField
+              label={language.t("config.agents.field.temperature")}
+              inputmode="decimal"
+              value={form.temperature}
+              onChange={(value) => setForm("temperature", value)}
+            />
+            <TextField
+              label={language.t("config.agents.field.topP")}
+              inputmode="decimal"
+              value={form.topP}
+              onChange={(value) => setForm("topP", value)}
+            />
+            <TextField
+              label={language.t("config.agents.field.color")}
+              placeholder="primary or #FF5733"
+              value={form.color}
+              onChange={(value) => setForm("color", value)}
+            />
+            <TextField
+              label={language.t("config.agents.field.steps")}
+              inputmode="numeric"
+              value={form.steps}
+              onChange={(value) => setForm("steps", value)}
+            />
+            <TextField
+              label={language.t("config.agents.field.description")}
+              value={form.description}
+              onChange={(value) => setForm("description", value)}
+            />
             <div class="flex flex-col gap-2">
               <label class="text-12-medium text-text-weak">{language.t("config.agents.field.mode")}</label>
               <Select
@@ -1082,8 +1122,12 @@ function JsoncAgentEditor(props: {
             </div>
           </div>
           <div class="grid gap-4 md:grid-cols-2">
-            <Toggle checked={form.hidden} onChange={(value) => setForm("hidden", value)}>{language.t("config.agents.field.hidden")}</Toggle>
-            <Toggle checked={form.disable} onChange={(value) => setForm("disable", value)}>{language.t("config.agents.field.disabled")}</Toggle>
+            <Toggle checked={form.hidden} onChange={(value) => setForm("hidden", value)}>
+              {language.t("config.agents.field.hidden")}
+            </Toggle>
+            <Toggle checked={form.disable} onChange={(value) => setForm("disable", value)}>
+              {language.t("config.agents.field.disabled")}
+            </Toggle>
           </div>
           <div class="flex flex-col gap-2">
             <label class="text-12-medium text-text-weak">{language.t("config.agents.field.prompt")}</label>
@@ -1091,9 +1135,7 @@ function JsoncAgentEditor(props: {
               class="min-h-40 rounded-xl border border-border-weak-base bg-background-base p-3 text-13-regular text-text-base outline-none"
               value={form.prompt}
               onInput={(event) => setForm("prompt", event.currentTarget.value)}
-              onKeyDown={(event) =>
-                handleTextareaIndent(event, form.prompt, (next) => setForm("prompt", next.text))
-              }
+              onKeyDown={(event) => handleTextareaIndent(event, form.prompt, (next) => setForm("prompt", next.text))}
             />
           </div>
           <div class="grid gap-4 lg:grid-cols-2">
@@ -1228,15 +1270,17 @@ function hmCfg(input?: HermesConfig) {
   }
 }
 
-function cliAgentCfg(input?: CliAgentConfig & {
-  provider?: string
-  model?: string
-  baseURL?: string
-  apiKey?: string
-  hasFileApiKey?: boolean
-  apiKeyEnvSet?: boolean
-  baseUrlEnvSet?: boolean
-}) {
+function cliAgentCfg(
+  input?: CliAgentConfig & {
+    provider?: string
+    model?: string
+    baseURL?: string
+    apiKey?: string
+    hasFileApiKey?: boolean
+    apiKeyEnvSet?: boolean
+    baseUrlEnvSet?: boolean
+  },
+) {
   return {
     enabled: input?.enabled ?? true,
     binaryPath: input?.binaryPath ?? "",
@@ -1282,11 +1326,7 @@ function skillSearchMatchField(value: string, term: string) {
 }
 
 function skillSearchMatch(fields: Array<string | undefined>, query: string) {
-  const terms = query
-    .toLowerCase()
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
+  const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean)
   if (terms.length === 0) return true
 
   const values = fields.filter((field): field is string => !!field?.trim())
@@ -1308,11 +1348,11 @@ function sectionIcon(section: Section): IconProps["name"] {
 }
 
 const CONFIG_MIDDLE_ITEM_CLASS =
-  "group flex w-full cursor-pointer items-start justify-between gap-4 rounded-[14px] border px-4 py-4 text-left transition-all duration-150 focus:outline-none focus-visible:border-border-strong focus-visible:bg-surface-base-hover"
+  "group relative flex w-full cursor-pointer items-start justify-between gap-4 overflow-hidden rounded-lg border px-4 py-4 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 focus:outline-none focus-visible:border-border-strong focus-visible:bg-surface-base-hover"
 const CONFIG_MIDDLE_ITEM_ACTIVE_CLASS =
-  "border-border-base bg-surface-base-active shadow-[inset_0_1px_0_color-mix(in_srgb,white_7%,transparent)]"
+  "border-border-weak-base bg-[linear-gradient(105deg,color-mix(in_srgb,var(--surface-brand-base)_8%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)))]"
 const CONFIG_MIDDLE_ITEM_INACTIVE_CLASS =
-  "border-border-weak-base/70 bg-background-base/45 hover:border-border-base hover:bg-surface-base/85"
+  "border-border-weak-base/75 bg-background-base/60 hover:-translate-y-px hover:border-border-base hover:bg-background-base"
 const CONFIG_PANE_FOCUS_CLASS =
   "relative z-[1] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-strong)_22%,transparent),inset_0_0_0_3px_color-mix(in_srgb,var(--text-strong)_8%,transparent)]"
 
@@ -1474,13 +1514,14 @@ function SkillListButton(props: {
               !confirmDelete(),
           }}
           onClick={handleDeleteClick}
-          aria-label={confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.skills.delete.action")}
-          title={confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.skills.delete.action")}
+          aria-label={
+            confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.skills.delete.action")
+          }
+          title={
+            confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.skills.delete.action")
+          }
         >
-          <Show
-            when={confirmDelete()}
-            fallback={<Icon name="trash" size="small" />}
-          >
+          <Show when={confirmDelete()} fallback={<Icon name="trash" size="small" />}>
             <span class="text-11-medium whitespace-nowrap">{language.t("config.skills.delete.confirm")}</span>
           </Show>
         </button>
@@ -1489,20 +1530,31 @@ function SkillListButton(props: {
   )
 }
 
-function ConfigSearchBox(props: {
-  value: string
-  placeholder: string
-  onInput: (value: string) => void
-}) {
+function ConfigSearchBox(props: { value: string; placeholder: string; onInput: (value: string) => void }) {
   return (
-    <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
+    <div class="flex items-center gap-2.5 rounded-lg border border-border-weak-base bg-background-base px-3 py-2.5 transition-[border-color,box-shadow] focus-within:border-[color-mix(in_srgb,var(--surface-brand-base)_45%,var(--border-strong))] focus-within:shadow-[0_0_0_3px_color-mix(in_srgb,var(--surface-brand-base)_10%,transparent)]">
+      <Icon name="magnifying-glass" size="small" class="shrink-0 text-text-weak" />
       <input
         type="text"
         value={props.value}
         placeholder={props.placeholder}
-        class="w-full bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak"
+        class="min-w-0 flex-1 bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak"
         onInput={(event) => props.onInput(event.currentTarget.value)}
       />
+    </div>
+  )
+}
+
+function ConfigPaneTitle(props: { title: string; description: string; icon: IconProps["name"] }) {
+  return (
+    <div class="flex min-w-0 items-start gap-3">
+      <div class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[color-mix(in_srgb,var(--surface-brand-base)_28%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--surface-brand-base)_12%,var(--background-base))] text-text-strong shadow-sm">
+        <Icon name={props.icon} size="medium" />
+      </div>
+      <div class="min-w-0 pt-0.5">
+        <div class="truncate text-18-medium text-text-strong">{props.title}</div>
+        <div class="mt-1 line-clamp-2 text-12-regular leading-5 text-text-weak">{props.description}</div>
+      </div>
     </div>
   )
 }
@@ -1771,7 +1823,9 @@ function ProviderListButton(props: {
     >
       <div class="min-w-0 flex-1">
         <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <div class="min-w-0 truncate text-15-medium text-text-interactive-base transition-colors">{props.item.id}</div>
+          <div class="min-w-0 truncate text-15-medium text-text-interactive-base transition-colors">
+            {props.item.id}
+          </div>
           <span
             class="shrink-0 rounded-full border px-2 py-0.5 text-11-medium transition-colors"
             classList={{
@@ -2019,10 +2073,7 @@ function MarkdownField(props: {
 
 type ConfigEditorMode = "source" | "preview"
 
-function ConfigEditorModeToggle(props: {
-  mode: ConfigEditorMode
-  onMode: (mode: ConfigEditorMode) => void
-}) {
+function ConfigEditorModeToggle(props: { mode: ConfigEditorMode; onMode: (mode: ConfigEditorMode) => void }) {
   const language = useLanguage()
 
   return (
@@ -2051,12 +2102,7 @@ function ConfigEditorModeToggle(props: {
   )
 }
 
-function SaveButton(props: {
-  label: string
-  disabled?: boolean
-  icon?: "save" | "check-small"
-  onClick: () => void
-}) {
+function SaveButton(props: { label: string; disabled?: boolean; icon?: "save" | "check-small"; onClick: () => void }) {
   return (
     <Button
       size="small"
@@ -2481,7 +2527,10 @@ function ExtraAgentInfoCard(props: { info?: ExtraAgentInfo; loading?: boolean })
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="text-13-medium text-text-strong">{language.t("config.claws.info.title")}</div>
         <Show when={props.loading}>
-          <div class="inline-flex items-center gap-1.5 text-12-regular text-text-weak" title={language.t("config.claws.info.refreshing")}>
+          <div
+            class="inline-flex items-center gap-1.5 text-12-regular text-text-weak"
+            title={language.t("config.claws.info.refreshing")}
+          >
             <Icon name="refresh" size="small" class="animate-spin" />
             <span>{language.t("config.claws.info.loading")}</span>
           </div>
@@ -2891,9 +2940,7 @@ function DshPluginInventoryCard(props: {
           disabled={!props.canLoad || props.loading}
           onClick={props.onLoad}
         >
-          {props.loading
-            ? language.t("config.claws.dsh.plugins.loading")
-            : language.t("config.claws.dsh.plugins.load")}
+          {props.loading ? language.t("config.claws.dsh.plugins.loading") : language.t("config.claws.dsh.plugins.load")}
         </Button>
       </div>
 
@@ -3089,7 +3136,8 @@ function CliAgentEditor(props: {
   const apiKeyStatus = () => {
     if (props.form.clearApiKey) return language.t("config.claws.dsh.apiKeyStatus.willClear")
     if (props.form.apiKey.trim()) return language.t("config.claws.dsh.apiKeyStatus.willWrite")
-    if (props.form.hasFileApiKey && props.form.apiKeyEnvSet) return language.t("config.claws.dsh.apiKeyStatus.fileAndEnv")
+    if (props.form.hasFileApiKey && props.form.apiKeyEnvSet)
+      return language.t("config.claws.dsh.apiKeyStatus.fileAndEnv")
     if (props.form.hasFileApiKey) return language.t("config.claws.dsh.apiKeyStatus.file")
     if (props.form.apiKeyEnvSet) return language.t("config.claws.dsh.apiKeyStatus.env")
     return language.t("config.claws.dsh.apiKeyStatus.none")
@@ -3639,10 +3687,12 @@ function CustomEditor(props: {
               />
             </div>
 
-              <div class="space-y-2">
+            <div class="space-y-2">
               <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
                 <span class="text-12-medium text-text-weak">{language.t("config.custom.field.apiKey")}</span>
-                <span class="text-11-regular text-text-weak/70">{language.t("config.custom.field.apiKeyDescription")}</span>
+                <span class="text-11-regular text-text-weak/70">
+                  {language.t("config.custom.field.apiKeyDescription")}
+                </span>
               </div>
               <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
                 <div class="flex items-center gap-2">
@@ -3698,7 +3748,9 @@ function CustomEditor(props: {
                   <div aria-hidden="true" />
                   <div class="flex min-w-0 flex-wrap items-baseline gap-x-1.5 pl-3">
                     <span class="text-12-medium text-text-weak">{language.t("config.custom.models.name")}</span>
-                    <span class="text-11-regular text-text-weak/70">{language.t("config.custom.models.name.hint")}</span>
+                    <span class="text-11-regular text-text-weak/70">
+                      {language.t("config.custom.models.name.hint")}
+                    </span>
                   </div>
                   <div aria-hidden="true" />
                 </div>
@@ -3964,16 +4016,7 @@ export default function ConfigPage() {
   })
 
   function bump(
-    ...list: Array<
-      | "workspaceRev"
-      | "skillRev"
-      | "agentRev"
-      | "clawRev"
-      | "gaRev"
-      | "hmRev"
-      | "mcpRev"
-      | "commandRev"
-    >
+    ...list: Array<"workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "mcpRev" | "commandRev">
   ) {
     list.forEach((key) => setState(key, (value) => value + 1))
   }
@@ -3990,7 +4033,7 @@ export default function ConfigPage() {
           ? type === "local"
             ? ((entry.command as string[]) ?? []).join(" ")
             : type === "remote"
-              ? (entry.url as string) ?? ""
+              ? ((entry.url as string) ?? "")
               : ""
           : ""
         return { name: name_, type, detail, status }
@@ -4013,7 +4056,7 @@ export default function ConfigPage() {
           ? type === "local"
             ? ((entry.command as string[]) ?? []).join(" ")
             : type === "remote"
-              ? (entry.url as string) ?? ""
+              ? ((entry.url as string) ?? "")
               : ""
           : ""
         return { name: name_, type, detail, status, draft: false }
@@ -4196,9 +4239,7 @@ export default function ConfigPage() {
   function toggleMcp(name: string, enabled: boolean) {
     if (state.mcpBusy === name) return
     setState("mcpBusy", name)
-    const action = enabled
-      ? globalSDK.client.mcp.connect({ name })
-      : globalSDK.client.mcp.disconnect({ name })
+    const action = enabled ? globalSDK.client.mcp.connect({ name }) : globalSDK.client.mcp.disconnect({ name })
     void action
       .catch((err: unknown) => {
         showToast({
@@ -4284,7 +4325,9 @@ export default function ConfigPage() {
   const [cliAgentDescriptors, setCliAgentDescriptors] = createSignal<CliAgentDescriptor[]>([])
   const [cliAgentConfigs, setCliAgentConfigs] = createStore<Partial<Record<CliAgentID, CliAgentConfig>>>({})
   const [cliAgentInfo, setCliAgentInfo] = createStore<Partial<Record<CliAgentID, CliAgentInfo>>>({})
-  const [cliAgentLoading, setCliAgentLoading] = createStore<Partial<Record<CliAgentID, { config: boolean; info: boolean }>>>({})
+  const [cliAgentLoading, setCliAgentLoading] = createStore<
+    Partial<Record<CliAgentID, { config: boolean; info: boolean }>>
+  >({})
   const [dshPlugins, setDshPlugins] = createStore({
     inventory: undefined as DshPluginInventory | undefined,
     loading: false,
@@ -4548,11 +4591,12 @@ export default function ConfigPage() {
       })
       .catch((err: unknown) => {
         if (marketLoadRun !== run) return
-        const message = isAbortError(err) || isSkillMarketTimeoutError(err)
-          ? t("config.skills.market.loadTimeout", { seconds: String(SKILL_MARKET_LOAD_TIMEOUT_MS / 1000) })
-          : err instanceof Error
-            ? err.message
-            : String(err)
+        const message =
+          isAbortError(err) || isSkillMarketTimeoutError(err)
+            ? t("config.skills.market.loadTimeout", { seconds: String(SKILL_MARKET_LOAD_TIMEOUT_MS / 1000) })
+            : err instanceof Error
+              ? err.message
+              : String(err)
         console.warn("[skill-market] load failed", { repo: repo.repo, branch: repo.branch, error: message })
         setMarketSkills({ skills: [], error: message })
       })
@@ -4620,12 +4664,16 @@ export default function ConfigPage() {
   }
 
   function back() {
-    if (window.history.length > 1) {
-      window.history.back()
+    console.debug(
+      `[config-back] click dir=${params.dir ?? ""} historyLength=${window.history.length} pathname=${window.location.pathname}`,
+    )
+    if (!params.dir) {
+      console.debug("[config-back] action=blocked reason=missing-dir")
       return
     }
-    if (!params.dir) return
-    navigate(`/${params.dir}/session`)
+    const target = `/${params.dir}/session`
+    console.debug(`[config-back] action=navigate target=${target} replace=true`)
+    navigate(target, { replace: true })
   }
   const clawsSectionEnabled = createMemo(() => platform.platform === "desktop")
   const querySection = createMemo<Section | undefined>(() => {
@@ -4797,10 +4845,9 @@ export default function ConfigPage() {
     root: string,
     extra: { group: "global" | "project"; root?: string; project?: string },
   ): Promise<DocItem[]> => {
-    return Promise.all([
-      scanCommands(join(root, "command"), extra),
-      scanCommands(join(root, "commands"), extra),
-    ]).then((list) => list.flat())
+    return Promise.all([scanCommands(join(root, "command"), extra), scanCommands(join(root, "commands"), extra)]).then(
+      (list) => list.flat(),
+    )
   }
 
   const scanAgents = async (
@@ -4965,15 +5012,22 @@ export default function ConfigPage() {
         editable: false,
         source: local ? "opencode" : "external",
         group:
-          item.origin === "built-in" ? ("builtin" as const) : item.origin === "config" ? ("config" as const) : local ? ("opencode" as const) : ("plugin" as const),
-        origin:
-          item.origin === "built-in" ? "built-in" : item.origin === "config" ? "opencode.jsonc" : "runtime",
+          item.origin === "built-in"
+            ? ("builtin" as const)
+            : item.origin === "config"
+              ? ("config" as const)
+              : local
+                ? ("opencode" as const)
+                : ("plugin" as const),
+        origin: item.origin === "built-in" ? "built-in" : item.origin === "config" ? "opencode.jsonc" : "runtime",
         note: item.description,
         content: item.prompt ?? "No prompt content is available for this runtime agent.",
       }
     })
   })
-  const loadedMap = createMemo(() => new Map((loaded.latest ?? ([] as Agent[])).map((item) => [item.name, item] as const)))
+  const loadedMap = createMemo(
+    () => new Map((loaded.latest ?? ([] as Agent[])).map((item) => [item.name, item] as const)),
+  )
 
   const agents = createMemo<DocItem[]>(() => {
     const seen = new Set<string>()
@@ -4989,7 +5043,15 @@ export default function ConfigPage() {
 
   const agentMatches = (item: DocItem) =>
     skillSearchMatch(
-      [item.label, loadedMap().get(item.label)?.description, item.note, item.path, item.project, item.origin, item.source],
+      [
+        item.label,
+        loadedMap().get(item.label)?.description,
+        item.note,
+        item.path,
+        item.project,
+        item.origin,
+        item.source,
+      ],
       state.agentQuery,
     )
   const agentOpenCode = createMemo(() => agents().filter((item) => item.group === "opencode" && agentMatches(item)))
@@ -5151,7 +5213,11 @@ export default function ConfigPage() {
         items: [item],
       })
     }
-    if (state.pick === COMMAND_NEW && state.cmdCreateProjectRoot && skillSearchMatch([state.cmdTitle], state.commandQuery)) {
+    if (
+      state.pick === COMMAND_NEW &&
+      state.cmdCreateProjectRoot &&
+      skillSearchMatch([state.cmdTitle], state.commandQuery)
+    ) {
       const key = state.cmdCreateProjectRoot
       const safeName = commandSafeName(state.cmdTitle)
       const label = safeName || state.cmdTitle.trim() || t("config.commands.create.action")
@@ -5184,9 +5250,7 @@ export default function ConfigPage() {
 
   const commandLoading = createMemo(
     () =>
-      state.section === "commands" &&
-      (diskGlobalCmds.loading || diskProjectCmds.loading) &&
-      commandDocs().length === 0,
+      state.section === "commands" && (diskGlobalCmds.loading || diskProjectCmds.loading) && commandDocs().length === 0,
   )
 
   const skillQueryText = createMemo(() => state.skillQuery.trim())
@@ -5374,10 +5438,7 @@ export default function ConfigPage() {
     ),
   )
 
-  const configuredPlugins = createMemo(() => [
-    ...(cfg().plugin ?? []),
-    ...projectPluginConfigs(),
-  ])
+  const configuredPlugins = createMemo(() => [...(cfg().plugin ?? []), ...projectPluginConfigs()])
 
   const plugins = createMemo<PluginItem[]>(() => {
     const on = configuredPlugins()
@@ -5441,9 +5502,16 @@ export default function ConfigPage() {
   })
 
   const pluginMatches = (item: PluginItem) =>
-    skillSearchMatch([item.label, item.name, item.path, item.spec, item.project, item.origin, item.root], state.pluginQuery)
-  const pluginGlobal = createMemo(() => (plugins() ?? []).filter((item) => item.group !== "project" && pluginMatches(item)))
-  const pluginProject = createMemo(() => (plugins() ?? []).filter((item) => item.group === "project" && pluginMatches(item)))
+    skillSearchMatch(
+      [item.label, item.name, item.path, item.spec, item.project, item.origin, item.root],
+      state.pluginQuery,
+    )
+  const pluginGlobal = createMemo(() =>
+    (plugins() ?? []).filter((item) => item.group !== "project" && pluginMatches(item)),
+  )
+  const pluginProject = createMemo(() =>
+    (plugins() ?? []).filter((item) => item.group === "project" && pluginMatches(item)),
+  )
   const projectPlugins = createMemo(() => {
     const map = new Map<string, { label: string; path?: string; items: PluginItem[] }>()
 
@@ -5592,7 +5660,8 @@ export default function ConfigPage() {
 
   const docs = createMemo(() => {
     const map = new Map<string, DocItem>()
-    for (const item of [...agentsMd(), ...agents(), ...skillDocs(), ...pluginDocs(), ...commandDocs()]) map.set(item.id, item)
+    for (const item of [...agentsMd(), ...agents(), ...skillDocs(), ...pluginDocs(), ...commandDocs()])
+      map.set(item.id, item)
     return map
   })
 
@@ -5664,7 +5733,8 @@ export default function ConfigPage() {
     if (!id) return false
     if (id === "openclaw") return !platform.getOpenclawConfig || (!!openclawConfig() && !openclawLoading())
     if (id === "hermes") return !platform.getHermesConfig || (!!hermesConfig() && !hermesLoading())
-    if (id === "genericagent") return !platform.getGenericagentConfig || (!!genericagentConfig() && !genericagentLoading())
+    if (id === "genericagent")
+      return !platform.getGenericagentConfig || (!!genericagentConfig() && !genericagentLoading())
     return false
   })
   const [extraAgentInfoState, setExtraAgentInfoState] = createSignal<ExtraAgentInfo>()
@@ -5673,7 +5743,8 @@ export default function ConfigPage() {
 
   createEffect(
     on(
-      () => [state.section, selectedExtraAgentId(), selectedExtraAgentConfigReady(), selectedExtraAgentConfig()] as const,
+      () =>
+        [state.section, selectedExtraAgentId(), selectedExtraAgentConfigReady(), selectedExtraAgentConfig()] as const,
       ([section, id, ready, config]) => {
         if (section !== "claws" || !id || !platform.getExtraAgentInfo || !ready) {
           extraAgentInfoRun++
@@ -6256,8 +6327,11 @@ export default function ConfigPage() {
   async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
     console.info("[config] jsonc agent save started", { name })
     const files = await platform.listConfigFiles?.(null)
-    const file = files?.find((item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc")
-    if (!file?.path || !platform.readConfigFile || !platform.writeConfigFile) throw new Error(t("config.error.globalConfigUnavailable"))
+    const file = files?.find(
+      (item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc",
+    )
+    if (!file?.path || !platform.readConfigFile || !platform.writeConfigFile)
+      throw new Error(t("config.error.globalConfigUnavailable"))
     console.info("[config] jsonc agent config file resolved", { name, path: file.path })
 
     const number = (label: string, value: string) => {
@@ -6267,7 +6341,8 @@ export default function ConfigPage() {
       return parsed
     }
     const steps = number("Steps", form.steps)
-    if (steps !== undefined && (!Number.isInteger(steps) || steps <= 0)) throw new Error("Steps must be a positive integer.")
+    if (steps !== undefined && (!Number.isInteger(steps) || steps <= 0))
+      throw new Error("Steps must be a positive integer.")
 
     const fields: Record<string, unknown> = {
       model: form.model.trim() || undefined,
@@ -6845,7 +6920,10 @@ export default function ConfigPage() {
       showToast({ variant: "success", title: t("common.save"), description: descriptor?.label ?? id })
       await refreshCliAgentInfo(id)
     } catch (error) {
-      showToast({ title: language.t("common.requestFailed"), description: error instanceof Error ? error.message : String(error) })
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
     } finally {
       setState("cliAgents", id, "saving", false)
     }
@@ -6910,7 +6988,9 @@ export default function ConfigPage() {
         markCopied("config-path")
       },
       (err: unknown) => {
-        console.debug(`[config] copy path failed path=${item.path} err=${err instanceof Error ? err.message : String(err)}`)
+        console.debug(
+          `[config] copy path failed path=${item.path} err=${err instanceof Error ? err.message : String(err)}`,
+        )
         showToast({
           title: language.t("common.requestFailed"),
           description: err instanceof Error ? err.message : String(err),
@@ -7277,7 +7357,11 @@ export default function ConfigPage() {
     })
   }
 
-  async function installMarketSkill(item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) {
+  async function installMarketSkill(
+    item: SkillMarketItem,
+    scope: SkillMarketInstallScope,
+    target?: SkillMarketProjectTarget,
+  ) {
     const root = scope === "project" ? (target ? join(target.root, ".opencode", "skills") : "") : space()?.skillsRoot
     if (!root || !platform.createConfigFile) {
       showToast({ title: t("common.requestFailed"), description: t("config.error.globalConfigUnavailable") })
@@ -7529,23 +7613,29 @@ export default function ConfigPage() {
 
     const nextSpec = item.spec ?? (item.path ? spec(item.path) : item.name)
     const key = pluginKey(nextSpec)
-    const files = (await platform.listConfigFiles(item.root)).filter((file) => file.scope === "project" && file.kind === "config")
+    const files = (await platform.listConfigFiles(item.root)).filter(
+      (file) => file.scope === "project" && file.kind === "config",
+    )
     const records = await Promise.all(
       files.map(async (file) => ({
         file,
-        text: file.exists ? (await platform.readConfigFile!(file.path)) ?? "{}" : "{}",
+        text: file.exists ? ((await platform.readConfigFile!(file.path)) ?? "{}") : "{}",
       })),
     )
     const declared = records.find((record) => {
       const config = parse(record.text) as { plugin?: unknown }
-      return Array.isArray(config.plugin) && config.plugin.some((entry) => {
-        if (typeof entry !== "string" && !Array.isArray(entry)) return false
-        return configPluginKey(entry as string | [string, Record<string, unknown>], record.file.path) === key
-      })
+      return (
+        Array.isArray(config.plugin) &&
+        config.plugin.some((entry) => {
+          if (typeof entry !== "string" && !Array.isArray(entry)) return false
+          return configPluginKey(entry as string | [string, Record<string, unknown>], record.file.path) === key
+        })
+      )
     })
     const target = declared ?? records.find((record) => record.file.label === ".opencode/opencode.jsonc")
     if (!target) throw new Error(`No project config file is available for ${item.label}.`)
-    if (!enabled && !declared) throw new Error(`${item.label} is automatically discovered and cannot be disabled from config.`)
+    if (!enabled && !declared)
+      throw new Error(`${item.label} is automatically discovered and cannot be disabled from config.`)
 
     const config = parse(target.text) as { plugin?: unknown }
     const next = updatePluginEntries({
@@ -7587,75 +7677,90 @@ export default function ConfigPage() {
   // ConfigLoadingShell in app.tsx to avoid a visual flash on first render.
   return (
     <div class="size-full overflow-hidden bg-background-base">
-      <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
+      <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_5%_0%,color-mix(in_srgb,var(--surface-brand-base)_7%,transparent),transparent_32%),linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)),var(--background-base)_45%)] xl:flex-row">
         <aside
-          class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] transition-shadow duration-150 xl:w-[200px] xl:border-r xl:border-b-0"
+          class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-brand-base)_7%,var(--surface-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base))_46%,var(--background-base))] transition-shadow duration-150 xl:w-[236px] xl:border-r xl:border-b-0"
           classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "left" }}
           data-config-pane="left"
           data-focused={state.focusVisible && state.focusPane === "left" ? "true" : undefined}
           onMouseDown={() => clearKeyboardFocus("left")}
         >
           <div class="flex h-full min-h-0 flex-col">
-            <div class="relative border-b border-border-weak-base px-3 py-4">
+            <div class="relative flex items-center gap-3 border-b border-border-weak-base px-4 py-5">
               <button
                 type="button"
-                class="absolute left-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border-weak-base bg-background-base text-text-weak transition-colors hover:border-border-strong hover:bg-surface-base-hover hover:text-text-strong active:bg-surface-base-active"
+                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base/75 text-text-weak shadow-sm transition-[background-color,border-color,color,transform] hover:-translate-x-0.5 hover:border-border-strong hover:bg-background-base hover:text-text-strong active:translate-x-0"
                 onClick={back}
                 aria-label={language.t("common.goBack")}
               >
                 <Icon name="chevron-left" size="small" />
               </button>
-              <div class="min-w-0 text-center">
-                <div class="text-20-medium text-text-strong">{t("config.title")}</div>
-              </div>
+              <div class="min-w-0 text-20-medium text-text-strong">{t("config.title")}</div>
             </div>
-            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
-              <div class="flex flex-col gap-1.5">
+            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
+              <div class="px-2 pb-2 pt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
+                {t("config.nav.workspace")}
+              </div>
+              <div class="flex flex-col gap-1">
                 <SectionButton
                   current={state.section === "providers"}
                   title={t("config.providers.title")}
+                  description={t("config.nav.providersDescription")}
                   icon={sectionIcon("providers")}
                   onClick={() => void jump("providers")}
                 />
                 <SectionButton
                   current={state.section === "agents-md"}
                   title="AGENTS.md"
+                  description={t("config.section.agentsMd")}
                   icon={sectionIcon("agents-md")}
                   onClick={() => void jump("agents-md")}
                 />
                 <SectionButton
                   current={state.section === "agents"}
                   title={t("config.agents.title")}
+                  description={t("config.nav.agentsDescription")}
                   icon={sectionIcon("agents")}
                   onClick={() => void jump("agents")}
                 />
                 <SectionButton
                   current={state.section === "skills"}
                   title={t("config.skills.title")}
+                  description={t("config.nav.skillsDescription")}
                   icon={sectionIcon("skills")}
                   onClick={() => void jump("skills")}
                 />
                 <SectionButton
                   current={state.section === "plugins"}
                   title={t("config.plugins.title")}
+                  description={t("config.nav.pluginsDescription")}
                   icon={sectionIcon("plugins")}
                   onClick={() => void jump("plugins")}
                 />
+              </div>
+              <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
+              <div class="px-2 pb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
+                {t("config.nav.connections")}
+              </div>
+              <div class="flex flex-col gap-1">
                 <SectionButton
                   current={state.section === "mcp"}
                   title={t("config.mcp.title")}
+                  description={t("config.nav.mcpDescription")}
                   icon={sectionIcon("mcp")}
                   onClick={() => void jump("mcp")}
                 />
                 <SectionButton
                   current={state.section === "commands"}
                   title={t("config.commands.title")}
+                  description={t("config.nav.commandsDescription")}
                   icon={sectionIcon("commands")}
                   onClick={() => void jump("commands")}
                 />
                 <SectionButton
                   current={state.section === "channels"}
                   title={t("config.channels.title")}
+                  description={t("config.nav.channelsDescription")}
                   icon={sectionIcon("channels")}
                   onClick={() => void jump("channels")}
                 />
@@ -7663,6 +7768,7 @@ export default function ConfigPage() {
                   <SectionButton
                     current={state.section === "claws"}
                     title={t("config.claws.title")}
+                    description={t("config.nav.clawsDescription")}
                     icon={sectionIcon("claws")}
                     onClick={() => void jump("claws")}
                   />
@@ -7674,28 +7780,43 @@ export default function ConfigPage() {
 
         <div class="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
           <section
-            class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base-active)_72%,transparent),color-mix(in_srgb,var(--surface-base)_88%,transparent))] backdrop-blur transition-shadow duration-150 xl:w-[400px] xl:border-r xl:border-b-0"
+            class="shrink-0 border-b border-border-weak-base bg-[color-mix(in_srgb,var(--surface-brand-base)_3%,var(--surface-base))] backdrop-blur transition-shadow duration-150 xl:w-[400px] xl:border-r xl:border-b-0"
             classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "middle" }}
             data-config-pane="middle"
             data-focused={state.focusVisible && state.focusPane === "middle" ? "true" : undefined}
             onMouseDown={() => clearKeyboardFocus("middle")}
           >
             <div class="flex h-full min-h-0 flex-col">
-              <div class="px-4 py-4">
+              <div class="relative overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_8%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)))] px-5 py-5">
                 <Switch>
                   <Match when={state.section === "agents-md"}>
-                    <div class="text-20-medium text-text-strong">AGENTS.md</div>
+                    <ConfigPaneTitle
+                      title="AGENTS.md"
+                      description={t("config.agentsMd.header")}
+                      icon={sectionIcon("agents-md")}
+                    />
                   </Match>
                   <Match when={state.section === "providers"}>
-                    <div class="text-20-medium text-text-strong">{t("config.providers.title")}</div>
-                    <div class="mt-3 flex items-center gap-2">
-                      <Button size="small" variant="ghost" icon="plus-small" onClick={createCustomProvider}>
+                    <ConfigPaneTitle
+                      title={t("config.providers.title")}
+                      description={t("config.providers.header")}
+                      icon={sectionIcon("providers")}
+                    />
+                    <div class="mt-4 flex items-center gap-2">
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        icon="plus-small"
+                        class="border border-border-weak-base bg-background-base/75 shadow-none hover:border-border-base hover:bg-background-base"
+                        onClick={createCustomProvider}
+                      >
                         {t("config.custom.new")}
                       </Button>
                       <Button
                         size="small"
                         variant="ghost"
                         icon="arrow-sync"
+                        class="border border-border-weak-base bg-background-base/75 shadow-none hover:border-border-base hover:bg-background-base"
                         disabled={refreshing()}
                         aria-label={t("settings.providers.refresh")}
                         onClick={() => void refreshProviders()}
@@ -7703,25 +7824,35 @@ export default function ConfigPage() {
                         {t("settings.providers.refresh")}
                       </Button>
                     </div>
-                    <div class="mt-3 rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
-                      <input
-                        type="text"
+                    <div class="mt-3">
+                      <ConfigSearchBox
                         value={state.query}
                         placeholder={t("dialog.provider.search.placeholder")}
-                        class="w-full bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak"
-                        onInput={(event) => setState("query", event.currentTarget.value)}
+                        onInput={(value) => setState("query", value)}
                       />
                     </div>
                   </Match>
                   <Match when={state.section === "agents"}>
-                    <div class="text-20-medium text-text-strong">{t("config.agents.title")}</div>
+                    <ConfigPaneTitle
+                      title={t("config.agents.title")}
+                      description={t("config.agents.header")}
+                      icon={sectionIcon("agents")}
+                    />
                   </Match>
                   <Match when={state.section === "claws" && clawsSectionEnabled()}>
-                    <div class="text-20-medium text-text-strong">{t("config.claws.title")}</div>
+                    <ConfigPaneTitle
+                      title={t("config.claws.title")}
+                      description={t("config.claws.header")}
+                      icon={sectionIcon("claws")}
+                    />
                   </Match>
                   <Match when={state.section === "mcp"}>
-                    <div class="text-20-medium text-text-strong">{t("config.mcp.title")}</div>
-                    <div class="mt-3 flex items-center gap-2">
+                    <ConfigPaneTitle
+                      title={t("config.mcp.title")}
+                      description={t("config.mcp.header")}
+                      icon={sectionIcon("mcp")}
+                    />
+                    <div class="mt-4 flex items-center gap-2">
                       <Button
                         size="small"
                         variant="ghost"
@@ -7735,12 +7866,19 @@ export default function ConfigPage() {
                     </div>
                   </Match>
                   <Match when={state.section === "channels"}>
-                    <div class="text-20-medium text-text-strong">{t("config.channels.title")}</div>
-                    <div class="mt-1 text-12-regular text-text-weak">{t("config.channels.header")}</div>
+                    <ConfigPaneTitle
+                      title={t("config.channels.title")}
+                      description={t("config.channels.header")}
+                      icon={sectionIcon("channels")}
+                    />
                   </Match>
                   <Match when={state.section === "commands"}>
-                    <div class="text-20-medium text-text-strong">{t("config.commands.title")}</div>
-                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <ConfigPaneTitle
+                      title={t("config.commands.title")}
+                      description={t("config.commands.header")}
+                      icon={sectionIcon("commands")}
+                    />
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
                       <Button
                         size="small"
                         variant="ghost"
@@ -7754,8 +7892,12 @@ export default function ConfigPage() {
                     </div>
                   </Match>
                   <Match when={state.section === "skills"}>
-                    <div class="text-20-medium text-text-strong">{t("config.skills.title")}</div>
-                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                    <ConfigPaneTitle
+                      title={t("config.skills.title")}
+                      description={t("config.skills.header")}
+                      icon={sectionIcon("skills")}
+                    />
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
                       <Button
                         size="small"
                         variant="ghost"
@@ -7769,7 +7911,11 @@ export default function ConfigPage() {
                     </div>
                   </Match>
                   <Match when={state.section === "plugins"}>
-                    <div class="text-20-medium text-text-strong">{t("config.plugins.title")}</div>
+                    <ConfigPaneTitle
+                      title={t("config.plugins.title")}
+                      description={t("config.plugins.header")}
+                      icon={sectionIcon("plugins")}
+                    />
                   </Match>
                 </Switch>
               </div>
@@ -7908,7 +8054,9 @@ export default function ConfigPage() {
                           <Show when={agentBuiltIn().length > 0}>
                             <div class="flex flex-col gap-2">
                               <div class="flex items-center justify-between gap-3 px-1">
-                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">{t("config.agents.group.builtin")}</div>
+                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                                  {t("config.agents.group.builtin")}
+                                </div>
                                 <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
                                   {agentBuiltIn().length}
                                 </div>
@@ -7958,7 +8106,9 @@ export default function ConfigPage() {
                           <Show when={agentConfig().length > 0}>
                             <div class="flex flex-col gap-2">
                               <div class="flex items-center justify-between gap-3 px-1">
-                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">{t("config.agents.group.jsonc")}</div>
+                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                                  {t("config.agents.group.jsonc")}
+                                </div>
                                 <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
                                   {agentConfig().length}
                                 </div>
@@ -8005,7 +8155,9 @@ export default function ConfigPage() {
                                             active={state.pick === item.id}
                                             title={item.label}
                                             note={loadedMap().get(item.label)?.description || item.note}
-                                            meta={[item.origin, short(item.path, item.root)].filter(Boolean).join(" · ")}
+                                            meta={[item.origin, short(item.path, item.root)]
+                                              .filter(Boolean)
+                                              .join(" · ")}
                                             onClick={() => void open(item)}
                                           />
                                         )}
@@ -8390,7 +8542,9 @@ export default function ConfigPage() {
                                       count={group.items.length}
                                       open={groupOpen(group.path ?? group.label)}
                                       onToggle={() => keepSkillsScroll(() => toggleGroup(group.path ?? group.label))}
-                                      onAdd={() => group.path && keepSkillsScroll(() => createSkill(group.path, group.label))}
+                                      onAdd={() =>
+                                        group.path && keepSkillsScroll(() => createSkill(group.path, group.label))
+                                      }
                                       addLabel={t("config.skills.create.action")}
                                       addDisabled={!group.path || !platform.createConfigFile}
                                     >
@@ -8532,7 +8686,7 @@ export default function ConfigPage() {
           </section>
 
           <main
-            class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background-base)_92%,var(--surface-base)_8%),var(--background-base))] transition-shadow duration-150"
+            class="min-h-0 min-w-0 flex-1 overflow-hidden bg-[linear-gradient(155deg,color-mix(in_srgb,var(--surface-brand-base)_2%,var(--background-base)),var(--background-base)_38%)] transition-shadow duration-150"
             classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "right" }}
             data-config-pane="right"
             data-focused={state.focusVisible && state.focusPane === "right" ? "true" : undefined}
@@ -8772,12 +8926,7 @@ export default function ConfigPage() {
                           </div>
                           <div class="flex shrink-0 items-center gap-2">
                             <Show when={!isNew()}>
-                              <Button
-                                size="small"
-                                variant="ghost"
-                                icon="trash"
-                                onClick={() => void deleteMcpServer()}
-                              >
+                              <Button size="small" variant="ghost" icon="trash" onClick={() => void deleteMcpServer()}>
                                 {t("config.mcp.editor.delete")}
                               </Button>
                             </Show>
@@ -8813,62 +8962,62 @@ export default function ConfigPage() {
                               />
                             </Show>
                             <div class="flex flex-col gap-1">
-                            <span class="text-12-medium text-text-base">{t("config.mcp.editor.type")}</span>
-                            <Select
-                              options={[
-                                { value: "local" as const, label: t("config.mcp.type.local") },
-                                { value: "remote" as const, label: t("config.mcp.type.remote") },
-                              ]}
-                              current={
-                                state.mcpForm.type === "local"
-                                  ? { value: "local" as const, label: t("config.mcp.type.local") }
-                                  : { value: "remote" as const, label: t("config.mcp.type.remote") }
-                              }
-                              value={(o) => o.value}
-                              label={(o) => o.label}
-                              onSelect={(o) => o && setMcpField("type", o.value)}
-                              variant="secondary"
-                              size="large"
-                            />
+                              <span class="text-12-medium text-text-base">{t("config.mcp.editor.type")}</span>
+                              <Select
+                                options={[
+                                  { value: "local" as const, label: t("config.mcp.type.local") },
+                                  { value: "remote" as const, label: t("config.mcp.type.remote") },
+                                ]}
+                                current={
+                                  state.mcpForm.type === "local"
+                                    ? { value: "local" as const, label: t("config.mcp.type.local") }
+                                    : { value: "remote" as const, label: t("config.mcp.type.remote") }
+                                }
+                                value={(o) => o.value}
+                                label={(o) => o.label}
+                                onSelect={(o) => o && setMcpField("type", o.value)}
+                                variant="secondary"
+                                size="large"
+                              />
+                            </div>
+                            <Switch>
+                              <Match when={state.mcpForm.type === "local"}>
+                                <TextField
+                                  label={t("config.mcp.editor.command")}
+                                  placeholder="npx -y @modelcontextprotocol/server-filesystem /path"
+                                  value={state.mcpForm.command}
+                                  onChange={(v) => setMcpField("command", v ?? "")}
+                                />
+                                <TextField
+                                  label={t("config.mcp.editor.environment")}
+                                  placeholder={"KEY=value\nKEY2=value2"}
+                                  value={state.mcpForm.environment}
+                                  onChange={(v) => setMcpField("environment", v ?? "")}
+                                  multiline
+                                  rows={3}
+                                />
+                              </Match>
+                              <Match when={state.mcpForm.type === "remote"}>
+                                <TextField
+                                  label={t("config.mcp.editor.url")}
+                                  placeholder="https://mcp.example.com/sse"
+                                  value={state.mcpForm.url}
+                                  onChange={(v) => setMcpField("url", v ?? "")}
+                                />
+                                <TextField
+                                  label={t("config.mcp.editor.headers")}
+                                  placeholder={"Authorization=Bearer token\nX-Custom=value"}
+                                  value={state.mcpForm.headers}
+                                  onChange={(v) => setMcpField("headers", v ?? "")}
+                                  multiline
+                                  rows={3}
+                                />
+                              </Match>
+                            </Switch>
                           </div>
-                          <Switch>
-                            <Match when={state.mcpForm.type === "local"}>
-                              <TextField
-                                label={t("config.mcp.editor.command")}
-                                placeholder="npx -y @modelcontextprotocol/server-filesystem /path"
-                                value={state.mcpForm.command}
-                                onChange={(v) => setMcpField("command", v ?? "")}
-                              />
-                              <TextField
-                                label={t("config.mcp.editor.environment")}
-                                placeholder={"KEY=value\nKEY2=value2"}
-                                value={state.mcpForm.environment}
-                                onChange={(v) => setMcpField("environment", v ?? "")}
-                                multiline
-                                rows={3}
-                              />
-                            </Match>
-                            <Match when={state.mcpForm.type === "remote"}>
-                              <TextField
-                                label={t("config.mcp.editor.url")}
-                                placeholder="https://mcp.example.com/sse"
-                                value={state.mcpForm.url}
-                                onChange={(v) => setMcpField("url", v ?? "")}
-                              />
-                              <TextField
-                                label={t("config.mcp.editor.headers")}
-                                placeholder={"Authorization=Bearer token\nX-Custom=value"}
-                                value={state.mcpForm.headers}
-                                onChange={(v) => setMcpField("headers", v ?? "")}
-                                multiline
-                                rows={3}
-                              />
-                            </Match>
-                          </Switch>
                         </div>
                       </div>
-                    </div>
-                    );
+                    )
                   }}
                 </Show>
               </Match>
@@ -8895,7 +9044,9 @@ export default function ConfigPage() {
                   when={state.pick !== COMMAND_NEW}
                   fallback={
                     <CommandCreator
-                      root={state.cmdCreateDir || (space()?.configRoot ? join(space()!.configRoot!, "commands") : undefined)}
+                      root={
+                        state.cmdCreateDir || (space()?.configRoot ? join(space()!.configRoot!, "commands") : undefined)
+                      }
                       title={state.cmdTitle}
                       text={state.text}
                       busy={state.cmdSaving}
@@ -9095,13 +9246,7 @@ function CommandCreator(props: {
             onInput={(e) => props.onTitle(e.currentTarget.value)}
             disabled={props.busy}
           />
-          <Button
-            size="small"
-            variant="ghost"
-            icon="close"
-            onClick={props.onCancel}
-            disabled={props.busy}
-          >
+          <Button size="small" variant="ghost" icon="close" onClick={props.onCancel} disabled={props.busy}>
             {language.t("common.cancel")}
           </Button>
           <SaveButton
@@ -9253,9 +9398,7 @@ function SkillMarketLoading(props: { meta?: SkillMarketLoadMeta }) {
           </div>
           <div class="mt-3 rounded-lg border border-border-weak-base bg-background-panel px-3 py-2">
             <div class="text-12-medium text-text-strong">{stage()}</div>
-            <Show when={progress()}>
-              {(value) => <div class="mt-1 text-12-regular text-text-weak">{value()}</div>}
-            </Show>
+            <Show when={progress()}>{(value) => <div class="mt-1 text-12-regular text-text-weak">{value()}</div>}</Show>
           </div>
           <Show when={props.meta?.slow}>
             <div class="mt-3 rounded-lg border border-border-warning-base/40 bg-surface-warning-base/10 px-3 py-2 text-12-regular leading-5 text-text-warning-base">
@@ -9426,7 +9569,11 @@ function SkillMarket(props: {
       ? language.t("config.skills.market.installGlobal")
       : language.t("config.skills.market.installProject")
   }
-  const installDisabled = (item: SkillMarketItem, scope: SkillMarketInstallScope, target?: SkillMarketProjectTarget) => {
+  const installDisabled = (
+    item: SkillMarketItem,
+    scope: SkillMarketInstallScope,
+    target?: SkillMarketProjectTarget,
+  ) => {
     const available = scope === "global" ? !!props.globalRoot : !!target
     return !available || !!props.installing || installed(item, scope, target)
   }
@@ -9525,120 +9672,117 @@ function SkillMarket(props: {
           <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
             {language.t("config.skills.market.repositories")}
           </div>
-            <div class="rounded-xl border border-border-weak-base bg-background-base p-3">
-              <div class="text-13-medium text-text-strong">{language.t("config.skills.market.custom.title")}</div>
-              <div class="mt-2">
-                <TextField
-                  type="text"
-                  hideLabel
-                  label={language.t("config.skills.market.custom.field")}
-                  description={language.t("config.skills.market.custom.inputDescription")}
-                  placeholder={language.t("config.skills.market.custom.placeholder")}
-                  value={props.customValue}
-                  validationState={props.customError ? "invalid" : undefined}
-                  error={props.customError}
-                  disabled={props.loading}
-                  onChange={props.onCustomInput}
-                  onKeyDown={(event: KeyboardEvent) => {
-                    if (event.key !== "Enter") return
-                    event.preventDefault()
-                    props.onCustomSubmit()
-                  }}
-                />
-              </div>
-              <div class="mt-3">
-                <Button
-                  size="small"
-                  variant="secondary"
-                  disabled={props.loading || !props.customValue.trim()}
-                  onClick={props.onCustomSubmit}
-                >
-                  {language.t("config.skills.market.custom.load")}
-                </Button>
+          <div class="rounded-xl border border-border-weak-base bg-background-base p-3">
+            <div class="text-13-medium text-text-strong">{language.t("config.skills.market.custom.title")}</div>
+            <div class="mt-2">
+              <TextField
+                type="text"
+                hideLabel
+                label={language.t("config.skills.market.custom.field")}
+                description={language.t("config.skills.market.custom.inputDescription")}
+                placeholder={language.t("config.skills.market.custom.placeholder")}
+                value={props.customValue}
+                validationState={props.customError ? "invalid" : undefined}
+                error={props.customError}
+                disabled={props.loading}
+                onChange={props.onCustomInput}
+                onKeyDown={(event: KeyboardEvent) => {
+                  if (event.key !== "Enter") return
+                  event.preventDefault()
+                  props.onCustomSubmit()
+                }}
+              />
+            </div>
+            <div class="mt-3">
+              <Button
+                size="small"
+                variant="secondary"
+                disabled={props.loading || !props.customValue.trim()}
+                onClick={props.onCustomSubmit}
+              >
+                {language.t("config.skills.market.custom.load")}
+              </Button>
+            </div>
+          </div>
+          <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
+            <div class="flex flex-col gap-2">
+              <For each={props.repos}>
+                {(repo) => (
+                  <div
+                    class="rounded-xl border px-3 py-3 text-left transition-colors"
+                    classList={{
+                      "border-border-base bg-surface-base-active": props.selected === repo.id,
+                      "border-border-weak-base bg-background-base hover:border-border-strong hover:bg-surface-base-hover":
+                        props.selected !== repo.id,
+                    }}
+                  >
+                    <div class="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        class="min-w-0 flex-1 text-left"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          props.onSelect(repo.id)
+                        }}
+                      >
+                        <div class="truncate text-13-medium text-text-strong">{repo.label}</div>
+                        <div class="mt-1 line-clamp-2 text-12-regular text-text-weak">{repo.description}</div>
+                        <div class="mt-2 break-all font-mono text-[11px] leading-5 text-text-weak">{repo.repo}</div>
+                      </button>
+                      <button
+                        type="button"
+                        class="shrink-0 text-text-weak transition-colors hover:text-text-base"
+                        aria-label={language.t("config.skills.market.openRepo")}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          event.stopPropagation()
+                          platform.openLink(repo.url)
+                        }}
+                      >
+                        <Icon name="link" size="small" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="min-w-0">
+              <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
+                {selectedRepo()?.label ?? language.t("config.skills.market.skills")}
               </div>
             </div>
-            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
-              <div class="flex flex-col gap-2">
-                <For each={props.repos}>
-                  {(repo) => (
-                    <div
-                      class="rounded-xl border px-3 py-3 text-left transition-colors"
-                      classList={{
-                        "border-border-base bg-surface-base-active": props.selected === repo.id,
-                        "border-border-weak-base bg-background-base hover:border-border-strong hover:bg-surface-base-hover":
-                          props.selected !== repo.id,
-                      }}
-                    >
-                      <div class="flex items-start justify-between gap-3">
-                        <button
-                          type="button"
-                          class="min-w-0 flex-1 text-left"
-                          onClick={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            props.onSelect(repo.id)
-                          }}
-                        >
-                          <div class="truncate text-13-medium text-text-strong">{repo.label}</div>
-                          <div class="mt-1 line-clamp-2 text-12-regular text-text-weak">{repo.description}</div>
-                          <div class="mt-2 break-all font-mono text-[11px] leading-5 text-text-weak">{repo.repo}</div>
-                        </button>
-                        <button
-                          type="button"
-                          class="shrink-0 text-text-weak transition-colors hover:text-text-base"
-                          aria-label={language.t("config.skills.market.openRepo")}
-                          onClick={(event) => {
-                            event.preventDefault()
-                            event.stopPropagation()
-                            platform.openLink(repo.url)
-                          }}
-                        >
-                          <Icon name="link" size="small" />
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </For>
-              </div>
+            <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+              {filteredSkills().length}
             </div>
           </div>
 
-          <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div class="min-w-0">
-                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                  {selectedRepo()?.label ?? language.t("config.skills.market.skills")}
-                </div>
-              </div>
-              <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                {filteredSkills().length}
-              </div>
-            </div>
-
-            <div class="mb-3 flex h-8 items-center gap-2 rounded-lg border border-border-weak-base bg-surface-base px-3">
-              <Icon name="magnifying-glass" class="shrink-0 text-icon-weak-base" />
-              <input
-                type="text"
-                value={marketQuery()}
-                onInput={(event) => setMarketQuery(event.currentTarget.value)}
-                placeholder={language.t("config.skills.market.search.placeholder")}
-                class="min-w-0 flex-1 bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak"
+          <div class="mb-3 flex h-8 items-center gap-2 rounded-lg border border-border-weak-base bg-surface-base px-3">
+            <Icon name="magnifying-glass" class="shrink-0 text-icon-weak-base" />
+            <input
+              type="text"
+              value={marketQuery()}
+              onInput={(event) => setMarketQuery(event.currentTarget.value)}
+              placeholder={language.t("config.skills.market.search.placeholder")}
+              class="min-w-0 flex-1 bg-transparent text-13-regular text-text-base outline-none placeholder:text-text-weak"
+            />
+            <Show when={marketQuery()}>
+              <IconButton
+                icon="close-small"
+                variant="ghost"
+                class="size-5 rounded"
+                onClick={() => setMarketQuery("")}
               />
-              <Show when={marketQuery()}>
-                <IconButton
-                  icon="close-small"
-                  variant="ghost"
-                  class="size-5 rounded"
-                  onClick={() => setMarketQuery("")}
-                />
-              </Show>
-            </div>
+            </Show>
+          </div>
 
-            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto">
-            <Show
-              when={!props.loading}
-              fallback={<SkillMarketLoading meta={props.loadMeta} />}
-            >
+          <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto">
+            <Show when={!props.loading} fallback={<SkillMarketLoading meta={props.loadMeta} />}>
               <Show
                 when={!errorText()}
                 fallback={
@@ -9710,7 +9854,9 @@ function SkillMarket(props: {
                                 </span>
                               </Show>
                             </div>
-                            <div class="relative mt-3 break-all font-mono text-[11px] leading-5 text-text-weak">{item.path}</div>
+                            <div class="relative mt-3 break-all font-mono text-[11px] leading-5 text-text-weak">
+                              {item.path}
+                            </div>
                             <div class="relative mt-auto flex flex-wrap items-center justify-between gap-2 pt-4">
                               <div class="flex items-center gap-1.5 text-[11px] text-text-weak">
                                 <Icon name="github" size="small" class="text-icon-weak-base" />
@@ -9752,9 +9898,9 @@ function SkillMarket(props: {
                 </Show>
               </Show>
             </Show>
-            </div>
           </div>
         </div>
       </div>
+    </div>
   )
 }

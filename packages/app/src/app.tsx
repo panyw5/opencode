@@ -61,20 +61,36 @@ const Scheduled = lazy(() => import("@/pages/scheduled"))
 const Loading = () => <div class="size-full" />
 
 const CONFIG_FALLBACK_SECTIONS = [
-  { id: "providers", key: "config.providers.title", icon: "providers" },
-  { id: "agents-md", label: "AGENTS.md", icon: "review" },
-  { id: "agents", key: "config.agents.title", icon: "robot" },
-  { id: "skills", key: "config.skills.title", icon: "book" },
-  { id: "plugins", key: "config.plugins.title", icon: "code" },
-  { id: "mcp", key: "config.mcp.title", icon: "mcp" },
-  { id: "commands", key: "config.commands.title", icon: "terminal" },
-  { id: "channels", key: "config.channels.title", icon: "speech-bubble" },
-  { id: "claws", key: "config.claws.title", icon: "openclaw" },
+  {
+    id: "providers",
+    key: "config.providers.title",
+    descriptionKey: "config.nav.providersDescription",
+    icon: "providers",
+  },
+  { id: "agents-md", label: "AGENTS.md", descriptionKey: "config.section.agentsMd", icon: "review" },
+  { id: "agents", key: "config.agents.title", descriptionKey: "config.nav.agentsDescription", icon: "robot" },
+  { id: "skills", key: "config.skills.title", descriptionKey: "config.nav.skillsDescription", icon: "book" },
+  { id: "plugins", key: "config.plugins.title", descriptionKey: "config.nav.pluginsDescription", icon: "code" },
+  { id: "mcp", key: "config.mcp.title", descriptionKey: "config.nav.mcpDescription", icon: "mcp" },
+  {
+    id: "commands",
+    key: "config.commands.title",
+    descriptionKey: "config.nav.commandsDescription",
+    icon: "terminal",
+  },
+  {
+    id: "channels",
+    key: "config.channels.title",
+    descriptionKey: "config.nav.channelsDescription",
+    icon: "speech-bubble",
+  },
+  { id: "claws", key: "config.claws.title", descriptionKey: "config.nav.clawsDescription", icon: "openclaw" },
 ] as const satisfies ReadonlyArray<{
   id: string
   icon: IconName
   label?: string
   key?: string
+  descriptionKey: string
 }>
 
 function ConfigRouteFrame(props: ParentProps) {
@@ -102,28 +118,46 @@ function ConfigLoadingShell() {
 
   return (
     <div class="size-full overflow-hidden bg-background-base">
-      <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.015),transparent_22%)] xl:flex-row">
-        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base)_88%,var(--background-base)_12%),color-mix(in_srgb,var(--surface-base)_72%,var(--background-base)_28%))] xl:w-[200px] xl:border-r xl:border-b-0">
+      <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_5%_0%,color-mix(in_srgb,var(--surface-brand-base)_7%,transparent),transparent_32%),linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)),var(--background-base)_45%)] xl:flex-row">
+        <aside class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-brand-base)_7%,var(--surface-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base))_46%,var(--background-base))] xl:w-[236px] xl:border-r xl:border-b-0">
           <div class="flex h-full min-h-0 flex-col">
-            <div class="relative border-b border-border-weak-base px-3 py-4">
+            <div class="relative flex items-center gap-3 border-b border-border-weak-base px-4 py-5">
               <div
-                class="absolute left-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border-weak-base bg-background-base text-text-weak"
+                class="flex size-10 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base/75 text-text-weak shadow-sm"
                 aria-hidden="true"
               >
                 <Icon name="chevron-left" size="small" />
               </div>
-              <div class="min-w-0 text-center">
-                <div class="text-20-medium text-text-strong">{language.t("config.title")}</div>
-              </div>
+              <div class="min-w-0 text-20-medium text-text-strong">{language.t("config.title")}</div>
             </div>
-            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-2">
-              <div class="flex flex-col gap-1.5">
-                <For each={CONFIG_FALLBACK_SECTIONS}>
+            <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
+              <div class="px-2 pb-2 pt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
+                {language.t("config.nav.workspace")}
+              </div>
+              <div class="flex flex-col gap-1">
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 5)}>
+                  {(section) => (
+                    <SectionButton
+                      current={false}
+                      title={"key" in section ? language.t(section.key) : section.label}
+                      description={language.t(section.descriptionKey)}
+                      icon={section.icon}
+                    />
+                  )}
+                </For>
+              </div>
+              <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
+              <div class="px-2 pb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
+                {language.t("config.nav.connections")}
+              </div>
+              <div class="flex flex-col gap-1">
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(5)}>
                   {(section) => (
                     <Show when={section.id !== "claws" || showClawsSection()}>
                       <SectionButton
                         current={false}
                         title={"key" in section ? language.t(section.key) : section.label}
+                        description={language.t(section.descriptionKey)}
                         icon={section.icon}
                       />
                     </Show>
@@ -135,12 +169,20 @@ function ConfigLoadingShell() {
         </aside>
 
         <div class="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
-          <section class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(180deg,color-mix(in_srgb,var(--surface-base-active)_72%,transparent),color-mix(in_srgb,var(--surface-base)_88%,transparent))] backdrop-blur xl:w-[400px] xl:border-r xl:border-b-0">
-            <div class="px-4 py-4">
-              <div class="text-20-medium text-text-strong">{language.t("config.title")}</div>
+          <section class="shrink-0 border-b border-border-weak-base bg-[color-mix(in_srgb,var(--surface-brand-base)_3%,var(--surface-base))] backdrop-blur xl:w-[400px] xl:border-r xl:border-b-0">
+            <div class="relative overflow-hidden bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_8%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)))] px-5 py-5">
+              <div class="flex items-start gap-3">
+                <div class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border-weak-base bg-background-base text-text-weak">
+                  <Icon name="providers" size="medium" />
+                </div>
+                <div class="min-w-0 pt-0.5">
+                  <div class="text-18-medium text-text-strong">{language.t("config.providers.title")}</div>
+                  <div class="mt-1 text-12-regular text-text-weak">{language.t("config.providers.header")}</div>
+                </div>
+              </div>
             </div>
           </section>
-          <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(180deg,color-mix(in_srgb,var(--background-base)_92%,var(--surface-base)_8%),var(--background-base))]" />
+          <main class="min-h-0 min-w-0 flex-1 bg-[linear-gradient(155deg,color-mix(in_srgb,var(--surface-brand-base)_2%,var(--background-base)),var(--background-base)_38%)]" />
         </div>
       </div>
     </div>
@@ -320,7 +362,8 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean | Acce
     message: "",
   })
   let sent = false
-  const disabled = () => (typeof props.disableHealthCheck === "function" ? props.disableHealthCheck() : props.disableHealthCheck)
+  const disabled = () =>
+    typeof props.disableHealthCheck === "function" ? props.disableHealthCheck() : props.disableHealthCheck
 
   const [checkMode, setCheckMode] = createSignal<"blocking" | "background">("blocking")
 
@@ -440,7 +483,9 @@ function ConnectionError(props: {
   )
 }
 
-function ServerScopedApp(props: ParentProps<{ disableHealthCheck?: boolean | Accessor<boolean>; router?: Component<BaseRouterProps> }>) {
+function ServerScopedApp(
+  props: ParentProps<{ disableHealthCheck?: boolean | Accessor<boolean>; router?: Component<BaseRouterProps> }>,
+) {
   const server = useServer()
   return (
     <Show when={server.current}>

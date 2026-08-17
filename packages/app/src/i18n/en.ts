@@ -32,7 +32,8 @@ export const dict = {
   "projectTask.field.title": "Title",
   "projectTask.field.titlePlaceholder": "What needs to be done?",
   "projectTask.field.description": "Description",
-  "projectTask.field.descriptionPlaceholder": "Goals, constraints, acceptance criteria… (stored at .project-tasks/<taskID>/prd.md)",
+  "projectTask.field.descriptionPlaceholder":
+    "Goals, constraints, acceptance criteria… (stored at .project-tasks/<taskID>/prd.md)",
   "projectTask.field.status": "Status",
   "projectTask.status.open": "Open",
   "projectTask.status.inProgress": "In progress",
@@ -50,7 +51,8 @@ export const dict = {
   "projectTask.mount.empty": "No open project tasks. Create one from the sidebar.",
   "projectTask.mount.unmount": "Unmount project task",
   "projectTask.inject.title": "Inject task context each turn",
-  "projectTask.inject.hint": "When enabled, each LLM turn receives the mounted task description, linked sessions, and open todos. Default is on.",
+  "projectTask.inject.hint":
+    "When enabled, each LLM turn receives the mounted task description, linked sessions, and open todos. Default is on.",
   "command.projectTask.open": "Open project tasks",
   "command.projectTask.open.description": "Show project tasks for the current project in the sidebar",
 
@@ -1367,7 +1369,16 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
   "config.title": "Config page",
-  "config.description": "A structured workspace for global config files, providers, agents, skills, and plugins.",
+  "config.nav.workspace": "Workspace",
+  "config.nav.connections": "Connections & automation",
+  "config.nav.providersDescription": "Configure providers and models",
+  "config.nav.agentsDescription": "Configure agent markdown files",
+  "config.nav.skillsDescription": "Configure skills and browse the marketplace",
+  "config.nav.pluginsDescription": "Manage plugins and edit scripts",
+  "config.nav.mcpDescription": "Manage and edit MCP servers",
+  "config.nav.commandsDescription": "Manage and edit slash commands",
+  "config.nav.channelsDescription": "Configure instant messaging channels",
+  "config.nav.clawsDescription": "Hermes, Codex, and more",
   "config.common.and": " and ",
   "config.action.openFolder": "Open folder",
   "config.action.delete": "Delete",
@@ -1504,8 +1515,7 @@ export const dict = {
   "config.claws.logs.testingGa":
     "Starting GenericAgent connection test\nGenericAgent directory: {dir}\nSpawning Python subprocess...\nHealth check in progress...",
   "config.claws.cliAgent.binary": "{{label}} binary",
-  "config.claws.cliAgent.binaryDescription":
-    "Optional path or command name. Leave empty to use `{{command}}` on PATH.",
+  "config.claws.cliAgent.binaryDescription": "Optional path or command name. Leave empty to use `{{command}}` on PATH.",
   "config.claws.cliAgent.configHomeDescription": "Optional config home override.",
   "config.claws.info.installStatus": "Install status",
   "config.claws.info.version": "Version",
@@ -1771,8 +1781,7 @@ export const dict = {
   "config.custom.field.baseURL": "baseURL",
   "config.custom.field.apiKey": "apiKey",
   "config.custom.field.apiKeyCopy": "Copy API key",
-  "config.custom.field.apiKeyDescription":
-    "Written to provider.options.apiKey in ~/.config/opencode/opencode.jsonc",
+  "config.custom.field.apiKeyDescription": "Written to provider.options.apiKey in ~/.config/opencode/opencode.jsonc",
   "config.custom.models.title": "Models",
   "config.custom.models.description": "Add, rename, or remove model ids exposed by this provider.",
   "config.custom.models.add": "Add model",

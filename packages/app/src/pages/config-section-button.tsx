@@ -1,50 +1,49 @@
 import { Icon, type IconProps } from "@opencode-ai/ui/icon"
 
-export function SectionButton(props: { current: boolean; title: string; icon: IconProps["name"]; onClick?: () => void }) {
+export function SectionButton(props: {
+  current: boolean
+  title: string
+  description?: string
+  icon: IconProps["name"]
+  onClick?: () => void
+}) {
   return (
     <button
       type="button"
       aria-current={props.current ? "page" : undefined}
-      class="group relative flex w-full items-center justify-between gap-3 overflow-hidden rounded-[16px] border px-3 py-3.5 text-left focus:outline-none focus-visible:border-border-strong focus-visible:bg-surface-base-hover"
+      class="group relative flex min-h-14 w-full items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150 focus:outline-none focus-visible:border-border-strong"
       classList={{
-        "border-transparent bg-transparent": !props.current,
-        "border-border-base bg-[linear-gradient(135deg,color-mix(in_srgb,var(--surface-base-active)_92%,white_8%),color-mix(in_srgb,var(--surface-base-active)_72%,transparent))]":
+        "border-transparent bg-transparent hover:border-border-weak-base hover:bg-background-base/65": !props.current,
+        "border-transparent bg-[linear-gradient(105deg,color-mix(in_srgb,var(--surface-brand-base)_11%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_4%,var(--background-base)))]":
           props.current,
       }}
       onClick={props.onClick}
     >
       <div
-        class="pointer-events-none absolute inset-0 rounded-[inherit] bg-surface-base-active opacity-0 transition-opacity duration-75 will-change-[opacity] group-hover:opacity-100"
+        class="relative z-[1] flex size-8 shrink-0 items-center justify-center rounded-lg border transition-[background-color,border-color,color] duration-150"
         classList={{
-          hidden: props.current,
+          "border-border-weak-base bg-background-base/75 text-text-weak group-hover:border-border-base group-hover:text-text-strong":
+            !props.current,
+          "border-[color-mix(in_srgb,var(--surface-brand-base)_34%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--surface-brand-base)_15%,var(--background-base))] text-text-strong":
+            props.current,
         }}
-      />
-      <div
-        class="absolute top-3 bottom-3 left-1.5 w-0.5 rounded-full bg-border-strong transition-opacity duration-150"
-        classList={{
-          "opacity-0": !props.current,
-          "opacity-70": props.current,
-        }}
-      />
-      <div class="relative z-[1] flex min-w-0 items-center gap-3">
+      >
+        <Icon name={props.icon} size="medium" />
+      </div>
+      <div class="relative z-[1] min-w-0 flex-1">
         <div
-          class="flex size-8 shrink-0 items-center justify-center rounded-[10px] border transition-colors duration-75"
+          class="truncate text-14-medium transition-colors"
           classList={{
-            "border-transparent text-text-weak group-hover:text-text-strong": !props.current,
-            "border-border-weak-base bg-background-base/55 text-text-strong": props.current,
+            "text-text-base group-hover:text-text-strong": !props.current,
+            "text-text-strong": props.current,
           }}
         >
-          <Icon name={props.icon} size="medium" />
+          {props.title}
         </div>
-        <div class="truncate text-16-medium text-text-strong transition-colors">{props.title}</div>
+        {props.description && (
+          <div class="mt-0.5 line-clamp-2 text-[11px] leading-4 text-text-weak">{props.description}</div>
+        )}
       </div>
-      <div
-        class="relative z-[1] size-1.5 shrink-0 rounded-full bg-border-strong transition-[opacity,transform] duration-75"
-        classList={{
-          "scale-75 opacity-0 group-hover:scale-100 group-hover:opacity-45": !props.current,
-          "opacity-55": props.current,
-        }}
-      />
     </button>
   )
 }
