@@ -154,6 +154,7 @@ export const dict = {
   "session.recent.placeholder": "搜索最近会话...",
   "session.recent.empty": "暂无最近会话",
   "command.sessionTabs.close": "关闭会话标签页",
+  "command.sessionTabs.closeDescendants": "关闭所有子智能体会话",
   "command.sessionTabs.previous": "上一个会话标签页",
   "command.sessionTabs.next": "下一个会话标签页",
 

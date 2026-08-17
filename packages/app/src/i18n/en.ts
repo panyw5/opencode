@@ -149,6 +149,7 @@ export const dict = {
   "session.recent.placeholder": "Search recent sessions...",
   "session.recent.empty": "No recent sessions",
   "command.sessionTabs.close": "Close session tab",
+  "command.sessionTabs.closeDescendants": "Close all subagent sessions",
   "command.sessionTabs.previous": "Previous session tab",
   "command.sessionTabs.next": "Next session tab",
 

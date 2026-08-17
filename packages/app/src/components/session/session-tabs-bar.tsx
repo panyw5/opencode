@@ -10,8 +10,10 @@ import {
   createSortable,
 } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
+import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
+import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 
 import { sessionBarKey, useLayout, type SessionBarTab } from "@/context/layout"
@@ -192,17 +194,11 @@ export function SessionTabsBar() {
     navigate(href)
   }
 
-  const close = (tab: SessionBarTab) => {
+  const subtreeFor = (tab: SessionBarTab) => {
     const all = orderedTabs()
     const tabKey = sessionBarKey(tab)
-    const index = all.findIndex((item) => sessionBarKey(item) === tabKey)
-    if (index === -1) {
-      console.debug(`[session-bar] close skip missing tab id=${tab.id} directory=${tab.directory}`)
-      return
-    }
-
     const parentByKey = parentIDs()
-    const subtree = collectSessionTabSubtree(
+    return collectSessionTabSubtree(
       all,
       sessionBarKey,
       (item) => {
@@ -212,6 +208,18 @@ export function SessionTabsBar() {
       },
       tabKey,
     )
+  }
+
+  const close = (tab: SessionBarTab) => {
+    const all = orderedTabs()
+    const tabKey = sessionBarKey(tab)
+    const index = all.findIndex((item) => sessionBarKey(item) === tabKey)
+    if (index === -1) {
+      console.debug(`[session-bar] close skip missing tab id=${tab.id} directory=${tab.directory}`)
+      return
+    }
+
+    const subtree = subtreeFor(tab)
     const closing = subtree.length > 0 ? subtree : [tab]
     const closingKeys = new Set(closing.map((item) => sessionBarKey(item)))
     const viewingClosed = closing.some((item) => isActive(item))
@@ -248,6 +256,24 @@ export function SessionTabsBar() {
     }
     console.debug("[session-bar] close navigate home")
     navigate("/")
+  }
+
+  const hasOpenDescendants = (tab: SessionBarTab) => subtreeFor(tab).length > 1
+
+  const closeDescendants = (tab: SessionBarTab) => {
+    const closing = subtreeFor(tab).slice(1)
+    if (closing.length === 0) {
+      console.debug(`[session-bar] close descendants skip none id=${tab.id} directory=${tab.directory}`)
+      return
+    }
+    const viewingClosed = closing.some((item) => isActive(item))
+    console.debug(
+      `[session-bar] close descendants parent=${tab.id} descendants=${closing.map((item) => item.id).join(",")} viewingClosed=${String(viewingClosed)}`,
+    )
+    layout.sessionBar.closeAll(closing)
+    if (!viewingClosed) return
+    console.debug(`[session-bar] close descendants navigate parent id=${tab.id}`)
+    void open(tab)
   }
 
   const closeDraft = () => {
@@ -380,8 +406,10 @@ export function SessionTabsBar() {
                     tabKey={key}
                     group={() => groupsByKey().get(key)}
                     active={(tab) => isActive(tab)}
+                    hasOpenDescendants={hasOpenDescendants}
                     onOpen={(tab) => void open(tab)}
                     onClose={close}
+                    onCloseDescendants={closeDescendants}
                   />
                 )}
               </For>
@@ -418,8 +446,10 @@ function SessionTabGroup(props: {
   tabKey: string
   group: () => SessionTabGroup<SessionBarTab> | undefined
   active: (tab: SessionBarTab) => boolean
+  hasOpenDescendants: (tab: SessionBarTab) => boolean
   onOpen: (tab: SessionBarTab) => void
   onClose: (tab: SessionBarTab) => void
+  onCloseDescendants: (tab: SessionBarTab) => void
 }) {
   const sortable = createSortable(props.tabKey)
   const [state, setState] = createStore({ open: false })
@@ -464,8 +494,13 @@ function SessionTabGroup(props: {
         relatedTabs={group().children.map((item) => item.tab)}
         childCount={group().children.length}
         preventPopoverToggle
+        hasOpenDescendants={props.hasOpenDescendants(group().tab)}
+        onMenuOpenChange={(open) => {
+          if (open) setState("open", false)
+        }}
         onOpen={() => props.onOpen(group().tab)}
         onClose={() => props.onClose(group().tab)}
+        onCloseDescendants={() => props.onCloseDescendants(group().tab)}
       />
     </div>
   )
@@ -498,11 +533,21 @@ function SessionTabGroup(props: {
                     tab={item.tab}
                     active={props.active(item.tab)}
                     nested
+                    hasOpenDescendants={props.hasOpenDescendants(item.tab)}
+                    onMenuOpenChange={(menuOpen) => {
+                      if (menuOpen) {
+                        cancelClose()
+                        setState("open", true)
+                        return
+                      }
+                      close()
+                    }}
                     onOpen={() => {
                       setState("open", false)
                       props.onOpen(item.tab)
                     }}
                     onClose={() => props.onClose(item.tab)}
+                    onCloseDescendants={() => props.onCloseDescendants(item.tab)}
                   />
                 </div>
               )}
@@ -521,8 +566,11 @@ function SessionTab(props: {
   relatedTabs?: SessionBarTab[]
   childCount?: number
   preventPopoverToggle?: boolean
+  hasOpenDescendants: boolean
+  onMenuOpenChange?: (open: boolean) => void
   onOpen: () => void
   onClose: () => void
+  onCloseDescendants: () => void
 }) {
   const globalSync = useGlobalSync()
   const layout = useLayout()
@@ -556,41 +604,78 @@ function SessionTab(props: {
     groupTabs().reduce((total, tab) => total + notification.session.unseenCount(tab.id), 0),
   )
 
+  const copy = () => {
+    const text = `Session ID: ${props.tab.id}\nProject path: ${props.tab.directory}`
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    console.debug(`[session-tab] copy info id=${props.tab.id} dir=${props.tab.directory}`)
+    if (!clipboard?.writeText) {
+      console.debug(`[session-tab] clipboard unavailable id=${props.tab.id}`)
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: "Clipboard unavailable",
+      })
+      return
+    }
+    void clipboard.writeText(text).then(
+      () => {
+        console.debug(`[session-tab] copied info id=${props.tab.id} dir=${props.tab.directory}`)
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("session.share.copy.copied"),
+          description: text,
+        })
+      },
+      (err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.debug(`[session-tab] copy failed id=${props.tab.id} err=${message}`)
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: message,
+        })
+      },
+    )
+  }
+
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      data-component="session-tab"
-      data-session-id={props.tab.id}
-      data-directory={props.tab.directory}
-      data-active={props.active ? "true" : undefined}
-      data-subagent={subagent() ? "true" : undefined}
-      class="group relative flex min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
-      classList={{
-        "h-7 max-w-52": !props.nested,
-        "w-full max-w-72 py-1.5": !!props.nested,
-        "bg-surface-base-active text-text-strong": props.active,
-        "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
-      }}
-      onClick={(event) => {
-        if (props.preventPopoverToggle) event.stopPropagation()
-        props.onOpen()
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== "Enter" && event.key !== " ") return
-        event.preventDefault()
-        if (props.preventPopoverToggle) event.stopPropagation()
-        props.onOpen()
-      }}
-      onMouseDown={(event) => {
-        if (event.button === 1) event.preventDefault()
-      }}
-      onAuxClick={(event) => {
-        if (event.button !== 1) return
-        event.preventDefault()
-        props.onClose()
-      }}
-    >
+    <ContextMenu modal onOpenChange={props.onMenuOpenChange}>
+      <ContextMenu.Trigger
+        as="div"
+        role="button"
+        tabIndex={0}
+        data-component="session-tab"
+        data-session-id={props.tab.id}
+        data-directory={props.tab.directory}
+        data-active={props.active ? "true" : undefined}
+        data-subagent={subagent() ? "true" : undefined}
+        class="group relative flex min-w-0 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
+        classList={{
+          "h-7 max-w-52": !props.nested,
+          "w-full max-w-72 py-1.5": !!props.nested,
+          "bg-surface-base-active text-text-strong": props.active,
+          "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
+        }}
+        onClick={(event: MouseEvent) => {
+          if (props.preventPopoverToggle) event.stopPropagation()
+          props.onOpen()
+        }}
+        onKeyDown={(event: KeyboardEvent) => {
+          if (event.key !== "Enter" && event.key !== " ") return
+          event.preventDefault()
+          if (props.preventPopoverToggle) event.stopPropagation()
+          props.onOpen()
+        }}
+        onMouseDown={(event: MouseEvent) => {
+          if (event.button === 1) event.preventDefault()
+        }}
+        onAuxClick={(event: MouseEvent) => {
+          if (event.button !== 1) return
+          event.preventDefault()
+          props.onClose()
+        }}
+      >
       <Show
         when={subagent()}
         fallback={
@@ -644,7 +729,50 @@ function SessionTab(props: {
       >
         <Icon name="close-small" size="small" />
       </span>
-    </div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content>
+          <ContextMenu.Item
+            data-action="session-tab-close-descendants"
+            data-session={base64Encode(props.tab.id)}
+            disabled={!props.hasOpenDescendants}
+            onSelect={props.onCloseDescendants}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base [transform:scaleY(-1)]">
+                <Icon name="branch" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("command.sessionTabs.closeDescendants")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="session-tab-close"
+            data-session={base64Encode(props.tab.id)}
+            onSelect={props.onClose}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="close-small" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("command.sessionTabs.close")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Separator />
+          <ContextMenu.Item
+            data-action="session-tab-copy-info"
+            data-session={base64Encode(props.tab.id)}
+            onSelect={copy}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="copy" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.copyInfo")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu>
   )
 }
 

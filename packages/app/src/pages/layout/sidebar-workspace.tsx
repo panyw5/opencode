@@ -356,6 +356,9 @@ const WorkspaceSessionList = (props: {
                 selectSession={props.ctx.selectSession}
                 prefetchSession={props.ctx.prefetchSession}
                 archiveSession={props.ctx.archiveSession}
+                editorOpen={props.ctx.editorOpen}
+                openEditor={props.ctx.openEditor}
+                InlineEditor={props.ctx.InlineEditor}
               />
             </div>
           )
