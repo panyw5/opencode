@@ -768,6 +768,35 @@ it.instance("mounted project task context flows into task subagent prompt", () =
   }),
 )
 
+it.instance("title generation includes every user prompt and the mounted project task", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig(providerCfg)
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const projectTasks = yield* ProjectTask.Service
+    const chat = yield* sessions.create({ title: "Pinned" })
+    const task = yield* projectTasks.create({
+      title: "TITLE_TASK_MARKER",
+      description: "TITLE_TASK_DESCRIPTION_MARKER",
+      status: "in_progress",
+    })
+    yield* projectTasks.mount({ sessionID: chat.id, taskID: task.id })
+    yield* user(chat.id, "TITLE_FIRST_USER_PROMPT")
+    yield* user(chat.id, "TITLE_SECOND_USER_PROMPT")
+
+    const result = yield* prompt.generateTitle({ sessionID: chat.id })
+
+    expect(result.title).toBe("E2E Title")
+    const inputs = yield* llm.inputs
+    expect(inputs).toHaveLength(1)
+    const body = JSON.stringify(inputs[0])
+    expect(body).toContain("TITLE_FIRST_USER_PROMPT")
+    expect(body).toContain("TITLE_SECOND_USER_PROMPT")
+    expect(body).toContain("TITLE_TASK_MARKER")
+    expect(body).toContain("TITLE_TASK_DESCRIPTION_MARKER")
+  }),
+)
+
 it.instance("glob tool keeps instance context during prompt runs", () =>
   Effect.gen(function* () {
     const { dir, llm } = yield* useServerConfig(providerCfg)

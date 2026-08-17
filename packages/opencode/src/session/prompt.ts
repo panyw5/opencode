@@ -280,6 +280,13 @@ export const layer = Layer.effect(
       const real = (m: MessageV2.WithParts) =>
         m.info.role === "user" && !m.parts.every((p) => "synthetic" in p && p.synthetic)
       const users = input.history.filter(real)
+      yield* elog.info("title generation history collected", {
+        sessionID: input.session.id,
+        historyCount: input.history.length,
+        userPromptCount: users.length,
+        force: input.force ?? false,
+        mountedTaskID: input.session.mountedTaskID,
+      })
       if (users.length === 0) return undefined as string | undefined
       if (!input.force && users.length !== 1) return undefined as string | undefined
 
@@ -296,6 +303,33 @@ export const layer = Layer.effect(
 
       const ag = yield* agents.get("title")
       if (!ag) return undefined as string | undefined
+
+      const mountedTask = input.session.mountedTaskID
+        ? yield* projectTasks.detail(input.session.mountedTaskID).pipe(Effect.option)
+        : Option.none()
+      if (input.session.mountedTaskID && Option.isNone(mountedTask)) {
+        yield* elog.warn("title generation mounted task unavailable", {
+          sessionID: input.session.id,
+          mountedTaskID: input.session.mountedTaskID,
+        })
+      }
+      const taskContext = Option.match(mountedTask, {
+        onNone: () => "",
+        onSome: (task) =>
+          [
+            "Mounted project task:",
+            `ID: ${task.id}`,
+            `Title: ${task.title}`,
+            `Status: ${task.status}`,
+            ...(task.description.trim() ? ["Description:", task.description.trim()] : []),
+          ].join("\n"),
+      })
+      yield* elog.info("title generation mounted task collected", {
+        sessionID: input.session.id,
+        mountedTaskID: input.session.mountedTaskID,
+        included: taskContext.length > 0,
+        taskContextLength: taskContext.length,
+      })
 
       // Prefer models that already work for chat. getSmallModel alone can pick a
       // catalog entry that the upstream API does not actually serve (e.g.
@@ -344,12 +378,22 @@ export const layer = Layer.effect(
           }
 
           const forceText = input.force ? plainUserText(context) : ""
+          yield* elog.info("title generation model context prepared", {
+            sessionID: input.session.id,
+            providerID: mdl.providerID,
+            modelID: mdl.id,
+            userPromptCount: users.length,
+            userTextLength: forceText.length,
+            mountedTaskID: input.session.mountedTaskID,
+            taskContextLength: taskContext.length,
+          })
           const msgs =
             onlySubtasks && !input.force
               ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
               : input.force
                 ? [{ role: "user" as const, content: forceText || "Untitled conversation" }]
                 : yield* MessageV2.toModelMessagesEffect(context, mdl)
+          const taskMsgs = taskContext ? [{ role: "user" as const, content: taskContext }] : []
 
           const text = yield* llm
             .stream({
@@ -361,7 +405,11 @@ export const layer = Layer.effect(
               model: mdl,
               sessionID: input.session.id,
               retries: 1,
-              messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs],
+              messages: [
+                { role: "user", content: "Generate a title for this conversation:\n" },
+                ...msgs,
+                ...taskMsgs,
+              ],
             })
             .pipe(
               Stream.filter(LLMEvent.is.textDelta),
