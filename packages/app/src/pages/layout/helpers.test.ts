@@ -6,7 +6,12 @@ import {
   parseDeepLink,
   parseNewSessionDeepLink,
 } from "./deep-links"
-import { type PermissionRequest, type Session } from "@opencode-ai/sdk/v2/client"
+import {
+  type AssistantMessage,
+  type PermissionRequest,
+  type Session,
+  type SessionStatus,
+} from "@opencode-ai/sdk/v2/client"
 import {
   canonicalWorkspaceDir,
   defaultChannelDirectory,
@@ -30,6 +35,7 @@ import {
   stripScheduledSessionTitle,
   latestWorkspaceSession,
   waitForMatch,
+  workingSessionTreeIDs,
   workspaceKey,
 } from "./helpers"
 import { projectSelected } from "./sidebar-project-helpers"
@@ -45,6 +51,22 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
     time: { created: 0, updated: 0, archived: undefined },
     ...input,
   }) as Session
+
+const assistant = (input: { id: string; sessionID: string; completed?: number }) =>
+  ({
+    id: input.id,
+    sessionID: input.sessionID,
+    role: "assistant",
+    parentID: "msg_parent",
+    modelID: "model",
+    providerID: "provider",
+    mode: "build",
+    agent: "build",
+    path: { cwd: "/root", root: "/root" },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 1, completed: input.completed },
+  }) as AssistantMessage
 
 describe("layout deep links", () => {
   test("parses open-project deep links", () => {
@@ -512,6 +534,56 @@ describe("layout workspace helpers", () => {
     )
 
     expect(result).toBe(false)
+  })
+
+  test("finds a running background child for an idle root session", () => {
+    const result = workingSessionTreeIDs({
+      sessionID: "root",
+      sessions: [
+        session({ id: "root", directory: "/root" }),
+        session({ id: "background", directory: "/root", parentID: "root" }),
+      ],
+      statuses: {
+        root: { type: "idle" } as SessionStatus,
+        background: { type: "busy" } as SessionStatus,
+      },
+      messages: {},
+    })
+
+    expect(result).toEqual(["background"])
+  })
+
+  test("finds running nested child agents and ignores unrelated sessions", () => {
+    const result = workingSessionTreeIDs({
+      sessionID: "root",
+      sessions: [
+        session({ id: "root", directory: "/root" }),
+        session({ id: "child", directory: "/root", parentID: "root" }),
+        session({ id: "nested", directory: "/root", parentID: "child" }),
+        session({ id: "other", directory: "/root" }),
+      ],
+      statuses: {
+        nested: { type: "busy" } as SessionStatus,
+        other: { type: "busy" } as SessionStatus,
+      },
+      messages: {},
+    })
+
+    expect(result).toEqual(["nested"])
+  })
+
+  test("does not mark a child whose assistant message already completed", () => {
+    const result = workingSessionTreeIDs({
+      sessionID: "root",
+      sessions: [
+        session({ id: "root", directory: "/root" }),
+        session({ id: "background", directory: "/root", parentID: "root" }),
+      ],
+      statuses: { background: { type: "busy" } as SessionStatus },
+      messages: { background: [assistant({ id: "msg_child", sessionID: "background", completed: 2 })] },
+    })
+
+    expect(result).toEqual([])
   })
 
   test("ignores archived and child sessions when finding latest root session", () => {

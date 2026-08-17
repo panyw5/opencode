@@ -28,6 +28,7 @@ import {
   isInitialSessionLoad,
   isScheduledSessionTitle,
   stripScheduledSessionTitle,
+  workingSessionTreeIDs,
   workspaceKey,
 } from "./helpers"
 
@@ -442,10 +443,27 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       return !permission.autoResponds(item, props.session.directory)
     })
   })
+  const activeSessionIDs = createMemo(() =>
+    workingSessionTreeIDs({
+      sessionID: props.session.id,
+      sessions: sessionStore.session,
+      statuses: sessionStore.session_status,
+      messages: sessionStore.message,
+    }),
+  )
   const isWorking = createMemo(() => {
     if (hasPermissions()) return false
-    const status = sessionStore.session_status[props.session.id]
-    return working(status, sessionStore.message[props.session.id])
+    return activeSessionIDs().length > 0
+  })
+  let loggedActivity = ""
+  createEffect(() => {
+    const ids = activeSessionIDs()
+    const next = ids.join(",")
+    if (next === loggedActivity) return
+    loggedActivity = next
+    console.debug(
+      `[sidebar-session] activity id=${props.session.id} active=${ids.length > 0 ? "true" : "false"} sessions=${next || "none"}`,
+    )
   })
   const isActive = createMemo(() => props.session.id === params.id)
   const isSelected = createMemo(() => {

@@ -1,5 +1,6 @@
 import { getFilename } from "@opencode-ai/core/util/path"
-import { type PermissionRequest, type Session } from "@opencode-ai/sdk/v2/client"
+import { type Message, type PermissionRequest, type Session, type SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { working } from "../session/session-working"
 
 type SessionStore = {
   session?: Session[]
@@ -316,7 +317,7 @@ export function hasProjectPermissions(
     })
 }
 
-export const childMapByParent = (sessions: Session[] | undefined) => {
+export const childMapByParent = (sessions: readonly Session[] | undefined) => {
   const map = new Map<string, string[]>()
   for (const session of sessions ?? []) {
     if (!session.parentID) continue
@@ -328,6 +329,28 @@ export const childMapByParent = (sessions: Session[] | undefined) => {
     map.set(session.parentID, [session.id])
   }
   return map
+}
+
+/** Return active sessions in a root's complete child-agent tree, parent first. */
+export function workingSessionTreeIDs(input: {
+  sessionID: string
+  sessions: readonly Session[] | undefined
+  statuses: Record<string, SessionStatus | undefined>
+  messages: Record<string, readonly Message[] | undefined>
+}) {
+  const children = childMapByParent(input.sessions)
+  const seen = new Set<string>()
+  const pending = [input.sessionID]
+  const active: string[] = []
+
+  for (const id of pending) {
+    if (seen.has(id)) continue
+    seen.add(id)
+    if (working(input.statuses[id], input.messages[id])) active.push(id)
+    for (const child of children.get(id) ?? []) pending.push(child)
+  }
+
+  return active
 }
 
 export const displayName = (project: { name?: string; worktree: string }) =>
