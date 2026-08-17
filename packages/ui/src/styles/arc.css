@@ -470,8 +470,12 @@ html[data-theme="arc"][data-color-scheme="light"] :is(button, [data-component="b
   --color-button-ghost-hover: rgba(0, 0, 0, 0.085);
   --button-ghost-hover2: rgba(0, 0, 0, 0.135);
   --color-button-ghost-hover2: rgba(0, 0, 0, 0.135);
-  --icon-strong-hover: #3d3544;
-  --icon-strong-active: #342d3b;
+  /* Primary controls use these icon-strong tokens as interaction fills.
+     Keep their full state ramp on the same muted mauve family as the session
+     panel and rail instead of jumping from mauve to near-black on focus. */
+  --icon-strong-hover: var(--sidebar-chrome-bg);
+  --icon-strong-focus: var(--sidebar-chrome-bg);
+  --icon-strong-active: var(--sidebar-chrome-active);
 }
 
 /* Buttons inside the dark mauve chrome. Also black alpha overlays, for a
@@ -787,8 +791,8 @@ html[data-theme="arc"] [data-component="dialog"] [data-slot="list-item"][data-ac
 }
 
 /* ───────────────────────────────────────────────────────────── */
-/* Buttons — micro lift on hover, snap-back on press             */
-/* primary: no y-shift on hover (shadow only); secondary lifts   */
+/* Buttons — shadow feedback on hover, subtle scale on press     */
+/* Hover never shifts controls vertically.                       */
 /* ───────────────────────────────────────────────────────────── */
 
 html[data-theme="arc"] [data-component="button"][data-variant="primary"]:hover:not(:disabled) {
@@ -798,7 +802,7 @@ html[data-theme="arc"] [data-component="button"][data-variant="primary"]:hover:n
 }
 
 html[data-theme="arc"] [data-component="button"][data-variant="secondary"]:hover:not(:disabled) {
-  transform: translateY(-1px);
+  transform: none;
   box-shadow:
     0 4px 12px rgba(0, 0, 0, 0.12),
     0 1px 3px rgba(0, 0, 0, 0.08);
