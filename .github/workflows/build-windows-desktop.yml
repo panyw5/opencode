@@ -46,6 +46,10 @@ jobs:
 
       - name: Build Desktop App
         run: |
+          $icon = Join-Path $PWD "packages/desktop/icons/prod/icon.ico"
+          if (-not (Test-Path -LiteralPath $icon)) { throw "Windows prod icon is missing at $icon" }
+          Write-Host "windows-icon source=$icon bytes=$((Get-Item -LiteralPath $icon).Length)"
+
           cd packages/desktop
           bun run package:win
 
@@ -109,6 +113,11 @@ jobs:
 
           $executable = Join-Path $installRoot "OpenCode.exe"
           if (-not (Test-Path -LiteralPath $executable)) { throw "Installed OpenCode executable was not found at $executable." }
+
+          Add-Type -AssemblyName System.Drawing
+          $exeIcon = [System.Drawing.Icon]::ExtractAssociatedIcon($executable)
+          if (-not $exeIcon) { throw "Installed OpenCode.exe has no associated icon." }
+          Write-Host "windows-icon exe=$executable size=$($exeIcon.Width)x$($exeIcon.Height)"
 
           $first = $null
           $second = $null

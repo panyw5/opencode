@@ -9,4 +9,5 @@ const dest = "resources/icons"
 
 await $`rm -rf ${dest}`
 await $`cp -R ${src} ${dest}`
-console.log(`Copied ${channel} icons from ${src} to ${dest}`)
+const copied = await Array.fromAsync(new Bun.Glob("icon.*").scan({ cwd: dest }))
+console.log(`Copied ${channel} icons from ${src} to ${dest} files=${copied.sort().join(",")}`)

@@ -65,7 +65,9 @@ function iconsDir() {
 
 function iconPath() {
   const ext = process.platform === "win32" ? "ico" : "png"
-  return join(iconsDir(), `icon.${ext}`)
+  const resolved = join(iconsDir(), `icon.${ext}`)
+  writeLog("window", `icon-path path=${resolved} packaged=${String(app.isPackaged)} platform=${process.platform}`)
+  return resolved
 }
 
 function tone() {
