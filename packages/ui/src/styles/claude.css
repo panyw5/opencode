@@ -199,6 +199,7 @@ html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="p
   width: 36px;
   height: 36px;
   border-radius: 50%;
+  margin: 2px;
 }
 
 html[data-theme="claude"] [data-component="dropdown-menu-content"],

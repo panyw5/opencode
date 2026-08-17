@@ -1,11 +1,15 @@
 import { createMemo, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { Icon } from "@opencode-ai/ui/icon"
+import { showToast } from "@opencode-ai/ui/toast"
 import { createSortable } from "@thisbeyond/solid-dnd"
 import { useLayout, type LocalProject } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
+import { usePlatform } from "@/context/platform"
 import { ProjectIcon } from "./sidebar-items"
 import { displayName } from "./helpers"
 import { projectSelected } from "./sidebar-project-helpers"
@@ -65,6 +69,8 @@ const ProjectTile = (props: {
 }): JSX.Element => {
   const notification = useNotification()
   const layout = useLayout()
+  const platform = usePlatform()
+  const navigate = useNavigate()
   const unseenCount = createMemo(() =>
     props.dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )
@@ -76,6 +82,81 @@ const ProjectTile = (props: {
       .forEach((directory) => notification.project.markViewed(directory))
 
   const name = () => displayName(props.project)
+
+  const openInFileManager = () => {
+    const directory = props.project.worktree
+    if (!directory) return
+    console.debug(`[sidebar-project] open in file manager dir=${directory} os=${platform.os}`)
+    if (platform.os === "windows" && platform.openPath) {
+      void platform.openPath(directory)
+      return
+    }
+    if (platform.openInFinder) {
+      void platform.openInFinder(directory).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.debug(`[sidebar-project] open in file manager failed dir=${directory} err=${message}`)
+        showToast({
+          variant: "error",
+          title: props.language.t("common.requestFailed"),
+          description: message,
+        })
+      })
+    }
+  }
+
+  const copyProjectPath = () => {
+    const directory = props.project.worktree
+    if (!directory) return
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    console.debug(`[sidebar-project] copy path dir=${directory}`)
+    if (!clipboard?.writeText) {
+      console.debug(`[sidebar-project] clipboard unavailable dir=${directory}`)
+      showToast({
+        variant: "error",
+        title: props.language.t("common.requestFailed"),
+        description: "Clipboard unavailable",
+      })
+      return
+    }
+    void clipboard.writeText(directory).then(
+      () => {
+        console.debug(`[sidebar-project] copied path dir=${directory}`)
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: props.language.t("session.share.copy.copied"),
+          description: directory,
+        })
+      },
+      (err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.debug(`[sidebar-project] copy path failed dir=${directory} err=${message}`)
+        showToast({
+          variant: "error",
+          title: props.language.t("common.requestFailed"),
+          description: message,
+        })
+      },
+    )
+  }
+
+  const openNewSession = () => {
+    const directory = props.project.worktree
+    if (!directory) return
+    console.debug(`[sidebar-project] new session dir=${directory}`)
+    navigate(`/${base64Encode(directory)}/session`)
+    layout.sidebar.close()
+  }
+
+  const openInFileManagerLabel = () =>
+    platform.os === "macos"
+      ? props.language.t("command.project.openInFinder")
+      : platform.os === "windows"
+        ? props.language.t("command.project.openInFileExplorer")
+        : props.language.t("command.project.openInFileManager")
+
+  const openInFileManagerDisabled = () =>
+    platform.os === "windows" ? !platform.openPath : !platform.openInFinder
 
   return (
     <RailTooltip mobile={props.mobile} title={name()} inactive={props.active()}>
@@ -118,6 +199,38 @@ const ProjectTile = (props: {
         </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
+          <ContextMenu.Item
+            data-action="project-open-in-finder"
+            data-project={base64Encode(props.project.worktree)}
+            disabled={openInFileManagerDisabled()}
+            onSelect={openInFileManager}
+          >
+            <ContextMenu.Icon>
+              <Icon name="folder" size="small" class="shrink-0 text-icon-base" />
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{openInFileManagerLabel()}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="project-copy-path"
+            data-project={base64Encode(props.project.worktree)}
+            onSelect={copyProjectPath}
+          >
+            <ContextMenu.Icon>
+              <Icon name="copy" size="small" class="shrink-0 text-icon-base" />
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{props.language.t("command.project.copyPath")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="project-new-session"
+            data-project={base64Encode(props.project.worktree)}
+            onSelect={openNewSession}
+          >
+            <ContextMenu.Icon>
+              <Icon name="new-session" size="small" class="shrink-0 text-icon-base" />
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{props.language.t("command.session.new")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Separator />
           <ContextMenu.Item onSelect={() => props.showEditProjectDialog(props.project)}>
             <ContextMenu.ItemLabel>{props.language.t("common.edit")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
