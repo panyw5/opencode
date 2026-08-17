@@ -3346,6 +3346,8 @@ export default function Layout(props: ParentProps) {
       return item.vcs === "git" || layout.sidebar.workspaces(item.worktree)()
     })
     const homedir = createMemo(() => globalSync.data.path.home)
+    const [copyState, setCopyState] = createStore({ copied: false })
+    let copiedTimer: ReturnType<typeof setTimeout> | undefined
     const copyProjectPath = () => {
       const directory = worktree()
       if (!directory) return
@@ -3363,12 +3365,9 @@ export default function Layout(props: ParentProps) {
       void clipboard.writeText(directory).then(
         () => {
           console.debug(`[sidebar-project] copied path dir=${directory}`)
-          showToast({
-            variant: "success",
-            icon: "circle-check",
-            title: language.t("session.share.copy.copied"),
-            description: directory,
-          })
+          setCopyState("copied", true)
+          if (copiedTimer) clearTimeout(copiedTimer)
+          copiedTimer = setTimeout(() => setCopyState("copied", false), 1_200)
         },
         (err: unknown) => {
           const message = err instanceof Error ? err.message : String(err)
@@ -3381,6 +3380,10 @@ export default function Layout(props: ParentProps) {
         },
       )
     }
+
+    onCleanup(() => {
+      if (copiedTimer) clearTimeout(copiedTimer)
+    })
 
     const openAgentsMd = () => {
       const dir = worktree()
@@ -3477,7 +3480,7 @@ export default function Layout(props: ParentProps) {
                         </Tooltip>
                         <Tooltip placement="bottom" value={language.t("session.header.open.copyPath")}>
                           <IconButton
-                            icon="copy"
+                            icon={copyState.copied ? "check" : "copy"}
                             variant="ghost"
                             class="size-5 shrink-0 rounded-md text-icon-base"
                             aria-label={language.t("session.header.open.copyPath")}

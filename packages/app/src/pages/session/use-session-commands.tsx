@@ -190,28 +190,23 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
                   )
                 }
 
-                const copy = async (url: string, existing: boolean) => {
+                const copy = async (url: string) => {
+                  console.debug(`[session-share] copy url session=${params.id}`)
                   const ok = await write(url)
                   if (!ok) {
+                    console.debug(`[session-share] copy url failed session=${params.id}`)
                     showToast({
                       title: language.t("toast.session.share.copyFailed.title"),
                       variant: "error",
                     })
                     return
                   }
-
-                  showToast({
-                    title: existing
-                      ? language.t("session.share.copy.copied")
-                      : language.t("toast.session.share.success.title"),
-                    description: language.t("toast.session.share.success.description"),
-                    variant: "success",
-                  })
+                  console.debug(`[session-share] copied url session=${params.id}`)
                 }
 
                 const existing = info()?.share?.url
                 if (existing) {
-                  await copy(existing, true)
+                  await copy(existing)
                   return
                 }
 
@@ -228,7 +223,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
                   return
                 }
 
-                await copy(url, false)
+                await copy(url)
               },
             }),
             sessionCommand({
@@ -297,17 +292,16 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         onSelect: () => {
           const directory = projectDirectory()
           if (!directory) return
+          console.debug(`[project-command] copy path dir=${directory}`)
           navigator.clipboard
             .writeText(directory)
             .then(() => {
-              showToast({
-                variant: "success",
-                icon: "circle-check",
-                title: language.t("session.share.copy.copied"),
-                description: directory,
-              })
+              console.debug(`[project-command] copied path dir=${directory}`)
             })
             .catch((err: unknown) => {
+              console.debug(
+                `[project-command] copy path failed dir=${directory} err=${err instanceof Error ? err.message : String(err)}`,
+              )
               showToast({
                 variant: "error",
                 title: language.t("common.requestFailed"),

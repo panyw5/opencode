@@ -179,6 +179,8 @@ const GitContext = () => {
   const { params } = useSessionLayout()
   const [open, setOpen] = createSignal(false)
   const [snap, setSnap] = createSignal(sync.data.vcs)
+  const [copyState, setCopyState] = createStore({ path: "" })
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
   const rawBranch = createMemo(() => sync.data.vcs?.branch?.trim())
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
@@ -240,12 +242,9 @@ const GitContext = () => {
     void clip.writeText(path).then(
       () => {
         console.debug("[GitContext] copied worktree path", { path })
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: path,
-        })
+        setCopyState("path", path)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setCopyState("path", ""), 1_200)
       },
       (err: unknown) => {
         console.debug("[GitContext] failed to copy worktree path", { path, err })
@@ -257,6 +256,10 @@ const GitContext = () => {
       },
     )
   }
+
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
 
   return (
     <Show when={sync.project?.vcs === "git" && branch()}>
@@ -341,7 +344,7 @@ const GitContext = () => {
                               {item.path}
                             </span>
                             <Icon
-                              name="copy"
+                              name={copyState.path === item.path ? "check" : "copy"}
                               size="small"
                               class="mt-0.5 shrink-0 transition-colors"
                               classList={{

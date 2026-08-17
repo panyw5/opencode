@@ -2088,6 +2088,7 @@ function Editor(props: {
   onReload: () => void
   onOpenFolder?: () => void
   onCopyPath?: () => void
+  copyPathCopied?: boolean
   onDelete?: () => void
   extra?: JSX.Element
   warn?: string
@@ -2173,7 +2174,7 @@ function Editor(props: {
             {props.item?.path ?? ""}
             <Show when={props.onCopyPath && props.item?.path}>
               <IconButton
-                icon="copy"
+                icon={props.copyPathCopied ? "check" : "copy"}
                 variant="ghost"
                 size="small"
                 class="ml-1 inline-flex translate-y-[1px] align-middle text-text-weak hover:bg-surface-base-hover hover:text-text-base active:bg-surface-base-active"
@@ -3075,6 +3076,7 @@ function CliAgentEditor(props: {
   onRefresh: () => void
   onToggleSecret?: () => void
   onCopyApiKey?: () => void
+  apiKeyCopied?: boolean
   onLoadPlugins?: () => void
   onPluginsQuery?: (value: string) => void
   onPluginsShowDisabled?: (value: boolean) => void
@@ -3205,7 +3207,7 @@ function CliAgentEditor(props: {
                         />
                         <IconButton
                           type="button"
-                          icon="copy"
+                          icon={props.apiKeyCopied ? "check" : "copy"}
                           variant="ghost"
                           disabled={
                             props.busy ||
@@ -3508,6 +3510,7 @@ function CustomEditor(props: {
   onCreate: () => void
   onSecret: () => void
   onCopyApiKey?: () => void
+  apiKeyCopied?: boolean
   onAddFetchedModel: (id: string, name: string) => void
 }) {
   const language = useLanguage()
@@ -3659,7 +3662,7 @@ function CustomEditor(props: {
                   />
                   <IconButton
                     type="button"
-                    icon="copy"
+                    icon={props.apiKeyCopied ? "check" : "copy"}
                     variant="ghost"
                     disabled={!props.form.apiKey.trim()}
                     onClick={props.onCopyApiKey}
@@ -3946,6 +3949,18 @@ export default function ConfigPage() {
     mcpDirty: false,
     mcpBusy: "",
     mcpGlobalDeleting: {} as Record<string, boolean>,
+    copied: "" as "dsh-api-key" | "custom-api-key" | "config-path" | "",
+  })
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+
+  const markCopied = (value: typeof state.copied) => {
+    setState("copied", value)
+    if (copiedTimer) clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => setState("copied", ""), 1_200)
+  }
+
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
   })
 
   function bump(
@@ -6715,10 +6730,13 @@ export default function ConfigPage() {
   async function copyDshApiKey() {
     const value = state.cliAgents.dsh?.apiKey?.trim()
     if (!value) return
+    console.debug("[config] copy dsh api key")
     try {
       await navigator.clipboard.writeText(value)
-      showToast({ variant: "success", title: language.t("session.share.copy.copied") })
+      console.debug("[config] copied dsh api key")
+      markCopied("dsh-api-key")
     } catch (error) {
+      console.debug("[config] copy dsh api key failed", { error })
       showToast({
         title: language.t("common.requestFailed"),
         description: error instanceof Error ? error.message : String(error),
@@ -6729,10 +6747,13 @@ export default function ConfigPage() {
   async function copyCustomApiKey() {
     const value = state.custom.apiKey?.trim()
     if (!value) return
+    console.debug("[config] copy custom api key")
     try {
       await navigator.clipboard.writeText(value)
-      showToast({ variant: "success", title: language.t("session.share.copy.copied") })
+      console.debug("[config] copied custom api key")
+      markCopied("custom-api-key")
     } catch (error) {
+      console.debug("[config] copy custom api key failed", { error })
       showToast({
         title: language.t("common.requestFailed"),
         description: error instanceof Error ? error.message : String(error),
@@ -6882,16 +6903,14 @@ export default function ConfigPage() {
   function copyPath() {
     const item = currentDoc()
     if (!item?.path) return
+    console.debug(`[config] copy path path=${item.path}`)
     void navigator.clipboard.writeText(item.path).then(
       () => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: t("session.share.copy.copied"),
-          description: item.path,
-        })
+        console.debug(`[config] copied path path=${item.path}`)
+        markCopied("config-path")
       },
       (err: unknown) => {
+        console.debug(`[config] copy path failed path=${item.path} err=${err instanceof Error ? err.message : String(err)}`)
         showToast({
           title: language.t("common.requestFailed"),
           description: err instanceof Error ? err.message : String(err),
@@ -8552,6 +8571,7 @@ export default function ConfigPage() {
                     onCreate={createCustomProvider}
                     onSecret={toggleCustomSecret}
                     onCopyApiKey={() => void copyCustomApiKey()}
+                    apiKeyCopied={state.copied === "custom-api-key"}
                     onAddFetchedModel={addFetchedCustomModel}
                   />
                 </Show>
@@ -8620,6 +8640,7 @@ export default function ConfigPage() {
                           onRefresh={() => void refreshCliAgentInfo(descriptor().id)}
                           onToggleSecret={descriptor().id === "dsh" ? () => toggleDshSecret() : undefined}
                           onCopyApiKey={descriptor().id === "dsh" ? () => void copyDshApiKey() : undefined}
+                          apiKeyCopied={descriptor().id === "dsh" && state.copied === "dsh-api-key"}
                           onLoadPlugins={
                             descriptor().id === "dsh" && platform.cliAgents?.listDshPlugins
                               ? () => void loadDshPlugins()
@@ -8962,6 +8983,7 @@ export default function ConfigPage() {
                           onReload={() => void reload()}
                           onOpenFolder={currentDoc() ? openFolder : undefined}
                           onCopyPath={currentDoc() ? copyPath : undefined}
+                          copyPathCopied={state.copied === "config-path"}
                           warn={currentDoc()?.warn}
                           empty={t("config.skills.empty")}
                           markdown
@@ -8993,6 +9015,7 @@ export default function ConfigPage() {
                         onReload={() => void reload()}
                         onOpenFolder={file(currentDoc()?.path ?? "") ? openFolder : undefined}
                         onCopyPath={file(currentDoc()?.path ?? "") ? copyPath : undefined}
+                        copyPathCopied={state.copied === "config-path"}
                         extra={
                           <Show when={currentAgent()}>
                             <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">

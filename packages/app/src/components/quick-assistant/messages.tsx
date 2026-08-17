@@ -27,19 +27,22 @@ function CopyMessageButton(props: { text: string }) {
 
   const copy = () => {
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    console.debug("[quick-assistant] copy message", { length: props.text.length })
     if (!clipboard?.writeText || props.text.length === 0) {
+      console.debug("[quick-assistant] clipboard unavailable or message empty", { length: props.text.length })
       showToast({ variant: "error", title: "Copy failed" })
       return
     }
 
     void clipboard.writeText(props.text).then(
       () => {
+        console.debug("[quick-assistant] copied message", { length: props.text.length })
         setCopied(true)
-        showToast({ variant: "success", title: "Copied" })
         if (timer) clearTimeout(timer)
         timer = setTimeout(() => setCopied(false), 1_200)
       },
-      () => {
+      (error: unknown) => {
+        console.debug("[quick-assistant] copy message failed", { error })
         showToast({ variant: "error", title: "Copy failed" })
       },
     )
@@ -60,7 +63,7 @@ function CopyMessageButton(props: { text: string }) {
         copy()
       }}
     >
-      <Icon name={copied() ? "check-small" : "copy"} size="small" />
+      <Icon name={copied() ? "check" : "copy"} size="small" />
     </button>
   )
 }

@@ -1,4 +1,4 @@
-import { createMemo, Show, type Accessor, type JSX } from "solid-js"
+import { createMemo, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
@@ -71,6 +71,8 @@ const ProjectTile = (props: {
   const layout = useLayout()
   const platform = usePlatform()
   const navigate = useNavigate()
+  const [copyState, setCopyState] = createStore({ copied: false })
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   const unseenCount = createMemo(() =>
     props.dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )
@@ -121,12 +123,9 @@ const ProjectTile = (props: {
     void clipboard.writeText(directory).then(
       () => {
         console.debug(`[sidebar-project] copied path dir=${directory}`)
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: props.language.t("session.share.copy.copied"),
-          description: directory,
-        })
+        setCopyState("copied", true)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setCopyState("copied", false), 1_200)
       },
       (err: unknown) => {
         const message = err instanceof Error ? err.message : String(err)
@@ -139,6 +138,10 @@ const ProjectTile = (props: {
       },
     )
   }
+
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
 
   const openNewSession = () => {
     const directory = props.project.worktree
@@ -206,7 +209,9 @@ const ProjectTile = (props: {
             onSelect={openInFileManager}
           >
             <ContextMenu.Icon>
-              <Icon name="folder" size="small" class="shrink-0 text-icon-base" />
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="folder" size="small" />
+              </span>
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{openInFileManagerLabel()}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
@@ -216,7 +221,9 @@ const ProjectTile = (props: {
             onSelect={copyProjectPath}
           >
             <ContextMenu.Icon>
-              <Icon name="copy" size="small" class="shrink-0 text-icon-base" />
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name={copyState.copied ? "check" : "copy"} size="small" />
+              </span>
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{props.language.t("command.project.copyPath")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
@@ -226,7 +233,9 @@ const ProjectTile = (props: {
             onSelect={openNewSession}
           >
             <ContextMenu.Icon>
-              <Icon name="new-session" size="small" class="shrink-0 text-icon-base" />
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="new-session" size="small" />
+              </span>
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{props.language.t("command.session.new")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>

@@ -1,5 +1,6 @@
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Avatar } from "@opencode-ai/ui/avatar"
+import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Keybind } from "@opencode-ai/ui/keybind"
@@ -10,6 +11,7 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { A, useParams } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useCommand } from "@/context/command"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
@@ -217,6 +219,17 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   )
 }
 
+type SessionInlineEditorComponent = (props: {
+  id: string
+  value: Accessor<string>
+  onSave: (next: string) => void
+  class?: string
+  displayClass?: string
+  editing?: boolean
+  stopPropagation?: boolean
+  openOnDblClick?: boolean
+}) => JSX.Element
+
 export type SessionItemProps = {
   session: Session
   list: Session[]
@@ -231,6 +244,9 @@ export type SessionItemProps = {
   selectSession: (session: Session) => void
   prefetchSession: (session: Session, priority?: "high" | "low") => void
   archiveSession: (session: Session) => Promise<void>
+  editorOpen: (id: string) => boolean
+  openEditor: (id: string, value: string) => void
+  InlineEditor: SessionInlineEditorComponent
 }
 
 const isPlainPrimaryMouse = (event: MouseEvent) =>
@@ -257,6 +273,9 @@ const SessionRow = (props: {
   detail?: Accessor<boolean | undefined>
   reduced?: boolean
   shimmer: Accessor<boolean>
+  editingTitle: Accessor<boolean>
+  InlineEditor: SessionInlineEditorComponent
+  renameSession: (next: string) => void
 }): JSX.Element => {
   const scheduled = createMemo(() => isScheduledSessionTitle(props.session.title))
   const displayTitle = createMemo(() => stripScheduledSessionTitle(props.session.title))
@@ -364,21 +383,37 @@ const SessionRow = (props: {
             style={props.active ? { color: "var(--sidebar-session-accent)" } : undefined}
           />
         </Show>
-        <span
-          ref={(el) => {
-            titleEl = el
-            applyTitleShimmerStyle(el, shimmering(), !!props.active)
-          }}
-          data-slot="session-title"
-          data-shimmer={shimmering() ? "true" : "false"}
-          classList={{
-            "text-16-medium grow-1 min-w-0 overflow-hidden text-ellipsis truncate": true,
-            "transition-colors": !props.reduced && !shimmering(),
-            "text-text-base": !props.active && !shimmering(),
-          }}
+        <Show
+          when={props.editingTitle()}
+          fallback={
+            <span
+              ref={(el) => {
+                titleEl = el
+                applyTitleShimmerStyle(el, shimmering(), !!props.active)
+              }}
+              data-slot="session-title"
+              data-shimmer={shimmering() ? "true" : "false"}
+              classList={{
+                "text-16-medium grow-1 min-w-0 overflow-hidden text-ellipsis truncate": true,
+                "transition-colors": !props.reduced && !shimmering(),
+                "text-text-base": !props.active && !shimmering(),
+              }}
+            >
+              {displayTitle()}
+            </span>
+          }
         >
-          {displayTitle()}
-        </span>
+          <props.InlineEditor
+            id={`session:${props.session.id}`}
+            value={displayTitle}
+            onSave={props.renameSession}
+            class="text-16-medium grow-1 min-w-0 w-full bg-transparent outline-none border-none p-0"
+            displayClass="text-16-medium grow-1 min-w-0 overflow-hidden text-ellipsis truncate"
+            editing
+            stopPropagation
+            openOnDblClick={false}
+          />
+        </Show>
       </div>
     </A>
   )
@@ -394,8 +429,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const permission = usePermission()
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
+  const [menu, setMenu] = createStore({ pendingRename: false, copied: false })
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   // Keep module shimmer signal subscribed at SessionItem level so remounts still animate.
   const titleShimmer = createMemo(() => isTitleShimmering(props.session.id))
+  const editingTitle = createMemo(() => props.editorOpen(`session:${props.session.id}`))
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
   const [sessionStore] = globalSync.child(props.session.directory, { bootstrap: false })
@@ -458,12 +496,9 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     void clip.writeText(text).then(
       () => {
         console.debug(`[sidebar-session] copied info id=${props.session.id} dir=${props.session.directory}`)
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: text,
-        })
+        setMenu("copied", true)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setMenu("copied", false), 1_200)
       },
       (err: unknown) => {
         console.debug(`[sidebar-session] copy failed id=${props.session.id} err=${err instanceof Error ? err.message : String(err)}`)
@@ -523,6 +558,52 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       )
   }
 
+  const renameSession = (next: string) => {
+    const trimmed = next.trim()
+    if (!trimmed) return
+    const current = stripScheduledSessionTitle(props.session.title)
+    if (trimmed === current) return
+    const [, setSessionStore] = globalSync.child(props.session.directory, { bootstrap: false })
+    console.debug(`[sidebar-session] rename start id=${props.session.id} dir=${props.session.directory}`)
+    void globalSDK.client.session
+      .update(
+        {
+          sessionID: props.session.id,
+          directory: props.session.directory,
+          title: trimmed,
+        },
+        { throwOnError: true },
+      )
+      .then(
+        () => {
+          setSessionStore("session", (list) =>
+            list.map((item) => (item.id === props.session.id ? { ...item, title: trimmed } : item)),
+          )
+          console.debug(`[sidebar-session] renamed id=${props.session.id}`)
+          showToast({
+            variant: "success",
+            icon: "circle-check",
+            title: language.t("common.rename"),
+            description: trimmed,
+          })
+        },
+        (err: unknown) => {
+          const message =
+            err instanceof Error
+              ? err.message
+              : typeof err === "object" && err && "message" in err
+                ? String((err as { message: unknown }).message)
+                : String(err)
+          console.debug(`[sidebar-session] rename failed id=${props.session.id} err=${message}`)
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+            description: message,
+          })
+        },
+      )
+  }
+
   const warm = (span: number, priority: "high" | "low") => {
     const nav = props.navList?.()
     const list = nav?.some((item) => item.id === props.session.id && item.directory === props.session.directory)
@@ -560,7 +641,10 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     }, 80)
   }
 
-  onCleanup(cancelHoverPrefetch)
+  onCleanup(() => {
+    cancelHoverPrefetch()
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
   const item = (
     <SessionRow
       session={props.session}
@@ -581,19 +665,25 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       detail={detail}
       reduced={props.reduced}
       shimmer={titleShimmer}
+      editingTitle={editingTitle}
+      InlineEditor={props.InlineEditor}
+      renameSession={renameSession}
     />
   )
 
   return (
-    <div
-      data-session-id={props.session.id}
-      data-component="sidebar-session"
-      data-active={isSelected() ? "true" : "false"}
-      classList={{
-        "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-4 pr-3 border border-transparent": true,
-        "transition-[background-color,border-color,box-shadow]": !props.reduced,
-      }}
-    >
+    <ContextMenu modal>
+      <ContextMenu.Trigger
+        as="div"
+        data-session-id={props.session.id}
+        data-component="sidebar-session"
+        data-active={isSelected() ? "true" : "false"}
+        classList={{
+          "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-4 pr-3 border border-transparent":
+            true,
+          "transition-[background-color,border-color,box-shadow]": !props.reduced,
+        }}
+      >
       <div class="min-w-0 grow">
         <Show
           when={!tooltip()}
@@ -648,7 +738,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                   }}
                 />
                 <IconButton
-                  icon="copy"
+                  icon={menu.copied ? "check" : "copy"}
                   variant="ghost"
                   class="size-6 rounded-md shrink-0"
                   aria-label={language.t("session.copyInfo")}
@@ -692,7 +782,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
               </Tooltip>
               <Tooltip value={language.t("session.copyInfo")} placement="top">
                 <IconButton
-                  icon="copy"
+                  icon={menu.copied ? "check" : "copy"}
                   variant="ghost"
                   class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
                   classList={{
@@ -733,7 +823,70 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
           </div>
         </Show>
       </div>
-    </div>
+      </ContextMenu.Trigger>
+      <ContextMenu.Portal>
+        <ContextMenu.Content
+          onCloseAutoFocus={(event) => {
+            if (!menu.pendingRename) return
+            event.preventDefault()
+            setMenu("pendingRename", false)
+            props.openEditor(`session:${props.session.id}`, stripScheduledSessionTitle(props.session.title))
+          }}
+        >
+          <ContextMenu.Item
+            data-action="session-copy-info"
+            data-session={base64Encode(props.session.id)}
+            onSelect={copy}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name={menu.copied ? "check" : "copy"} size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.copyInfo")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="session-generate-title"
+            data-session={base64Encode(props.session.id)}
+            onSelect={generateTitle}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="refresh" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.generateTitle")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="session-rename"
+            data-session={base64Encode(props.session.id)}
+            onSelect={() => setMenu("pendingRename", true)}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="edit" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("common.rename")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Separator />
+          <ContextMenu.Item
+            data-action="session-archive"
+            data-session={base64Encode(props.session.id)}
+            onSelect={() => {
+              void props.archiveSession(props.session)
+            }}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="archive" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("common.archive")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+        </ContextMenu.Content>
+      </ContextMenu.Portal>
+    </ContextMenu>
   )
 }
 

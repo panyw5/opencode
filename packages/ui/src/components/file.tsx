@@ -93,6 +93,8 @@ type SharedProps<T> = {
   openWith?: JSX.Element
   copyPath?: () => void
   copyContent?: () => void
+  copyPathCopied?: boolean
+  copyContentCopied?: boolean
   toolbar?: boolean
   actionsMount?: () => HTMLElement | undefined
 }
@@ -137,6 +139,8 @@ const sharedKeys = [
   "openWith",
   "copyPath",
   "copyContent",
+  "copyPathCopied",
+  "copyContentCopied",
   "onLineSelected",
   "onLineSelectionEnd",
   "onLineNumberSelectionEnd",
@@ -1046,7 +1050,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
             {(copyContent) => (
               <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
                 <IconButton
-                  icon="copy-content"
+                  icon={props.copyContentCopied ? "check" : "copy-content"}
                   variant="ghost"
                   class="h-8 w-8 rounded-md"
                   onClick={copyContent()}
@@ -1059,7 +1063,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
             {(copyPath) => (
               <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
                 <IconButton
-                  icon="copy"
+                  icon={props.copyPathCopied ? "check" : "copy"}
                   variant="ghost"
                   class="h-8 w-8 rounded-md"
                   onClick={copyPath()}
@@ -1106,7 +1110,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
           {(copyContent) => (
             <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
               <IconButton
-                icon="copy-content"
+                icon={props.copyContentCopied ? "check" : "copy-content"}
                 variant="ghost"
                 class="h-8 w-8 rounded-md"
                 onClick={copyContent()}
@@ -1119,7 +1123,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
           {(copyPath) => (
             <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
               <IconButton
-                icon="copy"
+                icon={props.copyPathCopied ? "check" : "copy"}
                 variant="ghost"
                 class="h-8 w-8 rounded-md"
                 onClick={copyPath()}
@@ -1476,6 +1480,8 @@ export function File<T>(props: FileProps<T>) {
         openWith={props.openWith}
         copyPath={props.copyPath}
         copyContent={props.copyContent}
+        copyPathCopied={props.copyPathCopied}
+        copyContentCopied={props.copyContentCopied}
       />
     )
   }
@@ -1488,6 +1494,8 @@ export function File<T>(props: FileProps<T>) {
       openWith={props.openWith}
       copyPath={props.copyPath}
       copyContent={props.copyContent}
+      copyPathCopied={props.copyPathCopied}
+      copyContentCopied={props.copyContentCopied}
     />
   )
 }

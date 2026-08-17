@@ -5,6 +5,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { useNavigate } from "@solidjs/router"
@@ -361,13 +362,32 @@ function ProjectTaskDetailDialog(props: {
   }
 
   const copyTitle = () => {
+    const value = title()
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-    if (!clipboard?.writeText) return
-    void clipboard.writeText(title()).then(() => {
-      setTitleCopied(true)
-      if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
-      titleCopiedTimer = setTimeout(() => setTitleCopied(false), 1200)
-    })
+    console.debug(`[project-task] copy title id=${props.task.id}`)
+    if (!clipboard?.writeText) {
+      console.debug(`[project-task] clipboard unavailable id=${props.task.id}`)
+      showToast({ variant: "error", title: language.t("common.requestFailed") })
+      return
+    }
+    void clipboard.writeText(value).then(
+      () => {
+        console.debug(`[project-task] copied title id=${props.task.id}`)
+        setTitleCopied(true)
+        if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
+        titleCopiedTimer = setTimeout(() => setTitleCopied(false), 1200)
+      },
+      (err: unknown) => {
+        console.debug(
+          `[project-task] copy title failed id=${props.task.id} err=${err instanceof Error ? err.message : String(err)}`,
+        )
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      },
+    )
   }
 
   const enterEdit = () => {

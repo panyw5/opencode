@@ -101,26 +101,32 @@ export function FileTabContent(props: { tab: string }) {
     return `${sdk.directory.replace(/[\\/]+$/, "")}/${p}`
   })
   const openWithAction = <OpenInApp path={fullPath()} logPrefix="file-preview" />
+  const [copyState, setCopyState] = createStore({ kind: "" as "path" | "content" | "" })
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  const markCopied = (kind: "path" | "content") => {
+    setCopyState("kind", kind)
+    if (copiedTimer) clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => setCopyState("kind", ""), 1_200)
+  }
   const copyPath = () => {
     const target = fullPath()
     if (!target) return
 
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    console.debug(`[file-preview] copy path path=${target}`)
     if (!clipboard?.writeText) {
+      console.debug(`[file-preview] clipboard unavailable path=${target}`)
       showToast({ variant: "error", title: language.t("common.requestFailed") })
       return
     }
 
     void clipboard.writeText(target).then(
       () => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: target,
-        })
+        console.debug(`[file-preview] copied path path=${target}`)
+        markCopied("path")
       },
       (err: unknown) => {
+        console.debug(`[file-preview] copy path failed path=${target} err=${err instanceof Error ? err.message : String(err)}`)
         showToast({
           variant: "error",
           title: language.t("common.requestFailed"),
@@ -135,21 +141,22 @@ export function FileTabContent(props: { tab: string }) {
     if (!target || text === undefined) return
 
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    console.debug(`[file-preview] copy content path=${target}`)
     if (!clipboard?.writeText) {
+      console.debug(`[file-preview] clipboard unavailable path=${target}`)
       showToast({ variant: "error", title: language.t("common.requestFailed") })
       return
     }
 
     void clipboard.writeText(text).then(
       () => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: target,
-        })
+        console.debug(`[file-preview] copied content path=${target}`)
+        markCopied("content")
       },
       (err: unknown) => {
+        console.debug(
+          `[file-preview] copy content failed path=${target} err=${err instanceof Error ? err.message : String(err)}`,
+        )
         showToast({
           variant: "error",
           title: language.t("common.requestFailed"),
@@ -158,6 +165,9 @@ export function FileTabContent(props: { tab: string }) {
       },
     )
   }
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
   const selectedLines = createMemo<SelectedLineRange | null>(() => {
     const p = path()
     if (!p) return null
@@ -499,6 +509,8 @@ export function FileTabContent(props: { tab: string }) {
         }}
         copyPath={copyPath}
         copyContent={state()?.content?.type === "text" ? copyContent : undefined}
+        copyPathCopied={copyState.kind === "path"}
+        copyContentCopied={copyState.kind === "content"}
         openWith={openWithAction}
         openFolder={
           platform.openInFinder

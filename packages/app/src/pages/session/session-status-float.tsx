@@ -55,12 +55,6 @@ export function SessionStatusFloat(props: {
         setCopied(true)
         if (copiedTimer) clearTimeout(copiedTimer)
         copiedTimer = setTimeout(() => setCopied(false), 1_200)
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: sessionID,
-        })
       },
       (error: unknown) => {
         const message = error instanceof Error ? error.message : String(error)
@@ -165,7 +159,7 @@ export function SessionStatusFloat(props: {
                     </span>
                     <IconButton
                       data-action="session-status-copy-details"
-                      icon={copied() ? "check-small" : "copy"}
+                      icon={copied() ? "check" : "copy"}
                       size="normal"
                       variant="ghost"
                       aria-label={language.t("session.status.copyDetails")}

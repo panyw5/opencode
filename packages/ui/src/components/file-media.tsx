@@ -36,6 +36,8 @@ export function FileMedia(props: {
   openWith?: JSX.Element
   copyPath?: () => void
   copyContent?: () => void
+  copyPathCopied?: boolean
+  copyContentCopied?: boolean
 }) {
   const i18n = useI18n()
   const cfg = () => props.media
@@ -184,7 +186,7 @@ export function FileMedia(props: {
           {(copyContent) => (
             <Tooltip value={i18n.t("ui.file.copyContent")} placement="bottom">
               <IconButton
-                icon="copy-content"
+                icon={props.copyContentCopied ? "check" : "copy-content"}
                 variant="secondary"
                 class="h-8 w-8 rounded-md"
                 onClick={copyContent()}
@@ -210,7 +212,7 @@ export function FileMedia(props: {
           {(copyPath) => (
             <Tooltip value={i18n.t("ui.file.copyPath")} placement="bottom">
               <IconButton
-                icon="copy"
+                icon={props.copyPathCopied ? "check" : "copy"}
                 variant="secondary"
                 class="h-8 w-8 rounded-md"
                 onClick={copyPath()}

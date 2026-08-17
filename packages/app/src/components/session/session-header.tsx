@@ -110,7 +110,8 @@ export function SessionHeader() {
   }
 
   const [prefs, setPrefs] = persisted(Persist.global("open.app"), createStore({ app: "finder" as OpenApp }))
-  const [menu, setMenu] = createStore({ open: false })
+  const [menu, setMenu] = createStore({ open: false, copied: false })
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   const [openRequest, setOpenRequest] = createStore({
     app: undefined as OpenApp | undefined,
   })
@@ -184,18 +185,26 @@ export function SessionHeader() {
   const copyPath = () => {
     const directory = projectDirectory()
     if (!directory) return
+    console.debug(`[session-header] copy project path dir=${directory}`)
     navigator.clipboard
       .writeText(directory)
       .then(() => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: directory,
-        })
+        console.debug(`[session-header] copied project path dir=${directory}`)
+        setMenu("copied", true)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setMenu("copied", false), 1_200)
       })
-      .catch((err: unknown) => showRequestError(language, err))
+      .catch((err: unknown) => {
+        console.debug(
+          `[session-header] copy project path failed dir=${directory} err=${err instanceof Error ? err.message : String(err)}`,
+        )
+        showRequestError(language, err)
+      })
   }
+
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
 
   const rightMount = createMemo(() => document.getElementById("opencode-titlebar-right"))
 
@@ -217,7 +226,7 @@ export function SessionHeader() {
                           onClick={copyPath}
                           aria-label={language.t("session.header.open.copyPath")}
                         >
-                          <Icon name="copy" size="small" class="text-icon-base" />
+                          <Icon name={menu.copied ? "check" : "copy"} size="small" class="text-icon-base" />
                           <span class="text-12-regular text-text-strong">
                             {language.t("session.header.open.copyPath")}
                           </span>
@@ -304,7 +313,11 @@ export function SessionHeader() {
                                 }}
                               >
                                 <div class="flex size-5 shrink-0 items-center justify-center">
-                                  <Icon name="copy" size="small" class="text-icon-weak" />
+                                  <Icon
+                                    name={menu.copied ? "check" : "copy"}
+                                    size="small"
+                                    class="text-icon-weak"
+                                  />
                                 </div>
                                 <DropdownMenu.ItemLabel>
                                   {language.t("session.header.open.copyPath")}

@@ -234,12 +234,15 @@ export function StatusPopover() {
     agents: [] as MarkdownDocument[],
     commands: [] as MarkdownDocument[],
   })
+  const [copyState, setCopyState] = createStore({ value: "" })
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   let dialogRun = 0
   let dialogDead = false
   let documentsKey: string | undefined
   onCleanup(() => {
     dialogDead = true
     dialogRun += 1
+    if (copiedTimer) clearTimeout(copiedTimer)
   })
   const servers = createMemo(() => {
     const current = server.current
@@ -491,16 +494,16 @@ export function StatusPopover() {
   const lspIssue = createMemo(() => lspItems().some((entry) => !!lspIssueMessage(entry.status, language)))
 
   const copy = (value: string) => {
+    console.debug("[status-popover] copy value", { value })
     void navigator.clipboard.writeText(value).then(
       () => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: value,
-        })
+        console.debug("[status-popover] copied value", { value })
+        setCopyState("value", value)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setCopyState("value", ""), 1_200)
       },
       (err: unknown) => {
+        console.debug("[status-popover] copy value failed", { value, err })
         showToast({
           title: language.t("common.requestFailed"),
           description: err instanceof Error ? err.message : String(err),
@@ -561,7 +564,7 @@ export function StatusPopover() {
       <Button
         size="small"
         variant="ghost"
-        icon="copy"
+        icon={copyState.value === location ? "check" : "copy"}
         class="shrink-0"
         aria-label={language.t("session.header.open.copyPath")}
         onClick={(event: MouseEvent) => {
@@ -876,7 +879,7 @@ export function StatusPopover() {
                           <Button
                             size="small"
                             variant="ghost"
-                            icon="copy"
+                            icon={copyState.value === plugin.value ? "check" : "copy"}
                             class="shrink-0"
                             aria-label={language.t("session.header.open.copyPath")}
                             onClick={(event: MouseEvent) => {
