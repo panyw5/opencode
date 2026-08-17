@@ -254,7 +254,7 @@ export function TestProviderModelButton(props: Props) {
       >
         <Button
           type="button"
-          size="small"
+          size="large"
           variant="ghost"
           class="w-full justify-center leading-none"
           classList={{

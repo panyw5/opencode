@@ -2102,10 +2102,16 @@ function ConfigEditorModeToggle(props: { mode: ConfigEditorMode; onMode: (mode: 
   )
 }
 
-function SaveButton(props: { label: string; disabled?: boolean; icon?: "save" | "check-small"; onClick: () => void }) {
+function SaveButton(props: {
+  label: string
+  disabled?: boolean
+  icon?: "save" | "check-small"
+  size?: "small" | "large"
+  onClick: () => void
+}) {
   return (
     <Button
-      size="small"
+      size={props.size ?? "small"}
       variant="secondary"
       icon={props.icon ?? "save"}
       onClick={props.onClick}
@@ -3600,18 +3606,18 @@ function CustomEditor(props: {
             <Show
               when={props.form.mode === "create"}
               fallback={
-                <Button size="small" variant="ghost" onClick={props.onDelete} disabled={props.busy}>
+                <Button size="large" variant="ghost" onClick={props.onDelete} disabled={props.busy}>
                   {language.t("config.action.delete")}
                 </Button>
               }
             >
-              <Button size="small" variant="ghost" onClick={props.onCreate}>
+              <Button size="large" variant="ghost" onClick={props.onCreate}>
                 {language.t("config.custom.new")}
               </Button>
             </Show>
             <Show when={props.onReload}>
               <Button
-                size="small"
+                size="large"
                 variant="ghost"
                 icon={props.reloading ? undefined : "reset"}
                 onClick={() => props.onReload?.()}
@@ -3626,6 +3632,7 @@ function CustomEditor(props: {
               </Button>
             </Show>
             <SaveButton
+              size="large"
               label={
                 props.form.saving
                   ? language.t("config.custom.savingProvider")
@@ -3848,7 +3855,7 @@ function CustomEditor(props: {
                 </For>
               </div>
               <div>
-                <Button size="small" variant="ghost" icon="plus-small" onClick={props.onAddModel}>
+                <Button size="large" variant="ghost" icon="plus-small" onClick={props.onAddModel}>
                   {language.t("config.custom.models.add")}
                 </Button>
               </div>
@@ -3860,7 +3867,7 @@ function CustomEditor(props: {
                   <div class="text-13-medium text-text-strong">{language.t("config.custom.headers.title")}</div>
                   <div class="text-12-regular text-text-weak">{language.t("config.custom.headers.description")}</div>
                 </div>
-                <Button size="small" variant="ghost" icon="plus-small" onClick={props.onAddHeader}>
+                <Button size="large" variant="ghost" icon="plus-small" onClick={props.onAddHeader}>
                   {language.t("config.custom.headers.add")}
                 </Button>
               </div>
@@ -7804,7 +7811,7 @@ export default function ConfigPage() {
                     />
                     <div class="mt-4 flex items-center gap-2">
                       <Button
-                        size="small"
+                        size="large"
                         variant="ghost"
                         icon="plus-small"
                         class="border border-border-weak-base bg-background-base/75 shadow-none hover:border-border-base hover:bg-background-base"
@@ -7813,7 +7820,7 @@ export default function ConfigPage() {
                         {t("config.custom.new")}
                       </Button>
                       <Button
-                        size="small"
+                        size="large"
                         variant="ghost"
                         icon="arrow-sync"
                         class="border border-border-weak-base bg-background-base/75 shadow-none hover:border-border-base hover:bg-background-base"
