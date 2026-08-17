@@ -219,7 +219,7 @@ export const layer = Layer.effect(
       }
       const active: Active = {
         info: shell,
-        done: yield* Deferred.make<Info>(),
+        done: yield* Deferred.make<{ info: Info; output?: string }>(),
         backgrounded: yield* Deferred.make<Info>(),
       }
       ;(yield* InstanceState.get(state)).shells.set(shell.id, active)
