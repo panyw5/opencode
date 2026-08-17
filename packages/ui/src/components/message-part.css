@@ -1504,7 +1504,11 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   }
 
   [data-slot="permission-header"] {
-    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 12px 0;
   }
 
   [data-slot="permission-row"] {
@@ -1580,7 +1584,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   [data-slot="permission-footer"] {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: center;
     flex-shrink: 0;
     padding: 32px 8px 8px;
     margin-top: -24px;
@@ -1589,11 +1593,51 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   [data-slot="permission-footer-actions"] {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 
     [data-component="button"] {
-      padding-left: 12px;
-      padding-right: 12px;
+      height: 34px;
+      padding-left: 18px;
+      padding-right: 18px;
+      border-radius: 8px;
+      transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease,
+        box-shadow 0.15s ease,
+        transform 0.12s ease;
+
+      &[data-variant="ghost"],
+      &[data-variant="secondary"] {
+        border-color: var(--border-weak-base);
+        background-color: var(--surface-base);
+        color: var(--text-weak);
+
+        &:hover:not(:disabled) {
+          background-color: var(--surface-base-hover);
+          border-color: var(--border-strong-base);
+          color: var(--text-strong);
+        }
+
+        &:active:not(:disabled) {
+          background-color: var(--surface-base-active);
+          transform: translateY(0) scale(0.98);
+          box-shadow: none;
+        }
+      }
+
+      &[data-variant="primary"] {
+        box-shadow: 0 2px 8px color-mix(in srgb, var(--icon-strong-base) 26%, transparent);
+
+        &:hover:not(:disabled) {
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--icon-strong-base) 34%, transparent);
+        }
+
+        &:active:not(:disabled) {
+          transform: translateY(0) scale(0.98);
+          box-shadow: 0 1px 4px color-mix(in srgb, var(--icon-strong-base) 18%, transparent);
+        }
+      }
     }
   }
 }

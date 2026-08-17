@@ -22,6 +22,8 @@ export function SessionPermissionDock(props: {
   return (
     <DockPrompt
       kind="permission"
+      expandLabel={language.t("session.question.expand")}
+      collapseLabel={language.t("session.question.collapse")}
       header={
         <div data-slot="permission-row" data-variant="header">
           <span data-slot="permission-icon">
@@ -32,20 +34,19 @@ export function SessionPermissionDock(props: {
       }
       footer={
         <>
-          <div />
           <div data-slot="permission-footer-actions">
-            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
+            <Button variant="ghost" size="large" onClick={() => props.onDecide("reject")} disabled={props.responding}>
               {language.t("ui.permission.deny")}
             </Button>
             <Button
               variant="secondary"
-              size="normal"
+              size="large"
               onClick={() => props.onDecide("always")}
               disabled={props.responding}
             >
               {language.t("ui.permission.allowAlways")}
             </Button>
-            <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
+            <Button variant="primary" size="large" onClick={() => props.onDecide("once")} disabled={props.responding}>
               {language.t("ui.permission.allowOnce")}
             </Button>
           </div>
