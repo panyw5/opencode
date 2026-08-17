@@ -27,6 +27,8 @@ type Options = {
   endpoint: string
   iterations: number
   tabs: number
+  workspaces: number
+  settleMs: number
   maxP95: number
   maxHeapGrowth: number
   maxNodeGrowth: number
@@ -37,6 +39,8 @@ const defaults: Options = {
   endpoint: "http://127.0.0.1:9222",
   iterations: 10,
   tabs: 3,
+  workspaces: 1,
+  settleMs: 2_000,
   maxP95: 250,
   maxHeapGrowth: 8 * 1024 * 1024,
   maxNodeGrowth: 2_500,
@@ -55,6 +59,8 @@ function usage() {
     "  --endpoint <url>             CDP HTTP endpoint (default: http://127.0.0.1:9222)",
     "  --iterations <count>         Full rounds across all tabs (default: 10)",
     "  --tabs <count>               Tabs to profile (default: 3)",
+    "  --workspaces <count>         Minimum distinct workspaces to open (default: 1)",
+    "  --settle-ms <ms>             Wait before retained-resource samples (default: 2000)",
     "  --max-p95 <ms>               Maximum activation P95 (default: 250)",
     "  --max-heap-growth <bytes>    Maximum retained V8 heap after GC (default: 8388608)",
     "  --max-node-growth <count>    Maximum retained DOM nodes (default: 2500)",
@@ -78,6 +84,8 @@ function parseOptions(args: string[]): Options | undefined {
     if (flag === "--endpoint") options.endpoint = value ?? ""
     else if (flag === "--iterations") options.iterations = positiveNumber(flag, value)
     else if (flag === "--tabs") options.tabs = positiveNumber(flag, value)
+    else if (flag === "--workspaces") options.workspaces = positiveNumber(flag, value)
+    else if (flag === "--settle-ms") options.settleMs = positiveNumber(flag, value)
     else if (flag === "--max-p95") options.maxP95 = positiveNumber(flag, value)
     else if (flag === "--max-heap-growth") options.maxHeapGrowth = positiveNumber(flag, value)
     else if (flag === "--max-node-growth") options.maxNodeGrowth = positiveNumber(flag, value)
@@ -86,8 +94,50 @@ function parseOptions(args: string[]): Options | undefined {
   }
   options.iterations = Math.floor(options.iterations)
   options.tabs = Math.floor(options.tabs)
+  options.workspaces = Math.floor(options.workspaces)
+  options.settleMs = Math.floor(options.settleMs)
   if (options.tabs < 2) throw new Error("--tabs must be at least 2")
+  if (options.workspaces > options.tabs) throw new Error("--workspaces cannot exceed --tabs")
   return options
+}
+
+type HelperMemory = {
+  totalRss: number
+  rendererRss: number
+  nodeServiceRss: number
+  gpuRss: number
+  networkRss: number
+  processes: number
+}
+
+async function helperMemory(): Promise<HelperMemory> {
+  const process = Bun.spawn(["ps", "-axo", "rss=,command="], { stdout: "pipe", stderr: "pipe" })
+  const output = await new Response(process.stdout).text()
+  await process.exited
+  const result: HelperMemory = {
+    totalRss: 0,
+    rendererRss: 0,
+    nodeServiceRss: 0,
+    gpuRss: 0,
+    networkRss: 0,
+    processes: 0,
+  }
+  for (const line of output.split("\n")) {
+    if (!line.includes("/Electron Helper") && !line.includes("/OpenCode Dev Helper")) continue
+    if (!line.includes("ai.opencode.desktop.dev")) continue
+    const match = line.trim().match(/^(\d+)\s+(.+)$/)
+    if (!match) continue
+    const rss = Number(match[1]) * 1024
+    const command = match[2]
+    result.totalRss += rss
+    result.processes += 1
+    if (command.includes("--type=renderer") && command.includes("--remote-debugging-port=9222"))
+      result.rendererRss += rss
+    if (command.includes("--utility-sub-type=node.mojom.NodeService")) result.nodeServiceRss += rss
+    if (command.includes("--type=gpu-process")) result.gpuRss += rss
+    if (command.includes("--utility-sub-type=network.mojom.NetworkService")) result.networkRss += rss
+  }
+  return result
 }
 
 class CdpClient {
@@ -155,21 +205,28 @@ async function main() {
   const response = await fetch(`${options.endpoint}/json`)
   if (!response.ok) throw new Error(`CDP target request failed: ${response.status}`)
   const targets = (await response.json()) as CdpTarget[]
-  const target = targets.find((item) => item.type === "page" && item.url.startsWith("http"))
+  const target = targets.find(
+    (item) => item.type === "page" && (item.url.startsWith("http") || item.url.startsWith("oc://")),
+  )
   if (!target) throw new Error("Electron renderer target was not found")
 
   const cdp = await CdpClient.connect(target.webSocketDebuggerUrl)
   let opened: string[] = []
   let initialActive: string | undefined
   try {
+    const settle = () => new Promise((resolve) => setTimeout(resolve, options.settleMs))
     await cdp.call("HeapProfiler.enable")
+    console.error(`[profile-session-tabs] stage=initial-settle waitMs=${options.settleMs}`)
+    await settle()
     await cdp.call("HeapProfiler.collectGarbage")
     const heapInitial = await cdp.call<HeapUsage>("Runtime.getHeapUsage")
     const domInitial = await cdp.call<DomCounters>("Memory.getDOMCounters")
+    const helperInitial = await helperMemory()
     const setup = await cdp.evaluate<{
       initialActive?: string
       opened: string[]
       targets: string[]
+      diagnostics: string[]
       error?: string
     }>(`(async () => {
       const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -178,34 +235,118 @@ async function main() {
       const initial = tabs().map((item) => item.dataset.sessionId)
       const initialActive = active()
       const opened = []
+      const diagnostics = []
+      const targets = []
+      const targetWorkspaces = new Set()
       let error
-      const links = [...new Map(
-        [...document.querySelectorAll('a[href*="/session/"]')]
-          .map((item) => [item.getAttribute('href'), item]),
-      ).values()]
-      for (const link of links) {
-        if (opened.length >= ${options.tabs}) break
+      for (const tab of tabs()) {
+        const id = tab.dataset.sessionId
+        const directory = tab.dataset.directory
+        if (!id || !directory || targetWorkspaces.has(directory)) continue
+        targets.push(id)
+        targetWorkspaces.add(directory)
+        if (targetWorkspaces.size >= ${options.workspaces} || targets.length >= ${options.tabs}) break
+      }
+      const openLink = async (link, source) => {
         const id = link.getAttribute('href')?.split('/').at(-1)
-        if (!id || initial.includes(id) || opened.includes(id)) continue
+        if (!id || initial.includes(id) || opened.includes(id)) return false
+        diagnostics.push('open-link source=' + source + ' id=' + id)
         link.click()
         const deadline = performance.now() + 10_000
         while (performance.now() < deadline && active() !== id) await new Promise(requestAnimationFrame)
         if (active() !== id) {
           error = 'Timed out opening session tab ' + id
-          break
+          diagnostics.push('open-link-timeout id=' + id)
+          return false
         }
         opened.push(id)
         await sleep(50)
+        return true
       }
-      const targets = [...opened]
+      const projects = [...new Map(
+        [...document.querySelectorAll('[data-action="project-switch"][data-project]')]
+          .map((item) => [item.dataset.project, item]),
+      ).values()]
+      for (const project of projects) {
+        if (targets.length >= ${options.tabs}) break
+        const openedWorkspaces = new Set(
+          tabs().filter((item) => opened.includes(item.dataset.sessionId)).map((item) => item.dataset.directory).filter(Boolean),
+        )
+        if (targetWorkspaces.size >= ${options.workspaces}) break
+        const slug = project.dataset.project
+        diagnostics.push('project-click slug=' + slug)
+        project.click()
+        const deadline = performance.now() + 10_000
+        let link
+        while (
+          performance.now() < deadline &&
+          ![...document.querySelectorAll('[data-action="project-switch"][data-project]')].some(
+            (item) => item.dataset.project === slug && item.getAttribute('aria-current') === 'true',
+          )
+        ) {
+          await new Promise(requestAnimationFrame)
+        }
+        await new Promise(requestAnimationFrame)
+        const newSession = [...document.querySelectorAll('.sidebar-action-button[data-icon="new-session"]')]
+          .find((item) => item.offsetParent !== null)
+        diagnostics.push('project-new-session slug=' + slug + ' found=' + String(Boolean(newSession)))
+        newSession?.click()
+        while (performance.now() < deadline) {
+          if (!location.pathname.startsWith('/' + slug + '/session')) {
+            await new Promise(requestAnimationFrame)
+            continue
+          }
+          link = [...document.querySelectorAll('a[href*="/session/"]')]
+            .find((item) => item.getAttribute('href')?.startsWith('/' + slug + '/session/'))
+          if (link) break
+          await new Promise(requestAnimationFrame)
+        }
+        diagnostics.push('project-links slug=' + slug + ' found=' + String(Boolean(link)))
+        if (link && (await openLink(link, 'project'))) {
+          const id = opened.at(-1)
+          const tab = tabs().find((item) => item.dataset.sessionId === id)
+          if (id) targets.push(id)
+          if (tab?.dataset.directory) targetWorkspaces.add(tab.dataset.directory)
+        }
+      }
+      const links = [...new Map(
+        [...document.querySelectorAll('a[href*="/session/"]')]
+          .map((item) => [item.getAttribute('href'), item]),
+      ).values()]
+      for (const link of links) {
+        if (targets.length >= ${options.tabs}) break
+        if (await openLink(link, 'sidebar')) {
+          const id = opened.at(-1)
+          const tab = tabs().find((item) => item.dataset.sessionId === id)
+          if (id) targets.push(id)
+          if (tab?.dataset.directory) targetWorkspaces.add(tab.dataset.directory)
+        }
+      }
       if (targets.length < ${options.tabs}) {
-        error ||= 'Expected ${options.tabs} unopened sidebar sessions, found ' + targets.length + '. Load more sessions in the sidebar.'
+        error ||= 'Expected ${options.tabs} session tabs, found ' + targets.length + '. Load more sessions in the sidebar.'
       }
-      return { initialActive, opened, targets, error }
+      const workspaceCount = new Set(
+        tabs().filter((item) => targets.includes(item.dataset.sessionId)).map((item) => item.dataset.directory).filter(Boolean),
+      ).size
+      diagnostics.push(
+        'opened=' +
+          opened.length +
+          ' workspaceCount=' +
+          workspaceCount +
+          ' tabDirectories=' +
+          tabs()
+            .filter((item) => targets.includes(item.dataset.sessionId))
+            .map((item) => item.dataset.directory || 'missing')
+            .join('|'),
+      )
+      if (workspaceCount < ${options.workspaces}) {
+        error ||= 'Expected ${options.workspaces} workspaces, opened ' + workspaceCount + '.'
+      }
+      return { initialActive, opened, targets, diagnostics, error }
     })()`)
     opened = setup.opened
     initialActive = setup.initialActive
-    if (setup.error) throw new Error(setup.error)
+    if (setup.error) throw new Error(setup.error + " diagnostics=" + setup.diagnostics.join(" ; "))
 
     const activate = async (id: string) => {
       await cdp.evaluate(`(async () => {
@@ -223,9 +364,12 @@ async function main() {
     }
 
     await activate(setup.targets.at(-1)!)
+    console.error(`[profile-session-tabs] stage=opened tabs=${setup.targets.length} settleMs=${options.settleMs}`)
+    await settle()
     await cdp.call("HeapProfiler.collectGarbage")
     const heapBefore = await cdp.call<HeapUsage>("Runtime.getHeapUsage")
     const domBefore = await cdp.call<DomCounters>("Memory.getDOMCounters")
+    const helperBefore = await helperMemory()
 
     const profile = await cdp.evaluate<{
       times: number[]
@@ -319,9 +463,14 @@ async function main() {
     }
 
     await activate(setup.targets.at(-1)!)
+    console.error(
+      `[profile-session-tabs] stage=switched activations=${profile.times.length} settleMs=${options.settleMs}`,
+    )
+    await settle()
     await cdp.call("HeapProfiler.collectGarbage")
     const heapAfterSwitch = await cdp.call<HeapUsage>("Runtime.getHeapUsage")
     const domAfterSwitch = await cdp.call<DomCounters>("Memory.getDOMCounters")
+    const helperAfterSwitch = await helperMemory()
 
     const close = await cdp.evaluate<{ results: { id: string; kind: string; duration: number; valid: boolean }[] }>(
       `(async () => {
@@ -361,9 +510,12 @@ async function main() {
     if (close.results.some((item) => !item.valid)) throw new Error("Session close selected the wrong neighboring tab")
 
     if (initialActive) await activate(initialActive)
+    console.error(`[profile-session-tabs] stage=closed closed=${close.results.length} settleMs=${options.settleMs}`)
+    await settle()
     await cdp.call("HeapProfiler.collectGarbage")
     const heapAfterClose = await cdp.call<HeapUsage>("Runtime.getHeapUsage")
     const domAfterClose = await cdp.call<DomCounters>("Memory.getDOMCounters")
+    const helperAfterClose = await helperMemory()
 
     const p50 = percentile(profile.times, 0.5)
     const p95 = percentile(profile.times, 0.95)
@@ -398,6 +550,14 @@ async function main() {
           listeners: domAfterClose.jsEventListeners,
         },
         retained: { heap: heapGrowth, nodes: nodeGrowth, listeners: listenerGrowth },
+        helper: {
+          initial: helperInitial,
+          beforeSwitch: helperBefore,
+          afterSwitch: helperAfterSwitch,
+          afterClose: helperAfterClose,
+          retainedRss: helperAfterClose.totalRss - helperInitial.totalRss,
+          retainedRendererRss: helperAfterClose.rendererRss - helperInitial.rendererRss,
+        },
       },
     }
     console.log(JSON.stringify(summary, null, 2))
@@ -416,7 +576,8 @@ async function main() {
   } finally {
     if (opened.length > 0) {
       await cdp
-        .evaluate(`(async () => {
+        .evaluate(
+          `(async () => {
           const ids = ${JSON.stringify(opened)}
           for (const id of ids) {
             const tab = [...document.querySelectorAll('[data-component="session-tab"][data-session-id]')]
@@ -429,15 +590,19 @@ async function main() {
                 .some((item) => item.dataset.sessionId === id)
             ) await new Promise(requestAnimationFrame)
           }
-        })()`)
+        })()`,
+        )
         .catch(() => undefined)
     }
-    if (initialActive) await cdp.evaluate(`document.querySelector('[data-session-id=${JSON.stringify(initialActive)}]')?.click()`).catch(() => undefined)
+    if (initialActive)
+      await cdp
+        .evaluate(`document.querySelector('[data-session-id=${JSON.stringify(initialActive)}]')?.click()`)
+        .catch(() => undefined)
     cdp.close()
   }
 }
 
 main().catch((error) => {
-  console.error(error instanceof Error ? error.stack ?? error.message : String(error))
+  console.error(error instanceof Error ? (error.stack ?? error.message) : String(error))
   process.exitCode = 1
 })

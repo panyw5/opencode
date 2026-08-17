@@ -28,7 +28,13 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { domainFromDirectory, extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { waitForMatch, workspaceKey } from "@/pages/layout/helpers"
 import { working } from "@/pages/session/session-working"
-import { collectSessionTabSubtree, groupSessionTabs, reorderSessionTabGroups, type SessionTabGroup } from "./session-tab-groups"
+import {
+  collectSessionTabSubtree,
+  groupSessionTabs,
+  reorderSessionTabGroups,
+  type SessionTabGroup,
+} from "./session-tab-groups"
+import { pickWarmDirectories, shouldFetchTabMeta } from "./session-tab-warm"
 
 /**
  * Global session tabs bar. One tab per open session, across projects.
@@ -82,7 +88,9 @@ export function SessionTabsBar() {
     }),
   )
   const groupsByKey = createMemo(() => new Map(groups().map((group) => [sessionBarKey(group.tab), group] as const)))
-  const orderedTabs = createMemo(() => groups().flatMap((group) => [group.tab, ...group.children.map((item) => item.tab)]))
+  const orderedTabs = createMemo(() =>
+    groups().flatMap((group) => [group.tab, ...group.children.map((item) => item.tab)]),
+  )
   const routeDir = createMemo(() => {
     const slug = params.dir
     if (!slug) return ""
@@ -105,48 +113,52 @@ export function SessionTabsBar() {
   const isActive = (tab: SessionBarTab) =>
     !!params.id && tab.id === params.id && workspaceKey(tab.directory) === workspaceKey(routeDir())
 
-  // Titles and live status come from the per-directory session stores; make sure
-  // they are loaded for every open tab (e.g. after a cold start).
+  // Only the directory behind the active route warms its full session list on
+  // cold start. Background-tab directories stay cold: their titles come from
+  // the persisted tab state, and the first switch builds the backend instance.
   createEffect(() => {
-    const dirs = new Set<string>()
-    for (const tab of tabs()) dirs.add(tab.directory)
-    for (const directory of dirs) {
+    for (const directory of pickWarmDirectories(tabs(), routeDir())) {
       const [child] = globalSync.child(directory, { bootstrap: false })
       if (child.sessions === "ready" || child.sessions === "loading") continue
       void globalSync.project.loadSessions(directory, { silent: true })
     }
   })
 
+  const fetchTabMeta = (tab: SessionBarTab) => {
+    const key = sessionBarKey(tab)
+    if (metadataLoads.has(key)) return
+    metadataLoads.add(key)
+    void globalSDK
+      .forDomain(domainFromDirectory(tab.directory))
+      .client.session.get({ directory: tab.directory, sessionID: tab.id })
+      .then((result) => {
+        const value = result.data
+        if (!value) return
+        layout.sessionBar.setInfo(tab.directory, tab.id, {
+          title: value.title,
+          parentID: value.parentID ?? null,
+        })
+      })
+      .catch(() => undefined)
+      .finally(() => metadataLoads.delete(key))
+  }
+
   createEffect(() => {
     for (const tab of tabs()) {
       if (tab.parentID !== undefined) continue
       const [child] = globalSync.child(tab.directory, { bootstrap: false })
-      if (child.sessions !== "ready") continue
-      const session = child.session.find((item) => item.id === tab.id)
+      const sessionsReady = child.sessions === "ready"
+      const session = sessionsReady ? child.session.find((item) => item.id === tab.id) : undefined
+      if (shouldFetchTabMeta({ title: tab.title, sessionsReady, sessionInList: !!session })) {
+        fetchTabMeta(tab)
+        continue
+      }
       if (session) {
         layout.sessionBar.setInfo(tab.directory, tab.id, {
           title: session.title,
           parentID: session.parentID ?? null,
         })
-        continue
       }
-
-      const key = sessionBarKey(tab)
-      if (metadataLoads.has(key)) continue
-      metadataLoads.add(key)
-      void globalSDK
-        .forDomain(domainFromDirectory(tab.directory))
-        .client.session.get({ directory: tab.directory, sessionID: tab.id })
-        .then((result) => {
-          const value = result.data
-          if (!value) return
-          layout.sessionBar.setInfo(tab.directory, tab.id, {
-            title: value.title,
-            parentID: value.parentID ?? null,
-          })
-        })
-        .catch(() => undefined)
-        .finally(() => metadataLoads.delete(key))
     }
   })
 
@@ -210,10 +222,12 @@ export function SessionTabsBar() {
       all.slice(Math.max(lastClosed, index) + 1).find((item) => !closingKeys.has(sessionBarKey(item)))
 
     console.debug(
-      `[session-bar] close parent=${tab.id} descendants=${closing
-        .filter((item) => sessionBarKey(item) !== tabKey)
-        .map((item) => item.id)
-        .join(",") || "none"} viewingClosed=${String(viewingClosed)} neighbor=${neighbor?.id ?? "none"}`,
+      `[session-bar] close parent=${tab.id} descendants=${
+        closing
+          .filter((item) => sessionBarKey(item) !== tabKey)
+          .map((item) => item.id)
+          .join(",") || "none"
+      } viewingClosed=${String(viewingClosed)} neighbor=${neighbor?.id ?? "none"}`,
     )
 
     layout.sessionBar.closeAll(closing)

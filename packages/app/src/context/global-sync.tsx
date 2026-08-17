@@ -329,6 +329,23 @@ function createGlobalSync() {
         sessionLoaded.delete(directory)
         sdkCache.delete(directory)
         clearSessionPrefetchDirectory(directory)
+        setLoaded(
+          "dir",
+          produce((draft) => {
+            delete draft[directory]
+          }),
+        )
+        console.debug(`[global-sync] instance dispose requested directory=${directory} domain=${domain}`)
+        void runtime(domain)
+          .client.instance.dispose({ directory })
+          .then(() => {
+            console.debug(`[global-sync] instance dispose succeeded directory=${directory} domain=${domain}`)
+          })
+          .catch((err) => {
+            console.warn(
+              `[global-sync] instance dispose failed directory=${directory} domain=${domain} err=${err instanceof Error ? err.message : String(err)}`,
+            )
+          })
       },
       translate: language.t,
     })
