@@ -15,6 +15,14 @@ import type { InstanceContext } from "../../src/project/instance-context"
 import { InstanceRuntime } from "../../src/project/instance-runtime"
 import { InstanceStore } from "../../src/project/instance-store"
 import { TestLLMServer } from "../lib/llm-server"
+import { mkdtempSync } from "fs"
+
+// Keep spawned login shells hermetic: Shell.args sources the user's interactive
+// zshrc, which may block in non-interactive contexts (e.g. `pyenv init` rehash).
+// Point ZDOTDIR at an empty dir so test shells skip the user rc files.
+if (process.platform !== "win32" && !process.env.ZDOTDIR) {
+  process.env.ZDOTDIR = mkdtempSync(path.join(os.tmpdir(), "opencode-test-zdotdir-"))
+}
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 export const testInstanceStoreLayer = InstanceStore.defaultLayer.pipe(Layer.provide(noopBootstrap))

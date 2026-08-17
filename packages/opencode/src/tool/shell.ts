@@ -447,12 +447,18 @@ export const ShellTool = Tool.define(
       ].join("\n")
     }
 
-    function metadata(info: BackgroundShell.Info, description: string, output: string) {
+    function metadata(
+      info: BackgroundShell.Info,
+      description: string,
+      output: string,
+      extra?: { truncated?: boolean; outputPath?: string },
+    ) {
       return {
         output,
         exit: info.exitCode ?? null,
         description,
-        truncated: false,
+        truncated: extra?.truncated ?? false,
+        ...(extra?.truncated && extra.outputPath ? { outputPath: extra.outputPath } : {}),
         background: info.background,
         jobId: info.id,
         ptyId: info.ptyID,
@@ -463,6 +469,22 @@ export const ShellTool = Tool.define(
     function cleanEnv(env: NodeJS.ProcessEnv) {
       return Object.fromEntries(Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined))
     }
+
+    const finalizeOutput = Effect.fn("ShellTool.finalizeOutput")(function* (raw: string, note?: string) {
+      const limits = yield* trunc.limits()
+      const end = tail(raw, limits.maxLines, limits.maxBytes)
+      let file = ""
+      if (end.cut) file = yield* trunc.write(raw)
+      let output = end.text
+      if (!output) output = "(no output)"
+      if (end.cut && file) {
+        output = `...output truncated...\n\nFull output saved to: ${file}\n\n` + output
+      }
+      if (note) {
+        output += "\n\n<shell_metadata>\n" + note + "\n</shell_metadata>"
+      }
+      return { output, cut: end.cut, file }
+    })
 
     const runSupervised = Effect.fn("ShellTool.runSupervised")(function* (
       input: {
@@ -532,17 +554,22 @@ export const ShellTool = Tool.define(
       )
 
       if (result.kind === "abort" || result.kind === "timeout") {
-        const stopped = yield* backgroundShell.stop(latest.id)
-        if (stopped) latest = stopped
         const note =
           result.kind === "abort"
             ? "User aborted the command"
             : `shell tool terminated command after exceeding timeout ${input.timeout} ms. If this command is expected to take longer, run it with background=true or send it to background before the timeout.`
-        const output = `${latest.outputTail || "(no output)"}\n\n<shell_metadata>\n${note}\n</shell_metadata>`
+        // Capture the full PTY buffer while the process is still alive, then stop it.
+        const full = yield* backgroundShell.output(latest.id)
+        const stopped = yield* backgroundShell.stop(latest.id)
+        if (stopped) latest = stopped
+        const fin = yield* finalizeOutput(full ?? latest.outputTail ?? "", note)
         return {
           title: input.description,
-          metadata: metadata(latest, input.description, output),
-          output,
+          metadata: metadata(latest, input.description, fin.output, {
+            truncated: fin.cut,
+            outputPath: fin.file,
+          }),
+          output: fin.output,
         }
       }
 
@@ -557,11 +584,14 @@ export const ShellTool = Tool.define(
       }
 
       latest = result.value.info ?? latest
-      const output = latest.outputTail || "(no output)"
+      const fin = yield* finalizeOutput(result.value.output ?? latest.outputTail ?? "")
       return {
         title: input.description,
-        metadata: metadata(latest, input.description, output),
-        output,
+        metadata: metadata(latest, input.description, fin.output, {
+          truncated: fin.cut,
+          outputPath: fin.file,
+        }),
+        output: fin.output,
       }
     })
 

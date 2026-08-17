@@ -66,7 +66,7 @@ export const Event = {
 
 type Active = {
   info: Info
-  done: Deferred.Deferred<Info>
+  done: Deferred.Deferred<{ info: Info; output?: string }>
   backgrounded: Deferred.Deferred<Info>
 }
 
@@ -78,6 +78,7 @@ type State = {
 export type WaitResult = {
   info?: Info
   backgrounded: boolean
+  output?: string
 }
 
 export interface Interface {
@@ -87,6 +88,8 @@ export interface Interface {
   readonly setBackground: (id: string) => Effect.Effect<Info | undefined>
   readonly wait: (id: string) => Effect.Effect<WaitResult>
   readonly stop: (id: string) => Effect.Effect<Info | undefined>
+  /** Full PTY output buffer while the pty session is still alive, else the stored tail. */
+  readonly output: (id: string) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/BackgroundShell") {}
@@ -152,7 +155,9 @@ export const layer = Layer.effect(
       }
       log.info("background shell exited", { id: next.id, exitCode: next.exitCode })
       match.info = next
-      yield* Deferred.succeed(match.done, copy(next)).pipe(Effect.ignore)
+      yield* Deferred.succeed(match.done, { info: copy(next), output: event.properties.output }).pipe(
+        Effect.ignore,
+      )
       yield* publishUpdate(match)
     })
 
@@ -243,12 +248,24 @@ export const layer = Layer.effect(
       yield* ensureSubscribed()
       const active = (yield* InstanceState.get(state)).shells.get(id)
       if (!active) return { backgrounded: false }
-      if (active.info.status !== "running") return { info: copy(active.info), backgrounded: false }
       if (active.info.background) return { info: copy(active.info), backgrounded: true }
+      const done = Deferred.await(active.done).pipe(
+        Effect.map((result) => ({ info: copy(result.info), backgrounded: false, output: result.output })),
+      )
+      if (active.info.status !== "running") return yield* done
       return yield* Effect.race(
-        Deferred.await(active.done).pipe(Effect.map((info) => ({ info: copy(info), backgrounded: false }))),
+        done,
         Deferred.await(active.backgrounded).pipe(Effect.map((info) => ({ info: copy(info), backgrounded: true }))),
       )
+    })
+
+    const output: Interface["output"] = Effect.fn("BackgroundShell.output")(function* (id) {
+      yield* ensureSubscribed()
+      const active = (yield* InstanceState.get(state)).shells.get(id)
+      if (!active) return
+      const snap = yield* pty.snapshot(active.info.ptyID).pipe(Effect.option)
+      if (snap._tag === "Some") return snap.value.output
+      return active.info.outputTail
     })
 
     const stop: Interface["stop"] = Effect.fn("BackgroundShell.stop")(function* (id) {
@@ -257,21 +274,24 @@ export const layer = Layer.effect(
       const active = s.shells.get(id)
       if (!active) return
       if (active.info.status === "running") {
+        const snap = yield* pty.snapshot(active.info.ptyID).pipe(Effect.option)
+        const full = snap._tag === "Some" ? snap.value.output : undefined
         yield* pty.remove(active.info.ptyID).pipe(Effect.ignore)
         const next = {
           ...active.info,
           status: "stopped" as const,
           endedAt: Date.now(),
+          ...(full !== undefined ? { outputTail: tail(full) ?? "" } : {}),
         }
         active.info = next
-        yield* Deferred.succeed(active.done, copy(next)).pipe(Effect.ignore)
+        yield* Deferred.succeed(active.done, { info: copy(next), output: full }).pipe(Effect.ignore)
         yield* publishUpdate(active)
         return copy(next)
       }
       return copy(active.info)
     })
 
-    return Service.of({ list, get, create, setBackground, wait, stop })
+    return Service.of({ list, get, create, setBackground, wait, stop, output })
   }),
 )
 

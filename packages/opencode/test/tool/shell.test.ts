@@ -11,6 +11,7 @@ import { provideInstance, tmpdirScoped } from "../fixture/fixture"
 import type { Permission } from "../../src/permission"
 import { Agent } from "../../src/agent/agent"
 import { Truncate } from "@/tool/truncate"
+import { BackgroundShell } from "@/background/shell"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -27,6 +28,7 @@ const shellLayer = Layer.mergeAll(
   Config.defaultLayer,
   Agent.defaultLayer,
   RuntimeFlags.defaultLayer,
+  BackgroundShell.defaultLayer,
 )
 const it = testEffect(shellLayer)
 type ShellTestServices =
@@ -1073,7 +1075,7 @@ describe("tool.shell abort", () => {
           })
           expect(result.output).toContain("started")
           expect(result.output).toContain("shell tool terminated command after exceeding timeout")
-          expect(result.output).toContain("retry with a larger timeout value in milliseconds")
+          expect(result.output).toContain("run it with background=true")
         }),
       ),
     15_000,
@@ -1133,7 +1135,8 @@ describe("tool.shell abort", () => {
         const updates: string[] = []
         const result = yield* run(
           {
-            command: `echo first && sleep 0.1 && echo second`,
+            // Outlive several 300ms metadata polls so progressive updates accumulate.
+            command: `echo first && sleep 0.8 && echo second && sleep 0.8`,
             description: "Streaming test",
           },
           {
