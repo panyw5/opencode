@@ -242,3 +242,187 @@ describe("spawnLocalServer", () => {
     expect(receivedPaths).toBe(startupPaths)
   })
 })
+
+describe("spawnLocalServer crash and shutdown edge cases", () => {
+  test("treats exit between ready and health check as unexpected and rejects health.wait", async () => {
+    const unexpectedCodes: number[] = []
+    const { child, spawnLocalServer } = createHarness({ checkHealth: async () => false })
+    const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
+      needsMigration: false,
+      startupPaths,
+      onUnexpectedExit: (code) => unexpectedCodes.push(code),
+    })
+
+    await Bun.sleep(0)
+    child.emitMessage({ type: "ready" })
+    const result = await started
+    child.emitExit(9)
+
+    expect(unexpectedCodes).toEqual([9])
+    const error = await rejection(result.health.wait)
+    expect(error.message).toBe("Sidecar exited before health check passed with code 9")
+  })
+
+  test("keeps polling health until checkHealth succeeds", async () => {
+    let calls = 0
+    const { child, spawnLocalServer } = createHarness({
+      checkHealth: async () => {
+        calls += 1
+        return calls >= 3
+      },
+    })
+    const started = spawnLocalServer("127.0.0.1", 4096, "secret", { needsMigration: false, startupPaths })
+
+    await Bun.sleep(0)
+    child.emitMessage({ type: "ready" })
+    const result = await started
+    await result.health.wait
+
+    expect(calls).toBeGreaterThanOrEqual(3)
+  })
+
+  test("rejects and kills the sidecar when ready never arrives", async () => {
+    const { child, start } = createHarness({ startStallTimeout: 50 })
+    const error = await rejection(start())
+
+    expect(error.message).toContain("Sidecar did not become ready within 50ms")
+    expect(child.killed).toBe(true)
+  })
+
+  test("kills the sidecar when it ignores the stop command", async () => {
+    const unexpectedCodes: number[] = []
+    const { child, spawnLocalServer } = createHarness()
+    const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
+      needsMigration: false,
+      startupPaths,
+      onUnexpectedExit: (code) => unexpectedCodes.push(code),
+    })
+
+    await Bun.sleep(0)
+    child.emitMessage({ type: "ready" })
+    const result = await started
+    await result.health.wait
+
+    await result.listener.stop()
+
+    expect(child.postedMessages).toContainEqual({ type: "stop" })
+    expect(child.killed).toBe(true)
+    expect(unexpectedCodes).toEqual([])
+  })
+
+  test("resolves stop immediately without posting when the sidecar already exited", async () => {
+    const { child, spawnLocalServer } = createHarness()
+    const started = spawnLocalServer("127.0.0.1", 4096, "secret", { needsMigration: false, startupPaths })
+
+    await Bun.sleep(0)
+    child.emitMessage({ type: "ready" })
+    const result = await started
+    await result.health.wait
+    child.emitExit(0)
+
+    await result.listener.stop()
+
+    expect(child.postedMessages).not.toContainEqual({ type: "stop" })
+  })
+
+  test("returns the same stop promise for concurrent stop calls", async () => {
+    const { child, spawnLocalServer } = createHarness()
+    const started = spawnLocalServer("127.0.0.1", 4096, "secret", { needsMigration: false, startupPaths })
+
+    await Bun.sleep(0)
+    child.emitMessage({ type: "ready" })
+    const result = await started
+    await result.health.wait
+
+    const first = result.listener.stop()
+    const second = result.listener.stop()
+    child.emitExit(0)
+    await Promise.all([first, second])
+
+    expect(second).toBe(first)
+    const stopMessages = child.postedMessages.filter((message) => (message as { type?: string }).type === "stop")
+    expect(stopMessages).toHaveLength(1)
+  })
+
+  test("forwards sidecar error messages to stderr after ready", async () => {
+    const stderr: string[] = []
+    const { child, spawnLocalServer } = createHarness()
+    const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
+      needsMigration: false,
+      startupPaths,
+      onStderr: (line) => stderr.push(line),
+    })
+
+    await Bun.sleep(0)
+    child.emitMessage({ type: "ready" })
+    await started
+    child.emitMessage({ type: "error", error: { message: "fatal after ready" } })
+
+    expect(stderr).toContain("sidecar error: fatal after ready")
+  })
+
+  test("logs child-process-gone only for the sidecar utility process", async () => {
+    const stderr: string[] = []
+    const { app, child, spawnLocalServer } = createHarness()
+    const started = spawnLocalServer("127.0.0.1", 4096, "secret", {
+      needsMigration: false,
+      startupPaths,
+      onStderr: (line) => stderr.push(line),
+    })
+
+    await Bun.sleep(0)
+    app.emit("child-process-gone", {}, { type: "Utility", name: "opencode server", reason: "crashed", exitCode: 1 })
+    app.emit("child-process-gone", {}, { type: "Utility", name: "other service", reason: "crashed", exitCode: 1 })
+    app.emit("child-process-gone", {}, { type: "GPU", name: "opencode server", reason: "crashed", exitCode: 1 })
+
+    expect(stderr).toEqual(["utility process gone reason=crashed exitCode=1"])
+
+    child.emitMessage({ type: "ready" })
+    await started
+  })
+})
+
+describe("checkHealth", () => {
+  test("returns true for a healthy response and sends basic auth", async () => {
+    let authorization: string | null = null
+    let requestedPath = ""
+    const server = Bun.serve({
+      port: 0,
+      fetch(request) {
+        authorization = request.headers.get("authorization")
+        requestedPath = new URL(request.url).pathname
+        return new Response("ok")
+      },
+    })
+
+    try {
+      const healthy = await module().checkHealth(`http://127.0.0.1:${server.port}`, "secret")
+      expect(healthy).toBe(true)
+      expect(requestedPath).toBe("/global/health")
+      expect(authorization).toBe(`Basic ${Buffer.from("opencode:secret").toString("base64")}`)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test("returns false when the server responds with an error status", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: () => new Response("nope", { status: 500 }),
+    })
+
+    try {
+      expect(await module().checkHealth(`http://127.0.0.1:${server.port}`, "secret")).toBe(false)
+    } finally {
+      server.stop(true)
+    }
+  })
+
+  test("returns false for an invalid url", async () => {
+    expect(await module().checkHealth("not a url")).toBe(false)
+  })
+
+  test("returns false when the connection is refused", async () => {
+    expect(await module().checkHealth("http://127.0.0.1:1", null)).toBe(false)
+  })
+})

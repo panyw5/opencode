@@ -48,6 +48,53 @@ describe("startWithPortRetry", () => {
     expect(allocations).toBe(2)
     expect(error.message).toContain("WSL sidecar for Debian failed to start after 2 attempts")
   })
+
+  test("coerces a non-positive attempt budget to a single attempt", async () => {
+    let allocations = 0
+    const error = await startWithPortRetry({
+      component: "WSL sidecar",
+      attempts: 0,
+      allocatePort: async () => ++allocations,
+      start: async (port) => {
+        throw new Error(`Address already in use: ${port}`)
+      },
+    }).catch((error) => error)
+
+    expect(allocations).toBe(1)
+    expect(error.message).toContain("failed to start after 1 attempt:")
+    expect(error.message).not.toContain("1 attempts")
+  })
+
+  test("succeeds on the final attempt and passes attempt numbers through", async () => {
+    const seen: Array<{ port: number; attempt: number }> = []
+    const result = await startWithPortRetry({
+      component: "WSL sidecar",
+      attempts: 3,
+      allocatePort: async () => 4200 + seen.length,
+      start: async (port, attempt) => {
+        seen.push({ port, attempt })
+        if (attempt < 3) throw new Error("listen EADDRINUSE: address already in use")
+        return port
+      },
+    })
+
+    expect(result).toBe(4202)
+    expect(seen.map((entry) => entry.attempt)).toEqual([1, 2, 3])
+  })
+
+  test("preserves the original error as cause on exhaustion", async () => {
+    const original = new Error("Address already in use")
+    const error = await startWithPortRetry({
+      component: "WSL sidecar",
+      attempts: 1,
+      allocatePort: async () => 4300,
+      start: async () => {
+        throw original
+      },
+    }).catch((error) => error)
+
+    expect(error.cause).toBe(original)
+  })
 })
 
 test("recognizes Windows socket binding errors", () => {

@@ -221,7 +221,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(deps),
   )
   return SessionPrompt.layer.pipe(
-    Layer.provide(SessionRevert.defaultLayer),
+    Layer.provideMerge(SessionRevert.defaultLayer),
     Layer.provide(Image.defaultLayer),
     Layer.provide(Reference.defaultLayer),
     Layer.provide(summary),
@@ -1457,6 +1457,79 @@ noLLMServer.instance("assertNotBusy succeeds when idle", () =>
     const exit = yield* run.assertNotBusy(chat.id).pipe(Effect.exit)
     expect(Exit.isSuccess(exit)).toBe(true)
   }),
+)
+
+it.instance(
+  "revert and unrevert reject with BusyError while a loop is running",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const revert = yield* SessionRevert.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      yield* llm.hang
+      const userMsg = yield* user(chat.id, "hi")
+
+      const fiber = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      const revertExit = yield* revert.revert({ sessionID: chat.id, messageID: userMsg.id }).pipe(Effect.exit)
+      expect(Exit.isFailure(revertExit)).toBe(true)
+      if (Exit.isFailure(revertExit)) {
+        expect(Cause.squash(revertExit.cause)).toBeInstanceOf(Session.BusyError)
+        expect(Cause.squash(revertExit.cause)).toMatchObject({ _tag: "SessionBusyError", sessionID: chat.id })
+      }
+
+      const unrevertExit = yield* revert.unrevert({ sessionID: chat.id }).pipe(Effect.exit)
+      expect(Exit.isFailure(unrevertExit)).toBe(true)
+      if (Exit.isFailure(unrevertExit)) {
+        expect(Cause.squash(unrevertExit.cause)).toBeInstanceOf(Session.BusyError)
+      }
+
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(fiber)
+    }),
+  3_000,
+)
+
+it.instance(
+  "prompt on an archived session returns the last assistant without starting a run",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Pinned" })
+      yield* llm.text("final answer")
+
+      const first = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "hello" }],
+      })
+      expect(first.info.role).toBe("assistant")
+      expect(yield* llm.calls).toBe(1)
+
+      yield* sessions.setArchived({ sessionID: chat.id, time: Date.now() })
+      const before = yield* sessions.messages({ sessionID: chat.id })
+
+      const second = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "are you there?" }],
+      })
+
+      // No new run: the previous assistant message is returned unchanged,
+      // no additional LLM call happens, and no user message is written.
+      expect(second.info.id).toBe(first.info.id)
+      expect(yield* llm.calls).toBe(1)
+      const after = yield* sessions.messages({ sessionID: chat.id })
+      expect(after.length).toBe(before.length)
+    }),
+  3_000,
 )
 
 // Shell semantics

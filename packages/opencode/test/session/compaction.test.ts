@@ -882,6 +882,61 @@ describe("session.compaction.process", () => {
     }).pipe(withCompaction({ result: "compact" })),
   )
 
+  itCompaction.instance(
+    "terminal LLM failure during summary errors the summary, preserves history and skips the compacted event",
+    () => {
+      const stub = llm()
+      stub.push(
+        Stream.fail(
+          new APICallError({
+            message: "auth expired",
+            isRetryable: false,
+            statusCode: 401,
+            url: "https://example.com/v1/messages",
+            requestBodyValues: {},
+          }),
+        ),
+      )
+      return Effect.gen(function* () {
+        const bus = yield* Bus.Service
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        const msg = yield* createUserMessage(session.id, "hello")
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+
+        let compactedEvents = 0
+        const unsub = yield* bus.subscribeCallback(SessionCompaction.Event.Compacted, (evt) => {
+          if (evt.properties.sessionID !== session.id) return
+          compactedEvents++
+        })
+        yield* Effect.addFinalizer(() => Effect.sync(unsub))
+
+        const result = yield* SessionCompaction.use.process({
+          parentID: msg.id,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        expect(result).toBe("stop")
+
+        const all = yield* ssn.messages({ sessionID: session.id })
+        const summary = all.find((item) => item.info.role === "assistant" && item.info.summary)
+        expect(summary?.info.role).toBe("assistant")
+        if (summary?.info.role === "assistant") {
+          expect(summary.info.error).toBeDefined()
+          expect(summary.info.finish).toBeUndefined()
+          expect(summary.info.time.completed).toBeNumber()
+        }
+        // History must survive the failed compaction.
+        expect(all.some((item) => item.info.id === msg.id)).toBe(true)
+        // No compacted event since the summary never completed.
+        expect(compactedEvents).toBe(0)
+      }).pipe(withCompaction({ llm: stub.layer }))
+    },
+    { git: true },
+  )
+
   it.instance(
     "adds synthetic continue prompt when auto is enabled",
     Effect.gen(function* () {
