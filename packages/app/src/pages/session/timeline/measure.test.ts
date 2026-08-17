@@ -6,6 +6,7 @@ import {
   partMeasurementKey,
   sameVirtualItemGeometry,
   scheduleConnectedMeasure,
+  snapshotVirtualItems,
   shouldAdjustVirtualScroll,
   shouldCommitVirtualRowHeight,
   shouldEaseLiveBottom,
@@ -22,6 +23,17 @@ test("treats replacement virtual items with unchanged geometry as equal", () => 
   expect(sameVirtualItemGeometry(previous, { ...previous, start: 241 })).toBe(false)
   expect(sameVirtualItemGeometry(previous, { ...previous, size: 61 })).toBe(false)
   expect(sameVirtualItemGeometry(previous, { ...previous, index: 5 })).toBe(false)
+})
+
+test("keeps virtual row keys and lookups on the same snapshot", () => {
+  const first = { key: "row-a", index: 0, start: 0, size: 60 }
+  const second = { key: 2, index: 1, start: 60, size: 80 }
+  const snapshot = snapshotVirtualItems([undefined, first, second])
+
+  expect(snapshot.keys).toEqual(["row-a", "2"])
+  expect(snapshot.byKey.get("row-a")).toBe(first)
+  expect(snapshot.byKey.get("2")).toBe(second)
+  expect(snapshot.byKey.get("missing")).toBeUndefined()
 })
 
 test("does not measure an element detached before the frame", async () => {

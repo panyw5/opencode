@@ -17,6 +17,21 @@ export function sameVirtualItemGeometry(previous: VirtualItemGeometry, next: Vir
   )
 }
 
+/** One getVirtualItems() snapshot so For keys and row lookups cannot diverge. */
+export function snapshotVirtualItems<T extends { key: string | number | bigint }>(
+  items: ReadonlyArray<T | undefined>,
+) {
+  const list = items.filter((item): item is T => item !== undefined)
+  const keys: string[] = []
+  const byKey = new Map<string, T>()
+  for (const item of list) {
+    const key = String(item.key)
+    keys.push(key)
+    byKey.set(key, item)
+  }
+  return { items: list, keys, byKey }
+}
+
 export function scheduleConnectedMeasure<T extends HTMLElement>(element: T, measure: (element: T) => void) {
   return requestAnimationFrame(() => {
     if (element.isConnected) measure(element)

@@ -165,7 +165,17 @@ export default function Page() {
     })
   })
 
-  createEffect(on(sessionKey, () => {}, { defer: true }))
+  createEffect(
+    on(
+      sessionKey,
+      (key, previous) => {
+        console.debug(
+          `[session] session-key from=${previous ?? "none"} to=${key} ready=${String(sync.data.message[params.id ?? ""] !== undefined)}`,
+        )
+      },
+      { defer: true },
+    ),
+  )
 
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
@@ -2643,7 +2653,11 @@ export default function Page() {
             <div class="absolute inset-0 overflow-hidden">
               <Switch>
                 <Match when={params.id}>
-                  <Show when={messagesReady()} fallback={<div class="size-full bg-background-stronger" />}>
+                  <Show
+                    when={messagesReady() ? sessionKey() : false}
+                    keyed
+                    fallback={<div class="size-full bg-background-stronger" />}
+                  >
                     <Show
                       when={!mobileChanges()}
                       fallback={

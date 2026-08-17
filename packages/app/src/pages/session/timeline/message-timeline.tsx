@@ -7,6 +7,7 @@ import {
   onCleanup,
   onMount,
   Show,
+  untrack,
   type Accessor,
   type JSX,
 } from "solid-js"
@@ -56,6 +57,7 @@ import {
   sameVirtualItemGeometry,
   shouldAdjustVirtualScroll,
   shouldCommitVirtualRowHeight,
+  snapshotVirtualItems,
   timelineContentVersion,
   timelineMeasurementsMatchWidth,
   timelineRowContentVisibility,
@@ -267,6 +269,7 @@ export function MessageTimeline(props: {
     on(
       sessionID,
       (id, prev) => {
+        console.debug(`[timeline] session-id from=${prev ?? "none"} to=${id ?? "none"} owner=${ownerSessionKey}`)
         if (prev && prev !== id) clearToolPartHydration(prev)
         if (!id) clearToolPartHydration()
       },
@@ -520,21 +523,9 @@ export function MessageTimeline(props: {
     }
     return adjust
   }
-  const virtualItemByKey = createMemo(
-    () =>
-      new Map(
-        virtualizer
-          .getVirtualItems()
-          .filter((item): item is NonNullable<typeof item> => item !== undefined)
-          .map((item) => [item.key, item] as const),
-      ),
-  )
-  const virtualRowKeys = createMemo(() =>
-    virtualizer
-      .getVirtualItems()
-      .filter((item): item is NonNullable<typeof item> => item !== undefined)
-      .map((item) => item.key as string),
-  )
+  const virtualSnapshot = createMemo(() => snapshotVirtualItems(virtualizer.getVirtualItems()))
+  const virtualItemByKey = createMemo(() => virtualSnapshot().byKey)
+  const virtualRowKeys = createMemo(() => virtualSnapshot().keys)
 
   createEffect(() => {
     props.setRevealMessage?.((id) => {
@@ -547,6 +538,9 @@ export function MessageTimeline(props: {
 
   let overscanTimer: number | undefined
   onMount(() => {
+    console.debug(
+      `[timeline] mount session=${sessionID() ?? "none"} owner=${ownerSessionKey} cached=${String(!!initialMeasurements)} rows=${String(timelineRows().length)}`,
+    )
     overscanTimer = window.setTimeout(() => {
       overscanTimer = undefined
       const previousOverscan = renderOverscan()
@@ -555,6 +549,9 @@ export function MessageTimeline(props: {
   })
 
   onCleanup(() => {
+    console.debug(
+      `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
+    )
     clearPrependAnchor()
     timelineCache.set(ownerSessionKey, {
       version: timelineMeasurementVersion,
@@ -877,14 +874,27 @@ export function MessageTimeline(props: {
     }
   }
   function VirtualTimelineRow(input: { rowKey: string }) {
+    const liveItem = createMemo(() => virtualItemByKey().get(input.rowKey))
+    if (!untrack(() => liveItem())) {
+      console.warn(
+        `[timeline] VirtualTimelineRow missing item key=${input.rowKey} session=${sessionID() ?? "none"} snapshot=${String(virtualSnapshot().keys.length)}`,
+      )
+    }
+    return (
+      <Show when={liveItem()}>
+        {(item) => <MountedVirtualTimelineRow rowKey={input.rowKey} item={item} />}
+      </Show>
+    )
+  }
+  function MountedVirtualTimelineRow(input: { rowKey: string; item: Accessor<VirtualItem> }) {
     let element: HTMLDivElement | undefined
     let resizeObserver: ResizeObserver | undefined
     let markdownObserver: MutationObserver | undefined
-    const initialItem = virtualItemByKey().get(input.rowKey)!
-    const initialRow = timelineRowByKey().get(input.rowKey)!
+    const initialItem = input.item()
+    const initialRow = timelineRowByKey().get(input.rowKey)
     const [contentHeight, setContentHeight] = createSignal(initialItem.size)
     const item = createMemo(
-      () => virtualItemByKey().get(input.rowKey) ?? initialItem,
+      () => virtualItemByKey().get(input.rowKey) ?? input.item(),
       initialItem,
       { equals: sameVirtualItemGeometry },
     )
