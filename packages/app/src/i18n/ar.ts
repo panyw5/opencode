@@ -345,6 +345,7 @@ export const dict = {
   "context.stats.provider": "موفر",
   "context.stats.model": "نموذج",
   "context.stats.limit": "حد السياق",
+  "context.stats.limitReferencedLabel": "حد السياق (referenced from {{source}})",
   "context.stats.totalTokens": "إجمالي الرموز",
   "context.stats.usage": "استخدام",
   "context.stats.inputTokens": "رموز الإدخال",

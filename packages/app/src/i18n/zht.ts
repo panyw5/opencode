@@ -414,6 +414,7 @@ export const dict = {
   "context.stats.provider": "提供者",
   "context.stats.model": "模型",
   "context.stats.limit": "上下文限制",
+  "context.stats.limitReferencedLabel": "上下文限制 (參考自 {{source}})",
   "context.stats.totalTokens": "總 token",
   "context.stats.usage": "使用量",
   "context.stats.inputTokens": "輸入 token",

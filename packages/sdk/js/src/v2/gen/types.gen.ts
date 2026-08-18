@@ -1579,6 +1579,7 @@ export type Model = {
       [key: string]: unknown
     }
   }
+  limitSource?: string
 }
 
 export type Provider = {

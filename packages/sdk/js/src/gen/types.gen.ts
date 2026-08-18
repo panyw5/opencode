@@ -1509,6 +1509,7 @@ export type Model = {
   headers: {
     [key: string]: string
   }
+  limitSource?: string
 }
 
 export type Provider = {

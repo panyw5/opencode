@@ -378,6 +378,7 @@ export const dict = {
   "context.stats.provider": "Provajder",
   "context.stats.model": "Model",
   "context.stats.limit": "Limit konteksta",
+  "context.stats.limitReferencedLabel": "Limit konteksta (referenced from {{source}})",
   "context.stats.totalTokens": "Ukupno tokena",
   "context.stats.usage": "Korištenje",
   "context.stats.inputTokens": "Ulazni tokeni",

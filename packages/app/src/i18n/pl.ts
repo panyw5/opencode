@@ -346,6 +346,7 @@ export const dict = {
   "context.stats.provider": "Dostawca",
   "context.stats.model": "Model",
   "context.stats.limit": "Limit kontekstu",
+  "context.stats.limitReferencedLabel": "Limit kontekstu (referenced from {{source}})",
   "context.stats.totalTokens": "Całkowita liczba tokenów",
   "context.stats.usage": "Użycie",
   "context.stats.inputTokens": "Tokeny wejściowe",

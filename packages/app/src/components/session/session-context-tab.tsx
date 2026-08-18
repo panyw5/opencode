@@ -28,7 +28,7 @@ const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
 function Stat(props: { label: string; value: JSX.Element }) {
   return (
     <div class="flex flex-col gap-1">
-      <div class="text-12-regular text-text-weak">{props.label}</div>
+      <div class="text-12-regular text-text-weak whitespace-nowrap">{props.label}</div>
       <div class="text-12-medium text-text-strong">{props.value}</div>
     </div>
   )
@@ -130,7 +130,7 @@ export function SessionContextTab() {
       }),
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), sync.data.provider.all))
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), sync.data.provider.all, info()))
   const ctx = createMemo(() => metrics().context)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
@@ -172,7 +172,7 @@ export function SessionContextTab() {
 
   const breakdown = createMemo(
     on(
-      () => [ctx()?.message.id, ctx()?.input, messages().length, systemPrompt()],
+      () => [ctx()?.message?.id, ctx()?.input, messages().length, systemPrompt()],
       () => {
         const c = ctx()
         if (!c?.input) return []
@@ -199,7 +199,15 @@ export function SessionContextTab() {
     { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()) },
     { label: "context.stats.provider", value: providerLabel },
     { label: "context.stats.model", value: modelLabel },
-    { label: "context.stats.limit", value: () => formatter().number(ctx()?.limit) },
+    {
+      label: "context.stats.limit",
+      labelText: ctx()?.limitSource
+        ? language.t("context.stats.limitReferencedLabel", {
+            source: ctx()?.limitSource ?? "",
+          })
+        : undefined,
+      value: () => formatter().number(ctx()?.limit),
+    },
     { label: "context.stats.totalTokens", value: () => formatter().number(ctx()?.total) },
     { label: "context.stats.usage", value: () => formatter().percent(ctx()?.usage) },
     { label: "context.stats.inputTokens", value: () => formatter().number(ctx()?.input) },
@@ -213,8 +221,8 @@ export function SessionContextTab() {
     { label: "context.stats.assistantMessages", value: () => counts().assistant.toLocaleString(language.intl()) },
     { label: "context.stats.totalCost", value: cost },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
-    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
-  ] satisfies { label: string; value: () => JSX.Element }[]
+    { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message?.time.created) },
+  ] satisfies { label: string; labelText?: string; value: () => JSX.Element }[]
 
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
@@ -277,7 +285,12 @@ export function SessionContextTab() {
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>
-            {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
+            {(stat) => (
+              <Stat
+                label={stat.labelText ?? language.t(stat.label as Parameters<typeof language.t>[0])}
+                value={stat.value()}
+              />
+            )}
           </For>
         </div>
 

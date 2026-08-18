@@ -28,6 +28,12 @@ import * as ProviderTransform from "./transform"
 import { ModelID, ProviderID } from "./schema"
 import { ModelStatus } from "./model-status"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { findLimitReference } from "./limit-reference"
+import {
+  applyOpenRouterUpstream,
+  openrouterUpstreamWindows,
+  openrouterUpstreamWindowsSync,
+} from "./openrouter-upstream"
 
 const log = Log.create({ service: "provider" })
 
@@ -931,6 +937,7 @@ export const Model = Schema.Struct({
   headers: Schema.Record(Schema.String, Schema.String),
   release_date: Schema.String,
   variants: optionalOmitUndefined(Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Any))),
+  limitSource: optionalOmitUndefined(Schema.String),
 }).annotate({ identifier: "Model" })
 export type Model = Types.DeepMutable<Schema.Schema.Type<typeof Model>>
 
@@ -1160,6 +1167,18 @@ export function fromModelsDevProvider(provider: ModelsDev.Provider): Info {
       }
     }
   }
+  if (provider.id === "openrouter") {
+    const windows = openrouterUpstreamWindowsSync()
+    for (const [id, model] of Object.entries(models)) {
+      const upstream = windows[id]
+      if (upstream && model.limit?.context && upstream < model.limit.context) {
+        models[id] = {
+          ...model,
+          limit: { ...model.limit, context: upstream },
+        }
+      }
+    }
+  }
   return {
     id: ProviderID.make(provider.id),
     source: "custom",
@@ -1220,6 +1239,7 @@ export const layer = Layer.effect(
         const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
+        void openrouterUpstreamWindows().catch(() => {})
         const database = mapValues(catalog, toPublicInfo)
 
         const providers: Record<ProviderID, Info> = {} as Record<ProviderID, Info>
@@ -1323,6 +1343,13 @@ export const layer = Layer.effect(
               if (model.id && model.id !== modelID) return modelID
               return existingModel?.name ?? modelID
             })
+            const referenced =
+              model.limit?.context || existingModel?.limit.context
+                ? undefined
+                : applyOpenRouterUpstream(
+                    findLimitReference(model.id ?? modelID, modelsDev),
+                    openrouterUpstreamWindowsSync(),
+                  )
             const parsedModel: Model = {
               id: ModelID.make(modelID),
               api: {
@@ -1372,14 +1399,15 @@ export const layer = Layer.effect(
               },
               options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
               limit: {
-                context: model.limit?.context ?? existingModel?.limit?.context ?? 0,
-                input: model.limit?.input ?? existingModel?.limit?.input,
-                output: model.limit?.output ?? existingModel?.limit?.output ?? 0,
+                context: model.limit?.context ?? existingModel?.limit?.context ?? referenced?.context ?? 0,
+                input: model.limit?.input ?? existingModel?.limit?.input ?? referenced?.input,
+                output: model.limit?.output ?? existingModel?.limit?.output ?? referenced?.output ?? 0,
               },
               headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
               family: model.family ?? existingModel?.family ?? "",
               release_date: model.release_date ?? existingModel?.release_date ?? "",
               variants: {},
+              ...(referenced ? { limitSource: referenced.source } : {}),
             }
             const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})
             parsedModel.variants = mapValues(

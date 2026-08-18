@@ -348,6 +348,7 @@ export const dict = {
   "context.stats.provider": "Fournisseur",
   "context.stats.model": "Modèle",
   "context.stats.limit": "Limite de contexte",
+  "context.stats.limitReferencedLabel": "Limite de contexte (referenced from {{source}})",
   "context.stats.totalTokens": "Total des jetons",
   "context.stats.usage": "Utilisation",
   "context.stats.inputTokens": "Jetons d'entrée",

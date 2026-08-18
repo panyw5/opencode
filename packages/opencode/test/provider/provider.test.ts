@@ -1103,6 +1103,29 @@ it.instance(
 )
 
 it.instance(
+  "fills missing custom-provider limits from a dated openrouter reference",
+  Effect.gen(function* () {
+    const providers = yield* list
+    const model = providers[ProviderID.make("axonhub")].models["deepseek-v4-flash-0731"]
+    expect(model.limit.context).toBeGreaterThan(0)
+    expect(model.limitSource).toBeDefined()
+  }),
+  {
+    config: {
+      provider: {
+        axonhub: {
+          name: "AxonHub",
+          npm: "@ai-sdk/openai-compatible",
+          env: [],
+          models: { "deepseek-v4-flash-0731": { name: "deepseek-v4-flash-0731" } },
+          options: { apiKey: "test" },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
   "provider options are deeply merged",
   Effect.gen(function* () {
     yield* set("ANTHROPIC_API_KEY", "test-api-key")

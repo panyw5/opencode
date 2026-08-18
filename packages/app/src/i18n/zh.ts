@@ -568,6 +568,7 @@ export const dict = {
   "context.stats.provider": "提供商",
   "context.stats.model": "模型",
   "context.stats.limit": "上下文限制",
+  "context.stats.limitReferencedLabel": "上下文限制 (参考自 {{source}})",
   "context.stats.totalTokens": "总 token",
   "context.stats.usage": "使用率",
   "context.stats.inputTokens": "输入 token",

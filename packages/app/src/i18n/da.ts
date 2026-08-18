@@ -376,6 +376,7 @@ export const dict = {
   "context.stats.provider": "Udbyder",
   "context.stats.model": "Model",
   "context.stats.limit": "Kontekstgrænse",
+  "context.stats.limitReferencedLabel": "Kontekstgrænse (referenced from {{source}})",
   "context.stats.totalTokens": "Samlede tokens",
   "context.stats.usage": "Forbrug",
   "context.stats.inputTokens": "Input-tokens",

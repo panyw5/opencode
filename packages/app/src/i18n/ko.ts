@@ -348,6 +348,7 @@ export const dict = {
   "context.stats.provider": "공급자",
   "context.stats.model": "모델",
   "context.stats.limit": "컨텍스트 제한",
+  "context.stats.limitReferencedLabel": "컨텍스트 제한 (referenced from {{source}})",
   "context.stats.totalTokens": "총 토큰",
   "context.stats.usage": "사용량",
   "context.stats.inputTokens": "입력 토큰",

@@ -381,6 +381,7 @@ export const dict = {
   "context.stats.provider": "Sağlayıcı",
   "context.stats.model": "Model",
   "context.stats.limit": "Bağlam Limiti",
+  "context.stats.limitReferencedLabel": "Bağlam Limiti (referenced from {{source}})",
   "context.stats.totalTokens": "Toplam Token",
   "context.stats.usage": "Kullanım",
   "context.stats.inputTokens": "Girdi Tokenleri",

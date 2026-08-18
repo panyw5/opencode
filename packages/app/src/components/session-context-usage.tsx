@@ -67,7 +67,8 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       }),
   )
 
-  const metrics = createMemo(() => getSessionContextMetrics(messages(), sync.data.provider.all))
+  const session = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
+  const metrics = createMemo(() => getSessionContextMetrics(messages(), sync.data.provider.all, session()))
   const context = createMemo(() => metrics().context)
   const cost = createMemo(() => usd().format(metrics().totalCost))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
@@ -163,7 +164,15 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const stats = createMemo(() => [
     { label: "context.stats.provider", value: context()?.providerLabel ?? "—" },
     { label: "context.stats.model", value: context()?.modelLabel ?? "—" },
-    { label: "context.stats.limit", value: formatter().number(context()?.limit) },
+    {
+      label: "context.stats.limit",
+      labelText: context()?.limitSource
+        ? language.t("context.stats.limitReferencedLabel", {
+            source: context()?.limitSource ?? "",
+          })
+        : undefined,
+      value: formatter().number(context()?.limit),
+    },
     { label: "context.stats.totalTokens", value: formatter().number(context()?.total) },
     { label: "context.stats.usage", value: formatter().percent(context()?.usage) },
     { label: "context.stats.inputTokens", value: formatter().number(context()?.input) },
@@ -179,14 +188,14 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
 
   const details = () => (
     <div class="flex flex-col gap-4">
-      <div class="grid grid-cols-2 gap-x-5 gap-y-2.5">
+      <div class="grid grid-cols-[auto_1fr] gap-x-5 gap-y-2.5">
         <For each={stats()}>
           {(stat) => (
             <>
-              <div class="text-13-regular text-text-weak">
-                {language.t(stat.label as Parameters<typeof language.t>[0])}
+              <div class="text-13-regular text-text-weak whitespace-nowrap">
+                {stat.labelText ?? language.t(stat.label as Parameters<typeof language.t>[0])}
               </div>
-              <div class="text-13-medium text-text-strong text-right truncate">{stat.value}</div>
+              <div class="text-13-medium text-text-strong text-right truncate min-w-0">{stat.value}</div>
             </>
           )}
         </For>

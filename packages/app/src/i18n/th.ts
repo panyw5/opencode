@@ -376,6 +376,7 @@ export const dict = {
   "context.stats.provider": "ผู้ให้บริการ",
   "context.stats.model": "โมเดล",
   "context.stats.limit": "ขีดจำกัดบริบท",
+  "context.stats.limitReferencedLabel": "ขีดจำกัดบริบท (referenced from {{source}})",
   "context.stats.totalTokens": "โทเค็นทั้งหมด",
   "context.stats.usage": "การใช้งาน",
   "context.stats.inputTokens": "โทเค็นนำเข้า",

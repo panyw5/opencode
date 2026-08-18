@@ -345,6 +345,7 @@ export const dict = {
   "context.stats.provider": "プロバイダー",
   "context.stats.model": "モデル",
   "context.stats.limit": "コンテキスト制限",
+  "context.stats.limitReferencedLabel": "コンテキスト制限 (referenced from {{source}})",
   "context.stats.totalTokens": "総トークン数",
   "context.stats.usage": "使用量",
   "context.stats.inputTokens": "入力トークン",

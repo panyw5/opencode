@@ -60,7 +60,7 @@ describe("getSessionContextMetrics", () => {
     const metrics = getSessionContextMetrics(messages, providers)
 
     expect(metrics.totalCost).toBe(1.75)
-    expect(metrics.context?.message.id).toBe("a2")
+    expect(metrics.context?.message?.id).toBe("a2")
     expect(metrics.context?.total).toBe(500)
     expect(metrics.context?.usage).toBe(50)
     expect(metrics.context?.providerLabel).toBe("OpenAI")
@@ -87,8 +87,8 @@ describe("getSessionContextMetrics", () => {
     messages.push(assistant("a2", { input: 100, output: 20, reasoning: 0, read: 0, write: 0 }, 0.75))
     const two = getSessionContextMetrics(messages, providers)
 
-    expect(one.context?.message.id).toBe("a1")
-    expect(two.context?.message.id).toBe("a2")
+    expect(one.context?.message?.id).toBe("a1")
+    expect(two.context?.message?.id).toBe("a2")
     expect(two.totalCost).toBe(1)
   })
 
@@ -97,5 +97,39 @@ describe("getSessionContextMetrics", () => {
 
     expect(metrics.totalCost).toBe(0)
     expect(metrics.context).toBeUndefined()
+  })
+
+  test("falls back to session model and referenced limit when tokens are missing", () => {
+    const messages = [user("u1"), assistant("a1", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0, "axonhub", "deepseek-v4-flash-0731")]
+    const providers = [
+      {
+        id: "axonhub",
+        name: "AxonHub",
+        models: {
+          "deepseek-v4-flash-0731": {
+            name: "deepseek-v4-flash-0731",
+            limit: { context: 0 },
+          },
+        },
+      },
+      {
+        id: "openrouter",
+        name: "OpenRouter",
+        models: {
+          "deepseek/deepseek-v4-flash-0731": {
+            name: "DeepSeek V4 Flash 0731",
+            limit: { context: 1_310_720 },
+          },
+        },
+      },
+    ]
+
+    const metrics = getSessionContextMetrics(messages, providers)
+
+    expect(metrics.context?.providerLabel).toBe("AxonHub")
+    expect(metrics.context?.modelLabel).toBe("deepseek-v4-flash-0731")
+    expect(metrics.context?.limit).toBe(1_310_720)
+    expect(metrics.context?.limitSource).toBe("openrouter")
+    expect(metrics.context?.usage).toBe(0)
   })
 })

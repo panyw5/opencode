@@ -583,6 +583,7 @@ export const dict = {
   "context.stats.provider": "Provider",
   "context.stats.model": "Model",
   "context.stats.limit": "Context Limit",
+  "context.stats.limitReferencedLabel": "Context Limit (referenced from {{source}})",
   "context.stats.totalTokens": "Total Tokens",
   "context.stats.usage": "Usage",
   "context.stats.inputTokens": "Input Tokens",
