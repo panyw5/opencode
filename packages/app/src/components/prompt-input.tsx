@@ -2216,7 +2216,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     variant="ghost"
                     class="size-9 shrink-0 rounded-full"
                     iconSize="medium"
-                    style={buttons()}
+                    style={{ ...buttons(), "border-radius": "9999px" }}
                     onClick={toggleRead}
                     aria-label={language.t("session.read")}
                     aria-pressed={read()}
