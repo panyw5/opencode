@@ -805,12 +805,15 @@ function DraftTab(props: { directory: string; closable: boolean; onClose: () => 
       <div
         data-component="session-tab"
         data-active="true"
-        class="group relative flex h-7 min-w-28 max-w-80 cursor-default select-none items-center gap-1.5 rounded-[10px] bg-surface-base-active pl-3 pr-2 text-13-medium italic text-text-strong"
+        class="group relative flex h-7 min-w-28 max-w-80 cursor-default select-none items-center gap-1.5 rounded-[10px] bg-surface-base-active pl-2 pr-1 text-13-medium italic text-text-strong"
       >
-        <span class="min-w-0 truncate">{language.t("command.session.new")}</span>
+        <span class="session-tab-main-icon flex shrink-0" aria-hidden="true">
+          <Icon name="bubble-5" size="small" />
+        </span>
+        <span class="min-w-0 flex-1 truncate">{language.t("command.session.new")}</span>
         <Show when={props.closable}>
           <span
-            class="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-opacity hover:bg-surface-base-hover hover:text-icon-strong-base"
+            class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow] hover:bg-surface-base-hover hover:text-icon-strong-base"
             role="button"
             tabIndex={-1}
             aria-label={language.t("common.closeTab")}
