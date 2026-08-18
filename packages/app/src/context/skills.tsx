@@ -38,7 +38,7 @@ export const { use: useSkills, provider: SkillsProvider } = createSimpleContext(
     return {
       list: createMemo(() => state.list),
       loading: createMemo(() => state.loading),
-      reload: () => loadSkills(sdk).then((list) => setState("list", list)),
+      reload: () => loadSkills(sdk, { force: true }).then((list) => setState("list", list)),
     }
   },
 })

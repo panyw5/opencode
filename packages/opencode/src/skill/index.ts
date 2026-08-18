@@ -181,6 +181,7 @@ const discoverSkills = Effect.fnUntraced(function* (
   worktree: string,
 ) {
   const state: ScanState = { matches: new Set(), dirs: new Set() }
+  log.info("discover start", { directory, worktree, disableExternalSkills, disableClaudeCodeSkills })
 
   const externalDirs: string[] = []
   if (!disableExternalSkills) {
@@ -190,6 +191,7 @@ const discoverSkills = Effect.fnUntraced(function* (
     for (const dir of externalDirs) {
       const root = path.join(global.home, dir)
       if (!(yield* fsys.isDir(root))) continue
+      log.info("discover global root", { root, pattern: EXTERNAL_SKILL_PATTERN })
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "global" })
     }
 
@@ -198,12 +200,14 @@ const discoverSkills = Effect.fnUntraced(function* (
       .pipe(Effect.catch(() => Effect.succeed([] as string[])))
 
     for (const root of upDirs) {
+      log.info("discover project root", { root, pattern: EXTERNAL_SKILL_PATTERN })
       yield* scan(state, root, EXTERNAL_SKILL_PATTERN, { dot: true, scope: "project" })
     }
   }
 
   const configDirs = yield* config.directories()
   for (const dir of configDirs) {
+    log.info("discover config root", { root: dir, pattern: OPENCODE_SKILL_PATTERN })
     yield* scan(state, dir, OPENCODE_SKILL_PATTERN)
   }
 
@@ -233,12 +237,13 @@ const discoverSkills = Effect.fnUntraced(function* (
 })
 
 const loadSkills = Effect.fnUntraced(function* (state: State, discovered: DiscoveryState, bus: Bus.Interface) {
+  log.info("load start", { matches: discovered.matches })
   yield* Effect.forEach(discovered.matches, (match) => add(state, match, bus), {
     concurrency: "unbounded",
     discard: true,
   })
 
-  log.info("init", { count: Object.keys(state.skills).length })
+  log.info("init", { count: Object.keys(state.skills).length, names: Object.keys(state.skills).toSorted() })
 })
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Skill") {}

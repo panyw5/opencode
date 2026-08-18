@@ -368,6 +368,7 @@ const main = Effect.gen(function* () {
   let reloading = Promise.resolve()
   const startSidecar = async (mode: "startup" | "reload", migrateDatabase: boolean) => {
     const generation = ++sidecarGeneration
+    logger.log("sidecar start requested", { mode, migrateDatabase, generation })
     await killSidecar()
     logger.log("sidecar connection started", { url })
 
@@ -403,7 +404,7 @@ const main = Effect.gen(function* () {
 
     await health.wait
 
-    logger.log("loading task finished")
+    logger.log("loading task finished", { mode, generation })
   }
 
   const queueBackendReload = (reason: string) => {
@@ -414,12 +415,14 @@ const main = Effect.gen(function* () {
         setInitStep({ phase: "server_waiting" })
         await startSidecar("reload", false)
         setInitStep({ phase: "done" })
+        logger.log("sidecar reload finished", { reason })
       })
     reloading = restart.catch(() => {})
     return restart
   }
 
   reloadBackend = () => {
+    logger.log("manual backend reload requested")
     return queueBackendReload("manual reload")
   }
 

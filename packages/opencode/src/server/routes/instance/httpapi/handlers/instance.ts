@@ -11,6 +11,9 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "httpapi.instance" })
 
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
@@ -79,7 +82,13 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     })
 
     const getSkill = Effect.fn("InstanceHttpApi.skill")(function* () {
-      return yield* skill.all()
+      const result = yield* skill.all()
+      log.info("skills response", {
+        count: result.length,
+        names: result.map((item) => item.name).toSorted(),
+        locations: result.map((item) => `${item.name}=${item.location}`).toSorted(),
+      })
+      return result
     })
 
     const getLsp = Effect.fn("InstanceHttpApi.lsp")(function* () {

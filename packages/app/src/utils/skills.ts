@@ -28,10 +28,12 @@ export function cachedSkills(sdk: ReturnType<typeof useSDK>) {
   return cache.get(key(sdk))
 }
 
-export async function loadSkills(sdk: ReturnType<typeof useSDK>) {
+export async function loadSkills(sdk: ReturnType<typeof useSDK>, options?: { force?: boolean }) {
   const id = key(sdk)
   const hit = cache.get(id)
-  if (hit) return hit
+  if (hit && !options?.force) return hit
+
+  if (options?.force) cache.delete(id)
 
   const task = wait.get(id)
   if (task) return task

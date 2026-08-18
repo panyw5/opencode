@@ -260,6 +260,8 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     reloadBackend: async () => {
       await desktopApi.reloadBackend()
+      console.info("[desktop] backend reload completed, notifying renderer")
+      window.dispatchEvent(new Event("opencode:backend-reloaded"))
     },
 
     back() {

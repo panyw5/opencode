@@ -3,7 +3,7 @@ import { createContext, createEffect, createSignal, getOwner, onCleanup, useCont
 import { createGlobalEmitter, type GlobalEmitter } from "@solid-primitives/event-bus"
 import z from "zod"
 import { createSdkForServer } from "@/utils/server"
-import { domainFromIntegration, type DomainId } from "@/pages/layout/extra-agents"
+import { domainFromIntegration, mainDomain, type DomainId } from "@/pages/layout/extra-agents"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
 import { useServer } from "./server"
@@ -374,6 +374,22 @@ export function GlobalSDKProvider(props: ParentProps) {
       streams.delete(domain)
     }
   })
+
+  const onBackendReloaded = () => {
+    const domain = mainDomain
+    const conn = server.currentFor(domain)
+    if (!conn) {
+      console.warn(`[global-sdk] backend reload ignored: no server for domain=${domain}`)
+      return
+    }
+
+    const nextVersion = (state()[domain]?.version ?? 0) + 1
+    console.info(`[global-sdk] backend reload received domain=${domain} version=${nextVersion}`)
+    setState((prev) => ({ ...prev, [domain]: createRuntime(conn, nextVersion, domain) }))
+  }
+
+  window.addEventListener("opencode:backend-reloaded", onBackendReloaded)
+  onCleanup(() => window.removeEventListener("opencode:backend-reloaded", onBackendReloaded))
 
   onCleanup(() => {
     for (const stream of streams.values()) stream.stop()
