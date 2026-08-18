@@ -13,6 +13,7 @@ import { Config } from "@/config/config"
 import { Effect, Exit, Option, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import * as EffectLogger from "@opencode-ai/core/effect/logger"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
@@ -22,6 +23,7 @@ export interface TaskPromptOps {
 }
 
 const id = "task"
+const elog = EffectLogger.create({ service: "tool.task" })
 const BACKGROUND_DESCRIPTION = [
   "",
   "",
@@ -254,27 +256,77 @@ export const TaskTool = Tool.define(
         return result.parts.findLast((item) => item.type === "text")?.text ?? ""
       })
 
-      const resumeWhenIdle: (input: { userID: MessageID; state: "completed" | "error" }) => Effect.Effect<void> =
-        Effect.fn("TaskTool.resumeWhenIdle")(function* (input: { userID: MessageID; state: "completed" | "error" }) {
-          const latest = yield* sessions
-            .findMessage(ctx.sessionID, (item) => item.info.role === "user")
-            .pipe(Effect.orDie)
-          if (Option.isNone(latest)) return
-          if (latest.value.info.id !== input.userID) return
-          const activeAssistant = yield* sessions
-            .findMessage(
-              ctx.sessionID,
-              (item) => item.info.role === "assistant" && typeof item.info.time.completed !== "number",
-            )
-            .pipe(Effect.orDie)
-          if ((yield* status.get(ctx.sessionID)).type !== "idle" || Option.isSome(activeAssistant)) {
-            yield* Effect.sleep("300 millis")
-            return yield* resumeWhenIdle(input)
+      const resumeWhenIdle: (
+        input: { userID: MessageID; state: "completed" | "error" },
+        retries?: number,
+      ) => Effect.Effect<void> = Effect.fn("TaskTool.resumeWhenIdle")(function* (
+        input: { userID: MessageID; state: "completed" | "error" },
+        retries = 0,
+      ) {
+        const MAX_RETRIES = 200 // 200 * 300ms = 60 seconds timeout
+
+        if (retries > MAX_RETRIES) {
+          yield* elog.warn("Background task resume timeout", {
+            sessionID: ctx.sessionID,
+            userID: input.userID,
+            retries,
+            description: params.description,
+          })
+          return
+        }
+
+        // Check if there is a newer **real user input** (not synthetic) after this notification
+        const latestRealUser = yield* sessions
+          .findMessage(ctx.sessionID, (item) => {
+            if (item.info.role !== "user") return false
+            if (item.info.id <= input.userID) return false
+            // Check if it's a real user input (not synthetic)
+            return !item.parts.some((p) => p.type === "text" && p.synthetic === true)
+          })
+          .pipe(Effect.orDie)
+
+        if (Option.isSome(latestRealUser)) {
+          yield* elog.info("Background task resume cancelled by user input", {
+            sessionID: ctx.sessionID,
+            backgroundUserID: input.userID,
+            realUserID: latestRealUser.value.info.id,
+          })
+          return
+        }
+
+        const activeAssistant = yield* sessions
+          .findMessage(
+            ctx.sessionID,
+            (item) => item.info.role === "assistant" && typeof item.info.time.completed !== "number",
+          )
+          .pipe(Effect.orDie)
+
+        const currentStatus = yield* status.get(ctx.sessionID)
+
+        if (currentStatus.type !== "idle" || Option.isSome(activeAssistant)) {
+          if (retries === 0) {
+            yield* elog.debug("Background task waiting for idle", {
+              sessionID: ctx.sessionID,
+              userID: input.userID,
+              status: currentStatus.type,
+              hasActiveAssistant: Option.isSome(activeAssistant),
+            })
           }
-          yield* ops
-            .loop({ sessionID: ctx.sessionID })
-            .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+          yield* Effect.sleep("300 millis")
+          return yield* resumeWhenIdle(input, retries + 1)
+        }
+
+        yield* elog.info("Background task triggering loop", {
+          sessionID: ctx.sessionID,
+          userID: input.userID,
+          description: params.description,
+          state: input.state,
         })
+
+        yield* ops
+          .loop({ sessionID: ctx.sessionID })
+          .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+      })
 
       const continueIfIdle = Effect.fn("TaskTool.continueIfIdle")(function* (input: {
         userID: MessageID
@@ -311,6 +363,15 @@ export const TaskTool = Tool.define(
             },
           ],
         })
+
+        yield* elog.info("Background task notification injected", {
+          sessionID: ctx.sessionID,
+          taskSessionID: nextSession.id,
+          description: params.description,
+          state,
+          messageID: message.info.id,
+        })
+
         yield* continueIfIdle({ userID: message.info.id, state })
       })
 
