@@ -3990,7 +3990,6 @@ export default function ConfigPage() {
     clawRev: 0,
     gaRev: 0,
     hmRev: 0,
-    mcpRev: 0,
     commandRev: 0,
     cmdTitle: "",
     cmdPath: "",
@@ -4022,7 +4021,7 @@ export default function ConfigPage() {
 
   function bump(
     ...list: Array<
-      "workspaceRev" | "skillRev" | "pluginRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "mcpRev" | "commandRev"
+      "workspaceRev" | "skillRev" | "pluginRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "commandRev"
     >
   ) {
     list.forEach((key) => setState(key, (value) => value + 1))
@@ -4196,7 +4195,6 @@ export default function ConfigPage() {
         await globalSync.updateConfig({ mcp: { ...current, [n]: config as never } })
       }
       setState("mcpDirty", false)
-      bump("mcpRev")
       if (isNew) {
         batch(() => {
           setState("pick", `mcp:${n}`)
@@ -4240,7 +4238,6 @@ export default function ConfigPage() {
       }
     }
     setState("pick", "")
-    bump("mcpRev")
   }
 
   function toggleMcp(name: string, enabled: boolean) {
@@ -4256,7 +4253,6 @@ export default function ConfigPage() {
       })
       .finally(() => {
         setState("mcpBusy", "")
-        bump("mcpRev")
       })
   }
 
