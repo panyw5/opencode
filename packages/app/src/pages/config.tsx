@@ -3985,6 +3985,7 @@ export default function ConfigPage() {
     reloadingBackend: false,
     workspaceRev: 0,
     skillRev: 0,
+    pluginRev: 0,
     agentRev: 0,
     clawRev: 0,
     gaRev: 0,
@@ -4020,7 +4021,9 @@ export default function ConfigPage() {
   })
 
   function bump(
-    ...list: Array<"workspaceRev" | "skillRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "mcpRev" | "commandRev">
+    ...list: Array<
+      "workspaceRev" | "skillRev" | "pluginRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "mcpRev" | "commandRev"
+    >
   ) {
     list.forEach((key) => setState(key, (value) => value + 1))
   }
@@ -5370,7 +5373,7 @@ export default function ConfigPage() {
   }
 
   const [diskProjectPlugins] = createResource(
-    () => [state.skillRev, openedKey()] as const,
+    () => [state.pluginRev, openedKey()] as const,
     async () => {
       const list = untrack(opened)
       return Promise.all(
@@ -5420,7 +5423,7 @@ export default function ConfigPage() {
   let projectPluginConfigsRun = 0
   createEffect(
     on(
-      () => [state.skillRev, openedKey()] as const,
+      () => [state.pluginRev, openedKey()] as const,
       () => {
         const run = ++projectPluginConfigsRun
         void (async () => {
@@ -6317,7 +6320,7 @@ export default function ConfigPage() {
           title: language.t("toast.server.reloadBackend.success.title"),
           description: language.t("toast.server.reloadBackend.success.description"),
         })
-        bump("workspaceRev", "skillRev", "agentRev", "clawRev", "gaRev", "hmRev")
+        bump("workspaceRev", "skillRev", "pluginRev", "agentRev", "clawRev", "gaRev", "hmRev")
       })
       .catch((err: unknown) => {
         showToast({
@@ -6372,7 +6375,7 @@ export default function ConfigPage() {
     await refreshAfterConfigWrite({
       source: `jsonc-agent:${name}`,
       refreshConfig: () => globalSync.refreshConfig(mainDomain),
-      refresh: () => bump("workspaceRev", "agentRev"),
+      refresh: () => bump("agentRev"),
     })
     console.info("[config] jsonc agent save completed", { name })
     showToast({ variant: "success", title: t("common.save"), description: name })
@@ -7653,7 +7656,7 @@ export default function ConfigPage() {
     })
     await platform.writeConfigFile(target.file.path, patchText(target.text, ["plugin"], next))
     await globalSDK.client.instance.dispose({ directory: item.root }).catch(() => undefined)
-    bump("skillRev")
+    bump("pluginRev")
   }
 
   function togglePlugin(item: PluginItem, enabled: boolean) {
