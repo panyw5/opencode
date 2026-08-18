@@ -2840,9 +2840,15 @@ export default function Layout(props: ParentProps) {
   createEffect(
     on(
       () => {
-        return [pageReady(), routeSlug(), params.id, currentProject()?.root, routeDir(), onSessionRoute()] as const
+        return [pageReady(), layoutReady(), routeSlug(), params.id, currentProject()?.root, routeDir(), onSessionRoute()] as const
       },
-      ([ready, slug, id, root, dir, sessionRoute]) => {
+      ([ready, persistedReady, slug, id, root, dir, sessionRoute]) => {
+        if (!persistedReady) {
+          if (sessionRoute && id) {
+            console.debug(`[session-bar] route sync waiting layout storage directory=${dir || "none"} id=${id}`)
+          }
+          return
+        }
         if (!ready || !slug || !dir || !sessionRoute) {
           activeRoute.session = ""
           activeRoute.sessionProject = ""

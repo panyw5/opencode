@@ -91,10 +91,13 @@ export function clearSessionPrefetch(directory: string, sessionIDs: Iterable<str
 export function clearSessionPrefetchDirectory(directory: string) {
   const prefix = `${directory}\n`
   const keys = new Set([...cache.keys(), ...inflight.keys()])
+  let removed = 0
   for (const id of keys) {
     if (!id.startsWith(prefix)) continue
     rev.set(id, version(id) + 1)
     cache.delete(id)
     inflight.delete(id)
+    removed += 1
   }
+  if (removed > 0) console.debug(`[session-prefetch] clear-directory directory=${directory} removed=${String(removed)}`)
 }

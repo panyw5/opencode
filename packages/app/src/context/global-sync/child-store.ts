@@ -52,6 +52,7 @@ export function createChildStoreManager(input: {
     vcs: input.vcs,
     limit: 5,
     message: {},
+    session_history: {},
     part: {},
   })
 

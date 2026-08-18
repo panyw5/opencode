@@ -526,6 +526,18 @@ export function MessageTimeline(props: {
   const virtualSnapshot = createMemo(() => snapshotVirtualItems(virtualizer.getVirtualItems()))
   const virtualItemByKey = createMemo(() => virtualSnapshot().byKey)
   const virtualRowKeys = createMemo(() => virtualSnapshot().keys)
+  let lastRenderTrace = ""
+  createEffect(() => {
+    const rows = timelineRows()
+    const snapshot = virtualSnapshot()
+    const messageCount = sessionMessages().length
+    const trace = `${sessionID() ?? "none"}:${messageCount}:${rows.length}:${snapshot.keys.length}:${snapshot.keys[0] ?? "none"}:${snapshot.keys.at(-1) ?? "none"}`
+    if (trace === lastRenderTrace) return
+    lastRenderTrace = trace
+    console.debug(
+      `[timeline] render-state sid=${sessionID() ?? "none"} messages=${String(messageCount)} rows=${String(rows.length)} virtual=${String(snapshot.keys.length)} first=${snapshot.keys[0] ?? "none"} last=${snapshot.keys.at(-1) ?? "none"}`,
+    )
+  })
 
   createEffect(() => {
     props.setRevealMessage?.((id) => {

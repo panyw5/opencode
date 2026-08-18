@@ -13,6 +13,7 @@ import { markSessionProfile } from "@/utils/session-profile"
 import { useGlobalSync } from "./global-sync"
 import { useSDK } from "./sdk"
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
+import type { SessionHistoryMeta } from "./global-sync/types"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
@@ -34,6 +35,11 @@ function runInflight(map: Map<string, Promise<void>>, key: string, task: () => P
 const keyFor = (directory: string, id: string) => `${directory}\n${id}`
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
+
+// SyncProvider is recreated when the route changes directory, but its requests
+// still write into the shared GlobalSync child store. Reject an older provider's
+// response once a newer request for the same directory/session has started.
+const messageLoadGeneration = new Map<string, number>()
 
 function merge<T extends { id: string }>(a: readonly T[], b: readonly T[]) {
   const map = new Map(a.map((item) => [item.id, item] as const))
@@ -414,12 +420,34 @@ const initialMessagePageSize = 80
       mode?: "replace" | "prepend"
     }) => {
       const key = keyFor(input.directory, input.sessionID)
-      if (meta.loading[key]) return
+      if (meta.loading[key]) {
+        console.debug(
+          `[sync] messages skip-loading directory=${input.directory} sid=${input.sessionID} mode=${input.mode ?? "replace"}`,
+        )
+        return
+      }
 
+      const generation = (messageLoadGeneration.get(key) ?? 0) + 1
+      messageLoadGeneration.set(key, generation)
+      let committed = false
+      console.debug(
+        `[sync] messages load-start directory=${input.directory} sid=${input.sessionID} mode=${input.mode ?? "replace"} limit=${String(input.limit)} before=${input.before ?? "none"} cached=${String(count(input.directory, input.sessionID))}`,
+      )
       setMeta("loading", key, true)
       await fetchMessages(input)
         .then((page) => {
-          if (!tracked(input.directory, input.sessionID)) return
+          if (!tracked(input.directory, input.sessionID)) {
+            console.debug(
+              `[sync] messages page-discarded directory=${input.directory} sid=${input.sessionID} reason=untracked count=${String(page.session.length)}`,
+            )
+            return
+          }
+          if (messageLoadGeneration.get(key) !== generation) {
+            console.debug(
+              `[sync] messages page-discarded directory=${input.directory} sid=${input.sessionID} reason=stale-generation generation=${String(generation)} current=${String(messageLoadGeneration.get(key) ?? "none")}`,
+            )
+            return
+          }
           const next = mergeOptimisticPage(page, getOptimistic(input.directory, input.sessionID))
           for (const messageID of next.confirmed) {
             clearOptimistic(input.directory, input.sessionID, messageID)
@@ -427,6 +455,11 @@ const initialMessagePageSize = 80
           const [store] = globalSync.child(input.directory, { bootstrap: false })
           const cached = input.mode === "prepend" ? (store.message[input.sessionID] ?? []) : []
           const message = input.mode === "prepend" ? merge(cached, next.session) : next.session
+          const previousShow = meta.show[key]
+          const nextShow = previousShow !== undefined && previousShow > message.length ? message.length : previousShow
+          console.debug(
+            `[sync] messages page-ready directory=${input.directory} sid=${input.sessionID} mode=${input.mode ?? "replace"} fetched=${String(next.session.length)} cached=${String(cached.length)} merged=${String(message.length)} cursor=${String(!!next.cursor)} complete=${String(next.complete)}`,
+          )
           markSessionProfile(input.sessionID, "store-commit", `count=${String(message.length)}`)
           batch(() => {
             input.setStore("message", input.sessionID, reconcile(message, { key: "id" }))
@@ -437,9 +470,15 @@ const initialMessagePageSize = 80
               )
               if (filtered.length) input.setStore("part", p.id, reconcileFetchedParts(filtered))
             }
-            if ((meta.show[key] ?? 0) > message.length) setMeta("show", key, message.length)
+            if (nextShow !== previousShow) setMeta("show", key, nextShow)
             setMeta("cursor", key, next.cursor)
             setMeta("complete", key, next.complete)
+            input.setStore("session_history", input.sessionID, {
+              cursor: next.cursor,
+              complete: next.complete,
+              show: nextShow,
+              at: Date.now(),
+            } satisfies SessionHistoryMeta)
             setSessionPrefetch({
               directory: input.directory,
               sessionID: input.sessionID,
@@ -448,6 +487,16 @@ const initialMessagePageSize = 80
               complete: next.complete,
             })
           })
+          committed = true
+          console.debug(
+            `[sync] messages store-committed directory=${input.directory} sid=${input.sessionID} count=${String(store.message[input.sessionID]?.length ?? 0)} show=${String(meta.show[key] ?? "none")} loading=${String(meta.loading[key] ?? false)}`,
+          )
+        })
+        .catch((error) => {
+          console.debug(
+            `[sync] messages load-error directory=${input.directory} sid=${input.sessionID} mode=${input.mode ?? "replace"} error=${error instanceof Error ? error.message : String(error)}`,
+          )
+          throw error
         })
         .finally(() => {
           setMeta(
@@ -459,7 +508,11 @@ const initialMessagePageSize = 80
               draft.loading[key] = false
             }),
           )
+          console.debug(
+            `[sync] messages load-end directory=${input.directory} sid=${input.sessionID} mode=${input.mode ?? "replace"} count=${String(count(input.directory, input.sessionID))} show=${String(meta.show[key] ?? "none")} loading=${String(meta.loading[key] ?? false)}`,
+          )
         })
+      return committed
     }
 
     return {
@@ -567,13 +620,38 @@ const initialMessagePageSize = 80
 
           touch(directory, setStore, sessionID)
 
+          const shared = store.session_history?.[sessionID]
           const seeded = getSessionPrefetch(directory, sessionID)
-          if (seeded && store.message[sessionID] !== undefined && meta.complete[key] === undefined) {
+          console.debug(
+            `[sync] sync-enter directory=${directory} sid=${sessionID} force=${String(!!opts?.force)} messages=${String(store.message[sessionID]?.length ?? 0)} metaComplete=${String(meta.complete[key] ?? "none")} metaShow=${String(meta.show[key] ?? "none")} shared=${shared ? `${String(shared.complete)}:${String(shared.show ?? "none")}` : "none"} prefetch=${seeded ? `${String(seeded.count)}:${String(seeded.complete)}:${String(seeded.at)}` : "none"}`,
+          )
+          if (shared && store.message[sessionID] !== undefined && meta.complete[key] === undefined) {
+            batch(() => {
+              setMeta("cursor", key, shared.cursor)
+              setMeta("complete", key, shared.complete)
+              setMeta("show", key, shared.show)
+              setMeta("loading", key, false)
+            })
+          } else if (seeded && store.message[sessionID] !== undefined && meta.complete[key] === undefined) {
             batch(() => {
               setMeta("cursor", key, seeded.cursor)
               setMeta("complete", key, seeded.complete)
               setMeta("loading", key, false)
             })
+            setStore("session_history", sessionID, {
+              cursor: seeded.cursor,
+              complete: seeded.complete,
+              show: seeded.count,
+              at: seeded.at,
+            } satisfies SessionHistoryMeta)
+          } else if (store.message[sessionID] !== undefined && meta.complete[key] === undefined) {
+            // The directory provider can be recreated after prefetch metadata is
+            // intentionally cleared. Keep the existing message cache visible while
+            // the new provider rebuilds its cursor.
+            setMeta("show", key, store.message[sessionID]?.length ?? 0)
+            console.debug(
+              `[sync] sync-cache-seed directory=${directory} sid=${sessionID} show=${String(store.message[sessionID]?.length ?? 0)} reason=message-cache-without-meta`,
+            )
           }
 
           return runInflight(inflight, key, async () => {
@@ -604,6 +682,9 @@ const initialMessagePageSize = 80
             }
 
             const limit = Math.max(view(directory, sessionID), initialMessagePageSize)
+            console.debug(
+              `[sync] sync-fetch directory=${directory} sid=${sessionID} force=${String(!!opts?.force)} hasSession=${String(hasSession)} cached=${String(cached)} current=${String(currentLength)} view=${String(currentShow)} limit=${String(limit)}`,
+            )
             const sessionReq =
               hasSession && !opts?.force
                 ? Promise.resolve()
@@ -623,6 +704,7 @@ const initialMessagePageSize = 80
                     setStore,
                     sessionID,
                     limit,
+                    mode: store.message[sessionID] !== undefined ? "prepend" : "replace",
                   })
 
             await Promise.all([sessionReq, messagesReq]).catch((error) => {
@@ -633,6 +715,9 @@ const initialMessagePageSize = 80
               )
               throw error
             })
+            console.debug(
+              `[sync] sync-end directory=${directory} sid=${sessionID} force=${String(!!opts?.force)} messages=${String(store.message[sessionID]?.length ?? 0)} complete=${String(meta.complete[key] ?? "none")} cursor=${String(!!meta.cursor[key])}`,
+            )
             markSessionProfile(sessionID, "sync-end", `force=${String(!!opts?.force)}`)
           })
         },
@@ -705,34 +790,79 @@ const initialMessagePageSize = 80
             touch(directory, setStore, sessionID)
             const key = keyFor(directory, sessionID)
             const step = count ?? historyMessagePageSize
-            if (meta.loading[key]) return
+            const complete = meta.complete[key] ?? false
+            const cursor = meta.cursor[key]
+            if (meta.loading[key]) {
+              console.debug(`[sync] history skip-loading directory=${directory} sid=${sessionID}`)
+              return
+            }
             const cached = current()[0].message[sessionID]?.length ?? 0
             const show = view(directory, sessionID)
 
+            console.debug(
+              `[sync] history load-start directory=${directory} sid=${sessionID} step=${String(step)} cached=${String(cached)} show=${String(show)} complete=${String(complete)} cursor=${String(!!cursor)}`,
+            )
+
             if (show < cached) {
-              setMeta("show", key, reveal({ cached, show: meta.show[key], step, page: initialMessagePageSize }))
+              const nextShow = reveal({ cached, show: meta.show[key], step, page: initialMessagePageSize })
+              setMeta("show", key, nextShow)
+              setStore("session_history", sessionID, {
+                cursor: meta.cursor[key],
+                complete: meta.complete[key] ?? false,
+                show: nextShow,
+                at: current()[0].session_history?.[sessionID]?.at ?? Date.now(),
+              } satisfies SessionHistoryMeta)
+              console.debug(
+                `[sync] history reveal-only directory=${directory} sid=${sessionID} from=${String(show)} to=${String(nextShow)} cached=${String(cached)}`,
+              )
               return
             }
 
-            if (meta.complete[key]) return
-            const before = meta.cursor[key]
-            if (!before) return
+            if (complete) {
+              console.debug(`[sync] history skip-complete directory=${directory} sid=${sessionID}`)
+              return
+            }
+            if (!cursor) {
+              console.debug(`[sync] history skip-no-cursor directory=${directory} sid=${sessionID}`)
+              return
+            }
 
-            await loadMessages({
+            const committed = await loadMessages({
               directory,
               client,
               setStore,
               sessionID,
               limit: step,
-              before,
+              before: cursor,
               mode: "prepend",
             })
-            setMeta("show", key, reveal({ cached: current()[0].message[sessionID]?.length ?? 0, show, step, page: initialMessagePageSize }))
+            if (!committed) {
+              console.debug(`[sync] history page-discarded directory=${directory} sid=${sessionID} reason=stale-generation`)
+              return
+            }
+            const nextShow = reveal({
+              cached: current()[0].message[sessionID]?.length ?? 0,
+              show,
+              step,
+              page: initialMessagePageSize,
+            })
+            setMeta("show", key, nextShow)
+            setStore("session_history", sessionID, {
+              cursor: meta.cursor[key],
+              complete: meta.complete[key] ?? false,
+              show: nextShow,
+              at: current()[0].session_history?.[sessionID]?.at ?? Date.now(),
+            } satisfies SessionHistoryMeta)
+            console.debug(
+              `[sync] history load-end directory=${directory} sid=${sessionID} cached=${String(current()[0].message[sessionID]?.length ?? 0)} show=${String(view(directory, sessionID))} complete=${String(meta.complete[key] ?? false)} cursor=${String(!!meta.cursor[key])}`,
+            )
           },
         },
         evict(sessionID: string, directory = sdk.directory) {
           const [, setStore] = globalSync.child(directory)
           seenFor(directory).delete(sessionID)
+          const key = keyFor(directory, sessionID)
+          messageLoadGeneration.set(key, (messageLoadGeneration.get(key) ?? 0) + 1)
           evict(directory, setStore, [sessionID])
         },
         fetch: async (count = 10) => {

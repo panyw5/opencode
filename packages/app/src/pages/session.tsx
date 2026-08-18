@@ -915,11 +915,15 @@ export default function Page() {
       if (!id) return
 
       const cached = untrack(() => sync.data.message[id] !== undefined)
+      const sharedHistory = untrack(() => globalSync.child(directory, { bootstrap: false })[0].session_history?.[id])
       const stale = !cached
         ? false
         : (() => {
             const info = getSessionPrefetch(directory, id)
-            if (!info) return true
+            if (!info) {
+              if (!sharedHistory?.at) return false
+              return Date.now() - sharedHistory.at > SESSION_PREFETCH_TTL
+            }
             return Date.now() - info.at > SESSION_PREFETCH_TTL
           })()
       const todos = untrack(() => sync.data.todo[id] !== undefined || globalSync.data.session_todo[id] !== undefined)
@@ -1841,6 +1845,9 @@ export default function Page() {
       if (el.scrollHeight > el.clientHeight + 1) return
       if (!historyMore()) return
 
+      console.debug(
+        `[session] fill-trigger sid=${params.id} scrollHeight=${String(Math.round(el.scrollHeight))} clientHeight=${String(Math.round(el.clientHeight))} loaded=${String(messages().length)} visible=${String(visibleUserMessages().length)}`,
+      )
       void loadEarlier()
     })
   }
@@ -2038,10 +2045,18 @@ export default function Page() {
   const loadEarlier = async () => {
     const id = params.id
     if (!id) return
-    if (historyLoadInFlight || !historyMore() || historyLoading()) return
+    if (historyLoadInFlight || !historyMore() || historyLoading()) {
+      console.debug(
+        `[session] history-skip sid=${id} inFlight=${String(historyLoadInFlight)} more=${String(historyMore())} loading=${String(historyLoading())}`,
+      )
+      return
+    }
 
     historyLoadInFlight = true
     historyEdgeArmed = false
+    console.debug(
+      `[session] history-start sid=${id} loaded=${String(messages().length)} visible=${String(visibleUserMessages().length)} more=${String(historyMore())}`,
+    )
     historyAnchor.capture()
     try {
       while (true) {
@@ -2050,15 +2065,25 @@ export default function Page() {
         if (params.id !== id) return
         const nextLoaded = messages().length
         const done = visibleUserMessages().length > 0 && nextLoaded > loaded
+        console.debug(
+          `[session] history-page sid=${id} loaded=${String(loaded)} nextLoaded=${String(nextLoaded)} visible=${String(visibleUserMessages().length)} more=${String(historyMore())} done=${String(done)}`,
+        )
         const finished = done || nextLoaded <= loaded || !historyMore()
         historyAnchor.restore(finished)
-        if (finished) return
+        if (finished) {
+          console.debug(`[session] history-end sid=${id} finished=true loaded=${String(nextLoaded)}`)
+          return
+        }
       }
     } catch (error) {
+      console.debug(
+        `[session] history-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
+      )
       historyAnchor.restore(true)
       throw error
     } finally {
       historyLoadInFlight = false
+      console.debug(`[session] history-finally sid=${id} inFlight=false loaded=${String(messages().length)}`)
     }
   }
 

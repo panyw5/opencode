@@ -120,6 +120,10 @@ export function SessionTabsBar() {
       if (closedDraft()) setClosedDraft("")
       return
     }
+    if (!layout.ready()) {
+      console.debug(`[session-bar] draft route waiting layout storage directory=${directory}`)
+      return
+    }
     if (closedDraft() === workspaceKey(directory)) return
     console.debug(`[session-bar] draft route observed directory=${directory} idless=true`)
     layout.sessionBar.openDraft(directory)

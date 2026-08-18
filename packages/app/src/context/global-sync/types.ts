@@ -31,6 +31,13 @@ export type ProjectMeta = {
   }
 }
 
+export type SessionHistoryMeta = {
+  cursor?: string
+  complete: boolean
+  show?: number
+  at?: number
+}
+
 export type State = {
   status: "loading" | "partial" | "complete"
   sessions: "idle" | "loading" | "ready"
@@ -68,6 +75,9 @@ export type State = {
   limit: number
   message: {
     [sessionID: string]: Message[]
+  }
+  session_history?: {
+    [sessionID: string]: SessionHistoryMeta
   }
   part: {
     [messageID: string]: Part[]
