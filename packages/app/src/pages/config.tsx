@@ -27,7 +27,7 @@ import { Select } from "@opencode-ai/ui/select"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Switch as Toggle } from "@opencode-ai/ui/switch"
-import { showToast } from "@opencode-ai/ui/toast"
+import { showPromiseToast, showToast } from "@opencode-ai/ui/toast"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { paint } from "@/components/prompt-input/expand"
@@ -1545,7 +1545,7 @@ function ConfigSearchBox(props: { value: string; placeholder: string; onInput: (
   )
 }
 
-function ConfigPaneTitle(props: { title: string; description: string; icon: IconProps["name"] }) {
+function ConfigPaneTitle(props: { title: string; description?: string; icon: IconProps["name"] }) {
   return (
     <div class="flex min-w-0 items-start gap-3">
       <div class="flex size-9 shrink-0 items-center justify-center rounded-lg border border-[color-mix(in_srgb,var(--surface-brand-base)_28%,var(--border-weak-base))] bg-[color-mix(in_srgb,var(--surface-brand-base)_12%,var(--background-base))] text-text-strong shadow-sm">
@@ -1553,7 +1553,9 @@ function ConfigPaneTitle(props: { title: string; description: string; icon: Icon
       </div>
       <div class="min-w-0 pt-0.5">
         <div class="truncate text-18-medium text-text-strong">{props.title}</div>
-        <div class="mt-1 line-clamp-2 text-12-regular leading-5 text-text-weak">{props.description}</div>
+        <Show when={props.description}>
+          <div class="mt-1 line-clamp-2 text-12-regular leading-5 text-text-weak">{props.description}</div>
+        </Show>
       </div>
     </div>
   )
@@ -2390,7 +2392,9 @@ function ProviderDetail(props: {
           >
             {props.item?.custom
               ? language.t("config.provider.toggle.enabledInConfig")
-              : language.t("config.provider.toggle.connected")}
+              : props.item?.connected
+                ? language.t("config.provider.toggle.remove")
+                : language.t("common.connect")}
           </Toggle>
         </div>
         <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
@@ -3603,19 +3607,12 @@ function CustomEditor(props: {
                 {language.t("config.provider.toggle.enabledInConfig")}
               </Toggle>
             </Show>
-            <Show
-              when={props.form.mode === "create"}
-              fallback={
-                <Button size="large" variant="ghost" onClick={props.onDelete} disabled={props.busy}>
-                  {language.t("config.action.delete")}
-                </Button>
-              }
-            >
-              <Button size="large" variant="ghost" onClick={props.onCreate}>
-                {language.t("config.custom.new")}
+            <Show when={props.form.mode !== "create"}>
+              <Button size="large" variant="ghost" onClick={props.onDelete} disabled={props.busy}>
+                {language.t("config.action.delete")}
               </Button>
             </Show>
-            <Show when={props.onReload}>
+            <Show when={props.onReload && props.form.mode !== "create"}>
               <Button
                 size="large"
                 variant="ghost"
@@ -7030,6 +7027,10 @@ export default function ConfigPage() {
     })
   }
 
+  function refreshProviderState() {
+    return globalSync.provider.refresh(mainDomain)
+  }
+
   function setCustomField(key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) {
     setState("custom", key, value)
     if (key === "apiKey") setState("customApiDirty", true)
@@ -7577,12 +7578,12 @@ export default function ConfigPage() {
       const next = prev.includes(item.id) ? prev : [...prev, item.id]
       await patchConfig({ disabled_providers: next }, { refreshProviders: false })
       globalSync.provider.remove(item.id)
-      refreshProviderStateInBackground()
+      await refreshProviderState()
       return
     }
     await globalSDK.client.auth.remove({ providerID: item.id })
     globalSync.provider.remove(item.id)
-    refreshProviderStateInBackground()
+    await refreshProviderState()
   }
 
   function toggleProvider(item: ProviderItem, enabled: boolean) {
@@ -7599,19 +7600,17 @@ export default function ConfigPage() {
     if (item.source === "env") return
     if (state.providerBusy === item.id) return
     setState("providerBusy", item.id)
-    void disconnectProvider(item)
-      .then(() => {
-        showToast({ variant: "success", title: t("common.disconnect"), description: item.name })
-      })
-      .catch((err: unknown) => {
-        showToast({
-          title: language.t("common.requestFailed"),
-          description: err instanceof Error ? err.message : String(err),
-        })
-      })
+    const removal = disconnectProvider(item)
+    showPromiseToast(removal, {
+      loading: language.t("provider.disconnect.toast.removing", { provider: item.name }),
+      success: () => language.t("provider.disconnect.toast.disconnected.description", { provider: item.name }),
+      error: (err) => (err instanceof Error ? err.message : String(err)),
+    })
+    void removal
       .finally(() => {
         setState("providerBusy", "")
       })
+      .catch(() => undefined)
   }
 
   async function toggleProjectPlugin(item: PluginItem, enabled: boolean) {

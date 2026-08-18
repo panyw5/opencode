@@ -355,6 +355,7 @@ export const dict = {
 
   "provider.disconnect.toast.disconnected.title": "{{provider}} disconnected",
   "provider.disconnect.toast.disconnected.description": "{{provider}} models are no longer available.",
+  "provider.disconnect.toast.removing": "Removing {{provider}}, please wait...",
 
   "model.tag.free": "Free",
   "model.tag.latest": "Latest",
@@ -1740,8 +1741,7 @@ export const dict = {
   "config.plugins.group.global": "Global",
   "config.plugins.group.project": "Project",
   "config.providers.title": "Providers",
-  "config.providers.header":
-    "Standard providers toggle connection state. Custom `@ai-sdk/...` providers toggle `disabled_providers` in config.",
+  "config.providers.header": "Configure custom providers and enable or disable built-in providers.",
   "config.providers.matches": "{{count}} matches",
   "config.providers.empty": 'No providers match `"{{query}}"`.',
   "config.providers.group.enabled": "Enabled",
@@ -1767,6 +1767,7 @@ export const dict = {
   "config.provider.known": "This provider exists in the catalog, but it is not currently enabled in your runtime.",
   "config.provider.toggle.enabledInConfig": "Enabled in config",
   "config.provider.toggle.connected": "Connected",
+  "config.provider.toggle.remove": "Remove",
   "config.provider.modelsTitle": "Models",
   "config.provider.noModels": "No models exposed by this provider.",
   "config.custom.select": "Select a provider to inspect it, or create a new custom provider.",
