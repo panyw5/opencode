@@ -519,9 +519,14 @@ function SessionTabGroup(props: {
   onClose: (tab: SessionBarTab) => void
   onCloseDescendants: (tab: SessionBarTab) => void
 }) {
+  const autoRevealDuration = 500
   const sortable = createSortable(props.tabKey)
   const [state, setState] = createStore({ open: false })
   let closeTimer: number | undefined
+  let autoCloseTimer: number | undefined
+  let revealFrame: number | undefined
+  let childrenViewport: HTMLDivElement | undefined
+  let skipAutoRevealID: string | undefined
   const group = () => {
     const value = props.group()
     if (!value) throw new Error(`Missing session tab group: ${props.tabKey}`)
@@ -538,18 +543,54 @@ function SessionTabGroup(props: {
     window.clearTimeout(closeTimer)
     closeTimer = undefined
   }
+  const cancelAutoClose = () => {
+    if (autoCloseTimer === undefined) return
+    window.clearTimeout(autoCloseTimer)
+    autoCloseTimer = undefined
+  }
   const open = () => {
     if (!group().children.length) return
     cancelClose()
+    cancelAutoClose()
     setState("open", true)
   }
   const close = () => {
     cancelClose()
+    cancelAutoClose()
     closeTimer = window.setTimeout(() => {
       closeTimer = undefined
       setState("open", false)
     }, 150)
   }
+  const activeChildID = createMemo(() => group().children.find((item) => props.active(item.tab))?.tab.id)
+
+  createEffect(() => {
+    const childID = activeChildID()
+    if (!childID || !group().children.length) return
+    if (skipAutoRevealID === childID) {
+      skipAutoRevealID = undefined
+      cancelClose()
+      cancelAutoClose()
+      console.debug(`[session-bar] skip auto reveal for clicked child id=${childID} parent=${group().tab.id}`)
+      return
+    }
+    cancelClose()
+    cancelAutoClose()
+    setState("open", true)
+    console.debug(`[session-bar] auto reveal child id=${childID} parent=${group().tab.id}`)
+    if (revealFrame !== undefined) cancelAnimationFrame(revealFrame)
+    revealFrame = requestAnimationFrame(() => {
+      revealFrame = undefined
+      childrenViewport
+        ?.querySelector<HTMLElement>('[data-component="session-tab"][data-active="true"]')
+        ?.scrollIntoView({ block: "nearest" })
+    })
+    autoCloseTimer = window.setTimeout(() => {
+      autoCloseTimer = undefined
+      setState("open", false)
+      console.debug(`[session-bar] auto hide child id=${childID} parent=${group().tab.id}`)
+    }, autoRevealDuration)
+  })
   const groupActive = () => {
     const value = group()
     return props.active(value.tab) || value.children.some((item) => props.active(item.tab))
@@ -570,7 +611,10 @@ function SessionTabGroup(props: {
         preventPopoverToggle
         hasOpenDescendants={props.hasOpenDescendants(group().tab)}
         onMenuOpenChange={(open) => {
-          if (open) setState("open", false)
+          if (open) {
+            cancelAutoClose()
+            setState("open", false)
+          }
         }}
         onOpen={() => props.onOpen(group().tab)}
         onClose={() => props.onClose(group().tab)}
@@ -579,7 +623,11 @@ function SessionTabGroup(props: {
     </div>
   )
 
-  onCleanup(cancelClose)
+  onCleanup(() => {
+    cancelClose()
+    cancelAutoClose()
+    if (revealFrame !== undefined) cancelAnimationFrame(revealFrame)
+  })
 
   return (
     <div
@@ -597,6 +645,7 @@ function SessionTabGroup(props: {
           triggerProps={{ role: "presentation", tabIndex: -1, class: "min-w-28" }}
         >
           <div
+            ref={childrenViewport}
             data-component="session-tab-children"
             class="session-child-agent-scrollbar flex max-h-80 min-w-56 flex-col gap-1.5 overflow-y-auto"
             onMouseEnter={open}
@@ -615,12 +664,14 @@ function SessionTabGroup(props: {
                     onMenuOpenChange={(menuOpen) => {
                       if (menuOpen) {
                         cancelClose()
+                        cancelAutoClose()
                         setState("open", true)
                         return
                       }
                       close()
                     }}
                     onOpen={() => {
+                      if (!props.active(item.tab)) skipAutoRevealID = item.tab.id
                       setState("open", false)
                       props.onOpen(item.tab)
                     }}
