@@ -288,13 +288,24 @@ export function SessionTabsBar() {
   // Cycle through open tabs. When the current route is not a persisted tab
   // (draft new-session page, home, config), previous lands on the last tab and
   // next on the first, matching the draft tab's visual position at the end.
+  // Only top-level tabs are cycled: subagent child tabs live inside their
+  // parent's group, so an active child maps onto its parent root tab.
   const switchBy = (delta: number) => {
-    const all = orderedTabs()
-    if (all.length === 0) return
-    const index = all.findIndex((tab) => isActive(tab))
+    const roots = groups().map((group) => group.tab)
+    if (roots.length === 0) return
+    const index = groups().findIndex(
+      (group) => isActive(group.tab) || group.children.some((item) => isActive(item.tab)),
+    )
     const target =
-      index === -1 ? (delta > 0 ? all[0] : all[all.length - 1]) : all[(index + delta + all.length) % all.length]
+      index === -1
+        ? delta > 0
+          ? roots[0]
+          : roots[roots.length - 1]
+        : roots[(index + delta + roots.length) % roots.length]
     if (!target) return
+    console.debug(
+      `[session-bar] switchBy delta=${delta} roots=${roots.map((tab) => tab.id).join(",")} activeGroupIndex=${index} target=${target.id}`,
+    )
     void open(target)
   }
 
