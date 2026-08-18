@@ -5,6 +5,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { useCheckServerHealth } from "@/utils/server-health"
 import {
   domainFromIntegration,
+  extraAgentByDirectory,
   isExtraAgentIntegration,
   mainDomain,
   type DomainId,
@@ -371,12 +372,46 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       if (isExtraAgentIntegration(conn?.integration)) return conn.integration
       return projectsKey(state.active)
     })
+    const mainOrigin = () => {
+      const last = state.lastNonExtraAgent
+      if (last) return projectsKey(last)
+      const fallback = allServers().find((item) => !isExtraAgentIntegration(item.integration))
+      if (fallback) return originFor(ServerConnection.key(fallback))
+      return projectsKey(state.active)
+    }
+    const persistOrigin = (directory?: string) => {
+      const agent = extraAgentByDirectory(directory)
+      if (agent) return agent.id
+      return mainOrigin()
+    }
+    const pendingOpens: string[] = []
     const projectsList = createMemo(() => storedProjects()[origin()] ?? [])
     const projectsFor = (input?: ServerConnection.Key) => {
       const key = input ? originFor(input) : origin()
       if (!key) return [] as StoredProject[]
       return storedProjects()[key] ?? []
     }
+    const writeProject = (directory: string, key = persistOrigin(directory)) => {
+      if (!key) {
+        console.debug(`[project-open] skip empty-key directory=${directory}`)
+        return false
+      }
+      const current = storedProjects()[key] ?? []
+      if (current.find((x) => x.worktree === directory)) {
+        console.debug(`[project-open] skip duplicate key=${key} directory=${directory}`)
+        return false
+      }
+      console.debug(`[project-open] write key=${key} directory=${directory} count=${current.length} ready=${ready()}`)
+      setStore("projects", key, [{ worktree: directory, expanded: true }, ...current])
+      return true
+    }
+    createEffect(() => {
+      if (!ready()) return
+      if (pendingOpens.length === 0) return
+      const queued = pendingOpens.splice(0)
+      console.debug(`[project-open] flush queued=${queued.length}`)
+      for (const directory of queued) writeProject(directory)
+    })
     const isLocal = createMemo(() => {
       const c = current()
       return (c?.type === "sidecar" && c.variant === "base") || (c?.type === "http" && isLocalHost(c.http.url))
@@ -436,23 +471,16 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           return projectsFor(input)
         },
         open(directory: string) {
-          const key = origin()
-          if (!key) return
-          const current = projectsFor()
-          if (current.find((x) => x.worktree === directory)) return
-          trace("projects.open", {
-            key,
-            directory,
-            count: current.length,
-          })
-          setStore("projects", key, [{ worktree: directory, expanded: true }, ...current])
+          if (!ready()) {
+            if (!pendingOpens.includes(directory)) pendingOpens.push(directory)
+            console.debug(`[project-open] queue directory=${directory} pending=${pendingOpens.length}`)
+            return
+          }
+          writeProject(directory)
         },
         openFor(input: ServerConnection.Key | undefined, directory: string) {
-          const key = input ? originFor(input) : origin()
-          if (!key) return
-          const current = projectsFor(input)
-          if (current.find((x) => x.worktree === directory)) return
-          setStore("projects", key, [{ worktree: directory, expanded: true }, ...current])
+          const key = input ? originFor(input) : persistOrigin(directory)
+          writeProject(directory, key)
         },
         close(directory: string) {
           const key = origin()

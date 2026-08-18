@@ -2092,6 +2092,7 @@ export default function Layout(props: ParentProps) {
   }
 
   function openProject(directory: string, navigate = true) {
+    console.debug(`[project-open] layout directory=${directory} navigate=${navigate}`)
     layout.projects.open(directory)
     if (navigate) return navigateToProject(directory)
   }
@@ -2134,23 +2135,44 @@ export default function Layout(props: ParentProps) {
     if (platform.platform !== "desktop") return
 
     const dragDropEventName = "opencode:drag-drop"
+    let dragSeq = 0
 
     const handler = async (event: Event) => {
-      const detail = (event as CustomEvent<{ type: string; paths: string[]; position: { x: number; y: number } }>)
-        .detail
+      const detail = (
+        event as CustomEvent<{
+          type: string
+          paths: string[]
+          hasFiles?: boolean
+          position: { x: number; y: number }
+        }>
+      ).detail
       if (!detail) return
 
       if (detail.type === "enter") {
+        const hinted = detail.hasFiles === true || detail.paths.length > 0
+        const seq = ++dragSeq
+        console.debug(`[drag-drop] enter paths=${detail.paths.length} hasFiles=${hinted} seq=${seq}`)
+        if (!hinted) return
         if (detail.paths.length > 0 && platform.filterDirectories) {
-          const dirs = await platform.filterDirectories(detail.paths).catch((): string[] => [])
-          const hasFiles = dirs.length < detail.paths.length
+          const dirs = await platform.filterDirectories(detail.paths).catch((error): string[] => {
+            console.debug(
+              `[drag-drop] enter filter failed err=${error instanceof Error ? error.message : String(error)}`,
+            )
+            return []
+          })
+          if (seq !== dragSeq) return
           setFolderDragging(dirs.length > 0)
-          setFileDragging(hasFiles)
+          setFileDragging(dirs.length < detail.paths.length)
+          return
         }
+        setFolderDragging(true)
+        setFileDragging(false)
         return
       }
 
       if (detail.type === "leave") {
+        dragSeq += 1
+        console.debug("[drag-drop] leave")
         setFolderDragging(false)
         setFileDragging(false)
         return
@@ -2158,15 +2180,31 @@ export default function Layout(props: ParentProps) {
 
       if (detail.type !== "drop") return
 
+      dragSeq += 1
       setFolderDragging(false)
       setFileDragging(false)
-      if (detail.paths.length === 0 || !platform.filterDirectories) return
+      console.debug(
+        `[drag-drop] drop paths=${detail.paths.length} filter=${!!platform.filterDirectories} ready=${server.ready()}`,
+      )
+      if (detail.paths.length === 0) {
+        console.debug("[drag-drop] drop ignored empty-paths")
+        return
+      }
+      if (!platform.filterDirectories) {
+        console.debug("[drag-drop] drop ignored missing-filterDirectories")
+        return
+      }
 
-      const dirs = await platform.filterDirectories(detail.paths).catch((): string[] => [])
+      const dirs = await platform.filterDirectories(detail.paths).catch((error): string[] => {
+        console.debug(`[drag-drop] drop filter failed err=${error instanceof Error ? error.message : String(error)}`)
+        return []
+      })
       const files = detail.paths.filter((path) => !dirs.includes(path))
+      console.debug(`[drag-drop] classified dirs=${dirs.length} files=${files.length}`)
 
       if (dirs.length > 0) {
         for (const dir of dirs) {
+          console.debug(`[drag-drop] open project dir=${dir}`)
           openProject(dir, false)
         }
         await navigateToProject(dirs[0])

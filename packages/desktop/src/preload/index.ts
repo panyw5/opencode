@@ -177,35 +177,98 @@ const api: ElectronAPI = {
 contextBridge.exposeInMainWorld("api", api)
 
 function filePaths(event: DragEvent) {
-  const files = Array.from(event.dataTransfer?.files ?? [])
-  return files.map((file) => webUtils.getPathForFile(file)).filter((path) => path.length > 0)
+  const transfer = event.dataTransfer
+  const fromList = (files: File[]) =>
+    files.map((file) => webUtils.getPathForFile(file)).filter((path) => path.length > 0)
+
+  const fromFiles = fromList(Array.from(transfer?.files ?? []))
+  if (fromFiles.length > 0) return fromFiles
+
+  const fromItems = fromList(
+    Array.from(transfer?.items ?? [])
+      .filter((item) => item.kind === "file")
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => !!file),
+  )
+  return fromItems
 }
 
-function emitDragDrop(type: "enter" | "leave" | "drop", event: DragEvent) {
-  const paths = filePaths(event)
+function hasFilePayload(event: DragEvent) {
+  const types = Array.from(event.dataTransfer?.types ?? [])
+  return types.includes("Files") || types.includes("public.file-url")
+}
+
+function markCopyDrop(event: DragEvent) {
+  event.preventDefault()
+  if (event.dataTransfer) event.dataTransfer.dropEffect = "copy"
+}
+
+function emitDragDrop(
+  type: "enter" | "leave" | "drop",
+  event: DragEvent,
+  paths: string[],
+  extra?: { hasFiles?: boolean },
+) {
+  console.debug(
+    `[drag-drop] emit type=${type} paths=${paths.length} hasFiles=${extra?.hasFiles ?? paths.length > 0} x=${event.clientX} y=${event.clientY}`,
+  )
   window.dispatchEvent(
     new CustomEvent("opencode:drag-drop", {
       detail: {
         type,
         paths,
+        hasFiles: extra?.hasFiles ?? paths.length > 0,
         position: { x: event.clientX, y: event.clientY },
       },
     }),
   )
 }
 
-window.addEventListener("dragover", (event) => {
-  event.preventDefault()
-})
-window.addEventListener("dragenter", (event) => {
-  event.preventDefault()
-  emitDragDrop("enter", event)
-})
-window.addEventListener("dragleave", (event) => {
-  event.preventDefault()
-  emitDragDrop("leave", event)
-})
-window.addEventListener("drop", (event) => {
-  event.preventDefault()
-  emitDragDrop("drop", event)
-})
+let dragDepth = 0
+
+window.addEventListener(
+  "dragover",
+  (event) => {
+    markCopyDrop(event)
+    if (hasFilePayload(event)) event.stopPropagation()
+  },
+  true,
+)
+window.addEventListener(
+  "dragenter",
+  (event) => {
+    markCopyDrop(event)
+    const files = hasFilePayload(event)
+    if (files) event.stopPropagation()
+    dragDepth += 1
+    if (dragDepth !== 1) return
+    emitDragDrop("enter", event, [], { hasFiles: files })
+  },
+  true,
+)
+window.addEventListener(
+  "dragleave",
+  (event) => {
+    event.preventDefault()
+    dragDepth = Math.max(0, dragDepth - 1)
+    if (dragDepth !== 0) return
+    emitDragDrop("leave", event, [])
+  },
+  true,
+)
+window.addEventListener(
+  "drop",
+  (event) => {
+    markCopyDrop(event)
+    dragDepth = 0
+    const paths = filePaths(event)
+    if (paths.length === 0) {
+      console.debug("[drag-drop] drop produced empty paths")
+      emitDragDrop("drop", event, paths, { hasFiles: hasFilePayload(event) })
+      return
+    }
+    event.stopPropagation()
+    emitDragDrop("drop", event, paths, { hasFiles: true })
+  },
+  true,
+)

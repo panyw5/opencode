@@ -6,6 +6,7 @@ import {
   attachmentExtension,
   cliInstallDirectory,
   configRoot,
+  keepDroppedPathAsDirectory,
   resolveDesktopPath,
   tempMarkdownAttachmentPath,
 } from "./native-path"
@@ -80,5 +81,11 @@ describe("native desktop paths", () => {
     expect(attachmentExtension(".json")).toBe("json")
     expect(attachmentExtension("")).toBe("md")
     expect(attachmentExtension("../sh")).toBe("md")
+  })
+
+  test("keeps dropped folders even when stat is unavailable", () => {
+    expect(keepDroppedPathAsDirectory(undefined)).toBe(true)
+    expect(keepDroppedPathAsDirectory({ isDirectory: () => true })).toBe(true)
+    expect(keepDroppedPathAsDirectory({ isDirectory: () => false })).toBe(false)
   })
 })

@@ -1,6 +1,10 @@
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
 
+export function keepDroppedPathAsDirectory(info?: { isDirectory(): boolean } | undefined) {
+  return !info || info.isDirectory()
+}
+
 export function resolveDesktopPath(path: string) {
   if (path === "~") return resolve(homedir())
   if (path.startsWith("~/") || path.startsWith("~\\")) return resolve(homedir(), path.slice(2))

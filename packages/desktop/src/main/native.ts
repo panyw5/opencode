@@ -48,6 +48,7 @@ import type {
 import {
   cliInstallDirectory,
   configRoot,
+  keepDroppedPathAsDirectory,
   resolveDesktopPath,
   tempMarkdownAttachmentPath,
 } from "./native-path"
@@ -181,12 +182,20 @@ export async function filterDirectories(paths: string[]) {
   const result: string[] = []
   for (const path of paths) {
     const resolved = resolveDesktopPath(path)
-    const info = await stat(resolved).catch(() => undefined)
-    if (info?.isDirectory()) {
+    const info = await stat(resolved).catch((error) => {
+      console.debug(
+        `[drag-drop] filter stat failed path=${resolved} err=${error instanceof Error ? error.message : String(error)}`,
+      )
+      return undefined
+    })
+    if (keepDroppedPathAsDirectory(info)) {
       registerAllowedRoot(resolved)
       result.push(resolved)
+      continue
     }
+    console.debug(`[drag-drop] filter skip path=${resolved} dir=${!!info?.isDirectory()} file=${!!info?.isFile()}`)
   }
+  console.debug(`[drag-drop] filter result in=${paths.length} dirs=${result.length}`)
   return result
 }
 
