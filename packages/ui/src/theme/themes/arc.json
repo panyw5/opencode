@@ -104,6 +104,7 @@
       "surface-base": "#362c3a",
       "surface-base-hover": "#3e3443",
       "surface-base-active": "#463c4c",
+      "surface-interactive-weak-hover": "#6A5873",
       "surface-raised-base": "#3c3240",
       "surface-raised-base-hover": "#443a48",
       "surface-raised-strong": "#4c4252",

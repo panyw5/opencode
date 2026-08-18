@@ -161,7 +161,7 @@
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-weak) 11%, transparent);
   }
 
-  [data-component="session-tab"][data-subagent="true"] {
+  [data-component="session-tab"][data-subagent="true"]:not([data-active="true"]) {
     background-color: color-mix(in srgb, var(--surface-base-active) 54%, transparent);
   }
 

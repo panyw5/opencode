@@ -276,7 +276,7 @@
 
       &:has([data-selected]) {
         color: var(--text-strong);
-        background-color: var(--surface-base-active);
+        background-color: var(--surface-interactive-weak-hover);
         border-color: var(--border-weak-base);
 
         &::after {
@@ -457,11 +457,11 @@
       }
 
       &:has([data-selected]) {
-        background-color: var(--surface-base-active);
+        background-color: var(--surface-interactive-weak-hover);
         color: var(--text-strong);
 
         &:hover:not(:disabled) {
-          background-color: var(--surface-base-active);
+          background-color: var(--surface-interactive-weak-hover);
         }
       }
     }
@@ -538,7 +538,7 @@
       }
 
       &:has([data-selected]) {
-        background-color: var(--surface-base-active);
+        background-color: var(--surface-interactive-weak-hover);
         color: var(--text-strong);
       }
     }
@@ -644,7 +644,7 @@
         }
 
         &:has([data-selected]) {
-          background-color: var(--surface-base-active);
+          background-color: var(--surface-interactive-weak-hover);
           color: var(--text-strong);
 
           [data-component="icon"] {
@@ -652,7 +652,7 @@
           }
 
           &:hover:not(:disabled) {
-            background-color: var(--surface-base-active);
+            background-color: var(--surface-interactive-weak-hover);
           }
         }
       }
@@ -702,7 +702,7 @@
   height: var(--tabs-compact-pill-height, 24px);
   border: 1px solid var(--border-weak-base);
   border-radius: var(--tabs-compact-pill-radius, 6px);
-  background-color: var(--surface-base-active);
+  background-color: var(--surface-interactive-weak-hover);
 }
 
 [data-component="tabs-drag-preview"]::after {

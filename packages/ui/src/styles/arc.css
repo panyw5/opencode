@@ -237,6 +237,20 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="titlebar"] {
   --color-border-weak-base: transparent;
 }
 
+/* Active session tabs use a light interactive fill in Arc light mode. Keep
+   their text and close icon on the dark ink ramp instead of inheriting the
+   titlebar's light-on-dark chrome ramp. */
+html[data-theme="arc"][data-color-scheme="light"]
+  [data-component="titlebar"]
+  [data-component="session-tab"][data-active="true"] {
+  --text-strong: #1a1625;
+  --color-text-strong: #1a1625;
+  --icon-base: #4a4458;
+  --color-icon-base: #4a4458;
+  --icon-strong-base: #1a1625;
+  --color-icon-strong-base: #1a1625;
+}
+
 /* SidebarPanel: remove the light border separator (drew a hard line
      between rail and panel since both are now the same mauve color).
      Top-left scoop radius is intentional — filled by ScoopJoin

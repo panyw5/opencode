@@ -783,7 +783,7 @@ function SessionTab(props: {
         classList={{
           "h-7 min-w-28 max-w-80": !props.nested,
           "w-full min-w-0 max-w-72 py-1.5": !!props.nested,
-          "bg-surface-base-active text-text-strong": props.active,
+          "bg-surface-interactive-weak-hover text-text-strong": props.active,
           "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
         }}
         onClick={(event: MouseEvent) => {
@@ -920,7 +920,7 @@ function DraftTab(props: { directory: string; active: boolean; onOpen: () => voi
         tabIndex={0}
         class="group relative flex h-7 min-w-28 max-w-80 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium italic"
         classList={{
-          "bg-surface-base-active text-text-strong": props.active,
+          "bg-surface-interactive-weak-hover text-text-strong": props.active,
           "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
         }}
         onClick={() => {
