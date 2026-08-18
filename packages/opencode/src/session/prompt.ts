@@ -2165,12 +2165,18 @@ export const layer = Layer.effect(
                 return "break" as const
               }
               compactRetries++
+              const midTurn =
+                handle.message.finish === "tool-calls" ||
+                MessageV2.parts(handle.message.id).some(
+                  (part) => part.type === "tool" && !part.metadata?.providerExecuted,
+                )
               yield* compaction.create({
                 sessionID,
                 agent: lastUser.agent,
                 model: lastUser.model,
                 auto: true,
-                overflow: !handle.message.finish,
+                overflow: !handle.message.finish && !midTurn,
+                midTurn,
               })
             } else {
               compactRetries = 0

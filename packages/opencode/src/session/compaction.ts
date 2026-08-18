@@ -40,6 +40,7 @@ const PRUNE_PROTECTED_TOOLS = ["skill"]
 const DEFAULT_TAIL_TURNS = 2
 const MIN_PRESERVE_RECENT_TOKENS = 2_000
 const MAX_PRESERVE_RECENT_TOKENS = 8_000
+const MAX_SUMMARY_SHRINKS = 16
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
 ## Goal
@@ -184,6 +185,18 @@ function splitTurn(input: {
   })
 }
 
+// Drops the oldest user turn (and its responses) from the summary input so a
+// compaction request that exceeds the model context limit can be retried with
+// a smaller history. Returns undefined when no more turns can be dropped while
+// keeping at least one non-compaction user message to summarize.
+function shrinkHead(head: MessageV2.WithParts[]) {
+  const first = turns(head)[0]
+  if (!first) return undefined
+  const next = head.slice(first.end)
+  const hasUser = next.some((m) => m.info.role === "user" && !m.parts.some((p) => p.type === "compaction"))
+  return hasUser ? next : undefined
+}
+
 export interface Interface {
   readonly isOverflow: (input: {
     tokens: MessageV2.Assistant["tokens"]
@@ -203,6 +216,7 @@ export interface Interface {
     model: { providerID: ProviderID; modelID: ModelID }
     auto: boolean
     overflow?: boolean
+    midTurn?: boolean
   }) => Effect.Effect<void>
 }
 
@@ -247,13 +261,14 @@ export const layer = Layer.effect(
       messages: MessageV2.WithParts[]
       cfg: Config.Info
       model: Provider.Model
+      retainTurnId?: MessageID
     }) {
       const limit = input.cfg.compaction?.tail_turns ?? DEFAULT_TAIL_TURNS
-      if (limit <= 0) return { head: input.messages, tail_start_id: undefined }
+      if (limit <= 0 && !input.retainTurnId) return { head: input.messages, tail_start_id: undefined }
       const budget = preserveRecentBudget({ cfg: input.cfg, model: input.model })
       const all = turns(input.messages)
       if (!all.length) return { head: input.messages, tail_start_id: undefined }
-      const recent = all.slice(-limit)
+      const recent = all.slice(-Math.max(limit, input.retainTurnId ? 1 : 0))
       const sizes = yield* Effect.forEach(
         recent,
         (turn) =>
@@ -287,7 +302,14 @@ export const layer = Layer.effect(
         break
       }
 
-      if (!keep || keep.start === 0) return { head: input.messages, tail_start_id: undefined }
+      if (input.retainTurnId) {
+        const forced = all.find((turn) => turn.id === input.retainTurnId)
+        if (forced && (!keep || keep.start > forced.start)) {
+          keep = { start: forced.start, id: forced.id }
+        }
+      }
+
+      if (!keep || (keep.start === 0 && !input.retainTurnId)) return { head: input.messages, tail_start_id: undefined }
       return {
         head: input.messages.slice(0, keep.start),
         tail_start_id: keep.id,
@@ -363,7 +385,8 @@ export const layer = Layer.effect(
             parts: MessageV2.Part[]
           }
         | undefined
-      if (input.overflow) {
+      const midTurn = compactionPart?.mid_turn === true
+      if (input.overflow && !midTurn) {
         const idx = input.messages.findIndex((m) => m.info.id === input.parentID)
         for (let i = idx - 1; i >= 0; i--) {
           const msg = input.messages[i]
@@ -390,10 +413,16 @@ export const layer = Layer.effect(
       const prior = completedCompactions(history)
       const hidden = new Set(prior.flatMap((item) => [item.userIndex, item.assistantIndex]))
       const previousSummary = prior.at(-1)?.summary
+      const visible = history.filter((_, index) => !hidden.has(index))
+      const retainTurnId = midTurn
+        ? [...visible].reverse().find((msg) => msg.info.role === "user" && !msg.parts.some((p) => p.type === "compaction"))
+            ?.info.id
+        : undefined
       const selected = yield* select({
-        messages: history.filter((_, index) => !hidden.has(index)),
+        messages: visible,
         cfg,
         model,
+        retainTurnId,
       })
       // Allow plugins to inject context or replace compaction prompt.
       const compacting = yield* plugin.trigger(
@@ -402,14 +431,55 @@ export const layer = Layer.effect(
         { context: [], prompt: undefined },
       )
       const nextPrompt = compacting.prompt ?? buildPrompt({ previousSummary, context: compacting.context })
-      const msgs = structuredClone(selected.head)
-      yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
-      const modelMessages = yield* MessageV2.toModelMessagesEffect(msgs, model, {
-        stripMedia: true,
-        toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
-      })
+
+      const buildSummaryInput = (head: MessageV2.WithParts[]) =>
+        Effect.gen(function* () {
+          const msgs = structuredClone(head)
+          yield* plugin.trigger("experimental.chat.messages.transform", {}, { messages: msgs })
+          return yield* MessageV2.toModelMessagesEffect(msgs, model, {
+            stripMedia: true,
+            toolOutputMaxChars: TOOL_OUTPUT_MAX_CHARS,
+          })
+        })
+
+      const overflowText = replay
+        ? "Conversation history too large to compact - exceeds model context limit"
+        : "Session too large to compact - context exceeds model limit even after stripping media"
+
+      const budget = usable({ cfg, model, outputTokenMax: flags.outputTokenMax })
+      const promptTokens = Token.estimate(nextPrompt) + Token.estimate(agent.prompt ?? "")
+      const summarySize = (modelMessages: unknown) => Token.estimate(JSON.stringify(modelMessages)) + promptTokens
+
+      // Drops at least the oldest turn, then keeps dropping while the estimated
+      // summary input still cannot fit the usable context budget.
+      const shrinkSummaryInput = (head: MessageV2.WithParts[]) =>
+        Effect.gen(function* () {
+          const first = shrinkHead(head)
+          if (!first) return undefined
+          let current = first
+          let modelMessages = yield* buildSummaryInput(current)
+          while (budget > 0 && summarySize(modelMessages) >= budget) {
+            const next = shrinkHead(current)
+            if (!next) break
+            current = next
+            modelMessages = yield* buildSummaryInput(current)
+          }
+          return { head: current, modelMessages }
+        })
+
+      let head = selected.head
+      let modelMessages = yield* buildSummaryInput(head)
+      if (budget > 0 && summarySize(modelMessages) >= budget) {
+        const shrunk = yield* shrinkSummaryInput(head)
+        if (shrunk) {
+          log.info("summary input exceeds budget before request, shrunk", { budget })
+          head = shrunk.head
+          modelMessages = shrunk.modelMessages
+        }
+      }
+
       const ctx = yield* InstanceState.context
-      const msg: MessageV2.Assistant = {
+      const summaryMessage = (): MessageV2.Assistant => ({
         id: MessageID.ascending(),
         role: "assistant",
         parentID: input.parentID,
@@ -434,38 +504,53 @@ export const layer = Layer.effect(
         time: {
           created: Date.now(),
         },
-      }
-      yield* session.updateMessage(msg)
-      const processor = yield* processors.create({
-        assistantMessage: msg,
-        sessionID: input.sessionID,
-        model,
-      })
-      const result = yield* processor.process({
-        user: userMessage,
-        agent,
-        sessionID: input.sessionID,
-        tools: {},
-        system: [],
-        messages: [
-          ...modelMessages,
-          {
-            role: "user",
-            content: [{ type: "text", text: nextPrompt }],
-          },
-        ],
-        model,
       })
 
-      if (result === "compact") {
+      let msg = summaryMessage()
+      let processor: SessionProcessor.Handle
+      let result: SessionProcessor.Result
+      let shrinks = 0
+      for (;;) {
+        yield* session.updateMessage(msg)
+        processor = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: input.sessionID,
+          model,
+        })
+        result = yield* processor.process({
+          user: userMessage,
+          agent,
+          sessionID: input.sessionID,
+          tools: {},
+          system: [],
+          messages: [
+            ...modelMessages,
+            {
+              role: "user",
+              content: [{ type: "text", text: nextPrompt }],
+            },
+          ],
+          model,
+        })
+        if (result !== "compact") break
+
+        // The summary request itself exceeded the model context limit. Retry
+        // with the oldest turns dropped instead of failing the compaction.
+        const shrunk = shrinks < MAX_SUMMARY_SHRINKS ? yield* shrinkSummaryInput(head) : undefined
         processor.message.error = new MessageV2.ContextOverflowError({
-          message: replay
-            ? "Conversation history too large to compact - exceeds model context limit"
-            : "Session too large to compact - context exceeds model limit even after stripping media",
+          message: overflowText,
         }).toObject()
         processor.message.finish = "error"
         yield* session.updateMessage(processor.message)
-        return "stop"
+        if (!shrunk) {
+          log.info("summary input cannot fit context limit", { shrinks })
+          return "stop"
+        }
+        shrinks++
+        log.info("summary overflowed, retrying with shrunk history", { shrinks })
+        head = shrunk.head
+        modelMessages = shrunk.modelMessages
+        msg = summaryMessage()
       }
 
       if (compactionPart && selected.tail_start_id && compactionPart.tail_start_id !== selected.tail_start_id) {
@@ -590,6 +675,7 @@ export const layer = Layer.effect(
       model: { providerID: ProviderID; modelID: ModelID }
       auto: boolean
       overflow?: boolean
+      midTurn?: boolean
     }) {
       const msg = yield* session.updateMessage({
         id: MessageID.ascending(),
@@ -606,6 +692,7 @@ export const layer = Layer.effect(
         type: "compaction",
         auto: input.auto,
         overflow: input.overflow,
+        mid_turn: input.midTurn,
       })
       if (flags.experimentalEventSystem) {
         yield* events.publish(SessionEvent.Compaction.Started, {

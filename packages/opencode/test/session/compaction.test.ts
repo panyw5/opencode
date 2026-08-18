@@ -196,6 +196,7 @@ function createCompactionMarker(sessionID: SessionID) {
 function fake(
   input: Parameters<SessionProcessorModule.SessionProcessor.Interface["create"]>[0],
   result: "continue" | "compact",
+  captures?: Array<LLM.StreamInput>,
 ) {
   const msg = input.assistantMessage
   return {
@@ -206,7 +207,10 @@ function fake(
     updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
     completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
     failToolCall: Effect.fn("TestSessionProcessor.failToolCall")(() => Effect.succeed(false)),
-    process: Effect.fn("TestSessionProcessor.process")(() => Effect.succeed(result)),
+    process: Effect.fn("TestSessionProcessor.process")((streamInput: LLM.StreamInput) => {
+      captures?.push(streamInput)
+      return Effect.succeed(result)
+    }),
   } satisfies SessionProcessorModule.SessionProcessor.Handle
 }
 
@@ -215,6 +219,20 @@ function layer(result: "continue" | "compact") {
     SessionProcessorModule.SessionProcessor.Service,
     SessionProcessorModule.SessionProcessor.Service.of({
       create: Effect.fn("TestSessionProcessor.create")((input) => Effect.succeed(fake(input, result))),
+    }),
+  )
+}
+
+function layerSeq(results: Array<"continue" | "compact">, captures?: Array<LLM.StreamInput>) {
+  let index = 0
+  return Layer.succeed(
+    SessionProcessorModule.SessionProcessor.Service,
+    SessionProcessorModule.SessionProcessor.Service.of({
+      create: Effect.fn("TestSessionProcessor.create")((input) => {
+        const result = results[index] ?? results.at(-1) ?? "continue"
+        index++
+        return Effect.succeed(fake(input, result, captures))
+      }),
     }),
   )
 }
@@ -255,6 +273,7 @@ type CompactionProcessOptions = {
   plugin?: Layer.Layer<Plugin.Service>
   provider?: ReturnType<typeof ProviderTest.fake>
   config?: Layer.Layer<Config.Service>
+  processors?: Layer.Layer<SessionProcessorModule.SessionProcessor.Service>
 }
 
 function withCompaction(options?: CompactionProcessOptions) {
@@ -264,14 +283,16 @@ function withCompaction(options?: CompactionProcessOptions) {
 function compactionProcessLayer(options?: CompactionProcessOptions) {
   const bus = Bus.layer
   const status = SessionStatus.layer.pipe(Layer.provide(bus))
-  const processor = options?.llm
-    ? SessionProcessorModule.SessionProcessor.layer.pipe(
-        Layer.provide(summary),
-        Layer.provide(Image.defaultLayer),
-        Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
-        Layer.provide(status),
-      )
-    : layer(options?.result ?? "continue")
+  const processor = options?.processors
+    ? options.processors
+    : options?.llm
+      ? SessionProcessorModule.SessionProcessor.layer.pipe(
+          Layer.provide(summary),
+          Layer.provide(Image.defaultLayer),
+          Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
+          Layer.provide(status),
+        )
+      : layer(options?.result ?? "continue")
   return Layer.mergeAll(SessionCompaction.layer.pipe(Layer.provide(processor)), processor, bus, status).pipe(
     Layer.provide(SessionNs.defaultLayer),
     Layer.provide((options?.provider ?? wide()).layer),
@@ -435,7 +456,8 @@ describe("session.compaction.isOverflow", () => {
       Effect.gen(function* () {
         const compact = yield* SessionCompaction.Service
         const model = createModel({ context: 400_000, input: 272_000, output: 128_000 })
-        const tokens = { input: 200_000, output: 20_000, reasoning: 0, cache: { read: 10_000, write: 0 } }
+        // usable = 272K - 20K reserved = 252K; 90% trigger = 226.8K
+        const tokens = { input: 180_000, output: 10_000, reasoning: 0, cache: { read: 5_000, write: 0 } }
         expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
       }),
     ),
@@ -562,6 +584,72 @@ describe("session.compaction.isOverflow", () => {
       },
     ),
   )
+
+  it.live(
+    "triggers at 90% of usable context by default",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 200_000, output: 32_000 })
+        // usable = 200K - 32K = 168K; 90% = 151.2K
+        const tokens = { input: 140_000, output: 12_000, reasoning: 0, cache: { read: 0, write: 0 } }
+        expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
+      }),
+    ),
+  )
+
+  it.live(
+    "does not trigger below 90% of usable context",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const model = createModel({ context: 200_000, output: 32_000 })
+        // usable = 168K; 90% = 151.2K
+        const tokens = { input: 130_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
+        expect(yield* compact.isOverflow({ tokens, model })).toBe(false)
+      }),
+    ),
+  )
+
+  it.live(
+    "respects compaction.threshold override",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const model = createModel({ context: 200_000, output: 32_000 })
+          // usable = 168K; 50% = 84K
+          const tokens = { input: 80_000, output: 5_000, reasoning: 0, cache: { read: 0, write: 0 } }
+          expect(yield* compact.isOverflow({ tokens, model })).toBe(true)
+        }),
+      {
+        config: {
+          compaction: { threshold: 0.5 },
+        },
+      },
+    ),
+  )
+
+  it.live(
+    "waits until usable is full when threshold is 1",
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const compact = yield* SessionCompaction.Service
+          const model = createModel({ context: 200_000, output: 32_000 })
+          // usable = 168K
+          const under = { input: 150_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
+          const over = { input: 160_000, output: 10_000, reasoning: 0, cache: { read: 0, write: 0 } }
+          expect(yield* compact.isOverflow({ tokens: under, model })).toBe(false)
+          expect(yield* compact.isOverflow({ tokens: over, model })).toBe(true)
+        }),
+      {
+        config: {
+          compaction: { threshold: 1 },
+        },
+      },
+    ),
+  )
 })
 
 describe("session.compaction.create", () => {
@@ -599,6 +687,30 @@ describe("session.compaction.create", () => {
           type: "compaction",
           reason: "auto",
           summary: "",
+        })
+      }),
+    ),
+  )
+
+  it.live(
+    "persists mid_turn on the compaction part",
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const compact = yield* SessionCompaction.Service
+        const ssn = yield* SessionNs.Service
+        const info = yield* ssn.create({})
+        yield* compact.create({
+          sessionID: info.id,
+          agent: "build",
+          model: ref,
+          auto: true,
+          midTurn: true,
+        })
+        const msgs = yield* ssn.messages({ sessionID: info.id })
+        expect(msgs[0].parts[0]).toMatchObject({
+          type: "compaction",
+          auto: true,
+          mid_turn: true,
         })
       }),
     ),
@@ -880,6 +992,154 @@ describe("session.compaction.process", () => {
         expect(JSON.stringify(summary.info.error)).toContain("Session too large to compact")
       }
     }).pipe(withCompaction({ result: "compact" })),
+  )
+
+  itCompaction.instance(
+    "shrinks summary history and retries when the summary request overflows",
+    () => {
+      const captures: Array<LLM.StreamInput> = []
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        for (const text of ["turn-1", "turn-2", "turn-3", "turn-4", "turn-5"]) {
+          yield* createUserMessage(session.id, text)
+        }
+        yield* createSummaryCompaction(session.id)
+
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        const parent = msgs.at(-1)?.info.id
+        expect(parent).toBeTruthy()
+
+        const result = yield* SessionCompaction.use.process({
+          parentID: parent!,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        expect(result).toBe("continue")
+        expect(captures.length).toBe(2)
+        const first = JSON.stringify(captures[0]?.messages)
+        const second = JSON.stringify(captures[1]?.messages)
+        // First attempt summarizes the full head, second attempt drops the oldest turn.
+        expect(first).toContain("turn-1")
+        expect(second).not.toContain("turn-1")
+        expect(second).toContain("turn-3")
+        expect(second.length).toBeLessThan(first.length)
+
+        const all = yield* ssn.messages({ sessionID: session.id })
+        const summaries = all.filter((item) => item.info.role === "assistant" && item.info.summary)
+        expect(summaries.length).toBe(2)
+        const errored = summaries[0]?.info
+        const ok = summaries[1]?.info
+        if (errored?.role === "assistant") {
+          expect(errored.finish).toBe("error")
+          expect(JSON.stringify(errored.error)).toContain("Session too large to compact")
+        }
+        if (ok?.role === "assistant") {
+          expect(ok.error).toBeUndefined()
+          expect(ok.finish).toBeUndefined()
+        }
+        // Original history survives the retried compaction.
+        expect(all.some((item) => item.info.id === msgs[0]?.info.id)).toBe(true)
+      }).pipe(withCompaction({ processors: layerSeq(["compact", "continue"], captures) }))
+    },
+  )
+
+  itCompaction.instance(
+    "pre-shrinks summary input that cannot fit the model budget before requesting",
+    () => {
+      const captures: Array<LLM.StreamInput> = []
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        for (const text of [
+          `alpha-${"1".repeat(6_000)}`,
+          `bravo-${"2".repeat(6_000)}`,
+          `charlie-${"3".repeat(6_000)}`,
+          "delta",
+          "echo",
+        ]) {
+          yield* createUserMessage(session.id, text)
+        }
+        yield* createSummaryCompaction(session.id)
+
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        const parent = msgs.at(-1)?.info.id
+        expect(parent).toBeTruthy()
+
+        const result = yield* SessionCompaction.use.process({
+          parentID: parent!,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        // Tiny context forces pre-emptive shrinking down to the last head turn
+        // without any wasted overflow request.
+        expect(result).toBe("continue")
+        expect(captures.length).toBe(1)
+        const captured = JSON.stringify(captures[0]?.messages)
+        expect(captured).not.toContain("alpha-")
+        expect(captured).not.toContain("bravo-")
+        expect(captured).toContain("charlie-")
+      }).pipe(
+        withCompaction({
+          processors: layerSeq(["continue"], captures),
+          provider: ProviderTest.fake({ model: createModel({ context: 2_000, output: 500 }) }),
+        }),
+      )
+    },
+  )
+
+  itCompaction.instance(
+    "recovers when the summary LLM stream fails with context overflow then succeeds",
+    () => {
+      const stub = llm()
+      stub.push(
+        Stream.fail(
+          new APICallError({
+            message: "request too large",
+            isRetryable: false,
+            statusCode: 413,
+            url: "https://example.com/v1/messages",
+            requestBodyValues: {},
+          }),
+        ),
+      )
+      stub.push(reply("## Goal\n- done"))
+      return Effect.gen(function* () {
+        const ssn = yield* SessionNs.Service
+        const session = yield* ssn.create({})
+        for (const text of ["turn-1", "turn-2", "turn-3", "turn-4", "turn-5"]) {
+          yield* createUserMessage(session.id, text)
+        }
+        yield* createSummaryCompaction(session.id)
+
+        const msgs = yield* ssn.messages({ sessionID: session.id })
+        const parent = msgs.at(-1)?.info.id
+        expect(parent).toBeTruthy()
+
+        const result = yield* SessionCompaction.use.process({
+          parentID: parent!,
+          messages: msgs,
+          sessionID: session.id,
+          auto: false,
+        })
+
+        expect(result).toBe("continue")
+
+        const all = yield* ssn.messages({ sessionID: session.id })
+        const summaries = all.filter((item) => item.info.role === "assistant" && item.info.summary)
+        expect(summaries.length).toBe(2)
+        const errored = summaries[0]?.info
+        const ok = summaries[1]
+        if (errored?.role === "assistant") expect(errored.finish).toBe("error")
+        const text = ok?.parts.find((p): p is MessageV2.TextPart => p.type === "text")?.text
+        expect(text).toContain("## Goal")
+      }).pipe(withCompaction({ llm: stub.layer }))
+    },
+    { git: true },
   )
 
   itCompaction.instance(
@@ -1229,6 +1489,93 @@ describe("session.compaction.process", () => {
       if (last?.parts[0]?.type === "text") {
         expect(last.parts[0].text).toContain("previous request exceeded the provider's size limit")
       }
+    }),
+  )
+
+  itCompaction.instance(
+    "mid-turn compaction keeps the current user turn in the tail",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      yield* createUserMessage(session.id, "older")
+      const current = yield* createUserMessage(session.id, "current mid-turn")
+      yield* createAssistantMessage(session.id, current.id, (yield* TestInstance).directory)
+      yield* SessionCompaction.use.create({
+        sessionID: session.id,
+        agent: "build",
+        model: ref,
+        auto: true,
+        midTurn: true,
+      })
+
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+      const parent = msgs.at(-1)?.info.id
+      expect(parent).toBeTruthy()
+      yield* SessionCompaction.use.process({
+        parentID: parent!,
+        messages: msgs,
+        sessionID: session.id,
+        auto: false,
+      })
+
+      const part = yield* readCompactionPart(session.id)
+      expect(part?.mid_turn).toBe(true)
+      expect(part?.tail_start_id).toBe(current.id)
+
+      const filtered = MessageV2.filterCompacted(MessageV2.stream(session.id))
+      expect(filtered.some((msg) => msg.info.id === current.id)).toBe(true)
+      expect(filtered.some((msg) => msg.parts.some((p) => p.type === "text" && p.text === "older"))).toBe(false)
+    }).pipe(withCompaction({ config: cfg({ tail_turns: 0, preserve_recent_tokens: 1 }) })),
+  )
+
+  it.instance(
+    "does not replay the current user turn on mid-turn overflow",
+    Effect.gen(function* () {
+      const ssn = yield* SessionNs.Service
+      const session = yield* ssn.create({})
+      yield* createUserMessage(session.id, "root")
+      const current = yield* createUserMessage(session.id, "image")
+      yield* ssn.updatePart({
+        id: PartID.ascending(),
+        messageID: current.id,
+        sessionID: session.id,
+        type: "file",
+        mime: "image/png",
+        filename: "cat.png",
+        url: "https://example.com/cat.png",
+      })
+      yield* SessionCompaction.use.create({
+        sessionID: session.id,
+        agent: "build",
+        model: ref,
+        auto: true,
+        overflow: true,
+        midTurn: true,
+      })
+
+      const msgs = yield* ssn.messages({ sessionID: session.id })
+      const parent = msgs.at(-1)?.info.id
+      expect(parent).toBeTruthy()
+      const result = yield* SessionCompaction.use.process({
+        parentID: parent!,
+        messages: msgs,
+        sessionID: session.id,
+        auto: true,
+        overflow: true,
+      })
+
+      const all = yield* ssn.messages({ sessionID: session.id })
+      const last = all.at(-1)
+      expect(result).toBe("continue")
+      expect(last?.parts.some((part) => part.type === "file")).toBe(false)
+      expect(
+        last?.parts.some((part) => part.type === "text" && part.text.includes("Attached image/png: cat.png")),
+      ).toBe(false)
+      if (last?.parts[0]?.type === "text") {
+        expect(last.parts[0].text).toContain("Continue if you have next steps")
+      }
+      const filtered = MessageV2.filterCompacted(MessageV2.stream(session.id))
+      expect(filtered.some((msg) => msg.info.id === current.id)).toBe(true)
     }),
   )
 

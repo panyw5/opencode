@@ -128,7 +128,7 @@ Every field is optional.
 
   "tool_output": { "max_lines": 200, "max_bytes": 8192 },
 
-  "compaction": { "auto": true, "tail_turns": 15 }
+  "compaction": { "auto": true, "tail_turns": 15, "threshold": 0.9 }
 }
 ```
 

@@ -4,6 +4,7 @@ import { ProviderTransform } from "@/provider/transform"
 import type { MessageV2 } from "./message-v2"
 
 const COMPACTION_BUFFER = 20_000
+export const DEFAULT_THRESHOLD = 0.9
 
 export function usable(input: { cfg: Config.Info; model: Provider.Model; outputTokenMax?: number }) {
   const context = input.model.limit.context
@@ -28,5 +29,8 @@ export function isOverflow(input: {
 
   const count =
     input.tokens.total || input.tokens.input + input.tokens.output + input.tokens.cache.read + input.tokens.cache.write
-  return count >= usable(input)
+  const limit = usable(input)
+  const ratio = input.cfg.compaction?.threshold ?? DEFAULT_THRESHOLD
+  const threshold = Number.isFinite(ratio) ? Math.min(1, Math.max(0, ratio)) : DEFAULT_THRESHOLD
+  return count >= Math.floor(limit * threshold)
 }

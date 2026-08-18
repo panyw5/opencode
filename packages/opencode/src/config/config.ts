@@ -299,6 +299,10 @@ export const Info = Schema.Struct({
       reserved: Schema.optional(NonNegativeInt).annotate({
         description: "Token buffer for compaction. Leaves enough window to avoid overflow during compaction.",
       }),
+      threshold: Schema.optional(Schema.Number.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(1))).annotate({
+        description:
+          "Fraction of usable context that triggers automatic compaction (default: 0.9). Set to 1 to wait until the usable window is full.",
+      }),
     }),
   ),
   experimental: Schema.optional(
