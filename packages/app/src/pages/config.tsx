@@ -88,7 +88,7 @@ import {
   normalizePath,
 } from "@/utils/config-source"
 import { configPluginKey, pluginKey, relativePluginSpecifier, updatePluginEntries } from "@/utils/config-plugin"
-import { refreshAfterConfigWrite } from "@/utils/config-reload"
+import { CONFIG_PAGE_REFRESH_EVENT, refreshAfterConfigWrite } from "@/utils/config-reload"
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
 import {
@@ -963,7 +963,6 @@ function jsoncObjectField(label: string, value: string): Record<string, unknown>
 function JsoncAgentEditor(props: {
   name: string
   config?: NonNullable<Config["agent"]>[string]
-  busy?: boolean
   onSave: (form: JsoncAgentForm) => Promise<void>
 }) {
   const language = useLanguage()
@@ -1016,7 +1015,7 @@ function JsoncAgentEditor(props: {
         <SaveButton
           label={saving() ? language.t("config.agents.jsonc.saving") : language.t("common.save")}
           onClick={() => void save()}
-          disabled={saving() || props.busy}
+          disabled={saving()}
         />
       </div>
       <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-5">
@@ -2131,7 +2130,6 @@ function Editor(props: {
   text: string
   dirty: boolean
   busy: boolean
-  reloading?: boolean
   tree?: TreeNode[]
   treeRoot?: string
   treeBusy?: boolean
@@ -2139,7 +2137,6 @@ function Editor(props: {
   onTreeToggle?: (path: string) => void
   onInput: (value: string) => void
   onSave: () => void
-  onReload: () => void
   onOpenFolder?: () => void
   onCopyPath?: () => void
   copyPathCopied?: boolean
@@ -2189,20 +2186,6 @@ function Editor(props: {
                   {language.t("config.action.openFolder")}
                 </Button>
               </Show>
-              <Button
-                size="small"
-                variant="ghost"
-                icon={props.reloading ? undefined : "reset"}
-                onClick={props.onReload}
-                disabled={props.reloading}
-              >
-                <Show when={props.reloading}>
-                  <Spinner class="size-3" />
-                </Show>
-                {props.reloading
-                  ? language.t("config.reloadBackend.loading")
-                  : language.t("command.server.reloadBackend")}
-              </Button>
               <Show when={props.onDelete}>
                 {(onDelete) => (
                   <Button
@@ -2243,11 +2226,6 @@ function Editor(props: {
           <Show when={props.warn}>
             <div class="mt-3 rounded-xl border border-border-weak-base bg-surface-secondary px-3 py-2 text-12-regular text-text-danger-base">
               {props.warn}
-            </div>
-          </Show>
-          <Show when={props.reloading}>
-            <div class="mt-3 rounded-xl border border-border-weak-base bg-surface-secondary px-3 py-2 text-12-regular text-text-weak">
-              {language.t("config.reloadBackend.loading")}
             </div>
           </Show>
         </div>
@@ -3551,7 +3529,6 @@ function CustomEditor(props: {
   item?: ProviderItem
   form: CustomState
   busy: boolean
-  reloading?: boolean
   onToggle: (item: ProviderItem, enabled: boolean) => void
   onField: (key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) => void
   onModel: (index: number, key: "id" | "name", value: string) => void
@@ -3563,7 +3540,6 @@ function CustomEditor(props: {
   onAddHeader: () => void
   onRemoveHeader: (index: number) => void
   onSave: () => void
-  onReload?: () => void
   onDelete: () => void
   onCreate: () => void
   onSecret: () => void
@@ -3612,22 +3588,6 @@ function CustomEditor(props: {
                 {language.t("config.action.delete")}
               </Button>
             </Show>
-            <Show when={props.onReload && props.form.mode !== "create"}>
-              <Button
-                size="large"
-                variant="ghost"
-                icon={props.reloading ? undefined : "reset"}
-                onClick={() => props.onReload?.()}
-                disabled={props.busy || props.form.saving || props.form.deleting || props.reloading}
-              >
-                <Show when={props.reloading}>
-                  <Spinner class="size-3" />
-                </Show>
-                {props.reloading
-                  ? language.t("config.reloadBackend.loading")
-                  : language.t("command.server.reloadBackend")}
-              </Button>
-            </Show>
             <SaveButton
               size="large"
               label={
@@ -3639,11 +3599,6 @@ function CustomEditor(props: {
               disabled={props.busy || props.form.saving || props.form.deleting}
             />
           </div>
-          <Show when={props.reloading}>
-            <div class="mt-3 w-full rounded-xl border border-border-weak-base bg-surface-secondary px-3 py-2 text-12-regular text-text-weak">
-              {language.t("config.reloadBackend.loading")}
-            </div>
-          </Show>
         </div>
 
         <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
@@ -3982,7 +3937,6 @@ export default function ConfigPage() {
     skillMarketInstalling: "",
     treeClosed: {} as Record<string, boolean>,
     busy: false,
-    reloadingBackend: false,
     workspaceRev: 0,
     skillRev: 0,
     pluginRev: 0,
@@ -4018,6 +3972,19 @@ export default function ConfigPage() {
   onCleanup(() => {
     if (copiedTimer) clearTimeout(copiedTimer)
   })
+
+  const refreshAfterBackendReload = () => {
+    console.info("[config] backend reload refresh started")
+    bump("workspaceRev", "skillRev", "pluginRev", "agentRev", "clawRev", "gaRev", "hmRev")
+    console.info("[config] backend reload refresh completed")
+  }
+
+  const onConfigPageRefresh = () => {
+    refreshAfterBackendReload()
+  }
+
+  window.addEventListener(CONFIG_PAGE_REFRESH_EVENT, onConfigPageRefresh)
+  onCleanup(() => window.removeEventListener(CONFIG_PAGE_REFRESH_EVENT, onConfigPageRefresh))
 
   function bump(
     ...list: Array<
@@ -6301,30 +6268,6 @@ export default function ConfigPage() {
           description: err instanceof Error ? err.message : String(err),
         })
       })
-  }
-
-  async function reload() {
-    if (!platform.reloadBackend) return
-    if (state.reloadingBackend) return
-    setState("reloadingBackend", true)
-    await platform
-      .reloadBackend()
-      .then(async () => {
-        await globalSync.bootstrap()
-        showToast({
-          variant: "success",
-          title: language.t("toast.server.reloadBackend.success.title"),
-          description: language.t("toast.server.reloadBackend.success.description"),
-        })
-        bump("workspaceRev", "skillRev", "pluginRev", "agentRev", "clawRev", "gaRev", "hmRev")
-      })
-      .catch((err: unknown) => {
-        showToast({
-          title: language.t("common.requestFailed"),
-          description: err instanceof Error ? err.message : String(err),
-        })
-      })
-      .finally(() => setState("reloadingBackend", false))
   }
 
   async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
@@ -8698,7 +8641,6 @@ export default function ConfigPage() {
                     item={selectedCustom()}
                     form={state.custom}
                     busy={state.providerBusy === selectedCustom()?.id}
-                    reloading={state.reloadingBackend}
                     onToggle={toggleProvider}
                     onField={setCustomField}
                     onModel={setCustomModel}
@@ -8709,7 +8651,6 @@ export default function ConfigPage() {
                     onRemoveModel={removeCustomModel}
                     onAddHeader={addCustomHeader}
                     onRemoveHeader={removeCustomHeader}
-                    onReload={platform.reloadBackend ? () => void reload() : undefined}
                     onSave={() => void saveCustom()}
                     onDelete={() => void deleteCustom()}
                     onCreate={createCustomProvider}
@@ -8858,10 +8799,8 @@ export default function ConfigPage() {
                     text={state.text}
                     dirty={dirty()}
                     busy={state.busy}
-                    reloading={state.reloadingBackend}
                     onInput={(value) => setState("text", value)}
                     onSave={() => void save()}
-                    onReload={() => void reload()}
                     onOpenFolder={currentDoc() ? openFolder : undefined}
                     extra={
                       <Toggle
@@ -9053,10 +8992,8 @@ export default function ConfigPage() {
                     text={state.text}
                     dirty={dirty()}
                     busy={state.busy}
-                    reloading={state.reloadingBackend}
                     onInput={(value) => setState("text", value)}
                     onSave={() => void save()}
-                    onReload={() => void reload()}
                     onOpenFolder={currentDoc() ? openFolder : undefined}
                     onDelete={
                       currentDoc()?.id.startsWith("cmd:") && platform.deleteLocalFile
@@ -9113,7 +9050,6 @@ export default function ConfigPage() {
                           text={state.text}
                           dirty={dirty()}
                           busy={state.busy}
-                          reloading={state.reloadingBackend}
                           tree={currentTree()}
                           treeRoot={currentSkillRoot()}
                           treeBusy={tree.loading}
@@ -9121,7 +9057,6 @@ export default function ConfigPage() {
                           onTreeToggle={toggleTree}
                           onInput={(value) => setState("text", value)}
                           onSave={() => void save()}
-                          onReload={() => void reload()}
                           onOpenFolder={currentDoc() ? openFolder : undefined}
                           onCopyPath={currentDoc() ? copyPath : undefined}
                           copyPathCopied={state.copied === "config-path"}
@@ -9150,10 +9085,8 @@ export default function ConfigPage() {
                         text={state.text}
                         dirty={dirty()}
                         busy={state.busy}
-                        reloading={state.reloadingBackend}
                         onInput={(value) => setState("text", value)}
                         onSave={() => void save()}
-                        onReload={() => void reload()}
                         onOpenFolder={file(currentDoc()?.path ?? "") ? openFolder : undefined}
                         onCopyPath={file(currentDoc()?.path ?? "") ? copyPath : undefined}
                         copyPathCopied={state.copied === "config-path"}
@@ -9173,7 +9106,6 @@ export default function ConfigPage() {
                       <JsoncAgentEditor
                         name={name()}
                         config={configFileAgents()?.[name()]}
-                        busy={state.reloadingBackend}
                         onSave={(form) => saveJsoncAgent(name(), form)}
                       />
                     )}
@@ -9187,10 +9119,8 @@ export default function ConfigPage() {
                   text={state.text}
                   dirty={dirty()}
                   busy={state.busy}
-                  reloading={state.reloadingBackend}
                   onInput={(value) => setState("text", value)}
                   onSave={() => void save()}
-                  onReload={() => void reload()}
                   onOpenFolder={currentDoc() ? openFolder : undefined}
                   empty={t("config.agentsMd.empty")}
                   markdown

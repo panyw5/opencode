@@ -4,6 +4,13 @@ type ConfigRefreshInput = {
   source: string
 }
 
+export const CONFIG_PAGE_REFRESH_EVENT = "opencode:config-page-refresh"
+
+export function requestConfigPageRefresh() {
+  console.info("[config] dispatching config page refresh")
+  window.dispatchEvent(new Event(CONFIG_PAGE_REFRESH_EVENT))
+}
+
 /** Make a direct config-file write visible without restarting the backend. */
 export async function refreshAfterConfigWrite(input: ConfigRefreshInput) {
   console.info("[config] runtime config refresh requested", { source: input.source })

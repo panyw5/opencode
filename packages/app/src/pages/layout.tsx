@@ -57,6 +57,7 @@ import { playSoundById } from "@/utils/sound"
 import { setNavigate } from "@/utils/notification-click"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
+import { requestConfigPageRefresh } from "@/utils/config-reload"
 
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { triggerFileFind } from "@opencode-ai/ui/pierre/file-find"
@@ -1291,7 +1292,9 @@ export default function Layout(props: ParentProps) {
     setReloadingBackend(true)
     await platform
       .reloadBackend()
-      .then(() => {
+      .then(async () => {
+        await globalSync.bootstrap()
+        requestConfigPageRefresh()
         showToast({
           variant: "success",
           title: language.t("toast.server.reloadBackend.success.title"),
