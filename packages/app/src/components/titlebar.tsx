@@ -123,7 +123,7 @@ export function Titlebar() {
     if (!(target instanceof Element)) return false
 
     const selector =
-      "button, a, input, textarea, select, option, [role='button'], [role='menuitem'], [contenteditable='true'], [contenteditable='']"
+      "button, a, input, textarea, select, option, [role='button'], [role='tab'], [role='menuitem'], [contenteditable='true'], [contenteditable='']"
 
     return !!target.closest(selector)
   }

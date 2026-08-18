@@ -49,6 +49,29 @@ export type SessionBarTab = {
 
 export const sessionBarKey = (tab: Pick<SessionBarTab, "directory" | "id">) => `${workspaceKey(tab.directory)}:${tab.id}`
 
+export function addSessionBarDraft(drafts: readonly string[], directory: string) {
+  if (!directory || drafts.some((item) => workspaceKey(item) === workspaceKey(directory))) return [...drafts]
+  return [...drafts, directory]
+}
+
+export function removeSessionBarDraft(drafts: readonly string[], directory: string) {
+  return drafts.filter((item) => workspaceKey(item) !== workspaceKey(directory))
+}
+
+export function visibleSessionBarDrafts(stored: readonly string[], current: string, closed = "") {
+  const closedKey = closed ? workspaceKey(closed) : ""
+  const drafts = closedKey ? stored.filter((directory) => workspaceKey(directory) !== closedKey) : [...stored]
+  if (!current || (closedKey && workspaceKey(current) === closedKey)) return drafts
+  if (drafts.some((directory) => workspaceKey(directory) === workspaceKey(current))) return drafts
+  return [...drafts, current]
+}
+
+export function cycleSessionBarIndex(length: number, activeIndex: number, delta: number) {
+  if (length <= 0) return -1
+  if (activeIndex < 0) return delta > 0 ? 0 : length - 1
+  return (activeIndex + delta + length) % length
+}
+
 const MAX_SESSION_BAR_TABS = 30
 
 type SessionView = {
@@ -280,6 +303,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         sessionView: {} as Record<string, SessionView>,
         sessionBar: {
           all: [] as SessionBarTab[],
+          drafts: [] as string[],
         },
         handoff: {
           tabs: undefined as TabHandoff | undefined,
@@ -678,6 +702,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       },
       sessionBar: {
         all: createMemo(() => store.sessionBar?.all ?? []),
+        drafts: createMemo(() => store.sessionBar?.drafts ?? []),
         /** Open (or focus) a session tab. Dedupes by directory+id, appends to the end. */
         open(directory: string, id: string, title?: string, parentID?: string | null) {
           const key = workspaceKey(directory)
@@ -709,6 +734,30 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             // Bound the strip: drop the oldest (leftmost) tabs.
             return next.slice(next.length - MAX_SESSION_BAR_TABS)
           })
+        },
+        openDraft(directory: string) {
+          const before = store.sessionBar?.drafts ?? []
+          const next = addSessionBarDraft(before, directory)
+          if (next.length === before.length) {
+            console.debug(`[session-bar] draft open skip existing directory=${directory} count=${before.length}`)
+            return
+          }
+          console.debug(
+            `[session-bar] draft open directory=${directory} before=${before.length} after=${next.length} drafts=${next.join(",")}`,
+          )
+          setStore("sessionBar", "drafts", next)
+        },
+        closeDraft(directory: string) {
+          const before = store.sessionBar?.drafts ?? []
+          const next = removeSessionBarDraft(before, directory)
+          if (next.length === before.length) {
+            console.debug(`[session-bar] draft close skip missing directory=${directory} count=${before.length}`)
+            return
+          }
+          console.debug(
+            `[session-bar] draft close directory=${directory} before=${before.length} after=${next.length} drafts=${next.join(",")}`,
+          )
+          setStore("sessionBar", "drafts", next)
         },
         close(directory: string, id: string) {
           setStore("sessionBar", "all", (prev) => {

@@ -110,7 +110,9 @@ button:disabled,
 *[data-tauri-drag-region] textarea,
 *[data-tauri-drag-region] select,
 *[data-tauri-drag-region] [role="button"],
+*[data-tauri-drag-region] [role="tab"],
 *[data-tauri-drag-region] [role="menuitem"],
+*[data-tauri-drag-region] [data-component="session-tab"],
 *[data-tauri-drag-region] [contenteditable] {
   app-region: no-drag;
 }

@@ -697,6 +697,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         session = created
         if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
         local.session.promote(sessionDirectory, session.id)
+        console.debug(
+          `[session-bar] draft promote directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${session.id}`,
+        )
+        layout.sessionBar.closeDraft(currentDirectory)
         layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
 
         // Apply project-task selection made on the new-session screen before navigate.

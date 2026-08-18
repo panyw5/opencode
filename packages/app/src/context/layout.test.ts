@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
-import { createSessionKeyReader, ensureSessionKey, pruneSessionKeys } from "./layout"
+import {
+  addSessionBarDraft,
+  createSessionKeyReader,
+  cycleSessionBarIndex,
+  ensureSessionKey,
+  pruneSessionKeys,
+  removeSessionBarDraft,
+  visibleSessionBarDrafts,
+} from "./layout"
 
 describe("layout session-key helpers", () => {
   test("couples touch and scroll seed in order", () => {
@@ -65,5 +73,34 @@ describe("pruneSessionKeys", () => {
     })
 
     expect(drop).toEqual([])
+  })
+})
+
+describe("session bar drafts", () => {
+  test("deduplicates drafts by workspace", () => {
+    expect(addSessionBarDraft(["/work/project"], "/work/project/")).toEqual(["/work/project"])
+    expect(addSessionBarDraft(["/work/project"], "/work/other")).toEqual(["/work/project", "/work/other"])
+  })
+
+  test("removes every path alias for a workspace", () => {
+    expect(removeSessionBarDraft(["/work/project", "/work/other"], "/work/project/")).toEqual(["/work/other"])
+  })
+
+  test("keeps stored drafts after leaving the new-session route", () => {
+    expect(visibleSessionBarDrafts(["/work/project"], "")).toEqual(["/work/project"])
+  })
+
+  test("includes the current draft before it is stored", () => {
+    expect(visibleSessionBarDrafts([], "/work/project")).toEqual(["/work/project"])
+  })
+
+  test("hides a draft that is being closed on the current route", () => {
+    expect(visibleSessionBarDrafts([], "/work/project", "/work/project/")).toEqual([])
+  })
+
+  test("cycles past the last session tab onto a draft", () => {
+    expect(cycleSessionBarIndex(3, 1, 1)).toBe(2)
+    expect(cycleSessionBarIndex(3, -1, 1)).toBe(0)
+    expect(cycleSessionBarIndex(3, -1, -1)).toBe(2)
   })
 })

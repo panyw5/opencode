@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import {
@@ -16,7 +16,7 @@ import { Popover } from "@opencode-ai/ui/popover"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 
-import { sessionBarKey, useLayout, type SessionBarTab } from "@/context/layout"
+import { cycleSessionBarIndex, sessionBarKey, useLayout, visibleSessionBarDrafts, type SessionBarTab } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useCommand } from "@/context/command"
@@ -60,11 +60,13 @@ export function SessionTabsBar() {
   const [state, setState] = createStore({
     activeDraggable: undefined as string | undefined,
   })
+  const [closedDraft, setClosedDraft] = createSignal("")
   let tabsViewport: HTMLDivElement | undefined
   let revealFrame: number | undefined
   const metadataLoads = new Set<string>()
 
   const tabs = createMemo(() => layout.sessionBar.all())
+  const drafts = createMemo(() => layout.sessionBar.drafts())
   const parentIDs = createMemo(() => {
     const result = new Map<string, string>()
     const directories = new Map<string, string>()
@@ -99,17 +101,28 @@ export function SessionTabsBar() {
     return decode64(slug) ?? ""
   })
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
-  // An id-less `/:dir/session` route is a not-yet-created session. Surface it as
-  // a transient draft tab; the first message turns the route into a real session
-  // which then lands in the persisted list via the layout route sync.
+  // An id-less `/:dir/session` route is a not-yet-created session. Keep one
+  // persisted draft tab per workspace until the first message promotes it.
   const draftDirectory = createMemo(() => {
     if (!onSessionRoute()) return ""
     if (params.id) return ""
     return routeDir()
   })
+  const visibleDrafts = createMemo(() => visibleSessionBarDrafts(drafts(), draftDirectory(), closedDraft()))
   const shown = createMemo(() => {
     if (!settings.general.sessionTabsBar()) return false
-    return tabs().length > 0 || !!draftDirectory()
+    return tabs().length > 0 || visibleDrafts().length > 0
+  })
+
+  createEffect(() => {
+    const directory = draftDirectory()
+    if (!directory) {
+      if (closedDraft()) setClosedDraft("")
+      return
+    }
+    if (closedDraft() === workspaceKey(directory)) return
+    console.debug(`[session-bar] draft route observed directory=${directory} idless=true`)
+    layout.sessionBar.openDraft(directory)
   })
 
   const isActive = (tab: SessionBarTab) =>
@@ -164,10 +177,9 @@ export function SessionTabsBar() {
     }
   })
 
-  const open = async (tab: SessionBarTab) => {
-    const href = `/${base64Encode(tab.directory)}/session/${tab.id}`
+  const selectServer = async (directory: string) => {
     // Tabs can point at sessions served by another server connection (extra agents).
-    const extra = extraAgentByDirectory(tab.directory)
+    const extra = extraAgentByDirectory(directory)
     if (extra) {
       const conn = server.list.find((item) => item.integration === extra.id)
       if (conn) {
@@ -178,7 +190,6 @@ export function SessionTabsBar() {
           (value) => value === key,
         )
       }
-      navigate(href)
       return
     }
     if (server.domain !== mainDomain) {
@@ -191,7 +202,18 @@ export function SessionTabsBar() {
         )
       }
     }
+  }
+
+  const open = async (tab: SessionBarTab) => {
+    await selectServer(tab.directory)
+    const href = `/${base64Encode(tab.directory)}/session/${tab.id}`
     navigate(href)
+  }
+
+  const openDraft = async (directory: string) => {
+    console.debug(`[session-bar] draft open route directory=${directory}`)
+    await selectServer(directory)
+    navigate(`/${base64Encode(directory)}/session`)
   }
 
   const subtreeFor = (tab: SessionBarTab) => {
@@ -276,37 +298,61 @@ export function SessionTabsBar() {
     void open(tab)
   }
 
-  const closeDraft = () => {
+  const closeDraft = (directory = draftDirectory()) => {
+    if (!directory) return
+    const active = !params.id && workspaceKey(directory) === workspaceKey(routeDir())
+    console.debug(`[session-bar] draft close request directory=${directory} active=${String(active)}`)
+    if (active) {
+      console.debug(`[session-bar] draft close suppress directory=${directory}`)
+      setClosedDraft(workspaceKey(directory))
+    }
+    layout.sessionBar.closeDraft(directory)
+    if (!active) return
+
     const last = orderedTabs().at(-1)
     if (last) {
       void open(last)
       return
     }
+    const next = drafts().find((item) => workspaceKey(item) !== workspaceKey(directory))
+    if (next) {
+      void openDraft(next)
+      return
+    }
     navigate("/")
   }
 
-  // Cycle through open tabs. When the current route is not a persisted tab
-  // (draft new-session page, home, config), previous lands on the last tab and
-  // next on the first, matching the draft tab's visual position at the end.
-  // Only top-level tabs are cycled: subagent child tabs live inside their
-  // parent's group, so an active child maps onto its parent root tab.
+  // Cycle through open tabs, then any persisted draft tabs at the end.
+  // Only top-level session tabs are cycled: subagent child tabs live inside
+  // their parent's group, so an active child maps onto its parent root tab.
   const switchBy = (delta: number) => {
     const roots = groups().map((group) => group.tab)
-    if (roots.length === 0) return
-    const index = groups().findIndex(
+    const draftRoots = visibleDrafts()
+    if (roots.length === 0 && draftRoots.length === 0) return
+    const draftIndex = draftRoots.findIndex(
+      (directory) => !params.id && workspaceKey(directory) === workspaceKey(routeDir()),
+    )
+    const sessionIndex = groups().findIndex(
       (group) => isActive(group.tab) || group.children.some((item) => isActive(item.tab)),
     )
-    const target =
-      index === -1
-        ? delta > 0
-          ? roots[0]
-          : roots[roots.length - 1]
-        : roots[(index + delta + roots.length) % roots.length]
-    if (!target) return
+    const index = draftIndex >= 0 ? roots.length + draftIndex : sessionIndex
+    const next = cycleSessionBarIndex(roots.length + draftRoots.length, index, delta)
+    if (next < 0) return
+    if (next < roots.length) {
+      const target = roots[next]
+      if (!target) return
+      console.debug(
+        `[session-bar] switchBy delta=${delta} roots=${roots.map((tab) => tab.id).join(",")} drafts=${draftRoots.length} activeIndex=${index} target=${target.id}`,
+      )
+      void open(target)
+      return
+    }
+    const directory = draftRoots[next - roots.length]
+    if (!directory) return
     console.debug(
-      `[session-bar] switchBy delta=${delta} roots=${roots.map((tab) => tab.id).join(",")} activeGroupIndex=${index} target=${target.id}`,
+      `[session-bar] switchBy delta=${delta} roots=${roots.map((tab) => tab.id).join(",")} drafts=${draftRoots.length} activeIndex=${index} target=draft:${directory}`,
     )
-    void open(target)
+    void openDraft(directory)
   }
 
   const closeActive = () => {
@@ -333,7 +379,7 @@ export function SessionTabsBar() {
       keywords: kw("command.sessionTabs.previous"),
       category: language.t("command.category.session"),
       keybind: "mod+shift+[",
-      disabled: tabs().length === 0,
+      disabled: tabs().length === 0 && visibleDrafts().length === 0,
       onSelect: () => switchBy(-1),
     },
     {
@@ -342,7 +388,7 @@ export function SessionTabsBar() {
       keywords: kw("command.sessionTabs.next"),
       category: language.t("command.category.session"),
       keybind: "mod+shift+]",
-      disabled: tabs().length === 0,
+      disabled: tabs().length === 0 && visibleDrafts().length === 0,
       onSelect: () => switchBy(1),
     },
   ])
@@ -350,7 +396,7 @@ export function SessionTabsBar() {
   const keys = createMemo(() => groups().map((group) => sessionBarKey(group.tab)))
   const scrollTarget = createMemo(() => {
     const draft = draftDirectory()
-    if (draft) return `draft:${workspaceKey(draft)}:${tabs().length}`
+    if (draft) return `draft:${workspaceKey(draft)}:${tabs().length}:${visibleDrafts().length}`
     const active = tabs().find((tab) => isActive(tab))
     if (!active) return
     return `${sessionBarKey(active)}:${tabs().length}`
@@ -425,9 +471,16 @@ export function SessionTabsBar() {
                 )}
               </For>
             </SortableProvider>
-            <Show when={draftDirectory()}>
-              {(directory) => <DraftTab directory={directory()} closable={tabs().length > 0} onClose={closeDraft} />}
-            </Show>
+            <For each={visibleDrafts()}>
+              {(directory) => (
+                <DraftTab
+                  directory={directory}
+                  active={!params.id && workspaceKey(directory) === workspaceKey(routeDir())}
+                  onOpen={() => void openDraft(directory)}
+                  onClose={() => closeDraft(directory)}
+                />
+              )}
+            </For>
           </div>
           <DragOverlay>
             <Show when={state.activeDraggable} keyed>
@@ -797,34 +850,55 @@ function SessionTab(props: {
   )
 }
 
-function DraftTab(props: { directory: string; closable: boolean; onClose: () => void }) {
+function DraftTab(props: { directory: string; active: boolean; onOpen: () => void; onClose: () => void }) {
   const language = useLanguage()
 
   return (
     <div class="h-full flex min-w-28 items-center">
       <div
         data-component="session-tab"
-        data-active="true"
-        class="group relative flex h-7 min-w-28 max-w-80 cursor-default select-none items-center gap-1.5 rounded-[10px] bg-surface-base-active pl-2 pr-1 text-13-medium italic text-text-strong"
+        data-draft="true"
+        data-directory={props.directory}
+        data-active={props.active ? "true" : undefined}
+        role="button"
+        aria-selected={props.active}
+        tabIndex={0}
+        class="group relative flex h-7 min-w-28 max-w-80 cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium italic"
+        classList={{
+          "bg-surface-base-active text-text-strong": props.active,
+          "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
+        }}
+        onClick={() => {
+          console.debug(`[session-bar] draft click directory=${props.directory} active=${String(props.active)}`)
+          props.onOpen()
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return
+          event.preventDefault()
+          console.debug(`[session-bar] draft key directory=${props.directory} key=${event.key}`)
+          props.onOpen()
+        }}
       >
         <span class="session-tab-main-icon flex shrink-0" aria-hidden="true">
           <Icon name="bubble-5" size="small" />
         </span>
         <span class="min-w-0 flex-1 truncate">{language.t("command.session.new")}</span>
-        <Show when={props.closable}>
-          <span
-            class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow] hover:bg-surface-base-hover hover:text-icon-strong-base"
-            role="button"
-            tabIndex={-1}
-            aria-label={language.t("common.closeTab")}
-            onClick={(event) => {
-              event.stopPropagation()
-              props.onClose()
-            }}
-          >
-            <Icon name="close-small" size="small" />
-          </span>
-        </Show>
+        <span
+          class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow]"
+          classList={{
+            "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
+            "opacity-100": props.active,
+          }}
+          role="button"
+          tabIndex={-1}
+          aria-label={language.t("common.closeTab")}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onClose()
+          }}
+        >
+          <Icon name="close-small" size="small" />
+        </span>
       </div>
     </div>
   )
