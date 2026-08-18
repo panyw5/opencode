@@ -2212,11 +2212,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <IconButton
                     data-action="prompt-read"
                     type="button"
-                    icon="read"
+                    icon="glasses"
                     variant="ghost"
-                    class="size-7 shrink-0"
-                    iconSize="normal"
-                    style={control()}
+                    class="size-9 shrink-0 rounded-full"
+                    iconSize="medium"
+                    style={buttons()}
                     onClick={toggleRead}
                     aria-label={language.t("session.read")}
                     aria-pressed={read()}
