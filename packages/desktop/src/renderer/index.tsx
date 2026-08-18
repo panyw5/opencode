@@ -411,15 +411,15 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     listConfigFiles: (directory?: string | null) => desktopApi.listConfigFiles(directory),
 
-    readConfigFile: (path: string) => desktopApi.readConfigFile(path),
+    readLocalFile: (path: string) => desktopApi.readLocalFile(path),
 
-    writeConfigFile: (path: string, content: string) => desktopApi.writeConfigFile(path, content),
+    writeLocalFile: (path: string, content: string) => desktopApi.writeLocalFile(path, content),
 
-    createConfigFile: (path: string, content: string) => desktopApi.createConfigFile(path, content),
+    createLocalFile: (path: string, content: string) => desktopApi.createLocalFile(path, content),
 
-    deleteConfigFile: (path: string) => desktopApi.deleteConfigFile(path),
+    deleteLocalFile: (path: string) => desktopApi.deleteLocalFile(path),
 
-    renameConfigFile: (oldPath: string, newPath: string) => desktopApi.renameConfigFile(oldPath, newPath),
+    renameLocalFile: (oldPath: string, newPath: string) => desktopApi.renameLocalFile(oldPath, newPath),
 
     createTempMarkdownAttachment:
       typeof desktopApi.createTempMarkdownAttachment === "function"

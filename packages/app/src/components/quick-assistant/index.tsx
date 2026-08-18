@@ -329,12 +329,12 @@ export function QuickAssistant() {
     const next = root()
     if (!next) return
     if (platform.platform !== "desktop") return
-    if (!platform.readConfigFile || !platform.writeConfigFile) return
+    if (!platform.readLocalFile || !platform.writeLocalFile) return
     const file = join(next, "opencode.json")
-    platform.readConfigFile(file).then((existing) => {
+    platform.readLocalFile(file).then((existing) => {
       const patched = patchQuickAssistantConfig(existing)
       if (!patched) return
-      return platform.writeConfigFile!(file, patched)
+      return platform.writeLocalFile!(file, patched)
     })
   })
 

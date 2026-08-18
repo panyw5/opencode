@@ -30,13 +30,13 @@ export function AgentsMdDialog(props: {
   const dirty = createMemo(() => text() !== saved())
 
   const load = async () => {
-    if (!platform.readConfigFile) {
+    if (!platform.readLocalFile) {
       setLoading(false)
       return
     }
     setLoading(true)
     try {
-      const content = await platform.readConfigFile(agentsMdPath())
+      const content = await platform.readLocalFile(agentsMdPath())
       const value = content ?? ""
       setText(value)
       setSaved(value)
@@ -50,10 +50,10 @@ export function AgentsMdDialog(props: {
   }
 
   const save = async () => {
-    if (!platform.writeConfigFile) return
+    if (!platform.writeLocalFile) return
     setSaving(true)
     try {
-      await platform.writeConfigFile(agentsMdPath(), text())
+      await platform.writeLocalFile(agentsMdPath(), text())
       setSaved(text())
       showToast({
         variant: "success",

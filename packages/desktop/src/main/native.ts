@@ -264,7 +264,7 @@ export async function listConfigDirectory(path: string): Promise<ConfigTreeItem[
   }))
 }
 
-export async function readConfigFile(path: string) {
+export async function readLocalFile(path: string) {
   const target = assertAllowedLocalPath(path)
   const info = await stat(target).catch(() => undefined)
   if (!info?.isFile()) return null
@@ -272,24 +272,24 @@ export async function readConfigFile(path: string) {
   return readFile(target, "utf8")
 }
 
-export async function writeConfigFile(path: string, content: string) {
+export async function writeLocalFile(path: string, content: string) {
   const target = assertAllowedLocalPath(path)
   await mkdir(dirname(target), { recursive: true })
   await writeFile(target, content, "utf8")
 }
 
-export async function createConfigFile(path: string, content: string) {
+export async function createLocalFile(path: string, content: string) {
   const target = assertAllowedLocalPath(path)
   await mkdir(dirname(target), { recursive: true })
   await writeFile(target, content, { encoding: "utf8", flag: "wx" })
 }
 
-export async function deleteConfigFile(path: string) {
+export async function deleteLocalFile(path: string) {
   const target = assertAllowedLocalPath(path)
   await unlink(target)
 }
 
-export async function renameConfigFile(oldPath: string, newPath: string) {
+export async function renameLocalFile(oldPath: string, newPath: string) {
   const src = assertAllowedLocalPath(oldPath)
   const dest = assertAllowedLocalPath(newPath)
   await mkdir(dirname(dest), { recursive: true })

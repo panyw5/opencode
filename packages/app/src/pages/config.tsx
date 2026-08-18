@@ -1169,15 +1169,15 @@ function JsoncAgentEditor(props: {
 }
 
 async function loadConfigFileAgents(
-  platform: Pick<ReturnType<typeof usePlatform>, "listConfigFiles" | "readConfigFile">,
+  platform: Pick<ReturnType<typeof usePlatform>, "listConfigFiles" | "readLocalFile">,
 ) {
-  if (!platform.listConfigFiles || !platform.readConfigFile) return
+  if (!platform.listConfigFiles || !platform.readLocalFile) return
   const files = await platform.listConfigFiles(null)
   const file = files.find(
     (item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc",
   )
   if (!file?.exists) return
-  return configuredAgentsFromJsonc((await platform.readConfigFile(file.path)) ?? "")
+  return configuredAgentsFromJsonc((await platform.readLocalFile(file.path)) ?? "")
 }
 
 function providerCfg(input: ProviderCfg | undefined): CustomState {
@@ -4770,7 +4770,7 @@ export default function ConfigPage() {
     root: string,
     extra: Omit<SkillItem, "name" | "description" | "location" | "content" | "editable" | "warn">,
   ) => {
-    if (!platform.listConfigDirectory || !platform.readConfigFile) return [] as SkillItem[]
+    if (!platform.listConfigDirectory || !platform.readLocalFile) return [] as SkillItem[]
     if (!file(root)) return [] as SkillItem[]
 
     const walk = async (dir: string): Promise<SkillItem[]> => {
@@ -4782,7 +4782,7 @@ export default function ConfigPage() {
           if (item.kind === "directory") return walk(item.path)
           if (name(item.path) !== "SKILL.md") return []
 
-          const text = await platform.readConfigFile?.(item.path).catch(() => null)
+          const text = await platform.readLocalFile?.(item.path).catch(() => null)
           if (!text) return []
 
           const meta = skillMeta(text, item.path)
@@ -4809,7 +4809,7 @@ export default function ConfigPage() {
     root: string,
     extra: { group: "global" | "project"; root?: string; project?: string },
   ): Promise<DocItem[]> => {
-    if (!platform.listConfigDirectory || !platform.readConfigFile) return []
+    if (!platform.listConfigDirectory || !platform.readLocalFile) return []
     if (!file(root)) return []
 
     const walk = async (dir: string): Promise<DocItem[]> => {
@@ -4819,7 +4819,7 @@ export default function ConfigPage() {
         sortTree(list).map(async (item) => {
           if (item.kind === "directory") return walk(item.path)
           if (!item.path.endsWith(".md")) return []
-          const text = await platform.readConfigFile?.(item.path).catch(() => null)
+          const text = await platform.readLocalFile?.(item.path).catch(() => null)
           if (text == null) return []
           const rel = item.path.slice(root.length + 1).replace(/\.md$/, "")
           const cmdName = rel.replace(/^(command|commands)\//, "")
@@ -4872,7 +4872,7 @@ export default function ConfigPage() {
           if (!match.test(item.path)) return []
 
           const label = stem(rel(root, item.path))
-          const text = await platform.readConfigFile?.(item.path).catch(() => null)
+          const text = await platform.readLocalFile?.(item.path).catch(() => null)
           const description = text ? frontmatterData(text)?.description : undefined
 
           return [
@@ -5875,7 +5875,7 @@ export default function ConfigPage() {
     const prev = pending.get(item.path)
     if (prev) return prev
     const next = (
-      (platform.readConfigFile?.(item.path).catch(() => "") as Promise<string | null | undefined>) ??
+      (platform.readLocalFile?.(item.path).catch(() => "") as Promise<string | null | undefined>) ??
       Promise.resolve("")
     ).then((text) => {
       const value = text ?? ""
@@ -6287,9 +6287,9 @@ export default function ConfigPage() {
 
   async function save() {
     const item = currentDoc()
-    if (!item?.editable || !platform.writeConfigFile) return
+    if (!item?.editable || !platform.writeLocalFile) return
     await platform
-      .writeConfigFile(item.path, state.text)
+      .writeLocalFile(item.path, state.text)
       .then(() => {
         cache.set(item.path, state.text)
         setState("saved", state.text)
@@ -6333,7 +6333,7 @@ export default function ConfigPage() {
     const file = files?.find(
       (item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc",
     )
-    if (!file?.path || !platform.readConfigFile || !platform.writeConfigFile)
+    if (!file?.path || !platform.readLocalFile || !platform.writeLocalFile)
       throw new Error(t("config.error.globalConfigUnavailable"))
     console.info("[config] jsonc agent config file resolved", { name, path: file.path })
 
@@ -6362,10 +6362,10 @@ export default function ConfigPage() {
       permission: jsoncObjectField("Permission", form.permission),
       options: jsoncObjectField("Options", form.options),
     }
-    let text = (await platform.readConfigFile(file.path)) ?? "{}"
+    let text = (await platform.readLocalFile(file.path)) ?? "{}"
     console.info("[config] jsonc agent config file read", { name, path: file.path, bytes: text.length })
     for (const [key, value] of Object.entries(fields)) text = patchText(text, ["agent", name, key], value)
-    await platform.writeConfigFile(file.path, text)
+    await platform.writeLocalFile(file.path, text)
     console.info("[config] jsonc agent config file written", { name, path: file.path, bytes: text.length })
     setConfigFileAgents(configuredAgentsFromJsonc(text))
     await refreshAfterConfigWrite({
@@ -7162,7 +7162,7 @@ export default function ConfigPage() {
 
   async function saveCommand() {
     const targetDir = state.cmdCreateDir || (space()?.configRoot ? join(space()!.configRoot!, "commands") : "")
-    if (!targetDir || !platform.createConfigFile) return
+    if (!targetDir || !platform.createLocalFile) return
     const title = state.cmdTitle.trim()
     if (!title) {
       setState("cmdErr", t("config.commands.error.nameRequired"))
@@ -7177,7 +7177,7 @@ export default function ConfigPage() {
     const isProject = !!state.cmdCreateProjectRoot
     setState("cmdSaving", true)
     try {
-      await platform.createConfigFile(path, state.text)
+      await platform.createLocalFile(path, state.text)
       cache.set(path, state.text)
       batch(() => {
         setState("cmdPath", path)
@@ -7206,9 +7206,9 @@ export default function ConfigPage() {
   }
 
   async function deleteCommand(item?: DocItem) {
-    if (!item?.path || !platform.deleteConfigFile) return
+    if (!item?.path || !platform.deleteLocalFile) return
     await platform
-      .deleteConfigFile(item.path)
+      .deleteLocalFile(item.path)
       .then(() => {
         cache.delete(item.path)
         batch(() => {
@@ -7297,7 +7297,7 @@ export default function ConfigPage() {
 
   async function saveSkill() {
     const root = state.skillCreateRoot || space()?.skillsRoot
-    if (!root || !platform.createConfigFile) {
+    if (!root || !platform.createLocalFile) {
       setState("skillErr", t("config.error.globalConfigUnavailable"))
       return
     }
@@ -7312,7 +7312,7 @@ export default function ConfigPage() {
     const isProject = !!state.skillCreateProjectRoot
     setState("skillSaving", true)
     await platform
-      .createConfigFile(path, text)
+      .createLocalFile(path, text)
       .then(async () => {
         const meta = skillMeta(text, path)
         cache.set(path, text)
@@ -7370,7 +7370,7 @@ export default function ConfigPage() {
     target?: SkillMarketProjectTarget,
   ) {
     const root = scope === "project" ? (target ? join(target.root, ".opencode", "skills") : "") : space()?.skillsRoot
-    if (!root || !platform.createConfigFile) {
+    if (!root || !platform.createLocalFile) {
       showToast({ title: t("common.requestFailed"), description: t("config.error.globalConfigUnavailable") })
       return
     }
@@ -7378,7 +7378,7 @@ export default function ConfigPage() {
     const isProject = scope === "project"
     setState("skillMarketInstalling", `${scope}:${isProject ? `${target?.root ?? ""}:` : ""}${item.id}`)
     await platform
-      .createConfigFile(path, item.content)
+      .createLocalFile(path, item.content)
       .then(async () => {
         const meta = skillMeta(item.content, path)
         cache.set(path, item.content)
@@ -7411,10 +7411,10 @@ export default function ConfigPage() {
   }
 
   async function deleteSkill(item: DocItem) {
-    if (!platform.renameConfigFile) return
+    if (!platform.renameLocalFile) return
     const bakPath = `${item.path}.bak`
     await platform
-      .renameConfigFile(item.path, bakPath)
+      .renameLocalFile(item.path, bakPath)
       .then(() => {
         cache.delete(item.path)
         if (state.pick === item.id) {
@@ -7453,19 +7453,6 @@ export default function ConfigPage() {
     return output.result
   }
 
-  async function writeGlobalConfig(next: Config) {
-    const list = await platform.listConfigFiles?.(null)
-    const file = list?.find(
-      (item) => item.scope === "global" && item.kind === "config" && item.label.includes("opencode"),
-    )
-    if (!file?.path || !platform.readConfigFile || !platform.writeConfigFile)
-      throw new Error(t("config.error.globalConfigUnavailable"))
-    const text = (await platform.readConfigFile(file.path)) ?? "{}"
-    const json = patchText(text, ["provider"], next.provider ?? {})
-    const disabled = patchText(json, ["disabled_providers"], next.disabled_providers ?? [])
-    await platform.writeConfigFile(file.path, disabled)
-  }
-
   async function saveCustom() {
     const result = validateCustom()
     if (!result) return
@@ -7489,7 +7476,6 @@ export default function ConfigPage() {
     if (state.customApiDirty || result.key)
       tasks.push(globalSDK.client.auth.remove({ providerID: id }).catch(() => undefined))
     await Promise.all(tasks)
-      .then(() => writeGlobalConfig(next))
       .then(() => globalSync.updateConfig(next, { refreshProviders: false }))
       .then((synced) => {
         batch(() => {
@@ -7524,7 +7510,6 @@ export default function ConfigPage() {
     await globalSDK.client.auth
       .remove({ providerID: id })
       .catch(() => undefined)
-      .then(() => writeGlobalConfig(next))
       .then(() => globalSync.updateConfig(next, { refreshProviders: false }))
       .then((synced) => {
         batch(() => {
@@ -7613,7 +7598,7 @@ export default function ConfigPage() {
   }
 
   async function toggleProjectPlugin(item: PluginItem, enabled: boolean) {
-    if (!item.root || !platform.listConfigFiles || !platform.readConfigFile || !platform.writeConfigFile)
+    if (!item.root || !platform.listConfigFiles || !platform.readLocalFile || !platform.writeLocalFile)
       throw new Error(t("config.error.globalConfigUnavailable"))
 
     const nextSpec = item.spec ?? (item.path ? spec(item.path) : item.name)
@@ -7624,7 +7609,7 @@ export default function ConfigPage() {
     const records = await Promise.all(
       files.map(async (file) => ({
         file,
-        text: file.exists ? ((await platform.readConfigFile!(file.path)) ?? "{}") : "{}",
+        text: file.exists ? ((await platform.readLocalFile!(file.path)) ?? "{}") : "{}",
       })),
     )
     const declared = records.find((record) => {
@@ -7650,7 +7635,7 @@ export default function ConfigPage() {
       nextSpecifier: item.path ? relativePluginSpecifier(item.path, target.file.path) : nextSpec,
       enabled,
     })
-    await platform.writeConfigFile(target.file.path, patchText(target.text, ["plugin"], next))
+    await platform.writeLocalFile(target.file.path, patchText(target.text, ["plugin"], next))
     await globalSDK.client.instance.dispose({ directory: item.root }).catch(() => undefined)
     bump("pluginRev")
   }
@@ -7890,7 +7875,7 @@ export default function ConfigPage() {
                         icon="folder-add-left"
                         class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
                         onClick={() => createCommand()}
-                        disabled={!space()?.configRoot || !platform.createConfigFile}
+                        disabled={!space()?.configRoot || !platform.createLocalFile}
                       >
                         {t("config.commands.create.action")}
                       </Button>
@@ -7909,7 +7894,7 @@ export default function ConfigPage() {
                         icon="folder-add-left"
                         class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
                         onClick={() => createSkill()}
-                        disabled={!space()?.skillsRoot || !platform.createConfigFile}
+                        disabled={!space()?.skillsRoot || !platform.createLocalFile}
                       >
                         {t("config.skills.create.action")}
                       </Button>
@@ -8392,7 +8377,7 @@ export default function ConfigPage() {
                                       onToggle={() => toggleCommandProject(group.label)}
                                       onAdd={() => group.path && createCommand(group.path, group.label)}
                                       addLabel={t("config.commands.create.action")}
-                                      addDisabled={!group.path || !platform.createConfigFile}
+                                      addDisabled={!group.path || !platform.createLocalFile}
                                     >
                                       <For each={group.items}>
                                         {(item) => (
@@ -8551,7 +8536,7 @@ export default function ConfigPage() {
                                         group.path && keepSkillsScroll(() => createSkill(group.path, group.label))
                                       }
                                       addLabel={t("config.skills.create.action")}
-                                      addDisabled={!group.path || !platform.createConfigFile}
+                                      addDisabled={!group.path || !platform.createLocalFile}
                                     >
                                       <For each={group.items}>
                                         {(item) => (
@@ -9074,7 +9059,7 @@ export default function ConfigPage() {
                     onReload={() => void reload()}
                     onOpenFolder={currentDoc() ? openFolder : undefined}
                     onDelete={
-                      currentDoc()?.id.startsWith("cmd:") && platform.deleteConfigFile
+                      currentDoc()?.id.startsWith("cmd:") && platform.deleteLocalFile
                         ? () => void deleteCommand(currentDoc())
                         : undefined
                     }

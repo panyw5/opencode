@@ -271,7 +271,7 @@ export function StatusPopover() {
   const claudeCfg = createMemo(() => claude(cfg.claude, sync.data.path.directory))
   const omo = createMemo(() => !!parse(cfg.omo))
   createEffect(() => {
-    const read = platform.readConfigFile
+    const read = platform.readLocalFile
     const list = platform.listConfigFiles
     const dir = sync.data.path.directory
     if (!read || !list || platform.platform !== "desktop" || !dir) {
@@ -322,7 +322,7 @@ export function StatusPopover() {
     roots: Array<{ root: string | undefined; scope: MarkdownDocument["scope"] }>,
   ): Promise<MarkdownDocument[]> => {
     const listDirectory = platform.listConfigDirectory
-    const read = platform.readConfigFile
+    const read = platform.readLocalFile
     if (!listDirectory || !read) return []
 
     const walk = async (

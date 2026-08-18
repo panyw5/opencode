@@ -30,10 +30,10 @@ import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
 import {
-  createConfigFile,
+  createLocalFile,
   createTempMarkdownAttachment,
-  deleteConfigFile,
-  renameConfigFile,
+  deleteLocalFile,
+  renameLocalFile,
   detectOpenclawConfig,
   filterDirectories,
   getConfigWorkspace,
@@ -49,13 +49,13 @@ import {
   listLocalDirectory,
   openInEditor,
   openInFinder,
-  readConfigFile,
+  readLocalFile,
   setCustomEditorPath,
   setDefaultEditor,
   setGenericagentConfig,
   setHermesConfig,
   setOpenclawConfig,
-  writeConfigFile,
+  writeLocalFile,
 } from "./native"
 import {
   cliAgentDescriptors,
@@ -271,16 +271,16 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("list-config-files", (_event: IpcMainInvokeEvent, directory?: string | null) =>
     listConfigFiles(directory),
   )
-  ipcMain.handle("read-config-file", (_event: IpcMainInvokeEvent, path: string) => readConfigFile(path))
-  ipcMain.handle("write-config-file", (_event: IpcMainInvokeEvent, path: string, content: string) =>
-    writeConfigFile(path, content),
+  ipcMain.handle("read-local-file", (_event: IpcMainInvokeEvent, path: string) => readLocalFile(path))
+  ipcMain.handle("write-local-file", (_event: IpcMainInvokeEvent, path: string, content: string) =>
+    writeLocalFile(path, content),
   )
-  ipcMain.handle("create-config-file", (_event: IpcMainInvokeEvent, path: string, content: string) =>
-    createConfigFile(path, content),
+  ipcMain.handle("create-local-file", (_event: IpcMainInvokeEvent, path: string, content: string) =>
+    createLocalFile(path, content),
   )
-  ipcMain.handle("delete-config-file", (_event: IpcMainInvokeEvent, path: string) => deleteConfigFile(path))
-  ipcMain.handle("rename-config-file", (_event: IpcMainInvokeEvent, oldPath: string, newPath: string) =>
-    renameConfigFile(oldPath, newPath),
+  ipcMain.handle("delete-local-file", (_event: IpcMainInvokeEvent, path: string) => deleteLocalFile(path))
+  ipcMain.handle("rename-local-file", (_event: IpcMainInvokeEvent, oldPath: string, newPath: string) =>
+    renameLocalFile(oldPath, newPath),
   )
   ipcMain.handle(
     "create-temp-markdown-attachment",

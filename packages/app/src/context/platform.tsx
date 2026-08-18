@@ -409,20 +409,20 @@ export type Platform = {
   /** List known config files (desktop only) */
   listConfigFiles?(directory?: string | null): Promise<ConfigFile[]>
 
-  /** Read config file text (desktop only) */
-  readConfigFile?(path: string): Promise<string | null>
+  /** Read a local file inside allowed desktop roots (desktop only) */
+  readLocalFile?(path: string): Promise<string | null>
 
-  /** Write config file text (desktop only) */
-  writeConfigFile?(path: string, content: string): Promise<void>
+  /** Write a local file inside allowed desktop roots (desktop only) */
+  writeLocalFile?(path: string, content: string): Promise<void>
 
-  /** Create a config file and fail if it already exists (desktop only) */
-  createConfigFile?(path: string, content: string): Promise<void>
+  /** Create a local file and fail if it already exists (desktop only) */
+  createLocalFile?(path: string, content: string): Promise<void>
 
-  /** Delete a config file (desktop only) */
-  deleteConfigFile?(path: string): Promise<void>
+  /** Delete a local file inside allowed desktop roots (desktop only) */
+  deleteLocalFile?(path: string): Promise<void>
 
-  /** Rename (move) a config file from oldPath to newPath (desktop only) */
-  renameConfigFile?(oldPath: string, newPath: string): Promise<void>
+  /** Rename (move) a local file from oldPath to newPath (desktop only) */
+  renameLocalFile?(oldPath: string, newPath: string): Promise<void>
 
   /** Create a project-scoped temporary text attachment file (desktop only) */
   createTempMarkdownAttachment?(directory: string, content: string, extension?: string): Promise<string>
