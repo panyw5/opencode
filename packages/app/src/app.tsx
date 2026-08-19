@@ -47,6 +47,9 @@ import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SessionHistoryProvider } from "@/context/session-history"
 import { SettingsProvider } from "@/context/settings"
+import { SDKProvider } from "@/context/sdk"
+import { SyncProvider } from "@/context/sync"
+import { useGlobalSync } from "@/context/global-sync"
 import { TerminalProvider } from "@/context/terminal"
 import { SectionButton } from "@/pages/config-section-button"
 import DirectoryLayout from "@/pages/directory-layout"
@@ -96,6 +99,10 @@ const CONFIG_FALLBACK_SECTIONS = [
 function ConfigRouteFrame(props: ParentProps) {
   const platform = usePlatform()
   const layout = useLayout()
+
+  createEffect(() => {
+    console.debug(`[settings-nav] config-route-mounted pathname=${window.location.pathname}`)
+  })
 
   onMount(() => {
     if (platform.platform !== "desktop") return
@@ -226,6 +233,27 @@ const ConfigRoute = () => (
     </ErrorBoundary>
   </ConfigRouteFrame>
 )
+
+function GlobalConfigRoute() {
+  const globalSync = useGlobalSync()
+  const directory = createMemo(() => globalSync.data.path.directory || globalSync.data.path.home)
+
+  createEffect(() => {
+    console.debug(`[settings-nav] global-config-route directory=${directory() || "none"}`)
+  })
+
+  return (
+    <Show when={directory()} keyed fallback={<ConfigLoadingShell />}>
+      {(directory) => (
+        <SDKProvider directory={() => directory}>
+          <SyncProvider>
+            <ConfigRoute />
+          </SyncProvider>
+        </SDKProvider>
+      )}
+    </Show>
+  )
+}
 
 function CrashProbe() {
   const [armed, setArmed] = createSignal(false)
@@ -498,6 +526,7 @@ function ServerScopedApp(
             >
               <Route path="/" component={HomeRoute} />
               <Route path="/scheduled" component={Scheduled} />
+              <Route path="/config" component={GlobalConfigRoute} />
               <Route path="/:dir" component={DirectoryLayout}>
                 <Route path="/" component={SessionIndexRoute} />
                 <Route path="/session/:id?" component={SessionRoute} />

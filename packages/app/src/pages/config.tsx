@@ -4638,7 +4638,8 @@ export default function ConfigPage() {
       `[config-back] click dir=${params.dir ?? ""} historyLength=${window.history.length} pathname=${window.location.pathname}`,
     )
     if (!params.dir) {
-      console.debug("[config-back] action=blocked reason=missing-dir")
+      console.debug("[config-back] action=navigate target=/ replace=true reason=global-route")
+      navigate("/", { replace: true })
       return
     }
     const target = `/${params.dir}/session`

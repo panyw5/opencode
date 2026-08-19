@@ -298,7 +298,7 @@ export const SidebarContent = (props: {
               variant="ghost"
               size="large"
               classList={{ "bg-surface-base-active": props.configActive() }}
-              onClick={props.onOpenConfig}
+              onClick={() => props.onOpenConfig()}
               aria-label={props.configLabel()}
             />
           </RailTooltip>

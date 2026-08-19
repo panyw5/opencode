@@ -777,6 +777,10 @@ export default function Layout(props: ParentProps) {
     await ready.promise
     await layout.ready.promise
     if (!untrack(() => state.autoselect)) return
+    if (onConfigRoute()) {
+      console.debug("[layout] skipping auto-selection for config route")
+      return
+    }
     if (routeDir()) {
       console.debug(`[layout] skipping auto-selection for explicit route directory=${routeDir()}`)
       return
@@ -1471,7 +1475,6 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.config.open"),
         category: language.t("command.category.settings"),
         keybind: "mod+shift+comma",
-        disabled: !params.dir,
         onSelect: () => openConfig(),
       },
       {
@@ -1753,19 +1756,37 @@ export default function Layout(props: ParentProps) {
   }
 
   function openSettings() {
+    console.debug(
+      `[settings-nav] open-settings pathname=${location.pathname} dir=${params.dir ?? "none"} projects=${layout.projects.list().length}`,
+    )
     const run = ++dialogRun
     void import("@/components/dialog-settings").then((x) => {
-      if (dialogDead || dialogRun !== run) return
+      if (dialogDead || dialogRun !== run) {
+        console.debug(`[settings-nav] open-settings cancelled dead=${dialogDead} run=${dialogRun}/${run}`)
+        return
+      }
+      console.debug("[settings-nav] open-settings show-dialog")
       dialog.show(() => <x.DialogSettings />)
     })
   }
 
   function openConfig(section?: string, pick?: string) {
-    if (!params.dir) return
+    console.debug(
+      `[settings-nav] open-config pathname=${location.pathname} dir=${params.dir ?? "none"} section=${section ?? "none"} pick=${pick ?? "none"} projects=${layout.projects.list().length}`,
+    )
+    const directory =
+      params.dir ||
+      server.projects.last() ||
+      layout.projects.list()[0]?.worktree ||
+      globalSync.data.project[0]?.worktree
     const q = new URLSearchParams()
     if (section) q.set("section", section)
     if (pick) q.set("pick", pick)
-    const next = q.size ? `/${params.dir}/config?${q.toString()}` : `/${params.dir}/config`
+    const slug = params.dir || (directory ? base64Encode(directory) : undefined)
+    const path = slug ? `/${slug}/config` : "/config"
+    const next = q.size ? `${path}?${q.toString()}` : path
+    if (!slug) console.debug("[settings-nav] open-config using global-route reason=no-directory")
+    console.debug(`[settings-nav] open-config navigate target=${next}`)
     batch(() => {
       setStore("sidebarPanel", "project")
       if (platform.platform === "desktop" && layout.sidebar.opened()) {

@@ -20,9 +20,11 @@ export const DialogSettings: Component = () => {
   const dialog = useDialog()
 
   const openConfig = () => {
-    if (!params.dir) return
+    console.debug(`[settings-nav] dialog-config pathname=${window.location.pathname} dir=${params.dir ?? "none"}`)
     dialog.close()
-    navigate(`/${params.dir}/config`)
+    const target = params.dir ? `/${params.dir}/config` : "/config"
+    console.debug(`[settings-nav] dialog-config navigate target=${target}`)
+    navigate(target)
   }
 
   return (
