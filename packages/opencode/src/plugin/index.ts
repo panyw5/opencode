@@ -20,6 +20,7 @@ import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cl
 import { AzureAuthPlugin } from "./azure"
 import { DigitalOceanAuthPlugin } from "./digitalocean"
 import { XaiAuthPlugin } from "./xai"
+import { CommandCodePlugin } from "./commandcode"
 import { Effect, Layer, Context, Schema, Stream } from "effect"
 import path from "path"
 import { fileURLToPath } from "url"
@@ -97,6 +98,7 @@ const INTERNAL_PLUGINS: PluginInstance[] = [
   AzureAuthPlugin,
   DigitalOceanAuthPlugin,
   XaiAuthPlugin,
+  CommandCodePlugin,
 ]
 
 function isServerPlugin(value: unknown): value is PluginInstance {

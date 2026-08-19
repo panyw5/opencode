@@ -561,6 +561,53 @@ it.instance(
 )
 
 it.instance(
+  "known keeps disabled config-only providers",
+  Effect.gen(function* () {
+    const svc = yield* Provider.Service
+    const connected = yield* svc.list()
+    const known = yield* svc.known()
+    expect(connected[ProviderID.make("custom-disabled")]).toBeUndefined()
+    expect(known[ProviderID.make("custom-disabled")]).toBeDefined()
+    expect(known[ProviderID.make("custom-disabled")].name).toBe("Custom Disabled")
+  }),
+  {
+    config: {
+      disabled_providers: ["custom-disabled"],
+      provider: {
+        "custom-disabled": {
+          name: "Custom Disabled",
+          npm: "@ai-sdk/openai-compatible",
+          models: { chat: { name: "Chat" } },
+        },
+      },
+    },
+  },
+)
+
+it.instance(
+  "known includes commandcode when disabled or unconnected",
+  Effect.gen(function* () {
+    const svc = yield* Provider.Service
+    const connected = yield* svc.list()
+    const known = yield* svc.known()
+    expect(connected[ProviderID.make("commandcode")]).toBeUndefined()
+    expect(known[ProviderID.make("commandcode")]).toBeDefined()
+    expect(known[ProviderID.make("commandcode")].name).toBe("Command Code")
+  }),
+  { config: { disabled_providers: ["commandcode"] } },
+)
+
+it.instance("commandcode stays known but disconnected without OpenCode credentials", () =>
+  Effect.gen(function* () {
+    const svc = yield* Provider.Service
+    const connected = yield* svc.list()
+    const known = yield* svc.known()
+    expect(connected[ProviderID.make("commandcode")]).toBeUndefined()
+    expect(known[ProviderID.make("commandcode")]).toBeDefined()
+  }),
+)
+
+it.instance(
   "enabled_providers with empty array allows no providers",
   Effect.gen(function* () {
     yield* set("ANTHROPIC_API_KEY", "test-api-key")

@@ -616,17 +616,24 @@ function createGlobalSync() {
     if (pending) return pending
 
     const promise = (async () => {
-      const result = await runtime(domain).client.provider.list()
+      const directory = rootBucket(domain).path.directory || globalStore.path.directory
+      console.log(`[global-sync] provider refresh start domain=${domain} directory=${directory || "(none)"}`)
+      const rt = runtime(domain)
+      const client = directory ? rt.createClient({ directory }) : rt.client
+      const result = await client.provider.list()
       const data = normalizeProviderList(result.data!)
       setRoot(domain, "provider", data)
+      console.log(
+        `[global-sync] provider refresh listed all=${String(data.all.length)} connected=${String(data.connected.length)}`,
+      )
 
       const manager = managers.get(domain)
       if (manager) {
-        await Promise.allSettled(
-          Object.keys(manager.children).map(async (directory) => {
-            if (isolated(directory)) return
-            const next = await sdkFor(directory).provider.list()
-            const child = manager.children[directory]
+        void Promise.allSettled(
+          Object.keys(manager.children).map(async (childDirectory) => {
+            if (isolated(childDirectory)) return
+            const next = await sdkFor(childDirectory).provider.list()
+            const child = manager.children[childDirectory]
             if (!child) return
             child[1]("provider", normalizeProviderList(next.data!))
           }),

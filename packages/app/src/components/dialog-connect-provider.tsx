@@ -33,7 +33,18 @@ export function DialogConnectProvider(props: { provider: string }) {
     timer.current = undefined
   })
 
-  const provider = createMemo(() => globalSync.data.provider.all.find((x) => x.id === props.provider)!)
+  const provider = createMemo(() => {
+    const match = globalSync.data.provider.all?.find((x) => x.id === props.provider)
+    if (match) return match
+    return {
+      id: props.provider,
+      name: props.provider === "commandcode" ? "Command Code" : props.provider,
+      source: "custom" as const,
+      env: [],
+      options: {},
+      models: {},
+    }
+  })
   const fallback = createMemo<ProviderAuthMethod[]>(() => [
     {
       type: "api" as const,
@@ -342,8 +353,30 @@ export function DialogConnectProvider(props: { provider: string }) {
     }
   })
 
+  function markProviderConnected(id: string) {
+    const prev = globalSync.data.provider
+    if (!prev || !Array.isArray(prev.connected) || !Array.isArray(prev.all)) return
+    const connected = prev.connected.includes(id) ? prev.connected : [...prev.connected, id]
+    if (connected === prev.connected) return
+    globalSync.set("provider", { ...prev, connected })
+  }
+
+  async function loadConnectedProviderList() {
+    const directory = globalSync.data.path.directory
+    console.log(`[connect] list providers provider=${props.provider} directory=${directory || "(none)"}`)
+    const client = directory ? globalSDK.createClient({ directory }) : globalSDK.client
+    const result = await Promise.race([
+      client.provider.list(),
+      new Promise<never>((_, reject) => {
+        setTimeout(() => reject(new Error("provider list timeout")), 8000)
+      }),
+    ])
+    return result.data
+  }
+
   async function complete() {
-    await globalSync.provider.refresh()
+    console.log(`[connect] complete start provider=${props.provider}`)
+    markProviderConnected(props.provider)
     dialog.close()
     showToast({
       variant: "success",
@@ -351,6 +384,24 @@ export function DialogConnectProvider(props: { provider: string }) {
       title: language.t("provider.connect.toast.connected.title", { provider: provider().name }),
       description: language.t("provider.connect.toast.connected.description", { provider: provider().name }),
     })
+    try {
+      const listed = await loadConnectedProviderList()
+      if (listed) {
+        const connected = listed.connected.includes(props.provider)
+          ? listed.connected
+          : [...listed.connected, props.provider]
+        const match = listed.all.find((item) => item.id === props.provider)
+        console.log(
+          `[connect] listed provider=${props.provider} all=${String(listed.all.length)} connected=${String(connected.includes(props.provider))} models=${String(match ? Object.keys(match.models).length : 0)}`,
+        )
+        globalSync.set("provider", { ...listed, connected })
+      }
+      await globalSync.provider.refresh()
+      console.log(`[connect] refresh done provider=${props.provider}`)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.log(`[connect] refresh failed provider=${props.provider} error=${message}`)
+    }
   }
 
   function goBack() {
@@ -405,30 +456,45 @@ export function DialogConnectProvider(props: { provider: string }) {
     const [formStore, setFormStore] = createStore({
       value: "",
       error: undefined as string | undefined,
+      submitting: false,
     })
 
     async function handleSubmit(e: SubmitEvent) {
       e.preventDefault()
+      if (formStore.submitting) return
 
       const form = e.currentTarget as HTMLFormElement
       const formData = new FormData(form)
-      const apiKey = formData.get("apiKey") as string
+      const apiKey = String(formData.get("apiKey") ?? formStore.value ?? "").trim()
 
-      if (!apiKey?.trim()) {
+      if (!apiKey) {
         setFormStore("error", language.t("provider.connect.apiKey.required"))
         return
       }
 
       setFormStore("error", undefined)
-      await globalSDK.client.auth.set({
-        providerID: props.provider,
-        auth: {
-          type: "api",
-          key: apiKey,
-          ...(store.promptInputs ? { metadata: store.promptInputs } : {}),
-        },
-      })
-      await complete()
+      setFormStore("submitting", true)
+      console.log(`[connect] submit provider=${props.provider} keyLen=${String(apiKey.length)}`)
+      try {
+        await globalSDK.client.auth.set({
+          providerID: props.provider,
+          auth: {
+            type: "api",
+            key: apiKey,
+            ...(store.promptInputs ? { metadata: store.promptInputs } : {}),
+          },
+        })
+        console.log(`[connect] auth.set ok provider=${props.provider}`)
+        await complete()
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        console.log(`[connect] submit failed provider=${props.provider} error=${message}`)
+        if (!alive.value) return
+        setFormStore("error", message)
+        showToast({ title: language.t("common.requestFailed"), description: message })
+      } finally {
+        if (alive.value) setFormStore("submitting", false)
+      }
     }
 
     return (
@@ -464,9 +530,10 @@ export function DialogConnectProvider(props: { provider: string }) {
             onChange={(v) => setFormStore("value", v)}
             validationState={formStore.error ? "invalid" : undefined}
             error={formStore.error}
+            disabled={formStore.submitting}
           />
-          <Button class="w-auto" type="submit" size="large" variant="primary">
-            {language.t("common.continue")}
+          <Button class="w-auto" type="submit" size="large" variant="primary" disabled={formStore.submitting}>
+            {formStore.submitting ? language.t("provider.connect.status.inProgress") : language.t("common.continue")}
           </Button>
         </form>
       </div>

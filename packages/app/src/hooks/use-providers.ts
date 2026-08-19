@@ -7,6 +7,7 @@ import type { Config } from "@opencode-ai/sdk/v2/client"
 export const popularProviders = [
   "opencode",
   "opencode-go",
+  "commandcode",
   "anthropic",
   "github-copilot",
   "openai",
@@ -29,7 +30,10 @@ function providerAccessors(
     all: () => providers().all,
     default: () => providers().default,
     order: () => providerOrderFromConfig(config()),
-    popular: () => providers().all.filter((p) => popularProviderSet.has(p.id)),
+    popular: () => {
+      const disabled = new Set(config()?.disabled_providers ?? [])
+      return providers().all.filter((p) => popularProviderSet.has(p.id) && !disabled.has(p.id))
+    },
     connected: () => {
       const connected = new Set(providers().connected)
       return providers().all.filter((p) => connected.has(p.id))
@@ -63,4 +67,3 @@ export function useProviders() {
   }
   return providerAccessors(providers, config)
 }
-

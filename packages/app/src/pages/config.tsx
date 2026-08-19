@@ -74,8 +74,15 @@ import { monoFontFamily, useSettings } from "@/context/settings"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useSync } from "@/context/sync"
-import { normalizeProviderList } from "@/context/global-sync/utils"
-import { providerDisplaySdk } from "./config-provider-display"
+import { normalizeProviderList, stripProvider } from "@/context/global-sync/utils"
+import {
+  canSignOutProvider,
+  collectConfigProviders,
+  isBuiltinProvider,
+  nextDisabledProviders,
+  providerEnabled,
+  type ConfigProviderItem,
+} from "./config-provider-list"
 import { fetchSkillMarketFile, loadSkillMarketIndex } from "./config-skill-market"
 import { SectionButton } from "./config-section-button"
 import { ServerConnection, useServer } from "@/context/server"
@@ -166,18 +173,7 @@ type SkillItem = {
   root?: string
 }
 
-type ProviderItem = {
-  id: string
-  name: string
-  connected: boolean
-  allowed: boolean
-  custom: boolean
-  source?: "env" | "api" | "config" | "custom"
-  sdk?: string
-  key?: string
-  env?: string[]
-  models: string[]
-}
+type ProviderItem = ConfigProviderItem
 
 type ProviderCfg = NonNullable<Config["provider"]>[string]
 
@@ -763,10 +759,7 @@ function sourceKey(source?: string) {
   return undefined
 }
 
-function providerEnabled(item?: ProviderItem) {
-  if (!item) return false
-  return item.custom ? item.allowed : item.connected
-}
+
 
 function home(path: string) {
   const list = norm(path).split("/").filter(Boolean)
@@ -2263,9 +2256,12 @@ function ProviderDetail(props: {
   item?: ProviderItem
   busy: boolean
   onToggle: (item: ProviderItem, enabled: boolean) => void
+  onSignOut: (item: ProviderItem) => void
 }) {
   const language = useLanguage()
   const settings = useSettings()
+
+  const canSignOut = () => canSignOutProvider(props.item)
 
   return (
     <div class="flex h-full min-h-0 flex-col">
@@ -2307,20 +2303,63 @@ function ProviderDetail(props: {
                   ? props.item?.source === "env"
                     ? language.t("config.provider.envConnected")
                     : language.t("config.provider.connected")
-                  : language.t("config.provider.known")}
+                  : !props.item?.allowed
+                    ? language.t("config.provider.disabled")
+                    : language.t("config.provider.known")}
             </div>
           </div>
-          <Toggle
-            checked={props.item?.custom ? !!props.item?.allowed : !!props.item?.connected}
-            disabled={props.busy || (!!props.item && !props.item.custom && props.item.source === "env")}
-            onChange={(value) => props.item && props.onToggle(props.item, value)}
-          >
-            {props.item?.custom
-              ? language.t("config.provider.toggle.enabledInConfig")
-              : props.item?.connected
-                ? language.t("config.provider.toggle.remove")
-                : language.t("common.connect")}
-          </Toggle>
+          <div class="flex flex-wrap items-center gap-2">
+            <Show
+              when={!props.item?.custom}
+              fallback={
+                <Toggle
+                  checked={!!props.item?.allowed}
+                  disabled={props.busy}
+                  onChange={(value) => props.item && props.onToggle(props.item, value)}
+                >
+                  {language.t("config.provider.toggle.enabledInConfig")}
+                </Toggle>
+              }
+            >
+              <Show when={props.item?.source !== "env"}>
+                <Button
+                  size="large"
+                  variant="secondary"
+                  disabled={props.busy}
+                  onClick={() => {
+                    const item = props.item
+                    if (!item) return
+                    const enable = !item.connected
+                    console.log(
+                      `[config] builtin provider action id=${item.id} connected=${String(item.connected)} allowed=${String(item.allowed)} enable=${String(enable)}`,
+                    )
+                    props.onToggle(item, enable)
+                  }}
+                >
+                  {props.item?.connected
+                    ? language.t("config.provider.toggle.disable")
+                    : !props.item?.allowed
+                      ? language.t("config.provider.toggle.enable")
+                      : language.t("common.connect")}
+                </Button>
+              </Show>
+              <Show when={canSignOut()}>
+                <Button
+                  size="large"
+                  variant="ghost"
+                  disabled={props.busy}
+                  onClick={() => {
+                    const item = props.item
+                    if (!item) return
+                    console.log(`[config] sign out provider id=${item.id} source=${item.source ?? ""}`)
+                    props.onSignOut(item)
+                  }}
+                >
+                  {language.t("config.provider.signOut")}
+                </Button>
+              </Show>
+            </Show>
+          </div>
         </div>
         <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-4">
           <div class="mb-3 text-11-medium uppercase tracking-[0.08em] text-text-weak">
@@ -5510,49 +5549,16 @@ export default function ConfigPage() {
 
   const providers = createMemo<ProviderItem[]>(() => {
     const data = mainProviders()
-    const off = new Set(cfg().disabled_providers ?? [])
-    const entries = cfg().provider ?? {}
-    const on = new Set(data.connected ?? [])
-    const list = data.all
-      .map((item) => {
-        const source: ProviderItem["source"] =
-          "source" in item &&
-          (item.source === "env" || item.source === "api" || item.source === "config" || item.source === "custom")
-            ? item.source
-            : undefined
-        const cfgItem = entries[item.id] as ProviderCfg | undefined
-        const display = providerDisplaySdk({ config: cfgItem, models: item.models })
-        return {
-          id: item.id,
-          name: item.name,
-          connected: on.has(item.id),
-          allowed: !off.has(item.id),
-          custom: display.custom,
-          source,
-          sdk: display.sdk,
-          key: "key" in item && typeof item.key === "string" ? item.key : undefined,
-          env: Array.isArray(item.env) ? item.env : cfgItem?.env,
-          models: Object.keys(item.models).sort(),
-        }
-      })
-      .filter((item) => item.connected || !off.has(item.id))
-    const known = new Set(list.map((item) => item.id))
-    const extra = Object.entries(entries)
-      .filter(([, item]) => typeof item?.npm === "string" && item.npm.startsWith("@ai-sdk/"))
-      .filter(([id]) => !known.has(id))
-      .map(([id, item]) => ({
-        id,
-        name: item?.name ?? id,
-        connected: false,
-        allowed: !off.has(id),
-        custom: true,
-        source: "config" as const,
-        sdk: item?.npm,
-        key: undefined,
-        env: item?.env,
-        models: Object.keys(item?.models ?? {}).sort(),
-      }))
-    return [...list, ...extra].sort((a, b) => a.id.localeCompare(b.id))
+    const items = collectConfigProviders({
+      all: data.all,
+      connected: data.connected ?? [],
+      disabled: cfg().disabled_providers ?? [],
+      configProviders: cfg().provider,
+    })
+    console.log(
+      `[config] provider list all=${String(data.all.length)} connected=${String((data.connected ?? []).length)} disabled=${(cfg().disabled_providers ?? []).join(",") || "(none)"} items=${String(items.length)} hasCommandcode=${String(items.some((item) => item.id === "commandcode"))}`,
+    )
+    return items
   })
 
   const providerList = createMemo(() => {
@@ -6983,7 +6989,11 @@ export default function ConfigPage() {
       console.info("[config] provider refresh started")
       const config = await globalSync.refreshConfig(mainDomain)
       console.info("[config] provider runtime config refreshed", { agentCount: Object.keys(config.agent ?? {}).length })
-      const result = await globalSDK.forDomain(mainDomain).client.provider.list()
+      const directory = globalSync.data.path.directory
+      const client = directory
+        ? globalSDK.forDomain(mainDomain).createClient({ directory })
+        : globalSDK.forDomain(mainDomain).client
+      const result = await client.provider.list()
       const data = result.data
       if (!data) throw new Error(t("common.requestFailed"))
       setMainProviders(normalizeProviderList(data))
@@ -7414,17 +7424,17 @@ export default function ConfigPage() {
   }
 
   function isConfigCustom(id: string) {
+    if (isBuiltinProvider(id)) return false
     const provider = cfg().provider?.[id]
     if (!provider) return false
-    // 任何在配置文件中定义的供应商都被认为是自定义的
-    // 不再限制必须使用 @ai-sdk/openai-compatible
     if (!provider.models || Object.keys(provider.models).length === 0) return false
-    return true
+    return typeof provider.npm === "string" && provider.npm.startsWith("@ai-sdk/")
   }
 
   function toggleProviderConfig(id: string, enabled: boolean) {
     const prev = cfg().disabled_providers ?? []
-    const next = enabled ? prev.filter((item) => item !== id) : Array.from(new Set([...prev, id]))
+    const next = nextDisabledProviders(prev, id, enabled)
+    console.log(`[config] toggle custom provider id=${id} enabled=${String(enabled)} disabled=${next.join(",")}`)
     return patchConfig({ disabled_providers: next }, { refreshProviders: false })
       .then(() => {
         if (!enabled) globalSync.provider.remove(id)
@@ -7454,6 +7464,51 @@ export default function ConfigPage() {
     await refreshProviderState()
   }
 
+  function toggleBuiltinProvider(id: string, enabled: boolean) {
+    const prev = cfg().disabled_providers ?? []
+    const next = nextDisabledProviders(prev, id, enabled)
+    console.log(`[config] toggle builtin provider id=${id} enabled=${String(enabled)} disabled=${next.join(",")}`)
+    return patchConfig({ disabled_providers: next }, { refreshProviders: false })
+      .then(async () => {
+        console.log(`[config] builtin toggle refresh start id=${id} enabled=${String(enabled)}`)
+        await refreshProviderState()
+        console.log(`[config] builtin toggle refresh done id=${id}`)
+      })
+      .catch((err: unknown) => {
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+  }
+
+  async function signOutProvider(item: ProviderItem) {
+    if (item.source === "env") return
+    console.log(`[config] sign out start id=${item.id} source=${item.source ?? ""} allowed=${String(item.allowed)}`)
+    const task = (async () => {
+      await globalSDK.client.auth.remove({ providerID: item.id })
+      globalSync.provider.remove(item.id)
+      setMainProviders(stripProvider(mainProviders(), item.id))
+      console.log(`[config] sign out removed from store id=${item.id}`)
+      await refreshProviderState().catch((err: unknown) => {
+        console.log(
+          `[config] sign out refresh failed id=${item.id} error=${err instanceof Error ? err.message : String(err)}`,
+        )
+      })
+      const after = mainProviders()
+      const stillConnected = (after.connected ?? []).includes(item.id)
+      console.log(
+        `[config] sign out done id=${item.id} stillConnected=${String(stillConnected)} connectedCount=${String((after.connected ?? []).length)}`,
+      )
+    })()
+    showPromiseToast(task, {
+      loading: language.t("provider.disconnect.toast.removing", { provider: item.name }),
+      success: () => language.t("provider.disconnect.toast.disconnected.description", { provider: item.name }),
+      error: (err) => (err instanceof Error ? err.message : String(err)),
+    })
+    void task.finally(() => undefined).catch(() => undefined)
+  }
+
   function toggleProvider(item: ProviderItem, enabled: boolean) {
     if (item.custom) {
       if (state.providerBusy === item.id) return
@@ -7462,23 +7517,19 @@ export default function ConfigPage() {
       return
     }
     if (enabled) {
+      if (!item.allowed) {
+        if (state.providerBusy === item.id) return
+        setState("providerBusy", item.id)
+        void toggleBuiltinProvider(item.id, true).finally(() => setState("providerBusy", ""))
+        return
+      }
       dialog.show(() => <DialogConnectProvider provider={item.id} />)
       return
     }
     if (item.source === "env") return
     if (state.providerBusy === item.id) return
     setState("providerBusy", item.id)
-    const removal = disconnectProvider(item)
-    showPromiseToast(removal, {
-      loading: language.t("provider.disconnect.toast.removing", { provider: item.name }),
-      success: () => language.t("provider.disconnect.toast.disconnected.description", { provider: item.name }),
-      error: (err) => (err instanceof Error ? err.message : String(err)),
-    })
-    void removal
-      .finally(() => {
-        setState("providerBusy", "")
-      })
-      .catch(() => undefined)
+    void toggleBuiltinProvider(item.id, false).finally(() => setState("providerBusy", ""))
   }
 
   async function toggleProjectPlugin(item: PluginItem, enabled: boolean) {
@@ -8576,6 +8627,7 @@ export default function ConfigPage() {
                       item={selectedProvider()}
                       busy={state.providerBusy === selectedProvider()?.id}
                       onToggle={toggleProvider}
+                      onSignOut={signOutProvider}
                     />
                   }
                 >

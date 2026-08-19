@@ -206,8 +206,12 @@ describe("config HttpApi", () => {
           ),
         )
         expect(second.status).toBe(200)
-        const refreshed = (yield* Effect.promise(() => second.json())) as { all: Array<{ id: string }> }
-        expect(refreshed.all.some((provider) => provider.id === providerID)).toBe(false)
+        const refreshed = (yield* Effect.promise(() => second.json())) as {
+          all: Array<{ id: string }>
+          connected: string[]
+        }
+        expect(refreshed.all.some((provider) => provider.id === providerID)).toBe(true)
+        expect(refreshed.connected.includes(providerID)).toBe(false)
       } finally {
         ;(Global.Path as { config: string }).config = previousConfigPath
       }

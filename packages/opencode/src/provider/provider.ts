@@ -34,6 +34,8 @@ import {
   openrouterUpstreamWindows,
   openrouterUpstreamWindowsSync,
 } from "./openrouter-upstream"
+import { createCommandCodeLanguageModel, COMMANDCODE_PACKAGE, COMMANDCODE_PROVIDER_ID } from "./commandcode"
+import { commandCodeCustomLoader, commandCodeFallbackModelsDevProvider } from "../plugin/commandcode"
 
 const log = Log.create({ service: "provider" })
 
@@ -128,6 +130,14 @@ const BUNDLED_PROVIDERS: Record<string, () => Promise<(opts: any) => BundledSDK>
   "@ai-sdk/github-copilot": () =>
     import("@opencode-ai/core/github-copilot/copilot-provider").then((m) => m.createOpenaiCompatible),
   "venice-ai-sdk-provider": () => import("venice-ai-sdk-provider").then((m) => m.createVenice),
+  [COMMANDCODE_PACKAGE]: async () => (options: { apiKey?: string; baseURL?: string }) => ({
+    languageModel(modelID: string) {
+      return createCommandCodeLanguageModel(modelID, {
+        apiKey: options.apiKey,
+        apiBase: options.baseURL,
+      })
+    },
+  }),
 }
 
 type CustomModelLoader = (sdk: any, modelID: string, options?: Record<string, any>) => Promise<any>
@@ -162,6 +172,7 @@ function selectAzureLanguageModel(sdk: any, modelID: string, useChat: boolean) {
 
 function custom(dep: CustomDep): Record<string, CustomLoader> {
   return {
+    commandcode: commandCodeCustomLoader(dep),
     anthropic: () =>
       Effect.succeed({
         autoload: false,
@@ -961,6 +972,20 @@ export const ListResult = Schema.Struct({
 })
 export type ListResult = Types.DeepMutable<Schema.Schema.Type<typeof ListResult>>
 
+export function listedProviders(input: {
+  known: Record<string, Info>
+  connected: Record<string, Info>
+  enabledProviders?: readonly string[]
+}): Record<string, Info> {
+  const enabled = input.enabledProviders ? new Set(input.enabledProviders) : null
+  const providers: Record<string, Info> = {}
+  for (const [id, info] of Object.entries(input.known)) {
+    if (enabled && !enabled.has(id)) continue
+    providers[id] = info
+  }
+  return Object.assign(providers, input.connected)
+}
+
 export const ConfigProvidersResult = Schema.Struct({
   providers: Schema.Array(Info),
   default: DefaultModelIDs,
@@ -968,13 +993,19 @@ export const ConfigProvidersResult = Schema.Struct({
 export type ConfigProvidersResult = Types.DeepMutable<Schema.Schema.Type<typeof ConfigProvidersResult>>
 
 export function toPublicInfo(provider: Info): Info {
-  return JSON.parse(
+  const result = JSON.parse(
     JSON.stringify(provider, (_, value) => {
       if (typeof value === "function" || typeof value === "symbol" || value === undefined) return undefined
       if (typeof value === "bigint") return value.toString()
       return value
     }),
   )
+  delete result.key
+  if (result.options && typeof result.options === "object") {
+    delete result.options.apiKey
+    delete result.options.fetch
+  }
+  return result
 }
 
 export function defaultModelIDs<T extends { models: Record<string, { id: string }> }>(providers: Record<string, T>) {
@@ -1020,6 +1051,7 @@ export type Error = ModelNotFoundError | InitError | NoProvidersError | NoModels
 
 export interface Interface {
   readonly list: () => Effect.Effect<Record<ProviderID, Info>>
+  readonly known: () => Effect.Effect<Record<ProviderID, Info>>
   readonly getProvider: (providerID: ProviderID) => Effect.Effect<Info>
   readonly getModel: (providerID: ProviderID, modelID: ModelID) => Effect.Effect<Model, ModelNotFoundError>
   readonly getLanguage: (model: Model) => Effect.Effect<LanguageModelV3, ModelNotFoundError>
@@ -1036,6 +1068,7 @@ interface State {
   models: Map<string, LanguageModelV3>
   providers: Record<ProviderID, Info>
   catalog: Record<ProviderID, Info>
+  known: Record<ProviderID, Info>
   sdk: Map<string, BundledSDK>
   modelLoaders: Record<string, CustomModelLoader>
   varsLoaders: Record<string, CustomVarsLoader>
@@ -1239,6 +1272,13 @@ export const layer = Layer.effect(
         const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()
         const catalog = mapValues(modelsDev, fromModelsDevProvider)
+        const commandcodeCatalogID = ProviderID.make(COMMANDCODE_PROVIDER_ID)
+        if (!catalog[commandcodeCatalogID]) {
+          catalog[commandcodeCatalogID] = fromModelsDevProvider(commandCodeFallbackModelsDevProvider())
+          log.info("seeded commandcode catalog entry", {
+            models: Object.keys(catalog[commandcodeCatalogID].models).length,
+          })
+        }
         void openrouterUpstreamWindows().catch(() => {})
         const database = mapValues(catalog, toPublicInfo)
 
@@ -1513,6 +1553,24 @@ export const layer = Layer.effect(
           })
         }
 
+        const commandcodeID = ProviderID.make(COMMANDCODE_PROVIDER_ID)
+        if (providers[commandcodeID]) {
+          const stored = auths[commandcodeID]
+          const envKey = envs.COMMANDCODE_API_KEY
+          const optionKey =
+            typeof providers[commandcodeID].options?.apiKey === "string"
+              ? providers[commandcodeID].options.apiKey
+              : undefined
+          const hasCredential = Boolean(optionKey || envKey || (stored?.type === "api" && stored.key))
+          log.info("commandcode connection check", {
+            hasOptionKey: Boolean(optionKey),
+            hasEnv: Boolean(envKey),
+            hasStored: Boolean(stored?.type === "api" && stored.key),
+            keep: hasCredential,
+          })
+          if (!hasCredential) delete providers[commandcodeID]
+        }
+
         for (const [id, provider] of Object.entries(providers)) {
           const providerID = ProviderID.make(id)
           if (!isProviderAllowed(providerID)) {
@@ -1557,8 +1615,12 @@ export const layer = Layer.effect(
           }
 
           if (Object.keys(provider.models).length === 0) {
-            delete providers[providerID]
-            continue
+            if (providerID === ProviderID.make(COMMANDCODE_PROVIDER_ID)) {
+              log.info("keeping commandcode connected without catalog models")
+            } else {
+              delete providers[providerID]
+              continue
+            }
           }
 
           log.info("found", { providerID })
@@ -1569,6 +1631,7 @@ export const layer = Layer.effect(
           models: languages,
           providers,
           catalog,
+          known: { ...database },
           sdk,
           modelLoaders,
           varsLoaders,
@@ -1583,6 +1646,15 @@ export const layer = Layer.effect(
       if (current.key === key) return current.providers
       const refreshed = yield* InstanceState.refresh(state)
       return refreshed.providers
+    })
+
+    const known = Effect.fn("Provider.known")(function* () {
+      const [cfg, auths] = yield* Effect.all([config.get(), auth.all().pipe(Effect.orDie)], { concurrency: 2 })
+      const key = stateKey(cfg, auths)
+      const current = yield* InstanceState.get(state)
+      if (current.key === key) return current.known
+      const refreshed = yield* InstanceState.refresh(state)
+      return refreshed.known
     })
 
     async function resolveSDK(model: Model, s: State, envs: Record<string, string | undefined>) {
@@ -1899,7 +1971,7 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ list, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
+    return Service.of({ list, known, getProvider, getModel, getLanguage, closest, getSmallModel, defaultModel })
   }),
 )
 
