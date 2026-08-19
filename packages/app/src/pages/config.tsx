@@ -20,7 +20,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Icon, type IconProps } from "@opencode-ai/ui/icon"
+import { Icon, type IconName, type IconProps } from "@opencode-ai/ui/icon"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Select } from "@opencode-ai/ui/select"
@@ -76,6 +76,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useSync } from "@/context/sync"
 import { normalizeProviderList } from "@/context/global-sync/utils"
 import { providerDisplaySdk } from "./config-provider-display"
+import { fetchSkillMarketFile, loadSkillMarketIndex } from "./config-skill-market"
 import { SectionButton } from "./config-section-button"
 import { ServerConnection, useServer } from "@/context/server"
 import { extraAgentById, extraAgents, mainDomain } from "@/pages/layout/extra-agents"
@@ -259,7 +260,6 @@ const SKILL_MARKET_LOAD_TIMEOUT_MS = 30_000
 const SKILL_MARKET_SLOW_LOAD_MS = 8_000
 const SKILL_MARKET_FILE_TIMEOUT_MS = 12_000
 const SKILL_MARKET_FILE_CONCURRENCY = 8
-const SKILL_MARKET_MAX_SKILLS = 80
 
 const SKILL_MARKET_REPOS: SkillMarketRepo[] = [
   {
@@ -665,57 +665,6 @@ async function withSkillMarketTimeout<T>(promise: Promise<T>, timeoutMs: number,
   }
 }
 
-function cdnPath(path: string) {
-  return path.split("/").map(encodeURIComponent).join("/")
-}
-
-function skillMarketRepoPathPrefix(path: string | undefined) {
-  const normalized = path?.trim().replace(/^\/+|\/+$/g, "")
-  return normalized ? `${normalized}/` : ""
-}
-
-async function marketJSON<T>(fetcher: typeof fetch, url: string, signal?: AbortSignal): Promise<T> {
-  const resp = await fetcher(url, { signal })
-  if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
-  return resp.json() as Promise<T>
-}
-
-async function marketRepoFiles(fetcher: typeof fetch, repo: SkillMarketRepo, signal?: AbortSignal) {
-  const branches = repo.branch ? [repo.branch] : ["main", "master"]
-  let lastErr: unknown
-
-  for (const branch of branches) {
-    try {
-      const root = skillMarketRepoPathPrefix(repo.path)
-      console.debug("[skill-market] fetch index", { repo: repo.repo, branch, path: repo.path })
-      const data = await marketJSON<{ files?: Array<{ name?: string; type?: string }> }>(
-        fetcher,
-        `https://data.jsdelivr.com/v1/package/gh/${repo.repo}@${encodeURIComponent(branch)}/flat`,
-        signal,
-      )
-      const paths = (data.files ?? [])
-        .map((item) => (typeof item.name === "string" ? item.name : ""))
-        .filter((path, index) => {
-          const item = data.files?.[index]
-          return !!path && (!item?.type || item.type === "file") && /(^|\/)SKILL\.md$/i.test(path)
-        })
-        .map((path) => path.replace(/^\/+/, ""))
-        .filter((path) => !root || path.startsWith(root))
-        .slice(0, SKILL_MARKET_MAX_SKILLS)
-      console.debug("[skill-market] index loaded", { repo: repo.repo, branch, path: repo.path, skills: paths.length })
-      return {
-        branch,
-        paths,
-      }
-    } catch (err) {
-      console.warn("[skill-market] index failed", { repo: repo.repo, branch, error: String(err) })
-      lastErr = err
-    }
-  }
-
-  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
-}
-
 async function loadMarketSkills(
   repo: SkillMarketRepo,
   fetcher: typeof fetch,
@@ -723,12 +672,15 @@ async function loadMarketSkills(
   onProgress?: (progress: Omit<SkillMarketLoadMeta, "repo" | "slow" | "timeoutMs">) => void,
 ): Promise<SkillMarketItem[]> {
   onProgress?.({ stage: "index", total: 0, completed: 0, failed: 0 })
-  const { branch, paths } = await withSkillMarketTimeout(
-    marketRepoFiles(fetcher, repo, signal),
+  const { branch, paths, source } = await withSkillMarketTimeout(
+    loadSkillMarketIndex(repo, fetcher, signal),
     SKILL_MARKET_LOAD_TIMEOUT_MS,
     () => {
-      console.warn("[skill-market] index timeout", { repo: repo.repo, branch: repo.branch })
+      console.warn(`[skill-market] index timeout repo=${repo.repo} branch=${repo.branch ?? ""}`)
     },
+  )
+  console.log(
+    `[skill-market] load skills repo=${repo.repo} branch=${branch} source=${source} count=${String(paths.length)}`,
   )
   onProgress?.({ stage: "skills", total: paths.length, completed: 0, failed: 0 })
 
@@ -743,24 +695,12 @@ async function loadMarketSkills(
       cursor += 1
       const path = paths[index]
       if (!path) continue
-      const sourceUrl = `https://cdn.jsdelivr.net/gh/${repo.repo}@${encodeURIComponent(branch)}/${cdnPath(path)}`
       try {
-        console.debug("[skill-market] fetch skill", { repo: repo.repo, branch, path })
+        console.log(`[skill-market] fetch skill repo=${repo.repo} branch=${branch} path=${path}`)
         list[index] = await withSkillMarketTimeout(
           (async () => {
-            const resp = await fetcher(sourceUrl, { signal })
-            if (!resp.ok) {
-              console.warn("[skill-market] skill response failed", {
-                repo: repo.repo,
-                branch,
-                path,
-                status: resp.status,
-                statusText: resp.statusText,
-              })
-              return undefined
-            }
-            const content = await resp.text()
-            const meta = skillMeta(content, path)
+            const file = await fetchSkillMarketFile(fetcher, repo.repo, branch, path, signal)
+            const meta = skillMeta(file.content, path)
             const folder = skillFolder(meta.name, name(dir(path)))
             return {
               id: `${repo.repo}:${path}`,
@@ -769,21 +709,21 @@ async function loadMarketSkills(
               path,
               repo: repo.repo,
               repoLabel: repo.label,
-              content,
-              sourceUrl,
+              content: file.content,
+              sourceUrl: file.url,
               folder,
             }
           })(),
           SKILL_MARKET_FILE_TIMEOUT_MS,
           () => {
-            console.warn("[skill-market] skill timeout", { repo: repo.repo, branch, path })
+            console.warn(`[skill-market] skill timeout repo=${repo.repo} branch=${branch} path=${path}`)
           },
         )
         if (list[index]) loaded += 1
         else failed += 1
       } catch (err) {
         failed += 1
-        console.warn("[skill-market] skill failed", { repo: repo.repo, branch, path, error: String(err) })
+        console.warn(`[skill-market] skill failed repo=${repo.repo} branch=${branch} path=${path} error=${String(err)}`)
       } finally {
         onProgress?.({ stage: "skills", total: paths.length, completed: loaded + failed, failed })
       }
@@ -792,9 +732,15 @@ async function loadMarketSkills(
 
   await Promise.all(workers)
 
-  return list
+  const skills = list
     .filter((item): item is SkillMarketItem => !!item)
     .sort((a, b) => a.name.localeCompare(b.name) || a.path.localeCompare(b.path))
+
+  if (paths.length && skills.length === 0) {
+    throw new Error(`Failed to read ${paths.length} SKILL.md files`)
+  }
+
+  return skills
 }
 
 function script(path?: string) {
@@ -1425,6 +1371,7 @@ function SkillListButton(props: {
   active: boolean
   title: string
   note?: string
+  icon?: IconName
   warn?: boolean
   warnLabel?: string
   deletable?: boolean
@@ -1471,7 +1418,7 @@ function SkillListButton(props: {
               !props.active && !props.warn,
           }}
         >
-          <Icon name="book" size="large" class="scale-110" />
+          <Icon name={props.icon ?? "book"} size="large" class="scale-110" />
         </div>
         <div class="min-w-0 flex-1">
           <div class="flex min-w-0 flex-wrap items-center gap-2">
@@ -4516,7 +4463,7 @@ export default function ConfigPage() {
     const controller = typeof AbortController === "function" ? new AbortController() : undefined
     const slowTimer = setTimeout(() => {
       if (marketLoadRun !== run) return
-      console.warn("[skill-market] load slow", { repo: repo.repo, branch: repo.branch })
+      console.warn(`[skill-market] load slow repo=${repo.repo} branch=${repo.branch ?? ""}`)
       setMarketLoadMeta((meta) => (meta ? { ...meta, slow: true } : meta))
     }, SKILL_MARKET_SLOW_LOAD_MS)
     const fetcher = platform.fetch ?? fetch
@@ -4530,23 +4477,16 @@ export default function ConfigPage() {
       completed: 0,
       failed: 0,
     })
-    console.debug("[skill-market] load start", {
-      repo: repo.repo,
-      branch: repo.branch,
-      id: repo.id,
-      fetcher: platform.fetch ? "platform.fetch" : "window.fetch",
-    })
+    console.log(
+      `[skill-market] load start repo=${repo.repo} branch=${repo.branch ?? ""} id=${repo.id} fetcher=${platform.fetch ? "platform.fetch" : "window.fetch"}`,
+    )
     void loadMarketSkills(repo, fetcher, controller?.signal, (progress) => {
       if (marketLoadRun !== run) return
       setMarketLoadMeta((meta) => (meta ? { ...meta, ...progress } : meta))
     })
       .then((skills) => {
         if (marketLoadRun !== run) return
-        console.debug("[skill-market] load success", {
-          repo: repo.repo,
-          branch: repo.branch,
-          count: skills.length,
-        })
+        console.log(`[skill-market] load success repo=${repo.repo} branch=${repo.branch ?? ""} count=${String(skills.length)}`)
         setMarketSkills({ skills })
         if (isCustomSkillMarketRepoID(repo.id)) {
           const parsed = cleanRepoParts(repo.repo, repo.branch)
@@ -4567,7 +4507,7 @@ export default function ConfigPage() {
             : err instanceof Error
               ? err.message
               : String(err)
-        console.warn("[skill-market] load failed", { repo: repo.repo, branch: repo.branch, error: message })
+        console.warn(`[skill-market] load failed repo=${repo.repo} branch=${repo.branch ?? ""} error=${message}`)
         setMarketSkills({ skills: [], error: message })
       })
       .finally(() => {
@@ -8357,6 +8297,7 @@ export default function ConfigPage() {
                               active={state.skillPanel === "market"}
                               title={t("config.skills.market.action")}
                               note={t("config.skills.market.description")}
+                              icon="shopping-bag"
                               onClick={openSkillMarket}
                             />
                             <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2.5">
