@@ -12,7 +12,9 @@ import { Effect, Record } from "effect"
 import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
+import * as Log from "@opencode-ai/core/util/log"
 
+const log = Log.create({ service: "session.llm.request" })
 const USER_AGENT = `opencode/${InstallationVersion}`
 
 type PrepareInput = {
@@ -88,6 +90,9 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       })
   const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), input.agent.options), variant)
   if (isOpenaiOauth) options.instructions = system.join("\n")
+  log.info(
+    `prepared provider options provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} session=${input.sessionID} promptCacheKey=${String(options.promptCacheKey ?? "")} setCacheKey=${String(input.provider.options?.setCacheKey)}`,
+  )
 
   const messages =
     isOpenaiOauth || input.isWorkflow

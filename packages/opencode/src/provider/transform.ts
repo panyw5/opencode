@@ -5,6 +5,9 @@ import type * as Provider from "./provider"
 import type * as ModelsDev from "@opencode-ai/core/models-dev"
 import { iife } from "@/util/iife"
 import { isOpenAIProviderID } from "./id"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "provider.transform" })
 
 type Modality = NonNullable<ModelsDev.Model["modalities"]>["input"][number]
 
@@ -1143,9 +1146,20 @@ export function options(input: {
     }
   }
 
-  if (isOpenAIProviderID(input.model.providerID) || input.providerOptions?.setCacheKey) {
+  // Custom providers that speak the real OpenAI SDK (Aether, AxonHub-codex, …)
+  // still need a stable prompt_cache_key. Codex routes cache identity from this
+  // field; without it, Aether will not emit session-id/thread-id and the same
+  // OpenCode session hops across upstream accounts.
+  const shouldSetPromptCacheKey =
+    isOpenAIProviderID(input.model.providerID) ||
+    input.model.api.npm === "@ai-sdk/openai" ||
+    input.providerOptions?.setCacheKey === true
+  if (shouldSetPromptCacheKey) {
     result["promptCacheKey"] = input.sessionID
   }
+  log.info(
+    `promptCacheKey decision provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} setCacheKey=${String(input.providerOptions?.setCacheKey)} applied=${String(shouldSetPromptCacheKey)} session=${input.sessionID}`,
+  )
 
   if (input.model.api.npm === "@ai-sdk/google" || input.model.api.npm === "@ai-sdk/google-vertex") {
     if (input.model.capabilities.reasoning) {

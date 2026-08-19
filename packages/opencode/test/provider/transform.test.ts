@@ -83,6 +83,34 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBe(sessionID)
   })
 
+  test("should set promptCacheKey for custom @ai-sdk/openai providers like aether", () => {
+    const aetherModel = {
+      ...mockModel,
+      providerID: "aether",
+      api: {
+        id: "gpt-5.6-luna",
+        url: "http://127.0.0.1:8084/v1",
+        npm: "@ai-sdk/openai",
+      },
+    }
+    const result = ProviderTransform.options({ model: aetherModel, sessionID, providerOptions: {} })
+    expect(result.promptCacheKey).toBe(sessionID)
+  })
+
+  test("should not set promptCacheKey for openai-compatible providers without setCacheKey", () => {
+    const compatibleModel = {
+      ...mockModel,
+      providerID: "axonhub",
+      api: {
+        id: "gpt-5.6-luna",
+        url: "http://127.0.0.1:8090/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+    }
+    const result = ProviderTransform.options({ model: compatibleModel, sessionID, providerOptions: {} })
+    expect(result.promptCacheKey).toBeUndefined()
+  })
+
   test("should set store=false for openai provider", () => {
     const openaiModel = {
       ...mockModel,
