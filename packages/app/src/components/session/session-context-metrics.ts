@@ -48,14 +48,35 @@ const emptyTokens = {
   total: 0,
 }
 
+const tokenComponents = (msg: AssistantMessage) => {
+  const tokens = msg.tokens
+  return {
+    input: tokens?.input ?? 0,
+    output: tokens?.output ?? 0,
+    reasoning: tokens?.reasoning ?? 0,
+    cacheRead: tokens?.cache?.read ?? 0,
+    cacheWrite: tokens?.cache?.write ?? 0,
+  }
+}
+
 const tokenTotal = (msg: AssistantMessage) => {
-  return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
+  const reported = msg.tokens?.total
+  if (typeof reported === "number" && reported > 0) return reported
+  const parts = tokenComponents(msg)
+  return parts.input + parts.output + parts.reasoning + parts.cacheRead + parts.cacheWrite
 }
 
 const lastAssistant = (messages: Message[]) => {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
     if (msg.role === "assistant") return msg
+  }
+}
+
+const lastAssistantWithTokens = (messages: Message[]) => {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i]
+    if (msg.role === "assistant" && tokenTotal(msg) > 0) return msg
   }
 }
 
@@ -67,7 +88,7 @@ const lastUser = (messages: Message[]) => {
 }
 
 const resolveIdentity = (messages: Message[], session?: SessionLike) => {
-  const assistant = lastAssistant(messages)
+  const assistant = lastAssistantWithTokens(messages) ?? lastAssistant(messages)
   if (assistant) {
     return {
       message: assistant,
@@ -117,11 +138,7 @@ const build = (messages: Message[] = [], providers: Provider[] = [], session?: S
   const resolved = resolveLimit(model, identity.modelID, providers)
   const tokens = identity.message
     ? {
-        input: identity.message.tokens.input,
-        output: identity.message.tokens.output,
-        reasoning: identity.message.tokens.reasoning,
-        cacheRead: identity.message.tokens.cache.read,
-        cacheWrite: identity.message.tokens.cache.write,
+        ...tokenComponents(identity.message),
         total: tokenTotal(identity.message),
       }
     : emptyTokens

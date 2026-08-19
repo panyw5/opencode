@@ -510,7 +510,7 @@ export function MessageTimeline(props: {
     const root = listRoot()
     const scrollOffset = instance.getLogicalScrollOffset()
     const adjust = shouldAdjustVirtualScroll({
-      itemStart: item.start,
+      itemEnd: item.end,
       scrollOffset,
       bottomAnchored: props.shouldAnchorBottom(),
       initializing: props.isInitialScrollSettling(),

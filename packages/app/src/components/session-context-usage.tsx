@@ -1,4 +1,4 @@
-import { For, Match, Show, Switch, createMemo, createSignal } from "solid-js"
+import { For, Match, Show, Switch, createEffect, createMemo, createSignal } from "solid-js"
 import { Tooltip, type TooltipProps } from "@opencode-ai/ui/tooltip"
 import { type ProgressCircleProps, ProgressCircle } from "@opencode-ai/ui/progress-circle"
 import { Button } from "@opencode-ai/ui/button"
@@ -70,6 +70,17 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const session = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
   const metrics = createMemo(() => getSessionContextMetrics(messages(), sync.data.provider.all, session()))
   const context = createMemo(() => metrics().context)
+
+  createEffect(() => {
+    const id = params.id
+    if (!id) return
+    const all = messages()
+    const last = [...all].reverse().find((msg) => msg.role === "assistant")
+    const used = context()?.message
+    console.debug(
+      `[session-context] sid=${id} n=${String(all.length)} last=${last && last.role === "assistant" ? last.id : "none"} used=${used?.id ?? "none"} total=${String(context()?.total ?? 0)} usage=${String(context()?.usage ?? "null")}`,
+    )
+  })
   const cost = createMemo(() => usd().format(metrics().totalCost))
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 

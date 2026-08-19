@@ -4,7 +4,7 @@ import { getSessionContextMetrics } from "./session-context-metrics"
 
 const assistant = (
   id: string,
-  tokens: { input: number; output: number; reasoning: number; read: number; write: number },
+  tokens: { input: number; output: number; reasoning: number; read: number; write: number; total?: number },
   cost: number,
   providerID = "openai",
   modelID = "gpt-4.1",
@@ -16,6 +16,7 @@ const assistant = (
     modelID,
     cost,
     tokens: {
+      total: tokens.total,
       input: tokens.input,
       output: tokens.output,
       reasoning: tokens.reasoning,
@@ -65,6 +66,43 @@ describe("getSessionContextMetrics", () => {
     expect(metrics.context?.usage).toBe(50)
     expect(metrics.context?.providerLabel).toBe("OpenAI")
     expect(metrics.context?.modelLabel).toBe("GPT-4.1")
+  })
+
+  test("skips trailing in-progress or aborted assistants with zero tokens", () => {
+    const messages = [
+      user("u1"),
+      assistant("a1", { input: 245784, output: 116, reasoning: 0, read: 0, write: 0, total: 245900 }, 0, "axonhub", "glm-5.2"),
+      assistant("a2", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0, "axonhub", "glm-5.2"),
+    ]
+    const providers = [
+      {
+        id: "axonhub",
+        name: "AxonHub",
+        models: {
+          "glm-5.2": {
+            name: "glm-5.2",
+            limit: { context: 1_000_000 },
+          },
+        },
+      },
+    ]
+
+    const metrics = getSessionContextMetrics(messages, providers)
+
+    expect(metrics.context?.message?.id).toBe("a1")
+    expect(metrics.context?.total).toBe(245900)
+    expect(metrics.context?.input).toBe(245784)
+    expect(metrics.context?.output).toBe(116)
+    expect(metrics.context?.usage).toBe(25)
+  })
+
+  test("prefers reported tokens.total over summed components", () => {
+    const messages = [assistant("a1", { input: 10, output: 10, reasoning: 0, read: 0, write: 0, total: 1000 }, 0)]
+    const providers = [{ id: "openai", models: {} }]
+
+    const metrics = getSessionContextMetrics(messages, providers)
+
+    expect(metrics.context?.total).toBe(1000)
   })
 
   test("preserves fallback labels and null usage when model metadata is missing", () => {

@@ -85,18 +85,17 @@ export function virtualRowOverflow(contentHeight: number, virtualHeight: number)
 }
 
 /**
- * Keeps a bottom-anchored stream pinned when its last virtual row grows.
- * Uses the row start so a row whose top sits above the viewport is adjusted
- * (content below stays fixed), while a row whose top is inside the viewport is
- * left alone (its own top stays fixed).
+ * Compensates scroll only for rows entirely above the viewport, so the visible
+ * slice stays put. A spanning or in-view row can grow downward (streaming)
+ * without pushing the viewport up. Bottom-anchored follow still always adjusts.
  */
 export function shouldAdjustVirtualScroll(input: {
-  itemStart: number
+  itemEnd: number
   scrollOffset: number
   bottomAnchored: boolean
   initializing: boolean
 }) {
-  return input.itemStart < input.scrollOffset || (input.bottomAnchored && !input.initializing)
+  return input.itemEnd <= input.scrollOffset || (input.bottomAnchored && !input.initializing)
 }
 
 /** Streaming rows must not use size containment or the virtualizer freezes their height. */

@@ -139,26 +139,35 @@ test("does not clip a row while its DOM height is ahead of the virtualizer", () 
 
 test("keeps a bottom-anchored stream pinned as its last row grows", () => {
   expect(
-    shouldAdjustVirtualScroll({ itemStart: 500, scrollOffset: 500, bottomAnchored: true, initializing: false }),
+    shouldAdjustVirtualScroll({ itemEnd: 600, scrollOffset: 500, bottomAnchored: true, initializing: false }),
   ).toBe(true)
   expect(
-    shouldAdjustVirtualScroll({ itemStart: 500, scrollOffset: 500, bottomAnchored: true, initializing: true }),
+    shouldAdjustVirtualScroll({ itemEnd: 600, scrollOffset: 500, bottomAnchored: true, initializing: true }),
   ).toBe(false)
   expect(
-    shouldAdjustVirtualScroll({ itemStart: 400, scrollOffset: 500, bottomAnchored: false, initializing: false }),
+    shouldAdjustVirtualScroll({ itemEnd: 400, scrollOffset: 500, bottomAnchored: false, initializing: false }),
   ).toBe(true)
   expect(
-    shouldAdjustVirtualScroll({ itemStart: 600, scrollOffset: 500, bottomAnchored: false, initializing: false }),
+    shouldAdjustVirtualScroll({ itemEnd: 600, scrollOffset: 500, bottomAnchored: false, initializing: false }),
   ).toBe(false)
 })
 
-test("adjusts a row whose top sits above the viewport even when it grows into it", () => {
+test("adjusts a row fully above the viewport when it grows into it", () => {
   expect(
-    shouldAdjustVirtualScroll({ itemStart: 100, scrollOffset: 500, bottomAnchored: false, initializing: false }),
+    shouldAdjustVirtualScroll({ itemEnd: 400, scrollOffset: 500, bottomAnchored: false, initializing: false }),
   ).toBe(true)
   expect(
-    shouldAdjustVirtualScroll({ itemStart: 500, scrollOffset: 500, bottomAnchored: false, initializing: false }),
+    shouldAdjustVirtualScroll({ itemEnd: 500, scrollOffset: 500, bottomAnchored: false, initializing: false }),
+  ).toBe(true)
+})
+
+test("does not push the viewport when a scrolled-away streaming row grows", () => {
+  expect(
+    shouldAdjustVirtualScroll({ itemEnd: 900, scrollOffset: 400, bottomAnchored: false, initializing: false }),
   ).toBe(false)
+  expect(
+    shouldAdjustVirtualScroll({ itemEnd: 400, scrollOffset: 400, bottomAnchored: false, initializing: false }),
+  ).toBe(true)
 })
 
 test("does not contain the active or last streaming row", () => {
