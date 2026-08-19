@@ -1,6 +1,27 @@
 import type { CommandOption } from "@/context/command"
 
-const ENTRY_LIMIT = 5
+export const ENTRY_LIMIT = 5
+
+export const COMMON_COMMAND_IDS = [
+  "session.new",
+  "workspace.new",
+  "session.previous",
+  "session.next",
+  "terminal.toggle",
+  "review.toggle",
+] as const
+
+export const HOME_COMMAND_IDS = [
+  "session.recent",
+  "project.open",
+  "project.switch",
+  "settings.open",
+  "config.open",
+  "provider.connect",
+  "server.switch",
+  "server.reloadBackend",
+  "app.reloadFrontend",
+] as const
 
 export function pickCommandOptions(options: CommandOption[], ids: readonly string[]) {
   const order = new Map<string, number>(ids.map((id, index) => [id, index]))

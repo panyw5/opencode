@@ -27,7 +27,7 @@ export function DialogRecentSessions(props: {
   }
 
   return (
-    <Dialog title={language.t("command.session.recent")}>
+    <Dialog size="large" class="!min-h-[520px] !max-h-[600px]" transition title={language.t("command.session.recent")}>
       <List<GlobalSession>
         search={{ placeholder: language.t("session.recent.placeholder"), autofocus: true }}
         emptyMessage={language.t("session.recent.empty")}
@@ -50,11 +50,14 @@ export function DialogRecentSessions(props: {
                 <div class="size-6 rounded shrink-0 flex items-center justify-center bg-surface-base">
                   <Icon name="speech-bubble" class="text-icon-base size-4" />
                 </div>
-                <span class="text-14-medium text-text-base truncate w-[220px] shrink-0 pl-4">
+                <span class="text-14-medium text-text-base truncate grow min-w-0 pl-4">
                   {item.title?.trim() || item.id.slice(0, 8)}
                 </span>
-                <span class="text-12-regular text-text-weak truncate grow min-w-0 text-left pl-3">
-                  {workspace()} · {updated()}
+                <span class="text-12-regular text-text-weak truncate shrink-0 max-w-[10rem] text-left pl-3">
+                  {workspace()}
+                </span>
+                <span class="text-12-regular text-text-weak shrink-0 whitespace-nowrap pl-2">
+                  {updated()}
                 </span>
                 <Show when={isCurrent()}>
                   <span class="text-12-regular text-text-weak shrink-0 ml-2">

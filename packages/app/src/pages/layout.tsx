@@ -65,6 +65,7 @@ import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
 import { DialogSelectFile, DialogSessionContentSearch } from "@/components/dialog-select-file"
 import { mergeRecentSessions, RECENT_SESSION_LIMIT } from "@/components/dialog-recent-sessions-utils"
+import { HOME_COMMAND_IDS } from "@/components/dialog-select-file-utils"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { DialogSettings } from "@/components/dialog-settings"
 import { useCommand, type CommandOption } from "@/context/command"
@@ -1327,12 +1328,15 @@ export default function Layout(props: ParentProps) {
         category: language.t("command.category.view"),
         keybind: "mod+shift+p",
         onSelect: (source) => {
-          console.debug(`[command-palette] open source=${source ?? "unknown"} scope=layout`)
+          const home = location.pathname === "/"
+          console.debug(
+            `[command-palette] open source=${source ?? "unknown"} scope=layout home=${home ? "true" : "false"}`,
+          )
           dialog.show(
             () => (
               <DialogSelectFile
                 mode="commands"
-                defaultCommandIds={location.pathname === "/" ? ["server.reloadBackend", "app.reloadFrontend"] : undefined}
+                defaultCommandIds={home ? HOME_COMMAND_IDS : undefined}
               />
             ),
             undefined,
@@ -1562,8 +1566,7 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.session.recent", "command.session.recent.description"),
         category: language.t("command.category.session"),
         slash: "recent",
-        suggested: currentSessions().length > 0,
-        disabled: !params.dir,
+        suggested: currentSessions().length > 0 || location.pathname === "/",
         onSelect: () => {
           dialog.show(
             () => (
@@ -1587,6 +1590,7 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.session.previous"),
         category: language.t("command.category.session"),
         keybind: "alt+arrowup",
+        disabled: currentSessions().length === 0,
         onSelect: () => navigateSessionByOffset(-1),
       },
       {
@@ -1595,6 +1599,7 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.session.next"),
         category: language.t("command.category.session"),
         keybind: "alt+arrowdown",
+        disabled: currentSessions().length === 0,
         onSelect: () => navigateSessionByOffset(1),
       },
       {
@@ -1603,6 +1608,7 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.session.previous.unseen"),
         category: language.t("command.category.session"),
         keybind: "shift+alt+arrowup",
+        disabled: currentSessions().length === 0,
         onSelect: () => navigateSessionByUnseen(-1),
       },
       {
@@ -1611,6 +1617,7 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.session.next.unseen"),
         category: language.t("command.category.session"),
         keybind: "shift+alt+arrowdown",
+        disabled: currentSessions().length === 0,
         onSelect: () => navigateSessionByUnseen(1),
       },
       ...[1, 2, 3, 4, 5].map((index) => ({

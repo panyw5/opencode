@@ -21,7 +21,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { decode64 } from "@/utils/base64"
 import { getRelativeTime } from "@/utils/time"
-import { pickCommandOptions } from "./dialog-select-file-utils"
+import { COMMON_COMMAND_IDS, ENTRY_LIMIT, pickCommandOptions } from "./dialog-select-file-utils"
 
 type EntryType = "command" | "file" | "session" | "content"
 
@@ -44,16 +44,6 @@ type Entry = {
 }
 
 type DialogSelectFileMode = "all" | "files" | "commands"
-
-const ENTRY_LIMIT = 5
-const COMMON_COMMAND_IDS = [
-  "session.new",
-  "workspace.new",
-  "session.previous",
-  "session.next",
-  "terminal.toggle",
-  "review.toggle",
-] as const
 
 const uniqueEntries = (items: Entry[]) => {
   const seen = new Set<string>()
@@ -468,7 +458,7 @@ function DialogCommandPalette(props: { defaultCommandIds?: readonly string[] }) 
   })
 
   return (
-    <Dialog class="pt-4 !max-h-[480px]" transition>
+    <Dialog size="large" class="pt-4 !min-h-[520px] !max-h-[600px]" transition>
       <List
         search={{
           placeholder: language.t("palette.search.commands"),
