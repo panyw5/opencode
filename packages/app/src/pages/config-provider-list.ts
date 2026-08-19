@@ -122,6 +122,9 @@ export function collectConfigProviders(input: {
       allowed: !off.has(id),
       custom: false,
       source: "config",
+      sdk: undefined,
+      key: undefined,
+      env: undefined,
       models: Object.keys(entries[id]?.models ?? {}).sort(),
     })
   }

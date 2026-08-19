@@ -111,28 +111,31 @@ describe("skill market index parsers", () => {
 
 describe("skill market index loading", () => {
   test("skips a stale jsdelivr listing and uses the nested github tree", async () => {
-    const fetcher: typeof fetch = async (input) => {
-      const url = String(input)
-      if (url.includes("ungh.cc")) return new Response("nope", { status: 500 })
-      if (url.includes("api.github.com")) {
-        return Response.json({
-          tree: [
-            { path: "skills/engineering/code-review/SKILL.md", type: "blob" },
-            { path: "skills/productivity/grill-me/SKILL.md", type: "blob" },
-          ],
-        })
-      }
-      if (url.includes("data.jsdelivr.com")) {
-        return Response.json({
-          files: [{ name: "/grill-me/SKILL.md", type: "file" }],
-        })
-      }
-      if (url.endsWith("/grill-me/SKILL.md")) return new Response("missing", { status: 404 })
-      if (url.includes("skills/engineering/code-review/SKILL.md")) {
-        return new Response("---\nname: code-review\n---\n", { status: 200 })
-      }
-      return new Response("missing", { status: 404 })
-    }
+    const fetcher: typeof fetch = Object.assign(
+      async (input: URL | RequestInfo) => {
+        const url = String(input)
+        if (url.includes("ungh.cc")) return new Response("nope", { status: 500 })
+        if (url.includes("api.github.com")) {
+          return Response.json({
+            tree: [
+              { path: "skills/engineering/code-review/SKILL.md", type: "blob" },
+              { path: "skills/productivity/grill-me/SKILL.md", type: "blob" },
+            ],
+          })
+        }
+        if (url.includes("data.jsdelivr.com")) {
+          return Response.json({
+            files: [{ name: "/grill-me/SKILL.md", type: "file" }],
+          })
+        }
+        if (url.endsWith("/grill-me/SKILL.md")) return new Response("missing", { status: 404 })
+        if (url.includes("skills/engineering/code-review/SKILL.md")) {
+          return new Response("---\nname: code-review\n---\n", { status: 200 })
+        }
+        return new Response("missing", { status: 404 })
+      },
+      { preconnect: () => {} },
+    )
 
     const result = await loadSkillMarketIndex({ repo: "mattpocock/skills" }, fetcher)
     expect(result.source).toBe("github")
@@ -143,7 +146,9 @@ describe("skill market index loading", () => {
   })
 
   test("probe rejects stale skill paths", async () => {
-    const fetcher: typeof fetch = async () => new Response("missing", { status: 404 })
+    const fetcher: typeof fetch = Object.assign(async () => new Response("missing", { status: 404 }), {
+      preconnect: () => {},
+    })
     expect(await probeSkillMarketPath(fetcher, "mattpocock/skills", "main", "grill-me/SKILL.md")).toBe(false)
   })
 })
