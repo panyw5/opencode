@@ -1,4 +1,7 @@
-import { splitProps, type ComponentProps } from "solid-js"
+import { createContext, splitProps, useContext, type ComponentProps, type JSX } from "solid-js"
+import { LUCIDE_VIEWBOX, lucideIcons } from "./lucide-icons"
+import { PHOSPHOR_VIEWBOX, phosphorIcons } from "./phosphor-icons"
+import { TABLER_VIEWBOX, tablerIcons } from "./tabler-icons"
 
 const icons = {
   "align-right": `<path d="M12.292 6.04167L16.2503 9.99998L12.292 13.9583M2.91699 9.99998H15.6253M17.0837 3.75V16.25" stroke="currentColor" stroke-linecap="square"/>`,
@@ -97,6 +100,7 @@ const icons = {
   share: `<path d="M10.0013 12.0846L10.0013 3.33464M13.7513 6.66797L10.0013 2.91797L6.2513 6.66797M17.0846 10.418V17.0846H2.91797V10.418" stroke="currentColor" stroke-linecap="square"/>`,
   shield: `<path d="M7.49935 9.3737L9.16602 11.0404L12.4994 7.70703M9.99935 2.08203L17.0827 4.3737V9.92565C17.0827 14.0694 13.3327 16.2487 9.99935 18.047C6.66602 16.2487 2.91602 14.0694 2.91602 9.92565V4.3737L9.99935 2.08203Z" stroke="currentColor" stroke-linecap="square"/>`,
   download: `<path d="M13.9583 10.6257L10 14.584L6.04167 10.6257M10 2.08398V13.959M16.25 17.9173H3.75" stroke="currentColor" stroke-linecap="square"/>`,
+  "shopping-bag": `<path d="M5 6.25H15L16.25 17.083H3.75L5 6.25Z" stroke="currentColor" stroke-linecap="square" stroke-linejoin="round"/><path d="M7.5 6.25V5C7.5 3.619 8.619 2.5 10 2.5C11.381 2.5 12.5 3.619 12.5 5V6.25" stroke="currentColor" stroke-linecap="square"/>`,
   menu: `<path d="M2.5 5H17.5M2.5 10H17.5M2.5 15H17.5" stroke="currentColor" stroke-linecap="square"/>`,
   server: `<rect x="3.35547" y="1.92969" width="13.2857" height="16.1429" stroke="currentColor"/><rect x="3.35547" y="11.9297" width="13.2857" height="6.14286" stroke="currentColor"/><rect x="12.8555" y="14.2852" width="1.42857" height="1.42857" fill="currentColor"/><rect x="10" y="14.2852" width="1.42857" height="1.42857" fill="currentColor"/>`,
   save: `<path d="M4.16667 2.91699H13.9583L15.8333 4.79199V17.0837H4.16667V2.91699Z" stroke="currentColor" stroke-linecap="square"/><path d="M6.66699 2.91699V7.08366H12.917V2.91699" stroke="currentColor" stroke-linecap="square"/><path d="M6.66699 17.083V11.2497H13.3337V17.083" stroke="currentColor" stroke-linecap="square"/><path d="M11.667 5.00033H11.6753" stroke="currentColor" stroke-linecap="square"/>`,
@@ -142,6 +146,29 @@ const icons = {
 }
 
 export type IconName = keyof typeof icons
+export type IconPack = "legacy" | "phosphor" | "tabler" | "lucide"
+
+const IconPackContext = createContext<IconPack>("lucide")
+
+export function IconPackProvider(props: { pack: IconPack; children: JSX.Element }) {
+  return <IconPackContext.Provider value={props.pack}>{props.children}</IconPackContext.Provider>
+}
+
+export function useIconPack() {
+  return useContext(IconPackContext)
+}
+
+export function iconUsesPhosphor(name: string, pack: IconPack = "phosphor") {
+  return pack === "phosphor" && !!phosphorIcons[name]
+}
+
+export function iconUsesTabler(name: string, pack: IconPack = "tabler") {
+  return pack === "tabler" && !!tablerIcons[name]
+}
+
+export function iconUsesLucide(name: string, pack: IconPack = "lucide") {
+  return pack === "lucide" && !!lucideIcons[name]
+}
 
 export interface IconProps extends ComponentProps<"svg"> {
   name: IconName
@@ -150,22 +177,39 @@ export interface IconProps extends ComponentProps<"svg"> {
 
 export function Icon(props: IconProps) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
+  const pack = useIconPack()
+  const lucide = () => iconUsesLucide(local.name, pack)
+  const tabler = () => (iconUsesTabler(local.name, pack) ? tablerIcons[local.name] : undefined)
+  const phosphor = () => iconUsesPhosphor(local.name, pack)
+  const stroked = () => lucide() || (!!tabler() && !tabler()!.filled)
   const viewBox = () => {
+    if (lucide()) return LUCIDE_VIEWBOX
+    if (tabler()) return TABLER_VIEWBOX
+    if (phosphor()) return PHOSPHOR_VIEWBOX
     if (local.name === "magnifying-glass") return "0 0 16 16"
     if (local.name === "openclaw") return "0 0 120 120"
     return "0 0 20 20"
   }
+  const body = () =>
+    lucide()
+      ? lucideIcons[local.name]
+      : (tabler()?.body ?? (phosphor() ? phosphorIcons[local.name] : icons[local.name as keyof typeof icons]))
+  const packName = () => (lucide() ? "lucide" : tabler() ? "tabler" : phosphor() ? "phosphor" : "legacy")
   return (
-    <div data-component="icon" data-size={local.size || "normal"}>
+    <div data-component="icon" data-size={local.size || "normal"} data-icon-pack={packName()}>
       <svg
         data-slot="icon-svg"
         classList={{
           ...(local.classList || {}),
           [local.class ?? ""]: !!local.class,
         }}
-        fill="none"
+        fill={stroked() ? "none" : phosphor() || tabler()?.filled ? "currentColor" : "none"}
+        stroke={stroked() ? "currentColor" : undefined}
+        stroke-width={stroked() ? "2" : undefined}
+        stroke-linecap={stroked() ? "round" : undefined}
+        stroke-linejoin={stroked() ? "round" : undefined}
         viewBox={viewBox()}
-        innerHTML={icons[local.name as keyof typeof icons]}
+        innerHTML={body()}
         aria-hidden="true"
         {...others}
       />

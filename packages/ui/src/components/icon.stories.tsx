@@ -96,6 +96,7 @@ const names = [
   "photo",
   "share",
   "download",
+  "shopping-bag",
   "menu",
   "server",
   "branch",
