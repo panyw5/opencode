@@ -34,8 +34,11 @@ describe("phosphor icon pack", () => {
     expect(phosphorIcons.hermes).toBeUndefined()
   })
 
-  test("does not switch the rest of the app without the phosphor pack", () => {
+  test("is the default pack for mapped names", () => {
+    expect(iconUsesPhosphor("shopping-bag")).toBe(true)
     expect(iconUsesPhosphor("shopping-bag", "legacy")).toBe(false)
+    expect(iconUsesPhosphor("shopping-bag", "lucide")).toBe(false)
+    expect(iconUsesPhosphor("shopping-bag", "tabler")).toBe(false)
   })
 })
 
@@ -77,9 +80,9 @@ describe("lucide icon pack", () => {
     expect(lucideIcons.hermes).toBeUndefined()
   })
 
-  test("is the default pack for mapped names", () => {
-    expect(iconUsesLucide("shopping-bag")).toBe(true)
+  test("is not the default pack", () => {
     expect(iconUsesLucide("shopping-bag", "legacy")).toBe(false)
+    expect(iconUsesLucide("shopping-bag", "phosphor")).toBe(false)
     expect(iconUsesLucide("shopping-bag", "tabler")).toBe(false)
   })
 })

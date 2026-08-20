@@ -10,7 +10,7 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon, type IconPack } from "@opencode-ai/ui/icon"
 import { Progress } from "@opencode-ai/ui/progress"
 import { Select } from "@opencode-ai/ui/select"
 import { Switch } from "@opencode-ai/ui/switch"
@@ -208,6 +208,20 @@ export const SettingsGeneral: Component = () => {
   }
 
   const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
+
+  const iconPackOptions = createMemo(() =>
+    (
+      [
+        { value: "phosphor", labelKey: "settings.general.row.iconPack.option.phosphor" },
+        { value: "lucide", labelKey: "settings.general.row.iconPack.option.lucide" },
+        { value: "tabler", labelKey: "settings.general.row.iconPack.option.tabler" },
+        { value: "legacy", labelKey: "settings.general.row.iconPack.option.legacy" },
+      ] as const
+    ).map((option) => ({
+      value: option.value as IconPack,
+      label: language.t(option.labelKey),
+    })),
+  )
 
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
     { value: "system", label: language.t("theme.scheme.system") },
@@ -562,6 +576,24 @@ export const SettingsGeneral: Component = () => {
               </span>
             )}
           </Select>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.iconPack.title")}
+          description={language.t("settings.general.row.iconPack.description")}
+        >
+          <Select
+            data-action="settings-icon-pack"
+            options={iconPackOptions()}
+            current={iconPackOptions().find((o) => o.value === settings.appearance.iconPack())}
+            value={(o) => o.value}
+            label={(o) => o.label}
+            onSelect={(option) => option && settings.appearance.setIconPack(option.value)}
+            variant="secondary"
+            size="small"
+            triggerVariant="settings"
+            triggerStyle={{ "min-width": "180px" }}
+          />
         </SettingsRow>
       </SettingsList>
     </div>

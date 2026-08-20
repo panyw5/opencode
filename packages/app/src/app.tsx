@@ -5,7 +5,7 @@ import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { MarkedProvider } from "@opencode-ai/ui/context/marked"
 import { File } from "@opencode-ai/ui/file"
 import { Font } from "@opencode-ai/ui/font"
-import { Icon, type IconName } from "@opencode-ai/ui/icon"
+import { Icon, IconPackProvider, type IconName } from "@opencode-ai/ui/icon"
 import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
@@ -46,7 +46,7 @@ import { usePlatform } from "@/context/platform"
 import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SessionHistoryProvider } from "@/context/session-history"
-import { SettingsProvider } from "@/context/settings"
+import { SettingsProvider, useSettings } from "@/context/settings"
 import { SDKProvider } from "@/context/sdk"
 import { SyncProvider } from "@/context/sync"
 import { useGlobalSync } from "@/context/global-sync"
@@ -305,24 +305,31 @@ function QueryProvider(props: ParentProps) {
   return <QueryClientProvider client={client}>{props.children}</QueryClientProvider>
 }
 
+function IconPackFromSettings(props: ParentProps) {
+  const settings = useSettings()
+  return <IconPackProvider pack={settings.appearance.iconPack()}>{props.children}</IconPackProvider>
+}
+
 function AppShellProviders(props: ParentProps) {
   return (
     <SettingsProvider>
-      <PermissionProvider>
-        <SessionHistoryProvider>
-          <LayoutProvider>
-            <NotificationProvider>
-              <ModelsProvider>
-                <CommandProvider>
-                  <HighlightsProvider>
-                    <Layout>{props.children}</Layout>
-                  </HighlightsProvider>
-                </CommandProvider>
-              </ModelsProvider>
-            </NotificationProvider>
-          </LayoutProvider>
-        </SessionHistoryProvider>
-      </PermissionProvider>
+      <IconPackFromSettings>
+        <PermissionProvider>
+          <SessionHistoryProvider>
+            <LayoutProvider>
+              <NotificationProvider>
+                <ModelsProvider>
+                  <CommandProvider>
+                    <HighlightsProvider>
+                      <Layout>{props.children}</Layout>
+                    </HighlightsProvider>
+                  </CommandProvider>
+                </ModelsProvider>
+              </NotificationProvider>
+            </LayoutProvider>
+          </SessionHistoryProvider>
+        </PermissionProvider>
+      </IconPackFromSettings>
     </SettingsProvider>
   )
 }

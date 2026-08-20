@@ -1,6 +1,7 @@
 import { createStore, reconcile } from "solid-js/store"
 import { createEffect, createMemo } from "solid-js"
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import type { IconPack } from "@opencode-ai/ui/icon"
 import { persisted } from "@/utils/persist"
 
 export interface NotificationSettings {
@@ -44,6 +45,7 @@ export interface Settings {
     font: string
     zoomLevel: number
     contentWidth: number
+    iconPack: IconPack
   }
   keybinds: Record<string, string>
   permissions: {
@@ -93,6 +95,7 @@ const defaultSettings: Settings = {
     font: "ibm-plex-mono",
     zoomLevel: 1,
     contentWidth: 300, // Default max-w-300 (1200px)
+    iconPack: "phosphor",
   },
   keybinds: {},
   permissions: {
@@ -141,6 +144,13 @@ export function monoFontFamily(font: string | undefined) {
 
 function withFallback<T>(read: () => T | undefined, fallback: T) {
   return createMemo(() => read() ?? fallback)
+}
+
+const ICON_PACKS = new Set<IconPack>(["legacy", "phosphor", "tabler", "lucide"])
+
+function normalizeIconPack(value: unknown): IconPack | undefined {
+  if (typeof value !== "string") return undefined
+  return ICON_PACKS.has(value as IconPack) ? (value as IconPack) : undefined
 }
 
 let font: Promise<typeof import("@opencode-ai/ui/font-loader")> | undefined
@@ -262,6 +272,14 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
           const previous = store.appearance?.contentWidth ?? defaultSettings.appearance.contentWidth
           console.debug(`[settings] setContentWidth previous=${previous} next=${value}`)
           setStore("appearance", "contentWidth", value)
+        },
+        iconPack: withFallback(
+          () => normalizeIconPack(store.appearance?.iconPack),
+          defaultSettings.appearance.iconPack,
+        ),
+        setIconPack(value: IconPack) {
+          console.debug(`[settings] setIconPack next=${value}`)
+          setStore("appearance", "iconPack", value)
         },
       },
       keybinds: {

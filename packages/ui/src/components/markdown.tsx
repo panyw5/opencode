@@ -4,6 +4,7 @@ import DOMPurify from "dompurify"
 import morphdom from "morphdom"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { stream as streamMarkdown } from "./markdown-stream"
+import { applyResolvedIcon, readDocumentIconPack, refreshDomIcons, resolveIcon, type IconName } from "./icon"
 import {
   ComponentProps,
   createEffect,
@@ -93,11 +94,6 @@ const config = {
   SANITIZE_NAMED_PROPS: true,
   FORBID_TAGS: ["style"],
   FORBID_CONTENTS: ["style", "script"],
-}
-
-const iconPaths = {
-  copy: '<path d="M6.2513 6.24935V2.91602H17.0846V13.7493H13.7513M13.7513 6.24935V17.0827H2.91797V6.24935H13.7513Z" stroke="currentColor" stroke-linecap="round"/>',
-  check: '<path d="M5 11.9657L8.37838 14.7529L15 5.83398" stroke="currentColor" stroke-linecap="square"/>',
 }
 
 function sanitize(html: string) {
@@ -289,18 +285,12 @@ function markFileLinks(root: HTMLDivElement) {
   }
 }
 
-function createIcon(path: string, slot: string) {
+function createIcon(name: IconName, slot: string) {
   const icon = document.createElement("div")
-  icon.setAttribute("data-component", "icon")
   icon.setAttribute("data-size", "small")
   icon.setAttribute("data-slot", slot)
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-  svg.setAttribute("data-slot", "icon-svg")
-  svg.setAttribute("fill", "none")
-  svg.setAttribute("viewBox", "0 0 20 20")
-  svg.setAttribute("aria-hidden", "true")
-  svg.innerHTML = path
-  icon.appendChild(svg)
+  icon.setAttribute("data-icon-name", name)
+  applyResolvedIcon(icon, resolveIcon(name, readDocumentIconPack()))
   return icon
 }
 
@@ -346,8 +336,8 @@ function createCopyButton(labels: CopyLabels, position: CopyButtonPosition) {
   button.setAttribute("data-position", position)
   button.setAttribute("aria-label", labels.copy)
   button.setAttribute("data-tooltip", labels.copy)
-  button.appendChild(createIcon(iconPaths.copy, "copy-icon"))
-  button.appendChild(createIcon(iconPaths.check, "check-icon"))
+  button.appendChild(createIcon("copy", "copy-icon"))
+  button.appendChild(createIcon("check", "check-icon"))
   return button
 }
 
@@ -381,6 +371,15 @@ function ensureCopyButtons(parent: Element, labels: CopyLabels, positions: CopyB
     if (button) {
       button.setAttribute("data-position", position)
       used.add(button)
+      // Legacy copy buttons predate data-icon-name; rebuild icons so pack swaps apply.
+      const hasNamedIcons = button.querySelectorAll("[data-component=icon][data-icon-name]").length > 0
+      if (!hasNamedIcons) {
+        button.querySelectorAll("[data-component=icon]").forEach((node) => node.remove())
+        button.appendChild(createIcon("copy", "copy-icon"))
+        button.appendChild(createIcon("check", "check-icon"))
+      } else {
+        refreshDomIcons(readDocumentIconPack(), button)
+      }
       continue
     }
 

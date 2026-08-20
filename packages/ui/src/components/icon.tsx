@@ -1,4 +1,4 @@
-import { createContext, splitProps, useContext, type ComponentProps, type JSX } from "solid-js"
+import { createContext, createEffect, splitProps, useContext, type ComponentProps, type JSX } from "solid-js"
 import { LUCIDE_VIEWBOX, lucideIcons } from "./lucide-icons"
 import { PHOSPHOR_VIEWBOX, phosphorIcons } from "./phosphor-icons"
 import { TABLER_VIEWBOX, tablerIcons } from "./tabler-icons"
@@ -148,15 +148,7 @@ const icons = {
 export type IconName = keyof typeof icons
 export type IconPack = "legacy" | "phosphor" | "tabler" | "lucide"
 
-const IconPackContext = createContext<IconPack>("lucide")
-
-export function IconPackProvider(props: { pack: IconPack; children: JSX.Element }) {
-  return <IconPackContext.Provider value={props.pack}>{props.children}</IconPackContext.Provider>
-}
-
-export function useIconPack() {
-  return useContext(IconPackContext)
-}
+const IconPackContext = createContext<() => IconPack>(() => "phosphor")
 
 export function iconUsesPhosphor(name: string, pack: IconPack = "phosphor") {
   return pack === "phosphor" && !!phosphorIcons[name]
@@ -170,6 +162,102 @@ export function iconUsesLucide(name: string, pack: IconPack = "lucide") {
   return pack === "lucide" && !!lucideIcons[name]
 }
 
+export type ResolvedIcon = {
+  pack: IconPack
+  viewBox: string
+  body: string
+  fill: string
+  stroke?: string
+  strokeWidth?: string
+  strokeLinecap?: string
+  strokeLinejoin?: string
+}
+
+export function resolveIcon(name: IconName, pack: IconPack): ResolvedIcon {
+  const lucide = iconUsesLucide(name, pack)
+  const tabler = iconUsesTabler(name, pack) ? tablerIcons[name] : undefined
+  const phosphor = iconUsesPhosphor(name, pack)
+  const stroked = lucide || (!!tabler && !tabler.filled)
+  const viewBox = lucide
+    ? LUCIDE_VIEWBOX
+    : tabler
+      ? TABLER_VIEWBOX
+      : phosphor
+        ? PHOSPHOR_VIEWBOX
+        : name === "magnifying-glass"
+          ? "0 0 16 16"
+          : name === "openclaw"
+            ? "0 0 120 120"
+            : "0 0 20 20"
+  const body = lucide
+    ? (lucideIcons[name] ?? "")
+    : (tabler?.body ?? (phosphor ? (phosphorIcons[name] ?? "") : icons[name]))
+  const packName: IconPack = lucide ? "lucide" : tabler ? "tabler" : phosphor ? "phosphor" : "legacy"
+  return {
+    pack: packName,
+    viewBox,
+    body,
+    fill: stroked ? "none" : phosphor || tabler?.filled ? "currentColor" : "none",
+    stroke: stroked ? "currentColor" : undefined,
+    strokeWidth: stroked ? "2" : undefined,
+    strokeLinecap: stroked ? "round" : undefined,
+    strokeLinejoin: stroked ? "round" : undefined,
+  }
+}
+
+export function applyResolvedIcon(iconRoot: HTMLElement, resolved: ResolvedIcon) {
+  iconRoot.setAttribute("data-component", "icon")
+  iconRoot.setAttribute("data-icon-pack", resolved.pack)
+  let svg = iconRoot.querySelector("svg")
+  if (!svg) {
+    svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+    svg.setAttribute("data-slot", "icon-svg")
+    svg.setAttribute("aria-hidden", "true")
+    iconRoot.appendChild(svg)
+  }
+  svg.setAttribute("viewBox", resolved.viewBox)
+  svg.setAttribute("fill", resolved.fill)
+  if (resolved.stroke) svg.setAttribute("stroke", resolved.stroke)
+  else svg.removeAttribute("stroke")
+  if (resolved.strokeWidth) svg.setAttribute("stroke-width", resolved.strokeWidth)
+  else svg.removeAttribute("stroke-width")
+  if (resolved.strokeLinecap) svg.setAttribute("stroke-linecap", resolved.strokeLinecap)
+  else svg.removeAttribute("stroke-linecap")
+  if (resolved.strokeLinejoin) svg.setAttribute("stroke-linejoin", resolved.strokeLinejoin)
+  else svg.removeAttribute("stroke-linejoin")
+  svg.innerHTML = resolved.body
+}
+
+export function refreshDomIcons(pack: IconPack, root: ParentNode = document) {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-component=icon][data-icon-name]")) {
+    const name = el.getAttribute("data-icon-name")
+    if (!name || !(name in icons)) continue
+    applyResolvedIcon(el, resolveIcon(name as IconName, pack))
+  }
+}
+
+export function readDocumentIconPack(): IconPack {
+  if (typeof document === "undefined") return "phosphor"
+  const value = document.documentElement.dataset.iconPack
+  if (value === "legacy" || value === "phosphor" || value === "tabler" || value === "lucide") return value
+  return "phosphor"
+}
+
+export function IconPackProvider(props: { pack: IconPack; children: JSX.Element }) {
+  const pack = () => props.pack
+  createEffect(() => {
+    const next = pack()
+    if (typeof document === "undefined") return
+    document.documentElement.dataset.iconPack = next
+    refreshDomIcons(next)
+  })
+  return <IconPackContext.Provider value={pack}>{props.children}</IconPackContext.Provider>
+}
+
+export function useIconPack() {
+  return useContext(IconPackContext)
+}
+
 export interface IconProps extends ComponentProps<"svg"> {
   name: IconName
   size?: "small" | "normal" | "medium" | "large" | "x-large"
@@ -178,38 +266,22 @@ export interface IconProps extends ComponentProps<"svg"> {
 export function Icon(props: IconProps) {
   const [local, others] = splitProps(props, ["name", "size", "class", "classList"])
   const pack = useIconPack()
-  const lucide = () => iconUsesLucide(local.name, pack)
-  const tabler = () => (iconUsesTabler(local.name, pack) ? tablerIcons[local.name] : undefined)
-  const phosphor = () => iconUsesPhosphor(local.name, pack)
-  const stroked = () => lucide() || (!!tabler() && !tabler()!.filled)
-  const viewBox = () => {
-    if (lucide()) return LUCIDE_VIEWBOX
-    if (tabler()) return TABLER_VIEWBOX
-    if (phosphor()) return PHOSPHOR_VIEWBOX
-    if (local.name === "magnifying-glass") return "0 0 16 16"
-    if (local.name === "openclaw") return "0 0 120 120"
-    return "0 0 20 20"
-  }
-  const body = () =>
-    lucide()
-      ? lucideIcons[local.name]
-      : (tabler()?.body ?? (phosphor() ? phosphorIcons[local.name] : icons[local.name as keyof typeof icons]))
-  const packName = () => (lucide() ? "lucide" : tabler() ? "tabler" : phosphor() ? "phosphor" : "legacy")
+  const resolved = () => resolveIcon(local.name, pack())
   return (
-    <div data-component="icon" data-size={local.size || "normal"} data-icon-pack={packName()}>
+    <div data-component="icon" data-size={local.size || "normal"} data-icon-pack={resolved().pack}>
       <svg
         data-slot="icon-svg"
         classList={{
           ...(local.classList || {}),
           [local.class ?? ""]: !!local.class,
         }}
-        fill={stroked() ? "none" : phosphor() || tabler()?.filled ? "currentColor" : "none"}
-        stroke={stroked() ? "currentColor" : undefined}
-        stroke-width={stroked() ? "2" : undefined}
-        stroke-linecap={stroked() ? "round" : undefined}
-        stroke-linejoin={stroked() ? "round" : undefined}
-        viewBox={viewBox()}
-        innerHTML={body()}
+        fill={resolved().fill}
+        stroke={resolved().stroke}
+        stroke-width={resolved().strokeWidth}
+        stroke-linecap={resolved().strokeLinecap}
+        stroke-linejoin={resolved().strokeLinejoin}
+        viewBox={resolved().viewBox}
+        innerHTML={resolved().body}
         aria-hidden="true"
         {...others}
       />
