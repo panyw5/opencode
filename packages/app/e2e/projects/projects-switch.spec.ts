@@ -106,7 +106,7 @@ test("project rail selection leaves the active session route unchanged", async (
   }
 })
 
-test("project rail opens a new session when no session is active", async ({ page, withProject }) => {
+test("project rail keeps the current view when no session is active", async ({ page, withProject }) => {
   await page.setViewportSize({ width: 1400, height: 800 })
 
   const other = await createTestProject()
@@ -117,13 +117,14 @@ test("project rail opens a new session when no session is active", async ({ page
         await page.goto(sessionPath(directory))
         await waitSession(page, { directory })
         await expect(page).toHaveURL(new RegExp(`/${dirSlug(directory)}/session(?:[?#]|$)`))
+        const originalURL = page.url()
 
         const otherButton = page.locator(projectSwitchSelector(otherSlug)).first()
         await expect(otherButton).toBeVisible()
         await otherButton.click()
 
-        await expect(page).toHaveURL(new RegExp(`/${otherSlug}/session(?:[?#]|$)`))
-        await expect(page.locator(promptSelector)).toBeVisible()
+        await expect(page).toHaveURL(originalURL)
+        await expect(otherButton).toHaveAttribute("aria-current", "true")
       },
       { extra: [other] },
     )
