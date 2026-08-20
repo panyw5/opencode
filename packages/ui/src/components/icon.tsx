@@ -148,7 +148,7 @@ const icons = {
 export type IconName = keyof typeof icons
 export type IconPack = "legacy" | "phosphor" | "tabler" | "lucide"
 
-const IconPackContext = createContext<() => IconPack>(() => "phosphor")
+const IconPackContext = createContext<() => IconPack>(() => "phosphor" as const)
 
 export function iconUsesPhosphor(name: string, pack: IconPack = "phosphor") {
   return pack === "phosphor" && !!phosphorIcons[name]
@@ -169,8 +169,8 @@ export type ResolvedIcon = {
   fill: string
   stroke?: string
   strokeWidth?: string
-  strokeLinecap?: string
-  strokeLinejoin?: string
+  strokeLinecap?: "butt" | "inherit" | "round" | "square"
+  strokeLinejoin?: "inherit" | "miter" | "round" | "bevel"
 }
 
 export function resolveIcon(name: IconName, pack: IconPack): ResolvedIcon {
@@ -228,7 +228,10 @@ export function applyResolvedIcon(iconRoot: HTMLElement, resolved: ResolvedIcon)
   svg.innerHTML = resolved.body
 }
 
-export function refreshDomIcons(pack: IconPack, root: ParentNode = document) {
+export function refreshDomIcons(
+  pack: IconPack,
+  root: Pick<Document, "querySelectorAll"> = document,
+) {
   for (const el of root.querySelectorAll<HTMLElement>("[data-component=icon][data-icon-name]")) {
     const name = el.getAttribute("data-icon-name")
     if (!name || !(name in icons)) continue
