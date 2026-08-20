@@ -885,6 +885,7 @@ html[data-theme="arc"] [data-component="icon-button"]:active:not(:disabled) {
 html[data-theme="arc"] [data-action="project-switch"] {
   border-width: 0 !important;
   border-color: transparent !important;
+  border-radius: 50% !important;
   /* Drop the JSX p-1 (4px) padding so the avatar can stretch
      edge-to-edge — eliminates the old rail-hue "frame" effect. */
   padding: 0 !important;
@@ -902,7 +903,7 @@ html[data-theme="arc"] [data-action="project-switch"] [data-slot="project-avatar
 html[data-theme="arc"] [data-action="project-switch"] [data-slot="project-avatar-clip"] {
   width: 100% !important;
   height: 100% !important;
-  border-radius: 0.75rem !important;
+  border-radius: 50% !important;
 }
 
 html[data-theme="arc"] [data-action="project-switch"] [data-component="avatar"] {
@@ -910,7 +911,7 @@ html[data-theme="arc"] [data-action="project-switch"] [data-component="avatar"] 
   height: 100%;
   border: none;
   background-color: transparent !important;
-  border-radius: 0.75rem !important;
+  border-radius: 50% !important;
   /* Force one letter color across all rail-hues. The Avatar component
      otherwise inherits `color: var(--avatar-fg)` set via inline style from
      getAvatarColors() / the unloaded fallback (light cream `--text-base`).

@@ -85,7 +85,7 @@ html[data-theme="claude"] [data-component="sidebar-rail"] [data-component="icon-
 }
 
 html[data-theme="claude"] [data-action="project-switch"] {
-  border-radius: 12px;
+  border-radius: 50%;
 }
 
 html[data-theme="claude"] [data-component="project-rail-label"] {

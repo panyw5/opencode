@@ -178,7 +178,7 @@ const ProjectTile = (props: {
           data-project={base64Encode(props.project.worktree)}
           data-rail-hue={railHue(props.project.worktree)}
           classList={{
-            "flex items-center justify-center size-10 p-1 rounded-xl overflow-hidden cursor-pointer": true,
+            "flex items-center justify-center size-10 p-1 rounded-full overflow-hidden cursor-pointer": true,
             "transition-all duration-150": !props.sidebarReduced(),
             "bg-surface-interactive-selected border-2 border-border-brand-base": props.selected(),
             "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-base hover:scale-105":

@@ -167,7 +167,7 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
       data-component={loadingSessions() ? "project-icon-loading" : undefined}
       class={`relative size-8 shrink-0 ${props.class ?? ""}`}
     >
-      <div data-slot="project-avatar-clip" class="size-full rounded overflow-clip">
+      <div data-slot="project-avatar-clip" class="size-full rounded-full overflow-clip">
         <Avatar
           fallback={name()}
           src={
@@ -183,7 +183,7 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
                 background: "var(--color-surface-base-hover)",
                 foreground: "var(--color-text-weak)",
               })}
-          class="size-full rounded"
+          class="size-full rounded-full"
         />
       </div>
       <Show when={loadingSessions()}>
@@ -206,11 +206,11 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
           data-component="project-notification-badge"
           data-kind={badge().kind}
           aria-hidden="true"
-          class="absolute -top-1 -right-1 z-10 flex h-4 min-w-4 items-center justify-center rounded-full border-2 border-background-base px-1 text-[10px] font-bold leading-none text-white"
+          class="absolute -top-1 -right-1 z-10 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none"
           classList={{
-            "bg-surface-warning-strong": badge().kind === "permission",
-            "bg-text-diff-delete-base": badge().kind === "error",
-            "bg-icon-critical-base": badge().kind === "message",
+            "bg-surface-warning-strong text-white": badge().kind === "permission",
+            "bg-text-diff-delete-base text-white": badge().kind === "error",
+            "bg-surface-success-base text-text-on-success-base": badge().kind === "message",
           }}
         >
           {badge().label}
