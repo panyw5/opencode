@@ -56,6 +56,7 @@ export const SidebarContent = (props: {
   configKeybind: Accessor<string | undefined>
   configActive: Accessor<boolean>
   onOpenConfig: () => void
+  onPrefetchConfig?: () => void
   settingsLabel: Accessor<string>
   settingsKeybind: Accessor<string | undefined>
   onOpenSettings: () => void
@@ -299,6 +300,8 @@ export const SidebarContent = (props: {
               size="large"
               classList={{ "bg-surface-base-active": props.configActive() }}
               onClick={() => props.onOpenConfig()}
+              onPointerEnter={() => props.onPrefetchConfig?.()}
+              onFocus={() => props.onPrefetchConfig?.()}
               aria-label={props.configLabel()}
             />
           </RailTooltip>

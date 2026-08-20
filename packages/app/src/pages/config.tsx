@@ -5,11 +5,13 @@ import {
   createResource,
   createSignal,
   For,
+  lazy,
   Match,
   on,
   onCleanup,
   onMount,
   Show,
+  Suspense,
   Switch,
   untrack,
   type JSX,
@@ -83,6 +85,11 @@ import {
   providerEnabled,
   type ConfigProviderItem,
 } from "./config-provider-list"
+import {
+  CONFIG_MIDDLE_ITEM_ACTIVE_CLASS,
+  CONFIG_MIDDLE_ITEM_CLASS,
+  CONFIG_MIDDLE_ITEM_INACTIVE_CLASS,
+} from "./config-provider-list-shared"
 import { fetchSkillMarketFile, loadSkillMarketIndex } from "./config-skill-market"
 import { SectionButton } from "./config-section-button"
 import { ServerConnection, useServer } from "@/context/server"
@@ -1285,14 +1292,11 @@ function sectionIcon(section: Section): IconProps["name"] {
   return "openclaw"
 }
 
-const CONFIG_MIDDLE_ITEM_CLASS =
-  "group relative flex w-full cursor-pointer items-start justify-between gap-4 overflow-hidden rounded-lg border px-4 py-4 text-left transition-[background-color,border-color,box-shadow,transform] duration-150 focus:outline-none focus-visible:border-border-strong focus-visible:bg-surface-base-hover"
-const CONFIG_MIDDLE_ITEM_ACTIVE_CLASS =
-  "border-border-weak-base bg-[linear-gradient(105deg,color-mix(in_srgb,var(--surface-brand-base)_8%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)))]"
-const CONFIG_MIDDLE_ITEM_INACTIVE_CLASS =
-  "border-border-weak-base/75 bg-background-base/60 hover:-translate-y-px hover:border-border-base hover:bg-background-base"
 const CONFIG_PANE_FOCUS_CLASS =
   "relative z-[1] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--text-strong)_22%,transparent),inset_0_0_0_3px_color-mix(in_srgb,var(--text-strong)_8%,transparent)]"
+
+const ProviderEnabledBlock = lazy(() => import("./config-provider-enabled-block"))
+const ProviderDisabledBlock = lazy(() => import("./config-provider-disabled-block"))
 
 function ListButton(props: {
   active: boolean
@@ -1682,116 +1686,6 @@ function ProjectListGroup(props: {
       <Show when={props.open}>
         <div class="bg-surface-base/20 px-2 py-2">
           <div class="flex flex-col gap-2">{props.children}</div>
-        </div>
-      </Show>
-    </div>
-  )
-}
-
-type ProviderSdkBadgeTone = "codex" | "claude" | "deepseek" | "openai" | "neutral"
-
-type ProviderSdkBadge = {
-  label: string
-  icon: string
-  tone: ProviderSdkBadgeTone
-}
-
-function providerSdkBadge(item: ProviderItem): ProviderSdkBadge | undefined {
-  if (!item.sdk) return undefined
-
-  const sdk = item.sdk.toLowerCase()
-  const identity = `${item.id} ${item.name}`.toLowerCase()
-
-  if (identity.includes("deepseek")) return { label: "DeepSeek", icon: "deepseek", tone: "deepseek" }
-  if (identity.includes("anthropic") || identity.includes("claude") || sdk.includes("anthropic")) {
-    return { label: "Claude Code", icon: "anthropic", tone: "claude" }
-  }
-  if (item.id === "openai") return { label: "OpenAI", icon: "openai", tone: "openai" }
-  if (identity.includes("codex") || sdk === "@ai-sdk/openai") {
-    return { label: "Codex", icon: "openai", tone: "codex" }
-  }
-  if (sdk.includes("openai")) return { label: "OpenAI", icon: "openai", tone: "openai" }
-  if (sdk.includes("google")) return { label: "Google", icon: "google", tone: "neutral" }
-  if (sdk.includes("xai")) return { label: "xAI", icon: "xai", tone: "neutral" }
-  if (sdk.includes("mistral")) return { label: "Mistral", icon: "mistral", tone: "neutral" }
-
-  return { label: item.sdk.replace(/^@ai-sdk\//, ""), icon: item.id, tone: "neutral" }
-}
-
-function ProviderSdkChip(props: { badge: ProviderSdkBadge }) {
-  return (
-    <span
-      class="inline-flex h-7 w-fit items-center gap-1.5 rounded-full border px-2.5 text-12-medium shadow-[0_8px_20px_-16px_rgba(0,0,0,0.65)]"
-      classList={{
-        "border-[#74d6ca]/45 bg-[#2f8179] text-white": props.badge.tone === "codex",
-        "border-[#d16b27]/30 bg-[#fff0d8] text-[#a33f0a]": props.badge.tone === "claude",
-        "border-[#7daeff]/50 bg-[#dceaff] text-[#1856c9]": props.badge.tone === "deepseek",
-        "border-border-strong-base bg-surface-base text-text-base": props.badge.tone === "openai",
-        "border-border-weak-base bg-surface-secondary text-text-base": props.badge.tone === "neutral",
-      }}
-    >
-      <ProviderIcon id={props.badge.icon} class="size-4 shrink-0" />
-      <span>{props.badge.label}</span>
-    </span>
-  )
-}
-
-function ProviderListButton(props: {
-  active: boolean
-  item: ProviderItem
-  models: string
-  onClick: () => void
-  extra?: JSX.Element
-}) {
-  const badge = createMemo(() => providerSdkBadge(props.item))
-  const press = (event: KeyboardEvent) => {
-    if (event.key !== "Enter" && event.key !== " ") return
-    event.preventDefault()
-    props.onClick()
-  }
-
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      class={CONFIG_MIDDLE_ITEM_CLASS}
-      classList={{
-        [CONFIG_MIDDLE_ITEM_ACTIVE_CLASS]: props.active,
-        [CONFIG_MIDDLE_ITEM_INACTIVE_CLASS]: !props.active,
-      }}
-      onClick={props.onClick}
-      onKeyDown={press}
-    >
-      <div class="min-w-0 flex-1">
-        <div class="flex min-w-0 flex-wrap items-center gap-2">
-          <div class="min-w-0 truncate text-15-medium text-text-interactive-base transition-colors">
-            {props.item.id}
-          </div>
-          <span
-            class="shrink-0 rounded-full border px-2 py-0.5 text-11-medium transition-colors"
-            classList={{
-              "border-border-base bg-surface-secondary text-text-base": props.active,
-              "border-border-weak-base bg-surface-secondary/70 text-text-weak": !props.active,
-            }}
-          >
-            {props.models}
-          </span>
-        </div>
-        <Show when={badge()}>
-          {(value) => (
-            <div class="mt-3">
-              <ProviderSdkChip badge={value()} />
-            </div>
-          )}
-        </Show>
-      </div>
-      <Show when={props.extra}>
-        <div
-          class="shrink-0 pt-0.5"
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          {props.extra}
         </div>
       </Show>
     </div>
@@ -3852,7 +3746,15 @@ function CustomEditor(props: {
   )
 }
 
+function configPerfSinceClick() {
+  const clickAt = (window as Window & { __configNavClickAt?: number }).__configNavClickAt
+  if (typeof clickAt !== "number") return "n/a"
+  return `${(performance.now() - clickAt).toFixed(1)}ms`
+}
+
 export default function ConfigPage() {
+  const pageConstructAt = performance.now()
+  console.info(`[config-perf] page construct start sinceClick=${configPerfSinceClick()}`)
   const dialog = useDialog()
   const language = useLanguage()
   const platform = usePlatform()
@@ -3873,6 +3775,9 @@ export default function ConfigPage() {
   const initialPick = initialSection && typeof query.pick === "string" ? query.pick : ""
 
   onMount(() => {
+    console.info(
+      `[config-perf] page mount sinceClick=${configPerfSinceClick()} constructMs=${(performance.now() - pageConstructAt).toFixed(1)} providerAll=${String(globalSync.data.provider.all.length)}`,
+    )
     if (platform.platform !== "desktop") return
     if (!layout.sidebar.opened()) return
     layout.sidebar.close()
@@ -4232,23 +4137,34 @@ export default function ConfigPage() {
   const [workspace] = createResource(
     () => state.workspaceRev,
     async () => {
+      // Shared by agents-md / skills / plugins / commands roots — keep eager.
+      console.info("[config-perf] fetch configWorkspace start")
+      const started = performance.now()
       if (!platform.getConfigWorkspace) return undefined
-      return platform.getConfigWorkspace()
+      const result = await platform.getConfigWorkspace()
+      console.info(`[config-perf] fetch configWorkspace done ms=${(performance.now() - started).toFixed(1)}`)
+      return result
     },
   )
 
   const [rawSkills] = createResource(
-    () => state.skillRev,
+    () => (state.section === "skills" ? state.skillRev : false),
     async () => {
+      console.info("[config-perf] fetch app.skills start")
+      const started = performance.now()
       const resp = await globalSDK.client.app.skills({}, { throwOnError: true })
+      console.info(`[config-perf] fetch app.skills done ms=${(performance.now() - started).toFixed(1)}`)
       return resp.data ?? []
     },
   )
 
   const [loaded] = createResource(
-    () => state.agentRev,
+    () => (state.section === "agents" ? state.agentRev : false),
     async () => {
+      console.info("[config-perf] fetch app.agents start")
+      const started = performance.now()
       const resp = await globalSDK.client.app.agents({}, { throwOnError: true })
+      console.info(`[config-perf] fetch app.agents done ms=${(performance.now() - started).toFixed(1)}`)
       return resp.data ?? []
     },
   )
@@ -4257,8 +4173,9 @@ export default function ConfigPage() {
   let configFileAgentsRun = 0
   createEffect(
     on(
-      () => state.agentRev,
-      () => {
+      () => [state.section, state.agentRev] as const,
+      ([section]) => {
+        if (section !== "agents") return
         const run = ++configFileAgentsRun
         void loadConfigFileAgents(platform)
           .then((agents) => {
@@ -4846,7 +4763,7 @@ export default function ConfigPage() {
   }
 
   const [diskAgents] = createResource(
-    () => [state.agentRev, openedKey()] as const,
+    () => (state.section === "agents" ? ([state.agentRev, openedKey()] as const) : false),
     async () => {
       const list = untrack(opened)
       return Promise.all(
@@ -4897,7 +4814,8 @@ export default function ConfigPage() {
   )
 
   const [pluginAgents] = createResource(
-    () => [state.agentRev, mainPath().home, enabledPluginKey()] as const,
+    () =>
+      state.section === "agents" ? ([state.agentRev, mainPath().home, enabledPluginKey()] as const) : false,
     async ([, home]) => {
       const plugins = untrack(() => cfg().plugin)
       const cache = home ? join(home, ".cache", "opencode") : undefined
@@ -5025,7 +4943,7 @@ export default function ConfigPage() {
   const toggleAgentProject = (key: string) => setState("treeClosed", `agent-project:${key}`, (v) => !v)
 
   const [diskClaude] = createResource(
-    () => [state.skillRev, claudeRoot()] as const,
+    () => (state.section === "skills" ? ([state.skillRev, claudeRoot()] as const) : false),
     async ([, root]) => {
       if (!root) return [] as SkillItem[]
       return scan(root, { source: "external", group: "claude", origin: ".claude" })
@@ -5033,7 +4951,7 @@ export default function ConfigPage() {
   )
 
   const [diskOpenCode] = createResource(
-    () => [state.skillRev, space()?.skillsRoot] as const,
+    () => (state.section === "skills" ? ([state.skillRev, space()?.skillsRoot] as const) : false),
     async ([, root]) => {
       if (!root) return [] as SkillItem[]
       return scan(root, { source: "opencode", group: "opencode", origin: ".opencode" })
@@ -5041,7 +4959,7 @@ export default function ConfigPage() {
   )
 
   const [diskProject] = createResource(
-    () => [state.skillRev, openedKey()] as const,
+    () => (state.section === "skills" ? ([state.skillRev, openedKey()] as const) : false),
     async () => {
       const list = untrack(opened)
       return Promise.all(
@@ -5116,23 +5034,33 @@ export default function ConfigPage() {
 
   const globalCommandsDir = createMemo(() => space()?.configRoot)
   const [diskGlobalCmds] = createResource(
-    () => [state.commandRev, globalCommandsDir()] as const,
-    async ([, dir]) => (dir ? scanCommandFolders(dir, { group: "global", root: dir }) : []),
+    () => (state.section === "commands" ? ([state.commandRev, globalCommandsDir()] as const) : false),
+    async ([, dir]) => {
+      console.info("[config-perf] fetch diskGlobalCmds start")
+      const started = performance.now()
+      const result = dir ? await scanCommandFolders(dir, { group: "global", root: dir }) : []
+      console.info(`[config-perf] fetch diskGlobalCmds done ms=${(performance.now() - started).toFixed(1)}`)
+      return result
+    },
   )
   const [diskProjectCmds] = createResource(
-    () => [state.commandRev, openedKey()] as const,
+    () => (state.section === "commands" ? ([state.commandRev, openedKey()] as const) : false),
     async () => {
+      console.info("[config-perf] fetch diskProjectCmds start")
+      const started = performance.now()
       const list = untrack(opened)
       const projects = new Map<string, { root: string; label: string }>()
       for (const item of list) {
         projects.set(norm(item.worktree), { root: item.worktree, label: item.name ?? name(item.worktree) })
       }
-      return Promise.all(
+      const result = await Promise.all(
         Array.from(projects.values()).map(async (item) => {
           const dir = join(item.root, ".opencode")
           return scanCommandFolders(dir, { group: "project", root: item.root, project: item.label })
         }),
       ).then((results) => results.flat())
+      console.info(`[config-perf] fetch diskProjectCmds done ms=${(performance.now() - started).toFixed(1)}`)
+      return result
     },
   )
 
@@ -5316,10 +5244,12 @@ export default function ConfigPage() {
   }
 
   const [diskProjectPlugins] = createResource(
-    () => [state.pluginRev, openedKey()] as const,
+    () => (state.section === "plugins" ? ([state.pluginRev, openedKey()] as const) : false),
     async () => {
+      console.info("[config-perf] fetch diskProjectPlugins start")
+      const started = performance.now()
       const list = untrack(opened)
-      return Promise.all(
+      const result = await Promise.all(
         list.map(async (item) => {
           const label = item.name ?? name(item.worktree)
           const roots = projectRoots(item)
@@ -5359,6 +5289,10 @@ export default function ConfigPage() {
           ).then((list) => list.flat())
         }),
       ).then((list) => list.flat())
+      console.info(
+        `[config-perf] fetch diskProjectPlugins done ms=${(performance.now() - started).toFixed(1)} count=${String(result.length)}`,
+      )
+      return result
     },
   )
 
@@ -5366,9 +5300,12 @@ export default function ConfigPage() {
   let projectPluginConfigsRun = 0
   createEffect(
     on(
-      () => [state.pluginRev, openedKey()] as const,
-      () => {
+      () => [state.section, state.pluginRev, openedKey()] as const,
+      ([section]) => {
+        if (section !== "plugins") return
         const run = ++projectPluginConfigsRun
+        console.info("[config-perf] fetch projectPluginConfigs start")
+        const started = performance.now()
         void (async () => {
           const projects = untrack(opened)
           const configs = await Promise.allSettled(
@@ -5382,6 +5319,9 @@ export default function ConfigPage() {
           )
           if (run !== projectPluginConfigsRun) return
           setProjectPluginConfigs(configs.flatMap((result) => (result.status === "fulfilled" ? result.value : [])))
+          console.info(
+            `[config-perf] fetch projectPluginConfigs done ms=${(performance.now() - started).toFixed(1)}`,
+          )
         })()
       },
       { defer: false },
@@ -5548,6 +5488,7 @@ export default function ConfigPage() {
   )
 
   const providers = createMemo<ProviderItem[]>(() => {
+    const started = performance.now()
     const data = mainProviders()
     const items = collectConfigProviders({
       all: data.all,
@@ -5555,8 +5496,8 @@ export default function ConfigPage() {
       disabled: cfg().disabled_providers ?? [],
       configProviders: cfg().provider,
     })
-    console.log(
-      `[config] provider list all=${String(data.all.length)} connected=${String((data.connected ?? []).length)} disabled=${(cfg().disabled_providers ?? []).join(",") || "(none)"} items=${String(items.length)} hasCommandcode=${String(items.some((item) => item.id === "commandcode"))}`,
+    console.info(
+      `[config-perf] providers memo all=${String(data.all.length)} connected=${String((data.connected ?? []).length)} items=${String(items.length)} collectMs=${(performance.now() - started).toFixed(1)} sinceClick=${configPerfSinceClick()}`,
     )
     return items
   })
@@ -5574,6 +5515,16 @@ export default function ConfigPage() {
     return result
   })
   const providerVisible = createMemo(() => [...providerOn(), ...providerOff()])
+
+  createEffect(() => {
+    if (state.section !== "providers") return
+    const onCount = providerOn().length
+    const offCount = providerOff().length
+    const total = providerList().length
+    console.info(
+      `[config-perf] middle provider-list ready on=${String(onCount)} off=${String(offCount)} total=${String(total)} sinceClick=${configPerfSinceClick()}`,
+    )
+  })
 
   const docs = createMemo(() => {
     const map = new Map<string, DocItem>()
@@ -7877,38 +7828,23 @@ export default function ConfigPage() {
                       >
                         <div class="flex flex-col gap-3">
                           <Show when={providerOn().length > 0}>
-                            <div class="flex flex-col gap-2.5">
-                              <div class="flex items-center justify-between gap-3 px-1">
-                                <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                                  {t("config.providers.group.enabled")}
+                            <Suspense
+                              fallback={
+                                <div class="px-1 py-3 text-12-regular text-text-weak">
+                                  {`${t("common.loading")}${t("common.loading.ellipsis")}`}
                                 </div>
-                                <div class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                                  {providerOn().length}
-                                </div>
-                              </div>
-                              <For each={providerOn()}>
-                                {(item) => (
-                                  <ProviderListButton
-                                    active={state.pick === `provider:${item.id}`}
-                                    item={item}
-                                    models={t("config.providers.modelsBadge", { count: item.models.length })}
-                                    onClick={() => setState("pick", `provider:${item.id}`)}
-                                    extra={
-                                      <Toggle
-                                        checked={item.custom ? item.allowed : item.connected}
-                                        disabled={
-                                          state.providerBusy === item.id || (!item.custom && item.source === "env")
-                                        }
-                                        onChange={(value) => toggleProvider(item, value)}
-                                        hideLabel
-                                      >
-                                        {item.id}
-                                      </Toggle>
-                                    }
-                                  />
-                                )}
-                              </For>
-                            </div>
+                              }
+                            >
+                              <ProviderEnabledBlock
+                                items={providerOn()}
+                                activePick={state.pick}
+                                busyId={state.providerBusy}
+                                modelsBadge={(count) => t("config.providers.modelsBadge", { count })}
+                                groupLabel={t("config.providers.group.enabled")}
+                                onSelect={(id) => setState("pick", `provider:${id}`)}
+                                onToggle={toggleProvider}
+                              />
+                            </Suspense>
                           </Show>
 
                           <Show when={providerOff().length > 0}>
@@ -7932,31 +7868,23 @@ export default function ConfigPage() {
                                 </div>
                               </button>
                               <Show when={!state.providerOffCollapsed}>
-                                <div class="rounded-xl border border-border-weak-base bg-surface-base px-3 py-2 text-12-regular text-text-weak">
-                                  {t("config.providers.existingNote")}
-                                </div>
-                                <div class="flex flex-col gap-2.5">
-                                  <For each={providerOff()}>
-                                    {(item) => (
-                                      <ProviderListButton
-                                        active={state.pick === `provider:${item.id}`}
-                                        item={item}
-                                        models={t("config.providers.modelsBadge", { count: item.models.length })}
-                                        onClick={() => setState("pick", `provider:${item.id}`)}
-                                        extra={
-                                          <Toggle
-                                            checked={item.custom ? item.allowed : item.connected}
-                                            disabled={state.providerBusy === item.id}
-                                            onChange={(value) => toggleProvider(item, value)}
-                                            hideLabel
-                                          >
-                                            {item.id}
-                                          </Toggle>
-                                        }
-                                      />
-                                    )}
-                                  </For>
-                                </div>
+                                <Suspense
+                                  fallback={
+                                    <div class="px-1 py-3 text-12-regular text-text-weak">
+                                      {`${t("common.loading")}${t("common.loading.ellipsis")}`}
+                                    </div>
+                                  }
+                                >
+                                  <ProviderDisabledBlock
+                                    items={providerOff()}
+                                    activePick={state.pick}
+                                    busyId={state.providerBusy}
+                                    modelsBadge={(count) => t("config.providers.modelsBadge", { count })}
+                                    existingNote={t("config.providers.existingNote")}
+                                    onSelect={(id) => setState("pick", `provider:${id}`)}
+                                    onToggle={toggleProvider}
+                                  />
+                                </Suspense>
                               </Show>
                             </div>
                           </Show>

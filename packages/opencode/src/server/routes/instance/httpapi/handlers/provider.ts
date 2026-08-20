@@ -38,22 +38,36 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const svc = yield* ProviderAuth.Service
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
+      const started = Date.now()
+      log.info("list start")
       const config = yield* cfg.get()
+      const afterConfig = Date.now()
       const connected = yield* provider.list()
+      const afterConnected = Date.now()
       const known = yield* provider.known()
+      const afterKnown = Date.now()
       const providers = Provider.listedProviders({
         known,
         connected,
         enabledProviders: config.enabled_providers,
       })
+      const afterListed = Date.now()
+      const all = Object.values(providers).map(Provider.toPublicInfo)
+      const afterMap = Date.now()
       log.info("listed providers", {
         known: Object.keys(known).length,
         connected: Object.keys(connected).length,
         all: Object.keys(providers).length,
         disabled: (config.disabled_providers ?? []).join(","),
+        configMs: afterConfig - started,
+        connectedMs: afterConnected - afterConfig,
+        knownMs: afterKnown - afterConnected,
+        listedMs: afterListed - afterKnown,
+        mapMs: afterMap - afterListed,
+        totalMs: afterMap - started,
       })
       return {
-        all: Object.values(providers).map(Provider.toPublicInfo),
+        all,
         default: Provider.defaultModelIDs(providers),
         connected: Object.keys(connected),
       }

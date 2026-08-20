@@ -1640,20 +1640,44 @@ export const layer = Layer.effect(
     )
 
     const list = Effect.fn("Provider.list")(function* () {
+      const started = Date.now()
       const [cfg, auths] = yield* Effect.all([config.get(), auth.all().pipe(Effect.orDie)], { concurrency: 2 })
       const key = stateKey(cfg, auths)
       const current = yield* InstanceState.get(state)
-      if (current.key === key) return current.providers
+      if (current.key === key) {
+        log.info("Provider.list cache hit", {
+          providers: Object.keys(current.providers).length,
+          totalMs: Date.now() - started,
+        })
+        return current.providers
+      }
+      log.info("Provider.list cache miss refresh", { totalMs: Date.now() - started })
       const refreshed = yield* InstanceState.refresh(state)
+      log.info("Provider.list refreshed", {
+        providers: Object.keys(refreshed.providers).length,
+        totalMs: Date.now() - started,
+      })
       return refreshed.providers
     })
 
     const known = Effect.fn("Provider.known")(function* () {
+      const started = Date.now()
       const [cfg, auths] = yield* Effect.all([config.get(), auth.all().pipe(Effect.orDie)], { concurrency: 2 })
       const key = stateKey(cfg, auths)
       const current = yield* InstanceState.get(state)
-      if (current.key === key) return current.known
+      if (current.key === key) {
+        log.info("Provider.known cache hit", {
+          known: Object.keys(current.known).length,
+          totalMs: Date.now() - started,
+        })
+        return current.known
+      }
+      log.info("Provider.known cache miss refresh", { totalMs: Date.now() - started })
       const refreshed = yield* InstanceState.refresh(state)
+      log.info("Provider.known refreshed", {
+        known: Object.keys(refreshed.known).length,
+        totalMs: Date.now() - started,
+      })
       return refreshed.known
     })
 

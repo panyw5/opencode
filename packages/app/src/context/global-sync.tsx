@@ -616,15 +616,19 @@ function createGlobalSync() {
     if (pending) return pending
 
     const promise = (async () => {
+      const started = performance.now()
       const directory = rootBucket(domain).path.directory || globalStore.path.directory
-      console.log(`[global-sync] provider refresh start domain=${domain} directory=${directory || "(none)"}`)
+      console.info(
+        `[config-perf] provider refresh start domain=${domain} directory=${directory || "(none)"} t=${started.toFixed(1)}`,
+      )
       const rt = runtime(domain)
       const client = directory ? rt.createClient({ directory }) : rt.client
       const result = await client.provider.list()
+      const listedAt = performance.now()
       const data = normalizeProviderList(result.data!)
       setRoot(domain, "provider", data)
-      console.log(
-        `[global-sync] provider refresh listed all=${String(data.all.length)} connected=${String(data.connected.length)}`,
+      console.info(
+        `[config-perf] provider refresh listed all=${String(data.all.length)} connected=${String(data.connected.length)} listMs=${(listedAt - started).toFixed(1)} totalMs=${(performance.now() - started).toFixed(1)}`,
       )
 
       const manager = managers.get(domain)

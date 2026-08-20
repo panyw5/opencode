@@ -59,9 +59,27 @@ import { useCheckServerHealth } from "./utils/server-health"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
-const Config = lazy(() => import("@/pages/config"))
+const Config = lazy(() => {
+  const started = performance.now()
+  const clickAt = (window as Window & { __configNavClickAt?: number }).__configNavClickAt
+  const sinceClick = typeof clickAt === "number" ? `${(started - clickAt).toFixed(1)}ms` : "n/a"
+  console.info(`[config-perf] lazy import start sinceClick=${sinceClick}`)
+  return import("@/pages/config").then((mod) => {
+    const done = performance.now()
+    const sinceClickDone = typeof clickAt === "number" ? `${(done - clickAt).toFixed(1)}ms` : "n/a"
+    console.info(
+      `[config-perf] lazy import done loadMs=${(done - started).toFixed(1)} sinceClick=${sinceClickDone}`,
+    )
+    return mod
+  })
+})
 const Scheduled = lazy(() => import("@/pages/scheduled"))
 const Loading = () => <div class="size-full" />
+
+// Kick off config chunk prefetch once the app shell is up (idle).
+if (typeof window !== "undefined") {
+  void import("@/utils/prefetch-config").then((m) => m.prefetchConfigPageWhenIdle())
+}
 
 const CONFIG_FALLBACK_SECTIONS = [
   {
@@ -96,15 +114,24 @@ const CONFIG_FALLBACK_SECTIONS = [
   descriptionKey: string
 }>
 
+function configPerfSinceClick() {
+  const clickAt = (window as Window & { __configNavClickAt?: number }).__configNavClickAt
+  if (typeof clickAt !== "number") return "n/a"
+  return `${(performance.now() - clickAt).toFixed(1)}ms`
+}
+
 function ConfigRouteFrame(props: ParentProps) {
   const platform = usePlatform()
   const layout = useLayout()
 
   createEffect(() => {
-    console.debug(`[settings-nav] config-route-mounted pathname=${window.location.pathname}`)
+    console.info(
+      `[config-perf] route-frame effect pathname=${window.location.pathname} sinceClick=${configPerfSinceClick()}`,
+    )
   })
 
   onMount(() => {
+    console.info(`[config-perf] route-frame mount sinceClick=${configPerfSinceClick()}`)
     if (platform.platform !== "desktop") return
     queueMicrotask(() => {
       if (!layout.sidebar.opened()) return
@@ -122,6 +149,10 @@ function ConfigLoadingShell() {
   const language = useLanguage()
   const platform = usePlatform()
   const showClawsSection = () => platform.platform === "desktop"
+
+  onMount(() => {
+    console.info(`[config-perf] loading-shell mount sinceClick=${configPerfSinceClick()}`)
+  })
 
   return (
     <div class="size-full overflow-hidden bg-background-base">
@@ -239,7 +270,9 @@ function GlobalConfigRoute() {
   const directory = createMemo(() => globalSync.data.path.directory || globalSync.data.path.home)
 
   createEffect(() => {
-    console.debug(`[settings-nav] global-config-route directory=${directory() || "none"}`)
+    console.info(
+      `[config-perf] global-config-route directory=${directory() || "none"} ready=${String(globalSync.data.ready)} providerAll=${String(globalSync.data.provider.all.length)} sinceClick=${configPerfSinceClick()}`,
+    )
   })
 
   return (

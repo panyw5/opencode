@@ -58,6 +58,7 @@ import { setNavigate } from "@/utils/notification-click"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { requestConfigPageRefresh } from "@/utils/config-reload"
+import { prefetchConfigPage } from "@/utils/prefetch-config"
 
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { triggerFileFind } from "@opencode-ai/ui/pierre/file-find"
@@ -1778,8 +1779,10 @@ export default function Layout(props: ParentProps) {
   }
 
   function openConfig(section?: string, pick?: string) {
-    console.debug(
-      `[settings-nav] open-config pathname=${location.pathname} dir=${params.dir ?? "none"} section=${section ?? "none"} pick=${pick ?? "none"} projects=${layout.projects.list().length}`,
+    const clickAt = performance.now()
+    ;(window as Window & { __configNavClickAt?: number }).__configNavClickAt = clickAt
+    console.info(
+      `[config-perf] click open-config t=${clickAt.toFixed(1)} pathname=${location.pathname} dir=${params.dir ?? "none"} section=${section ?? "none"} pick=${pick ?? "none"}`,
     )
     const directory =
       params.dir ||
@@ -1793,7 +1796,7 @@ export default function Layout(props: ParentProps) {
     const path = slug ? `/${slug}/config` : "/config"
     const next = q.size ? `${path}?${q.toString()}` : path
     if (!slug) console.debug("[settings-nav] open-config using global-route reason=no-directory")
-    console.debug(`[settings-nav] open-config navigate target=${next}`)
+    console.info(`[config-perf] navigate target=${next} sinceClick=${(performance.now() - clickAt).toFixed(1)}ms`)
     batch(() => {
       setStore("sidebarPanel", "project")
       if (platform.platform === "desktop" && layout.sidebar.opened()) {
@@ -3971,6 +3974,7 @@ export default function Layout(props: ParentProps) {
       configKeybind={() => command.keybind("config.open")}
       configActive={onConfigRoute}
       onOpenConfig={openConfig}
+      onPrefetchConfig={prefetchConfigPage}
       settingsLabel={() => language.t("sidebar.settings")}
       settingsKeybind={() => command.keybind("settings.open")}
       onOpenSettings={openSettings}
