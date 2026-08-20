@@ -24,6 +24,7 @@ import { TextReveal } from "./text-reveal"
 import { createAutoScroll, suppressAutoScrollResize } from "../hooks"
 import { useI18n } from "../context/i18n"
 import { formatThinkingElapsed, hiddenReasoning } from "./session-turn-state"
+import { hasVisibleText } from "./message-part-text"
 import { isCustomHookTool, normalizeTool } from "./tool-meta"
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -118,9 +119,9 @@ function partState(part: PartType, showReasoningSummaries: boolean, showCustomHo
     if (tool === "question" && part.state.status === "pending") return
     return "visible" as const
   }
-  if (part.type === "text") return part.text?.trim() ? ("visible" as const) : undefined
+  if (part.type === "text") return hasVisibleText(part.text) ? ("visible" as const) : undefined
   if (part.type === "reasoning") {
-    if (showReasoningSummaries && part.text?.trim()) return "visible" as const
+    if (showReasoningSummaries && hasVisibleText(part.text)) return "visible" as const
     return
   }
   if (PART_MAPPING[part.type]) return "visible" as const
@@ -131,7 +132,7 @@ function ghost(parts: PartType[]) {
   return !parts.some((part) => {
     if (part.type === "step-start" || part.type === "step-finish") return false
     if (part.type === "reasoning") return false
-    if (part.type === "text") return !!part.text?.trim()
+    if (part.type === "text") return hasVisibleText(part.text)
     if (part.type === "tool") return true
     return !!PART_MAPPING[part.type]
   })
@@ -405,7 +406,7 @@ export function SessionTurn(
         const state = partState(part, showReasoningSummaries(), props.showCustomHookParts ?? true)
         if (state !== "visible") continue
         visible++
-        if (part.type === "text" && part.text?.trim()) {
+        if (part.type === "text" && hasVisibleText(part.text)) {
           copy = part.id
           copyText.push(part.text)
         }
@@ -481,7 +482,7 @@ export function SessionTurn(
     if (!working()) return "thinking"
     const hasReasoning = assistantList().some((message) =>
       list(data.store.part?.[message.id], emptyParts).some(
-        (part) => part.type === "reasoning" && !!part.text?.trim(),
+        (part) => part.type === "reasoning" && hasVisibleText(part.text),
       ),
     )
     return hasReasoning ? "thinking" : "sending"

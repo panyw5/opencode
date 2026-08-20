@@ -28,6 +28,7 @@ import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Usage, type LLMEvent } from "@opencode-ai/llm"
+import { shouldDropAssistantTextPart, stripInvisibleEdges } from "@/util/visible-text"
 
 const DOOM_LOOP_THRESHOLD = 3
 const TOOL_SETTLE_TIMEOUT = "10 seconds"
@@ -699,6 +700,9 @@ export const layer = Layer.effect(
               },
               { text: ctx.currentText.text },
             )).text
+            // OpenAI/Codex often prefixes a lone U+200B text item; strip edges and
+            // drop parts that remain invisible so they do not render as blank bubbles.
+            ctx.currentText.text = stripInvisibleEdges(ctx.currentText.text)
             if (!ctx.assistantMessage.summary) {
               // TODO(v2): Temporary dual-write while migrating session messages to v2 events.
               if (flags.experimentalEventSystem) {
@@ -714,7 +718,22 @@ export const layer = Layer.effect(
               ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
             }
             if (value.providerMetadata) ctx.currentText.metadata = value.providerMetadata
-            yield* session.updatePart(ctx.currentText)
+            if (shouldDropAssistantTextPart(ctx.currentText.text)) {
+              log.info("dropping invisible assistant text part", {
+                sessionID: String(ctx.sessionID),
+                messageID: String(ctx.assistantMessage.id),
+                partID: String(ctx.currentText.id),
+                textLen: String(ctx.currentText.text.length),
+                textHex: Buffer.from(ctx.currentText.text, "utf8").toString("hex"),
+              })
+              yield* session.removePart({
+                sessionID: ctx.currentText.sessionID,
+                messageID: ctx.currentText.messageID,
+                partID: ctx.currentText.id,
+              })
+            } else {
+              yield* session.updatePart(ctx.currentText)
+            }
             ctx.currentText = undefined
             return
 
@@ -742,7 +761,23 @@ export const layer = Layer.effect(
         if (ctx.currentText) {
           const end = Date.now()
           ctx.currentText.time = { start: ctx.currentText.time?.start ?? end, end }
-          yield* session.updatePart(ctx.currentText)
+          ctx.currentText.text = stripInvisibleEdges(ctx.currentText.text)
+          if (shouldDropAssistantTextPart(ctx.currentText.text)) {
+            log.info("dropping invisible assistant text part on cleanup", {
+              sessionID: String(ctx.sessionID),
+              messageID: String(ctx.assistantMessage.id),
+              partID: String(ctx.currentText.id),
+              textLen: String(ctx.currentText.text.length),
+              textHex: Buffer.from(ctx.currentText.text, "utf8").toString("hex"),
+            })
+            yield* session.removePart({
+              sessionID: ctx.currentText.sessionID,
+              messageID: ctx.currentText.messageID,
+              partID: ctx.currentText.id,
+            })
+          } else {
+            yield* session.updatePart(ctx.currentText)
+          }
           ctx.currentText = undefined
         }
 

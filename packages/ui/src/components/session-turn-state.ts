@@ -1,4 +1,5 @@
 import type { AssistantMessage, Part } from "@opencode-ai/sdk/v2"
+import { hasVisibleText } from "./message-part-text"
 
 export function formatThinkingElapsed(seconds: number) {
   const tenths = Math.max(0, Math.floor(seconds * 10))
@@ -15,5 +16,7 @@ export function hiddenReasoning(
 ) {
   if (show) return false
 
-  return msgs.some((msg) => (parts[msg.id] ?? []).some((part) => part.type === "reasoning" && !!part.text?.trim()))
+  return msgs.some((msg) =>
+    (parts[msg.id] ?? []).some((part) => part.type === "reasoning" && hasVisibleText(part.text)),
+  )
 }

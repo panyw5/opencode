@@ -63,6 +63,7 @@ import { Spinner } from "./spinner"
 import { animate } from "motion"
 import { attached, inline, kind } from "./message-file"
 import { skillText } from "./message-skill"
+import { hasVisibleText } from "./message-part-text"
 import { InjectedPromptFromParts } from "./injected-prompt"
 import { hookName, isCustomHookTool, normalizeTool } from "./tool-meta"
 export { normalizeTool } from "./tool-meta"
@@ -740,8 +741,8 @@ export function renderable(part: PartType, showReasoningSummaries = true, showCu
     if (tool === "question") return part.state.status !== "pending"
     return true
   }
-  if (part.type === "text") return !!part.text?.trim()
-  if (part.type === "reasoning") return showReasoningSummaries && !!part.text?.trim()
+  if (part.type === "text") return hasVisibleText(part.text)
+  if (part.type === "reasoning") return showReasoningSummaries && hasVisibleText(part.text)
   return !!PART_MAPPING[part.type]
 }
 
@@ -1864,7 +1865,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   })
   const isLastTextPart = createMemo(() => {
     const last = (data.store.part?.[props.message.id] ?? [])
-      .filter((item): item is TextPart => item?.type === "text" && !!item.text?.trim())
+      .filter((item): item is TextPart => item?.type === "text" && hasVisibleText(item.text))
       .at(-1)
     return last?.id === part.id
   })
