@@ -1,4 +1,4 @@
-import { createMemo, onCleanup, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, onCleanup, Show, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@opencode-ai/core/util/encode"
@@ -24,7 +24,8 @@ function railHue(input: string): number {
 }
 
 export type ProjectSidebarContext = {
-  current: Accessor<string | undefined>
+  sessionCurrent: Accessor<string | undefined>
+  sidebarExpanded: Accessor<string | undefined>
   sidebarReduced: Accessor<boolean>
   consumeProjectClick: () => boolean
   selectSidebarProject: (directory: string) => void
@@ -55,7 +56,8 @@ const ProjectTile = (props: {
   project: LocalProject
   mobile?: boolean
   sidebarReduced: Accessor<boolean>
-  selected: Accessor<boolean>
+  sessionCurrent: Accessor<boolean>
+  sidebarExpanded: Accessor<boolean>
   active: Accessor<boolean>
   dirs: Accessor<string[]>
   consumeProjectClick: () => boolean
@@ -173,17 +175,22 @@ const ProjectTile = (props: {
           as="button"
           type="button"
           aria-label={name()}
-          aria-current={props.selected() ? "true" : undefined}
+          aria-current={props.sessionCurrent() ? "true" : undefined}
           data-action="project-switch"
           data-project={base64Encode(props.project.worktree)}
           data-rail-hue={railHue(props.project.worktree)}
+          data-session-current={props.sessionCurrent() ? "true" : "false"}
+          data-sidebar-expanded={props.sidebarExpanded() ? "true" : "false"}
+          data-sidebar-floating={props.sidebarExpanded() ? "true" : "false"}
+          style={{ transform: props.sidebarExpanded() ? "translateY(-3px) scale(1.16)" : undefined }}
           classList={{
             "flex items-center justify-center size-10 p-1 rounded-full overflow-hidden cursor-pointer": true,
             "transition-all duration-150": !props.sidebarReduced(),
-            "bg-surface-interactive-selected border-2 border-border-brand-base": props.selected(),
-            "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-base hover:scale-105":
-              !props.sidebarReduced() && !props.selected() && !props.active(),
-            "bg-surface-base-hover border border-border-base": !props.selected() && props.active(),
+            "bg-surface-interactive-selected border-2 border-border-brand-base": props.sessionCurrent(),
+            "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-base":
+              !props.sidebarReduced() && !props.sessionCurrent() && !props.active(),
+            "bg-surface-base-hover border border-border-base": !props.sessionCurrent() && props.active(),
+            "relative z-10": !props.sidebarReduced() && props.sidebarExpanded(),
           }}
           onPointerDown={(event) => {
             if (event.button !== 2 && !(event.button === 0 && event.ctrlKey)) return
@@ -191,7 +198,7 @@ const ProjectTile = (props: {
           }}
           onClick={() => {
             if (props.consumeProjectClick()) return
-            if (props.selected()) {
+            if (props.sidebarExpanded()) {
               layout.sidebar.toggle()
               return
             }
@@ -273,7 +280,7 @@ const ProjectTile = (props: {
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
-    </ContextMenu>
+      </ContextMenu>
     </RailTooltip>
   )
 }
@@ -285,9 +292,19 @@ export const SortableProject = (props: {
 }): JSX.Element | null => {
   if (!props.project?.worktree) return null
   const sortable = createSortable(props.project.worktree)
-  const selected = createMemo(() =>
-    projectSelected(props.ctx.current(), props.project.worktree, props.project.sandboxes),
+  const sessionCurrent = createMemo(() =>
+    projectSelected(props.ctx.sessionCurrent(), props.project.worktree, props.project.sandboxes),
   )
+  const sidebarExpanded = createMemo(() =>
+    projectSelected(props.ctx.sidebarExpanded(), props.project.worktree, props.project.sandboxes),
+  )
+  let lastIndicator = ""
+  createEffect(() => {
+    const next = `session=${sessionCurrent() ? "true" : "false"} sidebar=${sidebarExpanded() ? "true" : "false"}`
+    if (next === lastIndicator) return
+    lastIndicator = next
+    console.debug(`[sidebar-project] indicator root=${props.project.worktree} ${next}`)
+  })
   const language = useLanguage()
   const dirs = createMemo(() => props.ctx.workspaceIds(props.project))
   const [state, setState] = createStore({ menu: false })
@@ -296,7 +313,8 @@ export const SortableProject = (props: {
       project={props.project}
       mobile={props.mobile}
       sidebarReduced={props.ctx.sidebarReduced}
-      selected={selected}
+      sessionCurrent={sessionCurrent}
+      sidebarExpanded={sidebarExpanded}
       active={() => state.menu}
       dirs={dirs}
       consumeProjectClick={props.ctx.consumeProjectClick}

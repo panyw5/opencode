@@ -300,6 +300,26 @@
     --sidebar-float-shadow-mid: rgba(255, 255, 255, 0.012);
   }
 
+  [data-component="sidebar-rail"] [data-action="project-switch"][data-sidebar-floating="true"] {
+    --project-floating-ring: color-mix(in srgb, var(--text-strong) 18%, transparent);
+    box-shadow:
+      0 7px 10px -5px light-dark(rgba(0, 0, 0, 0.52), rgba(0, 0, 0, 0.92)),
+      0 2px 4px -2px light-dark(rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.78)),
+      0 0 0 1px var(--project-floating-ring);
+  }
+
+  html[data-color-scheme="dark"]
+    [data-component="sidebar-rail"]
+    [data-action="project-switch"][data-sidebar-floating="true"] {
+    --project-floating-ring: color-mix(in srgb, var(--text-strong) 26%, transparent);
+  }
+
+  html[data-color-scheme="light"]
+    [data-component="sidebar-rail"]
+    [data-action="project-switch"][data-session-current="true"] {
+    border-color: color-mix(in srgb, var(--text-strong) 38%, var(--border-base));
+  }
+
   [data-component="sidebar-session"] {
     --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
     --sidebar-session-hover-bg: light-dark(#f1f1f1, #2c2924);

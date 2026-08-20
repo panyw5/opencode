@@ -3152,7 +3152,7 @@ export default function Layout(props: ParentProps) {
     return currentProject()
   })
 
-  const railCurrentProject = createMemo(() => (onConfigRoute() ? undefined : sidebarProject()?.root))
+  const sessionCurrentProject = createMemo(() => (onConfigRoute() ? undefined : currentProject()?.root))
 
   const sidebarProjectDirs = createMemo(() => {
     const project = sidebarProject()
@@ -3369,7 +3369,8 @@ export default function Layout(props: ParentProps) {
   }
 
   const projectSidebarCtx: ProjectSidebarContext = {
-    current: railCurrentProject,
+    sessionCurrent: sessionCurrentProject,
+    sidebarExpanded: () => (layout.sidebar.opened() ? sidebarProject()?.root : undefined),
     sidebarReduced,
     consumeProjectClick,
     selectSidebarProject,
