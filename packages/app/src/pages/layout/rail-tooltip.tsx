@@ -1,7 +1,46 @@
-import { createEffect, createSignal, For, Show, type JSX } from "solid-js"
+import { createEffect, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { Portal } from "solid-js/web"
 
 const MODIFIER_GLYPHS = new Set(["⌘", "⇧", "⌃", "⌥"])
+
+// Chromium/Electron re-fires pointerenter when the window regains focus (e.g. Cmd+Tab)
+// while the cursor is still over a trigger. Gate hover tooltips until the pointer moves.
+let pointerArmed = true
+let armListenerCount = 0
+let removeArmListeners: (() => void) | undefined
+
+function ensurePointerArmListeners() {
+  if (armListenerCount++ > 0) return
+
+  const disarm = () => {
+    pointerArmed = false
+  }
+  const onBlur = () => disarm()
+  const onVisibility = () => {
+    if (document.visibilityState === "hidden") disarm()
+  }
+  const onPointerMove = (e: PointerEvent) => {
+    if (pointerArmed) return
+    if (e.movementX === 0 && e.movementY === 0) return
+    pointerArmed = true
+  }
+
+  window.addEventListener("blur", onBlur)
+  document.addEventListener("visibilitychange", onVisibility)
+  window.addEventListener("pointermove", onPointerMove)
+  removeArmListeners = () => {
+    window.removeEventListener("blur", onBlur)
+    document.removeEventListener("visibilitychange", onVisibility)
+    window.removeEventListener("pointermove", onPointerMove)
+    removeArmListeners = undefined
+  }
+}
+
+function releasePointerArmListeners() {
+  if (--armListenerCount > 0) return
+  removeArmListeners?.()
+  pointerArmed = true
+}
 
 function RailKeybind(props: { value: string }) {
   return (
@@ -33,8 +72,8 @@ export function RailTooltip(props: {
 
   const hide = () => setPos(undefined)
 
-  const show = () => {
-    if (props.inactive || !node) return
+  const place = () => {
+    if (!node) return
     const rect = node.getBoundingClientRect()
     setPos(
       props.mobile
@@ -43,8 +82,36 @@ export function RailTooltip(props: {
     )
   }
 
+  const showFromPointer = () => {
+    if (props.inactive || !node || !pointerArmed) return
+    place()
+  }
+
+  const showFromKeyboardFocus = (e: FocusEvent) => {
+    if (props.inactive || !node) return
+    const target = e.target as HTMLElement | null
+    // Mouse clicks and window focus restore should not open the tooltip.
+    if (!target?.matches?.(":focus-visible")) return
+    place()
+  }
+
   createEffect(() => {
     if (props.inactive) hide()
+  })
+
+  onMount(() => {
+    ensurePointerArmListeners()
+    const onBlur = () => hide()
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") hide()
+    }
+    window.addEventListener("blur", onBlur)
+    document.addEventListener("visibilitychange", onVisibility)
+    onCleanup(() => {
+      window.removeEventListener("blur", onBlur)
+      document.removeEventListener("visibilitychange", onVisibility)
+      releasePointerArmListeners()
+    })
   })
 
   return (
@@ -54,9 +121,9 @@ export function RailTooltip(props: {
           node = el
         }}
         class="flex"
-        onPointerEnter={show}
+        onPointerEnter={showFromPointer}
         onPointerLeave={hide}
-        onFocusIn={show}
+        onFocusIn={showFromKeyboardFocus}
         onFocusOut={hide}
       >
         {props.children}
