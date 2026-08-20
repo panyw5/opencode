@@ -50,8 +50,8 @@ describe("toolCallStartMs", () => {
 })
 
 describe("formatToolCallTime", () => {
-  test("formats a short local-style clock in UTC", () => {
+  test("formats a localized date and short time in UTC", () => {
     const start = Date.UTC(2026, 7, 16, 14, 32, 5)
-    expect(formatToolCallTime(start, "en-GB", "UTC")).toBe("14:32")
+    expect(formatToolCallTime(start, "en-GB", "UTC")).toBe("16 Aug 2026 at 14:32")
   })
 })

@@ -116,8 +116,8 @@ function ComposerDockExit(props: {
 function formatChildAgentTime(value: number, locale: string): string | undefined {
   if (!Number.isFinite(value) || value <= 0) return undefined
   return new Intl.DateTimeFormat(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
+    dateStyle: "medium",
+    timeStyle: "short",
   }).format(new Date(value))
 }
 

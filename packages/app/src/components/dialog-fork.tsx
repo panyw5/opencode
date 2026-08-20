@@ -19,7 +19,7 @@ interface ForkableMessage {
 }
 
 function formatTime(date: Date): string {
-  return date.toLocaleTimeString(undefined, { timeStyle: "short" })
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date)
 }
 
 export const DialogFork: Component = () => {
