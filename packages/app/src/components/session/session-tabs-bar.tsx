@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import {
@@ -18,7 +18,6 @@ import { base64Encode } from "@opencode-ai/core/util/encode"
 
 import { cycleSessionBarIndex, sessionBarKey, useLayout, visibleSessionBarDrafts, type SessionBarTab } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
-import { useGlobalSDK } from "@/context/global-sdk"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
@@ -27,9 +26,9 @@ import { useSettings } from "@/context/settings"
 import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
-import { domainFromDirectory, extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
+import { extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { projectOwner, waitForMatch, workspaceKey } from "@/pages/layout/helpers"
-import { working } from "@/pages/session/session-working"
+import { visiblyWorking } from "@/pages/session/session-working"
 import {
   collectSessionTabSubtree,
   groupSessionTabs,
@@ -47,7 +46,6 @@ export function SessionTabsBar() {
   const layout = useLayout()
   const settings = useSettings()
   const globalSync = useGlobalSync()
-  const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const command = useCommand()
   const server = useServer()
@@ -125,8 +123,14 @@ export function SessionTabsBar() {
       return
     }
     if (closedDraft() === workspaceKey(directory)) return
-    console.debug(`[session-bar] draft route observed directory=${directory} idless=true`)
-    layout.sessionBar.openDraft(directory)
+    const stored = untrack(() => layout.sessionBar.drafts())
+    console.debug(
+      `[session-bar] draft route observed directory=${directory} idless=true stored=${stored.length} route=${location.pathname}`,
+    )
+    // `openDraft` reads and writes the persisted drafts list. Keep that state
+    // outside this route-driven effect so closing a promoted draft cannot
+    // retrigger the old id-less route and immediately recreate it.
+    untrack(() => layout.sessionBar.openDraft(directory))
   })
 
   const isActive = (tab: SessionBarTab) =>
@@ -147,11 +151,9 @@ export function SessionTabsBar() {
     const key = sessionBarKey(tab)
     if (metadataLoads.has(key)) return
     metadataLoads.add(key)
-    void globalSDK
-      .forDomain(domainFromDirectory(tab.directory))
-      .client.session.get({ directory: tab.directory, sessionID: tab.id })
-      .then((result) => {
-        const value = result.data
+    void globalSync.session.info
+      .ensure(tab.directory, tab.id)
+      .then((value) => {
         if (!value) return
         layout.sessionBar.setInfo(tab.directory, tab.id, {
           title: value.title,
@@ -527,6 +529,7 @@ function SessionTabGroup(props: {
   let revealFrame: number | undefined
   let childrenViewport: HTMLDivElement | undefined
   let skipAutoRevealID: string | undefined
+  let parentContextMenuOpen = false
   const group = () => {
     const value = props.group()
     if (!value) throw new Error(`Missing session tab group: ${props.tabKey}`)
@@ -549,6 +552,7 @@ function SessionTabGroup(props: {
     autoCloseTimer = undefined
   }
   const open = () => {
+    if (parentContextMenuOpen) return
     if (!group().children.length) return
     cancelClose()
     cancelAutoClose()
@@ -564,33 +568,40 @@ function SessionTabGroup(props: {
   }
   const activeChildID = createMemo(() => group().children.find((item) => props.active(item.tab))?.tab.id)
 
-  createEffect(() => {
-    const childID = activeChildID()
-    if (!childID || !group().children.length) return
-    if (skipAutoRevealID === childID) {
-      skipAutoRevealID = undefined
+  createEffect(
+    on(activeChildID, (childID, previousChildID) => {
+      if (!childID) return
+      const value = group()
+      if (!value.children.length) return
+      if (skipAutoRevealID === childID) {
+        skipAutoRevealID = undefined
+        cancelClose()
+        cancelAutoClose()
+        console.debug(
+          `[session-bar] skip auto reveal for clicked child id=${childID} parent=${value.tab.id} previous=${previousChildID ?? "none"}`,
+        )
+        return
+      }
       cancelClose()
       cancelAutoClose()
-      console.debug(`[session-bar] skip auto reveal for clicked child id=${childID} parent=${group().tab.id}`)
-      return
-    }
-    cancelClose()
-    cancelAutoClose()
-    setState("open", true)
-    console.debug(`[session-bar] auto reveal child id=${childID} parent=${group().tab.id}`)
-    if (revealFrame !== undefined) cancelAnimationFrame(revealFrame)
-    revealFrame = requestAnimationFrame(() => {
-      revealFrame = undefined
-      childrenViewport
-        ?.querySelector<HTMLElement>('[data-component="session-tab"][data-active="true"]')
-        ?.scrollIntoView({ block: "nearest" })
-    })
-    autoCloseTimer = window.setTimeout(() => {
-      autoCloseTimer = undefined
-      setState("open", false)
-      console.debug(`[session-bar] auto hide child id=${childID} parent=${group().tab.id}`)
-    }, autoRevealDuration)
-  })
+      setState("open", true)
+      console.debug(
+        `[session-bar] auto reveal child id=${childID} parent=${value.tab.id} previous=${previousChildID ?? "none"}`,
+      )
+      if (revealFrame !== undefined) cancelAnimationFrame(revealFrame)
+      revealFrame = requestAnimationFrame(() => {
+        revealFrame = undefined
+        childrenViewport
+          ?.querySelector<HTMLElement>('[data-component="session-tab"][data-active="true"]')
+          ?.scrollIntoView({ block: "nearest" })
+      })
+      autoCloseTimer = window.setTimeout(() => {
+        autoCloseTimer = undefined
+        setState("open", false)
+        console.debug(`[session-bar] auto hide child id=${childID} parent=${value.tab.id}`)
+      }, autoRevealDuration)
+    }),
+  )
   const groupActive = () => {
     const value = group()
     return props.active(value.tab) || value.children.some((item) => props.active(item.tab))
@@ -611,6 +622,7 @@ function SessionTabGroup(props: {
         preventPopoverToggle
         hasOpenDescendants={props.hasOpenDescendants(group().tab)}
         onMenuOpenChange={(open) => {
+          parentContextMenuOpen = open
           if (open) {
             cancelAutoClose()
             setState("open", false)
@@ -728,7 +740,11 @@ function SessionTab(props: {
   })
 
   const groupTabs = () => [props.tab, ...(props.relatedTabs ?? [])]
-  const busy = createMemo(() => groupTabs().some((tab) => working(child.session_status[tab.id], child.message[tab.id])))
+  const busy = createMemo(() =>
+    groupTabs().some((tab) =>
+      visiblyWorking(globalSync.session.status.get(props.tab.directory, tab.id), child.message[tab.id]),
+    ),
+  )
   const unseen = createMemo(() =>
     groupTabs().reduce((total, tab) => total + notification.session.unseenCount(tab.id), 0),
   )

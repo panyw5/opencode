@@ -78,11 +78,12 @@ export function cleanupDroppedSessionCaches(
     ...Object.keys(store.permission),
     ...Object.keys(store.question),
     ...Object.keys(store.session_status),
+    ...Object.keys(store.session_history ?? {}),
     ...Object.values(store.part)
       .map((parts) => parts?.find((part) => !!part?.sessionID)?.sessionID)
       .filter((sessionID): sessionID is string => !!sessionID),
   ].filter((sessionID, index, list) => !keep.has(sessionID) && list.indexOf(sessionID) === index)
-  if (stale.length === 0) return
+  if (stale.length === 0) return []
   for (const sessionID of stale) {
     setSessionTodo?.(sessionID, undefined)
   }
@@ -91,6 +92,7 @@ export function cleanupDroppedSessionCaches(
       dropSessionCaches(draft, stale)
     }),
   )
+  return stale
 }
 
 export function applyDirectoryEvent(input: {
@@ -134,6 +136,7 @@ export function applyDirectoryEvent(input: {
       const info = (event.properties as { info: Session }).info
       const result = Binary.search(input.store.session, info.id, (s) => s.id)
       if (info.time.archived) {
+        const removed = result.found
         if (result.found) {
           input.setStore(
             "session",
@@ -144,6 +147,7 @@ export function applyDirectoryEvent(input: {
         }
         cleanupSessionCaches(input.setStore, info.id, input.setSessionTodo)
         if (info.parentID) break
+        if (!removed) break
         input.setStore("sessionTotal", (value) => Math.max(0, value - 1))
         break
       }
@@ -162,7 +166,8 @@ export function applyDirectoryEvent(input: {
     case "session.deleted": {
       const info = (event.properties as { info: Session }).info
       const result = Binary.search(input.store.session, info.id, (s) => s.id)
-      if (result.found) {
+      const removed = result.found
+      if (removed) {
         input.setStore(
           "session",
           produce((draft) => {
@@ -172,6 +177,7 @@ export function applyDirectoryEvent(input: {
       }
       cleanupSessionCaches(input.setStore, info.id, input.setSessionTodo)
       if (info.parentID) break
+      if (!removed) break
       input.setStore("sessionTotal", (value) => Math.max(0, value - 1))
       break
     }
@@ -389,6 +395,15 @@ export function applyDirectoryEvent(input: {
       if (!permissions) break
       const result = Binary.search(permissions, props.requestID, (p) => p.id)
       if (!result.found) break
+      if (permissions.length === 1) {
+        input.setStore(
+          "permission",
+          produce((draft) => {
+            delete draft[props.sessionID]
+          }),
+        )
+        break
+      }
       input.setStore(
         "permission",
         props.sessionID,
@@ -426,6 +441,15 @@ export function applyDirectoryEvent(input: {
       if (!questions) break
       const result = Binary.search(questions, props.requestID, (q) => q.id)
       if (!result.found) break
+      if (questions.length === 1) {
+        input.setStore(
+          "question",
+          produce((draft) => {
+            delete draft[props.sessionID]
+          }),
+        )
+        break
+      }
       input.setStore(
         "question",
         props.sessionID,

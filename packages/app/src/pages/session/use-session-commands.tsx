@@ -87,7 +87,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const newSessionDirectory = () => layout.sidebar.project() ?? projectDirectory()
 
   const idle = { type: "idle" as const }
-  const status = () => sync.data.session_status[params.id ?? ""] ?? idle
+  const status = () => sync.session.status.get(params.id ?? "") ?? idle
   const messages = () => actions.explicitMessages()
   const busy = () => sessionWorking(status(), messages())
   const userMessages = () => actions.visibleUserMessages()

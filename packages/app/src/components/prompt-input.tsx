@@ -16,6 +16,7 @@ import {
 } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
+import { useGlobalSync } from "@/context/global-sync"
 import { useSync } from "@/context/sync"
 import { useComments } from "@/context/comments"
 import { Button } from "@opencode-ai/ui/button"
@@ -402,6 +403,7 @@ const GitContext = () => {
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
+  const globalSync = useGlobalSync()
   const sync = useSync()
   const local = useLocal()
   const files = useFile()
@@ -492,7 +494,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const sessionID = params.id
     if (!sessionID) return false
 
-    const diffs = sync.data.session_diff[sessionID]
+    const diffs = globalSync.session.diff.get(sdk.directory, sessionID)
     if (!diffs) return false
     return diffs.some((diff) => diff.file === path)
   }
@@ -557,8 +559,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
   const status = createMemo(
     () =>
-      sync.data.session_status[params.id ?? ""] ?? {
-        type: "idle",
+      sync.session.status.get(params.id ?? "") ?? {
+        type: "idle" as const,
       },
   )
   const messages = createMemo(() => {

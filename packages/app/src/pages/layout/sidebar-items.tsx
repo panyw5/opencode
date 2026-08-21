@@ -100,9 +100,12 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   const loaded = createMemo(() => dirs().some((directory) => globalSync.loaded(directory)))
   const loadingSessions = createMemo(() => isInitialSessionLoad(stores()))
   const hasActiveSession = createMemo(() =>
-    stores().some((store) =>
-      store.session.some((session) => working(store.session_status[session.id], store.message[session.id])),
-    ),
+    dirs().some((directory) => {
+      const [store] = globalSync.child(directory, { bootstrap: false })
+      return store.session.some((session) =>
+        working(globalSync.session.status.get(directory, session.id), store.message[session.id]),
+      )
+    }),
   )
   const [activityPulse, setActivityPulse] = createSignal(false)
   createEffect(() => {

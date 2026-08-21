@@ -223,6 +223,16 @@ describe("applyDirectoryEvent", () => {
     expect(store.permission.ses_1).toBeUndefined()
     expect(store.question.ses_1).toBeUndefined()
     expect(store.session_status.ses_1).toBeUndefined()
+
+    applyDirectoryEvent({
+      event: { type: "session.updated", properties: { info: rootSession({ id: "ses_1", archived: 10 }) } },
+      store,
+      setStore,
+      push() {},
+      directory: "/tmp",
+      loadLsp() {},
+    })
+    expect(store.sessionTotal).toBe(1)
   })
 
   test("restores archived root sessions into total count", () => {
@@ -335,12 +345,15 @@ describe("applyDirectoryEvent", () => {
       baseState({
         session: [rootSession({ id: "ses_keep" })],
         part: { msg_1: [textPart("prt_1", "ses_drop", "msg_1")] },
+        session_history: { ses_history_drop: { complete: true } },
       }),
     )
 
-    cleanupDroppedSessionCaches(store, setStore, store.session)
+    const stale = cleanupDroppedSessionCaches(store, setStore, store.session)
 
     expect(store.part.msg_1).toBeUndefined()
+    expect(store.session_history?.ses_history_drop).toBeUndefined()
+    expect(stale).toEqual(["ses_history_drop", "ses_drop"])
   })
 
   test("upserts and removes messages while clearing orphaned parts", () => {
@@ -565,6 +578,29 @@ describe("applyDirectoryEvent", () => {
       loadLsp() {},
     })
     expect(store.question[sessionID]?.map((x) => x.id)).toEqual(["q_1", "q_3"])
+
+    for (const requestID of ["perm_1", "perm_3"]) {
+      applyDirectoryEvent({
+        event: { type: "permission.replied", properties: { sessionID, requestID } },
+        store,
+        setStore,
+        push() {},
+        directory: "/tmp",
+        loadLsp() {},
+      })
+    }
+    for (const requestID of ["q_1", "q_3"]) {
+      applyDirectoryEvent({
+        event: { type: "question.replied", properties: { sessionID, requestID, answers: [] } },
+        store,
+        setStore,
+        push() {},
+        directory: "/tmp",
+        loadLsp() {},
+      })
+    }
+    expect(store.permission[sessionID]).toBeUndefined()
+    expect(store.question[sessionID]).toBeUndefined()
   })
 
   test("updates vcs branch in store and cache", () => {

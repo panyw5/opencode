@@ -22,3 +22,8 @@ export function working(status: SessionStatus | undefined, list: readonly Messag
   if (typeof last.time.completed !== "number") return true
   return active(list) !== undefined
 }
+
+export function visiblyWorking(status: SessionStatus | undefined, list: readonly Message[] | undefined) {
+  if (status && status.type !== "idle") return true
+  return active(list) !== undefined
+}

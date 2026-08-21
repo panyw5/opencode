@@ -374,7 +374,7 @@ export function QuickAssistant() {
   ) => {
     const [statusResult, messageResult] = await Promise.allSettled([
       client.session.status(),
-      client.session.messages({ sessionID: id, limit: QUICK_ASSISTANT_MESSAGE_LIMIT }),
+      globalSync.session.messages.page({ directory: root(), sessionID: id, limit: QUICK_ASSISTANT_MESSAGE_LIMIT }),
     ])
     if (statusResult.status === "rejected" && isSessionNotFoundError(statusResult.reason)) throw statusResult.reason
     if (messageResult.status === "rejected" && isSessionNotFoundError(messageResult.reason)) throw messageResult.reason
@@ -386,12 +386,11 @@ export function QuickAssistant() {
       }
 
       if (messageResult.status === "fulfilled") {
-        const items = (messageResult.value.data ?? []).filter((item) => !!item?.info?.id)
-        const message = items.map((item) => item.info).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        const message = messageResult.value.session
         const next = mergeMessages(data()?.message[id], message)
         setStore("message", id, reconcile(next, { key: "id" }))
-        for (const item of items) {
-          setStore("part", item.info.id, item.parts)
+        for (const item of messageResult.value.part) {
+          setStore("part", item.id, item.part)
         }
       }
     })

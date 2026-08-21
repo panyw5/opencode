@@ -29,7 +29,7 @@ import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { Session, type Message } from "@opencode-ai/sdk/v2/client"
+import { Session } from "@opencode-ai/sdk/v2/client"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { createStore, produce, reconcile } from "solid-js/store"
@@ -52,7 +52,6 @@ import {
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { Binary } from "@opencode-ai/core/util/binary"
-import { retry } from "@opencode-ai/core/util/retry"
 import { playSoundById } from "@/utils/sound"
 import { setNavigate } from "@/utils/notification-click"
 import { Worktree as WorktreeState } from "@/utils/worktree"
@@ -993,83 +992,34 @@ export default function Layout(props: ParentProps) {
     return created
   }
 
-  const mergeByID = <T extends { id: string }>(current: T[], incoming: T[]) => {
-    if (current.length === 0) {
-      return incoming.slice().sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    }
-
-    const map = new Map<string, T>()
-    for (const item of current) {
-      map.set(item.id, item)
-    }
-    for (const item of incoming) {
-      map.set(item.id, item)
-    }
-    return [...map.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-  }
-
   async function prefetchMessages(directory: string, sessionID: string, token: number) {
-    const [store, setStore] = globalSync.child(directory, { bootstrap: false })
-
     return runSessionPrefetch({
       directory,
       sessionID,
       task: (rev) =>
-        retry(() => globalSDK.client.session.messages({ directory, sessionID, limit: prefetchChunk }))
-          .then((messages) => {
+        globalSync.session.messages
+          .load({ directory, sessionID, limit: prefetchChunk, mode: "prepend" })
+          .then((result) => {
             if (prefetchToken.value !== token) return
             if (!isSessionPrefetchCurrent(directory, sessionID, rev)) return
 
-            const items = (messages.data ?? []).filter((x) => !!x?.info?.id)
-            const next = items.map((x) => x.info).filter((m): m is Message => !!m?.id)
-            const sorted = mergeByID([], next)
             const stale = markPrefetched(directory, sessionID)
-            const cursor = messages.response.headers.get("x-next-cursor") ?? undefined
-
             if (stale.length > 0) {
               clearSessionPrefetch(directory, stale)
-              for (const id of stale) {
-                globalSync.todo.set(id, undefined)
-              }
+              globalSync.session.clear(directory, stale)
+              const [, setStore] = globalSync.child(directory, { bootstrap: false })
+              setStore(
+                produce((draft) => {
+                  dropSessionCaches(draft, stale)
+                }),
+              )
             }
-
-            const current = store.message[sessionID] ?? []
-            const merged = mergeByID(
-              current.filter((item): item is Message => !!item?.id),
-              sorted,
-            )
             const meta = {
-              count: merged.length,
-              cursor,
-              complete: !cursor,
+              count: result.count,
+              cursor: result.cursor,
+              complete: result.complete,
               at: Date.now(),
             }
-
-            if (!isSessionPrefetchCurrent(directory, sessionID, rev)) return
-
-            batch(() => {
-              if (stale.length > 0) {
-                setStore(
-                  produce((draft) => {
-                    dropSessionCaches(draft, stale)
-                  }),
-                )
-              }
-
-              setStore("message", sessionID, reconcile(merged, { key: "id" }))
-              setSessionPrefetch({ directory, sessionID, ...meta })
-
-              for (const message of items) {
-                const currentParts = store.part[message.info.id] ?? []
-                const mergedParts = mergeByID(
-                  currentParts.filter((item): item is (typeof currentParts)[number] & { id: string } => !!item?.id),
-                  message.parts.filter((item): item is (typeof message.parts)[number] & { id: string } => !!item?.id),
-                )
-
-                setStore("part", message.info.id, reconcile(mergedParts, { key: "id" }))
-              }
-            })
-
             return meta
           })
           .catch((error) => {
@@ -2015,18 +1965,14 @@ export default function Layout(props: ParentProps) {
   async function ensureSessionBarMeta(directory: string, id: string) {
     console.debug(`[session-bar] ensure meta start directory=${directory} id=${id}`)
     try {
-      const client = globalSDK.forDomain(domainFromDirectory(directory)).client
       const seen = new Set<string>()
       let currentID: string | undefined = id
       while (currentID && !seen.has(currentID)) {
-        seen.add(currentID)
-        const result: Awaited<ReturnType<typeof client.session.get>> = await client.session.get({
-          directory,
-          sessionID: currentID,
-        })
-        const value: Session | undefined = result.data
+        const sessionID: string = currentID
+        seen.add(sessionID)
+        const value = await globalSync.session.info.ensure(directory, sessionID)
         if (!value) {
-          console.debug(`[session-bar] ensure meta miss directory=${directory} id=${currentID}`)
+          console.debug(`[session-bar] ensure meta miss directory=${directory} id=${sessionID}`)
           return
         }
         layout.sessionBar.setInfo(directory, currentID, {

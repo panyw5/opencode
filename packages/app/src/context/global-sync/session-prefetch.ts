@@ -1,6 +1,7 @@
 const key = (directory: string, sessionID: string) => `${directory}\n${sessionID}`
 
 export const SESSION_PREFETCH_TTL = 15_000
+export const SESSION_PREFETCH_MAX = 200
 
 type Meta = {
   count: number
@@ -36,6 +37,7 @@ export function getSessionPrefetchPromise(directory: string, sessionID: string) 
 }
 
 export function clearSessionPrefetchInflight() {
+  for (const id of inflight.keys()) rev.set(id, version(id) + 1)
   inflight.clear()
 }
 
@@ -55,7 +57,10 @@ export function runSessionPrefetch(input: {
   const value = version(id)
 
   const promise = input.task(value).finally(() => {
-    if (inflight.get(id) === promise) inflight.delete(id)
+    const current = inflight.get(id)
+    if (current && current !== promise) return
+    if (current === promise) inflight.delete(id)
+    if (!inflight.has(id) && !cache.has(id)) rev.delete(id)
   })
 
   inflight.set(id, promise)
@@ -70,34 +75,50 @@ export function setSessionPrefetch(input: {
   complete: boolean
   at?: number
 }) {
-  cache.set(key(input.directory, input.sessionID), {
+  const id = key(input.directory, input.sessionID)
+  cache.delete(id)
+  cache.set(id, {
     count: input.count,
     cursor: input.cursor,
     complete: input.complete,
     at: input.at ?? Date.now(),
   })
+  while (cache.size > SESSION_PREFETCH_MAX) {
+    const oldest = cache.keys().next().value
+    if (!oldest) break
+    cache.delete(oldest)
+    if (!inflight.has(oldest)) rev.delete(oldest)
+  }
 }
 
 export function clearSessionPrefetch(directory: string, sessionIDs: Iterable<string>) {
   for (const sessionID of sessionIDs) {
     if (!sessionID) continue
     const id = key(directory, sessionID)
+    const pending = inflight.get(id)
     rev.set(id, version(id) + 1)
     cache.delete(id)
     inflight.delete(id)
+    if (!pending) rev.delete(id)
   }
 }
 
 export function clearSessionPrefetchDirectory(directory: string) {
   const prefix = `${directory}\n`
-  const keys = new Set([...cache.keys(), ...inflight.keys()])
+  const keys = new Set([...cache.keys(), ...inflight.keys(), ...rev.keys()])
   let removed = 0
   for (const id of keys) {
     if (!id.startsWith(prefix)) continue
+    const pending = inflight.get(id)
     rev.set(id, version(id) + 1)
     cache.delete(id)
     inflight.delete(id)
+    if (!pending) rev.delete(id)
     removed += 1
   }
   if (removed > 0) console.debug(`[session-prefetch] clear-directory directory=${directory} removed=${String(removed)}`)
+}
+
+export function getSessionPrefetchStats() {
+  return { cache: cache.size, inflight: inflight.size, revision: rev.size }
 }

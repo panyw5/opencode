@@ -62,15 +62,16 @@ function aborted(err: unknown) {
 }
 
 async function delivered(
-  client: ReturnType<typeof useSDK>["client"],
+  globalSync: ReturnType<typeof useGlobalSync>,
+  directory: string,
   sessionID: string,
   messageID: string,
 ) {
   const found = (items: { id: string }[] | undefined) => items?.some((item) => item.id === messageID) ?? false
   for (const ms of [0, 150, 400]) {
     if (ms) await new Promise((resolve) => setTimeout(resolve, ms))
-    const resp = await client.session.messages({ sessionID, limit: 20 }).catch(() => undefined)
-    if (found(resp?.data?.map((item) => item.info))) return true
+    const page = await globalSync.session.messages.page({ directory, sessionID, limit: 20 }).catch(() => undefined)
+    if (found(page?.session)) return true
   }
   return false
 }
@@ -157,16 +158,14 @@ const submitMeasureSummary = () =>
 export async function sendFollowupDraft(input: FollowupSendInput) {
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
-  const [, setStore] = input.globalSync.child(input.draft.sessionDirectory)
-
   const setBusy = () => {
     if (!input.optimisticBusy) return
-    setStore("session_status", input.draft.sessionID, { type: "busy" })
+    input.globalSync.session.status.set(input.draft.sessionDirectory, input.draft.sessionID, { type: "busy" })
   }
 
   const setIdle = () => {
     if (!input.optimisticBusy) return
-    setStore("session_status", input.draft.sessionID, { type: "idle" })
+    input.globalSync.session.status.set(input.draft.sessionDirectory, input.draft.sessionID, { type: "idle" })
   }
 
   const wait = async () => {
@@ -231,7 +230,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       })
       return true
     } catch (err) {
-      if (await delivered(input.client, input.draft.sessionID, messageID)) {
+      if (await delivered(input.globalSync, input.draft.sessionDirectory, input.draft.sessionID, messageID)) {
         completeOptimisticCommandMessage({
           sync: input.sync,
           directory: input.draft.sessionDirectory,
@@ -329,7 +328,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     console.debug(`[perf:submit] breakdown ${submitMeasureSummary()}`)
     return true
   } catch (err) {
-    if (await delivered(input.client, input.draft.sessionID, messageID)) return true
+    if (await delivered(input.globalSync, input.draft.sessionDirectory, input.draft.sessionID, messageID)) return true
     setIdle()
     remove()
     throw err
@@ -398,11 +397,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const t0 = performance.now()
     console.debug(`[abort] start sessionID=${sessionID} directory=${sdk.directory} t=${t0}`)
 
-    globalSync.todo.set(sessionID, [])
     const [, setStore] = globalSync.child(sdk.directory)
-    setStore("todo", sessionID, [])
-
-    setStore("session_status", sessionID, { type: "idle" })
+    globalSync.session.todo.set(sdk.directory, sessionID, [])
+    globalSync.session.status.set(sdk.directory, sessionID, { type: "idle" })
     let optimisticTarget: string | undefined
     setStore("message", sessionID, (list) => {
       if (!list?.length) return list
@@ -866,7 +863,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             completeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
           })
           .catch(async (err) => {
-            if (await delivered(client, session.id, messageID)) {
+            if (await delivered(globalSync, sessionDirectory, session.id, messageID)) {
               completeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
               return
             }
@@ -916,13 +913,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       diagnose("worktree-wait", { directory: sessionDirectory })
 
       if (sessionDirectory === currentDirectory) {
-        sync.set("session_status", session.id, { type: "busy" })
+        globalSync.session.status.set(sessionDirectory, session.id, { type: "busy" })
       }
 
       const controller = new AbortController()
       const cleanup = () => {
         if (sessionDirectory === currentDirectory) {
-          sync.set("session_status", session.id, { type: "idle" })
+          globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
         }
         removeOptimisticMessage()
         restoreCommentItems(commentItems)
@@ -984,7 +981,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       if (aborted(err)) return
       pending.delete(session.id)
       if (sessionDirectory === currentDirectory) {
-        sync.set("session_status", session.id, { type: "idle" })
+        globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
       }
       showToast({
         title: language.t("prompt.toast.promptSendFailed.title"),

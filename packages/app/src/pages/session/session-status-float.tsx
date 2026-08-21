@@ -5,15 +5,17 @@ import { Popover } from "@opencode-ai/ui/popover"
 import { showToast } from "@opencode-ai/ui/toast"
 import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import type { Part } from "@opencode-ai/sdk/v2/client"
-import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { useLanguage } from "@/context/language"
+import { useGlobalSync } from "@/context/global-sync"
 import { useSDK } from "@/context/sdk"
 import {
   collectSessionFileChanges,
   collectSessionReportedFileChanges,
   type SessionFileChange,
 } from "./session-file-changes"
+import { sessionStatusHistoryKey } from "./session-status-history"
 
 const historyPageSize = 100
 
@@ -24,16 +26,46 @@ export function SessionStatusFloat(props: {
   childSessionIDs: string[]
 }) {
   const language = useLanguage()
+  const globalSync = useGlobalSync()
   const sdk = useSDK()
   const [shown, setShown] = createSignal(false)
   const [copied, setCopied] = createSignal(false)
   const [childDiffs, setChildDiffs] = createSignal<SnapshotFileDiff[]>([])
   const [reportedFileChanges, setReportedFileChanges] = createSignal<SessionFileChange[]>([])
+  const historyLoads = new Map<
+    string,
+    Promise<{ sessionID: string; diffs: SnapshotFileDiff[]; reported: SessionFileChange[] }>
+  >()
   const fileChanges = createMemo(() =>
     collectSessionFileChanges([...props.diffs, ...childDiffs()], reportedFileChanges(), sdk.directory),
   )
   const hasFileChanges = createMemo(() => Object.values(fileChanges()).some((files) => files.length > 0))
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
+  let historyOwnerSessionID: string | undefined
+
+  const loadHistory = (sessionID: string, includeDiff: boolean) => {
+    const key = `${sdk.directory}\n${sessionID}\n${String(includeDiff)}`
+    const pending = historyLoads.get(key)
+    if (pending) return pending
+    const promise = Promise.all([
+      includeDiff ? globalSync.session.diff.ensure(sdk.directory, sessionID) : Promise.resolve([]),
+      loadAllMessageParts(globalSync, sdk.directory, sessionID),
+    ])
+      .then(([diff, parts]) => {
+        console.info("[session-status] loaded file change history", {
+          sessionID,
+          diffs: diff?.length ?? 0,
+          reported: parts.length,
+        })
+        return { sessionID, diffs: diff ?? [], reported: collectSessionReportedFileChanges(parts) }
+      })
+      .catch((error) => {
+        if (historyLoads.get(key) === promise) historyLoads.delete(key)
+        throw error
+      })
+    historyLoads.set(key, promise)
+    return promise
+  }
 
   const copySessionDetails = () => {
     const sessionID = props.sessionID
@@ -68,54 +100,51 @@ export function SessionStatusFloat(props: {
     if (copiedTimer) clearTimeout(copiedTimer)
   })
 
-  createEffect(() => {
-    if (!shown()) return
-    if (!props.sessionID) return
-    const sessionIDs = [...new Set([props.sessionID, ...props.childSessionIDs])]
-    let cancelled = false
-    setChildDiffs([])
-    setReportedFileChanges([])
-    console.info("[session-status] loading file change history", { sessionIDs })
+  createEffect(
+    on(
+      () => [shown(), sdk.directory, sessionStatusHistoryKey(props.sessionID, props.childSessionIDs)] as const,
+      ([open]) => {
+        if (!open) {
+          historyLoads.clear()
+          historyOwnerSessionID = undefined
+          return
+        }
+        const currentSessionID = props.sessionID
+        if (!currentSessionID) return
+        if (historyOwnerSessionID !== currentSessionID) {
+          historyLoads.clear()
+          historyOwnerSessionID = currentSessionID
+        }
+        const sessionIDs = [...new Set([currentSessionID, ...props.childSessionIDs])]
+        let cancelled = false
+        setChildDiffs([])
+        setReportedFileChanges([])
+        console.info("[session-status] loading file change history", { sessionIDs })
 
-    void Promise.all(
-      sessionIDs.map(async (sessionID) => {
-        const [diff, messages] = await Promise.all([
-          sdk.client.session.diff({ sessionID }),
-          loadAllMessages(sdk.client, sessionID),
-        ])
-        const parts = messages
-          .filter((message) => message.info.role === "assistant")
-          .flatMap((message) => message.parts as Part[])
-        console.info("[session-status] loaded file change history", {
-          sessionID,
-          diffs: diff.data?.length ?? 0,
-          messages: messages.length,
-          reported: parts.length,
-        })
-        return { sessionID, diffs: diff.data ?? [], reported: collectSessionReportedFileChanges(parts) }
-      }),
-    )
-      .then((results) => {
-        if (cancelled) return
-        setChildDiffs(
-          results.filter((result) => result.sessionID !== props.sessionID).flatMap((result) => result.diffs),
-        )
-        setReportedFileChanges(results.flatMap((result) => result.reported))
-        console.info("[session-status] merged file change history", {
-          sessionIDs,
-          diffs: results.reduce((count, result) => count + result.diffs.length, 0),
-          reported: results.reduce((count, result) => count + result.reported.length, 0),
-        })
-      })
-      .catch((error) => {
-        if (cancelled) return
-        console.warn("[session-status] failed to load file change history", { sessionIDs, error })
-      })
+        void Promise.all(sessionIDs.map((sessionID) => loadHistory(sessionID, sessionID !== currentSessionID)))
+          .then((results) => {
+            if (cancelled) return
+            setChildDiffs(
+              results.filter((result) => result.sessionID !== currentSessionID).flatMap((result) => result.diffs),
+            )
+            setReportedFileChanges(results.flatMap((result) => result.reported))
+            console.info("[session-status] merged file change history", {
+              sessionIDs,
+              diffs: results.reduce((count, result) => count + result.diffs.length, 0),
+              reported: results.reduce((count, result) => count + result.reported.length, 0),
+            })
+          })
+          .catch((error) => {
+            if (cancelled) return
+            console.warn("[session-status] failed to load file change history", { sessionIDs, error })
+          })
 
-    onCleanup(() => {
-      cancelled = true
-    })
-  })
+        onCleanup(() => {
+          cancelled = true
+        })
+      },
+    ),
+  )
 
   return (
     <div
@@ -213,13 +242,18 @@ export function SessionStatusFloat(props: {
   )
 }
 
-async function loadAllMessages(client: ReturnType<typeof useSDK>["client"], sessionID: string) {
-  const result: Array<{ info: { role: string }; parts: unknown[] }> = []
+async function loadAllMessageParts(
+  globalSync: ReturnType<typeof useGlobalSync>,
+  directory: string,
+  sessionID: string,
+) {
+  const result: Part[] = []
   let before: string | undefined
   do {
-    const response = await client.session.messages({ sessionID, limit: historyPageSize, before })
-    result.push(...((response.data ?? []) as Array<{ info: { role: string }; parts: unknown[] }>))
-    before = response.response.headers.get("x-next-cursor") ?? undefined
+    const page = await globalSync.session.messages.page({ directory, sessionID, limit: historyPageSize, before })
+    const assistant = new Set(page.session.filter((message) => message.role === "assistant").map((message) => message.id))
+    result.push(...page.part.filter((item) => assistant.has(item.id)).flatMap((item) => item.part))
+    before = page.cursor
   } while (before)
   return result
 }

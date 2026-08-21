@@ -3,14 +3,14 @@ import { workspaceKey } from "@/pages/layout/helpers"
 import { collectSessionTabSubtree } from "./session-tab-groups"
 
 export function withParentSessionTab(
-  tabs: readonly SessionBarTab[],
+  tabs: SessionBarTab[],
   directory: string,
   parentID: string,
   maxTabs: number,
 ): SessionBarTab[] {
   const key = workspaceKey(directory)
   if (tabs.some((tab) => tab.id === parentID && workspaceKey(tab.directory) === key)) {
-    return [...tabs]
+    return tabs
   }
   const next = [
     ...tabs,

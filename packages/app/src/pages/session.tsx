@@ -284,7 +284,7 @@ export default function Page() {
     sessionHistory.record({ id, title, directory })
   })
 
-  const diffs = createMemo(() => (params.id ? (sync.data.session_diff[params.id] ?? []) : []))
+  const diffs = createMemo(() => (params.id ? (globalSync.session.diff.get(sdk.directory, params.id) ?? []) : []))
   const sessionCount = createMemo(() => Math.max(info()?.summary?.files ?? 0, diffs().length))
   const hasSessionReview = createMemo(() => sessionCount() > 0)
   const canReview = createMemo(() => !!params.id)
@@ -356,13 +356,20 @@ export default function Page() {
       },
     ),
   )
+  const currentApiChildSessions = createMemo(() => {
+    const id = params.id
+    if (!id) return []
+    return apiChildSessions().filter((session) => session.parentID === id)
+  })
   const [apiSiblingSessions, setApiSiblingSessions] = createSignal<Session[]>([])
+  let loadedSiblingParentID: string | undefined
   createEffect(
     on(
       () => info()?.parentID,
       (parentID) => {
-        setApiSiblingSessions([])
         if (!parentID) return
+        if (loadedSiblingParentID === parentID && apiSiblingSessions().length > 0) return
+        setApiSiblingSessions([])
 
         let cancelled = false
         const id = params.id
@@ -373,6 +380,7 @@ export default function Page() {
               if (cancelled) return
               const siblings = result.data ?? []
               setApiSiblingSessions(siblings)
+              loadedSiblingParentID = parentID
               if (id) markSessionProfile(id, "siblings-request-end", `count=${String(siblings.length)}`)
             },
             () => {
@@ -439,7 +447,7 @@ export default function Page() {
       if (session.parentID !== id) continue
       byID.set(session.id, session)
     }
-    for (const session of apiChildSessions()) {
+    for (const session of currentApiChildSessions()) {
       byID.set(session.id, session)
     }
     return [...byID.values()]
@@ -451,7 +459,7 @@ export default function Page() {
       parts: sync.data.part,
       sessions: childAgentSessions(),
       messagesBySession: sync.data.message,
-      statuses: sync.data.session_status,
+      statuses: sync.session.status.all(),
     }),
   )
   const activeSkills = createMemo(() =>
@@ -483,7 +491,7 @@ export default function Page() {
     const id = params.id
     if (!id) return true
     if (!hasSessionReview()) return true
-    return sync.data.session_diff[id] !== undefined
+    return globalSync.session.diff.get(sdk.directory, id) !== undefined
   })
 
   const userMessages = createMemo(
@@ -926,7 +934,7 @@ export default function Page() {
             }
             return Date.now() - info.at > SESSION_PREFETCH_TTL
           })()
-      const todos = untrack(() => sync.data.todo[id] !== undefined || globalSync.data.session_todo[id] !== undefined)
+      const todos = untrack(() => globalSync.session.todo.get(directory, id) !== undefined)
       markSessionProfile(id, "route-effect", `cached=${String(cached)} stale=${String(stale)}`)
 
       const initialSync = untrack(() => sync.session.sync(id))
@@ -1249,7 +1257,7 @@ export default function Page() {
 
   createEffect(
     on(
-      () => sync.data.session_status[params.id ?? ""]?.type,
+      () => sync.session.status.get(params.id ?? "")?.type,
       (next, prev) => {
         const mode = vcsMode()
         if (!mode) return
@@ -1544,7 +1552,7 @@ export default function Page() {
     if (!id) return
 
     if (!wantsReview()) return
-    if (sync.data.session_diff[id] !== undefined) return
+    if (globalSync.session.diff.get(sdk.directory, id) !== undefined) return
     if (sync.status === "loading") return
 
     void sync.session.diff(id)
@@ -1562,7 +1570,7 @@ export default function Page() {
 
         const id = params.id
         if (!id) return
-        if (!untrack(() => sync.data.session_diff[id] !== undefined)) return
+        if (!untrack(() => globalSync.session.diff.get(sdk.directory, id) !== undefined)) return
 
         diffFrame = requestAnimationFrame(() => {
           diffFrame = undefined
@@ -1607,7 +1615,7 @@ export default function Page() {
   const running = () => {
     const id = params.id
     if (!id) return false
-    return working(sync.data.session_status[id], sync.data.message[id])
+    return working(sync.session.status.get(id), sync.data.message[id])
   }
   const autoScroll = createAutoScroll({
     working: running,
@@ -2307,7 +2315,7 @@ export default function Page() {
     })
 
   const busy = (sessionID: string) => {
-    return working(sync.data.session_status[sessionID], sync.data.message[sessionID])
+    return working(sync.session.status.get(sessionID), sync.data.message[sessionID])
   }
 
   const queuedFollowups = createMemo(() => {
@@ -2761,7 +2769,7 @@ export default function Page() {
                 sessionID={params.id}
                 skills={activeSkills()}
                 diffs={diffs()}
-                childSessionIDs={apiChildSessions().map((session) => session.id)}
+                childSessionIDs={currentApiChildSessions().map((session) => session.id)}
               />
             </Show>
             {/* Always show on desktop session routes (including new session) so users can

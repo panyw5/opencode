@@ -5,7 +5,6 @@ import type {
   Project,
   ProviderAuthResponse,
   ProviderListResponse,
-  Todo,
 } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
@@ -28,10 +27,12 @@ import { bootstrapDirectory, bootstrapGlobal } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
 import { createRefreshQueue } from "./global-sync/queue"
-import { clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
+import { clearSessionPrefetch, clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
 import { loadRootSessions } from "./global-sync/session-load"
+import { sessionDataMutation } from "./global-sync/session-data-event"
+import { createSessionService } from "./global-sync/session-service"
+import type { SessionChildStore } from "./global-sync/session-service-types"
 import {
-  mergeSessionStatusRefresh,
   shouldRefreshSessionStatusOnVisibility,
   type SessionStatusRefreshReason,
 } from "./global-sync/session-status-refresh"
@@ -55,15 +56,11 @@ export type GlobalStore = {
   rootByDomain: Partial<
     Record<
       DomainId,
-      Omit<GlobalStore, "projectByDomain" | "sessionTodoByDomain" | "project" | "session_todo" | "rootByDomain">
+      Omit<GlobalStore, "projectByDomain" | "project" | "rootByDomain">
     >
   >
   projectByDomain: Partial<Record<DomainId, Project[]>>
-  sessionTodoByDomain: Partial<Record<DomainId, Record<string, Todo[]>>>
   project: Project[]
-  session_todo: {
-    [sessionID: string]: Todo[]
-  }
   provider: ProviderListResponse
   provider_auth: ProviderAuthResponse
   config: Config
@@ -81,7 +78,6 @@ function createGlobalSync() {
   const sdkCache = new Map<string, OpencodeClient>()
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
-  const sessionStatusRefreshes = new Map<string, Promise<void>>()
   const sessionLoaded = new Set<string>()
   const providerRefreshes = new Map<DomainId, Promise<ProviderListResponse>>()
   const revs = new Map<string, number>()
@@ -90,6 +86,7 @@ function createGlobalSync() {
   const bootingRoot = new Map<DomainId, boolean>()
 
   const currentDomain = () => server.domain
+  let clearSessionControllers = (_directory: string) => {}
   const rev = (directory: string) => revs.get(directory) ?? 0
   const bump = (directory: string, why: string) => {
     const next = rev(directory) + 1
@@ -107,7 +104,6 @@ function createGlobalSync() {
   })
   const rootBucket = (domain = currentDomain()) => globalStore.rootByDomain[domain] ?? blankRoot()
   const projectBucket = (domain = currentDomain()) => globalStore.projectByDomain[domain] ?? []
-  const todoBucket = (domain = currentDomain()) => globalStore.sessionTodoByDomain[domain] ?? {}
   const runtime = (domain = currentDomain()) => globalSDK.forDomain(domain)
 
   const [projectCache, setProjectCache, projectInit] = persisted(
@@ -130,9 +126,7 @@ function createGlobalSync() {
     ...blankRoot(),
     rootByDomain: {},
     projectByDomain: projectCache.domains,
-    sessionTodoByDomain: {},
     project: projectCache.domains[mainDomain] ?? [],
-    session_todo: {},
   })
   const [loaded, setLoaded] = createStore({ dir: {} as Record<string, true> })
 
@@ -162,7 +156,6 @@ function createGlobalSync() {
         setGlobalStore("config", reconcile(root.config))
         setGlobalStore("reload", root.reload)
         setGlobalStore("project", reconcile(projectBucket(domain)))
-        setGlobalStore("session_todo", reconcile(todoBucket(domain)))
       },
       { defer: false },
     ),
@@ -263,37 +256,6 @@ function createGlobalSync() {
     })
   }
 
-  const setSessionTodo = (sessionID: string, todos: Todo[] | undefined) => {
-    if (!sessionID) return
-    const domain = currentDomain()
-    if (!todos) {
-      setGlobalStore(
-        "sessionTodoByDomain",
-        domain,
-        produce((draft) => {
-          if (!draft) return
-          delete draft[sessionID]
-        }),
-      )
-      setGlobalStore(
-        "session_todo",
-        produce((draft) => {
-          delete draft[sessionID]
-        }),
-      )
-      return
-    }
-    setGlobalStore(
-      "sessionTodoByDomain",
-      produce((draft) => {
-        const bucket = draft[domain] ?? {}
-        bucket[sessionID] = todos
-        draft[domain] = bucket
-      }),
-    )
-    setGlobalStore("session_todo", sessionID, reconcile(todos, { key: "id" }))
-  }
-
   const paused = () => untrack(() => globalStore.reload) !== undefined
   const queueFor = (domain = currentDomain()) => {
     const existing = queues.get(domain)
@@ -327,6 +289,7 @@ function createGlobalSync() {
         bump(directory, "dispose")
         queueFor(domain).clear(directory)
         sessionLoaded.delete(directory)
+        clearSessionControllers(directory)
         sdkCache.delete(directory)
         clearSessionPrefetchDirectory(directory)
         setLoaded(
@@ -335,6 +298,7 @@ function createGlobalSync() {
             delete draft[directory]
           }),
         )
+        revs.delete(directory)
         console.debug(`[global-sync] instance dispose requested directory=${directory} domain=${domain}`)
         void runtime(domain)
           .client.instance.dispose({ directory })
@@ -430,6 +394,19 @@ function createGlobalSync() {
     return sdk
   }
 
+  const sessionService = createSessionService({
+      canonical: storeKey,
+      isolated,
+      sdk: sdkFor,
+      child: (directory) => children.peek(directory, { bootstrap: false }) as SessionChildStore,
+      current: (directory, child, revision) =>
+        rev(directory) === revision && managerOf(directory).children[directory] === child,
+      revision: rev,
+      pin: children.pin,
+      unpin: children.unpin,
+    })
+  clearSessionControllers = sessionService.clearDirectory
+
   async function refreshConfig(domain = currentDomain()): Promise<Config> {
     const refreshed = await runtime(domain).client.global.config.refresh()
     if (!refreshed.data) throw new Error(language.t("common.requestFailed"))
@@ -440,55 +417,20 @@ function createGlobalSync() {
     return next
   }
 
-  async function refreshSessionStatus(
-    directory: string,
-    reason: SessionStatusRefreshReason = "manual",
-  ): Promise<void> {
-    directory = storeKey(directory)
-    if (!directory || isolated(directory)) return
-    const pending = sessionStatusRefreshes.get(directory)
-    if (pending) return pending
-
-    children.pin(directory)
-    const child = children.peek(directory, { bootstrap: false })
-    const mark = rev(directory)
-    const raw = child[1] as (...args: unknown[]) => unknown
-    const setStore = ((...input: unknown[]) => {
-      if (rev(directory) !== mark || managerOf(directory).children[directory] !== child) return input[0]
-      return raw(...input)
-    }) as typeof child[1]
-
-    console.debug(`[global-sync] session-status refresh directory=${directory} reason=${reason}`)
-    const promise = sdkFor(directory)
-      .session.status()
-      .then((x) => {
-        if (rev(directory) !== mark || managerOf(directory).children[directory] !== child) return
-        // Preserve optimistic busy when the server snapshot still reports idle for an
-        // in-flight send — a full replace here unmounts the timeline "Sending" label for a frame.
-        const local = child[0].session_status
-        const messages = child[0].message
-        setStore("session_status", reconcile(mergeSessionStatusRefresh(local, x.data, messages)))
-      })
-      .catch((err) => {
-        console.debug(
-          `[global-sync] refresh session status failed directory=${directory} reason=${reason} err=${err instanceof Error ? err.message : String(err)}`,
-        )
-      })
-      .finally(() => {
-        sessionStatusRefreshes.delete(directory)
-        children.unpin(directory)
-      })
-
-    sessionStatusRefreshes.set(directory, promise)
-    return promise
-  }
-
   /** Boundary-only: refresh status for every currently loaded directory store. */
   function refreshLoadedSessionStatuses(reason: SessionStatusRefreshReason) {
     forEachDirectory((directory) => {
       if (!loaded.dir[directory]) return
-      void refreshSessionStatus(directory, reason)
+      void sessionService.api.status.refresh(directory, reason)
     })
+  }
+
+  const sessionApi = {
+    ...sessionService.api,
+    status: {
+      ...sessionService.api.status,
+      refreshLoaded: refreshLoadedSessionStatuses,
+    },
   }
 
   // Long background → foreground: event stream may have stalled; reconcile once.
@@ -572,7 +514,11 @@ function createGlobalSync() {
         // Keep the directory cache complete. Sidebar views own visible limits,
         // so clipping here would let whichever view loads first hide newer rows.
         setStore("session", reconcile(sessions, { key: "id" }))
-        cleanupDroppedSessionCaches(store, setStore, sessions, setSessionTodo)
+        const stale = cleanupDroppedSessionCaches(store, setStore, sessions)
+        if (stale.length > 0) {
+          clearSessionPrefetch(directory, stale)
+          sessionService.api.clear(directory, stale)
+        }
         sessionLoaded.add(directory)
         setStore("sessions", "ready")
         setStore("session_error", undefined)
@@ -762,6 +708,24 @@ function createGlobalSync() {
     if (key !== directory) {
       globalSDK.eventFor(resolvedDomain).emit(key, event)
     }
+    const mutation = sessionDataMutation(event, (messageID) => {
+      const part = store.part[messageID]?.find((item) => item.sessionID)
+      if (part?.sessionID) return part.sessionID
+      for (const [sessionID, messages] of Object.entries(store.message)) {
+        if (messages?.some((message) => message.id === messageID)) return sessionID
+      }
+    })
+    if (mutation) sessionService.event(key, mutation)
+    const removedSession = (() => {
+      if (event.type === "session.deleted") return (event.properties as { info?: { id?: string } }).info?.id
+      if (event.type !== "session.updated") return
+      const info = (event.properties as { info?: { id?: string; time?: { archived?: number } } }).info
+      return info?.time?.archived ? info.id : undefined
+    })()
+    if (removedSession) {
+      clearSessionPrefetch(key, [removedSession])
+      sessionService.api.clear(key, [removedSession])
+    }
     try {
       applyDirectoryEvent({
         event,
@@ -769,7 +733,6 @@ function createGlobalSync() {
         store,
         setStore,
         push: queueFor(resolvedDomain).push,
-        setSessionTodo,
         vcsCache: children.vcsCache.get(key),
         loadLsp: () => {
           sdkFor(key)
@@ -843,10 +806,12 @@ function createGlobalSync() {
         prevSDKVersion = nextSDKVersion
         const dirs = directoriesInDomain(nextDomain)
         if (!domainSwitch && (serverChanged || connectionChanged)) {
+          sessionService.clearDomain(nextDomain)
           for (const dir of dirs) {
             booting.delete(dir)
             sessionLoads.delete(dir)
             sessionLoaded.delete(dir)
+            sessionService.clearDirectory(dir)
             bump(dir, "server-reset")
           }
         }
@@ -868,10 +833,6 @@ function createGlobalSync() {
 
   const projectApi = {
     loadSessions,
-    /** Full-table status pull for one directory. Prefer boundary reasons over polling. */
-    refreshSessionStatus,
-    /** Reconcile status for all loaded directories (visibility / manual resync). */
-    refreshLoadedSessionStatuses,
     warm(directory: string) {
       void bootstrapInstance(directory)
     },
@@ -952,9 +913,7 @@ function createGlobalSync() {
     updateConfig,
     provider: providerApi,
     project: projectApi,
-    todo: {
-      set: setSessionTodo,
-    },
+    session: sessionApi,
   }
 }
 

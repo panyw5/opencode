@@ -21,6 +21,7 @@ describe("withParentSessionTab", () => {
     const prev = [tab("parent"), tab("child", "parent")]
     const next = withParentSessionTab(prev, "/proj", "parent", 30)
     expect(next).toEqual(prev)
+    expect(next).toBe(prev)
   })
 
   test("respects max tab bound when inserting parent", () => {

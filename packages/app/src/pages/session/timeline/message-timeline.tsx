@@ -278,7 +278,7 @@ export function MessageTimeline(props: {
   )
   const sessionStatus = createMemo(() => {
     const id = sessionID()
-    return id ? (sync.data.session_status[id] ?? idle) : idle
+    return id ? (sync.session.status.get(id) ?? idle) : idle
   })
   const sessionMessages = createMemo(() => {
     const id = sessionID()

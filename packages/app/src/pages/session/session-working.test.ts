@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { AssistantMessage, Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { pending, working } from "./session-working"
+import { pending, visiblyWorking, working } from "./session-working"
 
 const user = () =>
   ({
@@ -48,5 +48,11 @@ describe("session-working", () => {
   test("falls back to pending last assistant when status is idle", () => {
     expect(working(undefined, [assistant({ created: 1 })])).toBe(true)
     expect(working(undefined, [assistant({ created: 1 }), user()])).toBe(false)
+  })
+
+  test("keeps the visual indicator active between assistant turns while status is non-idle", () => {
+    expect(visiblyWorking({ type: "busy" }, [assistant({ created: 1, completed: 2 })])).toBe(true)
+    expect(visiblyWorking({ type: "idle" }, [assistant({ created: 1, completed: 2 })])).toBe(false)
+    expect(visiblyWorking(undefined, [assistant({ created: 1 })])).toBe(true)
   })
 })

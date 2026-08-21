@@ -3,7 +3,9 @@ import {
   clearSessionPrefetch,
   clearSessionPrefetchDirectory,
   getSessionPrefetch,
+  getSessionPrefetchStats,
   runSessionPrefetch,
+  SESSION_PREFETCH_MAX,
   setSessionPrefetch,
   shouldSkipSessionPrefetch,
 } from "./session-prefetch"
@@ -99,5 +101,23 @@ describe("session prefetch", () => {
         now: 1 + 15_001,
       }),
     ).toBe(true)
+  })
+
+  test("bounds metadata and does not retain cleared revision keys", () => {
+    const revision = getSessionPrefetchStats().revision
+    clearSessionPrefetch("/tmp/no-pending", ["session"])
+    expect(getSessionPrefetchStats().revision).toBe(revision)
+
+    for (let index = 0; index < SESSION_PREFETCH_MAX + 20; index += 1) {
+      setSessionPrefetch({
+        directory: "/tmp/bounded",
+        sessionID: `session-${index}`,
+        count: 1,
+        complete: false,
+        at: index,
+      })
+    }
+    expect(getSessionPrefetchStats().cache).toBeLessThanOrEqual(SESSION_PREFETCH_MAX)
+    clearSessionPrefetchDirectory("/tmp/bounded")
   })
 })
