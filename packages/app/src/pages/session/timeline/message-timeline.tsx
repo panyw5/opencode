@@ -312,6 +312,7 @@ export function MessageTimeline(props: {
   const messageByID = projection.messageByID
   const assistantMessagesByParent = projection.assistantMessagesByParent
   const activeMessageID = projection.activeMessageID
+  const queuedMessageIDs = projection.queuedMessageIDs
   const lastAssistantGroupKey = projection.lastAssistantGroupKey
   const activeAssistantRowIndex = createMemo(() => {
     const activeID = activeMessageID()
@@ -733,6 +734,7 @@ export function MessageTimeline(props: {
                   <Message
                     message={value()}
                     parts={getMessageParts(value().id)}
+                    queued={queuedMessageIDs().has(value().id)}
                     actions={props.actions}
                     onBackgroundShell={props.onBackgroundShell}
                     onBackgroundTask={props.onBackgroundTask}

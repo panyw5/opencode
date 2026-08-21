@@ -8,6 +8,7 @@ import {
   latchThinkingPhase,
   THINKING_STATUS_STICKY_MS,
 } from "./sticky-status"
+import { queuedUserMessageIDs } from "./queued-message"
 
 const emptyAssistantMessages: AssistantMessage[] = []
 
@@ -33,6 +34,7 @@ export function createTimelineProjection(input: {
     })
     return result
   })
+  const queuedMessageIDs = createMemo(() => queuedUserMessageIDs(input.messages()))
   const rawActiveMessageID = createMemo(() => {
     const parentID = input.messages().findLast(
       (message): message is AssistantMessage => message.role === "assistant" && typeof message.time.completed !== "number",
@@ -154,6 +156,7 @@ export function createTimelineProjection(input: {
   return {
     activeMessageID,
     assistantMessagesByParent,
+    queuedMessageIDs,
     lastAssistantGroupKey,
     messageByID,
     messageRowIndex,

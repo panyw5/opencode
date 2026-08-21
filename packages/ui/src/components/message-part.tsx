@@ -252,6 +252,7 @@ function DiagnosticsDisplay(props: { diagnostics: Diagnostic[] }): JSX.Element {
 export interface MessageProps {
   message: MessageType
   parts: PartType[]
+  queued?: boolean
   actions?: UserActions
   showAssistantCopyPartID?: string | null
   assistantCopyText?: string
@@ -979,6 +980,7 @@ export function Message(props: MessageProps) {
           <UserMessageDisplay
             message={userMessage() as UserMessage}
             parts={props.parts}
+            queued={props.queued}
             actions={props.actions}
             interrupted={props.interrupted}
             showCustomHookParts={props.showCustomHookParts}
@@ -1221,6 +1223,7 @@ function LazyAction(props: { children: JSX.Element; size?: "small" | "normal" })
 export function UserMessageDisplay(props: {
   message: UserMessage
   parts: PartType[]
+  queued?: boolean
   actions?: UserActions
   interrupted?: boolean
   showCustomHookParts?: boolean
@@ -1349,7 +1352,7 @@ export function UserMessageDisplay(props: {
   }
 
   return (
-    <div data-component="user-message">
+    <div data-component="user-message" data-queued={props.queued ? "" : undefined} aria-busy={props.queued}>
       <Show when={attachments().length > 0}>
         <div data-slot="user-message-attachments">
           <For each={attachments()}>
@@ -1388,6 +1391,11 @@ export function UserMessageDisplay(props: {
         <>
           <div data-slot="user-message-body">
             <div data-slot="user-message-text">
+              <Show when={props.queued}>
+                <span data-slot="user-message-queued-badge" aria-hidden="true">
+                  <Icon name="clock" size="small" />
+                </span>
+              </Show>
               <Markdown
                 text={displayText()}
                 cacheKey={expanded() ? textPart()?.id : `${textPart()?.id}:preview`}
@@ -1414,7 +1422,7 @@ export function UserMessageDisplay(props: {
             </div>
           </div>
           <div data-slot="user-message-meta-bar">
-            <Show when={agent() || provider() || model() || metaTail()}>
+            <Show when={agent() || provider() || model() || metaTail() || props.queued}>
               <span data-slot="user-message-meta-wrap">
                 <Show when={agent()}>
                   <span data-slot="user-message-meta-agent" class="text-12-regular cursor-default">
@@ -1449,6 +1457,16 @@ export function UserMessageDisplay(props: {
                 <Show when={metaTail()}>
                   <span data-slot="user-message-meta-tail" class="text-12-regular cursor-default">
                     {metaTail()}
+                  </span>
+                </Show>
+                <Show when={props.queued}>
+                  <Show when={agent() || provider() || model() || metaTail()}>
+                    <span data-slot="user-message-meta-sep" class="text-12-regular cursor-default">
+                      {"\u00A0\u00B7\u00A0"}
+                    </span>
+                  </Show>
+                  <span data-slot="user-message-queued" class="text-12-regular cursor-default" role="status">
+                    {i18n.t("ui.message.queued")}
                   </span>
                 </Show>
               </span>

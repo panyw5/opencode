@@ -65,7 +65,7 @@ import { useTheme, type ColorScheme } from "@opencode-ai/ui/theme"
 import { DialogSelectProvider } from "@/components/dialog-select-provider"
 import { DialogSelectFile, DialogSessionContentSearch } from "@/components/dialog-select-file"
 import { mergeRecentSessions, RECENT_SESSION_LIMIT } from "@/components/dialog-recent-sessions-utils"
-import { HOME_COMMAND_IDS } from "@/components/dialog-select-file-utils"
+import { HOME_COMMAND_IDS, NEW_SESSION_COMMAND_IDS } from "@/components/dialog-select-file-utils"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { DialogSettings } from "@/components/dialog-settings"
 import { useCommand, type CommandOption } from "@/context/command"
@@ -1280,16 +1280,13 @@ export default function Layout(props: ParentProps) {
         keybind: "mod+shift+p",
         onSelect: (source) => {
           const home = location.pathname === "/"
+          const newSession = !!params.dir && !params.id && /\/session\/?$/.test(location.pathname)
+          const defaultCommandIds = home ? HOME_COMMAND_IDS : newSession ? NEW_SESSION_COMMAND_IDS : undefined
           console.debug(
-            `[command-palette] open source=${source ?? "unknown"} scope=layout home=${home ? "true" : "false"}`,
+            `[command-palette] open source=${source ?? "unknown"} scope=layout home=${home ? "true" : "false"} new-session=${newSession ? "true" : "false"}`,
           )
           dialog.show(
-            () => (
-              <DialogSelectFile
-                mode="commands"
-                defaultCommandIds={home ? HOME_COMMAND_IDS : undefined}
-              />
-            ),
+            () => <DialogSelectFile mode="commands" defaultCommandIds={defaultCommandIds} />,
             undefined,
             {
               modal: false,

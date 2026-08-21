@@ -108,6 +108,8 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
             [
               '[data-component="dropdown-menu-content"]',
               '[data-component="dropdown-menu-sub-content"]',
+              '[data-component="context-menu-content"]',
+              '[data-component="context-menu-sub-content"]',
               '[data-component="select-content"]',
               '[data-component="combobox-content"]',
             ].join(","),

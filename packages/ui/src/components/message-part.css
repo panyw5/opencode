@@ -58,6 +58,32 @@
     color: var(--text-weak);
   }
 
+  &[data-queued] {
+    [data-slot="user-message-attachment"] {
+      border-style: dashed;
+      opacity: 0.68;
+    }
+
+    [data-slot="user-message-text"] {
+      display: inline-grid;
+      grid-template-columns: minmax(0, 1fr) 24px;
+      column-gap: 8px;
+      align-items: start;
+      border-style: dashed;
+
+      > [data-component="markdown"] {
+        grid-column: 1;
+        grid-row: 1;
+        opacity: 0.68;
+      }
+
+      [data-slot="user-message-expand-wrapper"] {
+        grid-column: 1 / -1;
+        opacity: 0.68;
+      }
+    }
+  }
+
   [data-slot="user-message-attachments"] {
     display: flex;
     flex-wrap: wrap;
@@ -185,6 +211,7 @@
     [data-component="markdown"] {
       white-space: normal;
       line-height: var(--line-height-large);
+      transition: opacity 180ms ease;
 
       > :first-child {
         margin-top: 0;
@@ -242,6 +269,31 @@
     display: flex;
     justify-content: center;
     width: 100%;
+  }
+
+  [data-slot="user-message-queued-badge"] {
+    position: relative;
+    z-index: 1;
+    grid-column: 2;
+    grid-row: 1;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid color-mix(in srgb, var(--border-warning-base) 72%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-warning-weak) 76%, var(--background-stronger));
+    color: var(--icon-warning-base);
+    box-shadow: 0 1px 4px color-mix(in srgb, var(--icon-warning-base) 16%, transparent);
+    pointer-events: none;
+    animation: user-message-queued-badge-pulse 3.6s ease-in-out infinite;
+
+    [data-component="icon"] {
+      width: 15px;
+      height: 15px;
+      color: inherit;
+    }
   }
 
   [data-slot="user-message-expand-button"] {
@@ -336,6 +388,17 @@
     opacity: 0.72;
   }
 
+  [data-slot="user-message-queued"] {
+    user-select: none;
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+    color: var(--text-weak);
+    opacity: 0.82;
+  }
+
   .text-text-strong {
     color: var(--text-strong);
   }
@@ -377,6 +440,25 @@
     flex-direction: column;
     align-items: stretch;
     gap: 8px;
+  }
+}
+
+@keyframes user-message-queued-badge-pulse {
+  0%,
+  100% {
+    opacity: 0.48;
+    transform: scale(0.9);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="user-message-queued-badge"] {
+    animation: none;
   }
 }
 

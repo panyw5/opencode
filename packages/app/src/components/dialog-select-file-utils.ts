@@ -11,6 +11,15 @@ export const COMMON_COMMAND_IDS = [
   "review.toggle",
 ] as const
 
+export const NEW_SESSION_COMMAND_IDS = [
+  "session.recent",
+  "workspace.new",
+  "session.previous",
+  "session.next",
+  "terminal.toggle",
+  "review.toggle",
+] as const
+
 export const HOME_COMMAND_IDS = [
   "session.recent",
   "project.open",
