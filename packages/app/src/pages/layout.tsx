@@ -168,7 +168,6 @@ export default function Layout(props: ParentProps) {
 
   const pageReady = createMemo(() => ready())
   let booted = false
-  let preserveSidebarPanelOnRouteChange = false
 
   let scrollContainerRef: HTMLDivElement | undefined
   let dialogRun = 0
@@ -263,10 +262,6 @@ export default function Layout(props: ParentProps) {
         if (!isReady) return
         if (!/\/(?:config|scheduled|session)(?:\/|$)/.test(pathname)) return
         if (untrack(() => store.sidebarPanel) === "project") return
-        if (preserveSidebarPanelOnRouteChange) {
-          preserveSidebarPanelOnRouteChange = false
-          return
-        }
         setStore("sidebarPanel", "project")
       },
     ),
@@ -1309,7 +1304,8 @@ export default function Layout(props: ParentProps) {
         description: language.t("command.projectTask.open.description"),
         keywords: kw("command.projectTask.open", "command.projectTask.open.description"),
         category: language.t("command.category.view"),
-        disabled: !params.dir,
+        // Rail can select a project without navigating (empty session list); allow open then.
+        disabled: !params.dir && !layout.sidebar.project(),
         onSelect: () => openProjectTasksPanel(),
       },
       {
@@ -1754,34 +1750,26 @@ export default function Layout(props: ParentProps) {
   }
 
   function openProjectTasksPanel() {
-    if (!params.dir) return
+    // Prefer the sidebar-selected project: rail clicks can select a project
+    // without navigating when it has no sessions, so params.dir may be empty.
+    const directory = layout.sidebar.project() ?? routeDir()
+    console.debug(
+      `[layout] open-project-tasks directory=${directory || "none"} route-dir=${params.dir ?? "none"} pathname=${location.pathname}`,
+    )
+    if (!directory) return
     setStore("sidebarPanel", "projectTasks")
     layout.sidebar.open()
   }
 
   function openScheduledPanel() {
-    if (!params.dir) return
-
-    if (onSessionRoute()) {
-      setStore("sidebarPanel", "scheduled")
-      layout.sidebar.open()
-      return
-    }
-
-    const root = sidebarProject()?.root ?? activeProjectRoot(routeDir())
-    const session = cachedProjectSession(root)
-    preserveSidebarPanelOnRouteChange = true
-    batch(() => {
-      setStore("sidebarPanel", "scheduled")
-      if (session) {
-        selectSession(session)
-        setSwitching(undefined)
-        navigate(`/${base64Encode(session.directory)}/session/${session.id}`)
-        return
-      }
-      setSwitching(root)
-      navigate(`/${base64Encode(root)}/session`)
-    })
+    // Same as project tasks: sidebar may have a selected project while the
+    // main route is still "/" (no sessions / home empty state).
+    const directory = layout.sidebar.project() ?? routeDir()
+    console.debug(
+      `[layout] open-scheduled directory=${directory || "none"} route-dir=${params.dir ?? "none"} on-session=${onSessionRoute()} pathname=${location.pathname}`,
+    )
+    if (!directory) return
+    setStore("sidebarPanel", "scheduled")
     layout.sidebar.open()
   }
 
