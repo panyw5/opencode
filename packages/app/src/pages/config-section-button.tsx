@@ -13,8 +13,9 @@ export function SectionButton(props: {
       aria-current={props.current ? "page" : undefined}
       class="group relative flex min-h-14 w-full items-center gap-3 overflow-hidden rounded-lg border px-3 py-2.5 text-left transition-[background-color,border-color,box-shadow] duration-150 focus:outline-none focus-visible:border-border-strong"
       classList={{
-        "border-transparent bg-transparent hover:border-border-weak-base hover:bg-background-base/65": !props.current,
-        "border-transparent bg-[linear-gradient(105deg,color-mix(in_srgb,var(--surface-brand-base)_11%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_4%,var(--background-base)))]":
+        "border-transparent bg-transparent hover:border-[color-mix(in_srgb,var(--surface-brand-base)_24%,var(--border-weak-base))] hover:bg-[color-mix(in_srgb,var(--surface-brand-base)_10%,var(--background-base))] hover:shadow-[0_10px_22px_-16px_color-mix(in_srgb,black_45%,transparent)]":
+          !props.current,
+        "border-[color-mix(in_srgb,var(--surface-brand-base)_40%,var(--border-weak-base))] bg-[linear-gradient(105deg,color-mix(in_srgb,var(--surface-brand-base)_22%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_10%,var(--background-base)))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-brand-base)_18%,transparent)]":
           props.current,
       }}
       onClick={props.onClick}

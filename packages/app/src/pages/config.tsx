@@ -1312,10 +1312,11 @@ function ListButton(props: {
   return (
     <button
       type="button"
-      class="group flex w-full items-start justify-between gap-3 border-b border-border-weak-base px-3 py-3 text-left transition-colors"
+      class="group flex w-full items-start justify-between gap-3 border-b border-border-weak-base px-3 py-3 text-left transition-[background-color,border-color,box-shadow] duration-150"
       classList={{
-        "bg-surface-base hover:bg-surface-base-hover": !props.active,
-        "border-border-base bg-surface-base-active": props.active,
+        "bg-transparent hover:bg-[color-mix(in_srgb,var(--surface-brand-base)_6%,var(--background-base))]": !props.active,
+        "border-border-base bg-[color-mix(in_srgb,var(--surface-brand-base)_14%,var(--background-base))] shadow-[inset_3px_0_0_color-mix(in_srgb,var(--surface-brand-base)_55%,transparent)]":
+          props.active,
       }}
       onClick={props.onClick}
     >
@@ -5515,14 +5516,21 @@ export default function ConfigPage() {
     return result
   })
   const providerVisible = createMemo(() => [...providerOn(), ...providerOff()])
+  // Searching: auto-expand "未启用" so filtered matches are visible without a manual click.
+  // Clearing search restores the user's collapsed preference (default collapsed).
+  const providerOffExpanded = createMemo(() => state.query.trim().length > 0 || !state.providerOffCollapsed)
 
   createEffect(() => {
     if (state.section !== "providers") return
+    const searching = state.query.trim().length > 0
     const onCount = providerOn().length
     const offCount = providerOff().length
     const total = providerList().length
     console.info(
       `[config-perf] middle provider-list ready on=${String(onCount)} off=${String(offCount)} total=${String(total)} sinceClick=${configPerfSinceClick()}`,
+    )
+    console.info(
+      `[config] providerOffExpanded searching=${String(searching)} collapsed=${String(state.providerOffCollapsed)} offCount=${String(offCount)} expanded=${String(providerOffExpanded())}`,
     )
   })
 
@@ -7852,11 +7860,19 @@ export default function ConfigPage() {
                               <button
                                 type="button"
                                 class="flex items-center justify-between gap-3 px-1 cursor-pointer hover:opacity-80"
-                                onClick={() => setState("providerOffCollapsed", !state.providerOffCollapsed)}
+                                onClick={() => {
+                                  if (state.query.trim()) {
+                                    console.info("[config] providerOff collapse ignored while searching")
+                                    return
+                                  }
+                                  const next = !state.providerOffCollapsed
+                                  setState("providerOffCollapsed", next)
+                                  console.info(`[config] providerOffCollapsed toggled next=${String(next)}`)
+                                }}
                               >
                                 <div class="flex items-center gap-2">
                                   <Icon
-                                    name={state.providerOffCollapsed ? "chevron-right" : "chevron-down"}
+                                    name={providerOffExpanded() ? "chevron-down" : "chevron-right"}
                                     size="small"
                                   />
                                   <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
@@ -7867,7 +7883,7 @@ export default function ConfigPage() {
                                   {providerOff().length}
                                 </div>
                               </button>
-                              <Show when={!state.providerOffCollapsed}>
+                              <Show when={providerOffExpanded()}>
                                 <Suspense
                                   fallback={
                                     <div class="px-1 py-3 text-12-regular text-text-weak">
