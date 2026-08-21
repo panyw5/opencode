@@ -28,7 +28,7 @@ import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { domainFromDirectory, extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
-import { waitForMatch, workspaceKey } from "@/pages/layout/helpers"
+import { projectOwner, waitForMatch, workspaceKey } from "@/pages/layout/helpers"
 import { working } from "@/pages/session/session-working"
 import {
   collectSessionTabSubtree,
@@ -768,6 +768,20 @@ function SessionTab(props: {
     )
   }
 
+  const showInSidebar = () => {
+    const owner = projectOwner(props.tab.directory, layout.projects.list())
+    if (!owner) {
+      console.debug(`[session-tab] show in sidebar ignored id=${props.tab.id} dir=${props.tab.directory} reason=no-project`)
+      return
+    }
+
+    console.debug(
+      `[session-tab] show in sidebar id=${props.tab.id} dir=${props.tab.directory} root=${owner.root} sandbox=${String(owner.sandbox)}`,
+    )
+    layout.sidebar.setProject(owner.root)
+    layout.sidebar.open()
+  }
+
   return (
     <ContextMenu modal onOpenChange={props.onMenuOpenChange}>
       <ContextMenu.Trigger
@@ -861,6 +875,19 @@ function SessionTab(props: {
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content>
+          <ContextMenu.Item
+            data-action="session-tab-show-in-sidebar"
+            data-session={base64Encode(props.tab.id)}
+            onSelect={showInSidebar}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="sidebar" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("command.sessionTabs.showInSidebar")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Separator />
           <ContextMenu.Item
             data-action="session-tab-close-descendants"
             data-session={base64Encode(props.tab.id)}

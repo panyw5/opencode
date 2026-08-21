@@ -3128,14 +3128,10 @@ export default function Layout(props: ParentProps) {
     return [...ordered, extra]
   }
 
-  const [sidebarProjectRoot, setSidebarProjectRoot] = createSignal<string | undefined>()
-
-  createEffect(() => {
-    const root = sidebarProjectRoot()
-    if (workspaceKey(layout.sidebar.project() ?? "") === workspaceKey(root ?? "")) return
-    console.debug(`[sidebar-project] context-sync root=${root ?? "none"} route-directory=${routeDir() || "none"}`)
-    layout.sidebar.setProject(root)
-  })
+  // Keep one shared source of truth so controls outside this page (for example
+  // session tabs in the title bar) can select the project shown in the sidebar.
+  const sidebarProjectRoot = layout.sidebar.project
+  const setSidebarProjectRoot = layout.sidebar.setProject
 
   const sidebarProject = createMemo(() => {
     const selected = sidebarProjectRoot()

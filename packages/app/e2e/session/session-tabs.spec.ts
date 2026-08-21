@@ -1,6 +1,6 @@
 import { test, expect } from "../fixtures"
 import { withSession } from "../actions"
-import { promptSelector, sessionNewButtonSelector } from "../selectors"
+import { projectSwitchSelector, promptSelector, sessionItemSelector, sessionNewButtonSelector } from "../selectors"
 
 test("new session draft tab stays visible when switching sessions", async ({ page, sdk, gotoSession }) => {
   await page.setViewportSize({ width: 1400, height: 800 })
@@ -26,5 +26,28 @@ test("new session draft tab stays visible when switching sessions", async ({ pag
       await expect(page).toHaveURL(/\/session(?:[?#]|$)/)
       await expect(page.locator(promptSelector)).toContainText("draft should remain visible")
     })
+  })
+})
+
+test("session tab can reveal its project sessions in the sidebar", async ({ page, sdk, gotoSession, slug }) => {
+  await page.setViewportSize({ width: 1400, height: 800 })
+
+  await withSession(sdk, `e2e reveal session tab ${Date.now()}`, async (session) => {
+    await gotoSession(session.id)
+
+    const project = page.locator(projectSwitchSelector(slug)).first()
+    if ((await project.getAttribute("data-sidebar-expanded")) === "true") await project.click()
+    await expect(project).toHaveAttribute("data-sidebar-expanded", "false")
+
+    const tab = page.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`)
+    await expect(tab).toBeVisible()
+    await tab.click({ button: "right" })
+
+    const action = page.locator('[data-action="session-tab-show-in-sidebar"]')
+    await expect(action).toBeVisible()
+    await action.click()
+
+    await expect(project).toHaveAttribute("data-sidebar-expanded", "true")
+    await expect(page.locator(sessionItemSelector(session.id))).toBeVisible()
   })
 })
