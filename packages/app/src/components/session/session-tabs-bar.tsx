@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
+import type { Session } from "@opencode-ai/sdk/v2/client"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import {
   DragDropProvider,
@@ -21,12 +22,13 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { ServerConnection, useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
-import { extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
+import { domainFromDirectory, extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { projectOwner, waitForMatch, workspaceKey } from "@/pages/layout/helpers"
 import { visiblyWorking } from "@/pages/session/session-working"
 import {
@@ -714,9 +716,11 @@ function SessionTab(props: {
   onCloseDescendants: () => void
 }) {
   const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
   const layout = useLayout()
   const language = useLanguage()
   const notification = useNotification()
+  const [state, setState] = createStore({ generatingTitle: false })
   const [child] = globalSync.child(props.tab.directory, { bootstrap: false })
 
   const session = createMemo(() => (child.session ?? []).find((item) => item.id === props.tab.id))
@@ -798,8 +802,72 @@ function SessionTab(props: {
     layout.sidebar.open()
   }
 
+  const generateTitle = () => {
+    if (state.generatingTitle) {
+      console.debug(`[session-tab] generate title ignored id=${props.tab.id} reason=in-flight`)
+      return
+    }
+
+    setState("generatingTitle", true)
+    const domain = domainFromDirectory(props.tab.directory)
+    console.debug(`[session-tab] generate title start id=${props.tab.id} dir=${props.tab.directory} domain=${domain}`)
+    const [, setSessionStore] = globalSync.child(props.tab.directory, { bootstrap: false })
+    void globalSDK
+      .forDomain(domain)
+      .client.session.generateTitle(
+        {
+          sessionID: props.tab.id,
+          directory: props.tab.directory,
+        },
+        { throwOnError: true },
+      )
+      .then(
+        (result) => {
+          const data =
+            result && typeof result === "object" && "data" in result
+              ? (result as { data?: Session }).data
+              : (result as Session | undefined)
+          console.debug(`[session-tab] generate title response id=${props.tab.id} title=${data?.title ?? ""}`)
+          if (data?.title) {
+            setSessionStore("session", (list) =>
+              list.map((item) => (item.id === props.tab.id ? { ...item, title: data.title } : item)),
+            )
+            layout.sessionBar.setInfo(props.tab.directory, props.tab.id, {
+              title: data.title,
+              parentID: data.parentID ?? props.tab.parentID ?? null,
+            })
+            console.debug(`[session-tab] generate title state updated id=${props.tab.id}`)
+          }
+          showToast({
+            variant: "success",
+            icon: "circle-check",
+            title: language.t("toast.session.generateTitle.success.title"),
+            description: data?.title,
+          })
+        },
+        (err: unknown) => {
+          const message =
+            err instanceof Error
+              ? err.message
+              : typeof err === "object" && err && "message" in err
+                ? String((err as { message: unknown }).message)
+                : String(err)
+          console.debug(`[session-tab] generate title failed id=${props.tab.id} err=${message}`)
+          showToast({
+            variant: "error",
+            title: language.t("toast.session.generateTitle.failed.title"),
+            description: message,
+          })
+        },
+      )
+      .finally(() => {
+        setState("generatingTitle", false)
+        console.debug(`[session-tab] generate title settled id=${props.tab.id}`)
+      })
+  }
+
   return (
-    <ContextMenu modal onOpenChange={props.onMenuOpenChange}>
+    <ContextMenu modal={false} onOpenChange={props.onMenuOpenChange}>
       <ContextMenu.Trigger
         as="div"
         role="button"
@@ -902,6 +970,20 @@ function SessionTab(props: {
               </span>
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{language.t("command.sessionTabs.showInSidebar")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Separator />
+          <ContextMenu.Item
+            data-action="session-tab-generate-title"
+            data-session={base64Encode(props.tab.id)}
+            disabled={state.generatingTitle}
+            onSelect={generateTitle}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="refresh" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.generateTitle")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
           <ContextMenu.Separator />
           <ContextMenu.Item
