@@ -26,6 +26,7 @@ import {
   isInitialSessionLoad,
   latestProjectSession,
   latestRootSession,
+  permissionAlertUsesToast,
   projectOwner,
   resolveChannelDirectory,
   sessionByOneBasedIndex,
@@ -51,6 +52,43 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
     time: { created: 0, updated: 0, archived: undefined },
     ...input,
   }) as Session
+
+test("permission alerts use the direct session tab instead of an in-app toast", () => {
+  expect(
+    permissionAlertUsesToast({ sessionID: "child", sessions: [], openSessionIDs: ["child"] }),
+  ).toBe(false)
+})
+
+test("permission alerts use an open parent tab for child requests", () => {
+  expect(
+    permissionAlertUsesToast({
+      sessionID: "child",
+      sessions: [{ id: "parent" }, { id: "child", parentID: "parent" }],
+      openSessionIDs: ["parent"],
+    }),
+  ).toBe(false)
+})
+
+test("permission alerts keep the toast when no related tab is open", () => {
+  expect(
+    permissionAlertUsesToast({
+      sessionID: "child",
+      sessions: [{ id: "parent" }, { id: "child", parentID: "parent" }],
+      openSessionIDs: ["unrelated"],
+    }),
+  ).toBe(true)
+})
+
+test("permission alerts do not toast for the current session tree", () => {
+  expect(
+    permissionAlertUsesToast({
+      sessionID: "child",
+      sessions: [{ id: "parent" }, { id: "child", parentID: "parent" }],
+      openSessionIDs: [],
+      currentSessionID: "parent",
+    }),
+  ).toBe(false)
+})
 
 const assistant = (input: { id: string; sessionID: string; completed?: number }) =>
   ({

@@ -8,6 +8,28 @@ type SessionStore = {
   path: { directory: string }
 }
 
+export function permissionAlertUsesToast(input: {
+  sessionID: string
+  sessions: Array<{ id: string; parentID?: string }>
+  openSessionIDs: string[]
+  currentSessionID?: string
+}) {
+  const covered = new Set(input.openSessionIDs)
+  if (input.currentSessionID) covered.add(input.currentSessionID)
+  const parentByID = new Map<string, string>()
+  for (const session of input.sessions) {
+    if (session.parentID) parentByID.set(session.id, session.parentID)
+  }
+  const seen = new Set<string>()
+  let sessionID: string | undefined = input.sessionID
+  while (sessionID && !seen.has(sessionID)) {
+    if (covered.has(sessionID)) return false
+    seen.add(sessionID)
+    sessionID = parentByID.get(sessionID)
+  }
+  return true
+}
+
 export type ProjectOwnerInput = {
   worktree: string
   sandboxes?: string[]

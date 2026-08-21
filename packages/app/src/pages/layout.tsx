@@ -92,6 +92,7 @@ import {
   isInitialSessionLoad,
   latestProjectSession,
   latestRootSession,
+  permissionAlertUsesToast,
   projectOwner,
   resolveChannelDirectory,
   sessionByOneBasedIndex,
@@ -617,6 +618,24 @@ export default function Layout(props: ParentProps) {
         }
 
         const currentSession = params.id
+        if (
+          e.details.type === "permission.asked" &&
+          !permissionAlertUsesToast({
+            sessionID: props.sessionID,
+            sessions: store.session,
+            currentSessionID: workspaceKey(directory) === routeKey() ? currentSession : undefined,
+            openSessionIDs: layout.sessionBar
+              .all()
+              .filter((tab) => workspaceKey(tab.directory) === workspaceKey(directory))
+              .map((tab) => tab.id),
+          })
+        ) {
+          console.debug(
+            `[notification] permission handled by current view or tab capsule session=${props.sessionID} directory=${directory}`,
+          )
+          return
+        }
+
         if (workspaceKey(directory) === routeKey() && props.sessionID === currentSession) return
         if (workspaceKey(directory) === routeKey() && session?.parentID === currentSession) return
 

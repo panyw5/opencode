@@ -755,6 +755,7 @@ export const dict = {
   "notification.question.title": "Question",
   "notification.question.description": "{{sessionTitle}} in {{projectName}} has a question",
   "notification.action.goToSession": "Go to session",
+  "session.tabs.permission.view": "View",
 
   "notification.session.responseReady.title": "Response ready",
   "notification.session.error.title": "Session error",

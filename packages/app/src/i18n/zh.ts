@@ -712,6 +712,7 @@ export const dict = {
   "notification.question.title": "问题",
   "notification.question.description": "{{sessionTitle}}（{{projectName}}）有一个问题",
   "notification.action.goToSession": "前往会话",
+  "session.tabs.permission.view": "查看",
   "notification.session.responseReady.title": "回复已就绪",
   "notification.session.error.title": "会话错误",
   "notification.session.error.fallbackDescription": "发生错误",

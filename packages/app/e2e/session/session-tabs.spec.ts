@@ -2,6 +2,69 @@ import { test, expect } from "../fixtures"
 import { cleanupSession, sessionIDFromUrl, withSession } from "../actions"
 import { projectSwitchSelector, promptSelector, sessionItemSelector, sessionNewButtonSelector } from "../selectors"
 
+type TabPermissionRequest = {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: string[]
+  always: string[]
+  metadata: Record<string, unknown>
+}
+
+async function withMockTabPermissions<T>(
+  page: any,
+  initial: TabPermissionRequest[],
+  fn: (state: { loaded: () => Promise<void>; replies: () => Array<{ id: string; response: string }> }) => Promise<T>,
+  options?: { sessions?: any[] },
+) {
+  let pending = initial
+  let listRequests = 0
+  const responses: Array<{ id: string; response: string }> = []
+  const permissionListPattern = /\/permission(?:\?|$)/
+  const list = async (route: any) => {
+    listRequests += 1
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(pending) })
+  }
+  const reply = async (route: any) => {
+    const id = new URL(route.request().url()).pathname.split("/").pop() ?? ""
+    responses.push({ id, response: route.request().postDataJSON()?.response ?? "" })
+    pending = pending.filter((item) => item.id !== id)
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(true) })
+  }
+  const sessionList = options?.sessions?.length
+    ? async (route: any) => {
+        const response = await route.fetch()
+        const json = await response.json()
+        const sessions = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : undefined
+        if (sessions) {
+          for (const session of options.sessions ?? []) {
+            if (!sessions.some((item: any) => item?.id === session.id)) sessions.push(session)
+          }
+        }
+        await route.fulfill({
+          status: response.status(),
+          headers: response.headers(),
+          contentType: "application/json",
+          body: JSON.stringify(json),
+        })
+      }
+    : undefined
+
+  await page.route(permissionListPattern, list)
+  await page.route("**/session/*/permissions/*", reply)
+  if (sessionList) await page.route("**/session?*", sessionList)
+  try {
+    return await fn({
+      loaded: () => expect.poll(() => listRequests).toBeGreaterThan(0),
+      replies: () => responses,
+    })
+  } finally {
+    await page.unroute(permissionListPattern, list)
+    await page.unroute("**/session/*/permissions/*", reply)
+    if (sessionList) await page.unroute("**/session?*", sessionList)
+  }
+}
+
 test("new session draft tab stays visible when switching sessions", async ({ page, sdk, gotoSession }) => {
   await page.setViewportSize({ width: 1400, height: 800 })
 
@@ -105,5 +168,220 @@ test("session tab can generate a title from its context menu", async ({ page, sd
 
     await expect.poll(() => requests).toBe(1)
     await expect(tab).toContainText("Generated context title")
+  })
+})
+
+test("session tab permission capsule can view, allow once, and reject", async ({ page, sdk, gotoSession }) => {
+  await page.setViewportSize({ width: 1400, height: 800 })
+
+  await withSession(sdk, `e2e permission tab ${Date.now()}`, async (requested) => {
+    await withSession(sdk, `e2e permission tab current ${Date.now()}`, async (current) => {
+      const permission = {
+        id: "per_e2e_session_tab",
+        sessionID: requested.id,
+        permission: "bash",
+        patterns: ["/tmp/opencode-e2e-session-tab"],
+        always: ["*"],
+        metadata: { description: "Need tab permission" },
+      }
+      let pending = [permission]
+      let response = ""
+      let listRequests = 0
+      const permissionListPattern = /\/permission(?:\?|$)/
+      const permissionLogs: string[] = []
+      const logPermission = (message: { text(): string }) => {
+        const text = message.text()
+        if (text.includes("[session-tab-permission]")) permissionLogs.push(text)
+      }
+      const logPermissionRequest = (request: { url(): string; method(): string }) => {
+        if (request.url().includes("permission")) {
+          permissionLogs.push(`[e2e] request ${request.method()} ${request.url()}`)
+        }
+      }
+      const list = async (route: any) => {
+        listRequests += 1
+        permissionLogs.push(`[e2e] permission list ${route.request().method()} ${route.request().url()}`)
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(pending) })
+      }
+      const reply = async (route: any) => {
+        response = route.request().postDataJSON()?.response ?? ""
+        pending = []
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(true) })
+      }
+
+      await gotoSession(requested.id)
+      await gotoSession(current.id)
+      await page.route(permissionListPattern, list)
+      await page.route("**/session/*/permissions/*", reply)
+      page.on("console", logPermission)
+      page.on("request", logPermissionRequest)
+      try {
+        await page.reload()
+        await expect.poll(() => listRequests, { message: permissionLogs.join("\n") }).toBeGreaterThan(0)
+
+        const capsule = page.locator('[data-component="session-tab-permission-capsule"]')
+        await expect(capsule, permissionLogs.join("\n")).toBeVisible()
+        await expect(capsule).toHaveAttribute("data-session-id", requested.id)
+        await expect(capsule).toHaveAttribute("data-state", "open")
+        await expect(capsule.getByRole("button", { name: /allow once/i })).toBeVisible()
+        await expect(capsule.getByRole("button", { name: /deny/i })).toBeVisible()
+        await expect
+          .poll(() => capsule.evaluate((element) => getComputedStyle(element).animationName))
+          .toBe("session-tab-permission-enter")
+        await page.emulateMedia({ reducedMotion: "reduce" })
+        await expect
+          .poll(() => capsule.evaluate((element) => getComputedStyle(element).animationDuration))
+          .toBe("0.12s")
+        for (const scheme of ["light", "dark"] as const) {
+          const colors = await capsule.evaluate((element, colorScheme) => {
+            document.documentElement.dataset.colorScheme = colorScheme
+            return {
+              capsule: getComputedStyle(element).backgroundColor,
+              session: getComputedStyle(document.querySelector("main")!).backgroundColor,
+            }
+          }, scheme)
+          expect(colors.capsule).not.toBe(colors.session)
+        }
+        const requestedTab = page.locator(`[data-component="session-tab"][data-session-id="${requested.id}"]`)
+        const [tabBox, capsuleBox] = await Promise.all([requestedTab.boundingBox(), capsule.boundingBox()])
+        expect(tabBox).not.toBeNull()
+        expect(capsuleBox).not.toBeNull()
+        expect(capsuleBox!.y).toBeGreaterThanOrEqual(tabBox!.y + tabBox!.height)
+        expect(capsuleBox!.x + capsuleBox!.width).toBeLessThanOrEqual(1400)
+
+        await capsule.getByRole("button", { name: /view/i }).click()
+        await expect(page).toHaveURL(new RegExp(`/session/${requested.id}(?:[?#]|$)`))
+
+        const closeAnimation = page.evaluate(() => {
+          const element = document.querySelector('[data-component="session-tab-permission-capsule"]')
+          if (!element) throw new Error("Permission capsule not found before close")
+          return new Promise<string>((resolve) => {
+            const observer = new MutationObserver(() => {
+              if (element.getAttribute("data-state") !== "closing") return
+              observer.disconnect()
+              resolve(getComputedStyle(element).animationName)
+            })
+            observer.observe(element, { attributes: true, attributeFilter: ["data-state"] })
+          })
+        })
+        await capsule.getByRole("button", { name: /allow once/i }).click()
+        await expect.poll(() => response).toBe("once")
+        expect(await closeAnimation).toBe("session-tab-permission-exit")
+        await expect(capsule).toHaveCount(0)
+
+        response = ""
+        pending = [{ ...permission, id: "per_e2e_session_tab_reject" }]
+        await page.reload()
+        await expect(capsule).toBeVisible()
+        await capsule.getByRole("button", { name: /deny/i }).click()
+        await expect.poll(() => response).toBe("reject")
+        await expect(capsule).toHaveCount(0)
+      } finally {
+        await page.unroute(permissionListPattern, list)
+        await page.unroute("**/session/*/permissions/*", reply)
+        page.off("console", logPermission)
+        page.off("request", logPermissionRequest)
+      }
+    })
+  })
+})
+
+test("multiple session permission capsules stack without overlap", async ({ page, sdk, gotoSession }) => {
+  await page.setViewportSize({ width: 1400, height: 800 })
+
+  await withSession(sdk, `e2e permission stack first ${Date.now()}`, async (first) => {
+    await withSession(sdk, `e2e permission stack second ${Date.now()}`, async (second) => {
+      await withSession(sdk, `e2e permission stack current ${Date.now()}`, async (current) => {
+        await gotoSession(first.id)
+        await gotoSession(second.id)
+        await gotoSession(current.id)
+
+        const request = (id: string, sessionID: string): TabPermissionRequest => ({
+          id,
+          sessionID,
+          permission: "bash",
+          patterns: [`/tmp/${id}`],
+          always: ["*"],
+          metadata: { description: `Need permission for ${sessionID}` },
+        })
+
+        await withMockTabPermissions(
+          page,
+          [request("per_e2e_stack_first", first.id), request("per_e2e_stack_second", second.id)],
+          async (state) => {
+            await page.reload()
+            await state.loaded()
+
+            const capsules = page.locator('[data-component="session-tab-permission-capsule"]')
+            await expect(capsules).toHaveCount(2)
+            const firstByID = page.locator(
+              `[data-component="session-tab-permission-capsule"][data-session-id="${first.id}"]`,
+            )
+            const secondByID = page.locator(
+              `[data-component="session-tab-permission-capsule"][data-session-id="${second.id}"]`,
+            )
+            await expect(firstByID).toBeVisible()
+            await expect(secondByID).toBeVisible()
+
+            const boxes = await Promise.all([firstByID.boundingBox(), secondByID.boundingBox()])
+            expect(boxes[0]).not.toBeNull()
+            expect(boxes[1]).not.toBeNull()
+            const ordered = boxes.map((box) => box!).sort((a, b) => a.y - b.y)
+            expect(ordered[0].y + ordered[0].height).toBeLessThanOrEqual(ordered[1].y)
+          },
+        )
+      })
+    })
+  })
+})
+
+test("child permission is exposed from the visible parent session tab", async ({ page, sdk, gotoSession }) => {
+  await page.setViewportSize({ width: 1400, height: 800 })
+
+  await withSession(sdk, `e2e permission parent ${Date.now()}`, async (parent) => {
+    await withSession(sdk, `e2e permission parent current ${Date.now()}`, async (current) => {
+      const child = await sdk.session
+        .create({ title: `e2e permission child ${Date.now()}`, parentID: parent.id })
+        .then((result) => result.data)
+      if (!child?.id) throw new Error("Child session create did not return an id")
+
+      try {
+        await gotoSession(parent.id)
+        await gotoSession(current.id)
+
+        await withMockTabPermissions(
+          page,
+          [
+            {
+              id: "per_e2e_child_tab",
+              sessionID: child.id,
+              permission: "bash",
+              patterns: ["/tmp/opencode-e2e-child-tab"],
+              always: ["*"],
+              metadata: { description: "Need child permission" },
+            },
+          ],
+          async (state) => {
+            await page.reload()
+            await state.loaded()
+
+            const parentTab = page.locator(`[data-component="session-tab"][data-session-id="${parent.id}"]`)
+            const capsule = page.locator(
+              `[data-component="session-tab-permission-capsule"][data-session-id="${child.id}"]`,
+            )
+            await expect(parentTab).toHaveAttribute("data-permission", "true")
+            await expect(capsule).toBeVisible()
+
+            await capsule.getByRole("button", { name: /view/i }).click()
+            await expect(page).toHaveURL(new RegExp(`/session/${parent.id}(?:[?#]|$)`))
+            await capsule.getByRole("button", { name: /deny/i }).click()
+            await expect.poll(() => state.replies()).toContainEqual({ id: "per_e2e_child_tab", response: "reject" })
+          },
+          { sessions: [child] },
+        )
+      } finally {
+        await cleanupSession({ sdk, sessionID: child.id })
+      }
+    })
   })
 })

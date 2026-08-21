@@ -1,6 +1,7 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
-import { createStore } from "solid-js/store"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import { createStore, produce } from "solid-js/store"
+import { Portal } from "solid-js/web"
+import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import {
   DragDropProvider,
@@ -11,17 +12,25 @@ import {
   createSortable,
 } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
+import { Button } from "@opencode-ai/ui/button"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 
-import { cycleSessionBarIndex, sessionBarKey, useLayout, visibleSessionBarDrafts, type SessionBarTab } from "@/context/layout"
+import {
+  cycleSessionBarIndex,
+  sessionBarKey,
+  useLayout,
+  visibleSessionBarDrafts,
+  type SessionBarTab,
+} from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
+import { usePermission } from "@/context/permission"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { ServerConnection, useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
@@ -31,6 +40,8 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { domainFromDirectory, extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { projectOwner, waitForMatch, workspaceKey } from "@/pages/layout/helpers"
 import { visiblyWorking } from "@/pages/session/session-working"
+import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
+import { permissionRequestNotFound } from "@/pages/session/composer/session-question-dock-helpers"
 import {
   collectSessionTabSubtree,
   groupSessionTabs,
@@ -514,6 +525,8 @@ const cleanTitle = (value: string) => {
   return stripped || value
 }
 
+const sessionTabPermissionLayoutEvent = "opencode:session-tab-permission-layout"
+
 function SessionTabGroup(props: {
   tabKey: string
   group: () => SessionTabGroup<SessionBarTab> | undefined
@@ -644,11 +657,7 @@ function SessionTabGroup(props: {
   })
 
   return (
-    <div
-      use:sortable
-      class="h-full flex min-w-28 items-center"
-      classList={{ "opacity-0": sortable.isActiveDraggable }}
-    >
+    <div use:sortable class="h-full flex min-w-28 items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
       <Show when={group().children.length} fallback={trigger()}>
         <Popover
           open={state.open}
@@ -720,8 +729,10 @@ function SessionTab(props: {
   const layout = useLayout()
   const language = useLanguage()
   const notification = useNotification()
+  const permission = usePermission()
   const [state, setState] = createStore({ generatingTitle: false })
   const [child] = globalSync.child(props.tab.directory, { bootstrap: false })
+  let triggerEl: HTMLElement | undefined
 
   const session = createMemo(() => (child.session ?? []).find((item) => item.id === props.tab.id))
   const subagent = createMemo(() => !!(session()?.parentID ?? props.tab.parentID))
@@ -752,6 +763,48 @@ function SessionTab(props: {
   const unseen = createMemo(() =>
     groupTabs().reduce((total, tab) => total + notification.session.unseenCount(tab.id), 0),
   )
+  const permissionRequest = createMemo(() => {
+    return sessionPermissionRequest(child.session, child.permission, props.tab.id, (item) => {
+      return !permission.autoResponds(item, props.tab.directory)
+    })
+  })
+  const [permissionCapsule, setPermissionCapsule] = createStore({
+    request: undefined as PermissionRequest | undefined,
+    closing: false,
+  })
+  let permissionCloseTimer: number | undefined
+  createEffect(() => {
+    const request = permissionRequest()
+    if (request) {
+      if (permissionCloseTimer !== undefined) window.clearTimeout(permissionCloseTimer)
+      permissionCloseTimer = undefined
+      setPermissionCapsule({ request, closing: false })
+      return
+    }
+    if (!permissionCapsule.request || permissionCapsule.closing) return
+    setPermissionCapsule("closing", true)
+    console.debug(
+      `[session-tab-permission] close animation request=${permissionCapsule.request.id} session=${permissionCapsule.request.sessionID}`,
+    )
+    permissionCloseTimer = window.setTimeout(() => {
+      permissionCloseTimer = undefined
+      setPermissionCapsule({ request: undefined, closing: false })
+    }, 140)
+  })
+  onCleanup(() => {
+    if (permissionCloseTimer !== undefined) window.clearTimeout(permissionCloseTimer)
+  })
+  let permissionLog = ""
+  createEffect(() => {
+    const requestCount = Object.values(child.permission).reduce((total, items) => total + (items?.length ?? 0), 0)
+    const selected = permissionRequest()
+    const next = `${requestCount}:${selected?.id ?? "none"}`
+    if (next === permissionLog) return
+    permissionLog = next
+    console.debug(
+      `[session-tab-permission] state tab=${props.tab.id} sessions=${child.session.length} requests=${requestCount} selected=${selected?.id ?? "none"}`,
+    )
+  })
 
   const copy = () => {
     const text = `Session ID: ${props.tab.id}\nProject path: ${props.tab.directory}`
@@ -791,7 +844,9 @@ function SessionTab(props: {
   const showInSidebar = () => {
     const owner = projectOwner(props.tab.directory, layout.projects.list())
     if (!owner) {
-      console.debug(`[session-tab] show in sidebar ignored id=${props.tab.id} dir=${props.tab.directory} reason=no-project`)
+      console.debug(
+        `[session-tab] show in sidebar ignored id=${props.tab.id} dir=${props.tab.directory} reason=no-project`,
+      )
       return
     }
 
@@ -869,6 +924,7 @@ function SessionTab(props: {
   return (
     <ContextMenu modal={false} onOpenChange={props.onMenuOpenChange}>
       <ContextMenu.Trigger
+        ref={(el: HTMLElement) => (triggerEl = el)}
         as="div"
         role="button"
         tabIndex={0}
@@ -877,6 +933,7 @@ function SessionTab(props: {
         data-directory={props.tab.directory}
         data-active={props.active ? "true" : undefined}
         data-subagent={subagent() ? "true" : undefined}
+        data-permission={!props.nested && permissionCapsule.request ? "true" : undefined}
         class="group relative flex cursor-pointer select-none items-center gap-1.5 rounded-[10px] pl-2 pr-1 text-13-medium"
         classList={{
           "h-7 min-w-28 max-w-80": !props.nested,
@@ -903,60 +960,71 @@ function SessionTab(props: {
           props.onClose()
         }}
       >
-      <Show
-        when={subagent()}
-        fallback={
-          <span class="session-tab-main-icon flex shrink-0" aria-hidden="true">
-            <Icon name="bubble-5" size="small" />
-          </span>
-        }
-      >
-        <span class="flex shrink-0 text-icon-weak [transform:scaleY(-1)]" aria-hidden="true">
-          <Icon name="branch" size="small" />
-        </span>
-      </Show>
-      <span class="min-w-0 flex-1 truncate">{title()}</span>
-      <Show when={busy()}>
-        <span
-          class="size-1.5 shrink-0 animate-pulse rounded-full"
-          style={{ "background-color": "var(--icon-base)" }}
-          aria-hidden
-        />
-      </Show>
-      <Show when={!busy() && unseen() > 0}>
-        <span
-          class="size-1.5 shrink-0 rounded-full"
-          style={{ "background-color": "var(--surface-info-base)" }}
-          aria-hidden
-        />
-      </Show>
-      <Show when={(props.childCount ?? 0) > 0}>
-        <span
-          data-slot="session-tab-child-count"
-          class="flex shrink-0 items-center gap-0.5 rounded-md bg-surface-base-active px-1 text-10-medium text-text-weaker"
-          aria-hidden="true"
+        <Show
+          when={subagent()}
+          fallback={
+            <span class="session-tab-main-icon flex shrink-0" aria-hidden="true">
+              <Icon name="bubble-5" size="small" />
+            </span>
+          }
         >
-          <Icon name="branch" size="small" class="[transform:scaleY(-1)]" />
-          {props.childCount}
+          <span class="flex shrink-0 text-icon-weak [transform:scaleY(-1)]" aria-hidden="true">
+            <Icon name="branch" size="small" />
+          </span>
+        </Show>
+        <span class="min-w-0 flex-1 truncate">{title()}</span>
+        <Show when={busy()}>
+          <span
+            class="size-1.5 shrink-0 animate-pulse rounded-full"
+            style={{ "background-color": "var(--icon-base)" }}
+            aria-hidden
+          />
+        </Show>
+        <Show when={!busy() && unseen() > 0}>
+          <span
+            class="size-1.5 shrink-0 rounded-full"
+            style={{ "background-color": "var(--surface-info-base)" }}
+            aria-hidden
+          />
+        </Show>
+        <Show when={(props.childCount ?? 0) > 0}>
+          <span
+            data-slot="session-tab-child-count"
+            class="flex shrink-0 items-center gap-0.5 rounded-md bg-surface-base-active px-1 text-10-medium text-text-weaker"
+            aria-hidden="true"
+          >
+            <Icon name="branch" size="small" class="[transform:scaleY(-1)]" />
+            {props.childCount}
+          </span>
+        </Show>
+        <span
+          class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow]"
+          classList={{
+            "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
+            "opacity-100": props.active,
+          }}
+          role="button"
+          tabIndex={-1}
+          aria-label={language.t("common.closeTab")}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onClose()
+          }}
+        >
+          <Icon name="close-small" size="small" />
         </span>
-      </Show>
-      <span
-        class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow]"
-        classList={{
-          "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
-          "opacity-100": props.active,
-        }}
-        role="button"
-        tabIndex={-1}
-        aria-label={language.t("common.closeTab")}
-        onClick={(event) => {
-          event.stopPropagation()
-          props.onClose()
-        }}
-      >
-        <Icon name="close-small" size="small" />
-      </span>
       </ContextMenu.Trigger>
+      <Show when={!props.nested && permissionCapsule.request} keyed>
+        {(request) => (
+          <SessionTabPermissionCapsule
+            request={request}
+            directory={props.tab.directory}
+            anchor={() => triggerEl}
+            closing={permissionCapsule.closing}
+            onView={props.onOpen}
+          />
+        )}
+      </Show>
       <ContextMenu.Portal>
         <ContextMenu.Content>
           <ContextMenu.Item
@@ -1027,6 +1095,208 @@ function SessionTab(props: {
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu>
+  )
+}
+
+function SessionTabPermissionCapsule(props: {
+  request: PermissionRequest
+  directory: string
+  anchor: () => HTMLElement | undefined
+  closing: boolean
+  onView: () => void
+}) {
+  const globalSDK = useGlobalSDK()
+  const globalSync = useGlobalSync()
+  const language = useLanguage()
+  const [state, setState] = createStore({
+    responding: false,
+    left: 8,
+    top: 8,
+    positioned: false,
+  })
+  let capsuleEl: HTMLDivElement | undefined
+  let animationFrame: number | undefined
+
+  createEffect(() => {
+    const state = props.closing ? "closing" : "open"
+    if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame)
+    animationFrame = window.requestAnimationFrame(() => {
+      animationFrame = undefined
+      if (!capsuleEl) return
+      const style = getComputedStyle(capsuleEl)
+      console.debug(
+        `[session-tab-permission] animation style request=${props.request.id} state=${state} name=${style.animationName} duration=${style.animationDuration} opacity=${style.opacity} transform=${style.transform} reduced=${String(window.matchMedia("(prefers-reduced-motion: reduce)").matches)}`,
+      )
+    })
+  })
+
+  const position = () => {
+    const anchor = props.anchor()
+    if (!anchor || !capsuleEl) return
+    const rect = anchor.getBoundingClientRect()
+    const width = capsuleEl.offsetWidth
+    const left = Math.min(Math.max(8, rect.left), Math.max(8, window.innerWidth - width - 8))
+    const permissionTabs = Array.from(
+      document.querySelectorAll<HTMLElement>('[data-component="session-tab"][data-permission="true"]'),
+    )
+    const stackIndex = Math.max(0, permissionTabs.indexOf(anchor))
+    const top = rect.bottom + 6 + stackIndex * (capsuleEl.offsetHeight + 4)
+    setState({ left, top, positioned: true })
+    console.debug(
+      `[session-tab-permission] positioned request=${props.request.id} session=${props.request.sessionID} stack=${stackIndex} left=${Math.round(left)} top=${Math.round(top)} width=${width}`,
+    )
+  }
+
+  createEffect(() => {
+    console.debug(
+      `[session-tab-permission] show request=${props.request.id} session=${props.request.sessionID} directory=${props.directory}`,
+    )
+    const frame = window.requestAnimationFrame(() => {
+      position()
+      window.dispatchEvent(new Event(sessionTabPermissionLayoutEvent))
+    })
+    const anchor = props.anchor()
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(position)
+    if (anchor) observer?.observe(anchor)
+    if (capsuleEl) observer?.observe(capsuleEl)
+    window.addEventListener("resize", position)
+    window.addEventListener("scroll", position, true)
+    window.addEventListener(sessionTabPermissionLayoutEvent, position)
+    onCleanup(() => {
+      window.cancelAnimationFrame(frame)
+      if (animationFrame !== undefined) window.cancelAnimationFrame(animationFrame)
+      observer?.disconnect()
+      window.removeEventListener("resize", position)
+      window.removeEventListener("scroll", position, true)
+      window.removeEventListener(sessionTabPermissionLayoutEvent, position)
+      window.requestAnimationFrame(() => window.dispatchEvent(new Event(sessionTabPermissionLayoutEvent)))
+      console.debug(`[session-tab-permission] hide request=${props.request.id} session=${props.request.sessionID}`)
+    })
+  })
+
+  const removeLocal = () => {
+    const [, setChild] = globalSync.child(props.directory, { bootstrap: false })
+    setChild(
+      "permission",
+      props.request.sessionID,
+      produce((draft = []) => {
+        const index = draft.findIndex((item) => item.id === props.request.id)
+        if (index !== -1) draft.splice(index, 1)
+        return draft
+      }),
+    )
+  }
+
+  const decide = (response: "once" | "reject") => {
+    if (state.responding) {
+      console.debug(`[session-tab-permission] decide ignored request=${props.request.id} reason=in-flight`)
+      return
+    }
+    setState("responding", true)
+    console.debug(
+      `[session-tab-permission] decide start request=${props.request.id} session=${props.request.sessionID} response=${response}`,
+    )
+    void globalSDK
+      .forDomain(domainFromDirectory(props.directory))
+      .client.permission.respond({
+        sessionID: props.request.sessionID,
+        permissionID: props.request.id,
+        response,
+        directory: props.directory,
+      })
+      .then(() => {
+        console.debug(
+          `[session-tab-permission] decide success request=${props.request.id} session=${props.request.sessionID} response=${response}`,
+        )
+        removeLocal()
+      })
+      .catch((error: unknown) => {
+        if (permissionRequestNotFound(error, props.request.id)) {
+          console.warn(
+            `[session-tab-permission] stale request=${props.request.id} session=${props.request.sessionID} response=${response}`,
+          )
+          removeLocal()
+          return
+        }
+        const description = error instanceof Error ? error.message : String(error)
+        console.error(
+          `[session-tab-permission] decide failed request=${props.request.id} session=${props.request.sessionID} response=${response} error=${description}`,
+        )
+        showToast({ variant: "error", title: language.t("common.requestFailed"), description })
+      })
+      .finally(() => {
+        setState("responding", false)
+        console.debug(`[session-tab-permission] decide settled request=${props.request.id} response=${response}`)
+      })
+  }
+
+  const view = () => {
+    console.debug(`[session-tab-permission] view request=${props.request.id} session=${props.request.sessionID}`)
+    props.onView()
+  }
+
+  return (
+    <Portal>
+      <div
+        ref={capsuleEl}
+        data-component="session-tab-permission-capsule"
+        data-session-id={props.request.sessionID}
+        data-state={props.closing ? "closing" : "open"}
+        role="group"
+        aria-label={language.t("notification.permission.title")}
+        class="fixed z-[60] flex items-center gap-1.5 rounded-full border px-2 py-1 text-text-strong"
+        style={{
+          left: `${state.left}px`,
+          top: `${state.top}px`,
+          visibility: state.positioned ? "visible" : "hidden",
+        }}
+        onAnimationStart={(event: AnimationEvent) => {
+          console.debug(
+            `[session-tab-permission] animation start request=${props.request.id} state=${props.closing ? "closing" : "open"} name=${event.animationName}`,
+          )
+        }}
+        onAnimationEnd={(event: AnimationEvent) => {
+          console.debug(
+            `[session-tab-permission] animation end request=${props.request.id} state=${props.closing ? "closing" : "open"} name=${event.animationName}`,
+          )
+        }}
+      >
+        <span class="flex shrink-0 text-text-warning-base" aria-hidden="true">
+          <Icon name="warning" size="small" />
+        </span>
+        <span class="whitespace-nowrap px-0.5 text-12-medium">{language.t("notification.permission.title")}</span>
+        <Button
+          data-action="session-tab-permission-allow-once"
+          size="small"
+          variant="primary"
+          class="rounded-full"
+          disabled={state.responding}
+          onClick={() => decide("once")}
+        >
+          {language.t("ui.permission.allowOnce")}
+        </Button>
+        <Button
+          data-action="session-tab-permission-reject"
+          size="small"
+          variant="ghost"
+          class="rounded-full"
+          disabled={state.responding}
+          onClick={() => decide("reject")}
+        >
+          {language.t("ui.permission.deny")}
+        </Button>
+        <Button
+          data-action="session-tab-permission-view"
+          size="small"
+          variant="ghost"
+          class="rounded-full"
+          disabled={state.responding}
+          onClick={view}
+        >
+          {language.t("session.tabs.permission.view")}
+        </Button>
+      </div>
+    </Portal>
   )
 }
 
