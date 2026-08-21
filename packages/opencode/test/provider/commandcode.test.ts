@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import { commandCodeCustomLoader, resolveCommandCodeRuntimeAuth } from "../../src/plugin/commandcode"
+import {
+  CommandCodePlugin,
+  commandCodeCustomLoader,
+  resolveCommandCodeRuntimeAuth,
+} from "../../src/plugin/commandcode"
 import { createCommandCodeLanguageModel } from "../../src/provider/commandcode"
 
 function input() {
@@ -45,6 +49,49 @@ describe("commandcode runtime auth", () => {
     const result = await Effect.runPromise(load())
     expect(result.autoload).toBe(true)
     expect(result.options).toEqual({ apiKey: "user_stored" })
+  })
+})
+
+describe("commandcode catalog", () => {
+  test("refreshes the live catalog when config already has models", async () => {
+    const previous = globalThis.fetch
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          data: [
+            {
+              id: "stealth/ox-alpha",
+              name: "Ox Alpha",
+              context_length: 1_048_576,
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      )
+
+    try {
+      const hooks = await CommandCodePlugin({} as never)
+      const config = {
+        provider: {
+          commandcode: {
+            models: {
+              "stale-model": { name: "Stale Model" },
+            },
+          },
+        },
+      } as any
+
+      await hooks.config?.(config)
+
+      expect(config.provider.commandcode.models["stale-model"]).toBeUndefined()
+      expect(config.provider.commandcode.models["stealth/ox-alpha"]).toMatchObject({
+        id: "stealth/ox-alpha",
+        name: "Ox Alpha",
+        limit: { context: 1_048_576, output: 64_000 },
+      })
+    } finally {
+      globalThis.fetch = previous
+    }
   })
 })
 

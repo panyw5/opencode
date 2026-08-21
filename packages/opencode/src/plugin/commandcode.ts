@@ -206,7 +206,6 @@ async function configureProvider(config: Config) {
   const target = config as Config & { provider?: Record<string, any> }
   target.provider ??= {}
   const current = target.provider[COMMANDCODE_PROVIDER_ID] ?? {}
-  if (current.models && Object.keys(current.models).length > 0) return
 
   const catalog = await fetchCatalog()
   target.provider[COMMANDCODE_PROVIDER_ID] = {
