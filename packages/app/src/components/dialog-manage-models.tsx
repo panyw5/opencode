@@ -43,7 +43,7 @@ export const DialogManageModels: Component = () => {
         emptyMessage={language.t("dialog.model.empty")}
         key={(x) => `${x?.provider?.id}:${x?.id}`}
         items={local.model.list()}
-        filterKeys={["provider.name", "name", "id"]}
+        filterKeys={["provider.name", "provider.id", "name", "id", "ref"]}
         sortBy={(a, b) => a.name.localeCompare(b.name)}
         groupBy={(x) => x.provider.id}
         groupHeader={(group) => {

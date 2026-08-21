@@ -193,7 +193,7 @@ const ModelList: Component<{
       key={(x) => `${x.provider.id}:${x.id}`}
       items={models}
       current={model.current()}
-      filterKeys={["provider.name", "name", "id"]}
+      filterKeys={["provider.name", "provider.id", "name", "id", "ref"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
       groupBy={(x) => x.provider.name}
       sortGroupsBy={(a, b) => {

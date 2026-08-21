@@ -1265,9 +1265,9 @@ export const layer = Layer.effect(
     const modelsDevSvc = yield* ModelsDev.Service
     const runtimeFlags = yield* RuntimeFlags.Service
 
-    const state = yield* InstanceState.make<State>(() =>
-      Effect.gen(function* () {
-        using _ = log.time("state")
+        const state = yield* InstanceState.make<State>(() =>
+          Effect.gen(function* () {
+            using _ = log.time("state")
         const bridge = yield* EffectBridge.make()
         const cfg = yield* config.get()
         const modelsDev = yield* modelsDevSvc.get()

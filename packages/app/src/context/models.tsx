@@ -97,6 +97,8 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
         ...m,
         name: m.name.replace("(latest)", "").trim(),
         latest: m.name.includes("(latest)"),
+        // Searchable `provider/model` ref so the model selector fuzzy search can match ids.
+        ref: `${m.provider.id}/${m.id}`,
       }))
       return result
     })
