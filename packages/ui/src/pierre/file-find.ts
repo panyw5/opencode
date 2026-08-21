@@ -16,6 +16,41 @@ let target: FindHost | undefined
 let current: FindHost | undefined
 let installed = false
 
+// ---------------------------------------------------------------------------
+// Highlight utilities (shared between file-find and session-find)
+// ---------------------------------------------------------------------------
+
+const FIND_HIGHLIGHT_NAME = "opencode-find"
+const FIND_CURRENT_HIGHLIGHT_NAME = "opencode-find-current"
+
+export function clearFindHighlights() {
+  const api = (globalThis as { CSS?: { highlights?: { delete: (name: string) => void } } }).CSS?.highlights
+  if (!api) return
+  api.delete(FIND_HIGHLIGHT_NAME)
+  api.delete(FIND_CURRENT_HIGHLIGHT_NAME)
+}
+
+export function supportsHighlightAPI() {
+  const g = globalThis as unknown as { CSS?: { highlights?: unknown }; Highlight?: unknown }
+  return typeof g.Highlight === "function" && g.CSS?.highlights != null
+}
+
+export function setFindHighlights(ranges: Range[], currentIndex: number): boolean {
+  const api = (globalThis as unknown as { CSS?: { highlights?: any }; Highlight?: any }).CSS?.highlights
+  const Highlight = (globalThis as unknown as { Highlight?: any }).Highlight
+  if (!api || typeof Highlight !== "function") return false
+
+  api.delete(FIND_HIGHLIGHT_NAME)
+  api.delete(FIND_CURRENT_HIGHLIGHT_NAME)
+
+  const active = ranges[currentIndex]
+  if (active) api.set(FIND_CURRENT_HIGHLIGHT_NAME, new Highlight(active))
+
+  const rest = ranges.filter((_, i) => i !== currentIndex)
+  if (rest.length > 0) api.set(FIND_HIGHLIGHT_NAME, new Highlight(...rest))
+  return true
+}
+
 function isEditable(node: unknown): boolean {
   if (!(node instanceof HTMLElement)) return false
   if (node.closest("[data-prevent-autofocus]")) return true
@@ -121,16 +156,30 @@ function installShortcuts() {
   )
 }
 
+// ---------------------------------------------------------------------------
+// External host registration (used by session-find)
+// ---------------------------------------------------------------------------
+
+export function registerFindHost(host: FindHost): () => void {
+  installShortcuts()
+  hosts.add(host)
+  if (!target) target = host
+  return () => {
+    hosts.delete(host)
+    if (current === host) {
+      current = undefined
+      clearFindHighlights()
+    }
+    if (target === host) target = undefined
+  }
+}
+
 function clearHighlightFind() {
-  const api = (globalThis as { CSS?: { highlights?: { delete: (name: string) => void } } }).CSS?.highlights
-  if (!api) return
-  api.delete("opencode-find")
-  api.delete("opencode-find-current")
+  clearFindHighlights()
 }
 
 function supportsHighlights() {
-  const g = globalThis as unknown as { CSS?: { highlights?: unknown }; Highlight?: unknown }
-  return typeof g.Highlight === "function" && g.CSS?.highlights != null
+  return supportsHighlightAPI()
 }
 
 function scrollParent(el: HTMLElement): HTMLElement | undefined {
@@ -337,19 +386,7 @@ export function createFileFind(opts: CreateFileFindOptions) {
   }
 
   const setHighlights = (ranges: Range[], currentIndex: number) => {
-    const api = (globalThis as unknown as { CSS?: { highlights?: any }; Highlight?: any }).CSS?.highlights
-    const Highlight = (globalThis as unknown as { Highlight?: any }).Highlight
-    if (!api || typeof Highlight !== "function") return false
-
-    api.delete("opencode-find")
-    api.delete("opencode-find-current")
-
-    const active = ranges[currentIndex]
-    if (active) api.set("opencode-find-current", new Highlight(active))
-
-    const rest = ranges.filter((_, i) => i !== currentIndex)
-    if (rest.length > 0) api.set("opencode-find", new Highlight(...rest))
-    return true
+    return setFindHighlights(ranges, currentIndex)
   }
 
   const apply = (args?: { reset?: boolean; scroll?: boolean }) => {

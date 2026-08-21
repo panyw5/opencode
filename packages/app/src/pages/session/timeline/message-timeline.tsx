@@ -67,6 +67,8 @@ import { assistantCopySummary } from "./model"
 import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
+import { createSessionFind } from "./session-find"
+import { FileSearchBar } from "@opencode-ai/ui/file-search"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -527,6 +529,17 @@ export function MessageTimeline(props: {
   const virtualSnapshot = createMemo(() => snapshotVirtualItems(virtualizer.getVirtualItems()))
   const virtualItemByKey = createMemo(() => virtualSnapshot().byKey)
   const virtualRowKeys = createMemo(() => virtualSnapshot().keys)
+
+  // --- Session find ---
+  const sessionFind = createSessionFind({
+    virtualizer,
+    listRoot,
+    timelineRows,
+    rowByKey: timelineRowByKey,
+    getMessageParts,
+    sessionID,
+  })
+
   let lastRenderTrace = ""
   createEffect(() => {
     const rows = timelineRows()
@@ -640,6 +653,8 @@ export function MessageTimeline(props: {
     props.onUserScroll()
     props.onMarkScrollGesture(root)
     props.onHistoryScroll()
+    // Refresh find highlights after scroll (mounted rows change)
+    sessionFind.refreshHighlights()
   }
 
   // activeMessageID is sticky (debounced exit) so brief status blips do not flash the turn.
@@ -1098,6 +1113,20 @@ export function MessageTimeline(props: {
           </Show>
         </div>
       </ScrollView>
+      <Show when={sessionFind.open()}>
+        <FileSearchBar
+          pos={sessionFind.pos}
+          query={sessionFind.query}
+          index={sessionFind.index}
+          count={sessionFind.count}
+          setInput={sessionFind.setInput}
+          onInput={(value: string) => sessionFind.setQuery(value)}
+          onKeyDown={sessionFind.onInputKeyDown}
+          onClose={sessionFind.close}
+          onPrev={() => sessionFind.next(-1)}
+          onNext={() => sessionFind.next(1)}
+        />
+      </Show>
     </div>
   )
 }
