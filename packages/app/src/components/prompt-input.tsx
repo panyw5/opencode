@@ -2194,19 +2194,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </Show>
                   <Show when={platform.platform === "desktop"}>
                     <Tooltip {...hover} placement="top" value={language.t("prompt.action.expand")}>
-                      <IconButton
+                      <Button
                         data-action="prompt-expand"
                         type="button"
-                        icon="expand-corners"
-                        iconSize="medium"
                         variant="ghost"
-                        class="size-9 rounded-full"
+                        class="size-9 rounded-full p-0"
                         style={buttons()}
                         onClick={expand}
                         disabled={store.mode !== "normal"}
                         tabIndex={store.mode === "normal" ? undefined : -1}
                         aria-label={language.t("prompt.action.expand")}
-                      />
+                      >
+                        <Icon name="expand-corners" size="medium" style={{ transform: "rotate(45deg)" }} />
+                      </Button>
                     </Tooltip>
                   </Show>
                 </div>
