@@ -1,0 +1,7 @@
+List task sessions launched from the current session.
+
+Use this after a task call was interrupted before returning its task_id, or whenever you need to rediscover child tasks before reading their transcript or resuming them.
+
+The default scope lists all descendant task sessions. Set scope to children to list only direct children.
+
+Returns each task_id with its parent task, depth, title, agent, durable timestamps, and best-known state. Live session state is preferred. Because live status is server-local, an unfinished assistant message with no runner visible to the current server is reported as unknown rather than interrupted; another server instance may still own it. Unrelated sessions are never returned.

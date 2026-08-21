@@ -169,6 +169,15 @@ describe("tool.registry", () => {
     }),
   )
 
+  it.instance("shows task_list for rediscovering child task sessions", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const ids = yield* registry.ids()
+
+      expect(ids).toContain("task_list")
+    }),
+  )
+
   it.instance("hides task background parameter unless experimental background subagents are enabled", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service

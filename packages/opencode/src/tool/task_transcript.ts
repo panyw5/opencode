@@ -11,7 +11,7 @@ const MAX_LIMIT = 50
 const MAX_FIELD_CHARS = 4_000
 
 export const Parameters = Schema.Struct({
-  task_id: SessionID.annotate({ description: "The task_id returned by the task tool" }),
+  task_id: SessionID.annotate({ description: "The task_id returned by task or discovered with task_list" }),
   cursor: Schema.optional(Schema.String).annotate({
     description: "Opaque next_cursor returned by a previous call, to read older messages",
   }),

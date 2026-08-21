@@ -1443,6 +1443,80 @@ describe("session.message-v2.toModelMessage", () => {
     ])
   })
 
+  test("preserves a created task session ID in an interrupted running tool result", async () => {
+    const userID = "m-user"
+    const assistantID = "m-assistant"
+    const taskID = "ses_child"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [{ ...basePart(userID, "u1"), type: "text", text: "delegate work" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1"),
+            type: "tool",
+            callID: "call-task",
+            tool: "task",
+            state: {
+              status: "running",
+              input: { description: "inspect bug", prompt: "inspect", subagent_type: "general" },
+              title: "inspect bug",
+              metadata: { sessionId: taskID },
+              time: { start: 0 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    const result = await MessageV2.toModelMessages(input, model)
+    const tool = result.find((message) => message.role === "tool")
+    expect(tool).toBeDefined()
+    expect(JSON.stringify(tool)).toContain("[Tool execution was interrupted]")
+    expect(JSON.stringify(tool)).toContain(`task_id: ${taskID}`)
+    expect(JSON.stringify(tool)).toContain("task_list")
+  })
+
+  test("preserves a created task session ID after interruption is persisted as an error", async () => {
+    const userID = "m-user"
+    const assistantID = "m-assistant"
+    const taskID = "ses_child"
+    const input: MessageV2.WithParts[] = [
+      {
+        info: userInfo(userID),
+        parts: [{ ...basePart(userID, "u1"), type: "text", text: "delegate work" }] as MessageV2.Part[],
+      },
+      {
+        info: assistantInfo(assistantID, userID),
+        parts: [
+          {
+            ...basePart(assistantID, "a1"),
+            type: "tool",
+            callID: "call-task",
+            tool: "task",
+            state: {
+              status: "error",
+              input: { description: "inspect bug", prompt: "inspect", subagent_type: "general" },
+              error: "Tool execution aborted",
+              metadata: { interrupted: true, sessionId: taskID },
+              time: { start: 0, end: 1 },
+            },
+          },
+        ] as MessageV2.Part[],
+      },
+    ]
+
+    const result = await MessageV2.toModelMessages(input, model)
+    const tool = result.find((message) => message.role === "tool")
+    expect(tool).toBeDefined()
+    expect(JSON.stringify(tool)).toContain("Tool execution aborted")
+    expect(JSON.stringify(tool)).toContain(`task_id: ${taskID}`)
+    expect(JSON.stringify(tool)).toContain("task_transcript")
+  })
+
   test("drops crash-recovery assistant messages that only contain empty content", async () => {
     const assistantID = "m-assistant"
 

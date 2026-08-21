@@ -3,7 +3,7 @@ Inspect the persisted transcript of a task launched from the current session.
 Use this when a subagent is stuck, failed, produced an unexpected result, or needs more direction. Inspect its recent messages and tool activity before deciding whether to resume the task with `task(task_id=...)`, wait for it, or take over the work yourself.
 
 Access rules:
-- `task_id` must be the ID returned by the Task tool for a direct or descendant child task of the current session.
+- `task_id` must be the ID returned by the Task tool or discovered with task_list for a direct or descendant child task of the current session.
 - This tool cannot read unrelated sessions.
 
 Pagination:

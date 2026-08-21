@@ -21,6 +21,7 @@ import { Parameters as Read } from "../../src/tool/read"
 import { Parameters as Shell } from "../../src/tool/shell"
 import { Parameters as Skill } from "../../src/tool/skill"
 import { Parameters as Task } from "../../src/tool/task"
+import { Parameters as TaskList } from "../../src/tool/task_list"
 import { Parameters as TaskTranscript } from "../../src/tool/task_transcript"
 import { Parameters as Todo } from "../../src/tool/todo"
 import { Parameters as WebFetch } from "../../src/tool/webfetch"
@@ -53,6 +54,7 @@ describe("tool parameters", () => {
     test("read", () => expect(toJsonSchema(Read)).toMatchSnapshot())
     test("skill", () => expect(toJsonSchema(Skill)).toMatchSnapshot())
     test("task", () => expect(toJsonSchema(Task)).toMatchSnapshot())
+    test("task_list", () => expect(toJsonSchema(TaskList)).toMatchSnapshot())
     test("task_transcript", () => expect(toJsonSchema(TaskTranscript)).toMatchSnapshot())
     test("todo", () => expect(toJsonSchema(Todo)).toMatchSnapshot())
     test("webfetch", () => expect(toJsonSchema(WebFetch)).toMatchSnapshot())
@@ -263,6 +265,17 @@ describe("tool parameters", () => {
     })
     test("rejects limits over 50", () => {
       expect(accepts(TaskTranscript, { task_id: "ses_123", limit: 51 })).toBe(false)
+    })
+  })
+
+  describe("task_list", () => {
+    test("accepts empty input and optional scope", () => {
+      expect(parse(TaskList, {})).toEqual({})
+      expect(parse(TaskList, { scope: "children" }).scope).toBe("children")
+      expect(parse(TaskList, { scope: "descendants" }).scope).toBe("descendants")
+    })
+    test("rejects unknown scope", () => {
+      expect(accepts(TaskList, { scope: "all" })).toBe(false)
     })
   })
 

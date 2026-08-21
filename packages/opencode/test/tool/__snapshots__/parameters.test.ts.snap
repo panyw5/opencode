@@ -384,7 +384,7 @@ exports[`tool parameters JSON Schema (wire shape) task_transcript 1`] = `
       "type": "integer",
     },
     "task_id": {
-      "description": "The task_id returned by the task tool",
+      "description": "The task_id returned by task or discovered with task_list",
       "pattern": "^ses",
       "type": "string",
     },
@@ -392,6 +392,23 @@ exports[`tool parameters JSON Schema (wire shape) task_transcript 1`] = `
   "required": [
     "task_id",
   ],
+  "type": "object",
+}
+`;
+
+exports[`tool parameters JSON Schema (wire shape) task_list 1`] = `
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "scope": {
+      "description": "List direct children only, or all descendants (default descendants)",
+      "enum": [
+        "children",
+        "descendants",
+      ],
+      "type": "string",
+    },
+  },
   "type": "object",
 }
 `;

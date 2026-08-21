@@ -28,6 +28,8 @@ import { AuthError, OutputLengthError } from "./message-error"
 import { isConsultMention } from "@/tool/consult-mention"
 export { AuthError, OutputLengthError } from "./message-error"
 
+const log = EffectLogger.create({ service: "session.message-v2" })
+
 /** Error shape thrown by Bun's fetch() when gzip/br decompression fails mid-stream */
 interface FetchDecompressionError extends Error {
   code: "ZlibError"
@@ -676,6 +678,23 @@ function dedupeReplayToolParts(parts: Part[]): Part[] {
   return result
 }
 
+function interruptedTaskRecovery(part: ToolPart) {
+  if (part.tool !== "task" || part.state.status === "pending") return
+  const sessionID = part.state.metadata?.sessionId
+  if (typeof sessionID !== "string" || sessionID.length === 0) return
+  return [
+    "A child task session was created before the tool call was interrupted.",
+    `task_id: ${sessionID}`,
+    "The child may still be running. Use task_list to rediscover child tasks or task_transcript with this task_id before deciding whether to resume it.",
+  ].join("\n")
+}
+
+function withInterruptedTaskRecovery(part: ToolPart, text: string) {
+  const recovery = interruptedTaskRecovery(part)
+  if (!recovery || text.includes(recovery)) return text
+  return `${text}\n\n${recovery}`
+}
+
 export const toModelMessagesEffect = Effect.fnUntraced(function* (
   input: WithParts[],
   model: Provider.Model,
@@ -876,7 +895,19 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             })
           }
           if (part.state.status === "error") {
-            const output = part.state.metadata?.interrupted === true ? part.state.metadata.output : undefined
+            const interrupted = part.state.metadata?.interrupted === true
+            const recovery = interrupted ? interruptedTaskRecovery(part) : undefined
+            if (recovery) {
+              yield* log.info("preserving interrupted task session in model output", {
+                parentSessionID: part.sessionID,
+                messageID: part.messageID,
+                callID: part.callID,
+                taskSessionID: part.state.metadata?.sessionId,
+                persistedState: "error",
+              })
+            }
+            const preserved = interrupted ? part.state.metadata?.output : undefined
+            const output = typeof preserved === "string" ? withInterruptedTaskRecovery(part, preserved) : undefined
             if (typeof output === "string") {
               assistantMessage.parts.push({
                 type: ("tool-" + part.tool) as `tool-${string}`,
@@ -893,7 +924,7 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
                 state: "output-error",
                 toolCallId: part.callID,
                 input: part.state.input,
-                errorText: part.state.error,
+                errorText: interrupted ? withInterruptedTaskRecovery(part, part.state.error) : part.state.error,
                 ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
                 ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
               })
@@ -901,16 +932,27 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
           }
           // Handle pending/running tool calls to prevent dangling tool_use blocks
           // Anthropic/Claude APIs require every tool_use to have a corresponding tool_result
-          if (part.state.status === "pending" || part.state.status === "running")
+          if (part.state.status === "pending" || part.state.status === "running") {
+            const recovery = interruptedTaskRecovery(part)
+            if (recovery) {
+              yield* log.info("preserving active task session in interrupted model output", {
+                parentSessionID: part.sessionID,
+                messageID: part.messageID,
+                callID: part.callID,
+                taskSessionID: part.state.status === "running" ? part.state.metadata?.sessionId : undefined,
+                persistedState: part.state.status,
+              })
+            }
             assistantMessage.parts.push({
               type: ("tool-" + part.tool) as `tool-${string}`,
               state: "output-error",
               toolCallId: part.callID,
               input: part.state.input,
-              errorText: "[Tool execution was interrupted]",
+              errorText: withInterruptedTaskRecovery(part, "[Tool execution was interrupted]"),
               ...(part.metadata?.providerExecuted ? { providerExecuted: true } : {}),
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
             })
+          }
         }
         if (part.type === "reasoning") {
           if (differentModel) {
