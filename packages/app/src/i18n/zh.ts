@@ -159,7 +159,8 @@ export const dict = {
   "command.sessionTabs.previous": "上一个会话标签页",
   "command.sessionTabs.next": "下一个会话标签页",
 
-  "trellis.tasks.copyTitle": "复制任务标题",
+  "trellis.tasks.taskId": "任务 ID",
+  "trellis.tasks.copyId": "复制任务 ID",
   "trellis.tasks.edit": "编辑源码",
   "trellis.tasks.preview": "预览",
   "trellis.tasks.save": "保存",

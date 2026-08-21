@@ -9,7 +9,17 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  type Accessor,
+  type JSX,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { DialogPromptEditor } from "@/components/dialog-prompt-editor"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
@@ -170,19 +180,14 @@ function ProjectTaskCard(props: {
   // Last-row chips: task status (lifecycle) + session-todo progress + session count.
   // Status and todo progress are intentionally separate (multi-session work).
   const meta = createMemo(() => {
-    const items: string[] = [
-      projectTaskStatusLabel(props.task.status, language.t),
-      progressText(props.task),
-    ]
+    const items: string[] = [projectTaskStatusLabel(props.task.status, language.t), progressText(props.task)]
     if (props.task.sessionCount > 0) {
       items.push(language.t("projectTask.sessions.count", { count: props.task.sessionCount }))
     }
     return items
   })
   // "In progress" is only meaningful for open tasks — hide when already in_progress/done/archived.
-  const canSetInProgress = createMemo(
-    () => props.task.status === "open" && canAct(),
-  )
+  const canSetInProgress = createMemo(() => props.task.status === "open" && canAct())
 
   return (
     <TaskCardShell
@@ -202,9 +207,7 @@ function ProjectTaskCard(props: {
                 Promise.resolve(props.onSetInProgress(props.task)).finally(() => setPending(undefined))
               }}
             >
-              {pending() === "status"
-                ? language.t("common.loading")
-                : language.t("projectTask.status.inProgress")}
+              {pending() === "status" ? language.t("common.loading") : language.t("projectTask.status.inProgress")}
             </TaskCardActionButton>
           </Show>
           <TaskCardActionButton
@@ -234,8 +237,8 @@ function ProjectTaskDetailDialog(props: {
   const navigate = useNavigate()
   const dialogKey = createMemo(() => props.task.id)
   const [maximized, setMaximized] = createSignal(false)
-  const [titleCopied, setTitleCopied] = createSignal(false)
-  let titleCopiedTimer: ReturnType<typeof setTimeout> | undefined
+  const [idCopied, setIdCopied] = createSignal(false)
+  let idCopiedTimer: ReturnType<typeof setTimeout> | undefined
   const [state, setState] = createStore({
     detail: undefined as ProjectTaskDetail | undefined,
     loading: true,
@@ -248,6 +251,7 @@ function ProjectTaskDetailDialog(props: {
   })
 
   const detail = createMemo(() => state.detail)
+  const mainSessions = createMemo(() => (detail()?.sessions ?? []).filter((session) => !session.parentID))
   const title = createMemo(() => detail()?.title ?? props.task.title)
   const status = createMemo(() => detail()?.status ?? props.task.status)
   // Prefer the hydrated anchor + descriptionPath (worktree-anchored, handles legacy/custom
@@ -361,25 +365,25 @@ function ProjectTaskDetailDialog(props: {
     navigate(`/${base64Encode(props.directory)}/session/${sessionID}`)
   }
 
-  const copyTitle = () => {
-    const value = title()
+  const copyTaskID = () => {
+    const value = props.task.id
     const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-    console.debug(`[project-task] copy title id=${props.task.id}`)
+    console.debug(`[project-task] copy-id-start id=${props.task.id}`)
     if (!clipboard?.writeText) {
-      console.debug(`[project-task] clipboard unavailable id=${props.task.id}`)
+      console.debug(`[project-task] copy-id-unavailable id=${props.task.id}`)
       showToast({ variant: "error", title: language.t("common.requestFailed") })
       return
     }
     void clipboard.writeText(value).then(
       () => {
-        console.debug(`[project-task] copied title id=${props.task.id}`)
-        setTitleCopied(true)
-        if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
-        titleCopiedTimer = setTimeout(() => setTitleCopied(false), 1200)
+        console.debug(`[project-task] copy-id-success id=${props.task.id}`)
+        setIdCopied(true)
+        if (idCopiedTimer) clearTimeout(idCopiedTimer)
+        idCopiedTimer = setTimeout(() => setIdCopied(false), 1200)
       },
       (err: unknown) => {
         console.debug(
-          `[project-task] copy title failed id=${props.task.id} err=${err instanceof Error ? err.message : String(err)}`,
+          `[project-task] copy-id-failed id=${props.task.id} err=${err instanceof Error ? err.message : String(err)}`,
         )
         showToast({
           variant: "error",
@@ -413,7 +417,7 @@ function ProjectTaskDetailDialog(props: {
 
   onMount(() => void load())
   onCleanup(() => {
-    if (titleCopiedTimer) clearTimeout(titleCopiedTimer)
+    if (idCopiedTimer) clearTimeout(idCopiedTimer)
   })
 
   return (
@@ -443,27 +447,30 @@ function ProjectTaskDetailDialog(props: {
         title={
           <div class="flex min-w-0 items-center gap-2">
             <div class="min-w-0 flex-1">
-              <div class="flex min-w-0 items-center gap-2">
-                <span class="min-w-0 truncate">{title()}</span>
+              <div class="min-w-0 truncate">{title()}</div>
+              <div class="mt-0.5 flex min-w-0 items-center gap-1 text-12-regular text-text-weak">
+                <span class="shrink-0">{language.t("trellis.tasks.taskId")}:</span>
+                <span class="min-w-0 truncate">{props.task.id}</span>
                 <Tooltip
                   placement="bottom"
-                  value={titleCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyTitle")}
+                  value={idCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyId")}
                 >
                   <IconButton
-                    icon={titleCopied() ? "check" : "copy"}
+                    data-action="project-task-copy-id"
+                    icon={idCopied() ? "check" : "copy"}
                     variant="ghost"
-                    size="large"
+                    size="small"
+                    class="shrink-0"
                     aria-label={
-                      titleCopied()
-                        ? language.t("session.share.copy.copied")
-                        : language.t("trellis.tasks.copyTitle")
+                      idCopied() ? language.t("session.share.copy.copied") : language.t("trellis.tasks.copyId")
                     }
-                    onClick={copyTitle}
+                    onClick={copyTaskID}
                   />
                 </Tooltip>
-              </div>
-              <div class="mt-0.5 truncate text-12-regular text-text-weak">
-                {labelStatus(status())} · {progressText(detail() ?? props.task)}
+                <span class="shrink-0 text-text-subtle">·</span>
+                <span class="shrink-0">
+                  {labelStatus(status())} · {progressText(detail() ?? props.task)}
+                </span>
               </div>
             </div>
           </div>
@@ -475,36 +482,6 @@ function ProjectTaskDetailDialog(props: {
         data-maximized={maximized() ? "" : undefined}
         action={
           <div class="flex items-center gap-2">
-            <div
-              role="group"
-              class="flex items-center rounded-lg border border-border-weak-base bg-background-stronger p-0.5"
-            >
-              <button
-                type="button"
-                class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
-                classList={{
-                  "bg-background-base text-text-strong shadow-sm": state.mode === "preview",
-                  "text-text-base hover:text-text-strong": state.mode !== "preview",
-                }}
-                onClick={() => void saveAndPreview()}
-              >
-                <Icon name="eye" size="small" />
-                {language.t("trellis.tasks.preview")}
-              </button>
-              <button
-                type="button"
-                class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
-                classList={{
-                  "bg-background-base text-text-strong shadow-sm": state.mode === "edit",
-                  "text-text-base hover:text-text-strong": state.mode !== "edit",
-                }}
-                onClick={enterEdit}
-              >
-                <Icon name="edit" size="small" />
-                {language.t("trellis.tasks.edit")}
-              </button>
-            </div>
-            <OpenInApp path={prdPath()} logPrefix={`project-task-editor taskID=${props.task.id}`} />
             <Tooltip placement="bottom" value={language.t("projectTask.archive")}>
               <IconButton
                 icon="archive"
@@ -560,11 +537,40 @@ function ProjectTaskDetailDialog(props: {
                 </button>
               )}
             </For>
-            <span class="ml-auto text-12-regular text-text-weak">
-              {language.t("projectTask.sessions.count", {
-                count: detail()?.sessionCount ?? props.task.sessionCount,
-              })}
-            </span>
+            <div data-component="project-task-editor-toolbar" class="ml-auto flex items-center gap-2">
+              <div
+                role="group"
+                class="flex items-center rounded-lg border border-border-weak-base bg-background-stronger p-0.5"
+              >
+                <button
+                  data-action="project-task-preview"
+                  type="button"
+                  class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
+                  classList={{
+                    "bg-background-base text-text-strong shadow-sm": state.mode === "preview",
+                    "text-text-base hover:text-text-strong": state.mode !== "preview",
+                  }}
+                  onClick={() => void saveAndPreview()}
+                >
+                  <Icon name="eye" size="small" />
+                  {language.t("trellis.tasks.preview")}
+                </button>
+                <button
+                  data-action="project-task-edit"
+                  type="button"
+                  class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
+                  classList={{
+                    "bg-background-base text-text-strong shadow-sm": state.mode === "edit",
+                    "text-text-base hover:text-text-strong": state.mode !== "edit",
+                  }}
+                  onClick={enterEdit}
+                >
+                  <Icon name="edit" size="small" />
+                  {language.t("trellis.tasks.edit")}
+                </button>
+              </div>
+              <OpenInApp path={prdPath()} logPrefix={`project-task-editor taskID=${props.task.id}`} />
+            </div>
           </div>
 
           <div
@@ -652,64 +658,62 @@ function ProjectTaskDetailDialog(props: {
           </Show>
 
           <Show when={state.mode === "preview" ? detail() : undefined}>
-            {(task) => (
-              <section class="flex max-h-[28vh] min-h-0 shrink-0 flex-col gap-2 overflow-hidden">
-                <div class="text-12-medium text-text-base">
-                  {language.t("projectTask.sessions.title")} ({task().sessionCount})
-                </div>
-                <Show
-                  when={task().sessions.length > 0}
-                  fallback={
-                    <div class="text-12-regular text-text-weaker">{language.t("projectTask.sessions.empty")}</div>
-                  }
-                >
-                  <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-                    <For each={task().sessions}>
-                      {(session) => (
-                        <div class="rounded-xl border border-border-weak-base bg-background-stronger px-3 py-2">
-                          <button
-                            type="button"
-                            class="flex w-full items-center justify-between gap-2 text-left"
-                            onClick={() => openSession(session.sessionID)}
-                          >
-                            <div class="min-w-0">
-                              <div class="truncate text-13-medium text-text-strong">{session.title}</div>
-                              <div class="text-11-regular text-text-weak">
-                                {progressText(session)} · {session.todos.length} todos
-                              </div>
+            <section class="flex max-h-[28vh] min-h-0 shrink-0 flex-col gap-2 overflow-hidden">
+              <div class="text-12-medium text-text-base">
+                {language.t("projectTask.sessions.title")} ({mainSessions().length})
+              </div>
+              <Show
+                when={mainSessions().length > 0}
+                fallback={
+                  <div class="text-12-regular text-text-weaker">{language.t("projectTask.sessions.empty")}</div>
+                }
+              >
+                <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                  <For each={mainSessions()}>
+                    {(session) => (
+                      <div class="rounded-xl border border-border-weak-base bg-background-stronger px-3 py-2">
+                        <button
+                          type="button"
+                          class="flex w-full items-center justify-between gap-2 text-left"
+                          onClick={() => openSession(session.sessionID)}
+                        >
+                          <div class="min-w-0">
+                            <div class="truncate text-13-medium text-text-strong">{session.title}</div>
+                            <div class="text-11-regular text-text-weak">
+                              {progressText(session)} · {session.todos.length} todos
                             </div>
-                            <Icon name="arrow-right" size="small" class="text-icon-weak" />
-                          </button>
-                          <Show when={session.todos.length > 0}>
-                            <ul class="mt-2 flex flex-col gap-1 border-t border-border-weaker-base pt-2">
-                              <For each={session.todos}>
-                                {(todo) => (
-                                  <li class="flex items-start gap-2 text-12-regular text-text-base">
-                                    <span
-                                      class="mt-1 size-1.5 shrink-0 rounded-full"
-                                      classList={{
-                                        "bg-icon-success-base": todo.status === "completed",
-                                        "bg-icon-brand-base": todo.status === "in_progress",
-                                        "bg-icon-weak": todo.status === "pending",
-                                        "bg-icon-critical-base": todo.status === "cancelled",
-                                      }}
-                                    />
-                                    <span class="min-w-0 flex-1">{todo.content}</span>
-                                    <span class="shrink-0 text-11-regular text-text-weaker">
-                                      {labelStatus(todo.status)}
-                                    </span>
-                                  </li>
-                                )}
-                              </For>
-                            </ul>
-                          </Show>
-                        </div>
-                      )}
-                    </For>
-                  </div>
-                </Show>
-              </section>
-            )}
+                          </div>
+                          <Icon name="arrow-right" size="small" class="text-icon-weak" />
+                        </button>
+                        <Show when={session.todos.length > 0}>
+                          <ul class="mt-2 flex flex-col gap-1 border-t border-border-weaker-base pt-2">
+                            <For each={session.todos}>
+                              {(todo) => (
+                                <li class="flex items-start gap-2 text-12-regular text-text-base">
+                                  <span
+                                    class="mt-1 size-1.5 shrink-0 rounded-full"
+                                    classList={{
+                                      "bg-icon-success-base": todo.status === "completed",
+                                      "bg-icon-brand-base": todo.status === "in_progress",
+                                      "bg-icon-weak": todo.status === "pending",
+                                      "bg-icon-critical-base": todo.status === "cancelled",
+                                    }}
+                                  />
+                                  <span class="min-w-0 flex-1">{todo.content}</span>
+                                  <span class="shrink-0 text-11-regular text-text-weaker">
+                                    {labelStatus(todo.status)}
+                                  </span>
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        </Show>
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </section>
           </Show>
         </div>
       </Dialog>
@@ -727,9 +731,7 @@ export function ProjectTasksPanel(props: {
   const language = useLanguage()
   const dialog = useDialog()
   const dir = createMemo(() => props.directory())
-  const client = createMemo(() =>
-    globalSDK.createClient({ directory: dir().replace(/\\/g, "/"), throwOnError: true }),
-  )
+  const client = createMemo(() => globalSDK.createClient({ directory: dir().replace(/\\/g, "/"), throwOnError: true }))
   const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "" })
   let request = 0
 
@@ -858,12 +860,7 @@ export function ProjectTasksPanel(props: {
               <div class="flex flex-col gap-2">
                 <For each={tasks()}>
                   {(task) => (
-                    <ProjectTaskCard
-                      task={task}
-                      onOpen={open}
-                      onArchive={archive}
-                      onSetInProgress={setInProgress}
-                    />
+                    <ProjectTaskCard task={task} onOpen={open} onArchive={archive} onSetInProgress={setInProgress} />
                   )}
                 </For>
               </div>

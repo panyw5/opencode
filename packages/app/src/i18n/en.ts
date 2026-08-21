@@ -156,7 +156,8 @@ export const dict = {
   "command.sessionTabs.previous": "Previous session tab",
   "command.sessionTabs.next": "Next session tab",
 
-  "trellis.tasks.copyTitle": "Copy task title",
+  "trellis.tasks.taskId": "Task ID",
+  "trellis.tasks.copyId": "Copy task ID",
   "trellis.tasks.edit": "Edit source",
   "trellis.tasks.preview": "Preview",
   "trellis.tasks.save": "Save",
