@@ -8,8 +8,10 @@ import {
   estimateTextLines,
   OPEN_TOOL_HEIGHT,
   PREVIOUS_PART_SPACING,
+  rowRenderCost,
   TEXT_PART_MARGIN,
   timelineTextMetrics,
+  trimRangeToBudget,
   TURN_GAP_HEIGHT,
 } from "./estimate"
 
@@ -272,6 +274,103 @@ describe("estimateRowHeight viewport clamp", () => {
         { ...base, parts: lookup(part), viewportHeight: 600 },
       ),
     ).toBe(1800)
+  })
+})
+
+describe("rowRenderCost", () => {
+  test("cheap structural rows cost far less than open tools", () => {
+    expect(rowRenderCost({ _tag: "TurnGap" }, base)).toBe(0.25)
+    expect(rowRenderCost({ _tag: "Thinking", userMessageID: "m", phase: "thinking" }, base)).toBe(0.25)
+    expect(rowRenderCost({ _tag: "TurnDivider", userMessageID: "m", label: "compaction" }, base)).toBe(0.5)
+    const collapsed = toolPart()
+    const running = toolPart({ status: "running" })
+    const groupOf = (part: ToolPart) => ({
+      _tag: "AssistantPart",
+      userMessageID: "m",
+      group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } },
+    })
+    expect(rowRenderCost(groupOf(collapsed), { ...base, parts: lookup(collapsed) })).toBe(1)
+    expect(rowRenderCost(groupOf(running), { ...base, parts: lookup(running) })).toBe(6)
+  })
+
+  test("a context group costs one card per member", () => {
+    const cost = rowRenderCost(
+      {
+        _tag: "AssistantPart",
+        userMessageID: "m",
+        group: {
+          type: "context",
+          refs: [
+            { messageID: "msg_1", partID: "a" },
+            { messageID: "msg_1", partID: "b" },
+            { messageID: "msg_1", partID: "c" },
+          ],
+        },
+      },
+      base,
+    )
+    expect(cost).toBe(3.5)
+  })
+
+  test("text cost grows with wrapped lines but is capped", () => {
+    const short = textPart("one line")
+    const long = textPart("x".repeat(5000))
+    const rowOf = (part: Part) => ({
+      _tag: "AssistantPart",
+      userMessageID: "m",
+      group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } },
+    })
+    const shortCost = rowRenderCost(rowOf(short), { ...base, parts: lookup(short) })
+    const longCost = rowRenderCost(rowOf(long), { ...base, parts: lookup(long) })
+    expect(shortCost).toBe(1)
+    expect(longCost).toBeGreaterThan(shortCost)
+    expect(longCost).toBeLessThanOrEqual(8)
+  })
+})
+
+describe("trimRangeToBudget", () => {
+  const costOf = (index: number) => (index % 3 === 0 ? 1 : 3)
+
+  test("keeps the visible window regardless of budget", () => {
+    const trimmed = trimRangeToBudget({
+      indexes: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      startIndex: 4,
+      endIndex: 6,
+      costOf,
+      budget: 0,
+    })
+    expect(trimmed).toEqual([4, 5, 6])
+  })
+
+  test("expands closest-first until the budget is spent", () => {
+    const trimmed = trimRangeToBudget({
+      indexes: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      startIndex: 4,
+      endIndex: 5,
+      costOf,
+      budget: 6, // visible costs 3+3=6 → nothing left
+    })
+    expect(trimmed).toEqual([4, 5])
+
+    const withSpare = trimRangeToBudget({
+      indexes: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+      startIndex: 4,
+      endIndex: 5,
+      costOf,
+      budget: 7, // 1 spare → index 3 (cost 1) fits, index 2 (cost 3) does not
+    })
+    expect(withSpare).toEqual([3, 4, 5])
+  })
+
+  test("returns sorted unique indexes", () => {
+    const trimmed = trimRangeToBudget({
+      indexes: [9, 2, 4, 7, 4],
+      startIndex: 4,
+      endIndex: 4,
+      costOf: () => 0.5,
+      budget: 10,
+    })
+    expect(trimmed).toEqual([2, 4, 7, 9])
   })
 })
 

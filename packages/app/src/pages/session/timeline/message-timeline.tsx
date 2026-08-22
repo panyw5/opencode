@@ -69,7 +69,7 @@ import {
   virtualRowOverflow,
   type ViewportAnchor,
 } from "./measure"
-import { estimateRowHeight, timelineTextMetrics } from "./estimate"
+import { estimateRowHeight, rowRenderCost, timelineTextMetrics, trimRangeToBudget } from "./estimate"
 import { assistantCopySummary } from "./model"
 import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
@@ -84,6 +84,14 @@ const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
 const unknownRow = { _tag: "unknown" }
 const overscanExpansionDelayMs = 750
+/** Overscan budget: visible-row cost × multiplier (+ base so small viewports still prefetch). */
+const OVERSCAN_COST_MULTIPLIER = 2
+const OVERSCAN_COST_BASE = 8
+/** Fast scrolling drops prefetch to a couple of cheap rows to protect frame time. */
+const FAST_SCROLL_OVERSCAN = 2
+const FAST_SCROLL_BUDGET_SHARE = 0.4
+const FAST_SCROLL_SPEED = 1.5 // px per ms
+const FAST_SCROLL_WINDOW_MS = 140
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
@@ -301,6 +309,15 @@ export function MessageTimeline(props: {
     if (tool === "bash") return settings.general.shellToolPartsExpanded()
     if (["edit", "write", "apply_patch"].includes(tool)) return settings.general.editToolPartsExpanded()
   }
+  const estimatorOptions = () => {
+    const metrics = textMetrics()
+    return {
+      parts: getMessagePart,
+      toolDefaultOpen: (part: ToolPart) => defaultOpen(part) ?? false,
+      userMessageText,
+      charWidth: metrics.charWidth,
+    }
+  }
 
   // --- Batched row measurement (single ResizeObserver owned by the virtualizer) ---
   // All height commits funnel through the measureElement option below: the
@@ -321,6 +338,24 @@ export function MessageTimeline(props: {
     programmaticScrollAt = performance.now()
   }
   const isProgrammaticScrollActive = () => performance.now() - programmaticScrollAt < programmaticScrollWindowMs
+
+  // Scroll velocity (px/ms, exponentially smoothed) drives overscan: fast
+  // flings shrink the prefetch window so mounting rows cannot overrun frames.
+  let velocityTrackedAt = 0
+  let velocityTrackedTop = 0
+  let scrollVelocity = 0
+  const trackScrollVelocity = (root: HTMLDivElement) => {
+    const now = performance.now()
+    const dt = now - velocityTrackedAt
+    if (dt > 2 && dt < 300) {
+      const speed = Math.abs(root.scrollTop - velocityTrackedTop) / dt
+      scrollVelocity = scrollVelocity * 0.7 + speed * 0.3
+    }
+    velocityTrackedAt = now
+    velocityTrackedTop = root.scrollTop
+  }
+  const fastScrolling = () =>
+    scrollVelocity > FAST_SCROLL_SPEED && performance.now() - velocityTrackedAt < FAST_SCROLL_WINDOW_MS
 
   // Anchor captured after the previous measurement batch; restored after the
   // next one so a spanning-row resize cannot shift what the user is reading.
@@ -564,12 +599,9 @@ export function MessageTimeline(props: {
       const size = listSize()
       const metrics = textMetrics()
       return estimateRowHeight(timelineRows()[index] ?? unknownRow, size.width, {
-        parts: getMessagePart,
-        toolDefaultOpen: (part) => defaultOpen(part) ?? false,
+        ...estimatorOptions(),
         viewportHeight: size.height,
         textLineHeight: metrics.lineHeight,
-        charWidth: metrics.charWidth,
-        userMessageText,
       })
     },
     scrollToFn: (offset, options, instance) => {
@@ -585,11 +617,35 @@ export function MessageTimeline(props: {
     overscan: 50,
     paddingEnd: 64,
     rangeExtractor: (range) => {
-      const indexes = defaultRangeExtractor({ ...range, overscan: renderOverscan() })
+      const rows = timelineRows()
+      const fast = fastScrolling()
+      const overscan = fast ? Math.min(FAST_SCROLL_OVERSCAN, renderOverscan()) : renderOverscan()
+      const indexes = defaultRangeExtractor({ ...range, overscan })
+      const options = estimatorOptions()
+      const costOf = (index: number) => rowRenderCost(rows[index] ?? unknownRow, options)
+      let visibleCost = 0
+      for (let index = range.startIndex; index <= range.endIndex; index++) visibleCost += costOf(index)
+      const budget = visibleCost * (fast ? FAST_SCROLL_BUDGET_SHARE : OVERSCAN_COST_MULTIPLIER) + OVERSCAN_COST_BASE
+      const trimmed = trimRangeToBudget({
+        indexes,
+        startIndex: range.startIndex,
+        endIndex: range.endIndex,
+        costOf,
+        budget,
+        // A floor per side guards against budget-starved windows leaving
+        // blanks when a huge row dominates the visible cost.
+        minPerSide: fast ? 1 : 3,
+      })
       const active = activeAssistantRowIndex()
-      return [...new Set([...resizePinnedIndexes, ...indexes, ...(active === undefined ? [] : [active])])].sort(
-        (a, b) => a - b,
-      )
+      const lastIndex = rows.length - 1
+      return [...new Set([
+        ...resizePinnedIndexes,
+        ...trimmed,
+        ...(active === undefined ? [] : [active]),
+        // While pinned to the bottom the tail row must stay mounted so the
+        // follow scroll and its live measurement never unmount.
+        ...(lastIndex >= 0 && props.shouldAnchorBottom() ? [lastIndex] : []),
+      ])].sort((a, b) => a - b)
     },
   })
   const resizeItem = virtualizer.resizeItem
@@ -795,6 +851,7 @@ export function MessageTimeline(props: {
   const handleScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
     const root = event.currentTarget
     props.onScheduleScrollState(root)
+    trackScrollVelocity(root)
     // While history is prepended we programmatically adjust scrollTop. Those events
     // must not clear the pin or request another page (that chain-loads to the top).
     if (prependLoading) return

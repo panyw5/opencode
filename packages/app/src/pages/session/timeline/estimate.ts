@@ -253,6 +253,109 @@ export type TimelineTextMetrics = {
   charWidth: number
 }
 
+/**
+ * Relative render cost of a row (1 ≈ one collapsed tool card). Drives the
+ * overscan budget: cheap rows can prefetch many, expensive rows few.
+ */
+export function rowRenderCost(row: EstimateRowInput, options: EstimateRowHeightOptions = {}): number {
+  switch (row._tag) {
+    case "TurnGap":
+    case "Thinking":
+    case "Retry":
+      return 0.25
+    case "TurnDivider":
+    case "DiffSummary":
+      return 0.5
+    case "CommentStrip":
+    case "Error":
+      return 1
+
+    case "UserMessage":
+      return 1.5 + estimateTextLines(options.userMessageText?.(row.userMessageID ?? "") ?? "", 800, options.charWidth ?? DEFAULT_CHAR_WIDTH) / 12
+
+    case "AssistantPart": {
+      const group = row.group
+      if (!group) return 1
+      if (group.type === "context" && group.refs) {
+        // One collapsible card per member plus a shared trigger.
+        return 0.5 + group.refs.length
+      }
+      if (group.type === "part" && group.ref) {
+        const part = options.parts?.(group.ref.messageID, group.ref.partID)
+        if (!part) return 1
+        if (part.type === "tool") {
+          if (toolPartLive(part)) return 6
+          if (normalizedToolName(part.tool) === "question") return 6
+          if (options.toolDefaultOpen?.(part)) return 6
+          return 1
+        }
+        if (part.type === "text") {
+          const lines = estimateTextLines(part.text, 800, options.charWidth ?? DEFAULT_CHAR_WIDTH)
+          return Math.min(Math.max(lines / 6, 1), 8)
+        }
+        if (part.type === "reasoning") return 0.75
+        return 1
+      }
+      return 1
+    }
+
+    default:
+      return 1
+  }
+}
+
+/**
+ * Keep the visible window plus as many overscan rows as the budget allows,
+ * expanding outward from the visible edges (closest rows first). Indexes
+ * outside the visible window that exceed the budget are dropped; the visible
+ * window itself is never trimmed. Each side always keeps at least
+ * `minPerSide` rows regardless of budget so scrolling never reveals blanks.
+ */
+export function trimRangeToBudget(input: {
+  indexes: ReadonlyArray<number>
+  startIndex: number
+  endIndex: number
+  costOf: (index: number) => number
+  budget: number
+  minPerSide?: number
+}): number[] {
+  const { indexes, startIndex, endIndex, costOf, budget } = input
+  const minPerSide = input.minPerSide ?? 0
+  if (indexes.length === 0) return []
+  let visibleCost = 0
+  const keep = new Set<number>()
+  const below: number[] = []
+  const above: number[] = []
+  for (const index of indexes) {
+    if (index >= startIndex && index <= endIndex) {
+      keep.add(index)
+      visibleCost += costOf(index)
+    } else if (index < startIndex) {
+      below.push(index)
+    } else {
+      above.push(index)
+    }
+  }
+  let remaining = Math.max(0, budget - visibleCost)
+  // Closest-to-viewport first: below in descending order, above ascending.
+  below.sort((a, b) => b - a)
+  above.sort((a, b) => a - b)
+  const expand = (candidates: number[]) => {
+    let kept = 0
+    for (const index of candidates) {
+      const guaranteed = kept < minPerSide
+      const cost = costOf(index)
+      if (!guaranteed && cost > remaining) continue
+      keep.add(index)
+      kept += 1
+      if (!guaranteed) remaining -= cost
+    }
+  }
+  expand(below)
+  expand(above)
+  return [...keep].sort((a, b) => a - b)
+}
+
 const DEFAULT_TEXT_METRICS: TimelineTextMetrics = {
   lineHeight: DEFAULT_TEXT_LINE_HEIGHT,
   charWidth: DEFAULT_CHAR_WIDTH,
