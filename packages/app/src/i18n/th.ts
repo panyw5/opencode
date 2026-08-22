@@ -539,6 +539,7 @@ export const dict = {
 
   "session.context.addToContext": "เพิ่ม {{selection}} ไปยังบริบท",
   "session.todo.title": "สิ่งที่ต้องทำ",
+  "session.todo.mounted": "เชื่อมโยงงานโปรเจกต์แล้ว",
   "session.todo.collapse": "ย่อ",
   "session.todo.expand": "ขยาย",
   "session.followupDock.summary.one": "{{count}} ข้อความในคิว",

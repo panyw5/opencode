@@ -544,6 +544,7 @@ export const dict = {
 
   "session.context.addToContext": "Dodaj {{selection}} u kontekst",
   "session.todo.title": "Zadaci",
+  "session.todo.mounted": "Povezan projektni zadatak",
   "session.todo.collapse": "Sažmi",
   "session.todo.expand": "Proširi",
   "session.followupDock.summary.one": "{{count}} poruka na čekanju",

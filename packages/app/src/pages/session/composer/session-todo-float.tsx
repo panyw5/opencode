@@ -3,8 +3,10 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
 import { createEffect, createMemo, createSignal, on, onCleanup, Show, untrack } from "solid-js"
+import { pendingProjectTaskMount } from "@/components/session/pending-project-task-mount"
 import { SessionProjectTaskMount } from "@/components/session/session-project-task-mount"
 import { useLanguage } from "@/context/language"
+import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { TodoList } from "@/pages/session/composer/session-todo-list"
 import { composerEnabled, composerProbe } from "@/testing/session-composer"
@@ -17,16 +19,29 @@ export function SessionTodoFloat(props: {
 }) {
   const language = useLanguage()
   const sync = useSync()
+  const sdk = useSDK()
   const [shown, setShown] = createSignal(false)
 
   const total = createMemo(() => props.todos.length)
   const done = createMemo(() => props.todos.filter((todo) => todo.status === "completed").length)
   const inProgress = createMemo(() => props.todos.some((todo) => todo.status === "in_progress"))
-  const badge = createMemo(() =>
-    total() > 0
+  // Mirror SessionProjectTaskMount: existing session uses the server-mounted task, a new
+  // session (no session row yet) falls back to the local pending selection.
+  const directory = createMemo(() => sdk.directory)
+  const session = createMemo(() => {
+    const id = props.sessionID
+    if (!id) return undefined
+    return sync.session.get(id)
+  })
+  const pending = createMemo(() => pendingProjectTaskMount(directory()))
+  const isMountedToTask = createMemo(() => !!(session()?.mountedTaskID ?? pending().taskID))
+  const badge = createMemo(() => {
+    // Once the session is linked to a project task, surface it in the capsule label.
+    if (isMountedToTask()) return language.t("session.todo.mounted")
+    return total() > 0
       ? language.t("session.todo.badge", { done: done(), total: total() })
-      : language.t("session.todo.title"),
-  )
+      : language.t("session.todo.title")
+  })
 
   const e2e = composerEnabled()
   const probe = composerProbe(props.sessionID)

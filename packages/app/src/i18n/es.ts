@@ -545,6 +545,7 @@ export const dict = {
 
   "session.context.addToContext": "Añadir {{selection}} al contexto",
   "session.todo.title": "Tareas",
+  "session.todo.mounted": "Tarea de proyecto vinculada",
   "session.todo.collapse": "Contraer",
   "session.todo.expand": "Expandir",
   "session.followupDock.summary.one": "{{count}} mensaje en cola",

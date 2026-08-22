@@ -568,6 +568,7 @@ export const dict = {
 
   "session.context.addToContext": "Додати {{selection}} до контексту",
   "session.todo.title": "Завдання",
+  "session.todo.mounted": "Приєднано завдання проєкту",
   "session.todo.collapse": "Згорнути",
   "session.todo.expand": "Розгорнути",
   "session.todo.progress": "Виконано {{done}} з {{total}} завдань",

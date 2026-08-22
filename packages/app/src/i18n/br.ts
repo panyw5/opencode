@@ -489,6 +489,7 @@ export const dict = {
   "session.messages.jumpToLatest": "Ir para a mais recente",
   "session.context.addToContext": "Adicionar {{selection}} ao contexto",
   "session.todo.title": "Tarefas",
+  "session.todo.mounted": "Tarefa de projeto vinculada",
   "session.todo.collapse": "Recolher",
   "session.todo.expand": "Expandir",
   "session.followupDock.summary.one": "{{count}} mensagem na fila",

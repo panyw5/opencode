@@ -806,6 +806,7 @@ export const dict = {
   "session.childAgents.indexResume": "#{{index}} resume",
   "session.childAgents.promptBadge": "Subagent: {{title}}",
   "session.todo.title": "Session tasks",
+  "session.todo.mounted": "Project task linked",
   "session.todo.collapse": "Collapse",
   "session.todo.expand": "Expand",
   "session.todo.progress": "{{done}} of {{total}} todos completed",

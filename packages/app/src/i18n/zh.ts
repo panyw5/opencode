@@ -752,6 +752,7 @@ export const dict = {
   "session.childAgents.indexResume": "#{{index}} 续跑",
   "session.childAgents.promptBadge": "子智能体：{{title}}",
   "session.todo.title": "会话任务",
+  "session.todo.mounted": "已关联项目任务",
   "session.todo.collapse": "折叠",
   "session.todo.expand": "展开",
   "session.todo.badge": "任务：{{done}}/{{total}}",

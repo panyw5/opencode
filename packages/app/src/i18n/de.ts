@@ -497,6 +497,7 @@ export const dict = {
   "session.messages.jumpToLatest": "Zum neuesten springen",
   "session.context.addToContext": "{{selection}} zum Kontext hinzufügen",
   "session.todo.title": "Aufgaben",
+  "session.todo.mounted": "Projektaufgabe verknüpft",
   "session.todo.collapse": "Einklappen",
   "session.todo.expand": "Ausklappen",
   "session.followupDock.summary.one": "{{count}} Nachricht in der Warteschlange",

@@ -549,6 +549,7 @@ export const dict = {
 
   "session.context.addToContext": "{{selection}} bağlama ekle",
   "session.todo.title": "Görevler",
+  "session.todo.mounted": "Proje görevine bağlandı",
   "session.todo.collapse": "Daralt",
   "session.todo.expand": "Genişlet",
   "session.followupDock.summary.one": "{{count}} sıradaki mesaj",

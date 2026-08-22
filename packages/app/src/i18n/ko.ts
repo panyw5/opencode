@@ -488,6 +488,7 @@ export const dict = {
   "session.messages.jumpToLatest": "최신으로 이동",
   "session.context.addToContext": "컨텍스트에 {{selection}} 추가",
   "session.todo.title": "할 일",
+  "session.todo.mounted": "프로젝트 태스크 연결됨",
   "session.todo.collapse": "접기",
   "session.todo.expand": "펼치기",
   "session.followupDock.summary.one": "{{count}}개의 대기 중인 메시지",
