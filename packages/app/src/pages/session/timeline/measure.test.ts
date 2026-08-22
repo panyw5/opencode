@@ -1,12 +1,12 @@
 import { expect, test } from "bun:test"
 import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
 import {
-  createCoalescedConnectedMeasure,
-  measureTimelineRowHeight,
+  captureViewportAnchor,
+  heightFromResizeObserverEntry,
   partMeasurementKey,
+  restoreViewportAnchor,
   rowContentVersion,
   sameVirtualItemGeometry,
-  scheduleConnectedMeasure,
   snapshotVirtualItems,
   shouldAdjustVirtualScroll,
   shouldCommitVirtualRowHeight,
@@ -37,105 +37,121 @@ test("keeps virtual row keys and lookups on the same snapshot", () => {
   expect(snapshot.byKey.get("missing")).toBeUndefined()
 })
 
-test("does not measure an element detached before the frame", async () => {
-  const element = document.createElement("div")
-  document.body.append(element)
-  let calls = 0
-
-  scheduleConnectedMeasure(element, () => {
-    calls += 1
-  })
-  element.remove()
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-
-  expect(calls).toBe(0)
-})
-
-test("measures a connected element on the next frame", async () => {
-  const element = document.createElement("div")
-  document.body.append(element)
-  let calls = 0
-
-  scheduleConnectedMeasure(element, () => {
-    calls += 1
-  })
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-
-  expect(calls).toBe(1)
-  element.remove()
-})
-
-test("coalesces requests and skips an unchanged row height", async () => {
-  const element = document.createElement("div")
-  document.body.append(element)
-  let height = 100
-  let commits = 0
-  const measurement = createCoalescedConnectedMeasure({
-    element: () => element,
-    measure: () => height,
-    commit: () => {
-      commits += 1
-    },
-  })
-
-  measurement.request()
-  measurement.request()
-  measurement.request()
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  expect(commits).toBe(1)
-
-  measurement.request()
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  expect(commits).toBe(1)
-
-  height = 100.6
-  measurement.request()
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  expect(commits).toBe(2)
-  element.remove()
-})
-
-test("coalesced measurement ignores a detached element", async () => {
-  const element = document.createElement("div")
-  document.body.append(element)
-  let commits = 0
-  const measurement = createCoalescedConnectedMeasure({
-    element: () => element,
-    measure: () => 100,
-    commit: () => {
-      commits += 1
-    },
-  })
-
-  measurement.request()
-  element.remove()
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  expect(commits).toBe(0)
-})
-
-test("coalesced measurement cancels pending frame work", async () => {
-  const element = document.createElement("div")
-  document.body.append(element)
-  let commits = 0
-  const measurement = createCoalescedConnectedMeasure({
-    element: () => element,
-    measure: () => 100,
-    commit: () => {
-      commits += 1
-    },
-  })
-
-  measurement.request()
-  measurement.cancel()
-  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-  expect(commits).toBe(0)
-  element.remove()
-})
-
 test("does not clip a row while its DOM height is ahead of the virtualizer", () => {
   expect(virtualRowOverflow(60, 60)).toBe("clip")
   expect(virtualRowOverflow(60.5, 60)).toBe("clip")
   expect(virtualRowOverflow(60.6, 60)).toBe("visible")
+})
+
+test("reads height from a resize entry border box without layout work", () => {
+  expect(heightFromResizeObserverEntry({ borderBoxSize: [{ blockSize: 62.4 }] })).toBe(62.4)
+  expect(heightFromResizeObserverEntry({ borderBoxSize: { blockSize: 48 } as never })).toBe(48)
+})
+
+test("falls back to the content rect when the border box is missing", () => {
+  expect(heightFromResizeObserverEntry({ contentRect: { height: 44 } })).toBe(44)
+})
+
+test("rejects unusable resize entries so callers fall back to an explicit read", () => {
+  expect(heightFromResizeObserverEntry(undefined)).toBeUndefined()
+  expect(heightFromResizeObserverEntry({})).toBeUndefined()
+  expect(heightFromResizeObserverEntry({ borderBoxSize: [{ blockSize: 0 }], contentRect: { height: 0 } })).toBeUndefined()
+})
+
+function rectOf(top: number, bottom: number) {
+  return () =>
+    ({
+      top,
+      bottom,
+      height: bottom - top,
+      width: 100,
+      left: 0,
+      right: 100,
+      x: 0,
+      y: top,
+      toJSON() {
+        return {}
+      },
+    }) as DOMRect
+}
+
+test("captures the row spanning the viewport top as the anchor", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  const above = document.createElement("div")
+  above.getBoundingClientRect = rectOf(-200, -100)
+  const spanning = document.createElement("div")
+  spanning.dataset.timelineKey = "row-spanning"
+  spanning.getBoundingClientRect = rectOf(-40, 300)
+  const below = document.createElement("div")
+  below.getBoundingClientRect = rectOf(300, 500)
+
+  const anchor = captureViewportAnchor(root, [above, spanning, below])
+  expect(anchor).toEqual({ key: "row-spanning", offset: -40 })
+})
+
+test("falls back to the first row below the viewport top between rows", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  const gap = document.createElement("div")
+  gap.dataset.timelineKey = "row-below"
+  gap.getBoundingClientRect = rectOf(24, 200)
+
+  const anchor = captureViewportAnchor(root, [gap])
+  expect(anchor).toEqual({ key: "row-below", offset: 24 })
+})
+
+test("returns no anchor when no mounted row is at or below the top", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  const above = document.createElement("div")
+  above.dataset.timelineKey = "row-above"
+  above.getBoundingClientRect = rectOf(-300, -100)
+
+  expect(captureViewportAnchor(root, [above])).toBeUndefined()
+})
+
+test("restores the anchor offset and reports the applied delta", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  let top = -40
+  const element = document.createElement("div")
+  document.body.append(element)
+  element.getBoundingClientRect = () => rectOf(top, top + 340)()
+
+  const delta = restoreViewportAnchor({
+    root,
+    anchor: { key: "row-spanning", offset: -40 },
+    elementByKey: (key) => (key === "row-spanning" ? element : undefined),
+  })
+  // Row drifted 30px down; scrollTop is adjusted by the same amount.
+  top = -10
+  const applied = restoreViewportAnchor({
+    root,
+    anchor: { key: "row-spanning", offset: -40 },
+    elementByKey: () => element,
+  })
+  expect(delta).toBe(0)
+  expect(applied).toBe(30)
+  expect(root.scrollTop).toBe(30)
+  element.remove()
+})
+
+test("restore is a no-op inside tolerance and for missing anchors", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  const element = document.createElement("div")
+  document.body.append(element)
+  element.getBoundingClientRect = rectOf(-40.4, 300)
+
+  expect(
+    restoreViewportAnchor({ root, anchor: { key: "k", offset: -40 }, elementByKey: () => element }),
+  ).toBe(0)
+  expect(
+    restoreViewportAnchor({ root, anchor: { key: "gone", offset: 0 }, elementByKey: () => undefined }),
+  ).toBe(0)
+  expect(root.scrollTop).toBe(0)
+  element.remove()
 })
 
 test("keeps a bottom-anchored stream pinned as its last row grows", () => {
@@ -189,28 +205,6 @@ test("does not shrink a live row from a transient short measure", () => {
   expect(shouldCommitVirtualRowHeight({ next: 32, previous: 69, live: true })).toBe(false)
   expect(shouldCommitVirtualRowHeight({ next: 80, previous: 69, live: true })).toBe(true)
   expect(shouldCommitVirtualRowHeight({ next: 32, previous: 69, live: false })).toBe(true)
-})
-
-test("prefers the larger of the visible and scrollable row boxes", () => {
-  const element = document.createElement("div")
-  Object.defineProperty(element, "offsetHeight", { configurable: true, value: 40 })
-  Object.defineProperty(element, "scrollHeight", { configurable: true, value: 96 })
-  element.getBoundingClientRect = () =>
-    ({
-      height: 48,
-      width: 100,
-      top: 0,
-      left: 0,
-      bottom: 48,
-      right: 100,
-      x: 0,
-      y: 0,
-      toJSON() {
-        return {}
-      },
-    }) as DOMRect
-
-  expect(measureTimelineRowHeight(element)).toBe(96)
 })
 
 test("invalidates cached measurements after a meaningful timeline width change", () => {

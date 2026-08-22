@@ -32,46 +32,81 @@ export function snapshotVirtualItems<T extends { key: string | number | bigint }
   return { items: list, keys, byKey }
 }
 
-export function scheduleConnectedMeasure<T extends HTMLElement>(element: T, measure: (element: T) => void) {
-  return requestAnimationFrame(() => {
-    if (element.isConnected) measure(element)
-  })
+export type ResizeObserverEntryLike = {
+  borderBoxSize?: ReadonlyArray<{ blockSize?: number }> | { blockSize?: number }
+  contentRect?: { height?: number }
 }
 
-export function createCoalescedConnectedMeasure<T extends HTMLElement>(input: {
-  element: () => T | undefined
-  measure: (element: T) => number
-  commit: (element: T, height: number) => void
+/**
+ * Extract an observed element's border-box height from a ResizeObserver entry
+ * without any layout read. Priority per the measurement plan: borderBoxSize
+ * block size, then contentRect.height (rows have no own padding/border, so the
+ * boxes coincide). Returns undefined when the entry carries no usable size —
+ * callers must then fall back to an explicit read.
+ */
+export function heightFromResizeObserverEntry(entry: ResizeObserverEntryLike | undefined): number | undefined {
+  if (!entry) return undefined
+  const box = entry.borderBoxSize
+  const blockSize = Array.isArray(box) ? box[0]?.blockSize : (box as { blockSize?: number } | undefined)?.blockSize
+  if (typeof blockSize === "number" && blockSize > 0) return blockSize
+  const contentHeight = entry.contentRect?.height
+  if (typeof contentHeight === "number" && contentHeight > 0) return contentHeight
+  return undefined
+}
+
+export type ViewportAnchor = {
+  /** Row key whose element pins the viewport; empty when no row is mounted. */
+  key: string
+  /** Distance from the anchor element's top to the viewport top. */
+  offset: number
+}
+
+/**
+ * Capture which mounted row the user is looking at, so a later batch of height
+ * commits can restore the viewport exactly (C1). The anchor is the row
+ * spanning the viewport top (its top may sit above the fold), or the first
+ * row below it when the top falls between rows.
+ */
+export function captureViewportAnchor(
+  root: HTMLElement,
+  elements: ReadonlyArray<HTMLElement>,
+): ViewportAnchor | undefined {
+  const view = root.getBoundingClientRect()
+  let fallback: HTMLElement | undefined
+  for (const element of elements) {
+    const rect = element.getBoundingClientRect()
+    if (rect.bottom <= view.top) continue
+    if (rect.top <= view.top) return { key: element.dataset.timelineKey ?? "", offset: rect.top - view.top }
+    fallback ??= element
+    break
+  }
+  if (fallback) {
+    const rect = fallback.getBoundingClientRect()
+    return { key: fallback.dataset.timelineKey ?? "", offset: rect.top - view.top }
+  }
+  return undefined
+}
+
+/**
+ * Re-pin the anchor row to its captured offset. Returns the applied delta;
+ * 0 means the viewport already matches (idempotent with TanStack's own
+ * above-viewport compensation, which leaves no residual to fix).
+ */
+export function restoreViewportAnchor(input: {
+  root: HTMLElement
+  anchor: ViewportAnchor
+  elementByKey: (key: string) => HTMLElement | undefined
   tolerance?: number
-}) {
-  let frame: number | undefined
-  let committedHeight: number | undefined
-  const tolerance = input.tolerance ?? 0.5
-
-  const request = () => {
-    if (frame !== undefined) return
-    frame = requestAnimationFrame(() => {
-      frame = undefined
-      const element = input.element()
-      if (!element?.isConnected) return
-      const height = input.measure(element)
-      if (committedHeight !== undefined && Math.abs(height - committedHeight) <= tolerance) return
-      committedHeight = height
-      input.commit(element, height)
-    })
-  }
-
-  return {
-    request,
-    cancel: () => {
-      if (frame === undefined) return
-      cancelAnimationFrame(frame)
-      frame = undefined
-    },
-    remember: (height: number) => {
-      committedHeight = height
-    },
-  }
+}): number {
+  const { root, anchor, elementByKey } = input
+  const tolerance = input.tolerance ?? 1
+  if (!anchor.key) return 0
+  const element = elementByKey(anchor.key)
+  if (!element?.isConnected) return 0
+  const delta = element.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
+  if (Math.abs(delta) <= tolerance) return 0
+  root.scrollTop += delta
+  return delta
 }
 
 export function timelineMeasurementsMatchWidth(cachedWidth: number | undefined, currentWidth: number) {
@@ -114,11 +149,6 @@ export function timelineRowContentVisibility(input: {
 export function shouldEaseLiveBottom(distance: number, input: { min: number; max: number }) {
   const abs = Math.abs(distance)
   return abs > input.min && abs <= input.max
-}
-
-/** Prefers the larger box so content-visibility cannot under-report a growing row. */
-export function measureTimelineRowHeight(element: HTMLElement) {
-  return Math.max(element.getBoundingClientRect().height, element.offsetHeight, element.scrollHeight)
 }
 
 /** A live row can grow immediately, but a transient short measure must not shrink it. */
