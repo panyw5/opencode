@@ -5,8 +5,10 @@ import {
   createSessionKeyReader,
   cycleSessionBarIndex,
   ensureSessionKey,
+  isSessionFileTab,
   pruneSessionKeys,
   removeSessionBarDraft,
+  shouldAutoCollapseFilePreview,
   visibleSessionBarDrafts,
 } from "./layout"
 
@@ -102,5 +104,24 @@ describe("session bar drafts", () => {
     expect(cycleSessionBarIndex(3, 1, 1)).toBe(2)
     expect(cycleSessionBarIndex(3, -1, 1)).toBe(0)
     expect(cycleSessionBarIndex(3, -1, -1)).toBe(2)
+  })
+})
+
+describe("file preview auto-collapse", () => {
+  test("treats only non-context/review tabs as file tabs", () => {
+    expect(isSessionFileTab("file://src/a.ts")).toBe(true)
+    expect(isSessionFileTab("context")).toBe(false)
+    expect(isSessionFileTab("review")).toBe(false)
+  })
+
+  test("collapses when no file tabs remain", () => {
+    expect(shouldAutoCollapseFilePreview([])).toBe(true)
+    expect(shouldAutoCollapseFilePreview(["context"])).toBe(true)
+    expect(shouldAutoCollapseFilePreview(["context", "review"])).toBe(true)
+  })
+
+  test("keeps preview open while any file tab remains", () => {
+    expect(shouldAutoCollapseFilePreview(["file://src/a.ts"])).toBe(false)
+    expect(shouldAutoCollapseFilePreview(["context", "file://src/a.ts"])).toBe(false)
   })
 })

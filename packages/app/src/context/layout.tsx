@@ -141,6 +141,13 @@ function nextSessionTabsForOpen(current: SessionTabs | undefined, tab: string): 
   return { all, active: tab }
 }
 
+/** File preview tabs exclude panel-only tabs like context/review. */
+export const isSessionFileTab = (tab: string) => tab !== "context" && tab !== "review"
+
+/** Collapse file preview after close when no file tabs remain. */
+export const shouldAutoCollapseFilePreview = (remainingTabs: readonly string[]) =>
+  !remainingTabs.some(isSessionFileTab)
+
 const sessionPath = (key: string) => {
   const dir = key.split("/")[0]
   if (!dir) return
@@ -1205,18 +1212,40 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
               return
             }
 
+            const closingFile = isSessionFileTab(tab)
             const all = current.all.filter((x) => x !== tab)
             if (current.active !== tab) {
               setStore("sessionTabs", session, "all", all)
+            } else {
+              const index = current.all.findIndex((f) => f === tab)
+              const next = current.all[index - 1] ?? current.all[index + 1] ?? all[0]
+              batch(() => {
+                setStore("sessionTabs", session, "all", all)
+                setStore("sessionTabs", session, "active", next)
+              })
+            }
+
+            if (!closingFile) {
+              console.debug(`[file-preview] close skip collapse session=${session} tab=${tab} reason=not-file-tab`)
+              return
+            }
+            if (!shouldAutoCollapseFilePreview(all)) {
+              console.debug(
+                `[file-preview] close keep open session=${session} tab=${tab} remaining=${all.filter(isSessionFileTab).length}`,
+              )
+              return
+            }
+            if (!(store.filePreview?.opened ?? false)) {
+              console.debug(`[file-preview] close skip collapse session=${session} tab=${tab} reason=already-closed`)
               return
             }
 
-            const index = current.all.findIndex((f) => f === tab)
-            const next = current.all[index - 1] ?? current.all[index + 1] ?? all[0]
-            batch(() => {
-              setStore("sessionTabs", session, "all", all)
-              setStore("sessionTabs", session, "active", next)
-            })
+            console.debug(`[file-preview] auto-collapse session=${session} reason=last-file-closed tab=${tab}`)
+            if (!store.filePreview) {
+              setStore("filePreview", { opened: false })
+              return
+            }
+            setStore("filePreview", "opened", false)
           },
           move(tab: string, to: number) {
             const session = key()
