@@ -1334,6 +1334,38 @@ export default function Page() {
     loadFile: file.load,
   })
 
+  const handleFileLinkClick = (event: MouseEvent) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const link = target.closest("a[data-file-link]")
+    if (!(link instanceof HTMLAnchorElement)) return
+
+    event.preventDefault()
+    const raw = link.dataset.path ?? ""
+    const path = file.normalize(raw)
+    const line = Number.parseInt(link.dataset.line ?? "", 10)
+    console.debug(
+      `[file-link] click session=${params.id ?? "none"} root=${sdk.directory} raw=${raw || "none"} path=${path || "none"} line=${Number.isFinite(line) ? line : "none"}`,
+    )
+    if (!path) {
+      console.warn(`[file-link] ignored empty path session=${params.id ?? "none"} root=${sdk.directory}`)
+      return
+    }
+
+    const tab = file.tab(path)
+    tabs().open(tab)
+    void file.load(path).then(() => {
+      const state = file.get(path)
+      console.debug(
+        `[file-link] load session=${params.id ?? "none"} root=${sdk.directory} path=${path} loaded=${String(!!state?.loaded)} error=${state?.error ?? "none"}`,
+      )
+    })
+    if (Number.isFinite(line) && line > 0) file.setSelectedLines(path, { start: line, end: line })
+    if (!view().filePreview.opened()) view().filePreview.open()
+    tabs().setActive(tab)
+    console.debug(`[file-link] opened session=${params.id ?? "none"} root=${sdk.directory} path=${path} tab=${tab}`)
+  }
+
   const changesTitle = () => {
     if (!canReview()) {
       return null
@@ -2642,6 +2674,7 @@ export default function Page() {
       ref={(el) => {
         root = el
       }}
+      onClick={handleFileLinkClick}
       class="relative bg-background-stronger size-full overflow-hidden flex flex-col"
     >
       <SessionHeader />
