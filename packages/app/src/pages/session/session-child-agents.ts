@@ -89,6 +89,7 @@ function entryFromTaskPart(input: {
   message: Message
   sessionByID: Map<string, Session>
   parentSessionID?: string
+  /** Children of the parent session only — taskSessionIndex scans this list. */
   sessions: readonly Session[]
   seenSessionIDs: Set<string>
   collect: CollectChildAgentEntriesInput
@@ -144,7 +145,7 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
         message,
         sessionByID,
         parentSessionID: input.sessionID,
-        sessions: input.sessions,
+        sessions: childSessions,
         seenSessionIDs,
         collect: input,
         order,
@@ -170,7 +171,7 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
       index: taskSessionIndex({
         childSessionId: session.id,
         parentSessionId: input.sessionID,
-        sessions: input.sessions,
+        sessions: childSessions,
       }),
       resume: false,
       order,

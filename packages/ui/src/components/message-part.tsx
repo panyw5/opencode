@@ -77,6 +77,7 @@ import { activeStreamingAssistantMessageID } from "./message-part-stream"
 import {
   isTaskResume,
   resolveTaskChildSessionId,
+  taskChildSessions,
   taskElapsedBounds,
   taskElapsedSeconds,
   taskSessionBadge,
@@ -1717,7 +1718,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
       metadata: partMetadata(),
       tool: part(),
       input: input(),
-      sessions: data.store.session,
+      sessions: taskChildSessions(data.taskLookup, part().sessionID),
     })
   })
   const taskHref = createMemo(() => {
@@ -2496,7 +2497,7 @@ ToolRegistry.register({
         metadata: props.metadata,
         tool: props.part,
         input: props.input,
-        sessions: data.store.session,
+        sessions: taskChildSessions(data.taskLookup, props.part?.sessionID),
       }),
     )
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
@@ -2523,7 +2524,7 @@ ToolRegistry.register({
     const childSession = createMemo(() => {
       const sessionId = childSessionId()
       if (!sessionId) return undefined
-      return data.store.session?.find((session) => session.id === sessionId)
+      return data.taskLookup.byID.get(sessionId)
     })
     const childLastCompleted = createMemo(() => {
       let latest: number | undefined
@@ -2583,7 +2584,9 @@ ToolRegistry.register({
         now: taskNow(),
       }),
     )
-    const hasOutput = createMemo(() => typeof props.output === "string" && props.output.trim().length > 0)
+    // Memoized and read by the collapsed trigger: shared hasVisibleText keeps
+    // the zero-width-char semantics without ad-hoc trim logic per render.
+    const hasOutput = createMemo(() => hasVisibleText(props.output))
     const outputPreview = createMemo(() =>
       props.output
         ?.trim()
@@ -2600,7 +2603,7 @@ ToolRegistry.register({
       taskSessionIndex({
         childSessionId: childSessionId(),
         parentSessionId: props.part?.sessionID,
-        sessions: data.store.session,
+        sessions: taskChildSessions(data.taskLookup, props.part?.sessionID),
       }),
     )
     const resume = createMemo(() => isTaskResume(props.input as Record<string, unknown>))

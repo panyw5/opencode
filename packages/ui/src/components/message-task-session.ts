@@ -13,6 +13,44 @@ function taskStartTime(part: ToolPart | undefined): number | undefined {
   return state.time.start
 }
 
+/**
+ * Session lookup for task tool cards: one index per sessions snapshot instead
+ * of a full-array scan per card. `childrenByParentID` applies the same rules
+ * as {@link taskSessionSiblings} (skip archived, created-asc with id
+ * tiebreak) so consumers can pass the prefiltered list straight into the
+ * existing helpers.
+ */
+export type TaskSessionLookup = {
+  byID: Map<string, Session>
+  childrenByParentID: Map<string, Session[]>
+}
+
+export function buildTaskSessionLookup(sessions: readonly Session[]): TaskSessionLookup {
+  const byID = new Map<string, Session>()
+  const childrenByParentID = new Map<string, Session[]>()
+  for (const session of sessions) {
+    byID.set(session.id, session)
+    if (!session.parentID || session.time.archived) continue
+    const list = childrenByParentID.get(session.parentID)
+    if (list) list.push(session)
+    else childrenByParentID.set(session.parentID, [session])
+  }
+  for (const list of childrenByParentID.values()) {
+    list.sort((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+  }
+  return { byID, childrenByParentID }
+}
+
+/** Children of a parent session from a lookup (empty for unknown/blank ids). */
+export function taskChildSessions(
+  lookup: TaskSessionLookup | undefined,
+  parentID: string | undefined,
+): Session[] {
+  const key = text(parentID)
+  if (!lookup || !key) return []
+  return lookup.childrenByParentID.get(key) ?? []
+}
+
 /** Whole elapsed seconds for a task invocation, fixed once the tool records its end time. */
 export function taskElapsedSeconds(input: { start?: number; end?: number; now?: number }): number | undefined {
   if (typeof input.start !== "number") return undefined
