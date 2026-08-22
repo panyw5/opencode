@@ -38,6 +38,8 @@ import {
   waitForMatch,
   workingSessionTreeIDs,
   workspaceKey,
+  workspacePathAliases,
+  sameWorkspacePath,
 } from "./helpers"
 import { projectSelected } from "./sidebar-project-helpers"
 import type { Project } from "@opencode-ai/sdk/v2"
@@ -769,5 +771,22 @@ describe("layout workspace helpers", () => {
     expect(errorMessage({ data: { message: "boom" } }, "fallback")).toBe("boom")
     expect(errorMessage(new Error("broken"), "fallback")).toBe("broken")
     expect(errorMessage("unknown", "fallback")).toBe("fallback")
+  })
+})
+
+describe("workspacePathAliases", () => {
+  test("treats macOS /tmp and /private/tmp as the same workspace", () => {
+    expect(sameWorkspacePath("/tmp/opencode-rail-test-2", "/private/tmp/opencode-rail-test-2")).toBe(true)
+    expect(workspacePathAliases("/tmp/opencode-rail-test-2")).toContain("/private/tmp/opencode-rail-test-2")
+    expect(workspacePathAliases("/private/tmp/opencode-rail-test-2")).toContain("/tmp/opencode-rail-test-2")
+  })
+
+  test("treats macOS /var and /private/var as the same workspace", () => {
+    expect(sameWorkspacePath("/var/folders/xx/project", "/private/var/folders/xx/project")).toBe(true)
+  })
+
+  test("does not conflate unrelated paths", () => {
+    expect(sameWorkspacePath("/tmp/a", "/tmp/b")).toBe(false)
+    expect(sameWorkspacePath("/Users/me/app", "/tmp/app")).toBe(false)
   })
 })

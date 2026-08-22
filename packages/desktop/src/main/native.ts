@@ -7,6 +7,7 @@ import {
   mkdir,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   stat,
@@ -182,18 +183,24 @@ export async function filterDirectories(paths: string[]) {
   const result: string[] = []
   for (const path of paths) {
     const resolved = resolveDesktopPath(path)
-    const info = await stat(resolved).catch((error) => {
+    // Prefer the real path so macOS /tmp vs /private/tmp (and other symlinks)
+    // cannot open the same folder as two distinct rail projects.
+    const canonical = await realpath(resolved).catch(() => resolved)
+    const info = await stat(canonical).catch((error) => {
       console.debug(
-        `[drag-drop] filter stat failed path=${resolved} err=${error instanceof Error ? error.message : String(error)}`,
+        `[drag-drop] filter stat failed path=${canonical} err=${error instanceof Error ? error.message : String(error)}`,
       )
       return undefined
     })
     if (keepDroppedPathAsDirectory(info)) {
-      registerAllowedRoot(resolved)
-      result.push(resolved)
+      registerAllowedRoot(canonical)
+      if (canonical !== resolved) {
+        console.debug(`[drag-drop] filter canonicalized path=${resolved} -> ${canonical}`)
+      }
+      result.push(canonical)
       continue
     }
-    console.debug(`[drag-drop] filter skip path=${resolved} dir=${!!info?.isDirectory()} file=${!!info?.isFile()}`)
+    console.debug(`[drag-drop] filter skip path=${canonical} dir=${!!info?.isDirectory()} file=${!!info?.isFile()}`)
   }
   console.debug(`[drag-drop] filter result in=${paths.length} dirs=${result.length}`)
   return result

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { resolveServerList, ServerConnection } from "./server"
+import { projectsKey, resolveProjectsListKey, resolveServerList, ServerConnection } from "./server"
 
 describe("resolveServerList", () => {
   test("lets startup auth_token credentials override a persisted same-url server", () => {
@@ -65,5 +65,37 @@ describe("resolveServerList", () => {
       password: "saved",
     })
     expect(list[0]?.type === "http" ? list[0].authToken : true).toBeUndefined()
+  })
+})
+
+describe("resolveProjectsListKey", () => {
+  test("collapses local sidecar and loopback urls onto the same bucket", () => {
+    expect(projectsKey("sidecar")).toBe("local")
+    expect(projectsKey("http://127.0.0.1:4096")).toBe("local")
+    expect(projectsKey("http://localhost:4096")).toBe("local")
+  })
+
+  test("prefers the resolved current connection over a stale active key", () => {
+    expect(
+      resolveProjectsListKey({
+        active: "https://stale.example.test",
+        currentKey: "sidecar",
+      }),
+    ).toBe("local")
+  })
+
+  test("uses extra-agent integration as the list key while browsing that domain", () => {
+    expect(
+      resolveProjectsListKey({
+        active: "extra-agent:openclaw",
+        currentKey: "extra-agent:openclaw",
+        currentIntegration: "openclaw",
+      }),
+    ).toBe("openclaw")
+  })
+
+  test("falls back to active when current is missing", () => {
+    expect(resolveProjectsListKey({ active: "sidecar" })).toBe("local")
+    expect(resolveProjectsListKey({ active: "https://remote.example.test" })).toBe("https://remote.example.test")
   })
 })

@@ -97,10 +97,12 @@ import {
   resolveChannelDirectory,
   sessionByOneBasedIndex,
   sortedProjectSessions,
+  sameWorkspacePath,
   sortedRootSessions,
   stripScheduledSessionTitle,
   waitForMatch,
   workspaceKey,
+  workspacePathAliases,
 } from "./layout/helpers"
 import {
   domainFromDirectory,
@@ -757,6 +759,27 @@ export default function Layout(props: ParentProps) {
     } satisfies CurrentProject
   })
 
+  // Directories the user just closed. The route-registration effect must not
+  // immediately re-open them while navigation catches up (especially when the
+  // closed tile is a /tmp ↔ /private/tmp alias of the current route).
+  const recentlyClosed = new Map<string, number>()
+  const markRecentlyClosed = (directory: string) => {
+    const at = Date.now()
+    for (const alias of workspacePathAliases(directory)) {
+      recentlyClosed.set(workspaceKey(alias), at)
+    }
+  }
+  const wasRecentlyClosed = (directory: string) => {
+    const now = Date.now()
+    for (const [key, at] of recentlyClosed) {
+      if (now - at > 5_000) recentlyClosed.delete(key)
+    }
+    return workspacePathAliases(directory).some((alias) => {
+      const at = recentlyClosed.get(workspaceKey(alias))
+      return at !== undefined && now - at <= 5_000
+    })
+  }
+
   createEffect(
     on(
       () => [pageReady(), globalSync.data.ready, routeDir()] as const,
@@ -772,6 +795,10 @@ export default function Layout(props: ParentProps) {
         )
         if (im) {
           console.debug(`[layout] skipped IM channel project registration channel=${im.name} directory=${directory}`)
+          return
+        }
+        if (wasRecentlyClosed(directory)) {
+          console.debug(`[layout] skipped recently-closed route directory=${directory}`)
           return
         }
         if (resolveProject(directory)) return
@@ -2224,24 +2251,49 @@ export default function Layout(props: ParentProps) {
 
   function closeProject(directory: string) {
     const list = layout.projects.list()
-    const key = workspaceKey(directory)
-    const index = list.findIndex((x) => workspaceKey(x.worktree) === key)
-    const active = workspaceKey(currentProject()?.root ?? "") === key
-    if (index === -1) return
-    const next = list[index + 1]
+    const matches = list.filter((item) => sameWorkspacePath(item.worktree, directory))
+    console.debug(
+      `[project-close] request directory=${directory} matches=${matches.map((item) => item.worktree).join("|") || "none"} list=${list.length} route=${routeDir() || "none"}`,
+    )
+    if (matches.length === 0) {
+      // Still mark closed so a lingering route cannot resurrect a just-removed alias.
+      markRecentlyClosed(directory)
+      layout.projects.close(directory)
+      return
+    }
+
+    const index = list.findIndex((item) => sameWorkspacePath(item.worktree, directory))
+    const next = list.find((item, i) => i > index && !sameWorkspacePath(item.worktree, directory))
+      ?? list.find((item) => !sameWorkspacePath(item.worktree, directory))
+    const routeMatches = sameWorkspacePath(routeDir() || "", directory)
+    const active =
+      routeMatches ||
+      matches.some((item) => sameWorkspacePath(currentProject()?.root ?? "", item.worktree)) ||
+      sameWorkspacePath(currentProject()?.root ?? "", directory)
+
+    markRecentlyClosed(directory)
 
     if (!active) {
+      for (const item of matches) layout.projects.close(item.worktree)
+      // Also close the requested path in case it differs from stored worktrees.
       layout.projects.close(directory)
+      console.debug(`[project-close] closed-inactive directory=${directory} removed=${matches.length}`)
       return
     }
 
     if (!next) {
+      for (const item of matches) layout.projects.close(item.worktree)
       layout.projects.close(directory)
+      console.debug(`[project-close] closed-last directory=${directory} navigate=/`)
       navigate("/")
       return
     }
 
+    console.debug(
+      `[project-close] closed-active directory=${directory} next=${next.worktree} removed=${matches.length}`,
+    )
     navigateWithSidebarReset(`/${base64Encode(next.worktree)}/session`)
+    for (const item of matches) layout.projects.close(item.worktree)
     layout.projects.close(directory)
     queueMicrotask(() => {
       void navigateToProject(next.worktree)

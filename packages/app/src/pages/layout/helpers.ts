@@ -50,6 +50,31 @@ export const workspaceKey = (directory: string) => {
   return value.replace(/\/+$/, "")
 }
 
+/** macOS often exposes the same folder as both /tmp and /private/tmp (and /var). */
+export function workspacePathAliases(directory: string): string[] {
+  const key = workspaceKey(directory)
+  if (!key) return []
+  const aliases = new Set<string>([directory, key])
+  const add = (value: string) => {
+    const next = workspaceKey(value)
+    if (next) aliases.add(next)
+  }
+  if (key === "/tmp" || key.startsWith("/tmp/")) add(key.replace(/^\/tmp/, "/private/tmp"))
+  if (key === "/private/tmp" || key.startsWith("/private/tmp/")) add(key.replace(/^\/private\/tmp/, "/tmp"))
+  if (key === "/var" || key.startsWith("/var/")) add(key.replace(/^\/var/, "/private/var"))
+  if (key === "/private/var" || key.startsWith("/private/var/")) add(key.replace(/^\/private\/var/, "/var"))
+  return [...aliases]
+}
+
+export function sameWorkspacePath(a: string, b: string) {
+  if (!a || !b) return false
+  const left = workspaceKey(a)
+  const right = workspaceKey(b)
+  if (left === right) return true
+  const aliases = new Set(workspacePathAliases(a).map(workspaceKey))
+  return aliases.has(right)
+}
+
 export const canonicalWorkspaceDir = (route: string, canonical?: string) => {
   if (!canonical) return route
   if (workspaceKey(route) !== workspaceKey(canonical)) return route

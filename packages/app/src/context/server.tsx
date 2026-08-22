@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { type Accessor, batch, createEffect, createMemo, onCleanup } from "solid-js"
+import { type Accessor, batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import { useCheckServerHealth } from "@/utils/server-health"
@@ -11,6 +11,7 @@ import {
   type DomainId,
   type ExtraAgentId,
 } from "@/pages/layout/extra-agents"
+import { sameWorkspacePath, workspaceKey, workspacePathAliases } from "@/pages/layout/helpers"
 
 type StoredProject = { worktree: string; expanded: boolean }
 type StoredServer = string | ServerConnection.HttpBase | ServerConnection.Http
@@ -35,11 +36,22 @@ export function serverName(conn?: ServerConnection.Any, ignoreDisplayName = fals
   return conn.http.url.replace(/^https?:\/\//, "").replace(/\/+$/, "")
 }
 
-function projectsKey(key: ServerConnection.Key) {
+export function projectsKey(key: string) {
   if (!key) return ""
   if (key === "sidecar") return "local"
   if (isLocalHost(key)) return "local"
   return key
+}
+
+/** List/persist bucket for the project rail. Prefer the resolved connection key. */
+export function resolveProjectsListKey(input: {
+  active: string
+  currentKey?: string
+  currentIntegration?: string
+}) {
+  if (isExtraAgentIntegration(input.currentIntegration)) return input.currentIntegration
+  if (input.currentKey) return projectsKey(input.currentKey)
+  return projectsKey(input.active)
 }
 
 function hostnameFromUrl(input: string) {
@@ -362,6 +374,22 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       }
     })
 
+    // Keep state.active aligned with a real connection. current() falls back to
+    // servers[0] when active is missing, but origin used to read state.active
+    // directly — that split made projects.open write to mainOrigin while list()
+    // read an empty stale bucket until reload.
+    createEffect(() => {
+      const servers = allServers() ?? []
+      if (servers.length === 0) return
+      const active = state.active
+      if (servers.some((item) => ServerConnection.key(item) === active)) return
+      const fallback = servers.find((item) => !isExtraAgentIntegration(item.integration)) ?? servers[0]
+      if (!fallback) return
+      const next = ServerConnection.key(fallback)
+      console.debug(`[server] repair stale active=${String(active)} next=${next}`)
+      setState("active", next)
+    })
+
     onCleanup(() => {
       for (const poll of polls.values()) poll.stop()
       polls.clear()
@@ -369,8 +397,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
 
     const origin = createMemo(() => {
       const conn = current()
-      if (isExtraAgentIntegration(conn?.integration)) return conn.integration
-      return projectsKey(state.active)
+      return resolveProjectsListKey({
+        active: state.active,
+        currentKey: conn ? ServerConnection.key(conn) : undefined,
+        currentIntegration: conn?.integration,
+      })
     })
     const mainOrigin = () => {
       const last = state.lastNonExtraAgent
@@ -382,33 +413,88 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const persistOrigin = (directory?: string) => {
       const agent = extraAgentByDirectory(directory)
       if (agent) return agent.id
+      // Ordinary projects always persist on the main OpenCode bucket, even when
+      // the UI is temporarily browsing an extra-agent domain.
       return mainOrigin()
     }
-    const pendingOpens: string[] = []
+    const [pendingOpens, setPendingOpens] = createSignal<string[]>([])
     const projectsList = createMemo(() => storedProjects()[origin()] ?? [])
     const projectsFor = (input?: ServerConnection.Key) => {
       const key = input ? originFor(input) : origin()
       if (!key) return [] as StoredProject[]
       return storedProjects()[key] ?? []
     }
+    const hasWorktree = (items: StoredProject[], directory: string) =>
+      items.some((item) => sameWorkspacePath(item.worktree, directory))
+    const removeWorktree = (items: StoredProject[], directory: string) => {
+      const next = items.filter((item) => !sameWorkspacePath(item.worktree, directory))
+      return { next, removed: items.length - next.length }
+    }
     const writeProject = (directory: string, key = persistOrigin(directory)) => {
       if (!key) {
         console.debug(`[project-open] skip empty-key directory=${directory}`)
         return false
       }
+      const live = origin()
+      const main = mainOrigin()
+      if (live && live !== key) {
+        console.debug(
+          `[project-open] key-mismatch write=${key} live=${live} main=${main} domain=${domain()} directory=${directory}`,
+        )
+      }
       const current = storedProjects()[key] ?? []
-      if (current.find((x) => x.worktree === directory)) {
-        console.debug(`[project-open] skip duplicate key=${key} directory=${directory}`)
+      if (hasWorktree(current, directory)) {
+        console.debug(`[project-open] skip duplicate key=${key} directory=${directory} count=${current.length}`)
         return false
       }
-      console.debug(`[project-open] write key=${key} directory=${directory} count=${current.length} ready=${ready()}`)
+      console.debug(
+        `[project-open] write key=${key} live=${live} main=${main} directory=${directory} count=${current.length} ready=${ready()}`,
+      )
       setStore("projects", key, [{ worktree: directory, expanded: true }, ...current])
+      // If list() is still pointed at a different bucket (should be rare after
+      // origin/active repair), mirror so the rail updates without a reload.
+      if (live && live !== key && domain() === mainDomain) {
+        const visible = storedProjects()[live] ?? []
+        if (!hasWorktree(visible, directory)) {
+          console.debug(`[project-open] mirror write live=${live} from=${key} directory=${directory}`)
+          setStore("projects", live, [{ worktree: directory, expanded: true }, ...visible])
+        }
+      }
       return true
+    }
+    const closeProjectInStore = (directory: string) => {
+      const keys = new Set<string>()
+      const live = origin()
+      const main = mainOrigin()
+      if (live) keys.add(live)
+      if (main) keys.add(main)
+      // Also scrub any bucket that still holds an alias (stale origin mirrors).
+      for (const [bucket, items] of Object.entries(storedProjects())) {
+        if (items.some((item) => sameWorkspacePath(item.worktree, directory))) keys.add(bucket)
+      }
+      let removed = 0
+      for (const key of keys) {
+        const current = storedProjects()[key] ?? []
+        const result = removeWorktree(current, directory)
+        if (result.removed === 0) continue
+        removed += result.removed
+        console.debug(
+          `[project-close] store key=${key} directory=${directory} removed=${result.removed} left=${result.next.length}`,
+        )
+        setStore("projects", key, result.next)
+      }
+      if (removed === 0) {
+        console.debug(
+          `[project-close] store miss directory=${directory} aliases=${workspacePathAliases(directory).join("|")} keys=${[...keys].join("|")}`,
+        )
+      }
+      return removed
     }
     createEffect(() => {
       if (!ready()) return
-      if (pendingOpens.length === 0) return
-      const queued = pendingOpens.splice(0)
+      const queued = pendingOpens()
+      if (queued.length === 0) return
+      setPendingOpens([])
       console.debug(`[project-open] flush queued=${queued.length}`)
       for (const directory of queued) writeProject(directory)
     })
@@ -472,8 +558,11 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
         },
         open(directory: string) {
           if (!ready()) {
-            if (!pendingOpens.includes(directory)) pendingOpens.push(directory)
-            console.debug(`[project-open] queue directory=${directory} pending=${pendingOpens.length}`)
+            setPendingOpens((prev) => {
+              if (prev.some((item) => workspaceKey(item) === workspaceKey(directory))) return prev
+              console.debug(`[project-open] queue directory=${directory} pending=${prev.length + 1}`)
+              return [...prev, directory]
+            })
             return
           }
           writeProject(directory)
@@ -483,24 +572,22 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
           writeProject(directory, key)
         },
         close(directory: string) {
-          const key = origin()
-          if (!key) return
-          const current = projectsFor()
-          setStore(
-            "projects",
-            key,
-            current.filter((x) => x.worktree !== directory),
-          )
+          closeProjectInStore(directory)
         },
         closeFor(input: ServerConnection.Key | undefined, directory: string) {
           const key = input ? originFor(input) : origin()
-          if (!key) return
+          if (!key) {
+            closeProjectInStore(directory)
+            return
+          }
           const current = projectsFor(input)
-          setStore(
-            "projects",
-            key,
-            current.filter((x) => x.worktree !== directory),
+          const result = removeWorktree(current, directory)
+          console.debug(
+            `[project-close] store-for key=${key} directory=${directory} removed=${result.removed} left=${result.next.length}`,
           )
+          setStore("projects", key, result.next)
+          // Also scrub aliases from other buckets so mirrored opens cannot resurrect.
+          closeProjectInStore(directory)
         },
         expand(directory: string) {
           const key = origin()

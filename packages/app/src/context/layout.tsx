@@ -10,7 +10,7 @@ import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { decode64 } from "@/utils/base64"
 import { same } from "@/utils/same"
 import { isExtraAgentDirectory, mainDomain } from "@/pages/layout/extra-agents"
-import { workspaceKey } from "@/pages/layout/helpers"
+import { sameWorkspacePath, workspaceKey } from "@/pages/layout/helpers"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
 import { removeSessionTabSubtree, withParentSessionTab } from "@/components/session/session-bar-parent"
@@ -579,11 +579,22 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     createEffect(() => {
       const current = server.current
       const projects = list()
-      if (!current || server.domain !== mainDomain) return
+      if (!current || server.domain !== mainDomain) {
+        console.debug(
+          `[project-rail] skip-cache-sync domain=${server.domain} hasCurrent=${current ? 1 : 0} list=${projects.length}`,
+        )
+        return
+      }
       // Keep the rail cache in sync with list() so that visible() can stabilise
       // project order across server switches and so the rail cache is available as
       // a colour fallback inside list() and the colour-assignment effect below.
+      const before = rail.projects.length
       setRail("projects", projects)
+      if (before !== projects.length) {
+        console.debug(
+          `[project-rail] cache-sync before=${before} after=${projects.length} worktrees=${projects.map((p) => p.worktree).join("|")}`,
+        )
+      }
     })
 
     createEffect(() => {
@@ -818,10 +829,20 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         }),
         open(directory: string) {
           const root = rootFor(directory)
-          if (server.projects.list().find((x) => x.worktree === root)) return
+          const existing = server.projects.list().find((x) => sameWorkspacePath(x.worktree, root))
+          if (existing) {
+            console.debug(
+              `[project-open] layout skip-existing directory=${directory} root=${root} worktree=${existing.worktree}`,
+            )
+            return
+          }
+          console.debug(
+            `[project-open] layout open directory=${directory} root=${root} domain=${server.domain} list=${server.projects.list().length}`,
+          )
           server.projects.open(root)
         },
         close(directory: string) {
+          console.debug(`[project-close] layout directory=${directory}`)
           server.projects.close(directory)
         },
         expand(directory: string) {

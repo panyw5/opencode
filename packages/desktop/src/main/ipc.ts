@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process"
-import { stat } from "node:fs/promises"
+import { realpath, stat } from "node:fs/promises"
 import { basename } from "node:path"
 import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
@@ -193,7 +193,10 @@ export function registerIpcHandlers(deps: Deps) {
         defaultPath: opts?.defaultPath,
       })
       if (result.canceled) return null
-      return opts?.multiple ? result.filePaths : result.filePaths[0]
+      const paths = await Promise.all(
+        result.filePaths.map(async (filePath) => realpath(filePath).catch(() => filePath)),
+      )
+      return opts?.multiple ? paths : paths[0]
     },
   )
 
