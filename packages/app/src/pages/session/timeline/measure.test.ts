@@ -87,7 +87,7 @@ test("captures the row spanning the viewport top as the anchor", () => {
   below.getBoundingClientRect = rectOf(300, 500)
 
   const anchor = captureViewportAnchor(root, [above, spanning, below])
-  expect(anchor).toEqual({ key: "row-spanning", offset: -40, scrollTop: 0 })
+  expect(anchor).toEqual({ key: "row-spanning", offset: -40, scrollTop: 0, programmaticDelta: 0 })
 })
 
 test("falls back to the first row below the viewport top between rows", () => {
@@ -97,8 +97,8 @@ test("falls back to the first row below the viewport top between rows", () => {
   gap.dataset.timelineKey = "row-below"
   gap.getBoundingClientRect = rectOf(24, 200)
 
-  const anchor = captureViewportAnchor(root, [gap])
-  expect(anchor).toEqual({ key: "row-below", offset: 24, scrollTop: 0 })
+  const anchor = captureViewportAnchor(root, [gap], 42)
+  expect(anchor).toEqual({ key: "row-below", offset: 24, scrollTop: 0, programmaticDelta: 42 })
 })
 
 test("returns no anchor when no mounted row is at or below the top", () => {
@@ -121,15 +121,17 @@ test("restores the anchor offset and reports the applied delta", () => {
 
   const delta = restoreViewportAnchor({
     root,
-    anchor: { key: "row-spanning", offset: -40, scrollTop: 0 },
+    anchor: { key: "row-spanning", offset: -40, scrollTop: 0, programmaticDelta: 0 },
     elementByKey: (key) => (key === "row-spanning" ? element : undefined),
+    userScrollDelta: 0,
   })
   // Row drifted 30px down; scrollTop is adjusted by the same amount.
   top = -10
   const applied = restoreViewportAnchor({
     root,
-    anchor: { key: "row-spanning", offset: -40, scrollTop: 0 },
+    anchor: { key: "row-spanning", offset: -40, scrollTop: 0, programmaticDelta: 0 },
     elementByKey: () => element,
+    userScrollDelta: 0,
   })
   expect(delta).toBe(0)
   expect(applied).toBe(30)
@@ -137,23 +139,73 @@ test("restores the anchor offset and reports the applied delta", () => {
   element.remove()
 })
 
-test("never restores when the user or a programmatic scroll moved the viewport", () => {
-  // A user scroll displaces the anchor row exactly like a height commit does;
-  // restoring would fight the user. scrollTop changing is the discriminator:
-  // height commits (while not bottom-anchored) never move it.
+test("keeps the user's scrolling while correcting a spanning-row resize", () => {
+  // The reported bug: while the user scrolls up, a LaTeX-dense spanning row
+  // settles from its text-stage height and shrinks — the raw scrollTop moved,
+  // but the displacement belongs to the height change and must be corrected.
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  let top = -40
+  const element = document.createElement("div")
+  document.body.append(element)
+  element.getBoundingClientRect = () => rectOf(top, top + 280)()
+  Object.defineProperty(root, "scrollTop", { configurable: true, get: () => 2000, set() {} })
+
+  // User scrolled up by 100 since capture (scrollTop 2100 -> 2000, no
+  // programmatic writes). Anchor should sit at -40 - (-100) = +60; the row
+  // actually sits at top (say -40 + 0) — the 100px gap is the resize.
+  const applied = restoreViewportAnchor({
+    root,
+    anchor: { key: "k", offset: -40, scrollTop: 2100, programmaticDelta: 0 },
+    elementByKey: () => element,
+    userScrollDelta: -100,
+  })
+  expect(applied).toBe(-100)
+  element.remove()
+})
+
+test("does not double-compensate when TanStack already adjusted", () => {
+  // An above-viewport resize makes TanStack write a compensation scroll; the
+  // anchor row stays put, so the user-delta math must resolve to a no-op.
   const root = document.createElement("div")
   root.getBoundingClientRect = rectOf(0, 800)
   const element = document.createElement("div")
   document.body.append(element)
-  element.getBoundingClientRect = rectOf(-10, 300)
+  element.getBoundingClientRect = rectOf(-40, 300)
 
   const applied = restoreViewportAnchor({
     root,
-    anchor: { key: "row-spanning", offset: -40, scrollTop: 1200 },
+    anchor: { key: "k", offset: -40, scrollTop: 0, programmaticDelta: 0 },
     elementByKey: () => element,
+    // All of the scrollTop change was the compensation write.
+    userScrollDelta: 0,
   })
   expect(applied).toBe(0)
-  expect(root.scrollTop).toBe(0)
+  element.remove()
+})
+
+test("pins the viewport to a spanning row's new bottom when it shrinks", () => {
+  // The reported jump: a LaTeX-dense spanning row settles from 634px to 272px
+  // while the viewport top sits 442px into the row. Its own top does not
+  // move, so the unclamped math sees no drift — but the viewport now shows
+  // the row below, displaced upward by the shrink. The clamp pins the
+  // viewport top to the row's new bottom instead.
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  let height = 272
+  const element = document.createElement("div")
+  document.body.append(element)
+  element.getBoundingClientRect = () => rectOf(-0, height)() // top pinned at viewport top
+
+  const applied = restoreViewportAnchor({
+    root,
+    anchor: { key: "k", offset: -442, scrollTop: 0, programmaticDelta: 0 },
+    elementByKey: () => element,
+    userScrollDelta: 0,
+  })
+  // Expected position clamps from -442 to -272 (the new height); the element
+  // top is at 0, so scrollTop is adjusted so the top sits at -272.
+  expect(applied).toBe(272)
   element.remove()
 })
 
@@ -165,10 +217,20 @@ test("restore is a no-op inside tolerance and for missing anchors", () => {
   element.getBoundingClientRect = rectOf(-40.4, 300)
 
   expect(
-    restoreViewportAnchor({ root, anchor: { key: "k", offset: -40, scrollTop: 0 }, elementByKey: () => element }),
+    restoreViewportAnchor({
+      root,
+      anchor: { key: "k", offset: -40, scrollTop: 0, programmaticDelta: 0 },
+      elementByKey: () => element,
+      userScrollDelta: 0,
+    }),
   ).toBe(0)
   expect(
-    restoreViewportAnchor({ root, anchor: { key: "gone", offset: 0, scrollTop: 0 }, elementByKey: () => undefined }),
+    restoreViewportAnchor({
+      root,
+      anchor: { key: "gone", offset: 0, scrollTop: 0, programmaticDelta: 0 },
+      elementByKey: () => undefined,
+      userScrollDelta: 0,
+    }),
   ).toBe(0)
   expect(root.scrollTop).toBe(0)
   element.remove()

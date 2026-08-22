@@ -331,11 +331,15 @@ export function MessageTimeline(props: {
   // Programmatic scrolls (anchor restore, TanStack scroll adjustments,
   // scrollToIndex/scrollToEnd) must not be mistaken for user scrolling: they
   // neither mark the user as detached from the bottom nor arm history loads.
-  // Real wheel/touch input clears the marker immediately.
+  // Real wheel/touch input clears the marker immediately. The cumulative
+  // programmatic delta lets the post-batch anchor math separate user scrolling
+  // from compensation writes.
   const programmaticScrollWindowMs = 160
   let programmaticScrollAt = 0
-  const markProgrammaticScroll = () => {
+  let programmaticScrollDelta = 0
+  const markProgrammaticScroll = (delta = 0) => {
     programmaticScrollAt = performance.now()
+    programmaticScrollDelta += delta
   }
   const isProgrammaticScrollActive = () => performance.now() - programmaticScrollAt < programmaticScrollWindowMs
 
@@ -357,50 +361,51 @@ export function MessageTimeline(props: {
   const fastScrolling = () =>
     scrollVelocity > FAST_SCROLL_SPEED && performance.now() - velocityTrackedAt < FAST_SCROLL_WINDOW_MS
 
-  // Anchor captured after the previous measurement batch; restored after the
-  // next one so a spanning-row resize cannot shift what the user is reading.
+  // Anchor captured after the previous measurement batch; restored right
+  // after the next one (synchronously inside the ResizeObserver callback,
+  // before paint) so a spanning-row resize — e.g. LaTeX settling from its
+  // text-stage height — never shows a frame of displaced content.
   let viewportAnchor: ViewportAnchor | undefined
-  let afterBatchFrame: number | undefined
-  const scheduleAfterMeasurementBatch = () => {
-    if (afterBatchFrame !== undefined) return
-    afterBatchFrame = requestAnimationFrame(() => {
-      afterBatchFrame = undefined
-      const root = listRoot()
-      if (!root) return
-      if (props.shouldAnchorBottom()) {
-        viewportAnchor = undefined
-        // TanStack already adjusts by each committed delta while bottom-anchored;
-        // this only closes residual gaps (e.g. a guarded shrink committing late).
-        // Never while the user is gesturing: writing scrollTop mid-gesture
-        // locks the user to the bottom (the write is programmatic and the
-        // user's own scroll events would be swallowed as programmatic too).
-        if (!props.isInitialScrollSettling() && !props.hasScrollGesture()) {
-          const gap = root.scrollHeight - root.clientHeight - root.scrollTop
-          if (gap > 0.5) {
-            markProgrammaticScroll()
-            root.scrollTop += gap
-            if (lagging()) timelineLag("batch-pin", `gap=${Math.round(gap)}`)
-          }
-        }
-        return
-      }
-      if (prependLoading) return
-      const byKey = new Map<string, HTMLElement>()
-      for (const element of root.querySelectorAll<HTMLElement>("[data-timeline-key]")) {
-        byKey.set(element.dataset.timelineKey ?? "", element)
-      }
-      if (viewportAnchor) {
-        const delta = restoreViewportAnchor({
-          root,
-          anchor: viewportAnchor,
-          elementByKey: (key) => byKey.get(key),
-        })
-        if (lagging() && Math.abs(delta) > 0.5) {
-          timelineLag("anchor-restore", `key=${viewportAnchor.key} delta=${Math.round(delta)}`)
+  const afterMeasurementBatch = () => {
+    const root = listRoot()
+    if (!root) return
+    if (props.shouldAnchorBottom()) {
+      viewportAnchor = undefined
+      // TanStack already adjusts by each committed delta while bottom-anchored;
+      // this only closes residual gaps (e.g. a guarded shrink committing late).
+      // Never while the user is gesturing: writing scrollTop mid-gesture
+      // locks the user to the bottom.
+      if (!props.isInitialScrollSettling() && !props.hasScrollGesture()) {
+        const gap = root.scrollHeight - root.clientHeight - root.scrollTop
+        if (gap > 0.5) {
+          markProgrammaticScroll(gap)
+          root.scrollTop += gap
+          if (lagging()) timelineLag("batch-pin", `gap=${Math.round(gap)}`)
         }
       }
-      viewportAnchor = captureViewportAnchor(root, [...byKey.values()])
-    })
+      return
+    }
+    if (prependLoading) return
+    const byKey = new Map<string, HTMLElement>()
+    for (const element of root.querySelectorAll<HTMLElement>("[data-timeline-key]")) {
+      byKey.set(element.dataset.timelineKey ?? "", element)
+    }
+    if (viewportAnchor) {
+      // Split the raw scrollTop change into the user's own scrolling and
+      // programmatic writes; only height-commit displacement gets corrected.
+      const userDelta = root.scrollTop - viewportAnchor.scrollTop - (programmaticScrollDelta - viewportAnchor.programmaticDelta)
+      const delta = restoreViewportAnchor({
+        root,
+        anchor: viewportAnchor,
+        elementByKey: (key) => byKey.get(key),
+        userScrollDelta: userDelta,
+      })
+      if (delta !== 0) markProgrammaticScroll(delta)
+      if (lagging() && Math.abs(delta) > 0.5) {
+        timelineLag("anchor-restore", `key=${viewportAnchor.key} delta=${Math.round(delta)} user=${Math.round(userDelta)}`)
+      }
+    }
+    viewportAnchor = captureViewportAnchor(root, [...byKey.values()], programmaticScrollDelta)
   }
 
   const projection = createTimelineProjection({
@@ -605,7 +610,8 @@ export function MessageTimeline(props: {
       })
     },
     scrollToFn: (offset, options, instance) => {
-      markProgrammaticScroll()
+      const root = listRoot()
+      if (root) markProgrammaticScroll(offset + (options.adjustments ?? 0) - root.scrollTop)
       if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
       elementScroll(offset, options, instance)
     },
@@ -787,7 +793,6 @@ export function MessageTimeline(props: {
     }
     if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
     if (overscanTimer !== undefined) window.clearTimeout(overscanTimer)
-    if (afterBatchFrame !== undefined) cancelAnimationFrame(afterBatchFrame)
     listResizeObserver?.disconnect()
     props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})
@@ -1169,7 +1174,10 @@ export function MessageTimeline(props: {
         return virtual
       }
       setContentHeight(raw)
-      scheduleAfterMeasurementBatch()
+      // Synchronous post-batch pass (we are inside the observer callback,
+      // before paint): restore the anchor and re-capture it while layout is
+      // still clean.
+      afterMeasurementBatch()
       const currentRow = row()
       if (currentRow) {
         const version = rowContentVersion(currentRow, getMessagePart)

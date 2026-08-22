@@ -59,13 +59,10 @@ export type ViewportAnchor = {
   key: string
   /** Distance from the anchor element's top to the viewport top. */
   offset: number
-  /**
-   * scrollTop at capture time. Height commits (while not bottom-anchored)
-   * never move scrollTop, so a changed scrollTop on restore means the user
-   * (or a programmatic scroll) moved the viewport — the anchor must be
-   * re-captured instead of "corrected", otherwise restore fights the user.
-   */
+  /** scrollTop at capture time (user + programmatic deltas combined). */
   scrollTop: number
+  /** Cumulative programmatic scroll delta at capture time. */
+  programmaticDelta: number
 }
 
 /**
@@ -77,6 +74,7 @@ export type ViewportAnchor = {
 export function captureViewportAnchor(
   root: HTMLElement,
   elements: ReadonlyArray<HTMLElement>,
+  programmaticDelta = 0,
 ): ViewportAnchor | undefined {
   const view = root.getBoundingClientRect()
   let fallback: HTMLElement | undefined
@@ -84,39 +82,58 @@ export function captureViewportAnchor(
     const rect = element.getBoundingClientRect()
     if (rect.bottom <= view.top) continue
     if (rect.top <= view.top)
-      return { key: element.dataset.timelineKey ?? "", offset: rect.top - view.top, scrollTop: root.scrollTop }
+      return {
+        key: element.dataset.timelineKey ?? "",
+        offset: rect.top - view.top,
+        scrollTop: root.scrollTop,
+        programmaticDelta,
+      }
     fallback ??= element
     break
   }
   if (fallback) {
     const rect = fallback.getBoundingClientRect()
-    return { key: fallback.dataset.timelineKey ?? "", offset: rect.top - view.top, scrollTop: root.scrollTop }
+    return {
+      key: fallback.dataset.timelineKey ?? "",
+      offset: rect.top - view.top,
+      scrollTop: root.scrollTop,
+      programmaticDelta,
+    }
   }
   return undefined
 }
 
 /**
- * Re-pin the anchor row to its captured offset. Returns the applied delta;
- * 0 means the viewport already matches (idempotent with TanStack's own
- * above-viewport compensation, which leaves no residual to fix).
+ * Re-pin the anchor row after a measurement batch, keeping the user's own
+ * scrolling intact.
  *
- * Skips entirely when scrollTop moved since capture: that displacement came
- * from user scrolling or a programmatic scroll, not from a height commit —
- * restoring would fight the scroll instead of fixing a jump.
+ * `userScrollDelta` is how far the user scrolled since capture (the caller
+ * subtracts tracked programmatic deltas from the raw scrollTop change). The
+ * anchor row is expected to sit at `anchor.offset - userScrollDelta`, clamped
+ * to the row's current height: when a spanning row shrinks (LaTeX settling
+ * from its text-stage height, say), the viewport top would otherwise slide
+ * past the row's new bottom and the content below would jump up by the
+ * shrink amount. Clamping pins the viewport top to the row's new bottom
+ * instead — the closest continuous position. This fixes spanning-row resizes
+ * (which TanStack intentionally leaves unadjusted for streaming) without ever
+ * fighting the user's wheel, including while the user is actively scrolling.
  */
 export function restoreViewportAnchor(input: {
   root: HTMLElement
   anchor: ViewportAnchor
   elementByKey: (key: string) => HTMLElement | undefined
+  /** Signed scrollTop change caused by the user since capture. */
+  userScrollDelta: number
   tolerance?: number
 }): number {
   const { root, anchor, elementByKey } = input
   const tolerance = input.tolerance ?? 1
   if (!anchor.key) return 0
-  if (Math.abs(root.scrollTop - anchor.scrollTop) > 0.5) return 0
   const element = elementByKey(anchor.key)
   if (!element?.isConnected) return 0
-  const delta = element.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
+  const rect = element.getBoundingClientRect()
+  const expected = Math.max(anchor.offset - input.userScrollDelta, -rect.height)
+  const delta = rect.top - root.getBoundingClientRect().top - expected
   if (Math.abs(delta) <= tolerance) return 0
   root.scrollTop += delta
   return delta
