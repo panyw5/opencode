@@ -132,6 +132,16 @@ function list(value: unknown): FileDiff[] {
   return Array.isArray(value) ? value : []
 }
 
+function joinWorkspacePath(root: string, child: string) {
+  const slash = /^[A-Za-z]:\\|\\\\/.test(root) || root.includes("\\") ? "\\" : "/"
+  return root.replace(/[\\/]+$/, "") + slash + child.replace(/^[\\/]+/, "")
+}
+
+function parentDirectory(input: string) {
+  const index = Math.max(input.lastIndexOf("/"), input.lastIndexOf("\\"))
+  return index > 0 ? input.slice(0, index) : input
+}
+
 export default function Page() {
   const globalSync = useGlobalSync()
   const layout = useLayout()
@@ -1344,11 +1354,37 @@ export default function Page() {
     const raw = link.dataset.path ?? ""
     const path = file.normalize(raw)
     const line = Number.parseInt(link.dataset.line ?? "", 10)
+    const mod = event.metaKey ? "cmd" : event.ctrlKey ? "ctrl" : "none"
     console.debug(
-      `[file-link] click session=${params.id ?? "none"} root=${sdk.directory} raw=${raw || "none"} path=${path || "none"} line=${Number.isFinite(line) ? line : "none"}`,
+      `[file-link] click session=${params.id ?? "none"} root=${sdk.directory} raw=${raw || "none"} path=${path || "none"} line=${Number.isFinite(line) ? line : "none"} mod=${mod}`,
     )
     if (!path) {
       console.warn(`[file-link] ignored empty path session=${params.id ?? "none"} root=${sdk.directory}`)
+      return
+    }
+
+    if (event.metaKey || event.ctrlKey) {
+      // Cmd+click / Ctrl+click: open the file's folder in the OS file manager.
+      if (platform.platform !== "desktop" || !server.isLocal() || (!platform.openInFinder && !platform.openPath)) {
+        console.warn(
+          `[file-link] reveal unavailable session=${params.id ?? "none"} platform=${platform.platform} local=${String(server.isLocal())}`,
+        )
+        return
+      }
+      const target = joinWorkspacePath(sdk.directory, path)
+      console.debug(`[file-link] reveal session=${params.id ?? "none"} target=${target}`)
+      const open = platform.openInFinder ? platform.openInFinder(target) : platform.openPath!(parentDirectory(target))
+      void Promise.resolve(open)
+        .then(() => console.debug(`[file-link] revealed session=${params.id ?? "none"} target=${target}`))
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err)
+          console.warn(`[file-link] reveal failed session=${params.id ?? "none"} target=${target} err=${message}`)
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+            description: message,
+          })
+        })
       return
     }
 
