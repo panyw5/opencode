@@ -87,7 +87,7 @@ test("captures the row spanning the viewport top as the anchor", () => {
   below.getBoundingClientRect = rectOf(300, 500)
 
   const anchor = captureViewportAnchor(root, [above, spanning, below])
-  expect(anchor).toEqual({ key: "row-spanning", offset: -40 })
+  expect(anchor).toEqual({ key: "row-spanning", offset: -40, scrollTop: 0 })
 })
 
 test("falls back to the first row below the viewport top between rows", () => {
@@ -98,7 +98,7 @@ test("falls back to the first row below the viewport top between rows", () => {
   gap.getBoundingClientRect = rectOf(24, 200)
 
   const anchor = captureViewportAnchor(root, [gap])
-  expect(anchor).toEqual({ key: "row-below", offset: 24 })
+  expect(anchor).toEqual({ key: "row-below", offset: 24, scrollTop: 0 })
 })
 
 test("returns no anchor when no mounted row is at or below the top", () => {
@@ -121,19 +121,39 @@ test("restores the anchor offset and reports the applied delta", () => {
 
   const delta = restoreViewportAnchor({
     root,
-    anchor: { key: "row-spanning", offset: -40 },
+    anchor: { key: "row-spanning", offset: -40, scrollTop: 0 },
     elementByKey: (key) => (key === "row-spanning" ? element : undefined),
   })
   // Row drifted 30px down; scrollTop is adjusted by the same amount.
   top = -10
   const applied = restoreViewportAnchor({
     root,
-    anchor: { key: "row-spanning", offset: -40 },
+    anchor: { key: "row-spanning", offset: -40, scrollTop: 0 },
     elementByKey: () => element,
   })
   expect(delta).toBe(0)
   expect(applied).toBe(30)
   expect(root.scrollTop).toBe(30)
+  element.remove()
+})
+
+test("never restores when the user or a programmatic scroll moved the viewport", () => {
+  // A user scroll displaces the anchor row exactly like a height commit does;
+  // restoring would fight the user. scrollTop changing is the discriminator:
+  // height commits (while not bottom-anchored) never move it.
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  const element = document.createElement("div")
+  document.body.append(element)
+  element.getBoundingClientRect = rectOf(-10, 300)
+
+  const applied = restoreViewportAnchor({
+    root,
+    anchor: { key: "row-spanning", offset: -40, scrollTop: 1200 },
+    elementByKey: () => element,
+  })
+  expect(applied).toBe(0)
+  expect(root.scrollTop).toBe(0)
   element.remove()
 })
 
@@ -145,10 +165,10 @@ test("restore is a no-op inside tolerance and for missing anchors", () => {
   element.getBoundingClientRect = rectOf(-40.4, 300)
 
   expect(
-    restoreViewportAnchor({ root, anchor: { key: "k", offset: -40 }, elementByKey: () => element }),
+    restoreViewportAnchor({ root, anchor: { key: "k", offset: -40, scrollTop: 0 }, elementByKey: () => element }),
   ).toBe(0)
   expect(
-    restoreViewportAnchor({ root, anchor: { key: "gone", offset: 0 }, elementByKey: () => undefined }),
+    restoreViewportAnchor({ root, anchor: { key: "gone", offset: 0, scrollTop: 0 }, elementByKey: () => undefined }),
   ).toBe(0)
   expect(root.scrollTop).toBe(0)
   element.remove()

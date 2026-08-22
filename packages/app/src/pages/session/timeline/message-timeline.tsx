@@ -336,8 +336,11 @@ export function MessageTimeline(props: {
         viewportAnchor = undefined
         // TanStack already adjusts by each committed delta while bottom-anchored;
         // this only closes residual gaps (e.g. a guarded shrink committing late).
-        if (!props.isInitialScrollSettling()) {
-          const gap = contentHeight(root) - root.clientHeight - root.scrollTop
+        // Never while the user is gesturing: writing scrollTop mid-gesture
+        // locks the user to the bottom (the write is programmatic and the
+        // user's own scroll events would be swallowed as programmatic too).
+        if (!props.isInitialScrollSettling() && !props.hasScrollGesture()) {
+          const gap = root.scrollHeight - root.clientHeight - root.scrollTop
           if (gap > 0.5) {
             markProgrammaticScroll()
             root.scrollTop += gap
@@ -642,10 +645,14 @@ export function MessageTimeline(props: {
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
     const root = listRoot()
     const scrollOffset = instance.getLogicalScrollOffset()
+    // While the user is actively wheeling/touching away from the bottom, the
+    // bottom-anchored adjustment would fight the gesture; the first user
+    // scroll event then latches user-scrolled and adjustments stop.
+    const bottomAnchored = props.shouldAnchorBottom() && !props.hasScrollGesture()
     const adjust = shouldAdjustVirtualScroll({
       itemEnd: item.end,
       scrollOffset,
-      bottomAnchored: props.shouldAnchorBottom(),
+      bottomAnchored,
       initializing: props.isInitialScrollSettling(),
     })
     if (lagging() && Math.abs(delta) >= 1) {
@@ -793,8 +800,10 @@ export function MessageTimeline(props: {
     if (prependLoading) return
     // Height-batch anchor restores and virtualizer scroll adjustments are
     // programmatic: they must not mark the user as scrolled-away nor arm
-    // history loading.
-    if (isProgrammaticScrollActive()) return
+    // history loading. While the user is actively gesturing, though, scroll
+    // events must keep flowing so the page can latch user-scrolled state —
+    // otherwise a compensation write during a wheel locks the user to the bottom.
+    if (isProgrammaticScrollActive() && !props.hasScrollGesture()) return
     if (!props.hasScrollGesture()) {
       props.onHistoryScroll()
       return
