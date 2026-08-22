@@ -65,23 +65,63 @@ export type ViewportAnchor = {
   programmaticDelta: number
 }
 
+export type VirtualAnchorItem = {
+  key: string | number | bigint
+  start: number
+  size: number
+}
+
 /**
- * Capture which mounted row the user is looking at, so a later batch of height
- * commits can restore the viewport exactly (C1). The anchor is the row
- * spanning the viewport top (its top may sit above the fold), or the first
- * row below it when the top falls between rows.
+ * Capture an anchor from virtualizer geometry without reading layout. This is
+ * used after real scrolling so a later measurement batch cannot restore an
+ * anchor from a row that the user has already scrolled past.
  */
-export function captureViewportAnchor(
+export function captureVirtualViewportAnchor(
+  root: Pick<HTMLElement, "scrollTop" | "clientHeight">,
+  items: ReadonlyArray<VirtualAnchorItem>,
+  programmaticDelta = 0,
+  lineRatio = 0,
+): ViewportAnchor | undefined {
+  const line = root.scrollTop + root.clientHeight * lineRatio
+  let fallback: VirtualAnchorItem | undefined
+  for (const item of items) {
+    if (item.start + item.size <= line) continue
+    if (item.start <= line) {
+      return {
+        key: String(item.key),
+        offset: item.start - root.scrollTop,
+        scrollTop: root.scrollTop,
+        programmaticDelta,
+      }
+    }
+    fallback ??= item
+    break
+  }
+  if (!fallback) return undefined
+  return {
+    key: String(fallback.key),
+    offset: fallback.start - root.scrollTop,
+    scrollTop: root.scrollTop,
+    programmaticDelta,
+  }
+}
+
+/** Fraction of the viewport height treated as the user's reading line. */
+export const READING_LINE_RATIO = 0.5
+
+function captureAnchorNearLine(
   root: HTMLElement,
   elements: ReadonlyArray<HTMLElement>,
-  programmaticDelta = 0,
+  programmaticDelta: number,
+  lineRatio: number,
 ): ViewportAnchor | undefined {
   const view = root.getBoundingClientRect()
+  const line = view.top + view.height * lineRatio
   let fallback: HTMLElement | undefined
   for (const element of elements) {
     const rect = element.getBoundingClientRect()
-    if (rect.bottom <= view.top) continue
-    if (rect.top <= view.top)
+    if (rect.bottom <= line) continue
+    if (rect.top <= line)
       return {
         key: element.dataset.timelineKey ?? "",
         offset: rect.top - view.top,
@@ -101,6 +141,36 @@ export function captureViewportAnchor(
     }
   }
   return undefined
+}
+
+/**
+ * Capture which mounted row the user is looking at, so a later batch of height
+ * commits can restore the viewport exactly (C1). The anchor is the row
+ * spanning the viewport top (its top may sit above the fold), or the first
+ * row below it when the top falls between rows.
+ */
+export function captureViewportAnchor(
+  root: HTMLElement,
+  elements: ReadonlyArray<HTMLElement>,
+  programmaticDelta = 0,
+): ViewportAnchor | undefined {
+  return captureAnchorNearLine(root, elements, programmaticDelta, 0)
+}
+
+/**
+ * Capture the row at the reading line (mid-viewport). Height changes between
+ * the viewport-top row and the reading line — markdown parse landing, deferred
+ * tool hydration, content-visibility un-skip — displace the content the user
+ * is actually reading; TanStack only compensates rows fully above the viewport
+ * and the top anchor only covers the row spanning it. This second anchor fills
+ * that gap; restore order keeps the top anchor primary.
+ */
+export function captureReadingAnchor(
+  root: HTMLElement,
+  elements: ReadonlyArray<HTMLElement>,
+  programmaticDelta = 0,
+): ViewportAnchor | undefined {
+  return captureAnchorNearLine(root, elements, programmaticDelta, READING_LINE_RATIO)
 }
 
 /**
@@ -136,6 +206,24 @@ export function restoreViewportAnchor(input: {
   const delta = rect.top - root.getBoundingClientRect().top - expected
   if (Math.abs(delta) <= tolerance) return 0
   root.scrollTop += delta
+  return delta
+}
+
+/** Restore an anchor from committed virtualizer geometry without layout reads. */
+export function restoreVirtualViewportAnchor(input: {
+  root: Pick<HTMLElement, "scrollTop">
+  anchor: ViewportAnchor
+  itemByKey: (key: string) => VirtualAnchorItem | undefined
+  userScrollDelta: number
+  tolerance?: number
+}): number {
+  const item = input.itemByKey(input.anchor.key)
+  if (!item) return 0
+  const expected = Math.max(input.anchor.offset - input.userScrollDelta, -item.size)
+  const actual = item.start - input.root.scrollTop
+  const delta = actual - expected
+  if (Math.abs(delta) <= (input.tolerance ?? 1)) return 0
+  input.root.scrollTop += delta
   return delta
 }
 
@@ -181,10 +269,34 @@ export function shouldEaseLiveBottom(distance: number, input: { min: number; max
   return abs > input.min && abs <= input.max
 }
 
-/** A live row can grow immediately, but a transient short measure must not shrink it. */
-export function shouldCommitVirtualRowHeight(input: { next: number; previous: number; live: boolean }) {
+/**
+ * A live row can grow immediately, but a transient short measure must not shrink it.
+ * A markdown row whose content has not rendered yet reports its empty-box
+ * height; adopting that shrink collapses the virtual size and its
+ * contain-intrinsic-size with it, and because content-visibility only re-lays
+ * the row out when it becomes relevant, the browser never fires another
+ * resize — the row stays stuck at the transient height until it scrolls back
+ * into view and then jumps. Shrinks are refused until the row has rendered
+ * real content (`data-markdown-rendered-stage` present).
+ */
+export function shouldCommitVirtualRowHeight(input: {
+  next: number
+  previous: number
+  live: boolean
+  markdownPending?: boolean
+}) {
+  if (input.markdownPending && input.next + 0.5 < input.previous) return false
   if (!input.live) return true
   return input.next + 0.5 >= input.previous
+}
+
+/** Text and reasoning rows share the deferred Markdown renderer. */
+export function markdownMeasurementPending(
+  part: Part | undefined,
+  rendered: boolean,
+) {
+  if ((part?.type !== "text" && part?.type !== "reasoning") || !part.text || !part.time?.end) return false
+  return !rendered
 }
 
 /** Keeps virtual row identity independent from the data that determines its height. */

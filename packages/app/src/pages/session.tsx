@@ -1747,6 +1747,7 @@ export default function Page() {
 
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
+  let scrollStateGeometry: { scrollTop: number; scrollHeight: number; clientHeight: number } | undefined
   let contentResizeFrame: number | undefined
   let contentResizeTarget: HTMLDivElement | undefined
   let fillFrame: number | undefined
@@ -1858,8 +1859,13 @@ export default function Page() {
     },
   )
 
-  const updateScrollState = (el: HTMLDivElement) => {
-    if (!el.isConnected || el.clientHeight <= 0 || el.scrollHeight <= 0) return
+  const updateScrollState = (
+    el: HTMLDivElement,
+    geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  ) => {
+    const clientHeight = geometry?.clientHeight ?? el.clientHeight
+    const scrollHeight = geometry?.scrollHeight ?? el.scrollHeight
+    if (!el.isConnected || clientHeight <= 0 || scrollHeight <= 0) return
     debug("state:before", el)
     if (shouldPinBottom()) {
       lockBottom(el, "state:live-lock")
@@ -1868,8 +1874,8 @@ export default function Page() {
         `[session] pin-skip sid=${params.id ?? "none"} running=${String(running())} follow=${String(followBottom)} live=${String(live())} userScrolled=${String(autoScroll.userScrolled())} gesture=${String(hasScrollGesture())} target=${String(hasScrollTarget())} gap=${String(Math.round(el.scrollHeight - el.clientHeight - el.scrollTop))}`,
       )
     }
-    const top = clamp(el)
-    const max = el.scrollHeight - el.clientHeight
+    const max = scrollHeight - clientHeight
+    const top = geometry ? Math.max(0, Math.min(geometry.scrollTop, max)) : clamp(el)
     const overflow = max > 1
     const gap = max - top
     const bottom = !overflow || gap <= scrollBottomThreshold
@@ -1891,18 +1897,24 @@ export default function Page() {
     debug("state:update", el, { nextOverflow: overflow, nextBottom: bottom })
   }
 
-  const scheduleScrollState = (el: HTMLDivElement) => {
+  const scheduleScrollState = (
+    el: HTMLDivElement,
+    geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
+  ) => {
     scrollStateTarget = el
+    scrollStateGeometry = geometry
     if (scrollStateFrame !== undefined) return
 
     scrollStateFrame = requestAnimationFrame(() => {
       scrollStateFrame = undefined
 
       const target = scrollStateTarget
+      const geometry = scrollStateGeometry
       scrollStateTarget = undefined
+      scrollStateGeometry = undefined
       if (!target) return
 
-      updateScrollState(target)
+      updateScrollState(target, geometry)
     })
   }
 

@@ -59,6 +59,30 @@ export function shouldDeferToolPart(part: Part, defaultOpen?: boolean) {
 
 let sharedViewportObserver: IntersectionObserver | undefined
 const viewportCallbacks = new Map<Element, () => void>()
+const viewportHydrationQueue = new Set<Element>()
+let viewportHydrationFrame: number | undefined
+let viewportHydrationBlockedUntil = 0
+
+/** Keep expensive completed-tool hydration out of active wheel/touch frames. */
+export function markToolHydrationScrollActivity(now = performance.now()) {
+  viewportHydrationBlockedUntil = Math.max(viewportHydrationBlockedUntil, now + 160)
+}
+
+function scheduleViewportHydration() {
+  if (viewportHydrationFrame !== undefined || viewportHydrationQueue.size === 0) return
+  viewportHydrationFrame = requestAnimationFrame(() => {
+    viewportHydrationFrame = undefined
+    if (performance.now() < viewportHydrationBlockedUntil) {
+      scheduleViewportHydration()
+      return
+    }
+    const element = viewportHydrationQueue.values().next().value as Element | undefined
+    if (!element) return
+    viewportHydrationQueue.delete(element)
+    viewportCallbacks.get(element)?.()
+    scheduleViewportHydration()
+  })
+}
 
 function viewportHydrationObserver() {
   if (!sharedViewportObserver) {
@@ -66,9 +90,10 @@ function viewportHydrationObserver() {
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue
-          const callback = viewportCallbacks.get(entry.target)
-          if (callback) callback()
+          if (!viewportCallbacks.has(entry.target)) continue
+          viewportHydrationQueue.add(entry.target)
         }
+        scheduleViewportHydration()
       },
       // Start hydrating slightly before the card scrolls into view so the
       // swap (same box height) is finished by the time it is visible.
@@ -83,6 +108,7 @@ export function observeToolPartViewport(element: Element, onVisible: () => void)
   viewportCallbacks.set(element, onVisible)
   observer.observe(element)
   return () => {
+    viewportHydrationQueue.delete(element)
     viewportCallbacks.delete(element)
     observer.unobserve(element)
   }

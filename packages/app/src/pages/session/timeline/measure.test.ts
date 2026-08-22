@@ -1,15 +1,19 @@
 import { expect, test } from "bun:test"
 import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
 import {
+  captureReadingAnchor,
+  captureVirtualViewportAnchor,
   captureViewportAnchor,
   heightFromResizeObserverEntry,
   partMeasurementKey,
   restoreViewportAnchor,
+  restoreVirtualViewportAnchor,
   rowContentVersion,
   sameVirtualItemGeometry,
   snapshotVirtualItems,
   shouldAdjustVirtualScroll,
   shouldCommitVirtualRowHeight,
+  markdownMeasurementPending,
   shouldEaseLiveBottom,
   timelineContentVersion,
   timelineMeasurementsMatchWidth,
@@ -109,6 +113,132 @@ test("returns no anchor when no mounted row is at or below the top", () => {
   above.getBoundingClientRect = rectOf(-300, -100)
 
   expect(captureViewportAnchor(root, [above])).toBeUndefined()
+})
+
+test("captures the row containing the reading line as the reading anchor", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  const top = document.createElement("div")
+  top.getBoundingClientRect = rectOf(-40, 200)
+  const reading = document.createElement("div")
+  reading.dataset.timelineKey = "row-reading"
+  reading.getBoundingClientRect = rectOf(200, 700)
+  const below = document.createElement("div")
+  below.getBoundingClientRect = rectOf(700, 900)
+
+  // Reading line sits at viewport top + height * 0.5 = 400, inside row-reading.
+  const anchor = captureReadingAnchor(root, [top, reading, below], 7)
+  expect(anchor).toEqual({ key: "row-reading", offset: 200, scrollTop: 0, programmaticDelta: 7 })
+})
+
+test("falls back to the first row below the reading line when it lands between rows", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  const above = document.createElement("div")
+  above.getBoundingClientRect = rectOf(0, 380)
+  const below = document.createElement("div")
+  below.dataset.timelineKey = "row-below-line"
+  below.getBoundingClientRect = rectOf(420, 900)
+
+  // Reading line at 400 falls in the 380-420 gap.
+  const anchor = captureReadingAnchor(root, [above, below])
+  expect(anchor).toEqual({ key: "row-below-line", offset: 420, scrollTop: 0, programmaticDelta: 0 })
+})
+
+test("returns no reading anchor when every mounted row sits above the line", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  const above = document.createElement("div")
+  above.dataset.timelineKey = "row-above"
+  above.getBoundingClientRect = rectOf(0, 300)
+
+  expect(captureReadingAnchor(root, [above])).toBeUndefined()
+})
+
+test("refreshes a scroll anchor from current virtual geometry without layout reads", () => {
+  const root = document.createElement("div")
+  Object.defineProperty(root, "scrollTop", { configurable: true, value: 900, writable: true })
+  Object.defineProperty(root, "clientHeight", { configurable: true, value: 800 })
+
+  expect(
+    captureVirtualViewportAnchor(root, [
+      { key: "row-above", start: 0, size: 800 },
+      { key: "row-current", start: 800, size: 500 },
+      { key: "row-below", start: 1300, size: 200 },
+    ]),
+  ).toEqual({ key: "row-current", offset: -100, scrollTop: 900, programmaticDelta: 0 })
+  expect(
+    captureVirtualViewportAnchor(
+      root,
+      [
+        { key: "row-above", start: 0, size: 800 },
+        { key: "row-current", start: 800, size: 600 },
+        { key: "row-below", start: 1400, size: 200 },
+      ],
+      12,
+      0.5,
+    ),
+  ).toEqual({ key: "row-current", offset: -100, scrollTop: 900, programmaticDelta: 12 })
+})
+
+test("restores a scroll anchor from committed virtual geometry without layout reads", () => {
+  let scrollTop = 1000
+  const root = {
+    get scrollTop() {
+      return scrollTop
+    },
+    set scrollTop(value: number) {
+      scrollTop = value
+    },
+  }
+  const delta = restoreVirtualViewportAnchor({
+    root,
+    anchor: { key: "row", offset: -100, scrollTop: 1000, programmaticDelta: 0 },
+    itemByKey: () => ({ key: "row", start: 850, size: 500 }),
+    userScrollDelta: 0,
+  })
+  expect(delta).toBe(-50)
+  expect(scrollTop).toBe(950)
+})
+
+test("keeps the reading row steady when an in-view row above it grows", () => {
+  const root = document.createElement("div")
+  root.getBoundingClientRect = rectOf(0, 800)
+  let scrollTop = 1000
+  Object.defineProperty(root, "scrollTop", {
+    configurable: true,
+    get: () => scrollTop,
+    set: (value: number) => {
+      scrollTop = value
+    },
+  })
+  let middleBottom = 700
+  const top = document.createElement("div")
+  top.dataset.timelineKey = "row-top"
+  top.getBoundingClientRect = rectOf(-100, 200)
+  const reading = document.createElement("div")
+  reading.dataset.timelineKey = "row-reading"
+  Object.defineProperty(reading, "getBoundingClientRect", {
+    configurable: true,
+    get: () => rectOf(middleBottom - 500, middleBottom),
+  })
+  document.body.append(reading)
+
+  const anchor = captureReadingAnchor(root, [top, reading])
+  expect(anchor?.key).toBe("row-reading")
+
+  // An in-view row above the reading line grows by 1415: the reading row's
+  // top moves down by the same amount with no scrollTop change.
+  middleBottom += 1415
+  const delta = restoreViewportAnchor({
+    root,
+    anchor: anchor!,
+    elementByKey: (key) => (key === "row-reading" ? reading : undefined),
+    userScrollDelta: 0,
+  })
+  expect(delta).toBe(1415)
+  expect(root.scrollTop).toBe(1000 + 1415)
+  reading.remove()
 })
 
 test("restores the anchor offset and reports the applied delta", () => {
@@ -287,6 +417,25 @@ test("does not shrink a live row from a transient short measure", () => {
   expect(shouldCommitVirtualRowHeight({ next: 32, previous: 69, live: true })).toBe(false)
   expect(shouldCommitVirtualRowHeight({ next: 80, previous: 69, live: true })).toBe(true)
   expect(shouldCommitVirtualRowHeight({ next: 32, previous: 69, live: false })).toBe(true)
+})
+
+test("does not shrink a row whose markdown has not rendered content yet", () => {
+  // Empty-parse transient (36) must not replace the estimate/cache height.
+  expect(shouldCommitVirtualRowHeight({ next: 36, previous: 800, live: false, markdownPending: true })).toBe(false)
+  expect(shouldCommitVirtualRowHeight({ next: 36, previous: 1451, live: false, markdownPending: true })).toBe(false)
+  // Growth while pending is adopted: content is landing.
+  expect(shouldCommitVirtualRowHeight({ next: 1451, previous: 800, live: false, markdownPending: true })).toBe(true)
+  // Once rendered, shrinks commit again (KaTeX settle handled by the anchor).
+  expect(shouldCommitVirtualRowHeight({ next: 272, previous: 634, live: false, markdownPending: false })).toBe(true)
+})
+
+test("guards completed text and reasoning until deferred markdown renders", () => {
+  const part = (value: object) => value as Part
+  expect(markdownMeasurementPending(part({ type: "text", text: "answer", time: { end: 1 } }), false)).toBe(true)
+  expect(markdownMeasurementPending(part({ type: "reasoning", text: "analysis", time: { end: 1 } }), false)).toBe(true)
+  expect(markdownMeasurementPending(part({ type: "reasoning", text: "analysis", time: { end: 1 } }), true)).toBe(false)
+  expect(markdownMeasurementPending(part({ type: "reasoning", text: "analysis" }), false)).toBe(false)
+  expect(markdownMeasurementPending(part({ type: "tool" }), false)).toBe(false)
 })
 
 test("invalidates cached measurements after a meaningful timeline width change", () => {

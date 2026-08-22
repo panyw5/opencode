@@ -28,6 +28,29 @@ import { useI18n } from "../context/i18n"
 export interface ScrollViewProps extends ComponentProps<"div"> {
   viewportRef?: (el: HTMLDivElement) => void
   orientation?: "vertical" | "horizontal"
+  /** Optional cached geometry for virtual scrollers; avoids forced layout on every scroll frame. */
+  scrollContentHeight?: number
+  scrollViewportHeight?: number
+}
+
+export function scrollThumbGeometry(input: {
+  scrollTop: number
+  scrollHeight: number
+  clientHeight: number
+  trackPadding?: number
+  minThumbHeight?: number
+}) {
+  if (input.scrollHeight <= input.clientHeight || input.scrollHeight === 0) return
+  const trackPadding = input.trackPadding ?? 8
+  const trackHeight = input.clientHeight - trackPadding * 2
+  const height = Math.max((input.clientHeight / input.scrollHeight) * trackHeight, input.minThumbHeight ?? 32)
+  const maxScrollTop = input.scrollHeight - input.clientHeight
+  const maxThumbTop = trackHeight - height
+  const top = maxScrollTop > 0 ? (input.scrollTop / maxScrollTop) * maxThumbTop : 0
+  return {
+    height,
+    top: trackPadding + Math.max(0, Math.min(top, maxThumbTop)),
+  }
 }
 
 export const scrollKey = (event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey">) => {
@@ -54,7 +77,7 @@ export function ScrollView(props: ScrollViewProps) {
   const merged = mergeProps({ orientation: "vertical" }, props)
   const [local, events, rest] = splitProps(
     merged,
-    ["class", "children", "viewportRef", "orientation", "style"],
+    ["class", "children", "viewportRef", "orientation", "style", "scrollContentHeight", "scrollViewportHeight"],
     [
       "onScroll",
       "onWheel",
@@ -86,49 +109,36 @@ export function ScrollView(props: ScrollViewProps) {
   const showThumb = () => state.showThumb
 
   let rafId: number | null = null
+  let latestScrollTop = 0
 
   const updateThumb = () => {
     if (!viewportRef) return
-    const { scrollTop, scrollHeight, clientHeight } = viewportRef
-
-    if (scrollHeight <= clientHeight || scrollHeight === 0) {
+    const scrollHeight = local.scrollContentHeight ?? viewportRef.scrollHeight
+    const clientHeight = local.scrollViewportHeight ?? viewportRef.clientHeight
+    const geometry = scrollThumbGeometry({ scrollTop: latestScrollTop, scrollHeight, clientHeight })
+    if (!geometry) {
       if (state.showThumb) {
         setState("showThumb", false)
       }
       return
     }
 
-    const trackPadding = 8
-    const trackHeight = clientHeight - trackPadding * 2
-
-    const minThumbHeight = 32
-    // Calculate raw thumb height based on ratio
-    let height = (clientHeight / scrollHeight) * trackHeight
-    height = Math.max(height, minThumbHeight)
-
-    const maxScrollTop = scrollHeight - clientHeight
-    const maxThumbTop = trackHeight - height
-
-    const top = maxScrollTop > 0 ? (scrollTop / maxScrollTop) * maxThumbTop : 0
-
-    // Ensure thumb stays within bounds (shouldn't be necessary due to math above, but good for safety)
-    const boundedTop = trackPadding + Math.max(0, Math.min(top, maxThumbTop))
-
     // Only update if values actually changed (with small threshold to avoid floating point issues)
-    const heightChanged = Math.abs(state.thumbHeight - height) > 0.5
-    const topChanged = Math.abs(state.thumbTop - boundedTop) > 0.5
+    const heightChanged = Math.abs(state.thumbHeight - geometry.height) > 0.5
+    const topChanged = Math.abs(state.thumbTop - geometry.top) > 0.5
     const showChanged = !state.showThumb
 
     if (heightChanged || topChanged || showChanged) {
       setState({
         showThumb: true,
-        thumbHeight: height,
-        thumbTop: boundedTop,
+        thumbHeight: geometry.height,
+        thumbTop: geometry.top,
       })
     }
   }
 
-  const scheduleUpdateThumb = () => {
+  const scheduleUpdateThumb = (scrollTop?: number) => {
+    if (scrollTop !== undefined) latestScrollTop = scrollTop
     if (rafId !== null) {
       cancelAnimationFrame(rafId)
     }
@@ -139,6 +149,7 @@ export function ScrollView(props: ScrollViewProps) {
   }
 
   onMount(() => {
+    latestScrollTop = viewportRef.scrollTop
     if (local.viewportRef) {
       local.viewportRef(viewportRef)
     }
@@ -257,7 +268,7 @@ export function ScrollView(props: ScrollViewProps) {
         ref={viewportRef}
         data-slot="scroll-view-viewport"
         onScroll={(e) => {
-          scheduleUpdateThumb()
+          scheduleUpdateThumb(e.currentTarget.scrollTop)
           if (typeof events.onScroll === "function") events.onScroll(e as any)
         }}
         onWheel={events.onWheel as any}
@@ -269,8 +280,11 @@ export function ScrollView(props: ScrollViewProps) {
         onClick={events.onClick as any}
         tabIndex={0}
         role="region"
-        aria-label={i18n.t("ui.scrollView.ariaLabel")}
-        onKeyDown={(e) => {
+         aria-label={i18n.t("ui.scrollView.ariaLabel")}
+         // Virtualized callers own scroll compensation. Native scroll anchoring
+         // otherwise changes scrollTop behind the virtualizer when a row settles.
+         style={{ "overflow-anchor": "none" }}
+         onKeyDown={(e) => {
           onKeyDown(e)
           if (typeof events.onKeyDown === "function") events.onKeyDown(e as any)
         }}

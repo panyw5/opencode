@@ -1004,7 +1004,7 @@ export function Markdown(
     { initialValue: isServer || local.instant ? fallback(local.text) : "" },
   )
 
-  let copySetupTimer: ReturnType<typeof setTimeout> | undefined
+  let cancelCopySetup: (() => void) | undefined
   let copyCleanup: (() => void) | undefined
   let live = true
   let domMathMode: "full" | "defer" | undefined
@@ -1229,13 +1229,20 @@ export function Markdown(
         }
       }
 
-      if (copySetupTimer) clearTimeout(copySetupTimer)
-      copySetupTimer = setTimeout(() => {
+      cancelCopySetup?.()
+      const setup = () => {
         if (!live || !container.isConnected) return
         if (copyCleanup) copyCleanup()
         copyCleanup = setupCodeCopy(container, next)
         setLabels(container, next)
-      }, 150)
+      }
+      if ("requestIdleCallback" in window) {
+        const id = window.requestIdleCallback(setup, { timeout: 1_000 })
+        cancelCopySetup = () => window.cancelIdleCallback(id)
+      } else {
+        const id = setTimeout(setup, 150)
+        cancelCopySetup = () => clearTimeout(id)
+      }
 
       const m = src()?.math
       domMathMode = m === "full" || m === "defer" ? m : undefined
@@ -1316,17 +1323,24 @@ export function Markdown(
     if (!container.dataset.html) return
     if (labelsEqual(container, next)) return
 
-    if (copySetupTimer) clearTimeout(copySetupTimer)
-    copySetupTimer = setTimeout(() => {
+    cancelCopySetup?.()
+    const setup = () => {
       if (!live || !container.isConnected) return
       if (copyCleanup) copyCleanup()
       copyCleanup = setupCodeCopy(container, next)
       setLabels(container, next)
-    }, 150)
+    }
+    if ("requestIdleCallback" in window) {
+      const id = window.requestIdleCallback(setup, { timeout: 1_000 })
+      cancelCopySetup = () => window.cancelIdleCallback(id)
+    } else {
+      const id = setTimeout(setup, 150)
+      cancelCopySetup = () => clearTimeout(id)
+    }
   })
 
   onCleanup(() => {
-    if (copySetupTimer) clearTimeout(copySetupTimer)
+    cancelCopySetup?.()
     if (copyCleanup) copyCleanup()
   })
 
