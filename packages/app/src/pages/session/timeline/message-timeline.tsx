@@ -54,19 +54,20 @@ import {
   createCoalescedConnectedMeasure,
   measureTimelineRowHeight,
   partMeasurementKey,
+  rowContentVersion,
   sameVirtualItemGeometry,
   shouldAdjustVirtualScroll,
   shouldCommitVirtualRowHeight,
   snapshotVirtualItems,
-  timelineContentVersion,
-  timelineMeasurementsMatchWidth,
   timelineRowContentVisibility,
   virtualRowOverflow,
 } from "./measure"
+import { estimateRowHeight, timelineTextMetrics } from "./estimate"
 import { assistantCopySummary } from "./model"
 import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
+import { timelineRowCache } from "./row-cache"
 import { createSessionFind } from "./session-find"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
 
@@ -74,22 +75,11 @@ const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
 const emptyAssistantMessages: AssistantMessage[] = []
 const idle = { type: "idle" as const }
-const timelineFallbackItemSize = 60
+const unknownRow = { _tag: "unknown" }
 const overscanExpansionDelayMs = 750
-// Snapshot sizes depend on the rendered row structure and Markdown strategy.
-const timelineMeasurementVersion = 3
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
-
-type TimelineCacheEntry = {
-  version: number
-  measurements: VirtualItem[]
-  width?: number
-  contentVersion: string
-}
-
-const timelineCache = new Map<string, TimelineCacheEntry>()
 
 const boundaryTarget = (root: HTMLElement, target: EventTarget | null) => {
   const current = target instanceof Element ? target : undefined
@@ -239,26 +229,7 @@ export function MessageTimeline(props: {
   const language = useLanguage()
   const { params, sessionKey } = useSessionKey()
   const ownerSessionKey = sessionKey()
-  const cached = timelineCache.get(ownerSessionKey)
-  const cachedContentVersion = timelineContentVersion(
-    params.id ? (sync.data.message[params.id] ?? emptyMessages) : emptyMessages,
-    sync.data.part,
-  )
-  const initialMeasurements =
-    cached?.version === timelineMeasurementVersion && cached.contentVersion === cachedContentVersion
-      ? cached.measurements
-      : undefined
-  if (cached && !initialMeasurements) {
-    console.warn("[timeline] discarded stale measurement cache", {
-      session: params.id,
-      cacheVersion: cached.version,
-      cacheContentLength: cached.contentVersion.length,
-      currentContentLength: cachedContentVersion.length,
-    })
-  }
-  const coldBottomMount = !initialMeasurements?.length && props.shouldAnchorBottom()
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
-  const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length || coldBottomMount ? 6 : 20)
 
   const sessionID = createMemo(() => params.id)
   const lagging = () =>
@@ -300,6 +271,29 @@ export function MessageTimeline(props: {
   const getMessageParts = (messageID: string) => sync.data.part[messageID] ?? emptyParts
   const getMessagePart = (messageID: string, partID: string) =>
     getMessageParts(messageID).find((part) => part.id === partID)
+  const userMessageText = (messageID: string) => {
+    const texts = getMessageParts(messageID).flatMap((part) =>
+      part.type === "text" && part.text ? [part.text] : [],
+    )
+    return texts.length > 0 ? texts.join("\n") : undefined
+  }
+
+  // Row-size inputs tracked outside estimateSize so the virtualizer's reactive
+  // update re-estimates uncached rows without forcing layout (no clientWidth
+  // read inside the estimate path).
+  const [listSize, setListSize] = createSignal({ width: 0, height: 0 })
+  let listResizeObserver: ResizeObserver | undefined
+  const textMetrics = createMemo(() => {
+    // Markdown metrics scale with the user's base font size setting.
+    settings.appearance.fontSize()
+    return timelineTextMetrics(listRoot())
+  })
+  const defaultOpen = (part: PartType) => {
+    if (part.type !== "tool") return
+    const tool = normalizeTool(part.tool)
+    if (tool === "bash") return settings.general.shellToolPartsExpanded()
+    if (["edit", "write", "apply_patch"].includes(tool)) return settings.general.editToolPartsExpanded()
+  }
   const projection = createTimelineProjection({
     messages: sessionMessages,
     userMessages: () => props.userMessages,
@@ -325,6 +319,39 @@ export function MessageTimeline(props: {
     )
     return index >= 0 ? index : undefined
   })
+
+  // Build the virtualizer's initial measurement cache from the row-level
+  // measurement cache. Each row is validated independently against its own
+  // contentVersion, so a new message elsewhere does not invalidate rows
+  // whose content is unchanged (C2). Width is taken from the cached row
+  // entry itself; rows whose stored width is incompatible with 0 (unknown)
+  // are still accepted because rowWidthCompatible treats 0 as always valid.
+  const initialMeasurements: VirtualItem[] = []
+  {
+    const rowsNow = timelineRows()
+    let start = 0
+    for (let index = 0; index < rowsNow.length; index++) {
+      const row = rowsNow[index]
+      const key = TimelineRow.key(row)
+      const version = rowContentVersion(row, getMessagePart)
+      // Use width=0 so any cached width is accepted on initial mount.
+      const height = timelineRowCache.getHeight(key, version, 0)
+      if (height !== undefined && height > 0) {
+        initialMeasurements.push({
+          key,
+          index,
+          start,
+          end: start + height,
+          size: height,
+          lane: 0,
+        } as VirtualItem)
+      }
+      start += height ?? 0
+    }
+  }
+  const hasCachedMeasurements = initialMeasurements.length > 0
+  const coldBottomMount = !hasCachedMeasurements && props.shouldAnchorBottom()
+  const [renderOverscan, setRenderOverscan] = createSignal(hasCachedMeasurements || coldBottomMount ? 6 : 20)
 
   type PrependAnchor = {
     key: string
@@ -439,7 +466,18 @@ export function MessageTimeline(props: {
     },
     getScrollElement: () => listRoot() ?? null,
     initialMeasurementsCache: initialMeasurements,
-    estimateSize: () => timelineFallbackItemSize,
+    estimateSize: (index: number) => {
+      const size = listSize()
+      const metrics = textMetrics()
+      return estimateRowHeight(timelineRows()[index] ?? unknownRow, size.width, {
+        parts: getMessagePart,
+        toolDefaultOpen: (part) => defaultOpen(part) ?? false,
+        viewportHeight: size.height,
+        textLineHeight: metrics.lineHeight,
+        charWidth: metrics.charWidth,
+        userMessageText,
+      })
+    },
     scrollToFn: (offset, options, instance) => {
       if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
       elementScroll(offset, options, instance)
@@ -579,15 +617,22 @@ export function MessageTimeline(props: {
       `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
     )
     clearPrependAnchor()
-    timelineCache.set(ownerSessionKey, {
-      version: timelineMeasurementVersion,
-      measurements: virtualizer.takeSnapshot(),
-      width: listRoot()?.clientWidth,
-      contentVersion: timelineContentVersion(sessionMessages(), sync.data.part),
-    })
-    while (timelineCache.size > 16) timelineCache.delete(timelineCache.keys().next().value!)
+    // Persist measured row heights into the row-level cache so the next mount
+    // (tab switch, session re-entry) can reuse them without re-measuring.
+    const width = listRoot()?.clientWidth ?? 0
+    const rowsNow = timelineRows()
+    for (const item of virtualizer.takeSnapshot()) {
+      if (!item || item.size <= 0) continue
+      const rowKey = String(item.key)
+      // Find the row to compute its content version.
+      const row = timelineRowByKey().get(rowKey)
+      if (!row) continue
+      const version = rowContentVersion(row, getMessagePart)
+      timelineRowCache.setMeasured(rowKey, item.size, version, width)
+    }
     if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
     if (overscanTimer !== undefined) window.clearTimeout(overscanTimer)
+    listResizeObserver?.disconnect()
     props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
@@ -621,7 +666,16 @@ export function MessageTimeline(props: {
     if (root === listRoot()) return
     setListRoot(root)
     props.setScrollRef(root)
-    if (initialMeasurements && !timelineMeasurementsMatchWidth(cached?.width, root.clientWidth)) virtualizer.measure()
+    // Track the scroll viewport size for row height estimation (estimate.ts).
+    listResizeObserver?.disconnect()
+    listResizeObserver = new ResizeObserver(() => {
+      setListSize({ width: root.clientWidth, height: root.clientHeight })
+    })
+    listResizeObserver.observe(root)
+    setListSize({ width: root.clientWidth, height: root.clientHeight })
+    // Row-level cache validates width per row, so a full re-measure here is
+    // only needed when we actually had cached measurements to reconsider.
+    if (initialMeasurements.length > 0) virtualizer.measure()
   }
   const markBoundaryGesture = (root: HTMLDivElement, target: EventTarget | null, delta: number) => {
     const nested = boundaryTarget(root, target)
@@ -668,12 +722,6 @@ export function MessageTimeline(props: {
       undefined,
     )
     return typeof end === "number" && end >= user.time.created ? end - user.time.created : undefined
-  }
-  const defaultOpen = (part: PartType) => {
-    if (part.type !== "tool") return
-    const tool = normalizeTool(part.tool)
-    if (tool === "bash") return settings.general.shellToolPartsExpanded()
-    if (["edit", "write", "apply_patch"].includes(tool)) return settings.general.editToolPartsExpanded()
   }
 
   function TimelineRowFrame(input: { row: Accessor<FramedTimelineRow>; children: JSX.Element }) {
@@ -965,6 +1013,14 @@ export function MessageTimeline(props: {
         }
         setContentHeight(height)
         virtualizer.resizeItem(item().index, height)
+        // Persist the measured height into the row-level cache so the next
+        // mount (or tab switch) can reuse it without re-measuring (C2).
+        const currentRow = row()
+        if (currentRow) {
+          const version = rowContentVersion(currentRow, getMessagePart)
+          const width = listRoot()?.clientWidth ?? 0
+          timelineRowCache.setMeasured(input.rowKey, height, version, width)
+        }
         const delta = height - virtual
         if (lagging() && Math.abs(delta) > 1) {
           console.debug(

@@ -153,3 +153,81 @@ export function timelineContentVersion(
     .map((message) => `${message.id}:${(parts[message.id] ?? []).map(partMeasurementKey).join(",")}`)
     .join("|")
 }
+
+/**
+ * Input shape for {@link rowContentVersion}. The fields mirror the relevant
+ * subsets of {@link TimelineRow.TimelineRow} without importing the class,
+ * keeping measure.ts free of a circular dependency on rows.ts.
+ */
+export type RowContentVersionInput = {
+  _tag: string
+  userMessageID?: string
+  group?: {
+    type: "part" | "context"
+    ref?: { messageID: string; partID: string }
+    refs?: ReadonlyArray<{ messageID: string; partID: string }>
+  }
+  label?: string
+  phase?: string
+  reasoningHeading?: string
+  diffs?: ReadonlyArray<{ file: string }>
+  text?: string
+}
+
+/**
+ * Compute a content version for a single timeline row, independent of every
+ * other row. Only fields that affect the row's rendered height are included,
+ * so a new message elsewhere does not invalidate this row's cached height (C2).
+ *
+ * The `parts` accessor is used to resolve the underlying `Part` objects for
+ * `AssistantPart` rows; for other row types the version is computed from the
+ * row's own structural fields.
+ */
+export function rowContentVersion(
+  row: RowContentVersionInput,
+  parts: (messageID: string, partID: string) => Part | undefined,
+): string {
+  switch (row._tag) {
+    case "TurnGap":
+      return "gap"
+
+    case "CommentStrip":
+      return `comments:${row.userMessageID ?? ""}`
+
+    case "UserMessage":
+      return `user:${row.userMessageID ?? ""}`
+
+    case "TurnDivider":
+      return `divider:${row.userMessageID ?? ""}:${row.label ?? ""}`
+
+    case "AssistantPart": {
+      const group = row.group
+      if (!group) return "assistant:missing"
+      if (group.type === "part" && group.ref) {
+        const part = parts(group.ref.messageID, group.ref.partID)
+        return `part:${partMeasurementKey(part)}`
+      }
+      if (group.type === "context" && group.refs) {
+        return `ctx:${group.refs
+          .map((ref) => partMeasurementKey(parts(ref.messageID, ref.partID)))
+          .join(",")}`
+      }
+      return "assistant:missing"
+    }
+
+    case "Thinking":
+      return `thinking:${row.phase ?? ""}:${row.reasoningHeading?.length ?? 0}`
+
+    case "Retry":
+      return "retry"
+
+    case "DiffSummary":
+      return `diff:${row.diffs?.length ?? 0}`
+
+    case "Error":
+      return `error:${(row.text ?? "").length}`
+
+    default:
+      return `unknown:${row._tag}`
+  }
+}

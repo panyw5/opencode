@@ -4,6 +4,7 @@ import {
   createCoalescedConnectedMeasure,
   measureTimelineRowHeight,
   partMeasurementKey,
+  rowContentVersion,
   sameVirtualItemGeometry,
   scheduleConnectedMeasure,
   snapshotVirtualItems,
@@ -260,4 +261,121 @@ test("changes the timeline cache version when streaming text grows", () => {
   expect(timelineContentVersion([message], { [message.id]: [short] })).not.toBe(
     timelineContentVersion([message], { [message.id]: [full] }),
   )
+})
+
+test("rowContentVersion returns a stable value for a TurnGap", () => {
+  expect(rowContentVersion({ _tag: "TurnGap", userMessageID: "msg_1" }, () => undefined)).toBe("gap")
+})
+
+test("rowContentVersion includes the label for a TurnDivider", () => {
+  expect(
+    rowContentVersion({ _tag: "TurnDivider", userMessageID: "msg_1", label: "compaction" }, () => undefined),
+  ).toBe("divider:msg_1:compaction")
+})
+
+test("rowContentVersion for an AssistantPart part group reflects part measurement key", () => {
+  const part = {
+    id: "prt_1",
+    sessionID: "ses_1",
+    messageID: "msg_1",
+    type: "text",
+    text: "hello",
+  } as Part
+  const lookup = (messageID: string, partID: string) =>
+    messageID === "msg_1" && partID === "prt_1" ? part : undefined
+
+  const v1 = rowContentVersion(
+    { _tag: "AssistantPart", userMessageID: "msg_1", group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } } },
+    lookup,
+  )
+  // Same part → same version.
+  expect(v1).toBe(
+    rowContentVersion(
+      { _tag: "AssistantPart", userMessageID: "msg_1", group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } } },
+      lookup,
+    ),
+  )
+
+  // Grow the text → version changes.
+  const longer = { ...part, text: "hello world" } as Part
+  const v2 = rowContentVersion(
+    { _tag: "AssistantPart", userMessageID: "msg_1", group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } } },
+    () => longer,
+  )
+  expect(v2).not.toBe(v1)
+})
+
+test("rowContentVersion for a context group combines all member parts", () => {
+  const partA = {
+    id: "prt_a",
+    sessionID: "ses_1",
+    messageID: "msg_1",
+    type: "tool",
+    tool: "read",
+    state: { status: "completed" as const, input: {}, output: "ok", metadata: {}, time: { start: 1, end: 2 } },
+  } as ToolPart
+  const partB = {
+    id: "prt_b",
+    sessionID: "ses_1",
+    messageID: "msg_1",
+    type: "tool",
+    tool: "grep",
+    state: { status: "completed" as const, input: {}, output: "done", metadata: {}, time: { start: 1, end: 2 } },
+  } as ToolPart
+  const lookup = (messageID: string, partID: string) =>
+    partID === "prt_a" ? partA : partID === "prt_b" ? partB : undefined
+
+  const v1 = rowContentVersion(
+    {
+      _tag: "AssistantPart",
+      userMessageID: "msg_1",
+      group: {
+        type: "context",
+        refs: [
+          { messageID: "msg_1", partID: "prt_a" },
+          { messageID: "msg_1", partID: "prt_b" },
+        ],
+      },
+    },
+    lookup,
+  )
+
+  // Change one member → version changes.
+  const partB2 = { ...partB, state: { ...partB.state, output: "changed" } } as ToolPart
+  const v2 = rowContentVersion(
+    {
+      _tag: "AssistantPart",
+      userMessageID: "msg_1",
+      group: {
+        type: "context",
+        refs: [
+          { messageID: "msg_1", partID: "prt_a" },
+          { messageID: "msg_1", partID: "prt_b" },
+        ],
+      },
+    },
+    (messageID, partID) => (partID === "prt_a" ? partA : partID === "prt_b" ? partB2 : undefined),
+  )
+  expect(v2).not.toBe(v1)
+})
+
+test("rowContentVersion for DiffSummary depends on diff count", () => {
+  const v1 = rowContentVersion({ _tag: "DiffSummary", userMessageID: "msg_1", diffs: [{ file: "a" }] }, () => undefined)
+  const v2 = rowContentVersion(
+    { _tag: "DiffSummary", userMessageID: "msg_1", diffs: [{ file: "a" }, { file: "b" }] },
+    () => undefined,
+  )
+  expect(v1).not.toBe(v2)
+})
+
+test("rowContentVersion for Error depends on text length", () => {
+  const v1 = rowContentVersion({ _tag: "Error", userMessageID: "msg_1", text: "short" }, () => undefined)
+  const v2 = rowContentVersion({ _tag: "Error", userMessageID: "msg_1", text: "a longer error" }, () => undefined)
+  expect(v1).not.toBe(v2)
+})
+
+test("rowContentVersion for Thinking depends on phase and heading length", () => {
+  const v1 = rowContentVersion({ _tag: "Thinking", userMessageID: "msg_1", phase: "sending" }, () => undefined)
+  const v2 = rowContentVersion({ _tag: "Thinking", userMessageID: "msg_1", phase: "thinking" }, () => undefined)
+  expect(v1).not.toBe(v2)
 })
