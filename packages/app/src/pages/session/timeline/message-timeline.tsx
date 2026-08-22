@@ -1081,16 +1081,18 @@ export function MessageTimeline(props: {
       { equals: sameVirtualItemGeometry },
     )
     const row = createMemo(() => timelineRowByKey().get(input.rowKey) ?? initialRow)
-    const liveMeasured = () => {
-      const index = item().index
-      return (
-        timelineRowContentVisibility({
-          index,
-          activeIndex: activeAssistantRowIndex(),
-          lastIndex: timelineRows().length - 1,
-        }) === "visible"
-      )
-    }
+    // Streaming rows (active group + last row) must stay fully rendered:
+    // content-visibility would freeze their growing height (risk #1). All
+    // other rows skip subtree layout/paint while outside the browser's
+    // relevance buffer.
+    const rowVisibility = createMemo(() =>
+      timelineRowContentVisibility({
+        index: item().index,
+        activeIndex: activeAssistantRowIndex(),
+        lastIndex: timelineRows().length - 1,
+      }),
+    )
+    const liveMeasured = () => rowVisibility() === "visible"
     // Height commits arrive through the virtualizer's single ResizeObserver
     // (see the measureElement option): the observer's border-box entry needs
     // no layout read, and this handler applies the live-shrink guard, keeps
@@ -1174,7 +1176,21 @@ export function MessageTimeline(props: {
           overflow: virtualRowOverflow(contentHeight(), item().size),
         }}
       >
-        <div ref={(value) => (element = value)} data-index={item().index}>
+        <div
+          ref={(value) => (element = value)}
+          data-index={item().index}
+          style={{
+            // Applied to the measured element (not the sized outer box): the
+            // outer row keeps its explicit virtual height regardless, while a
+            // skipped measured element reports the intrinsic size below to the
+            // virtualizer's ResizeObserver — no height churn while offscreen.
+            "content-visibility": rowVisibility(),
+            // Intrinsic = current virtual size (row cache or estimator), never
+            // a fixed 60px; the `auto` keyword remembers the last real height
+            // once the row has rendered.
+            "contain-intrinsic-size": `auto ${item().size}px`,
+          }}
+        >
           <Show when={row()} fallback={null}>
             {(value) => renderTimelineRow(value)}
           </Show>
