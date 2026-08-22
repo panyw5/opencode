@@ -3,7 +3,8 @@ import { Part as MessagePart, type MessagePartProps } from "@opencode-ai/ui/mess
 import {
   isToolPartHydrated,
   markToolPartHydrated,
-  scheduleIdleHydrate,
+  observeToolPartViewport,
+  releaseToolPartHydration,
   shouldDeferToolPart,
   toolHydrationKey,
 } from "./deferred-tool-helpers"
@@ -86,15 +87,19 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
     )
   }
 
-  const hydrate = (source: "focus" | "idle" | "pointer" | "reactive") => {
+  const hydrate = (source: "focus" | "pointer" | "reactive" | "viewport") => {
     if (hydrated()) return
+    stopViewportObserve?.()
+    stopViewportObserve = undefined
     const profiling = lagging()
     const started = profiling ? performance.now() : 0
     const row = profiling ? placeholder?.closest<HTMLElement>("[data-timeline-key]") : undefined
     const rowKey = row?.dataset.timelineKey ?? "none"
     const before = row?.getBoundingClientRect().height ?? 0
     if (profiling) logHydrate("start", source, `row=${rowKey} before=${Math.round(before)}`)
-    markToolPartHydrated(key())
+    // Interactions and reactive state latch permanently; viewport-driven
+    // hydration is released on unmount (see onCleanup).
+    markToolPartHydrated(key(), source === "viewport" ? "viewport" : "user")
     setHydrated(true)
     if (!profiling) return
     const committed = performance.now()
@@ -115,10 +120,21 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
     if (!deferrable()) hydrate("reactive")
   })
 
+  let stopViewportObserve: (() => void) | undefined
+
   onMount(() => {
     if (hydrated()) return
-    const cancel = scheduleIdleHydrate(() => hydrate("idle"))
-    onCleanup(cancel)
+    // Hydrate as the placeholder approaches the viewport (shared observer,
+    // 300px margin) instead of eagerly during the idle callback — offscreen
+    // rows stay skeletons and cost nothing.
+    stopViewportObserve = observeToolPartViewport(placeholder!, () => hydrate("viewport"))
+  })
+
+  onCleanup(() => {
+    stopViewportObserve?.()
+    // Scrolled away: drop a viewport-only hydration so remounts re-enter the
+    // cheap placeholder path; user-opened cards stay hydrated forever.
+    releaseToolPartHydration(key())
   })
 
   return (
@@ -128,7 +144,7 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
         <div
           ref={(element) => (placeholder = element)}
           data-slot="deferred-tool-part"
-          onPointerEnter={() => hydrate("pointer")}
+          onPointerDown={() => hydrate("pointer")}
           onFocusIn={() => hydrate("focus")}
         >
           <ToolPartPlaceholder />

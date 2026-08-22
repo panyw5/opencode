@@ -4,6 +4,7 @@ import {
   clearToolPartHydration,
   isToolPartHydrated,
   markToolPartHydrated,
+  releaseToolPartHydration,
   shouldDeferToolPart,
   toolHydrationKey,
 } from "./deferred-tool-helpers"
@@ -62,9 +63,31 @@ describe("tool hydration cache", () => {
     clearToolPartHydration()
     const key = toolHydrationKey("ses_a", "part_1")
     expect(isToolPartHydrated(key)).toBe(false)
-    markToolPartHydrated(key)
+    markToolPartHydrated(key, "viewport")
     expect(isToolPartHydrated(key)).toBe(true)
     clearToolPartHydration("ses_a")
     expect(isToolPartHydrated(key)).toBe(false)
+  })
+
+  test("releases viewport hydration on unmount but keeps user-opened forever", () => {
+    clearToolPartHydration()
+    const viewportKey = toolHydrationKey("ses_a", "part_viewport")
+    const userKey = toolHydrationKey("ses_a", "part_user")
+    const upgradedKey = toolHydrationKey("ses_a", "part_upgraded")
+
+    markToolPartHydrated(viewportKey, "viewport")
+    markToolPartHydrated(userKey, "user")
+    // A viewport hydration later touched by the user upgrades to permanent.
+    markToolPartHydrated(upgradedKey, "viewport")
+    markToolPartHydrated(upgradedKey, "user")
+
+    releaseToolPartHydration(viewportKey)
+    releaseToolPartHydration(userKey)
+    releaseToolPartHydration(upgradedKey)
+
+    expect(isToolPartHydrated(viewportKey)).toBe(false)
+    expect(isToolPartHydrated(userKey)).toBe(true)
+    expect(isToolPartHydrated(upgradedKey)).toBe(true)
+    clearToolPartHydration()
   })
 })
