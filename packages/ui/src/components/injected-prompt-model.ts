@@ -162,8 +162,8 @@ export function injectionTitleFromParts(parts: TextPart[], t: InjectionTitleTran
       }
       const metadataState = part.metadata?.state
       if (metadataState === "completed" || metadataState === "error") states.add(metadataState)
-      else if (/^Background shell completed:/i.test(part.text)) states.add("completed")
-      else if (/^Background shell failed:/i.test(part.text)) states.add("error")
+      else if (/^Background shell completed(?::|$)/i.test(part.text)) states.add("completed")
+      else if (/^Background shell failed(?::|$)/i.test(part.text)) states.add("error")
     }
     const description = descriptions.size === 1 ? [...descriptions][0] : undefined
     const state = states.size === 1 ? [...states][0] : undefined

@@ -111,6 +111,19 @@ describe("injected-prompt-model", () => {
     )
   })
 
+  test.each([
+    ["Background shell completed", "ui.message.injection.backgroundShellCompletedFallback"],
+    ["Background shell failed", "ui.message.injection.backgroundShellFailedFallback"],
+  ])("titles legacy background shell notifications without descriptions: %s", (body, title) => {
+    const parts = selectInjectionParts([
+      text({
+        text: body,
+        synthetic: true,
+      }),
+    ])
+    expect(injectionTitleFromParts(parts, t)).toBe(title)
+  })
+
   test("scheduledInjectionPart builds the payload shape", () => {
     expect(
       scheduledInjectionPart({
