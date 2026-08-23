@@ -4,6 +4,7 @@ import { app, crashReporter, netLog, shell } from "electron"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
+import { brokenConsoleCode } from "./logging-error"
 
 const MAX_LOG_AGE_DAYS = 7
 const TAIL_LINES = 1000
@@ -191,17 +192,17 @@ async function writeZip(output: string, entries: Entry[]) {
 }
 
 function initConsoleTransport() {
-  const write = log.transports.console.writeFn.bind(log.transports.console)
+  const consoleWrite = log.transports.console.writeFn.bind(log.transports.console)
   log.transports.console.writeFn = (options) => {
     try {
-      write(options)
+      consoleWrite(options)
     } catch (err) {
-      if (!isBrokenPipe(err)) throw err
+      const code = brokenConsoleCode(err)
+      if (!code) throw err
       log.transports.console.level = false
+      // Console output is disabled before this call, so the diagnostic is
+      // persisted to the run's main.log without recursively touching stdout.
+      write("main", "console transport disabled after stdout write failure", { code }, "warn")
     }
   }
-}
-
-function isBrokenPipe(err: unknown) {
-  return typeof err === "object" && err !== null && "code" in err && err.code === "EPIPE"
 }
