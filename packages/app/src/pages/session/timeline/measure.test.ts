@@ -438,13 +438,29 @@ test("does not shrink a row whose markdown has not rendered content yet", () => 
   expect(shouldCommitVirtualRowHeight({ next: 272, previous: 634, live: false, markdownPending: false })).toBe(true)
 })
 
-test("guards completed text and reasoning until deferred markdown renders", () => {
+test("guards mounted deferred markdown but allows collapsed reasoning to shrink", () => {
   const part = (value: object) => value as Part
-  expect(markdownMeasurementPending(part({ type: "text", text: "answer", time: { end: 1 } }), false)).toBe(true)
-  expect(markdownMeasurementPending(part({ type: "reasoning", text: "analysis", time: { end: 1 } }), false)).toBe(true)
-  expect(markdownMeasurementPending(part({ type: "reasoning", text: "analysis", time: { end: 1 } }), true)).toBe(false)
-  expect(markdownMeasurementPending(part({ type: "reasoning", text: "analysis" }), false)).toBe(false)
-  expect(markdownMeasurementPending(part({ type: "tool" }), false)).toBe(false)
+  expect(markdownMeasurementPending(part({ type: "text", text: "answer", time: { end: 1 } }), { rendered: false })).toBe(true)
+  expect(
+    markdownMeasurementPending(part({ type: "reasoning", text: "analysis", time: { end: 1 } }), {
+      rendered: false,
+      detailsMounted: true,
+    }),
+  ).toBe(true)
+  expect(
+    markdownMeasurementPending(part({ type: "reasoning", text: "analysis", time: { end: 1 } }), {
+      rendered: false,
+      detailsMounted: false,
+    }),
+  ).toBe(false)
+  expect(
+    markdownMeasurementPending(part({ type: "reasoning", text: "analysis", time: { end: 1 } }), {
+      rendered: true,
+      detailsMounted: true,
+    }),
+  ).toBe(false)
+  expect(markdownMeasurementPending(part({ type: "reasoning", text: "analysis" }), { rendered: false })).toBe(false)
+  expect(markdownMeasurementPending(part({ type: "tool" }), { rendered: false })).toBe(false)
 })
 
 test("invalidates cached measurements after a meaningful timeline width change", () => {

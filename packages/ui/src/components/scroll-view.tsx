@@ -36,6 +36,8 @@ export interface ScrollViewProps extends ComponentProps<"div"> {
     geometry: { scrollTop: number; scrollHeight: number; clientHeight: number },
     event: Event & { currentTarget: HTMLDivElement },
   ) => void
+  /** Called before ScrollView itself changes scrollTop via keyboard or thumb drag. */
+  onScrollInput?: (viewport: HTMLDivElement) => void
 }
 
 export function scrollThumbGeometry(input: {
@@ -116,6 +118,7 @@ export function ScrollView(props: ScrollViewProps) {
       "scrollContentHeight",
       "scrollViewportHeight",
       "onScrollGeometry",
+      "onScrollInput",
     ],
     [
       "onScroll",
@@ -228,6 +231,7 @@ export function ScrollView(props: ScrollViewProps) {
   const onThumbPointerDown = (e: PointerEvent) => {
     e.preventDefault()
     e.stopPropagation()
+    local.onScrollInput?.(viewportRef)
     setState("isDragging", true)
     startY = e.clientY
     startScrollTop = viewportRef.scrollTop
@@ -269,6 +273,7 @@ export function ScrollView(props: ScrollViewProps) {
 
     const next = scrollKey(e)
     if (!next) return
+    local.onScrollInput?.(viewportRef)
 
     const scrollAmount = viewportRef.clientHeight * 0.8
     const lineAmount = 40
@@ -337,11 +342,8 @@ export function ScrollView(props: ScrollViewProps) {
         onClick={events.onClick as any}
         tabIndex={0}
         role="region"
-         aria-label={i18n.t("ui.scrollView.ariaLabel")}
-         // Virtualized callers own scroll compensation. Native scroll anchoring
-         // otherwise changes scrollTop behind the virtualizer when a row settles.
-         style={{ "overflow-anchor": "none" }}
-         onKeyDown={(e) => {
+        aria-label={i18n.t("ui.scrollView.ariaLabel")}
+        onKeyDown={(e) => {
           onKeyDown(e)
           if (typeof events.onKeyDown === "function") events.onKeyDown(e as any)
         }}

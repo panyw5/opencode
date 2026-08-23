@@ -76,8 +76,10 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
   const [hydrated, setHydrated] = createSignal(!deferrable() || isToolPartHydrated(key()))
   let placeholder: HTMLDivElement | undefined
 
-  const lagging = () =>
-    typeof window !== "undefined" && window.localStorage.getItem("opencode.session.lag.debug") === "1"
+  // Sample once per mounted part. Hydration can be a hot path during scrolling;
+  // synchronous localStorage reads do not belong in each hydration attempt.
+  const lagDebug = typeof window !== "undefined" && window.localStorage.getItem("opencode.session.lag.debug") === "1"
+  const lagging = () => lagDebug
   const tool = () => (props.part.type === "tool" ? props.part.tool : props.part.type)
   const status = () => (props.part.type === "tool" ? props.part.state.status : "none")
   const logHydrate = (phase: string, source: string, fields = "") => {

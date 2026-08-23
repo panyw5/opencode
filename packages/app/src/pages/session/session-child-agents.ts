@@ -1,5 +1,4 @@
 import type { Message, Part, Session, SessionStatus, ToolPart } from "@opencode-ai/sdk/v2/client"
-import { taskSessionIndex } from "@opencode-ai/ui/message-task-session"
 import { working } from "./session-working"
 
 type SessionChildAgentStatus = Exclude<ToolPart["state"]["status"], "pending">
@@ -88,9 +87,7 @@ function entryFromTaskPart(input: {
   part: ToolPart
   message: Message
   sessionByID: Map<string, Session>
-  parentSessionID?: string
-  /** Children of the parent session only — taskSessionIndex scans this list. */
-  sessions: readonly Session[]
+  childIndexByID: Map<string, number>
   seenSessionIDs: Set<string>
   collect: CollectChildAgentEntriesInput
   order: number
@@ -116,11 +113,7 @@ function entryFromTaskPart(input: {
     description,
     created: stateStart(input.part.state) ?? session?.time.created ?? input.message.time.created,
     status: statusFor(sessionID, input.collect, toolStatus),
-    index: taskSessionIndex({
-      childSessionId: sessionID,
-      parentSessionId: input.parentSessionID,
-      sessions: input.sessions,
-    }),
+    index: input.childIndexByID.get(sessionID),
     resume,
     background: background || undefined,
     order: input.order,
@@ -132,6 +125,12 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
     (session) => input.sessionID !== undefined && session.parentID === input.sessionID,
   )
   const sessionByID = new Map(childSessions.map((session) => [session.id, session] as const))
+  const childIndexByID = new Map(
+    childSessions
+      .filter((session) => !session.time.archived)
+      .toSorted((a, b) => a.time.created - b.time.created || a.id.localeCompare(b.id))
+      .map((session, index) => [session.id, index + 1] as const),
+  )
   const entries: Array<SessionChildAgentEntry & { order: number }> = []
   let order = 0
   const seenSessionIDs = new Set<string>()
@@ -144,8 +143,7 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
         part,
         message,
         sessionByID,
-        parentSessionID: input.sessionID,
-        sessions: childSessions,
+        childIndexByID,
         seenSessionIDs,
         collect: input,
         order,
@@ -168,11 +166,7 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
       created: session.time.created,
       status,
       usage: status === "running" || status === "error" ? undefined : "not used",
-      index: taskSessionIndex({
-        childSessionId: session.id,
-        parentSessionId: input.sessionID,
-        sessions: childSessions,
-      }),
+      index: childIndexByID.get(session.id),
       resume: false,
       order,
     })

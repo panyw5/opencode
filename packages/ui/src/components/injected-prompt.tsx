@@ -96,7 +96,10 @@ export function InjectedPrompt(props: InjectedPromptProps) {
   const i18n = useI18n()
   const [expanded, setExpanded] = createSignal(!!props.defaultExpanded)
 
-  const body = createMemo(() => (typeof props.text === "function" ? props.text() : (props.text ?? "")))
+  // Keep lazy bodies as plain accessors. createMemo evaluates eagerly when it
+  // is created, which would join/escape large injected prompts even while the
+  // panel is collapsed.
+  const body = () => (typeof props.text === "function" ? props.text() : (props.text ?? ""))
   const pending = createMemo(() => !!props.pending)
   const summary = createMemo(() => {
     if (pending()) return i18n.t("ui.message.injection.injecting")
@@ -114,6 +117,7 @@ export function InjectedPrompt(props: InjectedPromptProps) {
       <button
         data-slot="injected-prompt-trigger"
         data-expanded={expanded() ? "true" : undefined}
+        aria-expanded={expanded()}
         onClick={() => setExpanded(!expanded())}
         onMouseDown={(e) => e.preventDefault()}
         type="button"
@@ -122,7 +126,7 @@ export function InjectedPrompt(props: InjectedPromptProps) {
         <span data-slot="injected-prompt-summary">{summary()}</span>
       </button>
       <Show when={expanded()}>
-        <InjectedPromptContent {...props} text={body()} />
+        <InjectedPromptContent {...props} />
       </Show>
     </div>
   )
@@ -148,7 +152,6 @@ export type InjectedPromptFromPartsProps = {
 export function InjectedPromptFromParts(props: InjectedPromptFromPartsProps) {
   const i18n = useI18n()
   const selected = createMemo(() => selectInjectionParts(props.parts))
-  const text = createMemo(() => joinInjectionText(selected()))
   const pending = createMemo(() => isInjectionPartsPending(selected()))
   const summary = createMemo(() =>
     i18n.t("ui.message.injection.chars", { count: injectionTextLength(selected()).toLocaleString() }),
@@ -169,7 +172,7 @@ export function InjectedPromptFromParts(props: InjectedPromptFromPartsProps) {
     <Show when={selected().length > 0}>
       <InjectedPrompt
         title={title()}
-        text={text}
+        text={() => joinInjectionText(selected())}
         pending={pending()}
         summary={summary()}
         kind={kind()}

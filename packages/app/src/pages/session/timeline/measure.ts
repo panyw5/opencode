@@ -303,10 +303,20 @@ export function shouldDeferFastRowMeasurement(input: {
 /** Text and reasoning rows share the deferred Markdown renderer. */
 export function markdownMeasurementPending(
   part: Part | undefined,
-  rendered: boolean,
+  input: {
+    rendered: boolean
+    /** Whether an expandable reasoning body is currently mounted. */
+    detailsMounted?: boolean
+  },
 ) {
   if ((part?.type !== "text" && part?.type !== "reasoning") || !part.text || !part.time?.end) return false
-  return !rendered
+  // A collapsed completed reasoning part intentionally unmounts its Markdown.
+  // Missing rendered-stage metadata therefore means "collapsed", not
+  // "deferred Markdown still pending". When expanded, the details body mounts
+  // before Markdown parsing completes and still needs the transient-shrink
+  // guard.
+  if (part.type === "reasoning" && input.detailsMounted === false) return false
+  return !input.rendered
 }
 
 /** Keeps virtual row identity independent from the data that determines its height. */

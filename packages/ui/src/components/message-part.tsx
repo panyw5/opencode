@@ -2093,17 +2093,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
           </div>
         </Collapsible.Trigger>
         <Show when={streaming() && !open()}>
-          <div
-            data-component="reasoning-part"
-            data-mode="preview"
-            ref={(el) => {
-              if (!el || typeof getComputedStyle !== "function") return
-              const cs = getComputedStyle(el)
-              console.log(
-                `[reasoning-preview] part=${part.id} cssHeight=${cs.height} minHeight=${cs.minHeight} scrollHeight=${String(el.scrollHeight)} logicalLines=${String(previewText().split("\n").length)}`,
-              )
-            }}
-          >
+          <div data-component="reasoning-part" data-mode="preview">
             <div data-slot="reasoning-preview">{previewText()}</div>
           </div>
         </Show>

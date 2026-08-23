@@ -68,6 +68,7 @@ import {
   shouldCommitVirtualRowHeight,
   shouldDeferFastRowMeasurement,
   snapshotVirtualItems,
+  timelineMeasurementsMatchWidth,
   timelineRowContentVisibility,
   virtualRowOverflow,
   type ViewportAnchor,
@@ -289,7 +290,7 @@ export function MessageTimeline(props: {
     on(
       sessionID,
       (id, prev) => {
-        console.debug(`[timeline] session-id from=${prev ?? "none"} to=${id ?? "none"} owner=${ownerSessionKey}`)
+        if (lagging()) console.debug(`[timeline] session-id from=${prev ?? "none"} to=${id ?? "none"} owner=${ownerSessionKey}`)
         if (prev && prev !== id) clearToolPartHydration(prev)
         if (!id) clearToolPartHydration()
       },
@@ -309,9 +310,11 @@ export function MessageTimeline(props: {
     if (all[0] && ordered[0] && all[0].id !== ordered[0].id) {
       const first = ordered[0]
       const last = ordered[ordered.length - 1]
-      console.debug(
-        `[timeline] message-order corrected sid=${id} n=${String(ordered.length)} first=${first.id}:${String(first.time.created)} last=${last.id}:${String(last.time.created)}`,
-      )
+      if (lagging()) {
+        console.debug(
+          `[timeline] message-order corrected sid=${id} n=${String(ordered.length)} first=${first.id}:${String(first.time.created)} last=${last.id}:${String(last.time.created)}`,
+        )
+      }
     }
     return ordered
   })
@@ -751,6 +754,16 @@ export function MessageTimeline(props: {
     },
   })
   const resizeItem = virtualizer.resizeItem
+  const cacheCommittedRowHeight = (rowKey: string, size: number) => {
+    const currentRow = timelineRowByKey().get(rowKey)
+    if (!currentRow) return
+    timelineRowCache.setMeasured(
+      rowKey,
+      size,
+      rowContentVersion(currentRow, getMessagePart),
+      listSize().width,
+    )
+  }
   const scheduleDeferredFastMeasurementFlush = () => {
     if (deferredFastMeasurementTimer !== undefined) window.clearTimeout(deferredFastMeasurementTimer)
     deferredFastMeasurementTimer = window.setTimeout(() => {
@@ -765,6 +778,7 @@ export function MessageTimeline(props: {
         if (!current || String(current.key) !== pending.key) continue
         measurementBatchPending = true
         virtualizer.resizeItem(index, pending.size)
+        cacheCommittedRowHeight(pending.key, pending.size)
       }
     }, 180)
   }
@@ -859,33 +873,35 @@ export function MessageTimeline(props: {
     sessionID,
   })
 
-  let lastRenderTrace = ""
-  createEffect(() => {
-    const rows = timelineRows()
-    const snapshot = virtualSnapshot()
-    const messageCount = sessionMessages().length
-    const trace = `${sessionID() ?? "none"}:${messageCount}:${rows.length}:${snapshot.keys.length}:${snapshot.keys[0] ?? "none"}:${snapshot.keys.at(-1) ?? "none"}`
-    if (trace === lastRenderTrace) return
-    lastRenderTrace = trace
-    if (lagging() && debugWindow) {
-      const root = listRoot()
-      const states = (debugWindow.__opencodeTimelineStates ??= {})
-      states[ownerSessionKey] = {
-        sessionID: sessionID(),
-        ownerSessionKey,
-        rowCount: rows.length,
-        messageCount,
-        initialMeasurementCount: initialMeasurements.length,
-        mountedKeys: [...snapshot.keys],
-        scrollTop: root?.scrollTop ?? 0,
-        scrollHeight: root?.scrollHeight ?? 0,
-        clientHeight: root?.clientHeight ?? 0,
+  if (lagDebug) {
+    let lastRenderTrace = ""
+    createEffect(() => {
+      const rows = timelineRows()
+      const snapshot = virtualSnapshot()
+      const messageCount = sessionMessages().length
+      const trace = `${sessionID() ?? "none"}:${messageCount}:${rows.length}:${snapshot.keys.length}:${snapshot.keys[0] ?? "none"}:${snapshot.keys.at(-1) ?? "none"}`
+      if (trace === lastRenderTrace) return
+      lastRenderTrace = trace
+      if (debugWindow) {
+        const root = listRoot()
+        const states = (debugWindow.__opencodeTimelineStates ??= {})
+        states[ownerSessionKey] = {
+          sessionID: sessionID(),
+          ownerSessionKey,
+          rowCount: rows.length,
+          messageCount,
+          initialMeasurementCount: initialMeasurements.length,
+          mountedKeys: [...snapshot.keys],
+          scrollTop: root?.scrollTop ?? 0,
+          scrollHeight: root?.scrollHeight ?? 0,
+          clientHeight: root?.clientHeight ?? 0,
+        }
       }
-    }
-    console.debug(
-      `[timeline] render-state sid=${sessionID() ?? "none"} messages=${String(messageCount)} rows=${String(rows.length)} virtual=${String(snapshot.keys.length)} first=${snapshot.keys[0] ?? "none"} last=${snapshot.keys.at(-1) ?? "none"}`,
-    )
-  })
+      console.debug(
+        `[timeline] render-state sid=${sessionID() ?? "none"} messages=${String(messageCount)} rows=${String(rows.length)} virtual=${String(snapshot.keys.length)} first=${snapshot.keys[0] ?? "none"} last=${snapshot.keys.at(-1) ?? "none"}`,
+      )
+    })
+  }
 
   createEffect(() => {
     props.setRevealMessage?.((id) => {
@@ -898,9 +914,11 @@ export function MessageTimeline(props: {
 
   let overscanTimer: number | undefined
   onMount(() => {
-    console.debug(
-      `[timeline] mount session=${sessionID() ?? "none"} owner=${ownerSessionKey} cached=${String(!!initialMeasurements)} rows=${String(timelineRows().length)}`,
-    )
+    if (lagging()) {
+      console.debug(
+        `[timeline] mount session=${sessionID() ?? "none"} owner=${ownerSessionKey} cached=${String(!!initialMeasurements)} rows=${String(timelineRows().length)}`,
+      )
+    }
     overscanTimer = window.setTimeout(() => {
       overscanTimer = undefined
       const previousOverscan = renderOverscan()
@@ -909,9 +927,11 @@ export function MessageTimeline(props: {
   })
 
   onCleanup(() => {
-    console.debug(
-      `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
-    )
+    if (lagging()) {
+      console.debug(
+        `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
+      )
+    }
     clearPrependAnchor()
     pendingNearBottomShrinks.clear()
     deferredFastMeasurements.clear()
@@ -1033,9 +1053,16 @@ export function MessageTimeline(props: {
     })
     listResizeObserver.observe(root)
     setListSize({ width: root.clientWidth, height: root.clientHeight })
-    // Row-level cache validates width per row, so a full re-measure here is
-    // only needed when we actually had cached measurements to reconsider.
-    if (initialMeasurements.length > 0) virtualizer.measure()
+    // Initial setup does not know the viewport width and accepts cached rows
+    // provisionally. Preserve compatible itemSizeCache entries; a full
+    // measure() would otherwise discard every valid cached height on each
+    // mount and defeat the row cache. Rebuild only when at least one restored
+    // measurement came from a meaningfully different width.
+    const cachedWidthCompatible = initialMeasurements.every((item) => {
+      const cached = timelineRowCache.get(String(item.key))
+      return !cached || timelineMeasurementsMatchWidth(cached.width, root.clientWidth)
+    })
+    if (!cachedWidthCompatible) virtualizer.measure()
   }
   const markBoundaryGesture = (root: HTMLDivElement, target: EventTarget | null, delta: number) => {
     const nested = boundaryTarget(root, target)
@@ -1098,6 +1125,7 @@ export function MessageTimeline(props: {
         if (geometry.scrollTop <= nextMaxScrollTop - 1) {
           pendingNearBottomShrinks.delete(index)
           virtualizer.resizeItem(index, pending.size)
+          cacheCommittedRowHeight(pending.key, pending.size)
           if (lagging()) {
             timelineLag(
               "deferred-shrink",
@@ -1407,7 +1435,12 @@ export function MessageTimeline(props: {
       // Completed reasoning uses the same deferred Markdown renderer as text;
       // before hydration it also reports only its 52px chrome, so it needs the
       // same rendered-stage guard or that transient height poisons the cache.
-      return markdownMeasurementPending(part, !!element?.querySelector("[data-markdown-rendered-stage]"))
+      return markdownMeasurementPending(part, {
+        rendered: !!element?.querySelector("[data-markdown-rendered-stage]"),
+        detailsMounted:
+          part?.type !== "reasoning" ||
+          !!element?.querySelector('[data-component="reasoning-part"][data-mode="full"]'),
+      })
     }
     // Height commits arrive through the virtualizer's single ResizeObserver
     // (see the measureElement option): the observer's border-box entry needs
@@ -1446,14 +1479,15 @@ export function MessageTimeline(props: {
         }
         return virtual
       }
+      // A fresh valid observation supersedes either deferred queue. Without
+      // this, reopening a row after a deferred collapse can leave the old
+      // shrink armed and apply it later when the user scrolls.
+      deferredFastMeasurements.delete(item().index)
+      pendingNearBottomShrinks.delete(item().index)
       if (shouldDeferFastRowMeasurement({ fast: fastScrolling(), live, next: raw, previous: virtual })) {
         deferredFastMeasurements.set(item().index, { key: input.rowKey, size: raw })
         setContentHeight(Math.min(raw, virtual))
         scheduleDeferredFastMeasurementFlush()
-        const currentRow = row()
-        if (currentRow) {
-          timelineRowCache.setMeasured(input.rowKey, raw, rowContentVersion(currentRow, getMessagePart), listSize().width)
-        }
         return virtual
       }
       const totalSize = virtualizer.getTotalSize()
@@ -1485,12 +1519,7 @@ export function MessageTimeline(props: {
       // after TanStack consumes this returned size, and queueMeasurementPass
       // coalesces every entry in the same observer batch.
       queueMeasurementPass()
-      const currentRow = row()
-      if (currentRow) {
-        const version = rowContentVersion(currentRow, getMessagePart)
-        const width = listSize().width
-        timelineRowCache.setMeasured(input.rowKey, raw, version, width)
-      }
+      cacheCommittedRowHeight(input.rowKey, raw)
       const delta = raw - virtual
       if (lagging() && Math.abs(delta) > 1) {
         console.debug(
@@ -1618,6 +1647,10 @@ export function MessageTimeline(props: {
         onPointerDown={(event) =>
           event.target === event.currentTarget && props.onMarkScrollGesture(event.currentTarget)
         }
+        onScrollInput={(root) => {
+          programmaticScrollAt = 0
+          props.onMarkScrollGesture(root)
+        }}
         onScrollGeometry={handleScroll}
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
