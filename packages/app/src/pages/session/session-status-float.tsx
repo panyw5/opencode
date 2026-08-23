@@ -167,6 +167,8 @@ export function SessionStatusFloat(props: {
           <>
             <Icon name="status" size="small" class="text-icon-weak" />
             <span>{language.t("session.status.button")}</span>
+            <span class="mx-0.5 inline-block size-0.5 rounded-full bg-border-weak-base" />
+            <SessionContextUsage variant="capsule" />
           </>
         }
         class="w-[500px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger p-0 shadow-xl"

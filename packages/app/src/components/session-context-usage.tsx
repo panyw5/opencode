@@ -27,7 +27,7 @@ const BREAKDOWN_COLOR: Record<SessionContextBreakdownKey, string> = {
 }
 
 interface SessionContextUsageProps {
-  variant?: "button" | "indicator" | "panel"
+  variant?: "button" | "indicator" | "panel" | "capsule"
   placement?: TooltipProps["placement"]
 }
 
@@ -244,6 +244,23 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
     </div>
   )
 
+  const capsuleTrigger = () => (
+    <div data-component="session-context-usage-capsule" class="flex items-center gap-1">
+      <div class="flex items-center justify-center">
+        <ProgressCircle
+          size={14}
+          strokeWidth={2}
+          percentage={context()?.usage ?? 0}
+          status={status()}
+          style={{
+            "--progress-circle-background": "light-dark(var(--border-weak-base), rgba(255, 255, 255, 0.22))",
+          }}
+        />
+      </div>
+      <span class="min-w-[2ch] text-11-medium text-text-weak tabular-nums text-left">{contextUsageLabel()}</span>
+    </div>
+  )
+
   return (
     <Show when={params.id}>
       <Switch>
@@ -260,6 +277,11 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
         <Match when={variant() === "indicator"}>
           <Tooltip value={tooltipValue()} placement={props.placement ?? "top"}>
             {circle()}
+          </Tooltip>
+        </Match>
+        <Match when={variant() === "capsule"}>
+          <Tooltip value={tooltipValue()} placement={props.placement ?? "top"}>
+            {capsuleTrigger()}
           </Tooltip>
         </Match>
         <Match when={true}>
