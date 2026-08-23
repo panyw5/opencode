@@ -29,6 +29,22 @@ type SmokeWindow = Window & {
 test.describe("smoke: session timeline", () => {
   test.setTimeout(240_000)
 
+  test("expands patch files rendered from patch-only metadata", async ({ page }) => {
+    await mockOpenCodeServer(page, {
+      sessions: fixture.sessions,
+      provider: fixture.provider,
+      directory: fixture.directory,
+      project: fixture.project,
+      pageMessages,
+    })
+    await configureSmokePage(page, fixture.directory)
+
+    await selectHomeProject(page, fixture.project.name)
+    await navigateToSession(page, fixture.directory, fixture.targetID, fixture.expected.targetTitle)
+    await expectSessionReady(page)
+    await expectPatchDiffExpandable(page)
+  })
+
   test("renders seeded timeline in order while paging through history", async ({ page }) => {
     const errors = trackPageErrors(page)
     await mockOpenCodeServer(page, {
@@ -50,6 +66,35 @@ test.describe("smoke: session timeline", () => {
     await expectCanScrollToStart(page, expectedPartIDs, expectedMessageIDs, errors)
   })
 })
+
+async function expectPatchDiffExpandable(page: Page) {
+  const tool = page.locator('[data-component="apply-patch-tool"]').last()
+  const scroller = page.locator('[data-slot="scroll-view-viewport"]').first()
+  const sidebarOverlay = page.locator('[data-component="sidebar-dismiss-overlay"]')
+  if (await sidebarOverlay.isVisible()) await sidebarOverlay.click({ force: true })
+  await scroller.hover()
+  for (let attempt = 0; attempt < 40 && (await tool.count()) === 0; attempt++) {
+    await page.mouse.wheel(0, -600)
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    )
+  }
+  await expect(tool).toBeVisible()
+
+  const toolTrigger = tool.locator('[data-slot="collapsible-trigger"]')
+  if ((await toolTrigger.getAttribute("aria-expanded")) !== "true") await toolTrigger.click()
+
+  const fileTrigger = tool.locator('[data-slot="accordion-trigger"]').first()
+  await fileTrigger.click()
+  await expect(fileTrigger).toHaveAttribute("aria-expanded", "true")
+
+  const diff = tool.locator('[data-component="apply-patch-file-diff"] [data-component="file"][data-mode="diff"]')
+  await expect(diff).toBeVisible()
+  await expect(diff).toContainText("export const value")
+}
 
 async function configureSmokePage(page: Page, directory: string) {
   await page.addInitScript(() => {
@@ -411,18 +456,17 @@ function expectCompleteScroll(
 
 async function selectHomeProject(page: Page, projectName: string) {
   await page.goto("/")
-  await page
-    .locator('[data-component="home-project-row"]')
-    .filter({ hasText: new RegExp(projectName, "i") })
-    .click()
-  await expect(page).toHaveURL(/\/$/)
+  await page.getByRole("button", { name: projectName, exact: true }).click()
+  await expect(page).toHaveURL(/\/session$/)
 }
 
 async function navigateToSession(page: Page, directory: string, sessionId: string, expectedTitle: string) {
   await page.goto(`/${base64Encode(directory)}/session/${sessionId}`)
-  await expect(page.getByRole("heading", { name: expectedTitle })).toBeVisible()
+  await expect(
+    page.locator('[data-component="session-tab"][data-active="true"]').filter({ hasText: expectedTitle }),
+  ).toBeVisible()
 }
 
 async function expectSessionReady(page: Page) {
-  await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible()
+  await expect(page.locator('[data-component="prompt-input"]')).toBeVisible()
 }

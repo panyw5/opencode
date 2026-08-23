@@ -62,6 +62,8 @@ import { ToolStatusTitle } from "./tool-status-title"
 import { Spinner } from "./spinner"
 import { animate } from "motion"
 import { attached, inline, kind } from "./message-file"
+import { patchFiles } from "./apply-patch-file"
+import { text as diffText } from "./session-diff"
 import { skillText } from "./message-skill"
 import { hasVisibleText } from "./message-part-text"
 import { InjectedPromptFromParts } from "./injected-prompt"
@@ -3051,24 +3053,12 @@ ToolRegistry.register({
   },
 })
 
-interface ApplyPatchFile {
-  filePath: string
-  relativePath: string
-  type: "add" | "update" | "delete" | "move"
-  diff: string
-  before: string
-  after: string
-  additions: number
-  deletions: number
-  movePath?: string
-}
-
 ToolRegistry.register({
   name: "apply_patch",
   render(props) {
     const i18n = useI18n()
     const fileComponent = useFileComponent()
-    const files = createMemo(() => (props.metadata.files ?? []) as ApplyPatchFile[])
+    const files = createMemo(() => patchFiles(props.metadata.files))
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
     const single = createMemo(() => {
       const list = files()
@@ -3170,8 +3160,11 @@ ToolRegistry.register({
                                 <Dynamic
                                   component={fileComponent}
                                   mode="diff"
-                                  before={{ name: file.filePath, contents: file.before }}
-                                  after={{ name: file.movePath ?? file.filePath, contents: file.after }}
+                                  before={{ name: file.filePath, contents: diffText(file.view, "deletions") }}
+                                  after={{
+                                    name: file.movePath ?? file.filePath,
+                                    contents: diffText(file.view, "additions"),
+                                  }}
                                 />
                               </div>
                             </Show>
@@ -3249,8 +3242,11 @@ ToolRegistry.register({
                   <Dynamic
                     component={fileComponent}
                     mode="diff"
-                    before={{ name: file().filePath, contents: file().before }}
-                    after={{ name: file().movePath ?? file().filePath, contents: file().after }}
+                    before={{ name: file().filePath, contents: diffText(file().view, "deletions") }}
+                    after={{
+                      name: file().movePath ?? file().filePath,
+                      contents: diffText(file().view, "additions"),
+                    }}
                   />
                 </div>
               </ToolFileAccordion>

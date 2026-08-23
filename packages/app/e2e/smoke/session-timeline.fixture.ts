@@ -147,15 +147,14 @@ function toolPart(
 }
 
 function patchFile(seed: number, type: "add" | "update" | "delete") {
+  const file = `src/generated/patch-${seed}.ts`
   return {
-    filePath: `src/generated/patch-${seed}.ts`,
-    relativePath: `src/generated/patch-${seed}.ts`,
+    filePath: file,
+    relativePath: file,
     type,
     additions: (seed % 7) + 1,
     deletions: type === "add" ? 0 : seed % 4,
-    patch: patch(seed, 520),
-    before: type === "add" ? undefined : code(seed, 18),
-    after: type === "delete" ? undefined : code(seed + 1, 24),
+    patch: `Index: ${file}\n===================================================================\n--- ${file}\n+++ ${file}\n@@ -1,2 +1,2 @@\n-export const value = "before-${seed}"\n+export const value = "after-${seed}"\n export const stable = true\n`,
   }
 }
 
