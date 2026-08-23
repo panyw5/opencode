@@ -138,7 +138,9 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       { type: "item", label: "Paste", action: "edit.paste", role: "paste", accelerator: { windows: "Ctrl+V" } },
       { type: "item", label: "Delete", action: "edit.delete" },
       { type: "separator" },
-      { type: "item", label: "Find...", command: "page.find", accelerator: { macos: "Cmd+F", windows: "Ctrl+F" } },
+      // The renderer owns this configurable shortcut; a native macOS accelerator
+      // would keep firing Cmd+F after the user disables or rebinds page.find.
+      { type: "item", label: "Find...", command: "page.find" },
       { type: "separator" },
       {
         type: "item",

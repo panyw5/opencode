@@ -122,35 +122,12 @@ function installShortcuts() {
       if (!mod) return
 
       const key = event.key.toLowerCase()
-      if (key === "g") {
-        const host = current
-        if (!host || !host.isOpen()) return
-        event.preventDefault()
-        event.stopPropagation()
-        host.next(event.shiftKey ? -1 : 1)
-        return
-      }
-
-      if (key !== "f") return
-
-      const active = current
-      if (active && active.isOpen()) {
-        event.preventDefault()
-        event.stopPropagation()
-        active.open()
-        return
-      }
-
-      const host =
-        hostForNode(document.activeElement) ??
-        hostForNode(event.target) ??
-        (target && target.element() && isVisibleHost(target.element()!) ? target : undefined) ??
-        firstVisibleHost()
-      if (!host) return
-
+      if (key !== "g") return
+      const host = current
+      if (!host || !host.isOpen()) return
       event.preventDefault()
       event.stopPropagation()
-      host.open()
+      host.next(event.shiftKey ? -1 : 1)
     },
     { capture: true },
   )

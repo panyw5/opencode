@@ -1361,7 +1361,6 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.page.find", "command.page.find.description"),
         category: language.t("command.category.view"),
         keybind: "mod+f",
-        disabled: !platform.find,
         onSelect: () => openFindbar(window.getSelection?.()?.toString().trim() || ""),
       },
       {

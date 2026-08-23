@@ -402,18 +402,25 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       run("command.palette", "palette")
     }
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (suspended() || dialog.active) return
+    const dispatchKeybind = (event: KeyboardEvent, allowed?: readonly string[]) => {
+      if (suspended() || dialog.active) return false
 
       const sig = signatureFromEvent(event)
       const isPalette = palette().has(sig)
       const option = keymap().get(sig)
+      const id = isPalette ? PALETTE_ID : option?.id
+      if (allowed) {
+        console.debug(
+          `[command-keybind] capture signature=${sig} resolved=${id ?? "none"} allowed=${allowed.join(",")} configured=${allowed.map((item) => `${item}:${settings.keybinds.get(item) ?? "default"}`).join(",")} suspended=false dialog=false`,
+        )
+      }
+      if (allowed && (!id || !allowed.includes(actionId(id)))) return false
       const modified = event.ctrlKey || event.metaKey || event.altKey
       const isTab = event.key === "Tab"
 
       const editable = isEditableTarget(event.target)
-      if (editable && shouldPreserveNativeEditableKeybind(event)) return
-      if (editable && !isPalette && !isAllowedEditableKeybind(option?.id) && !modified && !isTab) return
+      if (editable && shouldPreserveNativeEditableKeybind(event)) return false
+      if (editable && !isPalette && !isAllowedEditableKeybind(option?.id) && !modified && !isTab) return false
 
       if (isPalette) {
         console.debug(
@@ -421,12 +428,17 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
         )
         event.preventDefault()
         showPalette()
-        return
+        return true
       }
 
-      if (!option) return
+      if (!option) return false
       event.preventDefault()
       option.onSelect?.("keybind")
+      return true
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      dispatchKeybind(event)
     }
 
     onMount(() => {
@@ -459,6 +471,7 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       trigger(id: string, source?: CommandSource) {
         run(id, source)
       },
+      dispatchKeybind,
       keybind(id: string) {
         if (id === PALETTE_ID) {
           return formatKeybind(settings.keybinds.get(PALETTE_ID) ?? DEFAULT_PALETTE_KEYBIND, language.t)

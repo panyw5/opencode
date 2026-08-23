@@ -589,12 +589,14 @@ render(() => {
 
     onMount(() => {
       const onKeyDown = (event: KeyboardEvent) => {
-        if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
         if (event.key.toLowerCase() !== "f") return
 
-        event.preventDefault()
-        event.stopPropagation()
-        cmd.trigger("page.find", "keybind")
+        console.debug(
+          `[desktop-find-shortcut] capture key=${event.key} code=${event.code} meta=${event.metaKey} ctrl=${event.ctrlKey} shift=${event.shiftKey} alt=${event.altKey}`,
+        )
+        const handled = cmd.dispatchKeybind(event, ["page.find", "session.content.search"])
+        console.debug(`[desktop-find-shortcut] handled=${handled === true}`)
+        if (handled) event.stopPropagation()
       }
 
       window.addEventListener("keydown", onKeyDown, { capture: true })

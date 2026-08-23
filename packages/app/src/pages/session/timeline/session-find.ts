@@ -368,7 +368,7 @@ export function createSessionFind(opts: {
     isOpen: () => state.open,
   }
 
-  // Register immediately so Cmd+F can discover this host
+  // Register immediately so the page.find command can discover this host.
   const unregister = registerFindHost(host)
 
   // Cleanup on dispose
