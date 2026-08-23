@@ -18,9 +18,7 @@ export function sameVirtualItemGeometry(previous: VirtualItemGeometry, next: Vir
 }
 
 /** One getVirtualItems() snapshot so For keys and row lookups cannot diverge. */
-export function snapshotVirtualItems<T extends { key: string | number | bigint }>(
-  items: ReadonlyArray<T | undefined>,
-) {
+export function snapshotVirtualItems<T extends { key: string | number | bigint }>(items: ReadonlyArray<T | undefined>) {
   const list = items.filter((item): item is T => item !== undefined)
   const keys: string[] = []
   const byKey = new Map<string, T>()
@@ -269,6 +267,14 @@ export function shouldEaseLiveBottom(distance: number, input: { min: number; max
   return abs > input.min && abs <= input.max
 }
 
+/** Whether a rendered part is still producing content and must not shrink. */
+export function timelinePartIsLive(part: Part | undefined) {
+  if (!part) return false
+  if (part.type === "text" || part.type === "reasoning") return part.time?.end === undefined
+  if (part.type === "tool") return part.state.status === "pending" || part.state.status === "running"
+  return false
+}
+
 /**
  * A live row can grow immediately, but a transient short measure must not shrink it.
  * A markdown row whose content has not rendered yet reports its empty-box
@@ -291,12 +297,7 @@ export function shouldCommitVirtualRowHeight(input: {
 }
 
 /** Non-live overscan rows can keep their cached size until fast scrolling settles. */
-export function shouldDeferFastRowMeasurement(input: {
-  fast: boolean
-  live: boolean
-  next: number
-  previous: number
-}) {
+export function shouldDeferFastRowMeasurement(input: { fast: boolean; live: boolean; next: number; previous: number }) {
   return input.fast && !input.live && Math.abs(input.next - input.previous) > 0.5
 }
 
@@ -337,10 +338,7 @@ export function partMeasurementKey(part: Part | undefined) {
   return `${part.type}:${JSON.stringify(part).length}`
 }
 
-export function timelineContentVersion(
-  messages: readonly { id: string }[],
-  parts: Record<string, Part[] | undefined>,
-) {
+export function timelineContentVersion(messages: readonly { id: string }[], parts: Record<string, Part[] | undefined>) {
   return messages
     .map((message) => `${message.id}:${(parts[message.id] ?? []).map(partMeasurementKey).join(",")}`)
     .join("|")
@@ -400,9 +398,7 @@ export function rowContentVersion(
         return `part:${partMeasurementKey(part)}`
       }
       if (group.type === "context" && group.refs) {
-        return `ctx:${group.refs
-          .map((ref) => partMeasurementKey(parts(ref.messageID, ref.partID)))
-          .join(",")}`
+        return `ctx:${group.refs.map((ref) => partMeasurementKey(parts(ref.messageID, ref.partID))).join(",")}`
       }
       return "assistant:missing"
     }

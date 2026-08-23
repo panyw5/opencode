@@ -6,11 +6,14 @@ import {
   COLLAPSED_TOOL_HEIGHT,
   estimateRowHeight,
   estimateTextLines,
+  INJECTED_PROMPT_HEIGHT,
   OPEN_TOOL_HEIGHT,
   PREVIOUS_PART_SPACING,
   rowRenderCost,
   TEXT_PART_MARGIN,
+  TEXT_PART_META_HEIGHT,
   timelineTextMetrics,
+  timelineEstimateWidth,
   trimRangeToBudget,
   TURN_GAP_HEIGHT,
 } from "./estimate"
@@ -35,8 +38,7 @@ const toolPart = (overrides: { tool?: string; status?: ToolPart["state"]["status
     },
   }) as ToolPart
 
-const lookup = (part: Part) => (_messageID: string, partID: string) =>
-  partID === part.id ? part : undefined
+const lookup = (part: Part) => (_messageID: string, partID: string) => (partID === part.id ? part : undefined)
 
 const WIDTH = 1080
 const lineHeight = 31.2
@@ -70,7 +72,11 @@ describe("estimateRowHeight AssistantPart rows", () => {
   test("a collapsed completed tool estimates the collapsible box", () => {
     const part = toolPart()
     const height = estimateRowHeight(
-      { _tag: "AssistantPart", userMessageID: "m", group: { type: "part", ref: { messageID: "msg_1", partID: part.id } } },
+      {
+        _tag: "AssistantPart",
+        userMessageID: "m",
+        group: { type: "part", ref: { messageID: "msg_1", partID: part.id } },
+      },
       WIDTH,
       { ...base, parts: lookup(part) },
     )
@@ -101,9 +107,7 @@ describe("estimateRowHeight AssistantPart rows", () => {
       userMessageID: "m",
       group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } },
     })
-    expect(
-      estimateRowHeight(groupOf(running), WIDTH, { ...base, parts: lookup(running) }),
-    ).toBe(OPEN_TOOL_HEIGHT)
+    expect(estimateRowHeight(groupOf(running), WIDTH, { ...base, parts: lookup(running) })).toBe(OPEN_TOOL_HEIGHT)
     expect(
       estimateRowHeight(groupOf(completed), WIDTH, {
         ...base,
@@ -113,7 +117,7 @@ describe("estimateRowHeight AssistantPart rows", () => {
     ).toBe(OPEN_TOOL_HEIGHT)
   })
 
-  test("an answered question renders its expanded answer card", () => {
+  test("an answered question estimates the collapsed tool box", () => {
     const question = toolPart({ tool: "question" })
     expect(
       estimateRowHeight(
@@ -125,14 +129,18 @@ describe("estimateRowHeight AssistantPart rows", () => {
         WIDTH,
         { ...base, parts: lookup(question) },
       ),
-    ).toBe(OPEN_TOOL_HEIGHT)
+    ).toBe(COLLAPSED_TOOL_HEIGHT)
   })
 
   test("a reasoning part estimates the collapsed collapsible", () => {
     const part = { id: "prt_r", type: "reasoning", text: "thinking…" } as unknown as Part
     expect(
       estimateRowHeight(
-        { _tag: "AssistantPart", userMessageID: "m", group: { type: "part", ref: { messageID: "msg_1", partID: "prt_r" } } },
+        {
+          _tag: "AssistantPart",
+          userMessageID: "m",
+          group: { type: "part", ref: { messageID: "msg_1", partID: "prt_r" } },
+        },
         WIDTH,
         { ...base, parts: lookup(part) },
       ),
@@ -143,7 +151,11 @@ describe("estimateRowHeight AssistantPart rows", () => {
     const part = textPart("one line")
     expect(
       estimateRowHeight(
-        { _tag: "AssistantPart", userMessageID: "m", group: { type: "part", ref: { messageID: "msg_1", partID: part.id } } },
+        {
+          _tag: "AssistantPart",
+          userMessageID: "m",
+          group: { type: "part", ref: { messageID: "msg_1", partID: part.id } },
+        },
         WIDTH,
         { ...base, parts: lookup(part) },
       ),
@@ -151,10 +163,30 @@ describe("estimateRowHeight AssistantPart rows", () => {
     expect(TEXT_PART_MARGIN).toBe(24)
   })
 
+  test("the final assistant text reserves its copy and metadata row", () => {
+    const part = textPart("one line")
+    const row = {
+      _tag: "AssistantPart",
+      userMessageID: "m",
+      group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } },
+    }
+    const withoutMeta = estimateRowHeight(row, WIDTH, { ...base, parts: lookup(part) })
+    const withMeta = estimateRowHeight(row, WIDTH, {
+      ...base,
+      parts: lookup(part),
+      textPartHasMeta: () => true,
+    })
+    expect(withMeta - withoutMeta).toBe(TEXT_PART_META_HEIGHT)
+  })
+
   test("a missing part falls back instead of estimating garbage", () => {
     expect(
       estimateRowHeight(
-        { _tag: "AssistantPart", userMessageID: "m", group: { type: "part", ref: { messageID: "msg_1", partID: "gone" } } },
+        {
+          _tag: "AssistantPart",
+          userMessageID: "m",
+          group: { type: "part", ref: { messageID: "msg_1", partID: "gone" } },
+        },
         WIDTH,
         base,
       ),
@@ -205,6 +237,19 @@ describe("estimateRowHeight text-driven rows", () => {
     expect(estimateRowHeight({ _tag: "UserMessage", userMessageID: "m" }, WIDTH, base)).toBeGreaterThan(70)
   })
 
+  test("UserMessage reserves a fixed collapsed injected prompt instead of its full synthetic text", () => {
+    const withoutPrompt = estimateRowHeight({ _tag: "UserMessage", userMessageID: "m" }, WIDTH, {
+      ...base,
+      userMessageText: () => "short request",
+    })
+    const withPrompt = estimateRowHeight({ _tag: "UserMessage", userMessageID: "m" }, WIDTH, {
+      ...base,
+      userMessageText: () => "short request",
+      userMessageHasInjectedPrompt: () => true,
+    })
+    expect(withPrompt - withoutPrompt).toBeCloseTo(INJECTED_PROMPT_HEIGHT, 5)
+  })
+
   test("Error estimates card chrome plus wrapped text", () => {
     expect(estimateRowHeight({ _tag: "Error", userMessageID: "m", text: "boom" }, WIDTH, base)).toBeCloseTo(
       44 + lineHeight,
@@ -236,6 +281,13 @@ describe("estimateTextLines", () => {
     expect(estimateTextLines("x".repeat(40), 0, charWidth)).toBe(
       estimateTextLines("x".repeat(40), MIN_TEXT_WIDTH + TEXT_WIDTH_INSET, charWidth),
     )
+  })
+
+  test("weights CJK glyphs so medium-width mixed text does not lose a wrapped line", () => {
+    const text =
+      "研究中的 API 结论可用，但它误把 notebook 后面的另一对低权 null 当成目标 seed。实际目标仍是 `:6008–6010` 的两条 $h=9/2$ 向量；后续实现会强制使用这两式，并仅采用 `OPEdefs.m`。"
+    expect(estimateTextLines(text, 800, 11.4)).toBe(3)
+    expect(estimateTextLines(text, 1120, 11.4)).toBe(2)
   })
 })
 
@@ -269,7 +321,11 @@ describe("estimateRowHeight viewport clamp", () => {
     const part = textPart("word ".repeat(20000))
     expect(
       estimateRowHeight(
-        { _tag: "AssistantPart", userMessageID: "m", group: { type: "part", ref: { messageID: "msg_1", partID: part.id } } },
+        {
+          _tag: "AssistantPart",
+          userMessageID: "m",
+          group: { type: "part", ref: { messageID: "msg_1", partID: part.id } },
+        },
         WIDTH,
         { ...base, parts: lookup(part), viewportHeight: 600 },
       ),
@@ -393,5 +449,16 @@ describe("timelineTextMetrics", () => {
 
   test("falls back to defaults without a readable font size", () => {
     expect(timelineTextMetrics(undefined)).toEqual({ lineHeight: 25.2, charWidth: 7.7 })
+  })
+})
+
+describe("timelineEstimateWidth", () => {
+  test("caps centered desktop rows to the configured content width", () => {
+    expect(timelineEstimateWidth({ viewportWidth: 1663, centered: true, contentWidth: 350 })).toBe(1120)
+  })
+
+  test("uses the viewport for non-centered and mobile layouts", () => {
+    expect(timelineEstimateWidth({ viewportWidth: 1663, centered: false, contentWidth: 350 })).toBe(1663)
+    expect(timelineEstimateWidth({ viewportWidth: 700, centered: true, contentWidth: 350 })).toBe(700)
   })
 })

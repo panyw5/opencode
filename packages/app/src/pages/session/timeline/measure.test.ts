@@ -18,6 +18,7 @@ import {
   shouldEaseLiveBottom,
   timelineContentVersion,
   timelineMeasurementsMatchWidth,
+  timelinePartIsLive,
   timelineRowContentVisibility,
   virtualRowOverflow,
 } from "./measure"
@@ -61,7 +62,9 @@ test("falls back to the content rect when the border box is missing", () => {
 test("rejects unusable resize entries so callers fall back to an explicit read", () => {
   expect(heightFromResizeObserverEntry(undefined)).toBeUndefined()
   expect(heightFromResizeObserverEntry({})).toBeUndefined()
-  expect(heightFromResizeObserverEntry({ borderBoxSize: [{ blockSize: 0 }], contentRect: { height: 0 } })).toBeUndefined()
+  expect(
+    heightFromResizeObserverEntry({ borderBoxSize: [{ blockSize: 0 }], contentRect: { height: 0 } }),
+  ).toBeUndefined()
 })
 
 function rectOf(top: number, bottom: number) {
@@ -372,9 +375,9 @@ test("keeps a bottom-anchored stream pinned as its last row grows", () => {
   expect(
     shouldAdjustVirtualScroll({ itemEnd: 600, scrollOffset: 500, bottomAnchored: true, initializing: false }),
   ).toBe(true)
-  expect(
-    shouldAdjustVirtualScroll({ itemEnd: 600, scrollOffset: 500, bottomAnchored: true, initializing: true }),
-  ).toBe(false)
+  expect(shouldAdjustVirtualScroll({ itemEnd: 600, scrollOffset: 500, bottomAnchored: true, initializing: true })).toBe(
+    false,
+  )
   expect(
     shouldAdjustVirtualScroll({ itemEnd: 400, scrollOffset: 500, bottomAnchored: false, initializing: false }),
   ).toBe(true)
@@ -426,6 +429,17 @@ test("defers non-live row measurements only during fast scrolling", () => {
   expect(shouldDeferFastRowMeasurement({ fast: false, live: false, next: 400, previous: 200 })).toBe(false)
   expect(shouldDeferFastRowMeasurement({ fast: true, live: true, next: 400, previous: 200 })).toBe(false)
   expect(shouldDeferFastRowMeasurement({ fast: true, live: false, next: 200.2, previous: 200 })).toBe(false)
+
+  // A completed row may remain visible as the last row so Markdown can paint;
+  // its measured height must still be allowed to shrink to the real content.
+  expect(shouldCommitVirtualRowHeight({ next: 1774, previous: 2502, live: false, markdownPending: false })).toBe(true)
+})
+
+test("distinguishes completed visible parts from genuinely live parts", () => {
+  expect(timelinePartIsLive({ type: "text", time: { start: 1, end: 2 } } as never)).toBe(false)
+  expect(timelinePartIsLive({ type: "text", time: { start: 1 } } as never)).toBe(true)
+  expect(timelinePartIsLive({ type: "tool", state: { status: "running" } } as never)).toBe(true)
+  expect(timelinePartIsLive({ type: "tool", state: { status: "completed" } } as never)).toBe(false)
 })
 
 test("does not shrink a row whose markdown has not rendered content yet", () => {
@@ -440,7 +454,9 @@ test("does not shrink a row whose markdown has not rendered content yet", () => 
 
 test("guards mounted deferred markdown but allows collapsed reasoning to shrink", () => {
   const part = (value: object) => value as Part
-  expect(markdownMeasurementPending(part({ type: "text", text: "answer", time: { end: 1 } }), { rendered: false })).toBe(true)
+  expect(
+    markdownMeasurementPending(part({ type: "text", text: "answer", time: { end: 1 } }), { rendered: false }),
+  ).toBe(true)
   expect(
     markdownMeasurementPending(part({ type: "reasoning", text: "analysis", time: { end: 1 } }), {
       rendered: false,
@@ -518,9 +534,9 @@ test("rowContentVersion returns a stable value for a TurnGap", () => {
 })
 
 test("rowContentVersion includes the label for a TurnDivider", () => {
-  expect(
-    rowContentVersion({ _tag: "TurnDivider", userMessageID: "msg_1", label: "compaction" }, () => undefined),
-  ).toBe("divider:msg_1:compaction")
+  expect(rowContentVersion({ _tag: "TurnDivider", userMessageID: "msg_1", label: "compaction" }, () => undefined)).toBe(
+    "divider:msg_1:compaction",
+  )
 })
 
 test("rowContentVersion for an AssistantPart part group reflects part measurement key", () => {
@@ -531,17 +547,24 @@ test("rowContentVersion for an AssistantPart part group reflects part measuremen
     type: "text",
     text: "hello",
   } as Part
-  const lookup = (messageID: string, partID: string) =>
-    messageID === "msg_1" && partID === "prt_1" ? part : undefined
+  const lookup = (messageID: string, partID: string) => (messageID === "msg_1" && partID === "prt_1" ? part : undefined)
 
   const v1 = rowContentVersion(
-    { _tag: "AssistantPart", userMessageID: "msg_1", group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } } },
+    {
+      _tag: "AssistantPart",
+      userMessageID: "msg_1",
+      group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } },
+    },
     lookup,
   )
   // Same part → same version.
   expect(v1).toBe(
     rowContentVersion(
-      { _tag: "AssistantPart", userMessageID: "msg_1", group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } } },
+      {
+        _tag: "AssistantPart",
+        userMessageID: "msg_1",
+        group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } },
+      },
       lookup,
     ),
   )
@@ -549,7 +572,11 @@ test("rowContentVersion for an AssistantPart part group reflects part measuremen
   // Grow the text → version changes.
   const longer = { ...part, text: "hello world" } as Part
   const v2 = rowContentVersion(
-    { _tag: "AssistantPart", userMessageID: "msg_1", group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } } },
+    {
+      _tag: "AssistantPart",
+      userMessageID: "msg_1",
+      group: { type: "part", ref: { messageID: "msg_1", partID: "prt_1" } },
+    },
     () => longer,
   )
   expect(v2).not.toBe(v1)

@@ -1,18 +1,6 @@
 import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
 
 /**
- * Mirrors normalizeTool from @opencode-ai/ui/tool-meta without importing the
- * component package (whose module graph is client-only and breaks unit tests).
- */
-function normalizedToolName(tool: string) {
-  const name = tool.trim().toLowerCase() || "tool"
-  if (name === "terminal") return "bash"
-  if (name === "read_file") return "read"
-  if (name === "web_search") return "websearch"
-  return name
-}
-
-/**
  * Height estimation for timeline rows that have no cached measurement yet.
  *
  * Constants below were calibrated against the live app (CDP measurements over
@@ -42,12 +30,16 @@ export const DIFF_SUMMARY_HEIGHT = 44
 /** session-turn-thinking measures 24px; the row itself lands at ~40 once wrapped. */
 export const THINKING_HEIGHT = 24
 export const TEXT_PART_MARGIN = 24
+/** Copy/meta row shown under the final assistant text: margin-top 4 + min-height 24. */
+export const TEXT_PART_META_HEIGHT = 28
 /** Live or user-expanded tools render full output; give them a generous base. */
 export const OPEN_TOOL_HEIGHT = 160
 /** Fallback for shapes the estimator does not model (keeps today's 60px behavior). */
 export const UNKNOWN_ROW_HEIGHT = 60
 /** UserMessage chrome: body padding + meta bar + inner gaps (no attachments). */
 export const USER_MESSAGE_CHROME = 70
+/** Collapsed injected prompt: trigger/border plus its 12px bottom separation. */
+export const INJECTED_PROMPT_HEIGHT = 50
 /** CommentStrip bubble: py-2 + filename row + pt-1. */
 export const COMMENT_STRIP_CHROME = 34
 /** Error/Retry card padding around the message text. */
@@ -62,6 +54,17 @@ const DEFAULT_CHAR_WIDTH = 7.7 // ~0.55em sans at 14px
 const TEXT_WIDTH_INSET = 48
 const MIN_TEXT_WIDTH = 240
 const MIN_CHARS_PER_LINE = 24
+/** CJK/full-width glyphs occupy substantially more horizontal space than Latin glyphs. */
+const WIDE_GLYPH_UNITS = 1.75
+
+function textWidthUnits(text: string) {
+  let units = 0
+  for (const glyph of text) {
+    if (/\p{Mark}/u.test(glyph)) continue
+    units += (glyph.codePointAt(0) ?? 0) > 0xff ? WIDE_GLYPH_UNITS : 1
+  }
+  return units
+}
 
 /**
  * Input shape mirroring the relevant subset of {@link TimelineRow.TimelineRow}
@@ -96,10 +99,13 @@ export type EstimateRowHeightOptions = {
   viewportHeight?: number
   /** Concatenated text of a user message (drives UserMessage line count). */
   userMessageText?: (messageID: string) => string | undefined
+  /** Whether the user message renders a collapsed injected-prompt panel. */
+  userMessageHasInjectedPrompt?: (messageID: string) => boolean
+  /** Whether this text part renders the assistant copy/meta row. */
+  textPartHasMeta?: (messageID: string, partID: string) => boolean
 }
 
-const toolPartLive = (part: ToolPart) =>
-  part.state.status === "pending" || part.state.status === "running"
+const toolPartLive = (part: ToolPart) => part.state.status === "pending" || part.state.status === "running"
 
 /** Per-paragraph wrap so explicit newlines and short paragraphs stay conservative. */
 export function estimateTextLines(text: string, width: number, charWidth: number) {
@@ -110,7 +116,7 @@ export function estimateTextLines(text: string, width: number, charWidth: number
   let lines = 0
   for (const raw of text.split(/\r\n|\r|\n/)) {
     const paragraph = raw.trim()
-    lines += paragraph.length > 0 ? Math.ceil(paragraph.length / charsPerLine) : 1
+    lines += paragraph.length > 0 ? Math.ceil(textWidthUnits(paragraph) / charsPerLine) : 1
   }
   return Math.max(1, lines)
 }
@@ -124,14 +130,8 @@ function estimateTextHeight(
   return lines * (options.textLineHeight ?? DEFAULT_TEXT_LINE_HEIGHT)
 }
 
-function estimateToolPartHeight(
-  part: ToolPart,
-  options: EstimateRowHeightOptions,
-) {
+function estimateToolPartHeight(part: ToolPart, options: EstimateRowHeightOptions) {
   if (toolPartLive(part)) return OPEN_TOOL_HEIGHT
-  // Answered questions render their full answer card expanded (the question
-  // tool registers defaultOpen={completed}), never the collapsed box.
-  if (normalizedToolName(part.tool) === "question") return OPEN_TOOL_HEIGHT
   if (options.toolDefaultOpen?.(part)) return OPEN_TOOL_HEIGHT
   return COLLAPSED_TOOL_HEIGHT
 }
@@ -172,7 +172,10 @@ function estimatePartGroupHeight(
     if (part.type === "tool") return { height: estimateToolPartHeight(part, options), uncertain: false }
     if (part.type === "text")
       return {
-        height: TEXT_PART_MARGIN + estimateTextHeight(part.text, width, options),
+        height:
+          TEXT_PART_MARGIN +
+          estimateTextHeight(part.text, width, options) +
+          (options.textPartHasMeta?.(group.ref.messageID, group.ref.partID) ? TEXT_PART_META_HEIGHT : 0),
         uncertain: true,
       }
     if (part.type === "reasoning") return { height: COLLAPSED_REASONING_HEIGHT, uncertain: false }
@@ -218,7 +221,9 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
 
     case "UserMessage":
       return clampRowEstimate(
-        USER_MESSAGE_CHROME + estimateTextHeight(options.userMessageText?.(row.userMessageID ?? ""), width, options),
+        USER_MESSAGE_CHROME +
+          estimateTextHeight(options.userMessageText?.(row.userMessageID ?? ""), width, options) +
+          (options.userMessageHasInjectedPrompt?.(row.userMessageID ?? "") ? INJECTED_PROMPT_HEIGHT : 0),
         viewportHeight,
       )
 
@@ -271,7 +276,15 @@ export function rowRenderCost(row: EstimateRowInput, options: EstimateRowHeightO
       return 1
 
     case "UserMessage":
-      return 1.5 + estimateTextLines(options.userMessageText?.(row.userMessageID ?? "") ?? "", 800, options.charWidth ?? DEFAULT_CHAR_WIDTH) / 12
+      return (
+        1.5 +
+        estimateTextLines(
+          options.userMessageText?.(row.userMessageID ?? "") ?? "",
+          800,
+          options.charWidth ?? DEFAULT_CHAR_WIDTH,
+        ) /
+          12
+      )
 
     case "AssistantPart": {
       const group = row.group
@@ -285,7 +298,6 @@ export function rowRenderCost(row: EstimateRowInput, options: EstimateRowHeightO
         if (!part) return 1
         if (part.type === "tool") {
           if (toolPartLive(part)) return 6
-          if (normalizedToolName(part.tool) === "question") return 6
           if (options.toolDefaultOpen?.(part)) return 6
           return 1
         }
@@ -354,6 +366,22 @@ export function trimRangeToBudget(input: {
   expand(below)
   expand(above)
   return [...keep].sort((a, b) => a - b)
+}
+
+/**
+ * Width available to timeline row content. Centered layouts cap rows with the
+ * same `contentWidth * 0.8 * 0.25rem` formula used by settings.tsx; estimating
+ * against the full scroll viewport undercounts wrapped lines on wide windows.
+ */
+export function timelineEstimateWidth(input: {
+  viewportWidth: number
+  centered: boolean
+  contentWidth: number
+  remSize?: number
+}) {
+  if (!input.centered || input.viewportWidth < 768) return input.viewportWidth
+  const max = input.contentWidth * 0.8 * 0.25 * (input.remSize ?? 16)
+  return Math.min(input.viewportWidth, max)
 }
 
 const DEFAULT_TEXT_METRICS: TimelineTextMetrics = {

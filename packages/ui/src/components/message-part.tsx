@@ -1297,9 +1297,7 @@ export function UserMessageDisplay(props: {
     const match = providerByID(data.store.provider?.all, providerID)
     return match?.models?.[modelID]?.name ?? modelID
   })
-  const timefmt = createMemo(
-    () => new Intl.DateTimeFormat(i18n.locale(), { dateStyle: "medium", timeStyle: "short" }),
-  )
+  const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { dateStyle: "medium", timeStyle: "short" }))
 
   const provider = createMemo(() => {
     const providerID = props.message.model?.providerID
@@ -1826,9 +1824,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const data = useData()
   const i18n = useI18n()
   const numfmt = createMemo(() => new Intl.NumberFormat(i18n.locale()))
-  const timefmt = createMemo(
-    () => new Intl.DateTimeFormat(i18n.locale(), { dateStyle: "medium", timeStyle: "short" }),
-  )
+  const timefmt = createMemo(() => new Intl.DateTimeFormat(i18n.locale(), { dateStyle: "medium", timeStyle: "short" }))
   const part = props.part as TextPart
   const interrupted = createMemo(
     () =>
@@ -1959,7 +1955,9 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
   const handleCopy = async () => {
     const content = props.assistantCopyText?.trim() ? props.assistantCopyText : displayText()
     if (!content) return
-    console.debug(`[assistant-copy] part=${part.id} chars=${content.length} turn=${props.assistantCopyText?.trim() ? "full" : "part"}`)
+    console.debug(
+      `[assistant-copy] part=${part.id} chars=${content.length} turn=${props.assistantCopyText?.trim() ? "full" : "part"}`,
+    )
     await navigator.clipboard.writeText(content)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -2501,11 +2499,7 @@ ToolRegistry.register({
     const pending = createMemo(() => props.status === "pending" || props.status === "running")
     const backgroundRunning = createMemo(() => props.metadata?.background === true && pending())
     const canBackground = createMemo(
-      () =>
-        pending() &&
-        props.metadata?.background !== true &&
-        !!props.part?.sessionID &&
-        !!props.onBackgroundTask,
+      () => pending() && props.metadata?.background !== true && !!props.part?.sessionID && !!props.onBackgroundTask,
     )
     const [backgrounding, setBackgrounding] = createSignal(false)
     const childMessages = createMemo(() => {
@@ -2666,7 +2660,9 @@ ToolRegistry.register({
       const status = statusLabel()
       return [
         { label: status, kind: status === "error" ? "error" : "status" },
-        ...(elapsed === undefined ? [] : [{ label: i18n.t("ui.message.duration.seconds", { count: elapsed }), kind: "time" }]),
+        ...(elapsed === undefined
+          ? []
+          : [{ label: i18n.t("ui.message.duration.seconds", { count: elapsed }), kind: "time" }]),
         ...(stats.errorTools > 0 ? [{ label: `${stats.errorTools} error`, kind: "error" }] : []),
         { label: `${stats.messages} msg`, kind: "message" },
         { label: `${stats.tools} tool`, kind: "tool" },
@@ -3342,7 +3338,6 @@ ToolRegistry.register({
       <BasicTool
         {...props}
         hasDetails={completed()}
-        defaultOpen={completed()}
         showPendingDetails={optimistic()}
         showPendingMeta={optimistic()}
         icon="bubble-5"
@@ -4093,7 +4088,9 @@ ToolRegistry.register({
     )
 
     // No expand panel: actions live only on the trigger row (view / stop).
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
+    return (
+      <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
+    )
   },
 })
 
@@ -4214,7 +4211,9 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
+    return (
+      <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
+    )
   },
 })
 
@@ -4330,7 +4329,9 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
+    return (
+      <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
+    )
   },
 })
 
@@ -4342,13 +4343,14 @@ ToolRegistry.register({
     const i18n = useI18n()
     const running = createMemo(() => props.status === "pending" || props.status === "running")
     const prompt = createMemo(() => (typeof props.input.prompt === "string" ? props.input.prompt : ""))
-    const profile = createMemo(() =>
-      typeof props.metadata.profile === "string" ? props.metadata.profile : "headless",
-    )
+    const profile = createMemo(() => (typeof props.metadata.profile === "string" ? props.metadata.profile : "headless"))
     const subtitle = createMemo(() => {
       if (running()) return i18n.t("ui.tool.dsh.running")
       if (typeof props.metadata.preview === "string" && props.metadata.preview.trim()) {
-        return props.metadata.preview.split("\n").find((line) => line.trim())?.slice(0, 80)
+        return props.metadata.preview
+          .split("\n")
+          .find((line) => line.trim())
+          ?.slice(0, 80)
       }
       const first = prompt()
         .split("\n")
@@ -4440,6 +4442,8 @@ ToolRegistry.register({
       </div>
     )
 
-    return <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
+    return (
+      <BasicTool icon="brain" status={props.status} trigger={trigger()} hideDetails showPendingMeta part={props.part} />
+    )
   },
 })
