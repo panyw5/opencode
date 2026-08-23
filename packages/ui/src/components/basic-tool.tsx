@@ -34,6 +34,8 @@ export interface BasicToolProps {
   status?: string
   showPendingMeta?: boolean
   showPendingDetails?: boolean
+  /** Declare detail availability without evaluating a potentially expensive lazy child getter. */
+  hasDetails?: boolean
   hideDetails?: boolean
   defaultOpen?: boolean
   forceOpen?: boolean
@@ -48,6 +50,15 @@ export interface BasicToolProps {
 
 const SPRING = { type: "spring" as const, visualDuration: 0.35, bounce: 0 }
 
+export function resolveToolHasDetails(
+  input: { hidden?: boolean; details: boolean; declared?: boolean },
+  readChildren: () => JSX.Element,
+) {
+  if (input.hidden || !input.details) return false
+  if (input.declared !== undefined) return input.declared
+  return !!readChildren()
+}
+
 export function BasicTool(props: BasicToolProps) {
   const [state, setState] = createStore({
     open: props.defaultOpen ?? false,
@@ -58,7 +69,11 @@ export function BasicTool(props: BasicToolProps) {
   const pending = () => props.status === "pending" || props.status === "running"
   const meta = () => !pending() || !!props.showPendingMeta
   const details = () => !pending() || !!props.showPendingDetails
-  const hasDetails = () => !!props.children && !props.hideDetails && details()
+  const hasDetails = () =>
+    resolveToolHasDetails(
+      { hidden: props.hideDetails, details: details(), declared: props.hasDetails },
+      () => props.children,
+    )
   const mountDetails = () => hasDetails() && (props.mountDetails === "always" || open() || !!props.forceOpen)
 
   let frame: number | undefined
@@ -326,6 +341,11 @@ export function GenericTool(props: {
 }) {
   const i18n = useI18n()
 
+  const hasInput = () => {
+    const value = props.input
+    return !!value && typeof value === "object" && Object.keys(value).length > 0
+  }
+
   const inputJson = () => {
     const v = props.input
     if (!v || typeof v !== "object") return ""
@@ -343,7 +363,6 @@ export function GenericTool(props: {
     }
   }
 
-  const hasInput = () => inputJson().length > 0
   const hasOutput = () => typeof props.output === "string" && props.output.length > 0
   const hasBody = () => hasInput() || hasOutput()
 
@@ -358,6 +377,7 @@ export function GenericTool(props: {
         subtitle: label(props.input),
         args: args(props.input),
       }}
+      hasDetails={hasBody()}
       hideDetails={props.hideDetails || !hasBody()}
     >
       <Show when={hasInput()}>

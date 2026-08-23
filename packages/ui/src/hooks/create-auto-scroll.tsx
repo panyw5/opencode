@@ -32,6 +32,20 @@ export interface AutoScrollOptions {
   resize?: "follow" | "off"
 }
 
+export type AutoScrollGeometry = {
+  scrollTop: number
+  scrollHeight: number
+  clientHeight: number
+}
+
+export function autoScrollDistanceFromBottom(geometry: AutoScrollGeometry) {
+  return geometry.scrollHeight - geometry.clientHeight - geometry.scrollTop
+}
+
+export function autoScrollCanScroll(geometry: AutoScrollGeometry) {
+  return geometry.scrollHeight - geometry.clientHeight > 1
+}
+
 export function createAutoScroll(options: AutoScrollOptions) {
   let settling = false
   let settleTimer: ReturnType<typeof setTimeout> | undefined
@@ -41,8 +55,11 @@ export function createAutoScroll(options: AutoScrollOptions) {
 
   const threshold = () => options.bottomThreshold ?? 10
 
-  const atBottom = (el: HTMLElement) => {
-    return distanceFromBottom(el) <= threshold()
+  const readGeometry = (el: HTMLElement, geometry?: AutoScrollGeometry): AutoScrollGeometry =>
+    geometry ?? { scrollTop: el.scrollTop, scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }
+
+  const atBottom = (el: HTMLElement, geometry?: AutoScrollGeometry) => {
+    return autoScrollDistanceFromBottom(readGeometry(el, geometry)) <= threshold()
   }
 
   const [store, setStore] = createStore({
@@ -53,13 +70,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
 
   const active = () => options.working() || settling
 
-  const distanceFromBottom = (el: HTMLElement) => {
-    return el.scrollHeight - el.clientHeight - el.scrollTop
-  }
-
-  const canScroll = (el: HTMLElement) => {
-    return el.scrollHeight - el.clientHeight > 1
-  }
+  const canScroll = (el: HTMLElement, geometry?: AutoScrollGeometry) => autoScrollCanScroll(readGeometry(el, geometry))
 
   // Browsers can dispatch scroll events asynchronously. If new content arrives
   // between us calling `scrollTo()` and the subsequent `scroll` event firing,
@@ -78,7 +89,7 @@ export function createAutoScroll(options: AutoScrollOptions) {
     }, 1500)
   }
 
-  const isAuto = (el: HTMLElement) => {
+  const isAuto = (el: HTMLElement, geometry?: AutoScrollGeometry) => {
     const a = auto
     if (!a) return false
 
@@ -87,7 +98,8 @@ export function createAutoScroll(options: AutoScrollOptions) {
       return false
     }
 
-    return Math.abs(el.scrollTop - a.top) <= threshold() || atBottom(el)
+    const current = readGeometry(el, geometry)
+    return Math.abs(current.scrollTop - a.top) <= threshold() || atBottom(el, current)
   }
 
   const scrollToBottomNow = (behavior: ScrollBehavior) => {
@@ -126,11 +138,11 @@ export function createAutoScroll(options: AutoScrollOptions) {
     scrollToBottomNow("auto")
   }
 
-  const stop = (hold = false) => {
+  const stop = (hold = false, geometry?: AutoScrollGeometry) => {
     const el = store.scrollRef
     if (!el) return
     if (hold) away = Date.now()
-    if (!canScroll(el)) {
+    if (!canScroll(el, geometry)) {
       if (store.userScrolled) setStore("userScrolled", false)
       return
     }
@@ -156,16 +168,20 @@ export function createAutoScroll(options: AutoScrollOptions) {
     stop(true)
   }
 
-  const handleScroll = () => {
+  const handleScroll = (input?: Event | AutoScrollGeometry) => {
     const el = store.scrollRef
     if (!el) return
+    const geometry =
+      input && "scrollHeight" in input && typeof input.scrollHeight === "number"
+        ? (input as AutoScrollGeometry)
+        : undefined
 
-    if (!canScroll(el)) {
+    if (!canScroll(el, geometry)) {
       if (store.userScrolled) setStore("userScrolled", false)
       return
     }
 
-    if (atBottom(el)) {
+    if (atBottom(el, geometry)) {
       if (store.userScrolled && away && Date.now() - away < 700) return
       away = 0
       if (store.userScrolled) setStore("userScrolled", false)
@@ -173,12 +189,12 @@ export function createAutoScroll(options: AutoScrollOptions) {
     }
 
     // Ignore scroll events triggered by our own scrollToBottom calls.
-    if (!store.userScrolled && isAuto(el)) {
+    if (!store.userScrolled && isAuto(el, geometry)) {
       scrollToBottom(false)
       return
     }
 
-    stop()
+    stop(false, geometry)
   }
 
   const handleInteraction = () => {

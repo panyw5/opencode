@@ -232,9 +232,9 @@ export function timelineMeasurementsMatchWidth(cachedWidth: number | undefined, 
   return Math.abs(cachedWidth - currentWidth) <= 16
 }
 
-/** Keeps a growing row readable until its deferred virtualizer measurement commits. */
-export function virtualRowOverflow(contentHeight: number, virtualHeight: number) {
-  return contentHeight > virtualHeight + 0.5 ? "visible" : "clip"
+/** Keeps only a genuinely streaming row readable until its measurement commits. */
+export function virtualRowOverflow(contentHeight: number, virtualHeight: number, streaming: boolean) {
+  return streaming && contentHeight > virtualHeight + 0.5 ? "visible" : "clip"
 }
 
 /**
@@ -288,6 +288,16 @@ export function shouldCommitVirtualRowHeight(input: {
   if (input.markdownPending && input.next + 0.5 < input.previous) return false
   if (!input.live) return true
   return input.next + 0.5 >= input.previous
+}
+
+/** Non-live overscan rows can keep their cached size until fast scrolling settles. */
+export function shouldDeferFastRowMeasurement(input: {
+  fast: boolean
+  live: boolean
+  next: number
+  previous: number
+}) {
+  return input.fast && !input.live && Math.abs(input.next - input.previous) > 0.5
 }
 
 /** Text and reasoning rows share the deferred Markdown renderer. */

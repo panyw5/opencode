@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { scrollKey, scrollThumbGeometry } from "./scroll-view"
+import { scrollEventGeometry, scrollKey, scrollThumbGeometry } from "./scroll-view"
 
 describe("scrollKey", () => {
   test("maps plain navigation keys", () => {
@@ -28,5 +28,19 @@ describe("scrollThumbGeometry", () => {
 
   test("hides the thumb when content does not overflow", () => {
     expect(scrollThumbGeometry({ scrollTop: 0, scrollHeight: 800, clientHeight: 900 })).toBeUndefined()
+  })
+})
+
+describe("scrollEventGeometry", () => {
+  test("keeps the live scroll offset while reusing cached dimensions", () => {
+    expect(
+      scrollEventGeometry({
+        scrollTop: 11069,
+        scrollHeight: 58099,
+        clientHeight: 834,
+        cachedScrollHeight: 58099,
+        cachedClientHeight: 834,
+      }),
+    ).toEqual({ scrollTop: 11069, scrollHeight: 58099, clientHeight: 834 })
   })
 })

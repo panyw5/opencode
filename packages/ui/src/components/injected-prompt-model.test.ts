@@ -4,8 +4,10 @@ import {
   backgroundTaskInjectionPart,
   formatInjectionPreview,
   injectionPreviewFromParts,
+  injectionTextLength,
   injectionTitleFromParts,
   isInjectionKind,
+  isInjectionPartsPending,
   isInjectionTextPart,
   joinInjectionText,
   scheduledInjectionPart,
@@ -28,6 +30,26 @@ const t = (key: string, params?: Record<string, string | number | boolean>) => {
 }
 
 describe("injected-prompt-model", () => {
+  test("summarizes injected text without joining prompt bodies", () => {
+    const parts = [
+      text({ text: "first", synthetic: true, metadata: { kind: "scheduled-injection" } }),
+      text({ text: "second", synthetic: true, metadata: { kind: "scheduled-injection" } }),
+    ]
+
+    expect(injectionTextLength(parts)).toBe("first\n\nsecond".length)
+    expect(isInjectionPartsPending(parts)).toBe(false)
+  })
+
+  test("detects pending injected prompts without a joined text value", () => {
+    const part = text({
+      text: "",
+      synthetic: true,
+      metadata: { kind: "scheduled-injection", pending: true },
+    })
+
+    expect(isInjectionPartsPending([part])).toBe(true)
+  })
+
   test("recognizes known injection kinds", () => {
     expect(isInjectionKind("scheduled-injection")).toBe(true)
     expect(isInjectionKind("hook-injection")).toBe(true)

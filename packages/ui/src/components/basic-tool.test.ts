@@ -1,5 +1,18 @@
 import { describe, expect, test } from "bun:test"
-import { args, glyph, label } from "./basic-tool"
+import { args, glyph, label, resolveToolHasDetails } from "./basic-tool"
+
+describe("basic-tool details", () => {
+  test("does not evaluate declared details while collapsed", () => {
+    let reads = 0
+    const details = resolveToolHasDetails({ details: true, declared: true }, () => {
+      reads += 1
+      return "large output"
+    })
+
+    expect(details).toBe(true)
+    expect(reads).toBe(0)
+  })
+})
 
 describe("basic-tool label", () => {
   test("prefers command previews for terminal-style tools", () => {

@@ -31,6 +31,11 @@ export interface ScrollViewProps extends ComponentProps<"div"> {
   /** Optional cached geometry for virtual scrollers; avoids forced layout on every scroll frame. */
   scrollContentHeight?: number
   scrollViewportHeight?: number
+  /** Precomputed scroll geometry delivered before the optional native-style onScroll callback. */
+  onScrollGeometry?: (
+    geometry: { scrollTop: number; scrollHeight: number; clientHeight: number },
+    event: Event & { currentTarget: HTMLDivElement },
+  ) => void
 }
 
 export function scrollThumbGeometry(input: {
@@ -50,6 +55,23 @@ export function scrollThumbGeometry(input: {
   return {
     height,
     top: trackPadding + Math.max(0, Math.min(top, maxThumbTop)),
+  }
+}
+
+export function scrollEventGeometry(input: {
+  scrollTop: number
+  scrollHeight: number
+  clientHeight: number
+  cachedScrollHeight?: number
+  cachedClientHeight?: number
+}) {
+  return {
+    // scrollTop is cheap to read and must come from the event target. A
+    // virtualizer offset can lag a compensating DOM scroll by one event and
+    // make the timeline mistake that delta for user input.
+    scrollTop: input.scrollTop,
+    scrollHeight: input.cachedScrollHeight ?? input.scrollHeight,
+    clientHeight: input.cachedClientHeight ?? input.clientHeight,
   }
 }
 
@@ -74,10 +96,27 @@ export const scrollKey = (event: Pick<KeyboardEvent, "key" | "altKey" | "ctrlKey
 
 export function ScrollView(props: ScrollViewProps) {
   const i18n = useI18n()
+  const lagDebug = typeof window !== "undefined" && window.localStorage.getItem("opencode.session.lag.debug") === "1"
+  const trace = (phase: string, fields: string) => {
+    if (!lagDebug) return
+    const target = window as Window & { __opencodeScrollViewDebug?: string[] }
+    const entries = (target.__opencodeScrollViewDebug ??= [])
+    entries.push(`${Math.round(performance.now())} phase=${phase} ${fields}`)
+    if (entries.length > 2000) entries.splice(0, entries.length - 2000)
+  }
   const merged = mergeProps({ orientation: "vertical" }, props)
   const [local, events, rest] = splitProps(
     merged,
-    ["class", "children", "viewportRef", "orientation", "style", "scrollContentHeight", "scrollViewportHeight"],
+    [
+      "class",
+      "children",
+      "viewportRef",
+      "orientation",
+      "style",
+      "scrollContentHeight",
+      "scrollViewportHeight",
+      "onScrollGeometry",
+    ],
     [
       "onScroll",
       "onWheel",
@@ -113,6 +152,7 @@ export function ScrollView(props: ScrollViewProps) {
 
   const updateThumb = () => {
     if (!viewportRef) return
+    const started = lagDebug ? performance.now() : 0
     const scrollHeight = local.scrollContentHeight ?? viewportRef.scrollHeight
     const clientHeight = local.scrollViewportHeight ?? viewportRef.clientHeight
     const geometry = scrollThumbGeometry({ scrollTop: latestScrollTop, scrollHeight, clientHeight })
@@ -135,6 +175,12 @@ export function ScrollView(props: ScrollViewProps) {
         thumbTop: geometry.top,
       })
     }
+    if (lagDebug) {
+      trace(
+        "thumb",
+        `cachedContent=${String(local.scrollContentHeight !== undefined)} cachedViewport=${String(local.scrollViewportHeight !== undefined)} top=${Math.round(latestScrollTop)} height=${Math.round(scrollHeight)} client=${Math.round(clientHeight)} duration=${Math.round((performance.now() - started) * 10) / 10}`,
+      )
+    }
   }
 
   const scheduleUpdateThumb = (scrollTop?: number) => {
@@ -155,6 +201,7 @@ export function ScrollView(props: ScrollViewProps) {
     }
 
     const observer = new ResizeObserver(() => {
+      trace("resize", `scheduled=${String(rafId !== null)}`)
       scheduleUpdateThumb()
     })
 
@@ -268,8 +315,18 @@ export function ScrollView(props: ScrollViewProps) {
         ref={viewportRef}
         data-slot="scroll-view-viewport"
         onScroll={(e) => {
-          scheduleUpdateThumb(e.currentTarget.scrollTop)
+          const started = lagDebug ? performance.now() : 0
+          const geometry = scrollEventGeometry({
+            scrollTop: e.currentTarget.scrollTop,
+            scrollHeight: local.scrollContentHeight ?? e.currentTarget.scrollHeight,
+            clientHeight: local.scrollViewportHeight ?? e.currentTarget.clientHeight,
+            cachedScrollHeight: local.scrollContentHeight,
+            cachedClientHeight: local.scrollViewportHeight,
+          })
+          scheduleUpdateThumb(geometry.scrollTop)
+          local.onScrollGeometry?.(geometry, e)
           if (typeof events.onScroll === "function") events.onScroll(e as any)
+          if (lagDebug) trace("scroll", `duration=${Math.round((performance.now() - started) * 10) / 10}`)
         }}
         onWheel={events.onWheel as any}
         onTouchStart={events.onTouchStart as any}

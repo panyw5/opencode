@@ -35,6 +35,24 @@ export function joinInjectionText(parts: TextPart[]): string {
     .join("\n\n")
 }
 
+/** Joined text length without allocating the potentially large joined string. */
+export function injectionTextLength(parts: TextPart[]): number {
+  let length = 0
+  let count = 0
+  for (const part of parts) {
+    if (part.text.length === 0) continue
+    if (count > 0) length += 2
+    length += part.text.length
+    count += 1
+  }
+  return length
+}
+
+/** Pending state without joining every injected prompt body first. */
+export function isInjectionPartsPending(parts: TextPart[]): boolean {
+  return parts.every((part) => part.text.trim().length === 0) && parts.some((part) => part.metadata?.pending === true)
+}
+
 export function isInjectionPending(parts: TextPart[], text: string): boolean {
   return text.trim().length === 0 && parts.some((part) => part.metadata?.pending === true)
 }

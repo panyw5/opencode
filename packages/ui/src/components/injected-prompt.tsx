@@ -3,10 +3,10 @@ import type { Part, TextPart } from "@opencode-ai/sdk/v2"
 import { useI18n } from "../context/i18n"
 import { Markdown, type MarkdownStage } from "./markdown"
 import {
-  formatInjectionPreview,
+  injectionTextLength,
   injectionSummaryFromText,
   injectionTitleFromParts,
-  isInjectionPending,
+  isInjectionPartsPending,
   joinInjectionText,
   selectInjectionParts,
 } from "./injected-prompt-model"
@@ -41,14 +41,12 @@ function preserveLineBreaks(str: string) {
 export type InjectedPromptProps = {
   /** Panel title (e.g. "计划任务注入提示词"). */
   title: string
-  /** Full injected prompt body. */
-  text: string
+  /** Full injected prompt body, optionally supplied lazily for collapsed panels. */
+  text: string | (() => string)
   /** Show "injecting..." instead of char summary. */
   pending?: boolean
   /** Optional summary on the right (defaults to char count). */
   summary?: string
-  /** Collapsed one-line preview (defaults to truncated text). */
-  preview?: string
   defaultExpanded?: boolean
   /** Stable key for markdown cache. */
   cacheKey?: string
@@ -64,6 +62,32 @@ export type InjectedPromptProps = {
   children?: JSX.Element
 }
 
+function InjectedPromptContent(props: InjectedPromptProps) {
+  const body = createMemo(() => (typeof props.text === "function" ? props.text() : (props.text ?? "")))
+  const rendered = createMemo(() => preserveLineBreaks(escapeHtmlTags(body())))
+  return (
+    <div data-slot="injected-prompt-content">
+      <Show
+        when={props.children}
+        fallback={
+          <Markdown
+            text={rendered()}
+            cacheKey={props.cacheKey}
+            stage={props.markdownStage}
+            onStage={props.onMarkdownStage}
+            eager={props.markdownEager}
+            viewport={props.markdownViewport}
+            highlight={props.markdownHighlight}
+            math={props.markdownMath}
+          />
+        }
+      >
+        {props.children}
+      </Show>
+    </div>
+  )
+}
+
 /**
  * Shared collapsible panel for any injected prompt source
  * (hooks, slash commands, scheduled tasks, future project-task UI, etc.).
@@ -72,18 +96,13 @@ export function InjectedPrompt(props: InjectedPromptProps) {
   const i18n = useI18n()
   const [expanded, setExpanded] = createSignal(!!props.defaultExpanded)
 
-  const body = createMemo(() => props.text ?? "")
+  const body = createMemo(() => (typeof props.text === "function" ? props.text() : (props.text ?? "")))
   const pending = createMemo(() => !!props.pending)
-  const preview = createMemo(() => {
-    if (props.preview !== undefined) return props.preview
-    return formatInjectionPreview(body())
-  })
   const summary = createMemo(() => {
-    if (props.summary !== undefined) return props.summary
     if (pending()) return i18n.t("ui.message.injection.injecting")
+    if (props.summary !== undefined) return props.summary
     return injectionSummaryFromText(body(), (key, params) => i18n.t(key as any, params))
   })
-  const rendered = createMemo(() => preserveLineBreaks(escapeHtmlTags(body())))
 
   return (
     <div
@@ -102,26 +121,8 @@ export function InjectedPrompt(props: InjectedPromptProps) {
         <span data-slot="injected-prompt-title">{props.title}</span>
         <span data-slot="injected-prompt-summary">{summary()}</span>
       </button>
-      <Show when={!expanded() && preview()}>
-        <div data-slot="injected-prompt-preview">{preview()}</div>
-      </Show>
       <Show when={expanded()}>
-        <div data-slot="injected-prompt-content">
-          <Show when={props.children} fallback={
-            <Markdown
-              text={rendered()}
-              cacheKey={props.cacheKey}
-              stage={props.markdownStage}
-              onStage={props.onMarkdownStage}
-              eager={props.markdownEager}
-              viewport={props.markdownViewport}
-              highlight={props.markdownHighlight}
-              math={props.markdownMath}
-            />
-          }>
-            {props.children}
-          </Show>
-        </div>
+        <InjectedPromptContent {...props} text={body()} />
       </Show>
     </div>
   )
@@ -148,7 +149,10 @@ export function InjectedPromptFromParts(props: InjectedPromptFromPartsProps) {
   const i18n = useI18n()
   const selected = createMemo(() => selectInjectionParts(props.parts))
   const text = createMemo(() => joinInjectionText(selected()))
-  const pending = createMemo(() => isInjectionPending(selected(), text()))
+  const pending = createMemo(() => isInjectionPartsPending(selected()))
+  const summary = createMemo(() =>
+    i18n.t("ui.message.injection.chars", { count: injectionTextLength(selected()).toLocaleString() }),
+  )
   const title = createMemo(() =>
     injectionTitleFromParts(selected(), (key, params) => i18n.t(key as any, params)),
   )
@@ -165,8 +169,9 @@ export function InjectedPromptFromParts(props: InjectedPromptFromPartsProps) {
     <Show when={selected().length > 0}>
       <InjectedPrompt
         title={title()}
-        text={text()}
+        text={text}
         pending={pending()}
+        summary={summary()}
         kind={kind()}
         cacheKey={props.cacheKey}
         defaultExpanded={props.defaultExpanded}

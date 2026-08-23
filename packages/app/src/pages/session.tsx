@@ -1715,8 +1715,8 @@ export default function Page() {
     setUi("mode", "anchored")
   }
 
-  const handleTimelineAutoScroll = () => {
-    autoScroll.handleScroll()
+  const handleTimelineAutoScroll = (geometry: { scrollTop: number; scrollHeight: number; clientHeight: number }) => {
+    autoScroll.handleScroll(geometry)
   }
 
   // Streaming stability depends on locking the outer timeline directly to the
@@ -2798,9 +2798,9 @@ export default function Page() {
                         onMarkScrollGesture={markScrollGesture}
                         hasScrollGesture={hasScrollGesture}
                         onUserScroll={markUserScroll}
-                        onHistoryScroll={() => {
+                        onHistoryScroll={(scrollTop) => {
                           if (!autoScroll.userScrolled() || !scroller) return
-                          if (scroller.scrollTop >= historyEdgePx) {
+                          if (scrollTop >= historyEdgePx) {
                             historyEdgeArmed = true
                             return
                           }

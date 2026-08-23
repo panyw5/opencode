@@ -66,6 +66,7 @@ import {
   sameVirtualItemGeometry,
   shouldAdjustVirtualScroll,
   shouldCommitVirtualRowHeight,
+  shouldDeferFastRowMeasurement,
   snapshotVirtualItems,
   timelineRowContentVisibility,
   virtualRowOverflow,
@@ -227,11 +228,11 @@ export function MessageTimeline(props: {
     el: HTMLDivElement,
     geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
   ) => void
-  onAutoScrollHandleScroll: () => void
+  onAutoScrollHandleScroll: (geometry: { scrollTop: number; scrollHeight: number; clientHeight: number }) => void
   onMarkScrollGesture: (target?: EventTarget | null) => void
   hasScrollGesture: () => boolean
   onUserScroll: () => void
-  onHistoryScroll: () => void
+  onHistoryScroll: (scrollTop: number) => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
   isInitialScrollSettling: () => boolean
@@ -352,13 +353,14 @@ export function MessageTimeline(props: {
 
   // --- Batched row measurement (single ResizeObserver owned by the virtualizer) ---
   // All height commits funnel through the measureElement option below: the
-  // virtualizer's own ResizeObserver (border-box, rAF-coalesced via
-  // useAnimationFrameWithResizeObserver) delivers entry heights without layout
-  // reads, and each committed height goes through the owning row's handler
+  // virtualizer's own ResizeObserver delivers border-box entry heights without
+  // explicit layout reads, and each committed height goes through the owning row's handler
   // (live-shrink guard + contentHeight signal + row cache persistence).
   const rowHeightHandlers = new Map<string, (raw: number) => number>()
   const elementRowKey = new WeakMap<HTMLElement, string>()
   const pendingNearBottomShrinks = new Map<number, { key: string; size: number }>()
+  const deferredFastMeasurements = new Map<number, { key: string; size: number }>()
+  let deferredFastMeasurementTimer: number | undefined
 
   // Programmatic scrolls (anchor restore, TanStack scroll adjustments,
   // scrollToIndex/scrollToEnd) must not be mistaken for user scrolling: they
@@ -380,15 +382,15 @@ export function MessageTimeline(props: {
   let velocityTrackedAt = 0
   let velocityTrackedTop = 0
   let scrollVelocity = 0
-  const trackScrollVelocity = (root: HTMLDivElement) => {
+  const trackScrollVelocity = (scrollTop: number) => {
     const now = performance.now()
     const dt = now - velocityTrackedAt
     if (dt > 2 && dt < 300) {
-      const speed = Math.abs(root.scrollTop - velocityTrackedTop) / dt
+      const speed = Math.abs(scrollTop - velocityTrackedTop) / dt
       scrollVelocity = scrollVelocity * 0.7 + speed * 0.3
     }
     velocityTrackedAt = now
-    velocityTrackedTop = root.scrollTop
+    velocityTrackedTop = scrollTop
   }
   const fastScrolling = () =>
     scrollVelocity > FAST_SCROLL_SPEED && performance.now() - velocityTrackedAt < FAST_SCROLL_WINDOW_MS
@@ -411,10 +413,12 @@ export function MessageTimeline(props: {
       measurementPassQueued = false
       if (!measurementBatchPending) return
       measurementBatchPending = false
-      timelineLag(
-        "batch-dispatch",
-        `top=${Math.round(listRoot()?.scrollTop ?? 0)} bottom=${String(props.shouldAnchorBottom())} prepend=${String(prependLoading)} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"}`,
-      )
+      if (lagging()) {
+        timelineLag(
+          "batch-dispatch",
+          `top=${Math.round(listRoot()?.scrollTop ?? 0)} bottom=${String(props.shouldAnchorBottom())} prepend=${String(prependLoading)} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"}`,
+        )
+      }
       afterMeasurementBatch()
     })
   }
@@ -429,7 +433,7 @@ export function MessageTimeline(props: {
       // Never while the user is gesturing: writing scrollTop mid-gesture
       // locks the user to the bottom.
       if (!props.isInitialScrollSettling() && !props.hasScrollGesture()) {
-        const gap = root.scrollHeight - root.clientHeight - root.scrollTop
+        const gap = virtualizer.getTotalSize() - listSize().height - root.scrollTop
         if (gap > 0.5) {
           markProgrammaticScroll(gap)
           root.scrollTop += gap
@@ -453,10 +457,12 @@ export function MessageTimeline(props: {
         itemByKey: (key) => byKey.get(key),
         userScrollDelta: userDelta,
       })
-      timelineLag(
-        "virtual-anchor",
-        `phase=restore key=${viewportAnchor.key} offset=${Math.round(viewportAnchor.offset)} user=${Math.round(userDelta)} delta=${Math.round(delta)} top=${Math.round(root.scrollTop)} item=${(() => { const item = byKey.get(viewportAnchor.key); return item ? `${Math.round(item.start)}/${Math.round(item.size)}` : "missing" })()}`,
-      )
+      if (lagging()) {
+        timelineLag(
+          "virtual-anchor",
+          `phase=restore key=${viewportAnchor.key} offset=${Math.round(viewportAnchor.offset)} user=${Math.round(userDelta)} delta=${Math.round(delta)} top=${Math.round(root.scrollTop)} item=${(() => { const item = byKey.get(viewportAnchor.key); return item ? `${Math.round(item.start)}/${Math.round(item.size)}` : "missing" })()}`,
+        )
+      }
       if (delta !== 0) markProgrammaticScroll(delta)
       if (lagging() && Math.abs(delta) > 0.5) {
         timelineLag("anchor-restore", `key=${viewportAnchor.key} delta=${Math.round(delta)} user=${Math.round(userDelta)}`)
@@ -473,10 +479,12 @@ export function MessageTimeline(props: {
           itemByKey: (key) => byKey.get(key),
           userScrollDelta: readingUserDelta,
         })
-        timelineLag(
-          "virtual-anchor",
-          `phase=reading-restore key=${readingAnchor.key} offset=${Math.round(readingAnchor.offset)} user=${Math.round(readingUserDelta)} delta=${Math.round(readingDelta)} top=${Math.round(root.scrollTop)} item=${(() => { const item = byKey.get(readingAnchor.key); return item ? `${Math.round(item.start)}/${Math.round(item.size)}` : "missing" })()}`,
-        )
+        if (lagging()) {
+          timelineLag(
+            "virtual-anchor",
+            `phase=reading-restore key=${readingAnchor.key} offset=${Math.round(readingAnchor.offset)} user=${Math.round(readingUserDelta)} delta=${Math.round(readingDelta)} top=${Math.round(root.scrollTop)} item=${(() => { const item = byKey.get(readingAnchor.key); return item ? `${Math.round(item.start)}/${Math.round(item.size)}` : "missing" })()}`,
+          )
+        }
         if (readingDelta !== 0) markProgrammaticScroll(readingDelta)
         if (lagging() && Math.abs(readingDelta) > 0.5) {
           timelineLag(
@@ -488,10 +496,12 @@ export function MessageTimeline(props: {
     }
     viewportAnchor = captureVirtualViewportAnchor(root, items, programmaticScrollDelta)
     readingAnchor = captureVirtualViewportAnchor(root, items, programmaticScrollDelta, READING_LINE_RATIO)
-    timelineLag(
-      "virtual-anchor",
-      `phase=capture top=${Math.round(root.scrollTop)} viewport=${viewportAnchor?.key ?? "none"}/${Math.round(viewportAnchor?.offset ?? 0)} reading=${readingAnchor?.key ?? "none"}/${Math.round(readingAnchor?.offset ?? 0)}`,
-    )
+    if (lagging()) {
+      timelineLag(
+        "virtual-anchor",
+        `phase=capture top=${Math.round(root.scrollTop)} viewport=${viewportAnchor?.key ?? "none"}/${Math.round(viewportAnchor?.offset ?? 0)} reading=${readingAnchor?.key ?? "none"}/${Math.round(readingAnchor?.offset ?? 0)}`,
+      )
+    }
   }
 
   const projection = createTimelineProjection({
@@ -741,6 +751,23 @@ export function MessageTimeline(props: {
     },
   })
   const resizeItem = virtualizer.resizeItem
+  const scheduleDeferredFastMeasurementFlush = () => {
+    if (deferredFastMeasurementTimer !== undefined) window.clearTimeout(deferredFastMeasurementTimer)
+    deferredFastMeasurementTimer = window.setTimeout(() => {
+      deferredFastMeasurementTimer = undefined
+      if (fastScrolling()) {
+        scheduleDeferredFastMeasurementFlush()
+        return
+      }
+      for (const [index, pending] of deferredFastMeasurements) {
+        const current = virtualizer.measurementsCache[index]
+        deferredFastMeasurements.delete(index)
+        if (!current || String(current.key) !== pending.key) continue
+        measurementBatchPending = true
+        virtualizer.resizeItem(index, pending.size)
+      }
+    }, 180)
+  }
   virtualizer.resizeItem = (index, size) => {
     const profiling = lagging()
     const started = profiling ? performance.now() : 0
@@ -757,7 +784,7 @@ export function MessageTimeline(props: {
       : "none"
     const visibility = profiling && rowElement ? getComputedStyle(rowElement).contentVisibility : "none"
     let pinned = 0
-    if (root && previous !== undefined && Math.abs(size - previous) > root.clientHeight) {
+    if (root && previous !== undefined && Math.abs(size - previous) > listSize().height) {
       const view = root.getBoundingClientRect()
       resizePinnedIndexes = [...root.querySelectorAll<HTMLElement>("[data-index]")]
         .filter((element) => {
@@ -815,10 +842,11 @@ export function MessageTimeline(props: {
   const virtualSnapshot = createMemo(() => snapshotVirtualItems(virtualizer.getVirtualItems()))
   const virtualItemByKey = createMemo(() => virtualSnapshot().byKey)
   const virtualRowKeys = createMemo(() => virtualSnapshot().keys)
-  const refreshUserScrollAnchors = (root: HTMLDivElement) => {
+  const refreshUserScrollAnchors = (root: HTMLDivElement, scrollTop: number) => {
     const items = virtualizer.measurementsCache
-    viewportAnchor = captureVirtualViewportAnchor(root, items, programmaticScrollDelta)
-    readingAnchor = captureVirtualViewportAnchor(root, items, programmaticScrollDelta, READING_LINE_RATIO)
+    const geometry = { scrollTop, clientHeight: listSize().height }
+    viewportAnchor = captureVirtualViewportAnchor(geometry, items, programmaticScrollDelta)
+    readingAnchor = captureVirtualViewportAnchor(geometry, items, programmaticScrollDelta, READING_LINE_RATIO)
   }
 
   // --- Session find ---
@@ -886,6 +914,8 @@ export function MessageTimeline(props: {
     )
     clearPrependAnchor()
     pendingNearBottomShrinks.clear()
+    deferredFastMeasurements.clear()
+    if (deferredFastMeasurementTimer !== undefined) window.clearTimeout(deferredFastMeasurementTimer)
     // Persist measured row heights into the row-level cache so the next mount
     // (tab switch, session re-entry) can reuse them without re-measuring.
     const width = listRoot()?.clientWidth ?? 0
@@ -989,8 +1019,17 @@ export function MessageTimeline(props: {
     }
     // Track the scroll viewport size for row height estimation (estimate.ts).
     listResizeObserver?.disconnect()
-    listResizeObserver = new ResizeObserver(() => {
-      setListSize({ width: root.clientWidth, height: root.clientHeight })
+    listResizeObserver = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      const box = entry?.borderBoxSize
+      const border = Array.isArray(box) ? box[0] : box
+      if (border && border.inlineSize > 0 && border.blockSize > 0) {
+        setListSize({ width: border.inlineSize, height: border.blockSize })
+        return
+      }
+      if (entry?.contentRect.width && entry.contentRect.height) {
+        setListSize({ width: entry.contentRect.width, height: entry.contentRect.height })
+      }
     })
     listResizeObserver.observe(root)
     setListSize({ width: root.clientWidth, height: root.clientHeight })
@@ -1013,18 +1052,19 @@ export function MessageTimeline(props: {
     }
   }
   let touchGesture: number | undefined
-  const handleScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
+  const handleScroll = (
+    geometry: { scrollTop: number; scrollHeight: number; clientHeight: number },
+    event: Event & { currentTarget: HTMLDivElement },
+  ) => {
     const root = event.currentTarget
-    timelineLag(
-      "scroll",
-      `trusted=${String(event.isTrusted)} top=${Math.round(root.scrollTop)} height=${Math.round(root.scrollHeight)} client=${Math.round(root.clientHeight)} programmatic=${String(isProgrammaticScrollActive())} gesture=${String(props.hasScrollGesture())}`,
-    )
-    props.onScheduleScrollState(root, {
-      scrollTop: root.scrollTop,
-      scrollHeight: virtualizer.getTotalSize(),
-      clientHeight: listSize().height,
-    })
-    trackScrollVelocity(root)
+    if (lagging()) {
+      timelineLag(
+        "scroll",
+        `trusted=${String(event.isTrusted)} top=${Math.round(geometry.scrollTop)} height=${Math.round(geometry.scrollHeight)} client=${Math.round(geometry.clientHeight)} programmatic=${String(isProgrammaticScrollActive())} gesture=${String(props.hasScrollGesture())}`,
+      )
+    }
+    props.onScheduleScrollState(root, geometry)
+    trackScrollVelocity(geometry.scrollTop)
     // While history is prepended we programmatically adjust scrollTop. Those events
     // must not clear the pin or request another page (that chain-loads to the top).
     if (prependLoading) return
@@ -1036,18 +1076,18 @@ export function MessageTimeline(props: {
     // Real wheel/touch handlers clear programmaticScrollAt before the matching
     // user scroll event arrives.
     if (isProgrammaticScrollActive()) return
-    refreshUserScrollAnchors(root)
+    refreshUserScrollAnchors(root, geometry.scrollTop)
     if (!props.hasScrollGesture()) {
-      props.onHistoryScroll()
+      props.onHistoryScroll(geometry.scrollTop)
       return
     }
     clearPrependAnchor()
-    props.onAutoScrollHandleScroll()
+    props.onAutoScrollHandleScroll(geometry)
     props.onUserScroll()
     props.onMarkScrollGesture(root)
-    props.onHistoryScroll()
+    props.onHistoryScroll(geometry.scrollTop)
     if (pendingNearBottomShrinks.size > 0) {
-      const maxScrollTop = virtualizer.getTotalSize() - root.clientHeight
+      const maxScrollTop = virtualizer.getTotalSize() - geometry.clientHeight
       for (const [index, pending] of pendingNearBottomShrinks) {
         const item = virtualizer.measurementsCache[index]
         if (!item) {
@@ -1055,10 +1095,15 @@ export function MessageTimeline(props: {
           continue
         }
         const nextMaxScrollTop = maxScrollTop + pending.size - item.size
-        if (root.scrollTop <= nextMaxScrollTop - 1) {
+        if (geometry.scrollTop <= nextMaxScrollTop - 1) {
           pendingNearBottomShrinks.delete(index)
           virtualizer.resizeItem(index, pending.size)
-          timelineLag("deferred-shrink", `index=${index} key=${pending.key} size=${Math.round(pending.size)} top=${Math.round(root.scrollTop)}`)
+          if (lagging()) {
+            timelineLag(
+              "deferred-shrink",
+              `index=${index} key=${pending.key} size=${Math.round(pending.size)} top=${Math.round(geometry.scrollTop)}`,
+            )
+          }
         }
       }
     }
@@ -1388,14 +1433,26 @@ export function MessageTimeline(props: {
       // here would bypass this guard on the later pass.
       if (!shouldCommitVirtualRowHeight({ next: raw, previous: virtual, live, markdownPending: pending })) {
         setContentHeight(pending ? raw : Math.max(raw, contentHeight()))
-        timelineLag(
-          "measure-rejected",
-          `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} live=${String(live)} markdownPending=${String(pending)} visibility=${rowVisibility()} top=${Math.round(root?.scrollTop ?? 0)}`,
-        )
+        if (lagging()) {
+          timelineLag(
+            "measure-rejected",
+            `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} live=${String(live)} markdownPending=${String(pending)} visibility=${rowVisibility()} top=${Math.round(root?.scrollTop ?? 0)}`,
+          )
+        }
         if (lagging()) {
           console.debug(
             `[timeline] row-measure:skip-shrink key=${input.rowKey} index=${String(item().index)} height=${String(Math.round(raw))} virtual=${String(Math.round(virtual))} delta=${String(Math.round(raw - virtual))} live=${String(live)} pending=${String(pending)}`,
           )
+        }
+        return virtual
+      }
+      if (shouldDeferFastRowMeasurement({ fast: fastScrolling(), live, next: raw, previous: virtual })) {
+        deferredFastMeasurements.set(item().index, { key: input.rowKey, size: raw })
+        setContentHeight(Math.min(raw, virtual))
+        scheduleDeferredFastMeasurementFlush()
+        const currentRow = row()
+        if (currentRow) {
+          timelineRowCache.setMeasured(input.rowKey, raw, rowContentVersion(currentRow, getMessagePart), listSize().width)
         }
         return virtual
       }
@@ -1405,14 +1462,16 @@ export function MessageTimeline(props: {
         !props.shouldAnchorBottom() &&
         props.hasScrollGesture() &&
         raw < virtual &&
-        root.scrollTop > totalSize - root.clientHeight + raw - virtual + 1
+        root.scrollTop > totalSize - listSize().height + raw - virtual + 1
       if (wouldClampScroll) {
         pendingNearBottomShrinks.set(item().index, { key: input.rowKey, size: raw })
         setContentHeight(raw)
-        timelineLag(
-          "defer-shrink",
-          `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} top=${Math.round(root.scrollTop)} newMax=${Math.round(totalSize - root.clientHeight + raw - virtual)}`,
-        )
+        if (lagging()) {
+          timelineLag(
+            "defer-shrink",
+            `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} top=${Math.round(root.scrollTop)} newMax=${Math.round(totalSize - root.clientHeight + raw - virtual)}`,
+          )
+        }
         return virtual
       }
       setContentHeight(raw)
@@ -1429,7 +1488,7 @@ export function MessageTimeline(props: {
       const currentRow = row()
       if (currentRow) {
         const version = rowContentVersion(currentRow, getMessagePart)
-        const width = listRoot()?.clientWidth ?? 0
+        const width = listSize().width
         timelineRowCache.setMeasured(input.rowKey, raw, version, width)
       }
       const delta = raw - virtual
@@ -1486,7 +1545,10 @@ export function MessageTimeline(props: {
           height: `${item().size}px`,
           // Do not hide newly rendered streaming content while the virtualizer
           // catches up with its ResizeObserver measurement.
-          overflow: virtualRowOverflow(contentHeight(), item().size),
+          // Only streaming output may paint beyond its current virtual size.
+          // Completed tool hydration can grow before ResizeObserver commits;
+          // letting it overflow overlaps the following virtual row.
+          overflow: virtualRowOverflow(contentHeight(), item().size, item().index === activeAssistantRowIndex()),
         }}
       >
         <div
@@ -1522,19 +1584,21 @@ export function MessageTimeline(props: {
         viewportRef={bindListRoot}
         scrollContentHeight={virtualizer.getTotalSize()}
         scrollViewportHeight={listSize().height}
-         onWheel={(event) => {
+        onWheel={(event) => {
           // Real user input immediately revokes the programmatic-scroll marker.
           programmaticScrollAt = 0
           markToolHydrationScrollActivity()
-           const delta = normalizeWheelDelta({
+          const delta = normalizeWheelDelta({
             deltaY: event.deltaY,
             deltaMode: event.deltaMode,
-            rootHeight: event.currentTarget.clientHeight,
-           })
-           timelineLag(
-             "wheel-input",
-             `trusted=${String(event.isTrusted)} delta=${Math.round(delta)} top=${Math.round(event.currentTarget.scrollTop)} height=${Math.round(event.currentTarget.scrollHeight)} client=${Math.round(event.currentTarget.clientHeight)}`,
-           )
+            rootHeight: listSize().height,
+          })
+          if (lagging()) {
+            timelineLag(
+              "wheel-input",
+              `trusted=${String(event.isTrusted)} delta=${Math.round(delta)} top=${Math.round(event.currentTarget.scrollTop)} height=${Math.round(event.currentTarget.scrollHeight)} client=${Math.round(event.currentTarget.clientHeight)}`,
+            )
+          }
           if (delta) markBoundaryGesture(event.currentTarget, event.target, delta)
         }}
         onTouchStart={(event) => {
@@ -1554,7 +1618,7 @@ export function MessageTimeline(props: {
         onPointerDown={(event) =>
           event.target === event.currentTarget && props.onMarkScrollGesture(event.currentTarget)
         }
-        onScroll={handleScroll}
+        onScrollGeometry={handleScroll}
         onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
       >

@@ -58,18 +58,6 @@
   white-space: nowrap;
 }
 
-[data-component="injected-prompt"] [data-slot="injected-prompt-preview"] {
-  padding: 6px 12px 10px 30px;
-  color: var(--text-weaker);
-  font-family: var(--font-family-mono);
-  font-feature-settings: var(--font-family-mono--font-feature-settings);
-  font-size: var(--font-size-small);
-  line-height: var(--line-height-large);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 [data-component="injected-prompt"] [data-slot="injected-prompt-content"] {
   max-height: 360px;
   overflow-y: auto;

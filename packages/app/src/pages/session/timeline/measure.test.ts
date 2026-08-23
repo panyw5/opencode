@@ -13,6 +13,7 @@ import {
   snapshotVirtualItems,
   shouldAdjustVirtualScroll,
   shouldCommitVirtualRowHeight,
+  shouldDeferFastRowMeasurement,
   markdownMeasurementPending,
   shouldEaseLiveBottom,
   timelineContentVersion,
@@ -42,9 +43,10 @@ test("keeps virtual row keys and lookups on the same snapshot", () => {
 })
 
 test("does not clip a row while its DOM height is ahead of the virtualizer", () => {
-  expect(virtualRowOverflow(60, 60)).toBe("clip")
-  expect(virtualRowOverflow(60.5, 60)).toBe("clip")
-  expect(virtualRowOverflow(60.6, 60)).toBe("visible")
+  expect(virtualRowOverflow(60, 60, true)).toBe("clip")
+  expect(virtualRowOverflow(60.5, 60, true)).toBe("clip")
+  expect(virtualRowOverflow(60.6, 60, true)).toBe("visible")
+  expect(virtualRowOverflow(379, 62, false)).toBe("clip")
 })
 
 test("reads height from a resize entry border box without layout work", () => {
@@ -417,6 +419,13 @@ test("does not shrink a live row from a transient short measure", () => {
   expect(shouldCommitVirtualRowHeight({ next: 32, previous: 69, live: true })).toBe(false)
   expect(shouldCommitVirtualRowHeight({ next: 80, previous: 69, live: true })).toBe(true)
   expect(shouldCommitVirtualRowHeight({ next: 32, previous: 69, live: false })).toBe(true)
+})
+
+test("defers non-live row measurements only during fast scrolling", () => {
+  expect(shouldDeferFastRowMeasurement({ fast: true, live: false, next: 400, previous: 200 })).toBe(true)
+  expect(shouldDeferFastRowMeasurement({ fast: false, live: false, next: 400, previous: 200 })).toBe(false)
+  expect(shouldDeferFastRowMeasurement({ fast: true, live: true, next: 400, previous: 200 })).toBe(false)
+  expect(shouldDeferFastRowMeasurement({ fast: true, live: false, next: 200.2, previous: 200 })).toBe(false)
 })
 
 test("does not shrink a row whose markdown has not rendered content yet", () => {

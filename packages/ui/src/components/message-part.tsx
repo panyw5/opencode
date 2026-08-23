@@ -1540,6 +1540,7 @@ export function UserMessageDisplay(props: {
       <Show when={skillTemplatePart()}>
         <BasicTool
           icon="console"
+          hasDetails={!!skillTemplatePart()?.text}
           trigger={{
             title: "Skill",
           }}
@@ -2151,6 +2152,7 @@ ToolRegistry.register({
       <>
         <BasicTool
           {...props}
+          hasDetails={false}
           icon="glasses"
           trigger={{
             title: i18n.t("ui.tool.read"),
@@ -2181,12 +2183,14 @@ function ShellTool(props: ToolProps & { title: string }) {
   const hook = createMemo(() => hookName(props.input ?? {}, props.metadata ?? {}))
   const type = createMemo(() => hookType(props.input ?? {}, props.metadata ?? {}))
   const line = createMemo(() => cmd(props.input ?? {}, props.metadata ?? {}) ?? "")
+  const output = createMemo(() => props.output || props.metadata.output || "")
+  const hasBody = createMemo(() => !!line() || output().length > 0)
   const subtitle = createMemo(() => {
     if (hook()) return type()
     return text(props.input.description) ?? text(props.metadata.description) ?? line()
   })
   const body = createMemo(() => {
-    const out = stripAnsi(props.output || props.metadata.output || "")
+    const out = stripAnsi(output())
     return line() ? `$ ${line()}${out ? "\n\n" + out : ""}` : out
   })
   const [copied, setCopied] = createSignal(false)
@@ -2257,8 +2261,9 @@ function ShellTool(props: ToolProps & { title: string }) {
   return (
     <BasicTool
       {...props}
+      hasDetails={hasBody()}
       showPendingMeta
-      showPendingDetails={!!body()}
+      showPendingDetails={hasBody()}
       forceOpen={false}
       icon="console"
       trigger={
@@ -2343,6 +2348,7 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
+        hasDetails={!!props.output}
         icon="bullet-list"
         trigger={{
           title: i18n.t("ui.tool.list"),
@@ -2375,6 +2381,7 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
+        hasDetails={!!props.output}
         icon="magnifying-glass-menu"
         trigger={{
           title: i18n.t("ui.tool.glob"),
@@ -2411,6 +2418,7 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
+        hasDetails={!!props.output}
         icon="magnifying-glass-menu"
         trigger={{
           title: i18n.t("ui.tool.grep"),
@@ -2807,7 +2815,14 @@ ToolRegistry.register({
     )
 
     return (
-      <BasicTool {...props} hideArrow hideDetails={!hasOutput()} icon="task" trigger={trigger()}>
+      <BasicTool
+        {...props}
+        hasDetails={hasOutput()}
+        hideArrow
+        hideDetails={!hasOutput()}
+        icon="task"
+        trigger={trigger()}
+      >
         <Show when={hasOutput()}>
           <div data-component="tool-output" data-kind="subagent-task" data-scrollable>
             <Show when={missingSessionDetail()}>
@@ -2839,6 +2854,7 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
+        hasDetails={!!props.output && !pending()}
         icon="console"
         trigger={{
           title: pending() ? "Skill" : `Skill: /${name()}`,
@@ -2887,6 +2903,7 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
+        hasDetails={!!props.output}
         icon="console"
         trigger={{
           title: hook() ?? i18n.t("ui.tool.shell"),
@@ -2926,6 +2943,7 @@ ToolRegistry.register({
       <div data-component="edit-tool">
         <BasicTool
           {...props}
+          hasDetails={!!path() || diagnostics().length > 0}
           icon="code-lines"
           defer
           trigger={
@@ -2998,6 +3016,7 @@ ToolRegistry.register({
       <div data-component="write-tool">
         <BasicTool
           {...props}
+          hasDetails={(!!props.input.content && !!path()) || diagnostics().length > 0}
           icon="code-lines"
           defer
           trigger={
@@ -3085,6 +3104,7 @@ ToolRegistry.register({
           <div data-component="apply-patch-tool">
             <BasicTool
               {...props}
+              hasDetails={files().length > 0}
               icon="code-lines"
               defer
               trigger={{
@@ -3184,6 +3204,7 @@ ToolRegistry.register({
           <div data-component="apply-patch-tool">
             <BasicTool
               {...props}
+              hasDetails
               icon="code-lines"
               defer
               trigger={
@@ -3278,6 +3299,7 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
+        hasDetails={todos().length > 0}
         defaultOpen
         icon="checklist"
         trigger={{
@@ -3329,6 +3351,7 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
+        hasDetails={completed()}
         defaultOpen={completed()}
         showPendingDetails={optimistic()}
         showPendingMeta={optimistic()}
