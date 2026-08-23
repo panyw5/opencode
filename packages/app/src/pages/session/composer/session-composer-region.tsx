@@ -17,7 +17,11 @@ import { useServer } from "@/context/server"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
 import { getSessionHandoff, setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionKey } from "@/pages/session/session-layout"
-import { listBackgroundShells, type BackgroundShellInfo } from "@/pages/session/background-shell-api"
+import {
+  listBackgroundShells,
+  stopBackgroundShell,
+  type BackgroundShellInfo,
+} from "@/pages/session/background-shell-api"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionSkippedQuestionsDialog } from "@/pages/session/composer/session-skipped-questions-dialog"
@@ -302,10 +306,14 @@ function SessionUserMessageMenu(props: {
 function SessionBackgroundShellDialog(props: {
   entry: BackgroundShellInfo
   load: (id: string) => Promise<BackgroundShellInfo>
+  stop: (id: string) => Promise<boolean>
 }) {
   const [current, setCurrent] = createSignal(props.entry)
-  const [loading, setLoading] = createSignal(false)
-  const [error, setError] = createSignal<string | undefined>()
+  const [state, setState] = createStore({
+    loading: false,
+    stopping: false,
+    error: undefined as string | undefined,
+  })
   let request = 0
 
   const currentID = createMemo(() => current().id)
@@ -320,16 +328,31 @@ function SessionBackgroundShellDialog(props: {
 
   const refresh = async (quiet = false, id = currentID()) => {
     const active = ++request
-    if (!quiet) setLoading(true)
-    setError(undefined)
+    if (!quiet) setState("loading", true)
+    setState("error", undefined)
     try {
       const next = await props.load(id)
       if (active === request) setCurrent(next)
     } catch (e) {
       if (active !== request) return
-      setError(e instanceof Error ? e.message : String(e))
+      setState("error", e instanceof Error ? e.message : String(e))
     } finally {
-      if (active === request) setLoading(false)
+      if (active === request) setState("loading", false)
+    }
+  }
+
+  const stop = async () => {
+    const id = currentID()
+    if (currentStatus() !== "running" || state.stopping) return
+    setState({ stopping: true, error: undefined })
+    try {
+      const stopped = await props.stop(id)
+      if (!stopped) throw new Error("背景 shell 未能停止")
+      await refresh(true, id)
+    } catch (e) {
+      setState("error", e instanceof Error ? e.message : String(e))
+    } finally {
+      setState("stopping", false)
     }
   }
 
@@ -359,22 +382,34 @@ function SessionBackgroundShellDialog(props: {
                 <span class="truncate">{current().cwd}</span>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="small"
-              class="h-7 shrink-0 rounded-md px-2"
-              disabled={loading()}
-              onClick={() => void refresh()}
-            >
-              {loading() ? "刷新中" : "刷新"}
-            </Button>
+            <div class="flex shrink-0 items-center gap-1">
+              <Button
+                variant="ghost"
+                size="small"
+                class="h-7 rounded-md px-2 text-icon-critical-base"
+                disabled={currentStatus() !== "running" || state.loading || state.stopping}
+                onClick={() => void stop()}
+                data-testid="session-background-shell-stop"
+              >
+                {state.stopping ? "停止中" : "停止"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="small"
+                class="h-7 rounded-md px-2"
+                disabled={state.loading || state.stopping}
+                onClick={() => void refresh()}
+              >
+                {state.loading ? "刷新中" : "刷新"}
+              </Button>
+            </div>
           </div>
           <div class="mt-2 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-11-regular text-text-weak">
             {current().command}
           </div>
         </div>
 
-        <Show when={error()}>
+        <Show when={state.error}>
           {(message) => (
             <div class="rounded-md border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
               {message()}
@@ -800,8 +835,18 @@ export function SessionComposerRegion(props: {
     return info
   }
 
+  const stopSessionBackgroundShell = (id: string) =>
+    stopBackgroundShell({
+      sdk,
+      platform,
+      auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+      id,
+    })
+
   const openBackgroundShell = (entry: BackgroundShellInfo) => {
-    dialog.show(() => <SessionBackgroundShellDialog entry={entry} load={loadBackgroundShell} />)
+    dialog.show(() => (
+      <SessionBackgroundShellDialog entry={entry} load={loadBackgroundShell} stop={stopSessionBackgroundShell} />
+    ))
   }
 
   createEffect(() => {

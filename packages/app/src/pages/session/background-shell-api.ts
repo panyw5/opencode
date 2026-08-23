@@ -112,3 +112,17 @@ export function setBackgroundShell(input: {
     input.auth,
   )
 }
+
+export function stopBackgroundShell(input: {
+  sdk: SDK
+  platform: Platform
+  auth?: Auth
+  id: string
+}): Promise<boolean> {
+  return json<boolean>(
+    input.platform,
+    endpoint(input.sdk, `/background-shell/${encodeURIComponent(input.id)}`, {}),
+    { method: "DELETE" },
+    input.auth,
+  )
+}
