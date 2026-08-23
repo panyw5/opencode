@@ -6,9 +6,13 @@ import {
   COLLAPSED_TOOL_HEIGHT,
   estimateRowHeight,
   estimateTextLines,
+  ERROR_CARD_MAX_HEIGHT,
   INJECTED_PROMPT_HEIGHT,
+  MIN_ROW_ESTIMATE,
   OPEN_TOOL_HEIGHT,
   PREVIOUS_PART_SPACING,
+  REASONING_PREVIEW_GAP,
+  REASONING_PREVIEW_HEIGHT,
   rowRenderCost,
   TEXT_PART_MARGIN,
   TEXT_PART_META_HEIGHT,
@@ -99,7 +103,7 @@ describe("estimateRowHeight AssistantPart rows", () => {
     expect(PREVIOUS_PART_SPACING).toBe(12)
   })
 
-  test("a running or default-open tool estimates the open baseline", () => {
+  test("a running tool stays collapsed while a default-open tool estimates the open baseline", () => {
     const running = toolPart({ status: "running" })
     const completed = toolPart({ tool: "bash" })
     const groupOf = (part: ToolPart) => ({
@@ -107,7 +111,9 @@ describe("estimateRowHeight AssistantPart rows", () => {
       userMessageID: "m",
       group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } },
     })
-    expect(estimateRowHeight(groupOf(running), WIDTH, { ...base, parts: lookup(running) })).toBe(OPEN_TOOL_HEIGHT)
+    expect(estimateRowHeight(groupOf(running), WIDTH, { ...base, parts: lookup(running) })).toBe(
+      COLLAPSED_TOOL_HEIGHT,
+    )
     expect(
       estimateRowHeight(groupOf(completed), WIDTH, {
         ...base,
@@ -145,6 +151,21 @@ describe("estimateRowHeight AssistantPart rows", () => {
         { ...base, parts: lookup(part) },
       ),
     ).toBe(32)
+  })
+
+  test("a streaming reasoning part includes its fixed three-line preview", () => {
+    const part = { id: "prt_r", type: "reasoning", text: "still thinking" } as unknown as Part
+    expect(
+      estimateRowHeight(
+        {
+          _tag: "AssistantPart",
+          userMessageID: "m",
+          group: { type: "part", ref: { messageID: "msg_1", partID: "prt_r" } },
+        },
+        WIDTH,
+        { ...base, parts: lookup(part), reasoningStreaming: () => true },
+      ),
+    ).toBe(32 + REASONING_PREVIEW_GAP + REASONING_PREVIEW_HEIGHT)
   })
 
   test("a text part estimates margin plus wrapped lines", () => {
@@ -220,21 +241,31 @@ describe("estimateRowHeight context groups", () => {
     expect(estimateRowHeight(contextRow(["prt_a", "prt_b", "prt_a"]), WIDTH, options)).toBe(50 * 3 + 12 * 2)
   })
 
-  test("adds the previous-part spacing and treats running members as open", () => {
+  test("adds the previous-part spacing and keeps running members collapsed", () => {
     expect(estimateRowHeight(contextRow(["prt_a"], true), WIDTH, options)).toBe(50 + PREVIOUS_PART_SPACING)
-    expect(estimateRowHeight(contextRow(["prt_a", "prt_c"]), WIDTH, options)).toBe(50 + OPEN_TOOL_HEIGHT + 12)
+    expect(estimateRowHeight(contextRow(["prt_a", "prt_c"]), WIDTH, options)).toBe(50 * 2 + 12)
   })
 })
 
 describe("estimateRowHeight text-driven rows", () => {
+  test("CommentStrip estimates the tallest comment card instead of the user message text", () => {
+    const height = estimateRowHeight({ _tag: "CommentStrip", userMessageID: "m" }, WIDTH, {
+      ...base,
+      userMessageText: () => "unrelated user text ".repeat(100),
+      commentStripTexts: () => ["short", "comment ".repeat(80)],
+    })
+    expect(height).toBeGreaterThan(lineHeight * 2)
+    expect(height).toBeLessThan(800 * 3)
+  })
+
   test("UserMessage estimates chrome plus wrapped message text", () => {
     const options = { ...base, userMessageText: (id: string) => (id === "m" ? "hello" : undefined) }
     const height = estimateRowHeight({ _tag: "UserMessage", userMessageID: "m" }, WIDTH, options)
-    expect(height).toBeCloseTo(70 + lineHeight, 5)
+    expect(height).toBeCloseTo(50 + lineHeight, 5)
   })
 
   test("UserMessage without an accessor still estimates one line", () => {
-    expect(estimateRowHeight({ _tag: "UserMessage", userMessageID: "m" }, WIDTH, base)).toBeGreaterThan(70)
+    expect(estimateRowHeight({ _tag: "UserMessage", userMessageID: "m" }, WIDTH, base)).toBeGreaterThan(50)
   })
 
   test("UserMessage reserves a fixed collapsed injected prompt instead of its full synthetic text", () => {
@@ -254,6 +285,12 @@ describe("estimateRowHeight text-driven rows", () => {
     expect(estimateRowHeight({ _tag: "Error", userMessageID: "m", text: "boom" }, WIDTH, base)).toBeCloseTo(
       44 + lineHeight,
       5,
+    )
+  })
+
+  test("Error respects the real card max-height", () => {
+    expect(estimateRowHeight({ _tag: "Error", text: "x\n".repeat(500) }, WIDTH, base)).toBe(
+      ERROR_CARD_MAX_HEIGHT,
     )
   })
 })
@@ -317,6 +354,22 @@ describe("capRowEstimate", () => {
 })
 
 describe("estimateRowHeight viewport clamp", () => {
+  test("uses the default viewport before the list ResizeObserver reports a positive height", () => {
+    const part = textPart("one line")
+    const row = {
+      _tag: "AssistantPart",
+      userMessageID: "m",
+      group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } },
+    }
+    expect(
+      estimateRowHeight(row, WIDTH, {
+        ...base,
+        parts: lookup(part),
+        viewportHeight: 0,
+      }),
+    ).toBeGreaterThan(MIN_ROW_ESTIMATE)
+  })
+
   test("clamps a very long text row to three viewports", () => {
     const part = textPart("word ".repeat(20000))
     expect(

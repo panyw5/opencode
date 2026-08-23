@@ -43,7 +43,7 @@ export function clearToolPartHydration(sessionID?: string) {
   }
 }
 
-/** Collapsed completed tools can use a same-height shell; live/open tools must render fully. */
+/** Collapsed completed tools can use a same-height shell; live/default-open tools need the real component. */
 export function shouldDeferToolPart(part: Part, defaultOpen?: boolean) {
   if (part.type !== "tool") return false
   if (defaultOpen) return false

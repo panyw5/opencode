@@ -336,10 +336,15 @@ export function MessageTimeline(props: {
     const texts = getMessageParts(messageID).flatMap((part) =>
       part.type === "text" && part.text && !part.synthetic ? [part.text] : [],
     )
-    return texts.length > 0 ? texts.join("\n") : undefined
+    // UserMessageDisplay initially collapses long prompts to its first 1000
+    // characters. The estimator must describe that first DOM state rather than
+    // the full text that is only mounted after explicit user expansion.
+    return texts.length > 0 ? texts.join("\n").slice(0, 1000) : undefined
   }
   const userMessageHasInjectedPrompt = (messageID: string) =>
     getMessageParts(messageID).some((part) => part.type === "text" && !!part.synthetic && !!part.text)
+  const commentStripTexts = (messageID: string) =>
+    getMessageParts(messageID).flatMap((part) => MessageComment.fromPart(part)?.comment ?? [])
 
   // Row-size inputs tracked outside estimateSize so the virtualizer's reactive
   // update re-estimates uncached rows without forcing layout (no clientWidth
@@ -569,8 +574,15 @@ export function MessageTimeline(props: {
       parts: getMessagePart,
       toolDefaultOpen: (part: ToolPart) => defaultOpen(part) ?? false,
       userMessageText,
+      commentStripTexts,
       userMessageHasInjectedPrompt,
       textPartHasMeta: (_messageID: string, partID: string) => textPartMetaIDs().has(partID),
+      reasoningStreaming: (messageID: string, part: PartType) => {
+        if (part.type !== "reasoning") return false
+        const message = messageByID().get(messageID)
+        if (message?.role !== "assistant") return false
+        return typeof part.time?.end !== "number" && typeof message.time.completed !== "number"
+      },
       charWidth: metrics.charWidth,
     }
   }
@@ -1498,6 +1510,7 @@ export function MessageTimeline(props: {
       const virtual = item().size
       const live = liveMeasured()
       const pending = markdownPending()
+      const measured = virtualizer.itemSizeCache.has(item().key)
       const root = listRoot()
       if (lagging() && Math.abs(raw - virtual) >= 1_000) {
         const markdown = element?.querySelector<HTMLElement>('[data-component="markdown"]')
@@ -1510,12 +1523,12 @@ export function MessageTimeline(props: {
       // near-bottom clamp queue. A deferred value is eventually committed
       // directly by handleScroll, so enqueuing an invalid empty-Markdown size
       // here would bypass this guard on the later pass.
-      if (!shouldCommitVirtualRowHeight({ next: raw, previous: virtual, live, markdownPending: pending })) {
+      if (!shouldCommitVirtualRowHeight({ next: raw, previous: virtual, live, measured, markdownPending: pending })) {
         setContentHeight(pending ? raw : Math.max(raw, contentHeight()))
         if (lagging()) {
           timelineLag(
             "measure-rejected",
-            `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} live=${String(live)} markdownPending=${String(pending)} visibility=${rowVisibility()} top=${Math.round(root?.scrollTop ?? 0)}`,
+            `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} live=${String(live)} measured=${String(measured)} markdownPending=${String(pending)} visibility=${rowVisibility()} top=${Math.round(root?.scrollTop ?? 0)}`,
           )
         }
         if (lagging()) {

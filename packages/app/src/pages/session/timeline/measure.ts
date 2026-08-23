@@ -284,14 +284,21 @@ export function timelinePartIsLive(part: Part | undefined) {
  * resize — the row stays stuck at the transient height until it scrolls back
  * into view and then jumps. Shrinks are refused until the row has rendered
  * real content (`data-markdown-rendered-stage` present).
+ *
+ * The first real observation of a live row is different: its previous size is
+ * only an estimate, not a rendered height. That observation must be allowed to
+ * replace an overestimate; otherwise estimateSize keeps driving the virtual
+ * row while the real streaming DOM is permanently ignored.
  */
 export function shouldCommitVirtualRowHeight(input: {
   next: number
   previous: number
   live: boolean
+  measured?: boolean
   markdownPending?: boolean
 }) {
   if (input.markdownPending && input.next + 0.5 < input.previous) return false
+  if (input.live && input.measured === false) return true
   if (!input.live) return true
   return input.next + 0.5 >= input.previous
 }

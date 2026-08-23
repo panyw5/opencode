@@ -424,6 +424,11 @@ test("does not shrink a live row from a transient short measure", () => {
   expect(shouldCommitVirtualRowHeight({ next: 32, previous: 69, live: false })).toBe(true)
 })
 
+test("lets the first real live measurement replace an overestimate", () => {
+  expect(shouldCommitVirtualRowHeight({ next: 275, previous: 1306, live: true, measured: false })).toBe(true)
+  expect(shouldCommitVirtualRowHeight({ next: 275, previous: 1306, live: true, measured: true })).toBe(false)
+})
+
 test("defers non-live row measurements only during fast scrolling", () => {
   expect(shouldDeferFastRowMeasurement({ fast: true, live: false, next: 400, previous: 200 })).toBe(true)
   expect(shouldDeferFastRowMeasurement({ fast: false, live: false, next: 400, previous: 200 })).toBe(false)

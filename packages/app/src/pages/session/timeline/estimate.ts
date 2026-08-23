@@ -25,6 +25,10 @@ export const PREVIOUS_PART_SPACING = 12
 export const COLLAPSED_TOOL_HEIGHT = 50
 export const TOOL_SPACING = 12
 export const COLLAPSED_REASONING_HEIGHT = 32
+/** Streaming reasoning keeps a fixed three-line preview below its trigger. */
+export const REASONING_PREVIEW_HEIGHT = 76
+/** `reasoning-collapsible` uses an 8px gap between trigger and preview. */
+export const REASONING_PREVIEW_GAP = 8
 export const TURN_DIVIDER_HEIGHT = 40
 export const DIFF_SUMMARY_HEIGHT = 44
 /** session-turn-thinking measures 24px; the row itself lands at ~40 once wrapped. */
@@ -32,18 +36,22 @@ export const THINKING_HEIGHT = 24
 export const TEXT_PART_MARGIN = 24
 /** Copy/meta row shown under the final assistant text: margin-top 4 + min-height 24. */
 export const TEXT_PART_META_HEIGHT = 28
-/** Live or user-expanded tools render full output; give them a generous base. */
+/** Tools explicitly expanded by user settings render their full output. */
 export const OPEN_TOOL_HEIGHT = 160
 /** Fallback for shapes the estimator does not model (keeps today's 60px behavior). */
 export const UNKNOWN_ROW_HEIGHT = 60
-/** UserMessage chrome: body padding + meta bar + inner gaps (no attachments). */
-export const USER_MESSAGE_CHROME = 70
-/** Collapsed injected prompt: trigger/border plus its 12px bottom separation. */
-export const INJECTED_PROMPT_HEIGHT = 50
+/** UserMessage text padding + meta bar + the gap/margin between them. */
+export const USER_MESSAGE_CHROME = 50
+/** Collapsed injected prompt plus the parent UserMessage flex gap. */
+export const INJECTED_PROMPT_HEIGHT = 58
 /** CommentStrip bubble: py-2 + filename row + pt-1. */
 export const COMMENT_STRIP_CHROME = 34
+/** Comment bubbles are horizontally arranged and individually capped by CSS. */
+export const COMMENT_STRIP_WIDTH = 260
 /** Error/Retry card padding around the message text. */
 export const ERROR_CARD_CHROME = 44
+/** `.error-card` is a nested scroller and never grows beyond this height. */
+export const ERROR_CARD_MAX_HEIGHT = 240
 
 export const MIN_ROW_ESTIMATE = 40
 export const MAX_VIEWPORT_MULTIPLIER = 3
@@ -52,6 +60,10 @@ const DEFAULT_TEXT_LINE_HEIGHT = 25.2 // 14px × 1.8 (base theme markdown)
 const DEFAULT_CHAR_WIDTH = 7.7 // ~0.55em sans at 14px
 /** px-4 md:px-5 horizontal padding plus a small safety margin for text wrap. */
 const TEXT_WIDTH_INSET = 48
+const USER_MESSAGE_WIDTH_SHARE = 0.82
+const USER_MESSAGE_MAX_CHARS = 64
+const USER_MESSAGE_TEXT_INSET = 24
+const COMMENT_STRIP_TEXT_INSET = 20
 const MIN_TEXT_WIDTH = 240
 const MIN_CHARS_PER_LINE = 24
 /** CJK/full-width glyphs occupy substantially more horizontal space than Latin glyphs. */
@@ -99,19 +111,24 @@ export type EstimateRowHeightOptions = {
   viewportHeight?: number
   /** Concatenated text of a user message (drives UserMessage line count). */
   userMessageText?: (messageID: string) => string | undefined
+  /** CommentStrip cards are horizontal; only the tallest comment controls row height. */
+  commentStripTexts?: (messageID: string) => ReadonlyArray<string>
   /** Whether the user message renders a collapsed injected-prompt panel. */
   userMessageHasInjectedPrompt?: (messageID: string) => boolean
   /** Whether this text part renders the assistant copy/meta row. */
   textPartHasMeta?: (messageID: string, partID: string) => boolean
+  /** Match ReasoningPartDisplay's live preview predicate for this message. */
+  reasoningStreaming?: (messageID: string, part: Part) => boolean
 }
 
+/** Live tools are cheap in height but expensive to keep mounted and reactive. */
 const toolPartLive = (part: ToolPart) => part.state.status === "pending" || part.state.status === "running"
 
 /** Per-paragraph wrap so explicit newlines and short paragraphs stay conservative. */
-export function estimateTextLines(text: string, width: number, charWidth: number) {
+export function estimateTextLines(text: string, width: number, charWidth: number, widthInset = TEXT_WIDTH_INSET) {
   const charsPerLine = Math.max(
     MIN_CHARS_PER_LINE,
-    Math.floor(Math.max(width - TEXT_WIDTH_INSET, MIN_TEXT_WIDTH) / Math.max(charWidth, 1)),
+    Math.floor(Math.max(width - widthInset, MIN_TEXT_WIDTH) / Math.max(charWidth, 1)),
   )
   let lines = 0
   for (const raw of text.split(/\r\n|\r|\n/)) {
@@ -125,13 +142,13 @@ function estimateTextHeight(
   text: string | undefined,
   width: number,
   options: { textLineHeight?: number; charWidth?: number },
+  widthInset = TEXT_WIDTH_INSET,
 ) {
-  const lines = estimateTextLines(text ?? "", width, options.charWidth ?? DEFAULT_CHAR_WIDTH)
+  const lines = estimateTextLines(text ?? "", width, options.charWidth ?? DEFAULT_CHAR_WIDTH, widthInset)
   return lines * (options.textLineHeight ?? DEFAULT_TEXT_LINE_HEIGHT)
 }
 
 function estimateToolPartHeight(part: ToolPart, options: EstimateRowHeightOptions) {
-  if (toolPartLive(part)) return OPEN_TOOL_HEIGHT
   if (options.toolDefaultOpen?.(part)) return OPEN_TOOL_HEIGHT
   return COLLAPSED_TOOL_HEIGHT
 }
@@ -178,7 +195,12 @@ function estimatePartGroupHeight(
           (options.textPartHasMeta?.(group.ref.messageID, group.ref.partID) ? TEXT_PART_META_HEIGHT : 0),
         uncertain: true,
       }
-    if (part.type === "reasoning") return { height: COLLAPSED_REASONING_HEIGHT, uncertain: false }
+    if (part.type === "reasoning") {
+      const preview = options.reasoningStreaming?.(group.ref.messageID, part)
+        ? REASONING_PREVIEW_GAP + REASONING_PREVIEW_HEIGHT
+        : 0
+      return { height: COLLAPSED_REASONING_HEIGHT + preview, uncertain: false }
+    }
     return { height: UNKNOWN_ROW_HEIGHT, uncertain: false }
   }
 
@@ -206,7 +228,14 @@ export function capRowEstimate(height: number, viewportHeight: number) {
  * Pure: same row + width + options always yields the same number.
  */
 export function estimateRowHeight(row: EstimateRowInput, width: number, options: EstimateRowHeightOptions = {}) {
-  const viewportHeight = options.viewportHeight ?? DEFAULT_VIEWPORT_HEIGHT
+  // createVirtualizer calls estimateSize synchronously before the list
+  // ResizeObserver publishes its first dimensions. Treat that transient 0 as
+  // unknown; otherwise every uncertain text row is incorrectly capped at the
+  // 40px minimum during the initial geometry pass.
+  const viewportHeight =
+    options.viewportHeight !== undefined && options.viewportHeight > 0
+      ? options.viewportHeight
+      : DEFAULT_VIEWPORT_HEIGHT
   const previousSpacing = row.previousAssistantPart ? PREVIOUS_PART_SPACING : 0
 
   switch (row._tag) {
@@ -215,17 +244,38 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
 
     case "CommentStrip":
       return clampRowEstimate(
-        COMMENT_STRIP_CHROME + estimateTextHeight(options.userMessageText?.(row.userMessageID ?? ""), width, options),
+        COMMENT_STRIP_CHROME +
+          Math.max(
+            options.textLineHeight ?? DEFAULT_TEXT_LINE_HEIGHT,
+            ...(options.commentStripTexts?.(row.userMessageID ?? "") ?? []).map((text) =>
+              estimateTextHeight(
+                text,
+                Math.min(width * USER_MESSAGE_WIDTH_SHARE, COMMENT_STRIP_WIDTH),
+                options,
+                COMMENT_STRIP_TEXT_INSET,
+              ),
+            ),
+          ),
         viewportHeight,
       )
 
-    case "UserMessage":
+    case "UserMessage": {
+      const userWidth = Math.min(
+        width * USER_MESSAGE_WIDTH_SHARE,
+        USER_MESSAGE_MAX_CHARS * (options.charWidth ?? DEFAULT_CHAR_WIDTH),
+      )
       return clampRowEstimate(
         USER_MESSAGE_CHROME +
-          estimateTextHeight(options.userMessageText?.(row.userMessageID ?? ""), width, options) +
+          estimateTextHeight(
+            options.userMessageText?.(row.userMessageID ?? ""),
+            userWidth,
+            options,
+            USER_MESSAGE_TEXT_INSET,
+          ) +
           (options.userMessageHasInjectedPrompt?.(row.userMessageID ?? "") ? INJECTED_PROMPT_HEIGHT : 0),
         viewportHeight,
       )
+    }
 
     case "TurnDivider":
       return TURN_DIVIDER_HEIGHT
@@ -246,7 +296,10 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
       return DIFF_SUMMARY_HEIGHT
 
     case "Error":
-      return clampRowEstimate(ERROR_CARD_CHROME + estimateTextHeight(row.text, width, options), viewportHeight)
+      return Math.min(
+        ERROR_CARD_MAX_HEIGHT,
+        clampRowEstimate(ERROR_CARD_CHROME + estimateTextHeight(row.text, width, options), viewportHeight),
+      )
 
     default:
       return clampRowEstimate(UNKNOWN_ROW_HEIGHT, viewportHeight)
