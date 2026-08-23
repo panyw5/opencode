@@ -308,6 +308,7 @@ function SessionBackgroundShellDialog(props: {
   load: (id: string) => Promise<BackgroundShellInfo>
   stop: (id: string) => Promise<boolean>
 }) {
+  const dialog = useDialog()
   const [current, setCurrent] = createSignal(props.entry)
   const [state, setState] = createStore({
     loading: false,
@@ -370,7 +371,14 @@ function SessionBackgroundShellDialog(props: {
   })
 
   return (
-    <Dialog title="背景 shell 输出" size="large" class="max-h-[min(720px,calc(100dvh-64px))]">
+    <Dialog
+      title="背景 shell 输出"
+      size="large"
+      class="max-h-[min(720px,calc(100dvh-64px))]"
+      action={
+        <IconButton icon="close" size="large" variant="ghost" aria-label="关闭" onClick={() => dialog.close()} />
+      }
+    >
       <div class="flex min-h-0 flex-col gap-3 px-4 pb-4">
         <div class="rounded-lg border border-border-weak-base bg-surface-raised-base px-3 py-2">
           <div class="flex min-w-0 items-start justify-between gap-3">
@@ -385,8 +393,9 @@ function SessionBackgroundShellDialog(props: {
             <div class="flex shrink-0 items-center gap-1">
               <Button
                 variant="ghost"
-                size="small"
-                class="h-7 rounded-md px-2 text-icon-critical-base"
+                size="large"
+                icon="stop"
+                class="rounded-md text-icon-critical-base disabled:opacity-40"
                 disabled={currentStatus() !== "running" || state.loading || state.stopping}
                 onClick={() => void stop()}
                 data-testid="session-background-shell-stop"
@@ -395,8 +404,9 @@ function SessionBackgroundShellDialog(props: {
               </Button>
               <Button
                 variant="ghost"
-                size="small"
-                class="h-7 rounded-md px-2"
+                size="large"
+                icon="refresh"
+                class="rounded-md"
                 disabled={state.loading || state.stopping}
                 onClick={() => void refresh()}
               >
