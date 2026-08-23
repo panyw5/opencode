@@ -281,6 +281,16 @@ describe("estimateRowHeight text-driven rows", () => {
     expect(withPrompt - withoutPrompt).toBeCloseTo(INJECTED_PROMPT_HEIGHT, 5)
   })
 
+  test("synthetic information without ordinary user text uses only its collapsed panel height", () => {
+    expect(
+      estimateRowHeight({ _tag: "UserMessage", userMessageID: "m" }, WIDTH, {
+        ...base,
+        userMessageText: () => undefined,
+        userMessageHasInjectedPrompt: () => true,
+      }),
+    ).toBe(INJECTED_PROMPT_HEIGHT)
+  })
+
   test("Error estimates card chrome plus wrapped text", () => {
     expect(estimateRowHeight({ _tag: "Error", userMessageID: "m", text: "boom" }, WIDTH, base)).toBeCloseTo(
       44 + lineHeight,

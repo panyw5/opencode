@@ -42,8 +42,8 @@ export const OPEN_TOOL_HEIGHT = 160
 export const UNKNOWN_ROW_HEIGHT = 60
 /** UserMessage text padding + meta bar + the gap/margin between them. */
 export const USER_MESSAGE_CHROME = 50
-/** Collapsed injected prompt plus the parent UserMessage flex gap. */
-export const INJECTED_PROMPT_HEIGHT = 58
+/** Collapsed synthetic information panel measured in the live app. */
+export const INJECTED_PROMPT_HEIGHT = 59
 /** CommentStrip bubble: py-2 + filename row + pt-1. */
 export const COMMENT_STRIP_CHROME = 34
 /** Comment bubbles are horizontally arranged and individually capped by CSS. */
@@ -260,6 +260,9 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
       )
 
     case "UserMessage": {
+      const text = options.userMessageText?.(row.userMessageID ?? "")
+      const injected = options.userMessageHasInjectedPrompt?.(row.userMessageID ?? "") ?? false
+      if (!text && injected) return capRowEstimate(INJECTED_PROMPT_HEIGHT, viewportHeight)
       const userWidth = Math.min(
         width * USER_MESSAGE_WIDTH_SHARE,
         USER_MESSAGE_MAX_CHARS * (options.charWidth ?? DEFAULT_CHAR_WIDTH),
@@ -267,12 +270,12 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
       return clampRowEstimate(
         USER_MESSAGE_CHROME +
           estimateTextHeight(
-            options.userMessageText?.(row.userMessageID ?? ""),
+            text,
             userWidth,
             options,
             USER_MESSAGE_TEXT_INSET,
           ) +
-          (options.userMessageHasInjectedPrompt?.(row.userMessageID ?? "") ? INJECTED_PROMPT_HEIGHT : 0),
+          (injected ? INJECTED_PROMPT_HEIGHT : 0),
         viewportHeight,
       )
     }

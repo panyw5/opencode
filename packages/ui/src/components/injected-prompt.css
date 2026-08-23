@@ -49,6 +49,9 @@
   font-size: var(--font-size-small);
   font-weight: var(--font-weight-medium);
   color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 [data-component="injected-prompt"] [data-slot="injected-prompt-summary"] {

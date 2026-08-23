@@ -7,6 +7,7 @@ export const INJECTION_KINDS = [
   "scheduled-injection",
   "project-task-injection",
   "background-task-injection",
+  "background-shell-injection",
 ] as const
 
 export type InjectionKind = (typeof INJECTION_KINDS)[number]
@@ -19,7 +20,13 @@ export function isInjectionKind(kind: unknown): kind is InjectionKind {
 
 export function isInjectionTextPart(part: Part): part is TextPart {
   if (part.type !== "text" || !part.synthetic) return false
-  return isInjectionKind(part.metadata?.kind)
+  return injectionKindFromPart(part) !== undefined
+}
+
+/** Includes legacy background-shell notifications written before metadata was added. */
+export function injectionKindFromPart(part: TextPart): InjectionKind | undefined {
+  if (isInjectionKind(part.metadata?.kind)) return part.metadata.kind
+  if (/^Background shell (?:completed|failed)(?::|$)/i.test(part.text)) return "background-shell-injection"
 }
 
 /** Filter message parts that belong in the injected-prompt UI. */
@@ -92,7 +99,7 @@ export type InjectionTitleTranslator = (key: string, params?: Record<string, str
  * Callers pass their i18n `t` function (ui package keys under `ui.message.injection.*`).
  */
 export function injectionTitleFromParts(parts: TextPart[], t: InjectionTitleTranslator): string {
-  const kinds = new Set(parts.map((part) => part.metadata?.kind).filter(isInjectionKind))
+  const kinds = new Set(parts.map(injectionKindFromPart).filter((kind): kind is InjectionKind => kind !== undefined))
 
   if (kinds.size === 1 && kinds.has("hook-injection")) {
     const hooks = uniqueMetadataStrings(parts, "hook-injection", "hook")
@@ -138,6 +145,37 @@ export function injectionTitleFromParts(parts: TextPart[], t: InjectionTitleTran
       return description
         ? t("ui.message.injection.backgroundTaskFailed", { description })
         : t("ui.message.injection.backgroundTaskFailedFallback")
+    }
+  }
+
+  if (kinds.size === 1 && kinds.has("background-shell-injection")) {
+    const shellParts = parts.filter((part) => injectionKindFromPart(part) === "background-shell-injection")
+    const descriptions = new Set<string>()
+    const states = new Set<string>()
+    for (const part of shellParts) {
+      const metadataDescription = part.metadata?.description
+      if (typeof metadataDescription === "string" && metadataDescription.trim()) {
+        descriptions.add(metadataDescription.trim())
+      } else {
+        const legacy = /^Background shell (?:completed|failed):\s*(.+)$/im.exec(part.text)?.[1]?.trim()
+        if (legacy) descriptions.add(legacy)
+      }
+      const metadataState = part.metadata?.state
+      if (metadataState === "completed" || metadataState === "error") states.add(metadataState)
+      else if (/^Background shell completed:/i.test(part.text)) states.add("completed")
+      else if (/^Background shell failed:/i.test(part.text)) states.add("error")
+    }
+    const description = descriptions.size === 1 ? [...descriptions][0] : undefined
+    const state = states.size === 1 ? [...states][0] : undefined
+    if (state === "completed") {
+      return description
+        ? t("ui.message.injection.backgroundShellCompleted", { description })
+        : t("ui.message.injection.backgroundShellCompletedFallback")
+    }
+    if (state === "error") {
+      return description
+        ? t("ui.message.injection.backgroundShellFailed", { description })
+        : t("ui.message.injection.backgroundShellFailedFallback")
     }
   }
 

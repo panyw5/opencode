@@ -6,9 +6,11 @@ import {
   injectionTextLength,
   injectionSummaryFromText,
   injectionTitleFromParts,
+  injectionKindFromPart,
   isInjectionPartsPending,
   joinInjectionText,
   selectInjectionParts,
+  type InjectionKind,
 } from "./injected-prompt-model"
 
 export {
@@ -162,8 +164,8 @@ export function InjectedPromptFromParts(props: InjectedPromptFromPartsProps) {
   const kind = createMemo(() => {
     const kinds = new Set(
       selected()
-        .map((part) => part.metadata?.kind)
-        .filter((value): value is string => typeof value === "string"),
+        .map(injectionKindFromPart)
+        .filter((value): value is InjectionKind => value !== undefined),
     )
     return kinds.size === 1 ? [...kinds][0] : kinds.size > 1 ? "mixed" : undefined
   })

@@ -88,6 +88,7 @@ import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from ".
 import { timelineRowCache } from "./row-cache"
 import { createSessionFind } from "./session-find"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
+import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -342,7 +343,11 @@ export function MessageTimeline(props: {
     return texts.length > 0 ? texts.join("\n").slice(0, 1000) : undefined
   }
   const userMessageHasInjectedPrompt = (messageID: string) =>
-    getMessageParts(messageID).some((part) => part.type === "text" && !!part.synthetic && !!part.text)
+    getMessageParts(messageID).some(
+      (part) =>
+        (part.type === "text" && !!part.synthetic && !!part.text && part.metadata?.kind === "skill-template") ||
+        isInjectionTextPart(part),
+    )
   const commentStripTexts = (messageID: string) =>
     getMessageParts(messageID).flatMap((part) => MessageComment.fromPart(part)?.comment ?? [])
 
@@ -741,6 +746,13 @@ export function MessageTimeline(props: {
         const key = elementRowKey.get(element)
         const handler = key ? rowHeightHandlers.get(key) : undefined
         return handler ? handler(fromEntry) : fromEntry
+      }
+      if (entry && lagging()) {
+        const key = elementRowKey.get(element) ?? "unknown"
+        timelineLag(
+          "measure-entry-unusable",
+          `index=${element.dataset.index ?? "none"} key=${key} border=${String(entry.borderBoxSize[0]?.blockSize ?? 0)} content=${String(entry.contentRect.height)}`,
+        )
       }
       // Synchronous call path (element registration on mount, no entry):
       // return the current virtual size so resizeItem sees delta 0 — no

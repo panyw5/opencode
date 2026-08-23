@@ -2262,6 +2262,11 @@ export const layer = Layer.effect(
             type: "text",
             synthetic: true,
             text: backgroundShellMessage(info),
+            metadata: {
+              kind: "background-shell-injection",
+              description: info.description ?? info.command,
+              state: info.status === "completed" ? "completed" : "error",
+            },
           },
         ],
       })

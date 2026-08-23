@@ -56,6 +56,7 @@ describe("injected-prompt-model", () => {
     expect(isInjectionKind("command-injection")).toBe(true)
     expect(isInjectionKind("project-task-injection")).toBe(true)
     expect(isInjectionKind("background-task-injection")).toBe(true)
+    expect(isInjectionKind("background-shell-injection")).toBe(true)
     expect(isInjectionKind("command-invocation")).toBe(false)
   })
 
@@ -87,11 +88,27 @@ describe("injected-prompt-model", () => {
     ]
 
     const selected = selectInjectionParts(parts)
-    expect(selected).toHaveLength(2)
-    expect(selected.map((part) => part.text)).toEqual(["搜索新闻", "Background task completed: inspect bug"])
+    expect(selected).toHaveLength(3)
+    expect(selected.map((part) => part.text)).toEqual([
+      "搜索新闻",
+      "Background task completed: inspect bug",
+      "Background shell completed",
+    ])
     expect(isInjectionTextPart(parts[1]!)).toBe(true)
     expect(isInjectionTextPart(parts[2]!)).toBe(true)
-    expect(isInjectionTextPart(parts[3]!)).toBe(false)
+    expect(isInjectionTextPart(parts[3]!)).toBe(true)
+  })
+
+  test("titles legacy background shell notifications as visible information", () => {
+    const parts = selectInjectionParts([
+      text({
+        text: "Background shell completed: Start backend server\nbackground_shell_id: job_1",
+        synthetic: true,
+      }),
+    ])
+    expect(injectionTitleFromParts(parts, t)).toBe(
+      "ui.message.injection.backgroundShellCompleted:description=Start backend server",
+    )
   })
 
   test("scheduledInjectionPart builds the payload shape", () => {
