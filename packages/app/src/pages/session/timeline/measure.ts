@@ -296,7 +296,10 @@ export function shouldCommitVirtualRowHeight(input: {
   live: boolean
   measured?: boolean
   markdownPending?: boolean
+  /** The live tool deliberately unmounted its expanded details. */
+  intentionalCollapse?: boolean
 }) {
+  if (input.intentionalCollapse) return true
   if (input.markdownPending && input.next + 0.5 < input.previous) return false
   if (input.live && input.measured === false) return true
   if (!input.live) return true

@@ -1458,6 +1458,7 @@ export function MessageTimeline(props: {
   function MountedVirtualTimelineRow(input: { rowKey: string; item: Accessor<VirtualItem> }) {
     let element: HTMLDivElement | undefined
     let markdownObserver: MutationObserver | undefined
+    let liveToolDetailsMounted = false
     const initialItem = input.item()
     const initialRow = timelineRowByKey().get(input.rowKey)
     const [contentHeight, setContentHeight] = createSignal(initialItem.size)
@@ -1522,6 +1523,15 @@ export function MessageTimeline(props: {
       const virtual = item().size
       const live = liveMeasured()
       const pending = markdownPending()
+      const toolDetailsMounted = (() => {
+        const currentRow = row()
+        if (!currentRow || currentRow._tag !== "AssistantPart" || currentRow.group.type !== "part") return false
+        const currentPart = getMessagePart(currentRow.group.ref.messageID, currentRow.group.ref.partID)
+        if (currentPart?.type !== "tool") return false
+        return !!element?.querySelector('[data-component="collapsible"][data-detail-mounted="true"]')
+      })()
+      const intentionalCollapse = live && liveToolDetailsMounted && !toolDetailsMounted
+      liveToolDetailsMounted = toolDetailsMounted
       const measured = virtualizer.itemSizeCache.has(item().key)
       const root = listRoot()
       if (lagging() && Math.abs(raw - virtual) >= 1_000) {
@@ -1535,12 +1545,21 @@ export function MessageTimeline(props: {
       // near-bottom clamp queue. A deferred value is eventually committed
       // directly by handleScroll, so enqueuing an invalid empty-Markdown size
       // here would bypass this guard on the later pass.
-      if (!shouldCommitVirtualRowHeight({ next: raw, previous: virtual, live, measured, markdownPending: pending })) {
+      if (
+        !shouldCommitVirtualRowHeight({
+          next: raw,
+          previous: virtual,
+          live,
+          measured,
+          markdownPending: pending,
+          intentionalCollapse,
+        })
+      ) {
         setContentHeight(pending ? raw : Math.max(raw, contentHeight()))
         if (lagging()) {
           timelineLag(
             "measure-rejected",
-            `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} live=${String(live)} measured=${String(measured)} markdownPending=${String(pending)} visibility=${rowVisibility()} top=${Math.round(root?.scrollTop ?? 0)}`,
+            `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} live=${String(live)} measured=${String(measured)} markdownPending=${String(pending)} intentionalCollapse=${String(intentionalCollapse)} visibility=${rowVisibility()} top=${Math.round(root?.scrollTop ?? 0)}`,
           )
         }
         if (lagging()) {
@@ -1625,7 +1644,12 @@ export function MessageTimeline(props: {
           subtree: true,
           attributes: true,
           attributeOldValue: true,
-          attributeFilter: ["data-markdown-stage", "data-markdown-rendered-stage"],
+          attributeFilter: [
+            "data-markdown-stage",
+            "data-markdown-rendered-stage",
+            "data-expanded",
+            "data-detail-mounted",
+          ],
         })
       }
     })
