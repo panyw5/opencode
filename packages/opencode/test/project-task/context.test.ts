@@ -104,8 +104,8 @@ describe("formatProjectTaskFullContext", () => {
     const text = formatProjectTaskFullContext(makeDetail())
     expect(text).toContain("project_task_list")
     expect(text).toContain("Task ID hygiene")
-    expect(text).toContain("exact `id` from that tool's return value")
-    expect(text).toContain("NEVER retype")
+    expect(text).toContain("exact `id` from return value")
+    expect(text).toContain("Always use the returned `id`")
   })
 
   test("forbids auto-marking project tasks done without user approval", () => {

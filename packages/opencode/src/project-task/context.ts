@@ -197,10 +197,9 @@ function todoKey(t: { sessionID: string; content: string; status: string }) {
 function projectTaskIdHygieneLines(): string[] {
   return [
     "CRITICAL — Task ID hygiene (do this every time you target a task):",
-    "1. Call `project_task_list` first and take the exact `id` from that tool's return value.",
-    "2. Use only that returned `id` for `project_task_get` / `project_task_update` / `project_task_mount`.",
-    "3. NEVER retype, guess, or hand-copy a taskID from chat, memory, or this brief — IDs are easy to mistype.",
-    "4. Matching by title alone is not enough: resolve title → id via `project_task_list` (or the list/get/create/mount tool result you just received).",
+    "1. Call `project_task_list`, take the exact `id` from return value.",
+    "2. Always use the returned `id` for `project_task_get` / `project_task_update` / `project_task_mount`.",
+    "3. Use `project_task_list` to locate task with a title.",
   ]
 }
 
@@ -219,9 +218,8 @@ function audienceIntroLines(audience: ProjectTaskInjectAudience): string[] {
   if (audience === "subagent") {
     return [
       "You are a subagent working under a parent session that mounted this project-level task.",
-      "Focus on the delegated work for this task. Prefer reading task workspace files below when you need goals or notes.",
-      "Do not re-mount or unmount the project task unless the user (via the parent) explicitly requires it.",
-      "Do not spawn further subagents solely to re-load this task context — it is already injected here.",
+      "Focus on the delegated work for this task.",
+      "Do not spawn further subagents, unless explicitly requested.",
     ]
   }
   return [
