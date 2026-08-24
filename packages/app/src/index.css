@@ -176,7 +176,7 @@
   }
 
   [data-component="session-tab-permission-capsule"] {
-    --session-tab-permission-shift: 6px;
+    --session-tab-permission-shift: 8px;
 
     border-color: color-mix(in srgb, var(--border-warning-base) 72%, var(--border-weak-base));
     background-color: light-dark(
@@ -189,12 +189,18 @@
     backdrop-filter: blur(18px) saturate(135%);
     -webkit-backdrop-filter: blur(18px) saturate(135%);
     transform-origin: top center;
-    animation: session-tab-permission-enter 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    opacity: 0;
+    transform: translateY(calc(-1 * var(--session-tab-permission-shift))) scale(0.98);
+    will-change: opacity, transform;
   }
 
-  [data-component="session-tab-permission-capsule"][data-state="closing"] {
+  [data-component="session-tab-permission-capsule"][data-positioned="true"][data-state="open"] {
+    animation: session-tab-permission-enter 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  [data-component="session-tab-permission-capsule"][data-positioned="true"][data-state="closing"] {
     pointer-events: none;
-    animation: session-tab-permission-exit 140ms ease-in both;
+    animation: session-tab-permission-exit 160ms ease-in both;
   }
 
   @keyframes session-tab-permission-enter {
@@ -220,17 +226,16 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    [data-component="session-tab-permission-capsule"],
-    [data-component="session-tab-permission-capsule"][data-state="closing"] {
-      --session-tab-permission-shift: 3px;
-    }
-
     [data-component="session-tab-permission-capsule"] {
-      animation-duration: 120ms;
+      --session-tab-permission-shift: 2px;
     }
 
-    [data-component="session-tab-permission-capsule"][data-state="closing"] {
-      animation-duration: 100ms;
+    [data-component="session-tab-permission-capsule"][data-positioned="true"][data-state="open"] {
+      animation-duration: 160ms;
+    }
+
+    [data-component="session-tab-permission-capsule"][data-positioned="true"][data-state="closing"] {
+      animation-duration: 140ms;
     }
   }
 

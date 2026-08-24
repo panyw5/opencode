@@ -50,6 +50,8 @@ import {
 } from "./session-tab-groups"
 import { pickWarmDirectories, shouldFetchTabMeta } from "./session-tab-warm"
 
+const SESSION_TAB_PERMISSION_EXIT_MS = 160
+
 /**
  * Global session tabs bar. One tab per open session, across projects.
  * The ordered tab list is persisted in the Layout context (`sessionBar`);
@@ -789,7 +791,7 @@ function SessionTab(props: {
     permissionCloseTimer = window.setTimeout(() => {
       permissionCloseTimer = undefined
       setPermissionCapsule({ request: undefined, closing: false })
-    }, 140)
+    }, SESSION_TAB_PERMISSION_EXIT_MS)
   })
   onCleanup(() => {
     if (permissionCloseTimer !== undefined) window.clearTimeout(permissionCloseTimer)
@@ -1105,6 +1107,7 @@ function SessionTabPermissionCapsule(props: {
   closing: boolean
   onView: () => void
 }) {
+  const mountedAt = performance.now()
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const language = useLanguage()
@@ -1125,7 +1128,7 @@ function SessionTabPermissionCapsule(props: {
       if (!capsuleEl) return
       const style = getComputedStyle(capsuleEl)
       console.debug(
-        `[session-tab-permission] animation style request=${props.request.id} state=${state} name=${style.animationName} duration=${style.animationDuration} opacity=${style.opacity} transform=${style.transform} reduced=${String(window.matchMedia("(prefers-reduced-motion: reduce)").matches)}`,
+        `[session-tab-permission] animation style request=${props.request.id} state=${state} elapsed=${Math.round(performance.now() - mountedAt)}ms name=${style.animationName} duration=${style.animationDuration} visibility=${style.visibility} opacity=${style.opacity} transform=${style.transform} reduced=${String(window.matchMedia("(prefers-reduced-motion: reduce)").matches)}`,
       )
     })
   })
@@ -1143,7 +1146,7 @@ function SessionTabPermissionCapsule(props: {
     const top = rect.bottom + 6 + stackIndex * (capsuleEl.offsetHeight + 4)
     setState({ left, top, positioned: true })
     console.debug(
-      `[session-tab-permission] positioned request=${props.request.id} session=${props.request.sessionID} stack=${stackIndex} left=${Math.round(left)} top=${Math.round(top)} width=${width}`,
+      `[session-tab-permission] positioned request=${props.request.id} session=${props.request.sessionID} elapsed=${Math.round(performance.now() - mountedAt)}ms stack=${stackIndex} left=${Math.round(left)} top=${Math.round(top)} width=${width}`,
     )
   }
 
@@ -1242,6 +1245,7 @@ function SessionTabPermissionCapsule(props: {
         data-component="session-tab-permission-capsule"
         data-session-id={props.request.sessionID}
         data-state={props.closing ? "closing" : "open"}
+        data-positioned={state.positioned ? "true" : "false"}
         role="group"
         aria-label={language.t("notification.permission.title")}
         class="fixed z-[60] flex items-center gap-1.5 rounded-full border px-2 py-1 text-text-strong"
@@ -1252,7 +1256,7 @@ function SessionTabPermissionCapsule(props: {
         }}
         onAnimationStart={(event: AnimationEvent) => {
           console.debug(
-            `[session-tab-permission] animation start request=${props.request.id} state=${props.closing ? "closing" : "open"} name=${event.animationName}`,
+            `[session-tab-permission] animation start request=${props.request.id} state=${props.closing ? "closing" : "open"} elapsed=${Math.round(performance.now() - mountedAt)}ms visible=${String(getComputedStyle(event.currentTarget as Element).visibility === "visible")} name=${event.animationName}`,
           )
         }}
         onAnimationEnd={(event: AnimationEvent) => {

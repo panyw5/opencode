@@ -223,6 +223,7 @@ test("session tab permission capsule can view, allow once, and reject", async ({
         await expect(capsule, permissionLogs.join("\n")).toBeVisible()
         await expect(capsule).toHaveAttribute("data-session-id", requested.id)
         await expect(capsule).toHaveAttribute("data-state", "open")
+        await expect(capsule).toHaveAttribute("data-positioned", "true")
         await expect(capsule.getByRole("button", { name: /allow once/i })).toBeVisible()
         await expect(capsule.getByRole("button", { name: /deny/i })).toBeVisible()
         await expect
@@ -231,7 +232,7 @@ test("session tab permission capsule can view, allow once, and reject", async ({
         await page.emulateMedia({ reducedMotion: "reduce" })
         await expect
           .poll(() => capsule.evaluate((element) => getComputedStyle(element).animationDuration))
-          .toBe("0.12s")
+          .toBe("0.16s")
         for (const scheme of ["light", "dark"] as const) {
           const colors = await capsule.evaluate((element, colorScheme) => {
             document.documentElement.dataset.colorScheme = colorScheme
