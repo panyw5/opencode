@@ -78,6 +78,7 @@ import {
   ScheduledTaskRunNowTool,
   ScheduledTaskUpdateTool,
 } from "./scheduled-task"
+import { MathWorkerStartTool, MathWorkerStatusTool, MathWorkerStopTool } from "./math-worker"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -161,6 +162,9 @@ export const layer: Layer.Layer<
     const scheduledTaskDelete = yield* ScheduledTaskDeleteTool
     const scheduledTaskRunNow = yield* ScheduledTaskRunNowTool
     const scheduledTaskRuns = yield* ScheduledTaskRunsTool
+    const mathWorkerStart = yield* MathWorkerStartTool
+    const mathWorkerStatus = yield* MathWorkerStatusTool
+    const mathWorkerStop = yield* MathWorkerStopTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -293,6 +297,9 @@ export const layer: Layer.Layer<
           scheduled_task_delete: Tool.init(scheduledTaskDelete),
           scheduled_task_run_now: Tool.init(scheduledTaskRunNow),
           scheduled_task_runs: Tool.init(scheduledTaskRuns),
+          math_worker_start: Tool.init(mathWorkerStart),
+          math_worker_status: Tool.init(mathWorkerStatus),
+          math_worker_stop: Tool.init(mathWorkerStop),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
@@ -333,6 +340,9 @@ export const layer: Layer.Layer<
             tool.scheduled_task_delete,
             tool.scheduled_task_run_now,
             tool.scheduled_task_runs,
+            tool.math_worker_start,
+            tool.math_worker_status,
+            tool.math_worker_stop,
             tool.search,
             ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
             tool.codex_consult,

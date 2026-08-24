@@ -1,0 +1,1 @@
+Start an OS-detached math-worker child session. The worker is a separate process group and keeps running if Desktop/sidecar exits. Returns { sessionID, pid, state } immediately — do not wait for it. Speculative work still uses the task tool; this is the evidence lane only.

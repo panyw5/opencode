@@ -726,6 +726,7 @@ it.instance(
       agent: {
         build: { disable: true },
         plan: { disable: true },
+        "math-orchestrator": { disable: true },
       },
     },
   },

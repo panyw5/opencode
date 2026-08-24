@@ -45,6 +45,7 @@ function normalize(text: string): string {
 const TOP_LEVEL = [
   "acp",
   "mcp",
+  "math",
   "run",
   "debug",
   "providers", // aliased to `auth`
@@ -74,6 +75,11 @@ const SUBCOMMANDS = [
   ["mcp", "add"],
   ["mcp", "auth"],
   ["mcp", "logout"],
+  ["math", "mcp"],
+  ["math", "worker"],
+  ["math", "start"],
+  ["math", "status"],
+  ["math", "stop"],
   ["providers", "list"],
   ["providers", "login"],
   ["providers", "logout"],

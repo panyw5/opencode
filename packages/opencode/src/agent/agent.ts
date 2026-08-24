@@ -115,6 +115,9 @@ export const layer = Layer.effect(
           plan_exit: "deny",
           repo_clone: "deny",
           repo_overview: "deny",
+          math_worker_start: "deny",
+          math_worker_status: "deny",
+          math_worker_stop: "deny",
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",
@@ -281,6 +284,52 @@ export const layer = Layer.effect(
               user,
             ),
             prompt: PROMPT_SUMMARY,
+          },
+          "math-orchestrator": {
+            name: "math-orchestrator",
+            description:
+              "Math-mode orchestrator. Schedules detached math-workers and writes global memory. Cannot submit facts. Speculative work uses task; evidence work uses math_worker_start.",
+            options: {},
+            native: true,
+            mode: "primary",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                bash: "deny",
+                math_worker_start: "allow",
+                math_worker_status: "allow",
+                math_worker_stop: "allow",
+              }),
+              user,
+            ),
+          },
+          "math-worker": {
+            name: "math-worker",
+            description:
+              "Detached evidence-lane worker. Submits facts through the verifier gate. Cannot spawn nested tasks or run code.",
+            options: {},
+            native: true,
+            hidden: true,
+            mode: "subagent",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                grep: "allow",
+                glob: "allow",
+                list: "allow",
+                read: "allow",
+                skill: "allow",
+                webfetch: "allow",
+                websearch: "allow",
+                task: "deny",
+                bash: "deny",
+                math_worker_start: "deny",
+                math_worker_status: "deny",
+                math_worker_stop: "deny",
+              }),
+              user,
+            ),
           },
         }
 

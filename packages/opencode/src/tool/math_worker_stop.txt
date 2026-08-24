@@ -1,0 +1,1 @@
+Stop a detached math-worker. Default is graceful: write a .stop file so the worker exits at the next round boundary. force=true kills the process group.

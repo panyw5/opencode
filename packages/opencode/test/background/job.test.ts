@@ -1,6 +1,8 @@
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import { BackgroundJob } from "@/background/job"
+import { disposeInstance } from "@/effect/instance-registry"
+import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
 const it = testEffect(BackgroundJob.defaultLayer)
@@ -200,6 +202,31 @@ describe("background.job", () => {
 
       expect(promoted.metadata?.background).toBe(true)
       yield* Deferred.succeed(latch, undefined)
+    }),
+  )
+
+  // Wave 0 math-mode contract: sidecar/Instance dispose interrupts BackgroundJob
+  // fibers. Ordinary task({background:true}) lives in this scope and must die
+  // with the sidecar. Math workers (Wave 2) must not.
+  it.instance("cancels running jobs when instance disposers run", () =>
+    Effect.gen(function* () {
+      const jobs = yield* BackgroundJob.Service
+      const started = yield* Deferred.make<void>()
+      const interrupted = yield* Deferred.make<void>()
+      const job = yield* jobs.start({
+        type: "test",
+        run: Effect.gen(function* () {
+          yield* Deferred.succeed(started, undefined)
+          yield* Effect.never
+        }).pipe(Effect.ensuring(Deferred.succeed(interrupted, undefined))),
+      })
+
+      yield* Deferred.await(started)
+      expect(job.status).toBe("running")
+
+      const test = yield* TestInstance
+      yield* Effect.promise(() => disposeInstance(test.directory))
+      yield* Deferred.await(interrupted).pipe(Effect.timeout("2 seconds"))
     }),
   )
 })
