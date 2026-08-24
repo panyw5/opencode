@@ -111,6 +111,124 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBeUndefined()
   })
 
+  test("should use snake_case prompt_cache_key for OpenRouter", () => {
+    const model = {
+      ...mockModel,
+      providerID: "openrouter",
+      api: {
+        id: "anthropic/claude-sonnet-4",
+        url: "https://openrouter.ai/api/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+    }
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(result.prompt_cache_key).toBe(sessionID)
+    expect(result.promptCacheKey).toBeUndefined()
+  })
+
+  test("should set promptCacheKey for Venice", () => {
+    const model = {
+      ...mockModel,
+      providerID: "venice",
+      api: {
+        id: "venice-uncensored",
+        url: "https://api.venice.ai/api/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+    }
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(result.promptCacheKey).toBe(sessionID)
+    expect(result.prompt_cache_key).toBeUndefined()
+  })
+
+  test("should scope OpenCode GPT-5 cache keys to the session", () => {
+    const model = {
+      ...mockModel,
+      providerID: "opencode",
+      api: {
+        id: "gpt-5.2",
+        url: "https://opencode.ai/zen/v1",
+        npm: "@ai-sdk/openai-compatible",
+      },
+    }
+    const first = ProviderTransform.options({ model, sessionID: "session-a", providerOptions: {} })
+    const second = ProviderTransform.options({ model, sessionID: "session-b", providerOptions: {} })
+    expect(first.promptCacheKey).toBe("session-a")
+    expect(second.promptCacheKey).toBe("session-b")
+    expect(first.promptCacheKey).not.toBe(second.promptCacheKey)
+    expect(first.prompt_cache_key).toBeUndefined()
+    expect(second.prompt_cache_key).toBeUndefined()
+  })
+
+  test("snapshots normalized provider option contracts without dynamic identifiers", () => {
+    const normalize = (result: ReturnType<typeof ProviderTransform.options>) => ({
+      ...(result.store !== undefined ? { store: result.store } : {}),
+      ...(result.promptCacheKey !== undefined ? { promptCacheKey: "<session>" } : {}),
+      ...(result.prompt_cache_key !== undefined ? { prompt_cache_key: "<session>" } : {}),
+      ...(result.reasoningEffort !== undefined ? { reasoningEffort: result.reasoningEffort } : {}),
+      ...(result.reasoningSummary !== undefined ? { reasoningSummary: result.reasoningSummary } : {}),
+      ...(result.textVerbosity !== undefined ? { textVerbosity: result.textVerbosity } : {}),
+      ...(result.thinking !== undefined ? { thinking: result.thinking } : {}),
+      ...(result.thinkingConfig !== undefined ? { thinkingConfig: result.thinkingConfig } : {}),
+    })
+    const options = (model: typeof mockModel) =>
+      normalize(ProviderTransform.options({ model, sessionID, providerOptions: {} }))
+
+    const matrix = {
+      openaiResponses: options({
+        ...mockModel,
+        providerID: "openai",
+        api: { ...mockModel.api, id: "gpt-5.2", npm: "@ai-sdk/openai" },
+      }),
+      openaiCompatible: options({
+        ...mockModel,
+        providerID: "compatible",
+        api: { ...mockModel.api, id: "gpt-5.2", npm: "@ai-sdk/openai-compatible" },
+      }),
+      anthropicKimi: options({
+        ...mockModel,
+        providerID: "moonshot",
+        api: { ...mockModel.api, id: "kimi-k2.5", npm: "@ai-sdk/anthropic" },
+        limit: { context: 200000, output: 10000 },
+      }),
+      googleGemini: options({
+        ...mockModel,
+        providerID: "google",
+        api: { ...mockModel.api, id: "gemini-3-pro", npm: "@ai-sdk/google" },
+        capabilities: { ...mockModel.capabilities, reasoning: true },
+      }),
+    }
+
+    expect(matrix).toMatchInlineSnapshot(`
+      {
+        "anthropicKimi": {
+          "thinking": {
+            "budgetTokens": 4999,
+            "type": "enabled",
+          },
+        },
+        "googleGemini": {
+          "thinkingConfig": {
+            "includeThoughts": true,
+            "thinkingLevel": "high",
+          },
+        },
+        "openaiCompatible": {
+          "reasoningEffort": "medium",
+          "reasoningSummary": "auto",
+          "textVerbosity": "low",
+        },
+        "openaiResponses": {
+          "promptCacheKey": "<session>",
+          "reasoningEffort": "medium",
+          "reasoningSummary": "auto",
+          "store": false,
+          "textVerbosity": "low",
+        },
+      }
+    `)
+  })
+
   test("should set store=false for openai provider", () => {
     const openaiModel = {
       ...mockModel,
