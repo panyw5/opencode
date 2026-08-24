@@ -19,6 +19,13 @@ beforeEach(() => {
 })
 
 describe("theme preload", () => {
+  test("defaults to the Claude light theme on first launch", () => {
+    run()
+
+    expect(document.documentElement.dataset.theme).toBe("claude")
+    expect(document.documentElement.dataset.colorScheme).toBe("light")
+  })
+
   test("migrates legacy oc-1 to oc-2 before mount", () => {
     localStorage.setItem("opencode-theme-id", "oc-1")
     localStorage.setItem("opencode-theme-css-light", "--background-base:#fff;")
