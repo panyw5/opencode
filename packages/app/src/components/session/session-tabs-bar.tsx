@@ -14,8 +14,11 @@ import {
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { Button } from "@opencode-ai/ui/button"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 
@@ -732,6 +735,7 @@ function SessionTab(props: {
   const language = useLanguage()
   const notification = useNotification()
   const permission = usePermission()
+  const dialog = useDialog()
   const [state, setState] = createStore({ generatingTitle: false })
   const [child] = globalSync.child(props.tab.directory, { bootstrap: false })
   let triggerEl: HTMLElement | undefined
@@ -923,6 +927,17 @@ function SessionTab(props: {
       })
   }
 
+  const editTitle = () => {
+    console.debug(`[session-tab] edit title open id=${props.tab.id} dir=${props.tab.directory}`)
+    dialog.show(() => (
+      <DialogEditSessionTitle
+        directory={props.tab.directory}
+        sessionID={props.tab.id}
+        initialTitle={title()}
+      />
+    ))
+  }
+
   return (
     <ContextMenu modal={false} onOpenChange={props.onMenuOpenChange}>
       <ContextMenu.Trigger
@@ -1055,6 +1070,18 @@ function SessionTab(props: {
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{language.t("session.generateTitle")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="session-tab-edit-title"
+            data-session={base64Encode(props.tab.id)}
+            onSelect={editTitle}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="edit" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.editTitle")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
           <ContextMenu.Separator />
           <ContextMenu.Item
             data-action="session-tab-close-descendants"
@@ -1097,6 +1124,99 @@ function SessionTab(props: {
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu>
+  )
+}
+
+function DialogEditSessionTitle(props: { directory: string; sessionID: string; initialTitle: string }) {
+  const dialog = useDialog()
+  const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
+  const language = useLanguage()
+  const [state, setState] = createStore({ title: props.initialTitle, saving: false })
+
+  const save = () => {
+    if (state.saving) return
+    const title = state.title.trim()
+    if (!title) return
+    const domain = domainFromDirectory(props.directory)
+    setState("saving", true)
+    console.debug(`[session-tab] edit title start id=${props.sessionID} dir=${props.directory} domain=${domain}`)
+    const [, setSessionStore] = globalSync.child(props.directory, { bootstrap: false })
+    void globalSDK
+      .forDomain(domain)
+      .client.session.update(
+        {
+          sessionID: props.sessionID,
+          directory: props.directory,
+          title,
+        },
+        { throwOnError: true },
+      )
+      .then(
+        () => {
+          setSessionStore("session", (list) =>
+            list.map((item) => (item.id === props.sessionID ? { ...item, title } : item)),
+          )
+          dialog.close()
+          console.debug(`[session-tab] edit title saved id=${props.sessionID} title=${title}`)
+          showToast({
+            variant: "success",
+            icon: "circle-check",
+            title: language.t("toast.session.updateTitle.success.title"),
+            description: title,
+          })
+        },
+        (err: unknown) => {
+          const message =
+            err instanceof Error
+              ? err.message
+              : typeof err === "object" && err && "message" in err
+                ? String((err as { message: unknown }).message)
+                : String(err)
+          console.debug(`[session-tab] edit title failed id=${props.sessionID} err=${message}`)
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+            description: message,
+          })
+        },
+      )
+      .finally(() => {
+        setState("saving", false)
+        console.debug(`[session-tab] edit title settled id=${props.sessionID}`)
+      })
+  }
+
+  const handleSubmit = (event: SubmitEvent) => {
+    event.preventDefault()
+    save()
+  }
+
+  return (
+    <Dialog title={language.t("session.editTitle")} fit class="w-full max-w-[480px] mx-auto">
+      <form onSubmit={handleSubmit} class="flex flex-col gap-6 p-6 pt-0">
+        <TextField
+          autofocus
+          type="text"
+          placeholder={language.t("session.editTitle.placeholder")}
+          value={state.title}
+          onChange={(v) => setState("title", v)}
+          onKeyDown={(event: KeyboardEvent) => {
+            if (event.key !== "Enter") return
+            event.preventDefault()
+            save()
+          }}
+        />
+        <div class="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button type="submit" variant="primary" size="large" disabled={state.saving || !state.title.trim()}>
+            {state.saving ? language.t("common.saving") : language.t("common.save")}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   )
 }
 

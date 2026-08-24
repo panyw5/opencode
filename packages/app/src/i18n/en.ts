@@ -675,6 +675,7 @@ export const dict = {
 
   "toast.session.generateTitle.success.title": "Title generated",
   "toast.session.generateTitle.failed.title": "Failed to generate title",
+  "toast.session.updateTitle.success.title": "Title updated",
 
   "toast.session.listFailed.title": "Failed to load sessions for {{project}}",
   "toast.session.listFailed.openclaw.title": "Failed to load OpenClaw sessions",
@@ -783,6 +784,8 @@ export const dict = {
   "session.review.noSnapshot": "Snapshot tracking is disabled in config, so session changes are unavailable",
   "session.review.noChanges": "No changes",
   "session.generateTitle": "Generate title",
+  "session.editTitle": "Edit title",
+  "session.editTitle.placeholder": "Enter a title for this session",
   "session.review.noUncommittedChanges": "No uncommitted changes yet",
   "session.review.noBranchChanges": "No branch changes yet",
 
