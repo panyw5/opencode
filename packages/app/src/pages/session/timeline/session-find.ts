@@ -44,13 +44,24 @@ export function createSessionFind(opts: {
   rowByKey: () => Map<string, TimelineRow.TimelineRow>
   getMessageParts: (messageID: string) => Part[]
   sessionID: () => string | undefined
+  onNavigate: () => void
 }): SessionFindController {
   let input: HTMLInputElement | undefined
   let scrollFrame: number | undefined
   let highlightFrame: number | undefined
   let mountedRowsFrame: number | undefined
   let scrollRetries = 0
-  const MAX_SCROLL_RETRIES = 20
+  const MAX_SCROLL_RETRIES = 60
+
+  const debugFind = (message: string) => {
+    const line = `[session-find] ${message}`
+    console.debug(line)
+    if (typeof window === "undefined") return
+    const debugWindow = window as Window & { __opencodeSessionFindLogs?: string[] }
+    const logs = (debugWindow.__opencodeSessionFindLogs ??= [])
+    logs.push(line)
+    if (logs.length > 200) logs.splice(0, logs.length - 200)
+  }
 
   const [state, setState] = createStore({
     open: false,
@@ -120,6 +131,10 @@ export function createSessionFind(opts: {
         at = textLower.indexOf(queryLower, at + queryLower.length)
       }
     }
+
+    debugFind(
+      `search sid=${sid} queryLength=${String(query.length)} rows=${String(rows.length)} refs=${String(refs.length)} matches=${String(allMatches.length)} first=${allMatches[0]?.rowIndex ?? "none"} last=${allMatches.at(-1)?.rowIndex ?? "none"}`,
+    )
 
     return allMatches
   }
@@ -230,12 +245,27 @@ export function createSessionFind(opts: {
     const listRoot = opts.listRoot()
     if (!listRoot) return
 
-    opts.virtualizer.scrollToIndex(match.rowIndex, { align: "center" })
+    const resolveRowIndex = () => opts.timelineRows().findIndex((row) => TimelineRow.key(row) === match.rowKey)
+    const currentRowIndex = resolveRowIndex()
+    const beforeItems = opts.virtualizer.getVirtualItems()
+    debugFind(
+      `scroll-start key=${match.rowKey} storedIndex=${String(match.rowIndex)} currentIndex=${String(currentRowIndex)} rowKnown=${String(opts.rowByKey().has(match.rowKey))} mounted=${String(!!listRoot.querySelector(`[data-timeline-key="${CSS.escape(match.rowKey)}"]`))} virtual=${String(beforeItems[0]?.index ?? "none")}-${String(beforeItems.at(-1)?.index ?? "none")} scrollTop=${String(Math.round(listRoot.scrollTop))} total=${String(Math.round(opts.virtualizer.getTotalSize()))}`,
+    )
 
-    // After scroll, wait for mount then apply highlights
-    scrollRetries = 0
     if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
+    scrollRetries = 0
+    if (currentRowIndex < 0) {
+      debugFind(`scroll-missing key=${match.rowKey}`)
+      return
+    }
 
+    // A find navigation intentionally leaves bottom-follow mode. Without this,
+    // measuring the newly mounted target can immediately pin the list back to
+    // the tail before its highlight is painted.
+    opts.onNavigate()
+    opts.virtualizer.scrollToIndex(currentRowIndex, { align: "center" })
+
+    // After scroll, wait for mount then apply highlights.
     const tryApply = () => {
       scrollFrame = undefined
 
@@ -243,7 +273,15 @@ export function createSessionFind(opts: {
       const rowEl = listRoot.querySelector(`[data-timeline-key="${CSS.escape(match.rowKey)}"]`)
       if (!rowEl) {
         scrollRetries++
-        if (scrollRetries < MAX_SCROLL_RETRIES) {
+        const items = opts.virtualizer.getVirtualItems()
+        const latestIndex = resolveRowIndex()
+        debugFind(
+          `scroll-wait retry=${String(scrollRetries)} key=${match.rowKey} storedIndex=${String(match.rowIndex)} currentIndex=${String(latestIndex)} virtual=${String(items[0]?.index ?? "none")}-${String(items.at(-1)?.index ?? "none")} scrollTop=${String(Math.round(listRoot.scrollTop))}`,
+        )
+        if (latestIndex >= 0 && scrollRetries < MAX_SCROLL_RETRIES) {
+          // Row estimates can shift as distant content mounts. Re-issue the
+          // key-resolved target instead of waiting on a stale one-shot offset.
+          opts.virtualizer.scrollToIndex(latestIndex, { align: "center" })
           scrollFrame = requestAnimationFrame(tryApply)
         }
         return
@@ -251,6 +289,9 @@ export function createSessionFind(opts: {
 
       // Apply highlights
       applyHighlights(match)
+      debugFind(
+        `scroll-mounted retry=${String(scrollRetries)} key=${match.rowKey} index=${String(match.rowIndex)} scrollTop=${String(Math.round(listRoot.scrollTop))}`,
+      )
 
       // Scroll the row into view if needed
       const rowRect = rowEl.getBoundingClientRect()

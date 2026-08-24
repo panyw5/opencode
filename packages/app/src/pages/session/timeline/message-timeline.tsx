@@ -241,6 +241,7 @@ export function MessageTimeline(props: {
   onMarkScrollGesture: (target?: EventTarget | null) => void
   hasScrollGesture: () => boolean
   onUserScroll: () => void
+  onFindNavigate: () => void
   onHistoryScroll: (scrollTop: number) => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
@@ -928,6 +929,19 @@ export function MessageTimeline(props: {
   }
 
   // --- Session find ---
+  const prepareFindNavigation = () => {
+    console.debug(
+      `[timeline] find-navigate sid=${sessionID() ?? "none"} top=${String(Math.round(listRoot()?.scrollTop ?? 0))} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"} prepend=${String(prependLoading)} bottom=${String(props.shouldAnchorBottom())}`,
+    )
+    // Find navigation supersedes any viewport/bottom anchor. Keeping an anchor
+    // captured at the old window would restore that window when the target row
+    // is measured, immediately undoing scrollToIndex.
+    viewportAnchor = undefined
+    readingAnchor = undefined
+    programmaticScrollDelta = 0
+    clearPrependAnchor()
+    props.onFindNavigate()
+  }
   const sessionFind = createSessionFind({
     virtualizer,
     listRoot,
@@ -935,6 +949,11 @@ export function MessageTimeline(props: {
     rowByKey: timelineRowByKey,
     getMessageParts,
     sessionID,
+    onNavigate: prepareFindNavigation,
+  })
+  createEffect(() => {
+    virtualRowKeys()
+    sessionFind.refreshHighlights()
   })
 
   if (lagDebug) {
@@ -970,6 +989,9 @@ export function MessageTimeline(props: {
   createEffect(() => {
     props.setRevealMessage?.((id) => {
       const index = messageRowIndex().get(id)
+      console.debug(
+        `[timeline] reveal-message sid=${sessionID() ?? "none"} id=${id} index=${index === undefined ? "none" : String(index)} rows=${String(timelineRows().length)} mounted=${String(virtualizer.getVirtualItems().length)} total=${String(Math.round(virtualizer.getTotalSize()))}`,
+      )
       if (index !== undefined) virtualizer.scrollToIndex(index, { align: "center" })
     })
     props.setScrollToEnd?.(() => virtualizer.scrollToEnd())

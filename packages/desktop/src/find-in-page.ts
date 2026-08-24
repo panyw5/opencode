@@ -14,7 +14,27 @@ export function findInPage(query: string, dir?: 1 | -1) {
   const q = query.trim()
   if (!q) return
 
-  const found = (window as WindowFind).find?.(q, false, dir === -1, true, false, false, false)
+  const ignoredInputs = Array.from(
+    document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+      "[data-page-find-ignore] input, [data-page-find-ignore] textarea",
+    ),
+  ).map((element) => ({ element, value: element.value }))
+
+  // window.find() includes form-control values. Temporarily blank only the
+  // find UI's own controls so the query cannot become one of its own matches.
+  for (const item of ignoredInputs) item.element.value = ""
+  console.debug(
+    `[page-find] run direction=${dir ?? 1} queryLength=${String(q.length)} ignoredInputs=${String(ignoredInputs.length)}`,
+  )
+
+  let found: boolean | undefined
+  try {
+    found = (window as WindowFind).find?.(q, false, dir === -1, true, false, false, false)
+  } finally {
+    for (const item of ignoredInputs) item.element.value = item.value
+  }
+
+  console.debug(`[page-find] result found=${String(!!found)} ignoredInputs=${String(ignoredInputs.length)}`)
   if (found) requestAnimationFrame(revealCurrentSelection)
   return found
 }

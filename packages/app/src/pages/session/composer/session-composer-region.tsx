@@ -243,12 +243,23 @@ type SessionUserMessageEntry = {
 
 function SessionUserMessageMenu(props: {
   entries: SessionUserMessageEntry[]
+  loading: boolean
+  onLoadAll: () => void
   onOpen: (entry: SessionUserMessageEntry) => void
 }) {
   const language = useLanguage()
+  const [open, setOpen] = createSignal(false)
+
+  createEffect(() => {
+    if (!open()) return
+    console.debug(
+      `[user-message-menu] open entries=${String(props.entries.length)} loading=${String(props.loading)}`,
+    )
+    props.onLoadAll()
+  })
 
   return (
-    <DropdownMenu gutter={6} placement="top-start">
+    <DropdownMenu open={open()} onOpenChange={setOpen} gutter={6} placement="top-start">
       <DropdownMenu.Trigger
         as={Button}
         variant="ghost"
@@ -274,7 +285,10 @@ function SessionUserMessageMenu(props: {
         >
           <DropdownMenu.Group>
             <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-              用户消息
+              <span>用户消息</span>
+              <Show when={props.loading}>
+                <span class="ml-2 normal-case tracking-normal">正在载入全部消息…</span>
+              </Show>
             </DropdownMenu.GroupLabel>
             <For each={props.entries}>
               {(entry, index) => (
@@ -650,6 +664,8 @@ export function SessionComposerRegion(props: {
   childAgents?: SessionChildAgentEntry[]
   onOpenChildAgent?: (entry: SessionChildAgentEntry) => void
   userMessages?: SessionUserMessageEntry[]
+  userMessagesLoading?: boolean
+  onLoadAllUserMessages?: () => void
   onOpenUserMessage?: (entry: SessionUserMessageEntry) => void
   subagentNavigation?: {
     parentID: string
@@ -772,9 +788,10 @@ export function SessionComposerRegion(props: {
   const userMessageMenu = createMemo(() => {
     if (platform.platform !== "desktop") return undefined
     const onOpen = props.onOpenUserMessage
+    const onLoadAll = props.onLoadAllUserMessages
     const entries = props.userMessages ?? []
-    if (!onOpen || entries.length === 0) return undefined
-    return { entries, onOpen }
+    if (!onOpen || !onLoadAll || entries.length === 0) return undefined
+    return { entries, loading: !!props.userMessagesLoading, onLoadAll, onOpen }
   })
   const visibleSubagentNavigation = createMemo(() => {
     if (platform.platform !== "desktop") return undefined
@@ -1088,8 +1105,15 @@ export function SessionComposerRegion(props: {
                       "flex-1": !visibleSubagentNavigation(),
                     }}
                   >
-                    <Show when={userMessageMenu()} keyed>
-                      {(menu) => <SessionUserMessageMenu entries={menu.entries} onOpen={menu.onOpen} />}
+                    <Show when={userMessageMenu()}>
+                      {(menu) => (
+                        <SessionUserMessageMenu
+                          entries={menu().entries}
+                          loading={menu().loading}
+                          onLoadAll={menu().onLoadAll}
+                          onOpen={menu().onOpen}
+                        />
+                      )}
                     </Show>
                     <Show when={skippedQuestionCount() > 0}>
                       <Button

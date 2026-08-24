@@ -4164,6 +4164,7 @@ export default function Layout(props: ParentProps) {
             <Show when={findbar.open && platform.find}>
               <div class="pointer-events-none absolute top-3 right-3 z-30 w-[min(480px,calc(100%-24px))]">
                 <div
+                  data-page-find-ignore
                   class="pointer-events-auto flex flex-row items-center gap-2 rounded-2xl border border-border-weak-base px-2 py-2 shadow-lg"
                   style={{
                     "background-color": "color-mix(in srgb, var(--background-stronger) 92%, transparent)",

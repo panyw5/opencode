@@ -195,6 +195,7 @@ export default function Page() {
     mode: "live" as ScrollMode,
     // Keep the first paint covered while timeline scroll settles.
     renderOverlayStatus: (params.id ? "showing" : "hidden") as SessionRenderOverlayStatus,
+    userMessagesLoading: false,
     scroll: {
       overflow: false,
       bottom: true,
@@ -831,6 +832,7 @@ export default function Page() {
   let historyAnchor = { capture: () => {}, restore: (_done: boolean) => {} }
   let scrollMark = 0
   let messageMark = 0
+  let findNavigationUntil = 0
 
   const scrollGestureWindowMs = 250
 
@@ -842,6 +844,7 @@ export default function Page() {
     const nested = el?.closest("[data-scrollable]")
     if (nested && nested !== root) return
 
+    findNavigationUntil = 0
     setUi("scrollGesture", Date.now())
   }
 
@@ -2119,6 +2122,11 @@ export default function Page() {
   const historyEdgePx = 200
   let historyLoadInFlight = false
   let historyEdgeArmed = true
+  const prepareFindNavigation = () => {
+    findNavigationUntil = performance.now() + 1_500
+    historyEdgeArmed = false
+    autoScroll.pause()
+  }
 
   createEffect(
     on(
@@ -2234,6 +2242,61 @@ export default function Page() {
       created: message.time.created,
     })),
   )
+
+  let userMessageLoadRun = 0
+  const loadAllUserMessages = async () => {
+    const id = params.id
+    if (!id || ui.userMessagesLoading || !historyMore()) return
+
+    const run = ++userMessageLoadRun
+    setUi("userMessagesLoading", true)
+    console.debug(
+      `[user-message-menu] load-start sid=${id} shown=${String(messages().length)} users=${String(visibleUserMessages().length)} cached=${String(sync.data.message[id]?.length ?? 0)} more=${String(historyMore())}`,
+    )
+
+    try {
+      let pages = 0
+      let idle = 0
+      while (params.id === id && historyMore()) {
+        if (historyLoading()) {
+          idle += 1
+          if (idle === 1 || idle % 20 === 0) {
+            console.debug(`[user-message-menu] load-wait sid=${id} idle=${String(idle)}`)
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 50))
+          continue
+        }
+
+        idle = 0
+        const before = messages().length
+        const beforeCached = sync.data.message[id]?.length ?? 0
+        await sync.session.history.loadMore(id, 200)
+        if (params.id !== id || run !== userMessageLoadRun) return
+
+        pages += 1
+        const after = messages().length
+        const afterCached = sync.data.message[id]?.length ?? 0
+        console.debug(
+          `[user-message-menu] load-page sid=${id} page=${String(pages)} shown=${String(before)}->${String(after)} cached=${String(beforeCached)}->${String(afterCached)} users=${String(visibleUserMessages().length)} more=${String(historyMore())}`,
+        )
+        if (after > before || afterCached > beforeCached || !historyMore()) continue
+
+        console.debug(`[user-message-menu] load-stop sid=${id} reason=no-progress pages=${String(pages)}`)
+        break
+      }
+
+      console.debug(
+        `[user-message-menu] load-end sid=${id} pages=${String(pages)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)} cached=${String(sync.data.message[id]?.length ?? 0)} more=${String(historyMore())}`,
+      )
+    } catch (error) {
+      console.debug(
+        `[user-message-menu] load-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      fail(error)
+    } finally {
+      if (run === userMessageLoadRun) setUi("userMessagesLoading", false)
+    }
+  }
 
   const fail = (err: unknown) => {
     showToast({
@@ -2798,8 +2861,10 @@ export default function Page() {
                         onMarkScrollGesture={markScrollGesture}
                         hasScrollGesture={hasScrollGesture}
                         onUserScroll={markUserScroll}
+                        onFindNavigate={prepareFindNavigation}
                         onHistoryScroll={(scrollTop) => {
                           if (!autoScroll.userScrolled() || !scroller) return
+                          if (performance.now() < findNavigationUntil) return
                           if (scrollTop >= historyEdgePx) {
                             historyEdgeArmed = true
                             return
@@ -2921,8 +2986,13 @@ export default function Page() {
             childAgents={childAgentEntries()}
             onOpenChildAgent={openChildAgent}
             userMessages={userMessageMenu()}
+            userMessagesLoading={ui.userMessagesLoading}
+            onLoadAllUserMessages={() => void loadAllUserMessages()}
             onOpenUserMessage={(entry) => {
               const message = visibleUserMessages().find((item) => item.id === entry.id)
+              console.debug(
+                `[user-message-menu] select sid=${params.id ?? "none"} id=${entry.id} found=${String(!!message)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)}`,
+              )
               if (message) scrollToMessage(message, "auto")
             }}
             subagentNavigation={subagentNavigation()}
