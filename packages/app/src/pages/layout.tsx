@@ -1342,7 +1342,15 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.sidebar.toggle"),
         category: language.t("command.category.view"),
         keybind: "mod+b",
-        onSelect: () => layout.sidebar.toggle(),
+        onSelect: () => {
+          // xl breakpoint = 1280px; below that the desktop sidebar is
+          // CSS-hidden and the mobile overlay sidebar is used instead.
+          if (window.innerWidth < 1280) {
+            layout.mobileSidebar.toggle()
+          } else {
+            layout.sidebar.toggle()
+          }
+        },
       },
       {
         id: "projectTask.open",
