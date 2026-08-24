@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
   finishAdvisorIntervention,
-  holdForIntervention,
-  INTERVENTION_HOLD_MS,
   registerAdvisorIntervention,
   sendAdvisorIntervention,
   startAdvisorIntervention,
@@ -37,33 +35,11 @@ describe("advisor intervention", () => {
     handle.close()
   })
 
-  test("holdForIntervention waits until the user starts intervention", async () => {
-    const handle = registerAdvisorIntervention({ sessionID, callID: "call-hold", advisor: "dsh" })
-    const holding = holdForIntervention(handle, new AbortController().signal, 5_000)
-    expect(handle.snapshot()).toMatchObject({ available: true, active: false })
-
-    expect(startAdvisorIntervention({ sessionID, callID: "call-hold" })).toBe(true)
-    await expect(holding).resolves.toBe(true)
-    expect(handle.isActive()).toBe(true)
-    handle.close()
-  })
-
-  test("holdForIntervention times out without start", async () => {
-    const handle = registerAdvisorIntervention({ sessionID, callID: "call-timeout", advisor: "codex" })
-    await expect(holdForIntervention(handle, new AbortController().signal, 30)).resolves.toBe(false)
-    expect(handle.isActive()).toBe(false)
-    handle.close()
-  })
-
   test("startAdvisorIntervention is idempotent once active", () => {
     const handle = registerAdvisorIntervention({ sessionID, callID: "call-idem", advisor: "grok" })
     expect(startAdvisorIntervention({ sessionID, callID: "call-idem" })).toBe(true)
     expect(startAdvisorIntervention({ sessionID, callID: "call-idem" })).toBe(true)
     expect(handle.snapshot()).toMatchObject({ active: true })
     handle.close()
-  })
-
-  test("hold default window is five minutes", () => {
-    expect(INTERVENTION_HOLD_MS).toBe(5 * 60 * 1000)
   })
 })

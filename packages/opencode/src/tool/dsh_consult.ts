@@ -9,7 +9,7 @@ import DESCRIPTION from "./dsh_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
-import { holdForIntervention, registerAdvisorIntervention } from "./advisor-intervention"
+import { registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.dsh_consult" })
@@ -415,9 +415,13 @@ export const DshConsultTool = Tool.define(
             streamPreview = ""
             yield* publishMetadata(true)
 
-            // Hold the tool open so the desktop dialog can still start intervention
-            // after the first answer lands (entry would otherwise be closed already).
-            const started = yield* Effect.promise(() => holdForIntervention(intervention, ctx.abort))
+            const started = intervention?.isActive() ?? false
+            log.info("dsh consult turn completed", {
+              sessionID: ctx.sessionID,
+              callID: ctx.callID,
+              exitCode: result.exit.code,
+              interventionActive: started,
+            })
             const activeIntervention = intervention
             if (started && activeIntervention) {
               while (activeIntervention.isActive()) {

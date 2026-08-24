@@ -7,7 +7,7 @@ import DESCRIPTION from "./codex_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
-import { holdForIntervention, registerAdvisorIntervention } from "./advisor-intervention"
+import { registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.codex_consult" })
@@ -627,9 +627,13 @@ export const CodexConsultTool = Tool.define(
             throw new Error("Codex returned an empty response")
           }
 
-          // Hold the tool open so the desktop dialog can still start intervention
-          // after the first answer lands (entry would otherwise be closed already).
-          const started = yield* Effect.promise(() => holdForIntervention(intervention, ctx.abort))
+          const started = intervention?.isActive() ?? false
+          log.info("codex consult turn completed", {
+            sessionID: ctx.sessionID,
+            callID: ctx.callID,
+            exitCode,
+            interventionActive: started,
+          })
           while (started && intervention?.isActive()) {
             const command = yield* Effect.promise(() => intervention.wait(ctx.abort))
             if (command.type === "abort") throw new Error("Codex consultation was aborted")

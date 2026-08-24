@@ -7,7 +7,7 @@ import DESCRIPTION from "./grok_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
-import { holdForIntervention, registerAdvisorIntervention } from "./advisor-intervention"
+import { registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.grok_consult" })
@@ -361,9 +361,13 @@ export const GrokConsultTool = Tool.define(
           }
           if (!body) throw new Error("Grok Build returned an empty response")
 
-          // Hold the tool open so the desktop dialog can still start intervention
-          // after the first answer lands (entry would otherwise be closed already).
-          const started = yield* Effect.promise(() => holdForIntervention(intervention, ctx.abort))
+          const started = intervention?.isActive() ?? false
+          log.info("grok consult turn completed", {
+            sessionID: ctx.sessionID,
+            callID: ctx.callID,
+            exitCode: result.exit.code,
+            interventionActive: started,
+          })
           const activeIntervention = intervention
           while (started && activeIntervention?.isActive()) {
             const command = yield* Effect.promise(() => activeIntervention.wait(ctx.abort))

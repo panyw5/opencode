@@ -7,7 +7,7 @@ import DESCRIPTION from "./claude_consult.txt"
 import { InstanceState } from "@/effect/instance-state"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import { which } from "@/util/which"
-import { holdForIntervention, registerAdvisorIntervention } from "./advisor-intervention"
+import { registerAdvisorIntervention } from "./advisor-intervention"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "tool.claude_consult" })
@@ -511,9 +511,13 @@ export const ClaudeConsultTool = Tool.define(
             throw new Error("Claude returned an empty response")
           }
 
-          // Hold the tool open so the desktop dialog can still start intervention
-          // after the first answer lands (entry would otherwise be closed already).
-          const started = yield* Effect.promise(() => holdForIntervention(intervention, ctx.abort))
+          const started = intervention?.isActive() ?? false
+          log.info("claude consult turn completed", {
+            sessionID: ctx.sessionID,
+            callID: ctx.callID,
+            exitCode,
+            interventionActive: started,
+          })
           while (started && intervention?.isActive()) {
             const command = yield* Effect.promise(() => intervention.wait(ctx.abort))
             if (command.type === "abort") throw new Error("Claude consultation was aborted")

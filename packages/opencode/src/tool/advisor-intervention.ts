@@ -1,4 +1,7 @@
 import type { SessionID } from "@/session/schema"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "tool.advisor_intervention" })
 
 export type AdvisorKind = "codex" | "claude" | "grok" | "dsh"
 
@@ -26,9 +29,6 @@ type Entry = {
     resolve: (command: Command) => void
     reject: (error: unknown) => void
   }
-  activationWaiters: Array<{
-    resolve: (result: "active" | "abort") => void
-  }>
   onChange?: () => void
 }
 
@@ -47,11 +47,6 @@ function resolveWaiter(entry: Entry, command: Command): void {
   entry.waiter = undefined
   entry.waitingForInput = false
   waiter?.resolve(command)
-}
-
-function resolveActivationWaiters(entry: Entry, result: "active" | "abort"): void {
-  const waiters = entry.activationWaiters.splice(0, entry.activationWaiters.length)
-  for (const waiter of waiters) waiter.resolve(result)
 }
 
 function takeQueued(entry: Entry): Command | undefined {
@@ -81,37 +76,13 @@ export class AdvisorInterventionHandle {
 
   setBusy(busy: boolean): void {
     this.entry.busy = busy
-    notify(this.entry)
-  }
-
-  /**
-   * After the first advisor answer, hold the tool open until the user starts
-   * intervention, the session aborts, or the idle timeout elapses.
-   */
-  waitForStart(signal: AbortSignal, timeoutMs: number): Promise<"active" | "timeout" | "abort"> {
-    if (this.entry.active) return Promise.resolve("active")
-    if (signal.aborted) return Promise.resolve("abort")
-
-    return new Promise<"active" | "timeout" | "abort">((resolve) => {
-      let settled = false
-      const settle = (result: "active" | "timeout" | "abort") => {
-        if (settled) return
-        settled = true
-        clearTimeout(timer)
-        signal.removeEventListener("abort", onAbort)
-        const index = this.entry.activationWaiters.findIndex((item) => item.resolve === onActive)
-        if (index >= 0) this.entry.activationWaiters.splice(index, 1)
-        resolve(result)
-      }
-
-      const onActive = (result: "active" | "abort") => settle(result === "active" ? "active" : "abort")
-      const onAbort = () => settle("abort")
-      const timer = setTimeout(() => settle("timeout"), Math.max(1_000, timeoutMs))
-
-      this.entry.activationWaiters.push({ resolve: onActive })
-      signal.addEventListener("abort", onAbort, { once: true })
-      notify(this.entry)
+    log.info("advisor intervention busy state changed", {
+      sessionID: this.entry.sessionID,
+      callID: this.entry.callID,
+      advisor: this.entry.advisor,
+      busy,
     })
+    notify(this.entry)
   }
 
   waitForInput(signal: AbortSignal): Promise<Command> {
@@ -174,31 +145,17 @@ export class AdvisorInterventionHandle {
   }
 
   close(): void {
+    log.info("closing advisor intervention", {
+      sessionID: this.entry.sessionID,
+      callID: this.entry.callID,
+      advisor: this.entry.advisor,
+      active: this.entry.active,
+    })
     this.entry.active = false
     resolveWaiter(this.entry, { type: "abort" })
-    resolveActivationWaiters(this.entry, "abort")
     entries.delete(key(this.entry.sessionID, this.entry.callID))
     notify(this.entry)
   }
-}
-
-/** How long a finished advisor turn stays open for the user to press Intervene. */
-export const INTERVENTION_HOLD_MS = 5 * 60 * 1000
-
-/**
- * Keep the tool call alive after the first answer until the user starts
- * intervention, aborts, or the hold window expires.
- * @returns true when intervention is active and the tool should enter the message loop.
- */
-export async function holdForIntervention(
-  handle: AdvisorInterventionHandle | undefined,
-  signal: AbortSignal,
-  timeoutMs: number = INTERVENTION_HOLD_MS,
-): Promise<boolean> {
-  if (!handle) return false
-  if (handle.isActive()) return true
-  const result = await handle.waitForStart(signal, timeoutMs)
-  return result === "active"
 }
 
 export function registerAdvisorIntervention(input: {
@@ -214,28 +171,48 @@ export function registerAdvisorIntervention(input: {
     active: false,
     busy: false,
     waitingForInput: false,
-    activationWaiters: [],
     onChange: input.onChange,
   }
   const existing = entries.get(key(input.sessionID, input.callID))
   if (existing) {
     existing.waiter?.resolve({ type: "abort" })
-    resolveActivationWaiters(existing, "abort")
   }
   entries.set(key(input.sessionID, input.callID), entry)
+  log.info("registered advisor intervention", {
+    sessionID: input.sessionID,
+    callID: input.callID,
+    advisor: input.advisor,
+    replaced: existing !== undefined,
+  })
   return new AdvisorInterventionHandle(entry)
 }
 
 export function startAdvisorIntervention(input: { sessionID: SessionID; callID: string }): boolean {
   const entry = entries.get(key(input.sessionID, input.callID))
-  if (!entry || entry.busy) return false
+  if (!entry || entry.busy) {
+    log.info("advisor intervention start rejected", {
+      sessionID: input.sessionID,
+      callID: input.callID,
+      reason: !entry ? "not_found" : "busy",
+    })
+    return false
+  }
   if (entry.active) {
-    // Idempotent: UI may retry start while the hold loop is already active.
+    // Idempotent: UI may retry start while the intervention loop is already active.
+    log.info("advisor intervention already active", {
+      sessionID: input.sessionID,
+      callID: input.callID,
+      advisor: entry.advisor,
+    })
     notify(entry)
     return true
   }
   entry.active = true
-  resolveActivationWaiters(entry, "active")
+  log.info("advisor intervention started", {
+    sessionID: input.sessionID,
+    callID: input.callID,
+    advisor: entry.advisor,
+  })
   notify(entry)
   return true
 }
@@ -243,20 +220,54 @@ export function startAdvisorIntervention(input: { sessionID: SessionID; callID: 
 export function sendAdvisorIntervention(input: { sessionID: SessionID; callID: string; message: string }): boolean {
   const entry = entries.get(key(input.sessionID, input.callID))
   const message = input.message.trim()
-  if (!entry || !entry.active || entry.busy || entry.queued || !message) return false
+  if (!entry || !entry.active || entry.busy || entry.queued || !message) {
+    log.info("advisor intervention message rejected", {
+      sessionID: input.sessionID,
+      callID: input.callID,
+      reason: !entry
+        ? "not_found"
+        : !entry.active
+          ? "inactive"
+          : entry.busy
+            ? "busy"
+            : entry.queued
+              ? "queued"
+              : "empty",
+    })
+    return false
+  }
   const command = { type: "message" as const, message }
-  if (entry.waitingForInput) resolveWaiter(entry, command)
+  const deliveredToWaiter = entry.waitingForInput
+  if (deliveredToWaiter) resolveWaiter(entry, command)
   else entry.queued = command
+  log.info("advisor intervention message accepted", {
+    sessionID: input.sessionID,
+    callID: input.callID,
+    advisor: entry.advisor,
+    deliveredToWaiter,
+  })
   notify(entry)
   return true
 }
 
 export function finishAdvisorIntervention(input: { sessionID: SessionID; callID: string }): boolean {
   const entry = entries.get(key(input.sessionID, input.callID))
-  if (!entry || !entry.active) return false
+  if (!entry || !entry.active) {
+    log.info("advisor intervention finish rejected", {
+      sessionID: input.sessionID,
+      callID: input.callID,
+      reason: !entry ? "not_found" : "inactive",
+    })
+    return false
+  }
   entry.active = false
   entry.queued = undefined
   resolveWaiter(entry, { type: "finish" })
+  log.info("advisor intervention finished", {
+    sessionID: input.sessionID,
+    callID: input.callID,
+    advisor: entry.advisor,
+  })
   notify(entry)
   return true
 }
