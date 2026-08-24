@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test"
 import { Deferred, Effect, Fiber } from "effect"
 import { BackgroundJob } from "@/background/job"
 import { testEffect } from "../lib/effect"
+import { withTmpdirInstance } from "../fixture/fixture"
 
 const it = testEffect(BackgroundJob.defaultLayer)
 
@@ -200,6 +201,27 @@ describe("background.job", () => {
 
       expect(promoted.metadata?.background).toBe(true)
       yield* Deferred.succeed(latch, undefined)
+    }),
+  )
+
+  it.live("interrupts running jobs when the instance is disposed", () =>
+    Effect.gen(function* () {
+      const interrupted = yield* Deferred.make<void>()
+      const started = yield* Deferred.make<void>()
+
+      yield* Effect.gen(function* () {
+        const jobs = yield* BackgroundJob.Service
+        yield* jobs.start({
+          type: "test",
+          run: Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Deferred.succeed(interrupted, undefined)),
+          ),
+        })
+        yield* Deferred.await(started)
+      }).pipe(withTmpdirInstance(), Effect.scoped)
+
+      yield* Deferred.await(interrupted).pipe(Effect.timeout("1 second"))
     }),
   )
 })
