@@ -1337,15 +1337,30 @@ export function MessageTimeline(props: {
           const group = item().group
           return group.type === "part" ? getMessagePart(group.ref.messageID, group.ref.partID) : undefined
         })
-        const contextParts = createMemo(() => {
+        const contextPartRefs = createMemo(() => {
           const group = item().group
-          if (group.type !== "context") return [] as Array<{ part: ToolPart; message: AssistantMessage }>
-          return group.refs.flatMap((ref) => {
-            const message = messageByID().get(ref.messageID)
-            const part = getMessagePart(ref.messageID, ref.partID)
-            return message?.role === "assistant" && part?.type === "tool" ? [{ message, part }] : []
-          })
+          return group.type === "context" ? group.refs : []
         })
+        // Solid's For keys by item identity. Temporary { part, message }
+        // objects remounted every existing card whenever this group changed;
+        // stable ref keys preserve card instances while their props update.
+        const contextPartKey = (ref: { messageID: string; partID: string }): string => `${ref.messageID}\n${ref.partID}`
+        const contextPartKeys = createMemo(() => contextPartRefs().map(contextPartKey))
+        const contextPartRefByKey = createMemo(
+          () => new Map(contextPartRefs().map((ref) => [contextPartKey(ref), ref] as const)),
+        )
+        const contextMessage = (key: string) => {
+          const ref = contextPartRefByKey().get(key)
+          if (!ref) return
+          const message = messageByID().get(ref.messageID)
+          return message?.role === "assistant" ? message : undefined
+        }
+        const contextPart = (key: string) => {
+          const ref = contextPartRefByKey().get(key)
+          if (!ref) return
+          const part = getMessagePart(ref.messageID, ref.partID)
+          return part?.type === "tool" ? part : undefined
+        }
         return (
           <TimelineRowFrame row={item}>
             <div
@@ -1380,19 +1395,27 @@ export function MessageTimeline(props: {
                   </Show>
                 }
               >
-                <For each={contextParts()}>
-                  {(entry) => (
-                    <DeferredMessagePart
-                      sessionID={sessionID() ?? item().userMessageID}
-                      part={entry.part}
-                      message={entry.message}
-                      defaultOpen={defaultOpen(entry.part)}
-                      onBackgroundShell={props.onBackgroundShell}
-                      onBackgroundTask={props.onBackgroundTask}
-                      markdownViewport={listRoot()}
-                      markdownHighlight="defer"
-                      markdownMath="full"
-                    />
+                <For each={contextPartKeys()}>
+                  {(key) => (
+                    <Show when={contextMessage(key)}>
+                      {(message) => (
+                        <Show when={contextPart(key)}>
+                          {(part) => (
+                            <DeferredMessagePart
+                              sessionID={sessionID() ?? item().userMessageID}
+                              part={part()}
+                              message={message()}
+                              defaultOpen={defaultOpen(part())}
+                              onBackgroundShell={props.onBackgroundShell}
+                              onBackgroundTask={props.onBackgroundTask}
+                              markdownViewport={listRoot()}
+                              markdownHighlight="defer"
+                              markdownMath="full"
+                            />
+                          )}
+                        </Show>
+                      )}
+                    </Show>
                   )}
                 </For>
               </Show>

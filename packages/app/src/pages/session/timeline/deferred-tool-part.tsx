@@ -84,9 +84,12 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
   const status = () => (props.part.type === "tool" ? props.part.state.status : "none")
   const logHydrate = (phase: string, source: string, fields = "") => {
     if (!lagging()) return
-    console.debug(
-      `[lag] tool-hydrate phase=${phase} source=${source} sid=${props.sessionID} part=${props.part.id} tool=${tool()} status=${status()}${fields ? ` ${fields}` : ""}`,
-    )
+    const line = `[lag] tool-hydrate phase=${phase} source=${source} sid=${props.sessionID} part=${props.part.id} tool=${tool()} status=${status()}${fields ? ` ${fields}` : ""}`
+    const target = window as Window & { __opencodeTimelineDebug?: string[] }
+    const entries = (target.__opencodeTimelineDebug ??= [])
+    entries.push(line)
+    if (entries.length > 2_000) entries.splice(0, entries.length - 2_000)
+    console.debug(line)
   }
 
   const hydrate = (source: "focus" | "pointer" | "reactive" | "viewport") => {
@@ -125,6 +128,7 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
   let stopViewportObserve: (() => void) | undefined
 
   onMount(() => {
+    logHydrate("mount", "lifecycle", `hydrated=${String(hydrated())} deferrable=${String(deferrable())}`)
     if (hydrated()) return
     // Hydrate as the placeholder approaches the viewport (shared observer,
     // 300px margin) instead of eagerly during the idle callback — offscreen
@@ -133,6 +137,7 @@ export function DeferredMessagePart(props: DeferredMessagePartProps) {
   })
 
   onCleanup(() => {
+    logHydrate("unmount", "lifecycle", `hydrated=${String(hydrated())} deferrable=${String(deferrable())}`)
     stopViewportObserve?.()
     // Scrolled away: drop a viewport-only hydration so remounts re-enter the
     // cheap placeholder path; user-opened cards stay hydrated forever.
