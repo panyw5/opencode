@@ -87,6 +87,7 @@ export type EstimateRowInput = {
   _tag: string
   userMessageID?: string
   previousAssistantPart?: boolean
+  topSpacing?: boolean
   label?: string
   phase?: string
   group?: {
@@ -236,7 +237,7 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
     options.viewportHeight !== undefined && options.viewportHeight > 0
       ? options.viewportHeight
       : DEFAULT_VIEWPORT_HEIGHT
-  const previousSpacing = row.previousAssistantPart ? PREVIOUS_PART_SPACING : 0
+  const previousSpacing = (row.topSpacing ?? row.previousAssistantPart) ? PREVIOUS_PART_SPACING : 0
 
   switch (row._tag) {
     case "TurnGap":

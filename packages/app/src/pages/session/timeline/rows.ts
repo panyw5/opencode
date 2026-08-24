@@ -22,6 +22,7 @@ export type TimelineRowMap = {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
+    topSpacing?: boolean
   }
   Thinking: { userMessageID: string; phase: "sending" | "thinking"; reasoningHeading?: string }
   Retry: { userMessageID: string }
@@ -48,6 +49,7 @@ export namespace TimelineRow {
     userMessageID: string
     group: PartGroup
     previousAssistantPart: boolean
+    topSpacing?: boolean
   }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string
@@ -149,6 +151,9 @@ export namespace Timeline {
             ),
           ]
         : groupParts(assistantPartRefs).map((group) => ({ type: "part" as const, group }))
+    const assistantPartByRef = new Map(
+      assistantPartRefs.map((ref) => [`${ref.messageID}\n${ref.part.id}`, ref.part] as const),
+    )
     if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
 
     if (comments.length > 0)
@@ -186,11 +191,16 @@ export namespace Timeline {
         return
       }
 
+      const ref = item.group.type === "part" ? item.group.ref : item.group.refs[0]
+      const firstPart = ref ? assistantPartByRef.get(`${ref.messageID}\n${ref.partID}`) : undefined
+      const topSpacing = assistantGroupIndex > 0 || firstPart?.type === "tool"
+
       rows.push(
         new TimelineRow.AssistantPart({
           userMessageID: userMessage.id,
           group: item.group,
           previousAssistantPart: assistantGroupIndex > 0,
+          topSpacing,
         }),
       )
       assistantGroupIndex += 1

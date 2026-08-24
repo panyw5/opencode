@@ -103,6 +103,23 @@ describe("estimateRowHeight AssistantPart rows", () => {
     expect(PREVIOUS_PART_SPACING).toBe(12)
   })
 
+  test("topSpacing adds the pt-3 spacing to a leading tool", () => {
+    const part = toolPart({ tool: "grok_consult" })
+    const height = estimateRowHeight(
+      {
+        _tag: "AssistantPart",
+        userMessageID: "m",
+        group: { type: "part", ref: { messageID: "msg_1", partID: part.id } },
+        previousAssistantPart: false,
+        topSpacing: true,
+      },
+      WIDTH,
+      { ...base, parts: lookup(part) },
+    )
+
+    expect(height).toBe(COLLAPSED_TOOL_HEIGHT + PREVIOUS_PART_SPACING)
+  })
+
   test("a running tool stays collapsed while a default-open tool estimates the open baseline", () => {
     const running = toolPart({ status: "running" })
     const completed = toolPart({ tool: "bash" })

@@ -1246,10 +1246,10 @@ export function MessageTimeline(props: {
       if (!value) return false
       return value._tag === "CommentStrip" || (value._tag === "UserMessage" && value.anchor)
     }
-    const previousAssistantPart = () => {
+    const topSpacing = () => {
       const value = row()
       if (!value) return false
-      return value._tag === "AssistantPart" && value.previousAssistantPart
+      return value._tag === "AssistantPart" && (value.topSpacing ?? value.previousAssistantPart)
     }
     return (
       <div
@@ -1259,7 +1259,7 @@ export function MessageTimeline(props: {
         classList={{
           "min-w-0 w-full max-w-full": true,
           "md:max-w-[var(--session-content-width)] md:mx-auto": props.centered,
-          "pt-3": previousAssistantPart(),
+          "pt-3": topSpacing(),
         }}
       >
         <div data-component="session-turn" class="min-w-0 w-full relative" style={{ height: "auto" }}>
