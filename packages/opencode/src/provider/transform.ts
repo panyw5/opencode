@@ -1158,7 +1158,7 @@ export function options(input: {
     result["promptCacheKey"] = input.sessionID
   }
   log.info(
-    `promptCacheKey decision provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} setCacheKey=${String(input.providerOptions?.setCacheKey)} applied=${String(shouldSetPromptCacheKey)} session=${input.sessionID}`,
+    `promptCacheKey decision provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} setCacheKey=${String(input.providerOptions?.setCacheKey)} applied=${String(shouldSetPromptCacheKey)}`,
   )
 
   if (input.model.api.npm === "@ai-sdk/google" || input.model.api.npm === "@ai-sdk/google-vertex") {

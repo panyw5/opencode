@@ -91,7 +91,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), input.agent.options), variant)
   if (isOpenaiOauth) options.instructions = system.join("\n")
   log.info(
-    `prepared provider options provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} session=${input.sessionID} promptCacheKey=${String(options.promptCacheKey ?? "")} setCacheKey=${String(input.provider.options?.setCacheKey)}`,
+    `prepared provider options provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} promptCacheKeyApplied=${String(options.promptCacheKey !== undefined || options.prompt_cache_key !== undefined)} setCacheKey=${String(input.provider.options?.setCacheKey)}`,
   )
 
   const messages =
