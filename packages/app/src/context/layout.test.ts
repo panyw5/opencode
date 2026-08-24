@@ -8,9 +8,33 @@ import {
   isSessionFileTab,
   pruneSessionKeys,
   removeSessionBarDraft,
+  resolveRailProjects,
   shouldAutoCollapseFilePreview,
   visibleSessionBarDrafts,
 } from "./layout"
+
+describe("project rail source", () => {
+  test("uses the live list for additions in the main domain", () => {
+    const cached = [{ worktree: "one" }]
+    const live = [{ worktree: "two" }, { worktree: "one" }]
+
+    expect(resolveRailProjects({ current: true, main: true, live, cached })).toBe(live)
+  })
+
+  test("uses the live list for removals in the main domain", () => {
+    const cached = [{ worktree: "two" }, { worktree: "one" }]
+    const live = [{ worktree: "one" }]
+
+    expect(resolveRailProjects({ current: true, main: true, live, cached })).toBe(live)
+  })
+
+  test("keeps the cached rail while browsing another domain", () => {
+    const cached = [{ worktree: "one" }]
+    const live = [{ worktree: "agent" }]
+
+    expect(resolveRailProjects({ current: true, main: false, live, cached })).toBe(cached)
+  })
+})
 
 describe("layout session-key helpers", () => {
   test("couples touch and scroll seed in order", () => {

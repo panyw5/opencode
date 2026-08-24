@@ -89,6 +89,18 @@ type TabHandoff = {
 
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
 
+export function resolveRailProjects<T>(input: {
+  current: boolean
+  main: boolean
+  live: T[]
+  cached: T[]
+}) {
+  // The live list is authoritative in the main OpenCode domain. Using the
+  // cache to merge existence here can leave the rail stale after open/close.
+  if (!input.current || input.main) return input.live
+  return input.cached
+}
+
 export type ReviewDiffStyle = "unified" | "split"
 
 // The project rail should survive OpenClaw toggles even when server-backed contexts hot-swap.
@@ -691,19 +703,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       const current = server.current
       const next = list()
       const cached = rail.projects
-      if (!current || server.domain === mainDomain) {
-        // Reuse the cached order when returning from OpenClaw so icons do not
-        // jitter while fresh project metadata streams back in from the server.
-        const live = new Map(next.map((project) => [project.worktree, project] as const))
-        const merged = cached.flatMap((project) => {
-          const hit = live.get(project.worktree)
-          if (!hit) return []
-          live.delete(project.worktree)
-          return [hit]
-        })
-        return [...merged, ...live.values()]
-      }
-      return cached
+      return resolveRailProjects<LocalProject>({
+        current: !!current,
+        main: server.domain === mainDomain,
+        live: next,
+        cached,
+      })
     })
 
     return {
