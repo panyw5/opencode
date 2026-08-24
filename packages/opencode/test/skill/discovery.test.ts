@@ -11,6 +11,10 @@ import { testEffect } from "../lib/effect"
 let CLOUDFLARE_SKILLS_URL: string
 let server: ReturnType<typeof Bun.serve>
 let downloadCount = 0
+let mutableVersion = "1"
+let mutableContent = "# Old"
+let mutableDownloadCount = 0
+let mutableFiles = ["SKILL.md"]
 
 const fixturePath = path.join(import.meta.dir, "../fixture/skills")
 const cacheDir = path.join(Global.Path.cache, "skills")
@@ -23,6 +27,15 @@ beforeAll(async () => {
     port: 0,
     async fetch(req) {
       const url = new URL(req.url)
+
+      if (url.pathname === "/mutable/index.json") {
+        return Response.json({ skills: [{ name: "mutable", version: mutableVersion, files: mutableFiles }] })
+      }
+      if (url.pathname === "/mutable/mutable/SKILL.md") {
+        mutableDownloadCount++
+        return new Response(mutableContent)
+      }
+      if (url.pathname === "/mutable/mutable/old.md") return new Response("old reference")
 
       // route /.well-known/skills/* to the fixture directory
       if (url.pathname.startsWith("/.well-known/skills/")) {
@@ -134,6 +147,49 @@ describe("Discovery.pull", () => {
 
       // second pull should NOT increment download count
       expect(downloadCount).toBe(firstCount)
+    }),
+  )
+
+  it.live("refreshes versioned skills atomically and preserves the old version on partial failure", () =>
+    Effect.gen(function* () {
+      yield* Effect.promise(() => rm(cacheDir, { recursive: true, force: true }))
+      mutableVersion = "1"
+      mutableContent = "# Old"
+      mutableDownloadCount = 0
+      mutableFiles = ["SKILL.md", "old.md"]
+      const discovery = yield* Discovery.Service
+      const fsys = yield* AppFileSystem.Service
+      const url = `http://localhost:${server.port}/mutable/`
+
+      const first = yield* discovery.pull(url)
+      expect(yield* Effect.promise(() => Bun.file(path.join(first[0], "SKILL.md")).text())).toBe("# Old")
+
+      const interruptedBackup = `${first[0]}.old-interrupted`
+      yield* fsys.rename(first[0], interruptedBackup)
+      const recovered = yield* discovery.pull(url)
+      expect(recovered[0]).toBe(first[0])
+      expect(yield* Effect.promise(() => Bun.file(path.join(recovered[0], "SKILL.md")).text())).toBe("# Old")
+      expect(mutableDownloadCount).toBe(1)
+
+      mutableVersion = "2"
+      mutableContent = "# Partial"
+      mutableFiles = ["SKILL.md", "missing.md"]
+      const second = yield* discovery.pull(url)
+      expect(yield* Effect.promise(() => Bun.file(path.join(second[0], "SKILL.md")).text())).toBe("# Old")
+      expect(yield* Effect.promise(() => Bun.file(path.join(second[0], "old.md")).text())).toBe("old reference")
+
+      mutableVersion = "3"
+      mutableContent = "# New"
+      mutableFiles = ["SKILL.md"]
+      yield* discovery.pull(url)
+      expect(yield* Effect.promise(() => Bun.file(path.join(second[0], "SKILL.md")).text())).toBe("# New")
+      expect(yield* Effect.promise(() => Bun.file(path.join(second[0], "old.md")).exists())).toBe(false)
+      expect(mutableDownloadCount).toBe(3)
+
+      yield* discovery.pull(url)
+      expect(mutableDownloadCount).toBe(3)
+      const entries = yield* fsys.readDirectory(cacheDir)
+      expect(entries.some((entry) => entry.startsWith("mutable.tmp-") || entry.startsWith("mutable.old-"))).toBe(false)
     }),
   )
 })
