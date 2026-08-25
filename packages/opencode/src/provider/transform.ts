@@ -1151,9 +1151,11 @@ export function options(input: {
   // field; without it, Aether will not emit session-id/thread-id and the same
   // OpenCode session hops across upstream accounts.
   const shouldSetPromptCacheKey =
-    isOpenAIProviderID(input.model.providerID) ||
-    input.model.api.npm === "@ai-sdk/openai" ||
-    input.providerOptions?.setCacheKey === true
+    input.providerOptions?.setCacheKey !== false &&
+    (isOpenAIProviderID(input.model.providerID) ||
+      input.model.api.npm === "@ai-sdk/openai" ||
+      input.model.api.npm === "@ai-sdk/xai" ||
+      input.providerOptions?.setCacheKey === true)
   if (shouldSetPromptCacheKey) {
     result["promptCacheKey"] = input.sessionID
   }
