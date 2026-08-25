@@ -111,9 +111,10 @@ type HelperMemory = {
 }
 
 async function helperMemory(): Promise<HelperMemory> {
-  const process = Bun.spawn(["ps", "-axo", "rss=,command="], { stdout: "pipe", stderr: "pipe" })
-  const output = await new Response(process.stdout).text()
-  await process.exited
+  if (process.platform === "win32") return windowsHelperMemory()
+  const child = Bun.spawn(["ps", "-axo", "rss=,command="], { stdout: "pipe", stderr: "pipe" })
+  const output = await new Response(child.stdout).text()
+  await child.exited
   const result: HelperMemory = {
     totalRss: 0,
     rendererRss: 0,
@@ -133,6 +134,60 @@ async function helperMemory(): Promise<HelperMemory> {
     result.processes += 1
     if (command.includes("--type=renderer") && command.includes("--remote-debugging-port=9222"))
       result.rendererRss += rss
+    if (command.includes("--utility-sub-type=node.mojom.NodeService")) result.nodeServiceRss += rss
+    if (command.includes("--type=gpu-process")) result.gpuRss += rss
+    if (command.includes("--utility-sub-type=network.mojom.NetworkService")) result.networkRss += rss
+  }
+  return result
+}
+
+type WindowsProcess = {
+  ProcessId: number
+  ParentProcessId: number
+  WorkingSetSize: number | string
+  CommandLine?: string
+}
+
+async function windowsHelperMemory(): Promise<HelperMemory> {
+  const script = [
+    "$listener = Get-NetTCPConnection -State Listen -LocalPort 9222 -ErrorAction SilentlyContinue | Select-Object -First 1",
+    "if (-not $listener) { '[]'; exit 0 }",
+    "$all = @(Get-CimInstance Win32_Process)",
+    "$ids = [System.Collections.Generic.HashSet[int]]::new()",
+    "[void]$ids.Add([int]$listener.OwningProcess)",
+    "do {",
+    "  $before = $ids.Count",
+    "  foreach ($item in $all) { if ($ids.Contains([int]$item.ParentProcessId)) { [void]$ids.Add([int]$item.ProcessId) } }",
+    "} while ($ids.Count -ne $before)",
+    "$all | Where-Object { $ids.Contains([int]$_.ProcessId) } | Select-Object ProcessId,ParentProcessId,WorkingSetSize,CommandLine | ConvertTo-Json -Compress",
+  ].join("; ")
+  const child = Bun.spawn(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], {
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  const [stdout, stderr, code] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ])
+  if (code !== 0) throw new Error(`Windows process sampling failed: ${stderr.trim() || `exit ${code}`}`)
+  const parsed = JSON.parse(stdout.trim() || "[]") as WindowsProcess | WindowsProcess[]
+  const rows = Array.isArray(parsed) ? parsed : [parsed]
+  const result: HelperMemory = {
+    totalRss: 0,
+    rendererRss: 0,
+    nodeServiceRss: 0,
+    gpuRss: 0,
+    networkRss: 0,
+    processes: 0,
+  }
+  for (const row of rows) {
+    const rss = Number(row.WorkingSetSize)
+    if (!Number.isFinite(rss)) continue
+    const command = row.CommandLine ?? ""
+    result.totalRss += rss
+    result.processes += 1
+    if (command.includes("--type=renderer")) result.rendererRss += rss
     if (command.includes("--utility-sub-type=node.mojom.NodeService")) result.nodeServiceRss += rss
     if (command.includes("--type=gpu-process")) result.gpuRss += rss
     if (command.includes("--utility-sub-type=network.mojom.NetworkService")) result.networkRss += rss
@@ -242,10 +297,10 @@ async function main() {
       for (const tab of tabs()) {
         const id = tab.dataset.sessionId
         const directory = tab.dataset.directory
-        if (!id || !directory || targetWorkspaces.has(directory)) continue
+        if (!id || !directory) continue
         targets.push(id)
         targetWorkspaces.add(directory)
-        if (targetWorkspaces.size >= ${options.workspaces} || targets.length >= ${options.tabs}) break
+        if (targets.length >= ${options.tabs}) break
       }
       const openLink = async (link, source) => {
         const id = link.getAttribute('href')?.split('/').at(-1)
@@ -272,7 +327,7 @@ async function main() {
         const openedWorkspaces = new Set(
           tabs().filter((item) => opened.includes(item.dataset.sessionId)).map((item) => item.dataset.directory).filter(Boolean),
         )
-        if (targetWorkspaces.size >= ${options.workspaces}) break
+        if (targets.length >= ${options.tabs}) break
         const slug = project.dataset.project
         diagnostics.push('project-click slug=' + slug)
         project.click()

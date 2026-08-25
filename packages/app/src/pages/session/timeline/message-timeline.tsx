@@ -86,6 +86,7 @@ import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
 import { timelineRowCache } from "./row-cache"
+import { DEFAULT_TIMELINE_OVERSCAN, timelineOverscan } from "./windows-performance"
 import { createSessionFind } from "./session-find"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
 import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
@@ -104,6 +105,8 @@ const FAST_SCROLL_OVERSCAN = 2
 const FAST_SCROLL_BUDGET_SHARE = 0.4
 const FAST_SCROLL_SPEED = 1.5 // px per ms
 const FAST_SCROLL_WINDOW_MS = 140
+const normalTimelineOverscan =
+  typeof navigator === "undefined" ? DEFAULT_TIMELINE_OVERSCAN : timelineOverscan(navigator.userAgent)
 
 type FramedTimelineRow = Exclude<TimelineRow.TimelineRow, { _tag: "TurnGap" }>
 type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<TimelineRow.TimelineRow, { _tag: T }>
@@ -624,7 +627,9 @@ export function MessageTimeline(props: {
   }
   const hasCachedMeasurements = initialMeasurements.length > 0
   const coldBottomMount = !hasCachedMeasurements && props.shouldAnchorBottom()
-  const [renderOverscan, setRenderOverscan] = createSignal(hasCachedMeasurements || coldBottomMount ? 6 : 20)
+  const [renderOverscan, setRenderOverscan] = createSignal(
+    hasCachedMeasurements || coldBottomMount ? 6 : normalTimelineOverscan,
+  )
 
   type PrependAnchor = {
     key: string
@@ -1008,7 +1013,7 @@ export function MessageTimeline(props: {
     overscanTimer = window.setTimeout(() => {
       overscanTimer = undefined
       const previousOverscan = renderOverscan()
-      if (previousOverscan < 20) setRenderOverscan(20)
+      if (previousOverscan < normalTimelineOverscan) setRenderOverscan(normalTimelineOverscan)
     }, overscanExpansionDelayMs)
   })
 

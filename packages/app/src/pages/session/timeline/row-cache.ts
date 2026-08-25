@@ -1,4 +1,5 @@
 import type { VirtualItem } from "@tanstack/solid-virtual"
+import { isWindowsElectron, WINDOWS_TIMELINE_ROW_CACHE_MAX } from "./windows-performance"
 
 /**
  * Quality of a row height measurement.
@@ -47,7 +48,7 @@ export function rowWidthCompatible(cachedWidth: number, currentWidth: number) {
  * - `snapshot` / `restore` persist the cache across tab switches.
  */
 export class TimelineRowMeasurementCache {
-  private rows = new Map<string, RowMeasurement>()
+  protected rows = new Map<string, RowMeasurement>()
 
   get(rowKey: string): RowMeasurement | undefined {
     return this.rows.get(rowKey)
@@ -192,6 +193,26 @@ export class TimelineRowMeasurementCache {
   }
 }
 
+export class BoundedTimelineRowMeasurementCache extends TimelineRowMeasurementCache {
+  constructor(private maxEntries: number) {
+    super()
+  }
+
+  override set(rowKey: string, measurement: RowMeasurement): void {
+    super.set(rowKey, measurement)
+    // A rejected lower-quality/older write did not install this object and
+    // must not refresh the entry's recency.
+    if (this.rows.get(rowKey) !== measurement) return
+    this.rows.delete(rowKey)
+    this.rows.set(rowKey, measurement)
+    while (this.rows.size > this.maxEntries) {
+      const oldest = this.rows.keys().next().value
+      if (!oldest) break
+      this.rows.delete(oldest)
+    }
+  }
+}
+
 /**
  * Module-level singleton shared across timeline mounts.
  *
@@ -200,4 +221,8 @@ export class TimelineRowMeasurementCache {
  * risk of cross-session collision; `evictPrefix` can clear a session on
  * unmount if memory becomes a concern.
  */
-export const timelineRowCache = new TimelineRowMeasurementCache()
+const windowsDesktop = typeof navigator !== "undefined" && isWindowsElectron(navigator.userAgent)
+
+export const timelineRowCache = windowsDesktop
+  ? new BoundedTimelineRowMeasurementCache(WINDOWS_TIMELINE_ROW_CACHE_MAX)
+  : new TimelineRowMeasurementCache()
