@@ -72,7 +72,7 @@ function resolveGit(
     kind: "git",
     repository: input.repository,
     reference: parsed,
-    path: repositoryCachePath(parsed),
+    path: repositoryCachePath(parsed, "branch" in input ? input.branch : undefined),
     ...("branch" in input ? { branch: input.branch } : {}),
   }
 }

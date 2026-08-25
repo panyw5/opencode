@@ -94,6 +94,7 @@ describe("tool.repo_clone", () => {
         yield* git(source, ["commit", "-m", "add readme"])
         yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
         yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
+        yield* git(remoteRepo, ["symbolic-ref", "HEAD", "refs/heads/main"])
 
         const tool = yield* init()
         const cloned = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository: "owner/repo" }, ctx))
@@ -167,6 +168,7 @@ describe("tool.repo_clone", () => {
         yield* git(source, ["commit", "-m", "add docs"])
         yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
         yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
+        yield* git(remoteRepo, ["symbolic-ref", "HEAD", "refs/heads/main"])
 
         const tool = yield* init()
         const result = yield* githubBase(
@@ -176,7 +178,77 @@ describe("tool.repo_clone", () => {
 
         expect(result.metadata.status).toBe("cloned")
         expect(result.metadata.branch).toBe("docs")
+        expect(result.metadata.localPath).toContain("repo@docs")
         expect(yield* fs.readFileString(path.join(result.metadata.localPath, "DOCS.md"))).toBe("docs\n")
+      }),
+    ),
+  )
+
+  it.live("keeps branch checkouts isolated from the branchless cache", () =>
+    provideTmpdirInstance((_dir) =>
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const source = yield* tmpdirScoped({ git: true })
+        const remoteRoot = yield* tmpdirScoped()
+        const remoteDir = path.join(remoteRoot, "branch-isolation-owner")
+        const remoteRepo = path.join(remoteDir, "branch-isolation-repo.git")
+
+        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "main\n"))
+        yield* git(source, ["add", "."])
+        yield* git(source, ["commit", "-m", "main"])
+        yield* git(source, ["checkout", "-b", "feature/docs"])
+        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "feature\n"))
+        yield* git(source, ["add", "."])
+        yield* git(source, ["commit", "-m", "feature"])
+        yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
+        yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
+        yield* git(remoteRepo, ["symbolic-ref", "HEAD", "refs/heads/main"])
+
+        const tool = yield* init()
+        const main = yield* githubBase(
+          `file://${remoteRoot}/`,
+          tool.execute({ repository: "branch-isolation-owner/branch-isolation-repo" }, ctx),
+        )
+        const feature = yield* githubBase(
+          `file://${remoteRoot}/`,
+          tool.execute({ repository: "branch-isolation-owner/branch-isolation-repo", branch: "feature/docs" }, ctx),
+        )
+
+        expect(main.metadata.localPath).not.toBe(feature.metadata.localPath)
+        expect(feature.metadata.localPath).toContain("repo@feature%2Fdocs")
+        expect(yield* fs.readFileString(path.join(main.metadata.localPath, "README.md"))).toBe("main\n")
+        expect(yield* fs.readFileString(path.join(feature.metadata.localPath, "README.md"))).toBe("feature\n")
+      }),
+    ),
+  )
+
+  it.live("serializes concurrent refreshes for one branch checkout", () =>
+    provideTmpdirInstance((_dir) =>
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const source = yield* tmpdirScoped({ git: true })
+        const remoteRoot = yield* tmpdirScoped()
+        const remoteDir = path.join(remoteRoot, "concurrent-owner")
+        const remoteRepo = path.join(remoteDir, "concurrent-repo.git")
+
+        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "stable\n"))
+        yield* git(source, ["add", "."])
+        yield* git(source, ["commit", "-m", "stable"])
+        yield* git(source, ["checkout", "-b", "feature/concurrent"])
+        yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
+        yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
+
+        const tool = yield* init()
+        const repository = "concurrent-owner/concurrent-repo"
+        const first = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository, branch: "feature/concurrent" }, ctx))
+        const results = yield* Effect.all(
+          [1, 2].map(() => githubBase(`file://${remoteRoot}/`, tool.execute({ repository, branch: "feature/concurrent", refresh: true }, ctx))),
+          { concurrency: "unbounded" },
+        )
+
+        expect(first.metadata.localPath).toBe(results[0].metadata.localPath)
+        expect(results[0].metadata.localPath).toBe(results[1].metadata.localPath)
+        expect(yield* fs.readFileString(path.join(first.metadata.localPath, "README.md"))).toBe("stable\n")
       }),
     ),
   )

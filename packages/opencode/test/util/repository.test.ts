@@ -29,6 +29,12 @@ describe("util.repository", () => {
       label: "owner/repo",
     })
     expect(repositoryCachePath(reference)).toBe(path.join(Global.Path.repos, "github.com", "owner", "repo"))
+    expect(repositoryCachePath(reference, "feature/docs.v1")).toBe(
+      path.join(Global.Path.repos, "github.com", "owner", "repo@feature%2Fdocs.v1"),
+    )
+    expect(repositoryCachePath(reference, "release@2026")).toBe(
+      path.join(Global.Path.repos, "github.com", "owner", "repo@release%402026"),
+    )
     expect(repositoryCacheIdentity(reference)).toBe("github.com/owner/repo")
   })
 

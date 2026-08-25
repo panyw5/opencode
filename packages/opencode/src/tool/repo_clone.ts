@@ -41,7 +41,7 @@ export const RepoCloneTool = Tool.define<typeof Parameters, Metadata, Repository
 
           const repository = reference.label
           const remote = reference.remote
-          const localPath = repositoryCachePath(reference)
+          const localPath = repositoryCachePath(reference, params.branch)
 
           yield* ctx.ask({
             permission: "repo_clone",

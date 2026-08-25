@@ -118,7 +118,7 @@ describe("reference", () => {
       if (repo.kind === "git") {
         expect(repo.repository).toBe("Effect-TS/effect")
         expect(repo.branch).toBe("main")
-        expect(repo.path).toBe(path.join(Global.Path.repos, "github.com", "Effect-TS", "effect"))
+        expect(repo.path).toBe(path.join(Global.Path.repos, "github.com", "Effect-TS", "effect@main"))
       }
       expect(repoString.kind).toBe("git")
       if (repoString.kind === "git") {
@@ -154,7 +154,7 @@ describe("reference", () => {
     ),
   )
 
-  it.live("marks same-cache references with different branches invalid", () =>
+  it.live("keeps references with different branches on isolated cache paths", () =>
     Effect.gen(function* () {
       const root = path.resolve("opencode-reference-root")
       const references = Reference.resolveAll({
@@ -167,12 +167,10 @@ describe("reference", () => {
         }),
       })
 
-      expect(references.map((reference) => reference.kind)).toEqual(["git", "invalid", "git"])
-      expect(references[1]?.kind).toBe("invalid")
-      if (references[1]?.kind === "invalid") {
-        expect(references[1].message).toContain("conflicts with @main")
-        expect(references[1].message).toContain("@dev requests dev")
-      }
+      expect(references.map((reference) => reference.kind)).toEqual(["git", "git", "git"])
+      const paths = references.filter((reference) => reference.kind === "git").map((reference) => reference.path)
+      expect(new Set(paths).size).toBe(2)
+      expect(paths.some((value) => value.endsWith("repo@dev"))).toBe(true)
     }),
   )
 

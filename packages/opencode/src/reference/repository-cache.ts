@@ -176,7 +176,7 @@ const ensureWithServices = Effect.fn("RepositoryCache.ensureWithServices")(funct
 
   const repository = input.reference.label
   const remote = input.reference.remote
-  const localPath = repositoryCachePath(input.reference)
+  const localPath = repositoryCachePath(input.reference, input.branch)
   const cloneTarget = parseRepositoryReference(remote) ?? input.reference
 
   return yield* Effect.acquireUseRelease(

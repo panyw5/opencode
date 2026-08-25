@@ -219,8 +219,9 @@ export function parseGitHubRemote(input: string) {
   return { owner: parsed.owner, repo: parsed.repo }
 }
 
-export function repositoryCachePath(input: Reference) {
-  return path.join(Global.Path.repos, ...input.host.split(":"), ...input.segments)
+export function repositoryCachePath(input: Reference, branch?: string) {
+  const base = path.join(Global.Path.repos, ...input.host.split(":"), ...input.segments)
+  return branch ? `${base}@${encodeURIComponent(branch)}` : base
 }
 
 export function repositoryCacheIdentity(input: Reference) {
