@@ -2037,6 +2037,110 @@ describe("session.llm.stream", () => {
     },
   )
 
+  it.instance(
+    "replays Anthropic signed reasoning from assistant history",
+    () =>
+      Effect.gen(function* () {
+        const model = loadFixture("anthropic", "claude-opus-4-6").model
+        const chunks = [
+          {
+            type: "message_start",
+            message: {
+              id: "msg-signed-reasoning",
+              model: model.id,
+              usage: { input_tokens: 5, cache_creation_input_tokens: null, cache_read_input_tokens: null },
+            },
+          },
+          {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "" },
+          },
+          {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "Hello" },
+          },
+          { type: "content_block_stop", index: 0 },
+          {
+            type: "message_delta",
+            delta: { stop_reason: "end_turn", stop_sequence: null, container: null },
+            usage: { input_tokens: 5, output_tokens: 1, cache_creation_input_tokens: null, cache_read_input_tokens: null },
+          },
+          { type: "message_stop" },
+        ]
+        const request = waitRequest("/messages", createEventResponse(chunks))
+
+        const resolved = yield* Provider.use.getModel(ProviderID.make("anthropic"), ModelID.make(model.id))
+        const sessionID = SessionID.make("session-test-anthropic-signed-reasoning")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-anthropic-signed-reasoning"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make("anthropic"), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            { role: "user", content: "Hello" },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "Let me think about this...",
+                  providerOptions: { anthropic: { signature: "sig-abc-123" } },
+                },
+                { type: "text", text: "Here is my answer" },
+              ],
+            },
+            { role: "user", content: "Continue" },
+          ] satisfies ModelMessage[],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const body = capture.body
+        const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>
+        const assistantMsg = messages.find((m) => m.role === "assistant")
+        expect(assistantMsg).toBeDefined()
+        const thinkingBlock = assistantMsg!.content.find((p) => p.type === "thinking")
+        expect(thinkingBlock).toBeDefined()
+        expect(thinkingBlock!.thinking).toBe("Let me think about this...")
+        expect(thinkingBlock!.signature).toBe("sig-abc-123")
+      }),
+    {
+      config: () => {
+        const model = loadFixture("anthropic", "claude-opus-4-6").model
+        return {
+          enabled_providers: ["anthropic"],
+          provider: {
+            anthropic: {
+              name: "Anthropic",
+              env: ["ANTHROPIC_API_KEY"],
+              npm: "@ai-sdk/anthropic",
+              api: "https://api.anthropic.com/v1",
+              models: { [model.id]: configModel(model) as ConfigModel },
+              options: { apiKey: "test-anthropic-key", baseURL: `${state.server!.url.origin}/v1` },
+            },
+          },
+        }
+      },
+    },
+  )
+
   const geminiFixture = { providerID: "google", modelID: "gemini-2.5-flash" }
   it.instance(
     "sends Google API payload for Gemini models",
