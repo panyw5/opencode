@@ -76,6 +76,19 @@ const withHome = <A, E, R>(home: string, self: Effect.Effect<A, E, R>) =>
   )
 
 describe("skill", () => {
+  it.instance("ships Math Mode control skills", () =>
+    Effect.gen(function* () {
+      const skills = yield* Skill.Service
+      const initialize = yield* skills.require("math-initialize")
+      const elaboration = yield* skills.require("math-elaboration")
+      const query = yield* skills.require("math-query-memory")
+      expect(initialize.location).toBe("<built-in>")
+      expect(initialize.content).toContain("math_worker_ensure")
+      expect(elaboration.content).toContain("five-part")
+      expect(query.content).toContain("fact_id")
+    }),
+  )
+
   it.live("discovers skills from .opencode/skill/ directory", () =>
     provideTmpdirInstance(
       (dir) =>
@@ -602,7 +615,7 @@ description: Duplicate path test skill.
 
     yield* Effect.gen(function* () {
       const skill = yield* Skill.Service
-      const skills = yield* skill.all()
+      const skills = (yield* skill.all()).filter((item) => item.location !== "<built-in>")
       expect(skills.length).toBe(1)
       expect(skills[0].name).toBe("echo")
     }).pipe(provideInstance(tmp.path))

@@ -1,0 +1,1 @@
+Ensure an existing detached math-worker is running. If its PID is alive this is idempotent. If it died unexpectedly, restart a new process incarnation using the same session ID, TASK file, transcript, and truth store. A deliberate stop marker prevents restart. Use this instead of math_worker_start when recovering an existing worker.

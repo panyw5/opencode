@@ -3,7 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import { createGateway, type MathGateway, type MathGatewayConfig, ToolNotFoundError } from "./gateway"
 import { type MathToolName } from "./roles"
-import { httpVerifier, missingVerifier, type Verifier } from "./verifier"
+import { httpVerifier, sessionVerifier, type Verifier } from "./verifier"
 
 const StringMap = z.record(z.string(), z.string())
 
@@ -68,19 +68,15 @@ export function buildMathMcpServer(gateway: MathGateway): McpServer {
   const server = new McpServer({ name: "opencode-math", version: "0.1.0" })
   for (const name of gateway.tools()) {
     const meta = TOOL_META[name]
-    server.registerTool(
-      name,
-      { description: meta.description, inputSchema: meta.inputSchema },
-      async (args) => {
-        try {
-          const result = await gateway.call(name, (args ?? {}) as Record<string, unknown>)
-          return { content: [{ type: "text" as const, text: JSON.stringify(result) }] }
-        } catch (e) {
-          const message = e instanceof ToolNotFoundError ? e.message : e instanceof Error ? e.message : String(e)
-          return { content: [{ type: "text" as const, text: message }], isError: true }
-        }
-      },
-    )
+    server.registerTool(name, { description: meta.description, inputSchema: meta.inputSchema }, async (args) => {
+      try {
+        const result = await gateway.call(name, (args ?? {}) as Record<string, unknown>)
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }] }
+      } catch (e) {
+        const message = e instanceof ToolNotFoundError ? e.message : e instanceof Error ? e.message : String(e)
+        return { content: [{ type: "text" as const, text: message }], isError: true }
+      }
+    })
   }
   return server
 }
@@ -88,10 +84,16 @@ export function buildMathMcpServer(gateway: MathGateway): McpServer {
 export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier {
   const url = env.OPENCODE_MATH_VERIFY_URL
   if (url) return httpVerifier(url)
-  return missingVerifier("OPENCODE_MATH_VERIFY_URL is not set (verify service not wired yet)")
+  return sessionVerifier({
+    workspace: env.OPENCODE_MATH_WORKSPACE || process.cwd(),
+    model: env.OPENCODE_MATH_VERIFY_MODEL,
+  })
 }
 
-export function gatewayFromEnv(env: NodeJS.ProcessEnv = process.env, overrides?: Partial<MathGatewayConfig>): MathGateway {
+export function gatewayFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  overrides?: Partial<MathGatewayConfig>,
+): MathGateway {
   const projectDir = overrides?.projectDir ?? env.OPENCODE_MATH_PROJECT_DIR
   if (!projectDir) throw new Error("OPENCODE_MATH_PROJECT_DIR is not set")
   return createGateway({
@@ -108,6 +110,24 @@ export async function serveMathMcp(config: MathGatewayConfig): Promise<void> {
   const server = buildMathMcpServer(gateway)
   const transport = new StdioServerTransport()
   await server.connect(transport)
+  process.stdin.resume()
+  await new Promise<void>((resolve, reject) => {
+    if (process.stdin.readableEnded) return resolve()
+    const cleanup = () => {
+      process.stdin.off("end", onEnd)
+      process.stdin.off("error", onError)
+    }
+    const onEnd = () => {
+      cleanup()
+      resolve()
+    }
+    const onError = (error: Error) => {
+      cleanup()
+      reject(error)
+    }
+    process.stdin.once("end", onEnd)
+    process.stdin.once("error", onError)
+  })
 }
 
 export * as MathMcp from "./mcp"

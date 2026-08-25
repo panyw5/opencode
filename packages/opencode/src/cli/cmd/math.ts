@@ -2,16 +2,21 @@ import type { Argv } from "yargs"
 import { cmd } from "./cmd"
 import { effectCmd, fail } from "../effect-cmd"
 import { serveMathMcp, verifierFromEnv } from "@/math/mcp"
-import { runWorkerLoop, startMathWorker, statusMathWorker, stopMathWorker } from "@/math/worker"
+import { ensureMathWorker, runWorkerLoop, startMathWorker, statusMathWorker, stopMathWorker } from "@/math/worker"
 import { mathRoot } from "@/math/layout"
+import { buildVerifierPrompt, parseVerifierText, readVerifyInput } from "@/math/verifier"
 import { Session } from "@/session/session"
+import { SessionPrompt } from "@/session/prompt"
+import { Provider } from "@/provider/provider"
 import { SessionID } from "@/session/schema"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect } from "effect"
 import path from "path"
 
 function resolveMathProjectDir(projectDir: string | undefined, workspace: string): string {
-  return projectDir || process.env.OPENCODE_MATH_PROJECT_DIR || mathRoot(workspace, path.basename(workspace) || "default")
+  return (
+    projectDir || process.env.OPENCODE_MATH_PROJECT_DIR || mathRoot(workspace, path.basename(workspace) || "default")
+  )
 }
 
 export const MathCommand = cmd({
@@ -21,11 +26,62 @@ export const MathCommand = cmd({
     yargs
       .command(MathMcpCommand)
       .command(MathWorkerCommand)
+      .command(MathVerifyCommand)
       .command(MathStartCommand)
+      .command(MathEnsureCommand)
       .command(MathStatusCommand)
       .command(MathStopCommand)
       .demandCommand(),
   async handler() {},
+})
+
+export const MathVerifyCommand = effectCmd({
+  command: "verify",
+  describe: false,
+  directory: (args: { dir?: string }) => (args.dir ? path.resolve(process.cwd(), args.dir) : process.cwd()),
+  builder: (yargs: Argv) =>
+    yargs
+      .option("input", { type: "string", demandOption: true, describe: "verifier input JSON file" })
+      .option("dir", { type: "string", describe: "workspace directory (Instance cwd)" })
+      .option("model", { type: "string", describe: "verifier model as provider/model" }),
+  handler: Effect.fn("Cli.math.verify")(function* (args) {
+    const inputFile = path.resolve(process.cwd(), String(args.input))
+    const input = yield* Effect.tryPromise({
+      try: () => readVerifyInput(inputFile),
+      catch: (error) => new Error(`invalid verifier input: ${error instanceof Error ? error.message : String(error)}`),
+    }).pipe(Effect.orDie)
+    const sessions = yield* Session.Service
+    const prompts = yield* SessionPrompt.Service
+    const session = yield* sessions.create({ title: "math-verifier", agent: "math-verifier" })
+    const modelName = typeof args.model === "string" ? args.model : process.env.OPENCODE_MATH_VERIFY_MODEL
+    const model = modelName ? Provider.parseModel(modelName) : undefined
+    const result = yield* prompts
+      .prompt({
+        sessionID: session.id,
+        agent: "math-verifier",
+        model,
+        parts: [{ type: "text", text: buildVerifierPrompt(input) }],
+      })
+      .pipe(
+        Effect.ensuring(sessions.setArchived({ sessionID: session.id, time: Date.now() })),
+        Effect.catchCause((cause) => fail(`math verifier session failed: ${String(cause)}`)),
+      )
+    if (result.info.role !== "assistant" || result.info.error) {
+      const detail = result.info.role === "assistant" ? JSON.stringify(result.info.error) : "no assistant response"
+      return yield* fail(`math verifier session failed: ${detail}`)
+    }
+    let verdict
+    try {
+      const text = result.parts
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("")
+      verdict = parseVerifierText(text)
+    } catch (error) {
+      return yield* fail(error instanceof Error ? error.message : String(error))
+    }
+    process.stdout.write(JSON.stringify(verdict) + "\n")
+  }),
 })
 
 export const MathMcpCommand = cmd({
@@ -40,7 +96,8 @@ export const MathMcpCommand = cmd({
       })
       .option("project-dir", {
         type: "string",
-        describe: "math project root (contains fact_graph/ and global_memory/). Default: OPENCODE_MATH_PROJECT_DIR or cwd/.math/<name>",
+        describe:
+          "math project root (contains fact_graph/ and global_memory/). Default: OPENCODE_MATH_PROJECT_DIR or cwd/.math/<name>",
       })
       .option("author", {
         type: "string",
@@ -65,7 +122,7 @@ export const MathMcpCommand = cmd({
 
 export const MathWorkerCommand = effectCmd({
   command: "worker",
-  describe: "run a detached math-worker loop (heartbeat; does not follow sidecar lifetime)",
+  describe: "run a detached math-worker prompt loop (does not follow sidecar lifetime)",
   directory: (args: { dir?: string }) => (args.dir ? path.resolve(process.cwd(), args.dir) : process.cwd()),
   builder: (yargs: Argv) =>
     yargs
@@ -91,9 +148,18 @@ export const MathWorkerCommand = effectCmd({
         default: 2000,
         describe: "heartbeat interval in milliseconds",
       })
+      .option("model", {
+        type: "string",
+        describe: "worker model as provider/model (or OPENCODE_MATH_WORKER_MODEL)",
+      })
       .option("parent", {
         type: "string",
         describe: "parent session id when --create is set",
+      })
+      .option("probe-heartbeat-only", {
+        type: "boolean",
+        default: false,
+        hidden: true,
       }),
   handler: Effect.fn("Cli.math.worker")(function* (args) {
     const ctx = yield* InstanceState.context
@@ -118,7 +184,9 @@ export const MathWorkerCommand = effectCmd({
       sessionID,
       projectDir,
       intervalMs: interval,
-    }).pipe(Effect.catchTag("NotFoundError", (error) => fail(error.message)))
+      heartbeatOnly: args["probe-heartbeat-only"] === true,
+      model: typeof args.model === "string" ? args.model : process.env.OPENCODE_MATH_WORKER_MODEL,
+    }).pipe(Effect.catchCause((cause) => fail(`math worker loop failed: ${String(cause)}`)))
   }),
 })
 
@@ -140,6 +208,28 @@ export const MathStartCommand = effectCmd({
       project: args.project,
       intervalMs: args.interval,
     })
+    process.stdout.write(JSON.stringify(result) + "\n")
+  }),
+})
+
+export const MathEnsureCommand = effectCmd({
+  command: "ensure",
+  describe: "restart a dead math-worker using the same session id",
+  builder: (yargs) =>
+    yargs
+      .option("session", { type: "string", demandOption: true, describe: "existing math-worker session id" })
+      .option("project-dir", { type: "string", describe: "existing math project root" })
+      .option("interval", { type: "number", describe: "worker round interval ms" })
+      .option("model", { type: "string", describe: "worker model as provider/model" }),
+  handler: Effect.fn("Cli.math.ensure")(function* (args) {
+    const ctx = yield* InstanceState.context
+    const projectDir = resolveMathProjectDir(args["project-dir"], ctx.directory)
+    const result = yield* ensureMathWorker({
+      sessionID: SessionID.make(args.session),
+      projectDir,
+      intervalMs: args.interval,
+      model: args.model ?? process.env.OPENCODE_MATH_WORKER_MODEL,
+    }).pipe(Effect.catchCause((cause) => fail(`math worker ensure failed: ${String(cause)}`)))
     process.stdout.write(JSON.stringify(result) + "\n")
   }),
 })

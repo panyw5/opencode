@@ -13,6 +13,7 @@ import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_SCOUT from "./prompt/scout.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
+import PROMPT_MATH_ORCHESTRATOR from "./prompt/math-orchestrator.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@opencode-ai/core/global"
@@ -116,6 +117,7 @@ export const layer = Layer.effect(
           repo_clone: "deny",
           repo_overview: "deny",
           math_worker_start: "deny",
+          math_worker_ensure: "deny",
           math_worker_status: "deny",
           math_worker_stop: "deny",
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
@@ -292,11 +294,13 @@ export const layer = Layer.effect(
             options: {},
             native: true,
             mode: "primary",
+            prompt: PROMPT_MATH_ORCHESTRATOR,
             permission: Permission.merge(
               defaults,
               Permission.fromConfig({
                 bash: "deny",
                 math_worker_start: "allow",
+                math_worker_ensure: "allow",
                 math_worker_status: "allow",
                 math_worker_stop: "allow",
               }),
@@ -322,11 +326,31 @@ export const layer = Layer.effect(
                 skill: "allow",
                 webfetch: "allow",
                 websearch: "allow",
+                "math-truth_gm_add": "allow",
+                "math-truth_gm_search": "allow",
+                "math-truth_fact_search": "allow",
+                "math-truth_fact_submit": "allow",
                 task: "deny",
                 bash: "deny",
                 math_worker_start: "deny",
+                math_worker_ensure: "deny",
                 math_worker_status: "deny",
                 math_worker_stop: "deny",
+              }),
+              user,
+            ),
+          },
+          "math-verifier": {
+            name: "math-verifier",
+            description: "Cold-start mathematical proof judge. Read-only and unable to submit facts or write memory.",
+            options: {},
+            native: true,
+            hidden: true,
+            mode: "subagent",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
               }),
               user,
             ),

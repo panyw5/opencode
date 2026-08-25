@@ -15,6 +15,9 @@ import { Glob } from "@opencode-ai/core/util/glob"
 import * as Log from "@opencode-ai/core/util/log"
 import { Discovery } from "./discovery"
 import CUSTOMIZE_OPENCODE_SKILL_BODY from "./prompt/customize-opencode.md" with { type: "text" }
+import MATH_INITIALIZE_SKILL_BODY from "./prompt/math-initialize.md" with { type: "text" }
+import MATH_ELABORATION_SKILL_BODY from "./prompt/math-elaboration.md" with { type: "text" }
+import MATH_QUERY_MEMORY_SKILL_BODY from "./prompt/math-query-memory.md" with { type: "text" }
 import { isRecord } from "@/util/record"
 
 const log = Log.create({ service: "skill" })
@@ -32,6 +35,23 @@ const SKILL_PATTERN = "**/SKILL.md"
 const CUSTOMIZE_OPENCODE_SKILL_NAME = "customize-opencode"
 const CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION =
   "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself."
+const MATH_SKILLS = [
+  {
+    name: "math-initialize",
+    description: "Initialize or reconnect an OpenCode Math Mode swarm without duplicating durable workers.",
+    content: MATH_INITIALIZE_SKILL_BODY,
+  },
+  {
+    name: "math-elaboration",
+    description: "Compress Math Mode strategy, verified foundations, worker assignments, and open obligations.",
+    content: MATH_ELABORATION_SKILL_BODY,
+  },
+  {
+    name: "math-query-memory",
+    description: "Query Math Mode fact graph and global memory while preserving the verified-vs-hypothesis boundary.",
+    content: MATH_QUERY_MEMORY_SKILL_BODY,
+  },
+] as const
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -281,6 +301,9 @@ export const layer = Layer.effect(
           description: CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION,
           location: "<built-in>",
           content: CUSTOMIZE_OPENCODE_SKILL_BODY,
+        }
+        for (const skill of MATH_SKILLS) {
+          s.skills[skill.name] = { ...skill, location: "<built-in>" }
         }
         yield* loadSkills(s, yield* InstanceState.get(discovered), bus)
         return s

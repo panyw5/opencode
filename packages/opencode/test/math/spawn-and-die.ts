@@ -32,6 +32,7 @@ if (import.meta.main) {
       projectDir,
       "--interval",
       interval,
+      "--probe-heartbeat-only",
     ],
     cwd: projectDir,
     env: {

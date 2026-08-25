@@ -78,7 +78,7 @@ import {
   ScheduledTaskRunNowTool,
   ScheduledTaskUpdateTool,
 } from "./scheduled-task"
-import { MathWorkerStartTool, MathWorkerStatusTool, MathWorkerStopTool } from "./math-worker"
+import { MathWorkerEnsureTool, MathWorkerStartTool, MathWorkerStatusTool, MathWorkerStopTool } from "./math-worker"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -163,6 +163,7 @@ export const layer: Layer.Layer<
     const scheduledTaskRunNow = yield* ScheduledTaskRunNowTool
     const scheduledTaskRuns = yield* ScheduledTaskRunsTool
     const mathWorkerStart = yield* MathWorkerStartTool
+    const mathWorkerEnsure = yield* MathWorkerEnsureTool
     const mathWorkerStatus = yield* MathWorkerStatusTool
     const mathWorkerStop = yield* MathWorkerStopTool
     const lsptool = yield* LspTool
@@ -298,6 +299,7 @@ export const layer: Layer.Layer<
           scheduled_task_run_now: Tool.init(scheduledTaskRunNow),
           scheduled_task_runs: Tool.init(scheduledTaskRuns),
           math_worker_start: Tool.init(mathWorkerStart),
+          math_worker_ensure: Tool.init(mathWorkerEnsure),
           math_worker_status: Tool.init(mathWorkerStatus),
           math_worker_stop: Tool.init(mathWorkerStop),
           search: Tool.init(websearch),
@@ -315,45 +317,46 @@ export const layer: Layer.Layer<
         })
 
         const builtin = [
-            tool.invalid,
-            ...(questionEnabled ? [tool.question] : []),
-            tool.shell,
-            tool.read,
-            tool.glob,
-            tool.grep,
-            tool.edit,
-            tool.write,
-            tool.task,
-            tool.task_list,
-            tool.task_transcript,
-            tool.fetch,
-            tool.todo,
-            tool.project_task_create,
-            tool.project_task_list,
-            tool.project_task_get,
-            tool.project_task_mount,
-            tool.project_task_update,
-            tool.scheduled_task_create,
-            tool.scheduled_task_list,
-            tool.scheduled_task_get,
-            tool.scheduled_task_update,
-            tool.scheduled_task_delete,
-            tool.scheduled_task_run_now,
-            tool.scheduled_task_runs,
-            tool.math_worker_start,
-            tool.math_worker_status,
-            tool.math_worker_stop,
-            tool.search,
-            ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
-            tool.codex_consult,
-            tool.claude_consult,
-            tool.grok_consult,
-            tool.dsh_consult,
-            tool.skill,
-            tool.patch,
-            ...(flags.experimentalLspTool ? [tool.lsp] : []),
-            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
-          ]
+          tool.invalid,
+          ...(questionEnabled ? [tool.question] : []),
+          tool.shell,
+          tool.read,
+          tool.glob,
+          tool.grep,
+          tool.edit,
+          tool.write,
+          tool.task,
+          tool.task_list,
+          tool.task_transcript,
+          tool.fetch,
+          tool.todo,
+          tool.project_task_create,
+          tool.project_task_list,
+          tool.project_task_get,
+          tool.project_task_mount,
+          tool.project_task_update,
+          tool.scheduled_task_create,
+          tool.scheduled_task_list,
+          tool.scheduled_task_get,
+          tool.scheduled_task_update,
+          tool.scheduled_task_delete,
+          tool.scheduled_task_run_now,
+          tool.scheduled_task_runs,
+          tool.math_worker_start,
+          tool.math_worker_ensure,
+          tool.math_worker_status,
+          tool.math_worker_stop,
+          tool.search,
+          ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
+          tool.codex_consult,
+          tool.claude_consult,
+          tool.grok_consult,
+          tool.dsh_consult,
+          tool.skill,
+          tool.patch,
+          ...(flags.experimentalLspTool ? [tool.lsp] : []),
+          ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+        ]
         log.info("builtin tools initialized", { ids: builtin.map((item) => item.id) })
 
         return {
@@ -475,7 +478,9 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(Skill.defaultLayer),
       Layer.provide(Agent.defaultLayer),
       Layer.provide(Session.defaultLayer),
-      Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundShell.defaultLayer)),
+      Layer.provide(
+        Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundShell.defaultLayer),
+      ),
       Layer.provide(Provider.defaultLayer),
       Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
       Layer.provide(Reference.defaultLayer),

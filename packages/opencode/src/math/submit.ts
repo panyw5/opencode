@@ -62,9 +62,20 @@ export async function factSubmit(
     undefinedSyms = []
   }
 
-  let result: { verdict: "correct" | "wrong"; repair_hints?: string; verification_report?: unknown }
+  let result: Awaited<ReturnType<Verifier["verify"]>>
   try {
-    result = await ctx.verifier.verify({ statement: input.statement, proof: input.proof })
+    const predecessors = input.predecessors ?? []
+    const predecessor_facts = await Promise.all(
+      predecessors.map(async (fact_id) => ({ fact_id, content: (await ctx.factGraph.getRaw(fact_id)) ?? "" })),
+    )
+    result = await ctx.verifier.verify({
+      problem_id: ctx.problemId,
+      statement: input.statement,
+      proof: input.proof,
+      predecessors,
+      predecessor_facts,
+      glossary: await ctx.factGraph.glossary(),
+    })
   } catch (e) {
     const error = e instanceof VerifyUnavailableError || e instanceof Error ? e.message : String(e)
     return { accepted: false, verdict: "error", error, undefined_symbols: undefinedSyms }
