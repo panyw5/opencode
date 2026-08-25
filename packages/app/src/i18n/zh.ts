@@ -1343,8 +1343,6 @@ export const dict = {
   "error.childStore.storeCreateFailed": "创建存储失败",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
   "config.title": "配置页面",
-  "config.nav.workspace": "工作区",
-  "config.nav.connections": "连接与自动化",
   "config.nav.providersDescription": "配置供应商与模型",
   "config.nav.agentsDescription": "配置智能体 md 文件",
   "config.nav.skillsDescription": "配置技能，技能市场",

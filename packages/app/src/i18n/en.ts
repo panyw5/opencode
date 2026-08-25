@@ -1386,8 +1386,6 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
   "config.title": "Config page",
-  "config.nav.workspace": "Workspace",
-  "config.nav.connections": "Connections & automation",
   "config.nav.providersDescription": "Configure providers and models",
   "config.nav.agentsDescription": "Configure agent markdown files",
   "config.nav.skillsDescription": "Configure skills and browse the marketplace",

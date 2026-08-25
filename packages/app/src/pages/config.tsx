@@ -7313,17 +7313,24 @@ export default function ConfigPage() {
     const prev = state.custom.mode === "edit" ? state.customID : undefined
     const id = result.providerID
     const nextProvider = { ...(cfg().provider ?? {}) } as NonNullable<Config["provider"]>
-    if (prev && prev !== id) delete nextProvider[prev]
+    if (prev && prev !== id) nextProvider[prev] = {} as ProviderCfg
     nextProvider[id] = result.config as ProviderCfg
     if (!nextProvider[id].options) nextProvider[id].options = {}
     nextProvider[id].options = {
       ...nextProvider[id].options,
       ...(result.key ? { apiKey: result.key } : {}),
     }
-    if (!result.key && nextProvider[id].options && "apiKey" in nextProvider[id].options)
-      delete nextProvider[id].options.apiKey
+    if (!result.key && nextProvider[id].options) nextProvider[id].options.apiKey = ""
     const nextDisabled = (cfg().disabled_providers ?? []).filter((item) => item !== id && item !== prev)
     const next = { ...cfg(), provider: nextProvider, disabled_providers: nextDisabled }
+    const previousModels = Object.keys(cfg().provider?.[prev ?? id]?.models ?? {})
+    const nextModels = Object.keys(nextProvider[id]?.models ?? {})
+    console.info("[config] custom provider save payload", {
+      providerID: id,
+      previousModelCount: previousModels.length,
+      nextModelCount: nextModels.length,
+      removedModels: previousModels.filter((modelID) => !nextModels.includes(modelID)),
+    })
     const tasks: Promise<unknown>[] = []
     if (prev && prev !== id) tasks.push(globalSDK.client.auth.remove({ providerID: prev }).catch(() => undefined))
     if (state.customApiDirty || result.key)
@@ -7357,7 +7364,7 @@ export default function ConfigPage() {
     if (!id) return
     setState("custom", "deleting", true)
     const nextProvider = { ...(cfg().provider ?? {}) } as NonNullable<Config["provider"]>
-    delete nextProvider[id]
+    nextProvider[id] = {} as ProviderCfg
     const nextDisabled = (cfg().disabled_providers ?? []).filter((item) => item !== id)
     const next = { ...cfg(), provider: nextProvider, disabled_providers: nextDisabled }
     await globalSDK.client.auth
@@ -7582,9 +7589,6 @@ export default function ConfigPage() {
               <div class="min-w-0 text-20-medium text-text-strong">{t("config.title")}</div>
             </div>
             <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
-              <div class="px-2 pb-2 pt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
-                {t("config.nav.workspace")}
-              </div>
               <div class="flex flex-col gap-1">
                 <SectionButton
                   current={state.section === "providers"}
@@ -7621,12 +7625,6 @@ export default function ConfigPage() {
                   icon={sectionIcon("plugins")}
                   onClick={() => void jump("plugins")}
                 />
-              </div>
-              <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
-              <div class="px-2 pb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
-                {t("config.nav.connections")}
-              </div>
-              <div class="flex flex-col gap-1">
                 <SectionButton
                   current={state.section === "mcp"}
                   title={t("config.mcp.title")}
@@ -7641,6 +7639,9 @@ export default function ConfigPage() {
                   icon={sectionIcon("commands")}
                   onClick={() => void jump("commands")}
                 />
+              </div>
+              <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
+              <div class="flex flex-col gap-1">
                 <SectionButton
                   current={state.section === "channels"}
                   title={t("config.channels.title")}

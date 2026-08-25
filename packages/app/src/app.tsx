@@ -169,11 +169,8 @@ function ConfigLoadingShell() {
               <div class="min-w-0 text-20-medium text-text-strong">{language.t("config.title")}</div>
             </div>
             <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
-              <div class="px-2 pb-2 pt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
-                {language.t("config.nav.workspace")}
-              </div>
               <div class="flex flex-col gap-1">
-                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 5)}>
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 7)}>
                   {(section) => (
                     <SectionButton
                       current={false}
@@ -185,11 +182,8 @@ function ConfigLoadingShell() {
                 </For>
               </div>
               <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
-              <div class="px-2 pb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
-                {language.t("config.nav.connections")}
-              </div>
               <div class="flex flex-col gap-1">
-                <For each={CONFIG_FALLBACK_SECTIONS.slice(5)}>
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(7)}>
                   {(section) => (
                     <Show when={section.id !== "claws" || showClawsSection()}>
                       <SectionButton
