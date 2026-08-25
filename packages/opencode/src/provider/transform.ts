@@ -491,6 +491,9 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
 export function message(msgs: ModelMessage[], model: Provider.Model, options: Record<string, unknown>) {
   msgs = unsupportedParts(msgs, model)
   msgs = normalizeMessages(msgs, model, options)
+  const usesAnthropicAutomaticCaching =
+    options.cacheControl !== undefined &&
+    (model.api.npm === "@ai-sdk/anthropic" || model.api.npm === "@ai-sdk/google-vertex/anthropic")
   if (
     (model.providerID === "anthropic" ||
       model.providerID === "google-vertex-anthropic" ||
@@ -500,7 +503,8 @@ export function message(msgs: ModelMessage[], model: Provider.Model, options: Re
       model.id.includes("claude") ||
       model.api.npm === "@ai-sdk/anthropic" ||
       model.api.npm === "@ai-sdk/alibaba") &&
-    model.api.npm !== "@ai-sdk/gateway"
+    model.api.npm !== "@ai-sdk/gateway" &&
+    !usesAnthropicAutomaticCaching
   ) {
     msgs = applyCaching(msgs, model)
   }
