@@ -2105,4 +2105,261 @@ describe("session.llm.stream", () => {
       }),
     },
   )
+
+  const gemini3FlashPreviewFixture = { providerID: "google", modelID: "gemini-3-flash-preview" }
+  it.instance(
+    "sends thinkingConfig for Gemini 3 Flash reasoning models",
+    () =>
+      Effect.gen(function* () {
+        const fixture = loadFixture(gemini3FlashPreviewFixture.providerID, gemini3FlashPreviewFixture.modelID)
+        const pathSuffix = `/v1beta/models/${fixture.model.id}:streamGenerateContent`
+        const request = waitRequest(
+          pathSuffix,
+          createEventResponse(
+            [
+              {
+                candidates: [{ content: { parts: [{ text: "Hello" }] }, finishReason: "STOP" }],
+                usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+              },
+            ],
+            true,
+          ),
+        )
+
+        const resolved = yield* Provider.use.getModel(
+          ProviderID.make(gemini3FlashPreviewFixture.providerID),
+          ModelID.make(fixture.model.id),
+        )
+        const sessionID = SessionID.make("session-test-gemini-3-flash-thinking")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-gemini-3-flash-thinking"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make(gemini3FlashPreviewFixture.providerID), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const body = capture.body
+        const generationConfig = body.generationConfig as
+          | { thinkingConfig?: { includeThoughts?: boolean; thinkingLevel?: string } }
+          | undefined
+
+        expect(capture.url.pathname).toBe(pathSuffix)
+        expect(generationConfig?.thinkingConfig).toEqual({
+          includeThoughts: true,
+          thinkingLevel: "high",
+        })
+      }),
+    {
+      config: () => ({
+        enabled_providers: [gemini3FlashPreviewFixture.providerID],
+        provider: {
+          [gemini3FlashPreviewFixture.providerID]: {
+            options: { apiKey: "test-google-key", baseURL: `${state.server!.url.origin}/v1beta` },
+          },
+        },
+      }),
+    },
+  )
+
+  it.instance(
+    "replays Google thoughtSignature from assistant history",
+    () =>
+      Effect.gen(function* () {
+        const fixture = loadFixture(gemini3FlashPreviewFixture.providerID, gemini3FlashPreviewFixture.modelID)
+        const pathSuffix = `/v1beta/models/${fixture.model.id}:streamGenerateContent`
+        const request = waitRequest(
+          pathSuffix,
+          createEventResponse(
+            [
+              {
+                candidates: [{ content: { parts: [{ text: "Hello" }] }, finishReason: "STOP" }],
+                usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+              },
+            ],
+            true,
+          ),
+        )
+
+        const resolved = yield* Provider.use.getModel(
+          ProviderID.make(gemini3FlashPreviewFixture.providerID),
+          ModelID.make(fixture.model.id),
+        )
+        const sessionID = SessionID.make("session-test-google-thought-replay")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-google-thought-replay"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make(gemini3FlashPreviewFixture.providerID), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            { role: "user", content: "Hello" },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "thinking",
+                  providerOptions: { google: { thoughtSignature: "sig-123" } },
+                },
+                { type: "text", text: "Previous answer" },
+              ],
+            },
+            { role: "user", content: "Continue" },
+          ] satisfies ModelMessage[],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const body = capture.body
+        const contents = body.contents as Array<{
+          role: string
+          parts: Array<{ text?: string; thought?: boolean; thoughtSignature?: string }>
+        }>
+        const modelContent = contents.find((c) => c.role === "model")
+        expect(modelContent).toBeDefined()
+        const reasoningPart = modelContent!.parts.find((p) => p.thought === true)
+        expect(reasoningPart).toBeDefined()
+        expect(reasoningPart!.thoughtSignature).toBe("sig-123")
+        const textPart = modelContent!.parts.find((p) => p.text === "Previous answer")
+        expect(textPart).toBeDefined()
+      }),
+    {
+      config: () => ({
+        enabled_providers: [gemini3FlashPreviewFixture.providerID],
+        provider: {
+          [gemini3FlashPreviewFixture.providerID]: {
+            options: { apiKey: "test-google-key", baseURL: `${state.server!.url.origin}/v1beta` },
+          },
+        },
+      }),
+    },
+  )
+
+  it.instance(
+    "replays Vertex thoughtSignature from providerOptions.vertex",
+    () =>
+      Effect.gen(function* () {
+        const fixture = loadFixture("google", "gemini-3-flash-preview")
+        const pathSuffix = `/v1beta/models/${fixture.model.id}:streamGenerateContent`
+        const request = waitRequest(
+          pathSuffix,
+          createEventResponse(
+            [
+              {
+                candidates: [{ content: { parts: [{ text: "Hello" }] }, finishReason: "STOP" }],
+                usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+              },
+            ],
+            true,
+          ),
+        )
+
+        const resolved = yield* Provider.use.getModel(
+          ProviderID.make("vertex-test"),
+          ModelID.make(fixture.model.id),
+        )
+        const sessionID = SessionID.make("session-test-vertex-thought-replay")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-vertex-thought-replay"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make("vertex-test"), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            { role: "user", content: "Hello" },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "thinking",
+                  providerOptions: { vertex: { thoughtSignature: "sig-vertex-456" } },
+                },
+                { type: "text", text: "Previous answer" },
+              ],
+            },
+            { role: "user", content: "Continue" },
+          ] satisfies ModelMessage[],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const body = capture.body
+        const contents = body.contents as Array<{
+          role: string
+          parts: Array<{ text?: string; thought?: boolean; thoughtSignature?: string }>
+        }>
+        const modelContent = contents.find((c) => c.role === "model")
+        expect(modelContent).toBeDefined()
+        const reasoningPart = modelContent!.parts.find((p) => p.thought === true)
+        expect(reasoningPart).toBeDefined()
+        expect(reasoningPart!.thoughtSignature).toBe("sig-vertex-456")
+      }),
+    {
+      config: () => ({
+        enabled_providers: ["vertex-test"],
+        provider: {
+          "vertex-test": {
+            name: "Vertex Test",
+            npm: "@ai-sdk/google-vertex",
+            api: "https://vertexai.googleapis.com",
+            env: ["GOOGLE_APPLICATION_CREDENTIALS"],
+            models: {
+              "gemini-3-flash-preview": configModel(loadFixture("google", "gemini-3-flash-preview").model),
+            },
+            options: {
+              apiKey: "test-vertex-key",
+              baseURL: `${state.server!.url.origin}/v1beta`,
+            },
+          },
+        },
+      }),
+    },
+  )
 })
