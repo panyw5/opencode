@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  BoundedTimelineRowMeasurementCache,
   TimelineRowMeasurementCache,
   rowWidthCompatible,
   type RowMeasurement,
@@ -138,6 +139,29 @@ describe("TimelineRowMeasurementCache", () => {
     cache.setMeasured("row-2", 130, "v1", 800)
     cache.clear()
     expect(cache.size).toBe(0)
+  })
+
+  test("evicts the oldest measurement when explicitly bounded", () => {
+    const cache = new BoundedTimelineRowMeasurementCache(2)
+    cache.setMeasured("row-1", 100, "v1", 800)
+    cache.setMeasured("row-2", 110, "v1", 800)
+    cache.setMeasured("row-3", 120, "v1", 800)
+
+    expect(cache.has("row-1")).toBe(false)
+    expect(cache.has("row-2")).toBe(true)
+    expect(cache.has("row-3")).toBe(true)
+  })
+
+  test("refreshes insertion order when updating a bounded measurement", () => {
+    const cache = new BoundedTimelineRowMeasurementCache(2)
+    cache.setMeasured("row-1", 100, "v1", 800)
+    cache.setMeasured("row-2", 110, "v1", 800)
+    cache.setMeasured("row-1", 105, "v2", 800)
+    cache.setMeasured("row-3", 120, "v1", 800)
+
+    expect(cache.has("row-1")).toBe(true)
+    expect(cache.has("row-2")).toBe(false)
+    expect(cache.has("row-3")).toBe(true)
   })
 
   test("snapshots and restores across tab switches", () => {
