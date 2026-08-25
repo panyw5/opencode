@@ -36,6 +36,8 @@ describe("math.worker", () => {
         parentSessionID: parent.id,
         title: "lemma-slice",
         task: "# prove the rank obstruction\n",
+        model: "test/prover",
+        variant: "xhigh",
         spawn: (input) => {
           spawned.push(input.argv)
           spawnedEnv.push(input.env)
@@ -47,6 +49,7 @@ describe("math.worker", () => {
       expect(result.sessionID.startsWith("ses")).toBe(true)
       expect(spawned[0]?.join(" ")).toContain("math worker")
       expect(spawned[0]?.join(" ")).toContain(result.sessionID)
+      expect(spawned[0]?.join(" ")).toContain("--model test/prover --variant xhigh")
       expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"math-truth"')
       expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"worker"')
 
@@ -54,6 +57,8 @@ describe("math.worker", () => {
       const swarm = readSwarm(projectDir)
       expect(swarm.workers[result.sessionID]?.pid).toBe(4242)
       expect(swarm.workers[result.sessionID]?.parentSessionID).toBe(parent.id)
+      expect(swarm.workers[result.sessionID]?.model).toBe("test/prover")
+      expect(swarm.workers[result.sessionID]?.variant).toBe("xhigh")
 
       const rows = statusMathWorker({ projectDir, parentSessionID: parent.id })
       expect(rows.some((r) => r.sessionID === result.sessionID)).toBe(true)
@@ -118,21 +123,29 @@ describe("math.worker", () => {
         parentSessionID: parent.id,
         title: "restartable",
         task: "# Continue the proof",
+        model: "test/original",
+        variant: "high",
         spawn: () => ({ pid: 424242 }),
       })
       const before = yield* sessions.children(parent.id)
+      let restartArgv: string[] = []
       const ensured = yield* ensureMathWorker({
         sessionID: SessionID.make(started.sessionID),
         projectDir: started.projectDir,
-        spawn: () => ({ pid: 525252 }),
+        spawn: (input) => {
+          restartArgv = input.argv
+          return { pid: 525252 }
+        },
       })
       const after = yield* sessions.children(parent.id)
       expect(ensured.restarted).toBe(true)
       expect(ensured.sessionID).toBe(started.sessionID)
       expect(ensured.previousPid).toBe(424242)
       expect(ensured.pid).toBe(525252)
+      expect(restartArgv.join(" ")).toContain("--model test/original --variant high")
       expect(after.map((child) => child.id)).toEqual(before.map((child) => child.id))
       expect(readSwarm(started.projectDir).workers[started.sessionID]?.pid).toBe(525252)
+      expect(readSwarm(started.projectDir).workers[started.sessionID]?.model).toBe("test/original")
       expect(test.directory).toBeTruthy()
     }),
   )
@@ -198,6 +211,7 @@ describe("math.agents", () => {
       expect(Permission.evaluate("bash", "*", worker.permission).action).toBe("deny")
       expect(Permission.evaluate("math_worker_start", "*", worker.permission).action).toBe("deny")
       expect(Permission.evaluate("math-truth_fact_submit", "*", worker.permission).action).toBe("allow")
+      expect(Permission.evaluate("math-truth_fact_get", "*", worker.permission).action).toBe("allow")
       expect(Permission.evaluate("math_worker_start", "*", orch.permission).action).toBe("allow")
       expect(Permission.evaluate("math_worker_ensure", "*", orch.permission).action).toBe("allow")
       expect(Permission.evaluate("bash", "*", orch.permission).action).toBe("deny")
@@ -205,6 +219,9 @@ describe("math.agents", () => {
       expect(orch.prompt).toContain("same session ID")
       const build = yield* agents.get("build")
       expect(Permission.evaluate("math_worker_start", "*", build.permission).action).toBe("deny")
+      expect(Permission.evaluate("skill", "verify-proof", build.permission).action).toBe("deny")
+      expect(Permission.evaluate("skill", "verify-proof", orch.permission).action).toBe("deny")
+      expect(Permission.evaluate("skill", "verify-proof", worker.permission).action).toBe("allow")
     }),
   )
 })

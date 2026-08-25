@@ -22,6 +22,8 @@ export type StartInput = {
   task: string
   project?: string
   intervalMs?: number
+  model?: string
+  variant?: string
   /** Injected in tests. Production uses spawnDetached(selfArgv(...)). */
   spawn?: (input: { argv: string[]; cwd: string; logFile: string; env?: NodeJS.ProcessEnv }) => { pid: number }
 }
@@ -49,6 +51,9 @@ export type StatusResult = {
   restartable?: boolean
   stopRequested?: boolean
   transcriptUpdatedAt?: number
+  project?: string
+  model?: string
+  variant?: string
 }
 
 export type EnsureResult = StartResult & {
@@ -172,7 +177,10 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     "--dir",
     directory,
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
-    ...(process.env.OPENCODE_MATH_WORKER_MODEL ? ["--model", process.env.OPENCODE_MATH_WORKER_MODEL] : []),
+    ...((input.model ?? process.env.OPENCODE_MATH_WORKER_MODEL)
+      ? ["--model", (input.model ?? process.env.OPENCODE_MATH_WORKER_MODEL)!]
+      : []),
+    ...(input.variant ? ["--variant", input.variant] : []),
   ])
   const spawn = input.spawn ?? spawnDetached
   const { pid } = spawn({
@@ -200,6 +208,8 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     logFile,
     taskFile,
     round: 0,
+    model: input.model ?? process.env.OPENCODE_MATH_WORKER_MODEL,
+    variant: input.variant,
   })
 
   return {
@@ -216,6 +226,7 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   projectDir: string
   intervalMs?: number
   model?: string
+  variant?: string
   spawn?: StartInput["spawn"]
 }) {
   const sessions = yield* Session.Service
@@ -252,7 +263,8 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     "--dir",
     session.directory,
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
-    ...(input.model ? ["--model", input.model] : []),
+    ...((input.model ?? existing?.model) ? ["--model", (input.model ?? existing?.model)!] : []),
+    ...((input.variant ?? existing?.variant) ? ["--variant", (input.variant ?? existing?.variant)!] : []),
   ])
   const spawn = input.spawn ?? spawnDetached
   const { pid } = spawn({
@@ -282,6 +294,8 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     lastFactId: existing?.lastFactId,
     lastRc: existing?.lastRc,
     lastHeartbeatAt: existing?.lastHeartbeatAt,
+    model: input.model ?? existing?.model,
+    variant: input.variant ?? existing?.variant,
   })
   log.info("math worker ensured", { sessionID: input.sessionID, previousPid: existing?.pid, pid, round })
   return {
@@ -301,6 +315,7 @@ export const ensureMathWorker = Effect.fn("MathWorker.ensure")(function* (input:
   projectDir: string
   intervalMs?: number
   model?: string
+  variant?: string
   spawn?: StartInput["spawn"]
 }) {
   return yield* Effect.acquireUseRelease(
@@ -325,6 +340,7 @@ export function statusMathWorker(input: {
     const alive = pidAlive(w.pid)
     return {
       sessionID: w.sessionID,
+      project: path.basename(input.projectDir),
       parentSessionID: w.parentSessionID,
       alive,
       state: alive ? w.state : "dead",
@@ -334,6 +350,8 @@ export function statusMathWorker(input: {
       last_rc: w.lastRc ?? null,
       lastHeartbeatAt: w.lastHeartbeatAt,
       logFile: w.logFile,
+      model: w.model,
+      variant: w.variant,
       stopRequested: existsSync(stopPath(input.projectDir, w.sessionID)),
       restartable:
         !alive && !existsSync(stopPath(input.projectDir, w.sessionID)) && Boolean(w.taskFile && existsSync(w.taskFile)),
@@ -362,6 +380,7 @@ export const discoverMathWorkers = Effect.fn("MathWorker.discover")(function* (i
     const taskFile = taskPath(input.projectDir, child.id)
     rows.set(child.id, {
       sessionID: child.id,
+      project: path.basename(input.projectDir),
       parentSessionID: child.parentID,
       alive: existing?.alive ?? false,
       state: existing?.state ?? "missing",
@@ -375,6 +394,8 @@ export const discoverMathWorkers = Effect.fn("MathWorker.discover")(function* (i
       restartable: existing?.restartable ?? (existsSync(taskFile) && !existsSync(stopPath(input.projectDir, child.id))),
       attachable: true,
       transcriptUpdatedAt: child.time.updated,
+      model: existing?.model,
+      variant: existing?.variant,
     })
   }
   return [...rows.values()].sort((a, b) => a.sessionID.localeCompare(b.sessionID))
@@ -476,6 +497,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
   projectDir: string
   round: number
   model?: string
+  variant?: string
 }) {
   const taskFile = taskPath(input.projectDir, input.sessionID)
   const task = readFileSync(taskFile, "utf8")
@@ -497,6 +519,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     sessionID: input.sessionID,
     agent: "math-worker",
     model: input.model ? Provider.parseModel(input.model) : undefined,
+    variant: input.variant,
     parts: [{ type: "text", text: buildWorkerKickoff({ task, round: input.round }) }],
   })
   const lastFactId = latestAcceptedFactId(yield* sessions.messages({ sessionID: input.sessionID }))
@@ -523,6 +546,7 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
   intervalMs: number
   heartbeatOnly?: boolean
   model?: string
+  variant?: string
 }) {
   const sessionID = SessionID.make(input.sessionID)
   mkdirSync(path.dirname(stopPath(input.projectDir, sessionID)), { recursive: true })
@@ -537,13 +561,25 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
     logFile: existing?.logFile ?? path.join(layout(input.projectDir).logs, `worker-${sessionID}.log`),
     taskFile: existing?.taskFile,
     round: existing?.round ?? 0,
+    lastFactId: existing?.lastFactId,
+    lastRc: existing?.lastRc,
+    lastHeartbeatAt: existing?.lastHeartbeatAt,
+    model: input.model ?? existing?.model,
+    variant: input.variant ?? existing?.variant,
   })
   let round = existing?.round ?? 0
   log.info("math worker loop start", { sessionID, intervalMs: input.intervalMs, pid: process.pid })
   while (!existsSync(stopPath(input.projectDir, sessionID))) {
     round += 1
     if (input.heartbeatOnly) yield* writeHeartbeat({ sessionID, round, projectDir: input.projectDir })
-    else yield* runWorkerRound({ sessionID, round, projectDir: input.projectDir, model: input.model })
+    else
+      yield* runWorkerRound({
+        sessionID,
+        round,
+        projectDir: input.projectDir,
+        model: input.model ?? existing?.model,
+        variant: input.variant ?? existing?.variant,
+      })
     yield* Effect.sleep(Duration.millis(input.intervalMs))
   }
   patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })

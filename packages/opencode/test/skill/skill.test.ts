@@ -89,6 +89,29 @@ describe("skill", () => {
     }),
   )
 
+  it.instance("ships the nine verifier-aware Math Mode worker skills", () =>
+    Effect.gen(function* () {
+      const skills = yield* Skill.Service
+      const names = [
+        "query-memory",
+        "obtain-immediate-conclusions",
+        "construct-toy-examples",
+        "construct-counterexamples",
+        "propose-subgoal-decomposition-plans",
+        "direct-proving",
+        "identify-key-failures",
+        "search-math-results",
+        "verify-proof",
+      ]
+      const loaded = yield* Effect.forEach(names, (name) => skills.require(name))
+      expect(loaded).toHaveLength(9)
+      expect(loaded.every((item) => item.location === "<built-in>")).toBe(true)
+      expect(loaded.find((item) => item.name === "verify-proof")?.content).toContain("fact_submit")
+      expect(loaded.find((item) => item.name === "query-memory")?.content).toContain("Verified facts")
+      expect(loaded.find((item) => item.name === "search-math-results")?.content).toContain("websearch")
+    }),
+  )
+
   it.live("discovers skills from .opencode/skill/ directory", () =>
     provideTmpdirInstance(
       (dir) =>

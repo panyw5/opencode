@@ -18,6 +18,15 @@ import CUSTOMIZE_OPENCODE_SKILL_BODY from "./prompt/customize-opencode.md" with 
 import MATH_INITIALIZE_SKILL_BODY from "./prompt/math-initialize.md" with { type: "text" }
 import MATH_ELABORATION_SKILL_BODY from "./prompt/math-elaboration.md" with { type: "text" }
 import MATH_QUERY_MEMORY_SKILL_BODY from "./prompt/math-query-memory.md" with { type: "text" }
+import MATH_WORKER_QUERY_MEMORY_SKILL_BODY from "./prompt/math-worker-query-memory.md" with { type: "text" }
+import MATH_WORKER_IMMEDIATE_CONCLUSIONS_SKILL_BODY from "./prompt/math-worker-immediate-conclusions.md" with { type: "text" }
+import MATH_WORKER_TOY_EXAMPLES_SKILL_BODY from "./prompt/math-worker-toy-examples.md" with { type: "text" }
+import MATH_WORKER_COUNTEREXAMPLES_SKILL_BODY from "./prompt/math-worker-counterexamples.md" with { type: "text" }
+import MATH_WORKER_DECOMPOSITION_SKILL_BODY from "./prompt/math-worker-decomposition.md" with { type: "text" }
+import MATH_WORKER_DIRECT_PROVING_SKILL_BODY from "./prompt/math-worker-direct-proving.md" with { type: "text" }
+import MATH_WORKER_KEY_FAILURES_SKILL_BODY from "./prompt/math-worker-key-failures.md" with { type: "text" }
+import MATH_WORKER_SEARCH_RESULTS_SKILL_BODY from "./prompt/math-worker-search-results.md" with { type: "text" }
+import MATH_WORKER_VERIFY_PROOF_SKILL_BODY from "./prompt/math-worker-verify-proof.md" with { type: "text" }
 import { isRecord } from "@/util/record"
 
 const log = Log.create({ service: "skill" })
@@ -50,6 +59,52 @@ const MATH_SKILLS = [
     name: "math-query-memory",
     description: "Query Math Mode fact graph and global memory while preserving the verified-vs-hypothesis boundary.",
     content: MATH_QUERY_MEMORY_SKILL_BODY,
+  },
+  {
+    name: "query-memory",
+    description:
+      "Recall worker transcript, shared hypotheses, verifier feedback, and verified facts before new proof work.",
+    content: MATH_WORKER_QUERY_MEMORY_SKILL_BODY,
+  },
+  {
+    name: "obtain-immediate-conclusions",
+    description: "Derive cheap consequences and identify fragile claims before deeper mathematical search.",
+    content: MATH_WORKER_IMMEDIATE_CONCLUSIONS_SKILL_BODY,
+  },
+  {
+    name: "construct-toy-examples",
+    description: "Build rigorously checked simple examples to expose mechanisms and proof patterns.",
+    content: MATH_WORKER_TOY_EXAMPLES_SKILL_BODY,
+  },
+  {
+    name: "construct-counterexamples",
+    description: "Actively falsify fragile conjectures while preserving their assumptions.",
+    content: MATH_WORKER_COUNTEREXAMPLES_SKILL_BODY,
+  },
+  {
+    name: "propose-subgoal-decomposition-plans",
+    description: "Create materially different ordered subgoal plans informed by current evidence and failures.",
+    content: MATH_WORKER_DECOMPOSITION_SKILL_BODY,
+  },
+  {
+    name: "direct-proving",
+    description: "Screen one decomposition plan by directly attempting all subgoals and verifying reusable lemmas.",
+    content: MATH_WORKER_DIRECT_PROVING_SKILL_BODY,
+  },
+  {
+    name: "identify-key-failures",
+    description: "Synthesize recurring failure mechanisms across unsuccessful proof plans.",
+    content: MATH_WORKER_KEY_FAILURES_SKILL_BODY,
+  },
+  {
+    name: "search-math-results",
+    description: "Retrieve program-conditioned mathematical results, constructions, examples, and analogies.",
+    content: MATH_WORKER_SEARCH_RESULTS_SKILL_BODY,
+  },
+  {
+    name: "verify-proof",
+    description: "Turn a self-contained proof into a verifier-gated fact through fact_submit.",
+    content: MATH_WORKER_VERIFY_PROOF_SKILL_BODY,
   },
 ] as const
 

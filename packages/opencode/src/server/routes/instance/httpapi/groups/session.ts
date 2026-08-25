@@ -45,6 +45,34 @@ export const MessagesQuery = Schema.Struct({
   before: Schema.optional(Schema.String),
 })
 export const StatusMap = Schema.Record(Schema.String, SessionStatus.Info)
+export const MathWorkerQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  project: Schema.optional(Schema.String),
+})
+export const MathWorkerStatus = Schema.Struct({
+  sessionID: Schema.String,
+  project: Schema.optional(Schema.String),
+  parentSessionID: Schema.optional(Schema.String),
+  alive: Schema.Boolean,
+  state: Schema.Literals(["running", "stopping", "dead", "missing"]),
+  pid: Schema.optional(Schema.Number),
+  round: Schema.optional(Schema.Number),
+  last_fact_id: Schema.optional(Schema.String),
+  last_rc: Schema.optional(Schema.NullOr(Schema.Number)),
+  lastHeartbeatAt: Schema.optional(Schema.Number),
+  logFile: Schema.optional(Schema.String),
+  attachable: Schema.optional(Schema.Boolean),
+  restartable: Schema.optional(Schema.Boolean),
+  stopRequested: Schema.optional(Schema.Boolean),
+  transcriptUpdatedAt: Schema.optional(Schema.Number),
+  model: Schema.optional(Schema.String),
+  variant: Schema.optional(Schema.String),
+})
+export const MathWorkerEnsurePayload = Schema.Struct({
+  model: Schema.optional(Schema.String),
+  variant: Schema.optional(Schema.String),
+})
+export const MathWorkerStopPayload = Schema.Struct({ force: Schema.optional(Schema.Boolean) })
 export const UpdatePayload = Schema.Struct({
   title: Schema.optional(Schema.String),
   permission: Schema.optional(Permission.Ruleset),
@@ -87,6 +115,9 @@ export const SessionPaths = {
   status: `${root}/status`,
   get: `${root}/:sessionID`,
   children: `${root}/:sessionID/children`,
+  mathWorkers: `${root}/:sessionID/math-workers`,
+  mathWorkerEnsure: `${root}/:sessionID/math-workers/:workerID/ensure`,
+  mathWorkerStop: `${root}/:sessionID/math-workers/:workerID/stop`,
   todo: `${root}/:sessionID/todo`,
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
@@ -163,6 +194,44 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.children",
             summary: "Get session children",
             description: "Retrieve all child sessions that were forked from the specified parent session.",
+          }),
+        ),
+        HttpApiEndpoint.get("mathWorkers", SessionPaths.mathWorkers, {
+          params: { sessionID: SessionID },
+          query: MathWorkerQuery,
+          success: described(Schema.Array(MathWorkerStatus), "List Math Mode workers"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.mathWorkers",
+            summary: "Get Math Mode workers",
+            description: "Reconcile durable math-worker child sessions with detached process status.",
+          }),
+        ),
+        HttpApiEndpoint.post("mathWorkerEnsure", SessionPaths.mathWorkerEnsure, {
+          params: { sessionID: SessionID, workerID: SessionID },
+          query: MathWorkerQuery,
+          payload: Schema.optional(MathWorkerEnsurePayload),
+          success: described(MathWorkerStatus, "Ensured Math Mode worker"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.mathWorkerEnsure",
+            summary: "Ensure Math Mode worker",
+            description: "Restart an unexpectedly dead worker using its existing durable session identity.",
+          }),
+        ),
+        HttpApiEndpoint.post("mathWorkerStop", SessionPaths.mathWorkerStop, {
+          params: { sessionID: SessionID, workerID: SessionID },
+          query: MathWorkerQuery,
+          payload: Schema.optional(MathWorkerStopPayload),
+          success: described(MathWorkerStatus, "Stopped Math Mode worker"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.mathWorkerStop",
+            summary: "Stop Math Mode worker",
+            description: "Request a round-boundary stop or force-kill the detached worker process group.",
           }),
         ),
         HttpApiEndpoint.get("todo", SessionPaths.todo, {

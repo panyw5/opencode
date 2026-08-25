@@ -27,7 +27,7 @@ describe("math.mcp", () => {
     const { client } = await connect("orchestrator", tmp.path)
     const listed = await client.listTools()
     const names = listed.tools.map((t) => t.name).sort()
-    expect(names).toEqual(["fact_revoke", "fact_search", "gm_add", "gm_search"])
+    expect(names).toEqual(["fact_get", "fact_revoke", "fact_search", "gm_add", "gm_search"])
     expect(names).not.toContain("fact_submit")
   })
 
@@ -45,6 +45,9 @@ describe("math.mcp", () => {
     const body = JSON.parse(text)
     expect(body.accepted).toBe(true)
     expect(body.fact_id).toBeTruthy()
+    const fact = await client.callTool({ name: "fact_get", arguments: { fact_id: body.fact_id } })
+    const factText = (fact.content as Array<{ type: string; text: string }>)[0]?.text
+    expect(JSON.parse(factText).content).toContain("## proof")
   })
 
   test("orchestrator tools/call fact_submit is an MCP error (tool not registered)", async () => {

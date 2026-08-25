@@ -27,6 +27,18 @@ import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { type DeepMutable } from "@opencode-ai/core/schema"
 
+const MATH_WORKER_SKILLS = [
+  "query-memory",
+  "obtain-immediate-conclusions",
+  "construct-toy-examples",
+  "construct-counterexamples",
+  "propose-subgoal-decomposition-plans",
+  "direct-proving",
+  "identify-key-failures",
+  "search-math-results",
+  "verify-proof",
+] as const
+
 export const Info = Schema.Struct({
   name: Schema.String,
   description: Schema.optional(Schema.String),
@@ -120,6 +132,10 @@ export const layer = Layer.effect(
           math_worker_ensure: "deny",
           math_worker_status: "deny",
           math_worker_stop: "deny",
+          skill: {
+            "*": "allow",
+            ...Object.fromEntries(MATH_WORKER_SKILLS.map((name) => [name, "deny" as const])),
+          },
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",
@@ -329,6 +345,7 @@ export const layer = Layer.effect(
                 "math-truth_gm_add": "allow",
                 "math-truth_gm_search": "allow",
                 "math-truth_fact_search": "allow",
+                "math-truth_fact_get": "allow",
                 "math-truth_fact_submit": "allow",
                 task: "deny",
                 bash: "deny",

@@ -1,12 +1,12 @@
-export const ALL_TOOLS = ["gm_add", "gm_search", "fact_submit", "fact_search", "fact_revoke"] as const
+export const ALL_TOOLS = ["gm_add", "gm_search", "fact_submit", "fact_search", "fact_get", "fact_revoke"] as const
 
 export type MathToolName = (typeof ALL_TOOLS)[number]
 
 export type MathRole = "worker" | "orchestrator" | "verifier" | "all"
 
 const ROLE_TOOLS: Record<MathRole, readonly MathToolName[]> = {
-  worker: ["gm_add", "gm_search", "fact_submit", "fact_search"],
-  orchestrator: ["gm_add", "gm_search", "fact_search", "fact_revoke"],
+  worker: ["gm_add", "gm_search", "fact_submit", "fact_search", "fact_get"],
+  orchestrator: ["gm_add", "gm_search", "fact_search", "fact_get", "fact_revoke"],
   verifier: [],
   all: ALL_TOOLS,
 }

@@ -16,6 +16,8 @@ export type SwarmWorker = {
   logFile: string
   taskFile?: string
   round?: number
+  model?: string
+  variant?: string
 }
 
 export type SwarmFile = {

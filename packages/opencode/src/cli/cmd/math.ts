@@ -152,6 +152,7 @@ export const MathWorkerCommand = effectCmd({
         type: "string",
         describe: "worker model as provider/model (or OPENCODE_MATH_WORKER_MODEL)",
       })
+      .option("variant", { type: "string", describe: "worker model effort/variant" })
       .option("parent", {
         type: "string",
         describe: "parent session id when --create is set",
@@ -186,6 +187,7 @@ export const MathWorkerCommand = effectCmd({
       intervalMs: interval,
       heartbeatOnly: args["probe-heartbeat-only"] === true,
       model: typeof args.model === "string" ? args.model : process.env.OPENCODE_MATH_WORKER_MODEL,
+      variant: typeof args.variant === "string" ? args.variant : undefined,
     }).pipe(Effect.catchCause((cause) => fail(`math worker loop failed: ${String(cause)}`)))
   }),
 })
@@ -199,7 +201,9 @@ export const MathStartCommand = effectCmd({
       .option("task", { type: "string", default: "", describe: "TASK.md body" })
       .option("parent", { type: "string", demandOption: true, describe: "parent (orchestrator) session id" })
       .option("project", { type: "string", describe: "math project name under .math/" })
-      .option("interval", { type: "number", describe: "heartbeat interval ms" }),
+      .option("interval", { type: "number", describe: "heartbeat interval ms" })
+      .option("model", { type: "string", describe: "worker model as provider/model" })
+      .option("variant", { type: "string", describe: "worker model effort/variant" }),
   handler: Effect.fn("Cli.math.start")(function* (args) {
     const result = yield* startMathWorker({
       parentSessionID: SessionID.make(args.parent),
@@ -207,6 +211,8 @@ export const MathStartCommand = effectCmd({
       task: args.task || "# TASK\n",
       project: args.project,
       intervalMs: args.interval,
+      model: args.model,
+      variant: args.variant,
     })
     process.stdout.write(JSON.stringify(result) + "\n")
   }),
@@ -220,7 +226,8 @@ export const MathEnsureCommand = effectCmd({
       .option("session", { type: "string", demandOption: true, describe: "existing math-worker session id" })
       .option("project-dir", { type: "string", describe: "existing math project root" })
       .option("interval", { type: "number", describe: "worker round interval ms" })
-      .option("model", { type: "string", describe: "worker model as provider/model" }),
+      .option("model", { type: "string", describe: "worker model as provider/model" })
+      .option("variant", { type: "string", describe: "worker model effort/variant" }),
   handler: Effect.fn("Cli.math.ensure")(function* (args) {
     const ctx = yield* InstanceState.context
     const projectDir = resolveMathProjectDir(args["project-dir"], ctx.directory)
@@ -228,7 +235,8 @@ export const MathEnsureCommand = effectCmd({
       sessionID: SessionID.make(args.session),
       projectDir,
       intervalMs: args.interval,
-      model: args.model ?? process.env.OPENCODE_MATH_WORKER_MODEL,
+      model: args.model,
+      variant: args.variant,
     }).pipe(Effect.catchCause((cause) => fail(`math worker ensure failed: ${String(cause)}`)))
     process.stdout.write(JSON.stringify(result) + "\n")
   }),

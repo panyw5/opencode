@@ -18,6 +18,8 @@ const StartParameters = Schema.Struct({
   project: Schema.optional(Schema.String).annotate({
     description: "Math project name under .math/. Defaults to the workspace directory name.",
   }),
+  model: Schema.optional(Schema.String).annotate({ description: "Worker model as provider/model" }),
+  variant: Schema.optional(Schema.String).annotate({ description: "Worker model effort/variant, e.g. high or xhigh" }),
 })
 
 const StatusParameters = Schema.Struct({
@@ -29,6 +31,7 @@ const EnsureParameters = Schema.Struct({
   session_id: Schema.String.annotate({ description: "Existing math-worker session id" }),
   project: Schema.optional(Schema.String).annotate({ description: "Math project name under .math/." }),
   model: Schema.optional(Schema.String).annotate({ description: "Worker model as provider/model" }),
+  variant: Schema.optional(Schema.String).annotate({ description: "Worker model effort/variant" }),
 })
 
 const StopParameters = Schema.Struct({
@@ -58,6 +61,8 @@ export const MathWorkerStartTool = Tool.define(
             title: params.title,
             task: params.task,
             project: params.project,
+            model: params.model,
+            variant: params.variant,
           }).pipe(Effect.provideService(Session.Service, sessions))
           yield* bus.publish(MathWorkerEvent.Status, {
             sessionID: result.sessionID,
@@ -144,7 +149,8 @@ export const MathWorkerEnsureTool = Tool.define(
           const result = yield* ensureMathWorker({
             sessionID: SessionID.make(params.session_id),
             projectDir,
-            model: params.model ?? process.env.OPENCODE_MATH_WORKER_MODEL,
+            model: params.model,
+            variant: params.variant,
           }).pipe(Effect.provideService(Session.Service, sessions), Effect.orDie)
           yield* bus.publish(MathWorkerEvent.Status, {
             sessionID: result.sessionID,

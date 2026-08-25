@@ -57,6 +57,7 @@ import {
   SessionStatusFloat,
   SessionTodoFloat,
 } from "@/pages/session/composer"
+import type { SessionMathWorkerEntry } from "@/pages/session/composer/session-composer-region"
 import {
   clipMessages,
   createOpenReviewFile,
@@ -87,6 +88,12 @@ import {
 } from "@/pages/session/session-layout-debug"
 import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import { collectSessionActiveSkills } from "@/pages/session/session-active-skills"
+import {
+  ensureMathWorker as ensureMathWorkerApi,
+  listMathWorkers,
+  stopMathWorker as stopMathWorkerApi,
+  type MathWorkerStatus,
+} from "@/pages/session/math-worker-api"
 import { Identifier } from "@/utils/id"
 import { compareMessages, resolveMessage, sortMessages } from "@/utils/message-order"
 import { commandInvocationFromParts, extractPromptFromParts, injectionPreviewFromParts } from "@/utils/prompt"
@@ -471,8 +478,55 @@ export default function Page() {
       sessions: childAgentSessions(),
       messagesBySession: sync.data.message,
       statuses: sync.session.status.all(),
-    }),
+    }).filter((entry) => entry.agent !== "math-worker"),
   )
+  const [mathSwarm, setMathSwarm] = createStore({
+    workers: [] as MathWorkerStatus[],
+    busy: {} as Record<string, boolean>,
+  })
+  let mathSwarmRequest = 0
+  const mathSwarmEnabled = createMemo(
+    () =>
+      info()?.agent === "math-orchestrator" || childAgentSessions().some((session) => session.agent === "math-worker"),
+  )
+  const refreshMathSwarm = async (parentSessionID: string) => {
+    const request = ++mathSwarmRequest
+    try {
+      const workers = await listMathWorkers({
+        sdk,
+        platform,
+        auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+        parentSessionID,
+      })
+      if (request !== mathSwarmRequest) return
+      setMathSwarm("workers", workers)
+    } catch (error) {
+      if (request !== mathSwarmRequest) return
+      console.warn("[math-swarm] refresh failed", error)
+    }
+  }
+  createEffect(() => {
+    const parentSessionID = params.id
+    if (!parentSessionID || !mathSwarmEnabled()) {
+      mathSwarmRequest += 1
+      setMathSwarm("workers", [])
+      return
+    }
+    void refreshMathSwarm(parentSessionID)
+    const timer = window.setInterval(() => void refreshMathSwarm(parentSessionID), 10_000)
+    onCleanup(() => {
+      mathSwarmRequest += 1
+      window.clearInterval(timer)
+    })
+  })
+  const mathWorkerEntries = createMemo<SessionMathWorkerEntry[]>(() => {
+    const titles = new Map(childAgentSessions().map((session) => [session.id, session.title] as const))
+    return mathSwarm.workers.map((worker) => ({
+      ...worker,
+      title: titles.get(worker.sessionID)?.trim() || `math-worker ${worker.sessionID.slice(-6)}`,
+    }))
+  })
+  const mathWorkersBusy = createMemo(() => Object.keys(mathSwarm.busy).filter((id) => mathSwarm.busy[id]))
   const activeSkills = createMemo(() =>
     collectSessionActiveSkills({
       messages: messages(),
@@ -1324,6 +1378,53 @@ export default function Page() {
     if (!dir) return
     navigate(`/${dir}/session/${entry.sessionID}`)
   }
+  const openMathWorker = (entry: SessionMathWorkerEntry): void => {
+    const dir = params.dir
+    if (!dir) return
+    navigate(`/${dir}/session/${entry.sessionID}`)
+  }
+  const ensureMathWorker = async (entry: SessionMathWorkerEntry) => {
+    const parentSessionID = params.id
+    if (!parentSessionID || mathSwarm.busy[entry.sessionID]) return
+    setMathSwarm("busy", entry.sessionID, true)
+    try {
+      await ensureMathWorkerApi({
+        sdk,
+        platform,
+        auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+        parentSessionID,
+        workerSessionID: entry.sessionID,
+        project: entry.project,
+      })
+      await refreshMathSwarm(parentSessionID)
+      showToast({ variant: "success", title: language.t("session.mathSwarm.ensured"), description: entry.title })
+    } catch (error) {
+      fail(error)
+    } finally {
+      setMathSwarm("busy", entry.sessionID, false)
+    }
+  }
+  const stopMathWorker = async (entry: SessionMathWorkerEntry) => {
+    const parentSessionID = params.id
+    if (!parentSessionID || mathSwarm.busy[entry.sessionID]) return
+    setMathSwarm("busy", entry.sessionID, true)
+    try {
+      await stopMathWorkerApi({
+        sdk,
+        platform,
+        auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+        parentSessionID,
+        workerSessionID: entry.sessionID,
+        project: entry.project,
+      })
+      await refreshMathSwarm(parentSessionID)
+      showToast({ variant: "success", title: language.t("session.mathSwarm.stopped"), description: entry.title })
+    } catch (error) {
+      fail(error)
+    } finally {
+      setMathSwarm("busy", entry.sessionID, false)
+    }
+  }
   function openSubagentSession(sessionID: string): void {
     const dir = params.dir
     if (!dir) return
@@ -1733,8 +1834,7 @@ export default function Page() {
       return
     }
     const ease =
-      mode === "smooth" &&
-      shouldEaseLiveBottom(dist, { min: smoothBottomMinDistance, max: smoothBottomSnapDistance })
+      mode === "smooth" && shouldEaseLiveBottom(dist, { min: smoothBottomMinDistance, max: smoothBottomSnapDistance })
     if (ease) {
       const step = Math.sign(dist) * Math.min(Math.max(Math.abs(dist) * smoothBottomEase, 1), smoothBottomMaxStep)
       el.scrollTop += step
@@ -1807,7 +1907,9 @@ export default function Page() {
       root.style.visibility = ""
     }
 
-    if (shouldFinishInitialScroll({ stableFrames: initialScrollStableFrames, now: performance.now(), deadline: until })) {
+    if (
+      shouldFinishInitialScroll({ stableFrames: initialScrollStableFrames, now: performance.now(), deadline: until })
+    ) {
       initialScrollKey = undefined
       if (root.style.visibility === "hidden") root.style.visibility = ""
       const id = params.id
@@ -1956,7 +2058,9 @@ export default function Page() {
       lockBottom(el, "resume:jump")
       scheduleScrollState(el)
     }
-    console.debug(`[session] resume-scroll live=${String(live())} follow=${String(followBottom)} running=${String(running())}`)
+    console.debug(
+      `[session] resume-scroll live=${String(live())} follow=${String(followBottom)} running=${String(running())}`,
+    )
   }
 
   // When the user returns to the bottom, treat the active message as "latest".
@@ -2172,9 +2276,7 @@ export default function Page() {
         }
       }
     } catch (error) {
-      console.debug(
-        `[session] history-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
-      )
+      console.debug(`[session] history-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`)
       historyAnchor.restore(true)
       throw error
     } finally {
@@ -2985,6 +3087,11 @@ export default function Page() {
             }
             childAgents={childAgentEntries()}
             onOpenChildAgent={openChildAgent}
+            mathWorkers={mathWorkerEntries()}
+            mathWorkersBusy={mathWorkersBusy()}
+            onOpenMathWorker={openMathWorker}
+            onEnsureMathWorker={(entry) => void ensureMathWorker(entry)}
+            onStopMathWorker={(entry) => void stopMathWorker(entry)}
             userMessages={userMessageMenu()}
             userMessagesLoading={ui.userMessagesLoading}
             onLoadAllUserMessages={() => void loadAllUserMessages()}

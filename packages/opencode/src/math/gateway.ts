@@ -88,7 +88,10 @@ export function createGateway(config: MathGatewayConfig): MathGateway {
         author: config.author,
         verifiable: bool(args, "verifiable"),
         glossary: strMap(args, "glossary"),
-        links: args.links && typeof args.links === "object" && !Array.isArray(args.links) ? (args.links as Record<string, unknown>) : undefined,
+        links:
+          args.links && typeof args.links === "object" && !Array.isArray(args.links)
+            ? (args.links as Record<string, unknown>)
+            : undefined,
       })
       return { id, kind }
     },
@@ -103,6 +106,13 @@ export function createGateway(config: MathGatewayConfig): MathGateway {
       const results = await factGraph.search(query, int(args, "limit", 10))
       return { query, results }
     },
+    async fact_get(args) {
+      const factId = str(args, "fact_id")
+      if (!factId) throw new Error("fact_id is required")
+      const content = await factGraph.getRaw(factId)
+      if (!content) throw new Error(`unknown fact_id: ${factId}`)
+      return { fact_id: factId, content }
+    },
     async fact_submit(args) {
       const statement = str(args, "statement")
       const proof = str(args, "proof")
@@ -116,7 +126,9 @@ export function createGateway(config: MathGatewayConfig): MathGateway {
           glossary_introduces: strMap(args, "glossary_introduces"),
           intuition: str(args, "intuition"),
           source_id: str(args, "source_id") || undefined,
-          external_refs: Array.isArray(args.external_refs) ? (args.external_refs as Record<string, unknown>[]) : undefined,
+          external_refs: Array.isArray(args.external_refs)
+            ? (args.external_refs as Record<string, unknown>[])
+            : undefined,
         },
         {
           factGraph,

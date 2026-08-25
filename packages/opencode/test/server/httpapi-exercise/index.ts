@@ -857,6 +857,67 @@ const scenarios: Scenario[] = [
       )
     }),
   http.protected
+    .get("/session/{sessionID}/math-workers", "session.mathWorkers")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/math-workers", { sessionID: ctx.state.parent.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      array(body)
+      check(
+        body.some((item) => isRecord(item) && item.sessionID === ctx.state.worker.id && item.state === "missing"),
+        "math workers should include the durable child placeholder",
+      )
+    }),
+  http.protected
+    .post("/session/{sessionID}/math-workers/{workerID}/ensure", "session.mathWorkerEnsure")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/math-workers/{workerID}/ensure", {
+        sessionID: ctx.state.parent.id,
+        workerID: ctx.state.worker.id,
+      }),
+      headers: ctx.headers(),
+      body: {},
+    }))
+    .status(400),
+  http.protected
+    .post("/session/{sessionID}/math-workers/{workerID}/stop", "session.mathWorkerStop")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/math-workers/{workerID}/stop", {
+        sessionID: ctx.state.parent.id,
+        workerID: ctx.state.worker.id,
+      }),
+      headers: ctx.headers(),
+      body: { force: false },
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.worker.id && body.state === "missing", "missing worker should stay missing")
+    }),
+  http.protected
     .get("/session/status", "session.status")
     .seeded((ctx) => ctx.session({ title: "Status session" }))
     .json(200, object),

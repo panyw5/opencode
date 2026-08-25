@@ -42,6 +42,12 @@ const TOOL_META: Record<
       limit: z.number().int().positive().optional(),
     },
   },
+  fact_get: {
+    description: "Read one verified active fact by exact fact_id after fact_search surfaces it.",
+    inputSchema: {
+      fact_id: z.string(),
+    },
+  },
   fact_submit: {
     description:
       "The only way to write a fact. Calls the verifier and writes the node IFF verdict=correct. Always traces the verdict to global memory (kind=verification). Orchestrator must never see this tool.",
