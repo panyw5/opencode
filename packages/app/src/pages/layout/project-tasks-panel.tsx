@@ -1,6 +1,7 @@
 import type { ProjectTask, ProjectTaskDetail, ProjectTaskStatus } from "@opencode-ai/sdk/v2/client"
 import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Spinner } from "@opencode-ai/ui/spinner"
@@ -838,6 +839,10 @@ export function ProjectTasksPanel(props: {
     }),
   )
 
+  const activeTasks = createMemo(() => tasks().filter((t) => t.status === "open" || t.status === "in_progress"))
+  const doneTasks = createMemo(() => tasks().filter((t) => t.status === "done" || t.status === "archived"))
+  const [doneOpen, setDoneOpen] = createSignal(false)
+
   return (
     <TaskPanelShell
       data-panel="project-tasks"
@@ -858,11 +863,30 @@ export function ProjectTasksPanel(props: {
           <Show when={!state.error} fallback={<ErrorCard err={state.error} />}>
             <Show when={tasks().length > 0} fallback={<Empty text={language.t("projectTask.empty")} />}>
               <div class="flex flex-col gap-2">
-                <For each={tasks()}>
-                  {(task) => (
-                    <ProjectTaskCard task={task} onOpen={open} onArchive={archive} onSetInProgress={setInProgress} />
-                  )}
-                </For>
+                <Show when={activeTasks().length > 0}>
+                  <For each={activeTasks()}>
+                    {(task) => (
+                      <ProjectTaskCard task={task} onOpen={open} onArchive={archive} onSetInProgress={setInProgress} />
+                    )}
+                  </For>
+                </Show>
+                <Show when={doneTasks().length > 0}>
+                  <Collapsible variant="ghost" open={doneOpen()} onOpenChange={setDoneOpen}>
+                    <Collapsible.Trigger class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-12-medium text-text-base hover:bg-surface-raised-base-hover transition-colors">
+                      <Collapsible.Arrow />
+                      <span>{language.t("projectTask.done.title", { count: doneTasks().length })}</span>
+                    </Collapsible.Trigger>
+                    <Collapsible.Content>
+                      <div class="flex flex-col gap-2 pt-2">
+                        <For each={doneTasks()}>
+                          {(task) => (
+                            <ProjectTaskCard task={task} onOpen={open} onArchive={archive} onSetInProgress={setInProgress} />
+                          )}
+                        </For>
+                      </div>
+                    </Collapsible.Content>
+                  </Collapsible>
+                </Show>
               </div>
             </Show>
           </Show>

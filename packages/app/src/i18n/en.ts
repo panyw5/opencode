@@ -53,6 +53,7 @@ export const dict = {
   "projectTask.inject.title": "Inject task context each turn",
   "projectTask.inject.hint":
     "When enabled, each LLM turn receives the mounted task description, linked sessions, and open todos. Default is on.",
+  "projectTask.done.title": "Done ({{count}})",
   "command.projectTask.open": "Open project tasks",
   "command.projectTask.open.description": "Show project tasks for the current project in the sidebar",
 
