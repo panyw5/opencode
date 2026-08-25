@@ -3030,6 +3030,16 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     })
   })
 
+  test("does not add explicit cache control when Anthropic automatic caching is enabled", () => {
+    const model = createModel({ providerID: "anthropic", api: { id: "claude-sonnet-4", url: "https://api.anthropic.com", npm: "@ai-sdk/anthropic" } })
+    const msgs = [
+      { role: "system", content: "You are a helpful assistant" },
+      { role: "user", content: "Hello" },
+    ] as any[]
+    const result = ProviderTransform.message(msgs, model, { cacheControl: { type: "ephemeral" } }) as any[]
+    expect(result[0].providerOptions).toBeUndefined()
+  })
+
   test("google-vertex-anthropic applies cache control", () => {
     const model = createModel({
       providerID: "google-vertex-anthropic",
