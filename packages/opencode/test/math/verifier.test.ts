@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   buildVerifierPrompt,
   decodeVerifyResult,
+  extractVerifierProcessOutput,
   parseVerifierText,
   sessionVerifier,
   VerifyUnavailableError,
@@ -76,5 +77,18 @@ describe("math.verifier", () => {
     })
     expect(parseVerifierText(json).verdict).toBe("correct")
     expect(() => parseVerifierText(`\`\`\`json\n${json}\n\`\`\``)).toThrow(VerifyUnavailableError)
+  })
+
+  test("process transport extracts the final JSON frame after stdout diagnostics", () => {
+    const json = JSON.stringify({
+      verdict: "correct",
+      verification_report: { summary: "checked", critical_errors: [], gaps: [] },
+    })
+    expect(
+      extractVerifierProcessOutput(
+        `[workspace-routing] defaultDirectory=/tmp/project pathname=/session/test/message\n${json}\n`,
+      ),
+    ).toBe(json)
+    expect(() => extractVerifierProcessOutput("[workspace-routing] no verdict\n")).toThrow(VerifyUnavailableError)
   })
 })

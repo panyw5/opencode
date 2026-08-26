@@ -264,11 +264,11 @@ export const MathStatusCommand = effectCmd({
 
 export const MathStopCommand = effectCmd({
   command: "stop",
-  describe: "stop a math-worker (write .stop; --force kills the process group)",
+  describe: "stop a math-worker process group (SIGTERM; --force uses SIGKILL)",
   builder: (yargs) =>
     yargs
       .option("session", { type: "string", demandOption: true, describe: "worker session id" })
-      .option("force", { type: "boolean", default: false, describe: "killpg SIGKILL" })
+      .option("force", { type: "boolean", default: false, describe: "use SIGKILL instead of SIGTERM" })
       .option("project-dir", { type: "string" }),
   handler: Effect.fn("Cli.math.stop")(function* (args) {
     const ctx = yield* InstanceState.context

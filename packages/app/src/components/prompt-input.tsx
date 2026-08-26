@@ -1041,7 +1041,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         display: item.display,
       })),
   )
-  const agentNames = createMemo(() => local.agent.list().map((agent) => agent.name))
+  const lockedAgent = createMemo(() => local.agent.locked()?.name)
+  const agentNames = createMemo(() => {
+    const locked = lockedAgent()
+    if (locked) return [locked]
+    return local.agent.list().map((agent) => agent.name)
+  })
   const genericAgentAtDirectory = createMemo(() => {
     if (extraAgentIntegration() !== "genericagent") return
     const sessionCwd = (info() as { cwd?: string } | undefined)?.cwd?.trim()
@@ -2242,7 +2247,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                 }
                               : undefined
                           }
-                          title={language.t("command.agent.cycle")}
+                          title={
+                            lockedAgent()
+                              ? language.t("session.mathMode.agentLocked")
+                              : language.t("command.agent.cycle")
+                          }
                           keybind={command.keybind("agent.cycle")}
                         >
                           <Select
@@ -2255,8 +2264,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             valueClass="truncate"
                             triggerStyle={control()}
                             variant="ghost"
-                            triggerProps={
-                              trace
+                            triggerProps={{
+                              disabled: !!lockedAgent(),
+                              "aria-label": lockedAgent()
+                                ? language.t("session.mathMode.agentLocked")
+                                : language.t("command.agent.cycle"),
+                              ...(trace
                                 ? {
                                     onPointerEnter: (e: PointerEvent) =>
                                       logPromptHover("agent-selector", "pointer-enter", e),
@@ -2266,8 +2279,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                     onBlur: () => logPromptHover("agent-selector", "blur"),
                                     onPointerDown: (e: PointerEvent) => uiPerfTriggerDown("agent-selector", e),
                                   }
-                                : undefined
-                            }
+                                : {}),
+                            }}
                             onOpenChange={
                               trace
                                 ? (open) => {

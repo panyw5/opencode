@@ -3,8 +3,9 @@ import { spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import path from "path"
 import { Database } from "bun:sqlite"
-import { killProcessGroup, pidAlive, spawnDetached } from "../../src/math/spawn"
-import { readSwarm, stopPath } from "../../src/math/swarm"
+import { killProcessGroup, pidAlive, resolveSelfArgv, spawnDetached } from "../../src/math/spawn"
+import { readSwarm, stopPath, writeSwarm } from "../../src/math/swarm"
+import { stopMathWorker } from "../../src/math/worker"
 import { tmpdir } from "../fixture/fixture"
 
 function waitUntil(pred: () => boolean, timeoutMs: number, label: string) {
@@ -16,7 +17,41 @@ function waitUntil(pred: () => boolean, timeoutMs: number, label: string) {
   throw new Error(`timed out waiting for ${label}`)
 }
 
+function processStopped(pid: number) {
+  const ps = spawnSync("ps", ["-p", String(pid), "-o", "state="], { encoding: "utf8" })
+  const state = (ps.stdout ?? "").trim()
+  return ps.status !== 0 || state === "" || state.startsWith("Z")
+}
+
 describe("math.spawn", () => {
+  test("Electron sidecar re-execs the bundled CLI override", () => {
+    expect(
+      resolveSelfArgv(["math", "worker", "--session", "ses_test"], {
+        execPath: "/Applications/OpenCode.app/Contents/Frameworks/Electron Helper",
+        argv: ["Electron Helper"],
+        env: { OPENCODE_CLI_PATH: "/Applications/OpenCode.app/Contents/Resources/sidecars/opencode-cli" },
+        electron: true,
+      }),
+    ).toEqual([
+      "/Applications/OpenCode.app/Contents/Resources/sidecars/opencode-cli",
+      "math",
+      "worker",
+      "--session",
+      "ses_test",
+    ])
+  })
+
+  test("Electron sidecar fails closed instead of launching a directory as an app", () => {
+    expect(() =>
+      resolveSelfArgv(["math", "worker"], {
+        execPath: "/Applications/OpenCode.app/Contents/Frameworks/Electron Helper",
+        argv: ["Electron Helper"],
+        env: {},
+        electron: true,
+      }),
+    ).toThrow("OPENCODE_CLI_PATH")
+  })
+
   test("detached sleep survives unref and is killable by process group", async () => {
     await using tmp = await tmpdir()
     const logFile = path.join(tmp.path, "sleep.log")
@@ -31,11 +66,40 @@ describe("math.spawn", () => {
     } catch {
       killProcessGroup(pid, "SIGTERM")
     }
-    waitUntil(() => {
-      const ps = spawnSync("ps", ["-p", String(pid), "-o", "state="], { encoding: "utf8" })
-      const state = (ps.stdout ?? "").trim()
-      return ps.status !== 0 || state === "" || state.startsWith("Z")
-    }, 3000, "sleep pid to die")
+    waitUntil(() => processStopped(pid), 3000, "sleep pid to die")
+  })
+
+  test("stopping a worker terminates its active detached process group", async () => {
+    await using tmp = await tmpdir()
+    const projectDir = path.join(tmp.path, ".math", "stop-signal")
+    const logFile = path.join(projectDir, "logs", "worker-stop-signal.log")
+    const { pid } = spawnDetached({
+      argv: ["/bin/sleep", "30"],
+      cwd: tmp.path,
+      logFile,
+    })
+    const sessionID = "ses_stop_signal"
+    writeSwarm(projectDir, {
+      projectDir,
+      workers: {
+        [sessionID]: {
+          sessionID,
+          pid,
+          state: "running",
+          startedAt: Date.now(),
+          logFile,
+          round: 1,
+        },
+      },
+    })
+
+    try {
+      const result = stopMathWorker({ projectDir, sessionID })
+      expect(result).toMatchObject({ sessionID, pid, state: "stopping" })
+      waitUntil(() => processStopped(pid), 3000, "stopped worker process group to die")
+    } finally {
+      if (pidAlive(pid)) killProcessGroup(pid, "SIGKILL")
+    }
   })
 })
 

@@ -31,7 +31,6 @@ import type { SessionComposerState } from "@/pages/session/composer/session-comp
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
-import type { MathWorkerStatus } from "@/pages/session/math-worker-api"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 
 function ComposerDockExit(props: {
@@ -629,110 +628,6 @@ function SessionChildAgentMenu(props: {
   )
 }
 
-export type SessionMathWorkerEntry = MathWorkerStatus & { title: string }
-
-function SessionMathWorkerMenu(props: {
-  entries: SessionMathWorkerEntry[]
-  busy: string[]
-  onOpen: (entry: SessionMathWorkerEntry) => void
-  onEnsure: (entry: SessionMathWorkerEntry) => void
-  onStop: (entry: SessionMathWorkerEntry) => void
-}) {
-  const language = useLanguage()
-  const busy = (entry: SessionMathWorkerEntry) => props.busy.includes(entry.sessionID)
-  const stateClass = (entry: SessionMathWorkerEntry) => {
-    if (entry.alive && entry.state === "running") return "text-icon-success-base"
-    if (entry.state === "stopping") return "text-icon-warning-base"
-    return "text-icon-critical-base"
-  }
-  const stateLabel = (entry: SessionMathWorkerEntry) => {
-    if (entry.state === "running") return language.t("session.mathSwarm.state.running")
-    if (entry.state === "stopping") return language.t("session.mathSwarm.state.stopping")
-    if (entry.state === "dead") return language.t("session.mathSwarm.state.dead")
-    return language.t("session.mathSwarm.state.missing")
-  }
-  const detail = (entry: SessionMathWorkerEntry) => {
-    const values = [
-      entry.pid ? `PID ${entry.pid}` : undefined,
-      entry.round !== undefined ? language.t("session.mathSwarm.round", { round: entry.round }) : undefined,
-      entry.last_fact_id ? `fact ${entry.last_fact_id.slice(0, 8)}` : undefined,
-      entry.variant,
-      entry.project,
-    ]
-    return values.filter(Boolean).join(" · ")
-  }
-
-  return (
-    <Show when={props.entries.length > 0}>
-      <DropdownMenu gutter={6} placement="top-start">
-        <DropdownMenu.Trigger
-          as={Button}
-          variant="ghost"
-          size="small"
-          icon="branch"
-          class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
-          aria-label={language.t("session.mathSwarm.open")}
-          data-testid="session-math-swarm-trigger"
-        >
-          <span>{language.t("session.mathSwarm.button", { count: props.entries.length })}</span>
-          <Icon name="chevron-down" size="small" class="text-icon-weak" />
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content class="w-[360px] max-w-[calc(100vw-32px)]">
-            <DropdownMenu.Group>
-              <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-                {language.t("session.mathSwarm.label")}
-              </DropdownMenu.GroupLabel>
-              <For each={props.entries}>
-                {(entry) => (
-                  <>
-                    <DropdownMenu.Item onSelect={() => props.onOpen(entry)} data-testid="session-math-worker-item">
-                      <div class="min-w-0 flex flex-col gap-0.5">
-                        <DropdownMenu.ItemLabel class="flex min-w-0 items-center gap-2 text-13-medium text-text-strong">
-                          <span class={`shrink-0 text-10-medium ${stateClass(entry)}`} aria-hidden="true">
-                            ●
-                          </span>
-                          <span class="min-w-0 flex-1 truncate">{entry.title}</span>
-                          <span class={`shrink-0 text-11-medium ${stateClass(entry)}`}>{stateLabel(entry)}</span>
-                        </DropdownMenu.ItemLabel>
-                        <Show when={detail(entry)}>
-                          <DropdownMenu.ItemDescription class="truncate font-mono text-11-regular text-text-weak">
-                            {detail(entry)}
-                          </DropdownMenu.ItemDescription>
-                        </Show>
-                      </div>
-                    </DropdownMenu.Item>
-                    <Show when={entry.restartable && !entry.stopRequested}>
-                      <DropdownMenu.Item
-                        disabled={busy(entry)}
-                        onSelect={() => props.onEnsure(entry)}
-                        data-testid="session-math-worker-ensure"
-                      >
-                        {language.t("session.mathSwarm.ensure", { title: entry.title })}
-                      </DropdownMenu.Item>
-                    </Show>
-                    <Show when={entry.alive && entry.state !== "stopping"}>
-                      <DropdownMenu.Item
-                        disabled={busy(entry)}
-                        onSelect={() => props.onStop(entry)}
-                        data-testid="session-math-worker-stop"
-                      >
-                        <span class="text-text-critical-base">
-                          {language.t("session.mathSwarm.stop", { title: entry.title })}
-                        </span>
-                      </DropdownMenu.Item>
-                    </Show>
-                  </>
-                )}
-              </For>
-            </DropdownMenu.Group>
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu>
-    </Show>
-  )
-}
-
 export function SessionComposerRegion(props: {
   state: SessionComposerState
   ready: boolean
@@ -764,11 +659,6 @@ export function SessionComposerRegion(props: {
   }
   childAgents?: SessionChildAgentEntry[]
   onOpenChildAgent?: (entry: SessionChildAgentEntry) => void
-  mathWorkers?: SessionMathWorkerEntry[]
-  mathWorkersBusy?: string[]
-  onOpenMathWorker?: (entry: SessionMathWorkerEntry) => void
-  onEnsureMathWorker?: (entry: SessionMathWorkerEntry) => void
-  onStopMathWorker?: (entry: SessionMathWorkerEntry) => void
   userMessages?: SessionUserMessageEntry[]
   userMessagesLoading?: boolean
   onLoadAllUserMessages?: () => void
@@ -891,16 +781,6 @@ export function SessionComposerRegion(props: {
     if (!onOpen) return undefined
     return { entries: props.childAgents ?? [], onOpen }
   })
-  const mathWorkerMenu = createMemo(() => {
-    if (!props.onOpenMathWorker || !props.onEnsureMathWorker || !props.onStopMathWorker) return undefined
-    return {
-      entries: props.mathWorkers ?? [],
-      busy: props.mathWorkersBusy ?? [],
-      onOpen: props.onOpenMathWorker,
-      onEnsure: props.onEnsureMathWorker,
-      onStop: props.onStopMathWorker,
-    }
-  })
   const userMessageMenu = createMemo(() => {
     if (platform.platform !== "desktop") return undefined
     const onOpen = props.onOpenUserMessage
@@ -920,7 +800,6 @@ export function SessionComposerRegion(props: {
     () =>
       !!props.subagentTitle ||
       (childAgentMenu()?.entries.length ?? 0) > 0 ||
-      (mathWorkerMenu()?.entries.length ?? 0) > 0 ||
       (platform.platform === "desktop" && backgroundShells().length > 0) ||
       !!userMessageMenu() ||
       !!visibleSubagentNavigation() ||
@@ -1162,17 +1041,6 @@ export function SessionComposerRegion(props: {
                   </Show>
                   <Show when={childAgentMenu()} keyed>
                     {(menu) => <SessionChildAgentMenu entries={menu.entries} onOpen={menu.onOpen} />}
-                  </Show>
-                  <Show when={mathWorkerMenu()} keyed>
-                    {(menu) => (
-                      <SessionMathWorkerMenu
-                        entries={menu.entries}
-                        busy={menu.busy}
-                        onOpen={menu.onOpen}
-                        onEnsure={menu.onEnsure}
-                        onStop={menu.onStop}
-                      />
-                    )}
                   </Show>
                   <Show when={platform.platform === "desktop" && backgroundShells().length > 0}>
                     <SessionBackgroundShellMenu

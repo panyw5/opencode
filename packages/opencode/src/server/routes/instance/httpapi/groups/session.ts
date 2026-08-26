@@ -67,12 +67,30 @@ export const MathWorkerStatus = Schema.Struct({
   transcriptUpdatedAt: Schema.optional(Schema.Number),
   model: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  startedAt: Schema.optional(Schema.Number),
+  cost: Schema.optional(Schema.Number),
+  tokens: Schema.optional(Schema.Number),
+  taskUpdatedAt: Schema.optional(Schema.Number),
+  taskPreview: Schema.optional(Schema.String),
+  factCount: Schema.optional(Schema.Number),
+  verificationCorrect: Schema.optional(Schema.Number),
+  verificationWrong: Schema.optional(Schema.Number),
+  verificationError: Schema.optional(Schema.Number),
+  latestVerification: Schema.optional(Schema.String),
 })
 export const MathWorkerEnsurePayload = Schema.Struct({
   model: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  reEnable: Schema.optional(Schema.Boolean),
 })
 export const MathWorkerStopPayload = Schema.Struct({ force: Schema.optional(Schema.Boolean) })
+export const MathWorkerTaskInfo = Schema.Struct({
+  sessionID: Schema.String,
+  project: Schema.String,
+  task: Schema.String,
+  updatedAt: Schema.Number,
+})
+export const MathWorkerTaskPayload = Schema.Struct({ task: Schema.String })
 export const UpdatePayload = Schema.Struct({
   title: Schema.optional(Schema.String),
   permission: Schema.optional(Permission.Ruleset),
@@ -118,6 +136,7 @@ export const SessionPaths = {
   mathWorkers: `${root}/:sessionID/math-workers`,
   mathWorkerEnsure: `${root}/:sessionID/math-workers/:workerID/ensure`,
   mathWorkerStop: `${root}/:sessionID/math-workers/:workerID/stop`,
+  mathWorkerTask: `${root}/:sessionID/math-workers/:workerID/task`,
   todo: `${root}/:sessionID/todo`,
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
@@ -218,7 +237,8 @@ export const SessionApi = HttpApi.make("session")
           OpenApi.annotations({
             identifier: "session.mathWorkerEnsure",
             summary: "Ensure Math Mode worker",
-            description: "Restart an unexpectedly dead worker using its existing durable session identity.",
+            description:
+              "Restart an unexpectedly dead worker using its existing durable session identity. A deliberate stop requires explicit reEnable.",
           }),
         ),
         HttpApiEndpoint.post("mathWorkerStop", SessionPaths.mathWorkerStop, {
@@ -232,6 +252,31 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.mathWorkerStop",
             summary: "Stop Math Mode worker",
             description: "Request a round-boundary stop or force-kill the detached worker process group.",
+          }),
+        ),
+        HttpApiEndpoint.get("mathWorkerTaskGet", SessionPaths.mathWorkerTask, {
+          params: { sessionID: SessionID, workerID: SessionID },
+          query: MathWorkerQuery,
+          success: described(MathWorkerTaskInfo, "Math Mode worker task"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.mathWorkerTaskGet",
+            summary: "Get Math Mode worker task",
+            description: "Read the durable TASK body used at the start of each worker round.",
+          }),
+        ),
+        HttpApiEndpoint.put("mathWorkerTaskUpdate", SessionPaths.mathWorkerTask, {
+          params: { sessionID: SessionID, workerID: SessionID },
+          query: MathWorkerQuery,
+          payload: MathWorkerTaskPayload,
+          success: described(MathWorkerTaskInfo, "Updated Math Mode worker task"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.mathWorkerTaskUpdate",
+            summary: "Update Math Mode worker task",
+            description: "Atomically replace the durable TASK body for the worker's next round.",
           }),
         ),
         HttpApiEndpoint.get("todo", SessionPaths.todo, {

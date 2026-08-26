@@ -57,7 +57,10 @@ import {
   SessionStatusFloat,
   SessionTodoFloat,
 } from "@/pages/session/composer"
-import type { SessionMathWorkerEntry } from "@/pages/session/composer/session-composer-region"
+import { SessionMathFloat, type SessionMathWorkerEntry } from "@/pages/session/session-math-float"
+import { SessionMathInitializeDialog } from "@/pages/session/composer/session-math-initialize-dialog"
+import { buildMathInitializationPrompt } from "@/pages/session/math-initialize"
+import { MATH_ORCHESTRATOR_AGENT, mathModeLocksAgent } from "@/pages/session/math-mode-agent"
 import {
   clipMessages,
   createOpenReviewFile,
@@ -90,10 +93,13 @@ import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/
 import { collectSessionActiveSkills } from "@/pages/session/session-active-skills"
 import {
   ensureMathWorker as ensureMathWorkerApi,
+  getMathWorkerTask,
   listMathWorkers,
   stopMathWorker as stopMathWorkerApi,
+  updateMathWorkerTask,
   type MathWorkerStatus,
 } from "@/pages/session/math-worker-api"
+import { SessionMathTaskDialog } from "@/pages/session/session-math-task-dialog"
 import { Identifier } from "@/utils/id"
 import { compareMessages, resolveMessage, sortMessages } from "@/utils/message-order"
 import { commandInvocationFromParts, extractPromptFromParts, injectionPreviewFromParts } from "@/utils/prompt"
@@ -456,6 +462,9 @@ export default function Page() {
       .trim()
     return cleaned || raw
   })
+  const mathModeAvailable = createMemo(
+    () => !subagentPromptTitle() && local.agent.available(MATH_ORCHESTRATOR_AGENT),
+  )
   const childAgentSessions = createMemo(() => {
     const id = params.id
     if (!id) return []
@@ -469,6 +478,33 @@ export default function Page() {
       byID.set(session.id, session)
     }
     return [...byID.values()]
+  })
+  const [mathModePrepared, setMathModePrepared] = createSignal(false)
+  createEffect(
+    on(
+      () => params.id,
+      () => setMathModePrepared(false),
+      { defer: true },
+    ),
+  )
+  const mathModeAgentLocked = createMemo(() =>
+    mathModeLocksAgent({
+      prepared: mathModePrepared(),
+      sessionAgent: info()?.agent,
+      childAgents: childAgentSessions().map((session) => session.agent),
+      subagent: !!subagentPromptTitle(),
+    }),
+  )
+  createEffect(() => {
+    if (!mathModeAgentLocked()) return
+    console.debug(
+      `[math-mode] agent lock enabled session=${params.id ?? "draft"} reason=${mathModePrepared() ? "prepared" : info()?.agent === MATH_ORCHESTRATOR_AGENT ? "session-agent" : "durable-worker"}`,
+    )
+    local.agent.lock(MATH_ORCHESTRATOR_AGENT)
+    onCleanup(() => {
+      local.agent.lock(undefined)
+      console.debug(`[math-mode] agent lock released session=${params.id ?? "draft"}`)
+    })
   })
   const childAgentEntries = createMemo(() =>
     collectSessionChildAgentEntries({
@@ -1383,7 +1419,27 @@ export default function Page() {
     if (!dir) return
     navigate(`/${dir}/session/${entry.sessionID}`)
   }
-  const ensureMathWorker = async (entry: SessionMathWorkerEntry) => {
+  const openMathInitialize = () => {
+    const current = local.model.current()
+    const defaultModel = current ? `${current.provider.id}/${current.id}` : ""
+    dialog.show(() => (
+      <SessionMathInitializeDialog
+        directory={sdk.directory}
+        defaultModel={defaultModel}
+        onConfirm={(config) => {
+          const text = buildMathInitializationPrompt(config)
+          console.debug(
+            `[math-initialize] confirmed project=${config.project} high=${config.highWorkers} xhigh=${config.xhighWorkers} promptLength=${text.length}`,
+          )
+          setMathModePrepared(true)
+          local.agent.lock(MATH_ORCHESTRATOR_AGENT)
+          prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
+          requestAnimationFrame(() => inputRef?.focus())
+        }}
+      />
+    ))
+  }
+  const ensureMathWorker = async (entry: SessionMathWorkerEntry, reEnable = false) => {
     const parentSessionID = params.id
     if (!parentSessionID || mathSwarm.busy[entry.sessionID]) return
     setMathSwarm("busy", entry.sessionID, true)
@@ -1395,9 +1451,14 @@ export default function Page() {
         parentSessionID,
         workerSessionID: entry.sessionID,
         project: entry.project,
+        reEnable,
       })
       await refreshMathSwarm(parentSessionID)
-      showToast({ variant: "success", title: language.t("session.mathSwarm.ensured"), description: entry.title })
+      showToast({
+        variant: "success",
+        title: language.t(reEnable ? "session.mathSwarm.reEnabled" : "session.mathSwarm.ensured"),
+        description: entry.title,
+      })
     } catch (error) {
       fail(error)
     } finally {
@@ -1408,8 +1469,11 @@ export default function Page() {
     const parentSessionID = params.id
     if (!parentSessionID || mathSwarm.busy[entry.sessionID]) return
     setMathSwarm("busy", entry.sessionID, true)
+    console.debug(
+      `[math-swarm] stop start parent=${parentSessionID} worker=${entry.sessionID} project=${entry.project ?? "default"} pid=${entry.pid ?? "unknown"} state=${entry.state}`,
+    )
     try {
-      await stopMathWorkerApi({
+      const result = await stopMathWorkerApi({
         sdk,
         platform,
         auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
@@ -1417,8 +1481,52 @@ export default function Page() {
         workerSessionID: entry.sessionID,
         project: entry.project,
       })
+      console.debug(
+        `[math-swarm] stop response worker=${entry.sessionID} pid=${result.pid ?? "unknown"} alive=${result.alive} state=${result.state} stopRequested=${result.stopRequested ?? true}`,
+      )
       await refreshMathSwarm(parentSessionID)
+      console.debug(`[math-swarm] stop refresh complete parent=${parentSessionID} worker=${entry.sessionID}`)
       showToast({ variant: "success", title: language.t("session.mathSwarm.stopped"), description: entry.title })
+    } catch (error) {
+      console.error(`[math-swarm] stop failed worker=${entry.sessionID} error=${error instanceof Error ? error.message : String(error)}`)
+      fail(error)
+    } finally {
+      setMathSwarm("busy", entry.sessionID, false)
+    }
+  }
+  const editMathWorkerTask = async (entry: SessionMathWorkerEntry) => {
+    const parentSessionID = params.id
+    if (!parentSessionID || mathSwarm.busy[entry.sessionID]) return
+    setMathSwarm("busy", entry.sessionID, true)
+    try {
+      const auth = server.currentFor(domainFromDirectory(sdk.directory))?.http
+      const info = await getMathWorkerTask({
+        sdk,
+        platform,
+        auth,
+        parentSessionID,
+        workerSessionID: entry.sessionID,
+        project: entry.project,
+      })
+      dialog.show(() => (
+        <SessionMathTaskDialog
+          worker={entry}
+          task={info.task}
+          onSave={async (task) => {
+            await updateMathWorkerTask({
+              sdk,
+              platform,
+              auth,
+              parentSessionID,
+              workerSessionID: entry.sessionID,
+              project: entry.project,
+              task,
+            })
+            await refreshMathSwarm(parentSessionID)
+            showToast({ variant: "success", title: language.t("session.mathTask.updated"), description: entry.title })
+          }}
+        />
+      ))
     } catch (error) {
       fail(error)
     } finally {
@@ -3030,6 +3138,19 @@ export default function Page() {
                 expandLabel={language.t("session.todo.expand")}
               />
             </Show>
+            <Show when={platform.platform === "desktop"}>
+              <SessionMathFloat
+                available={mathModeAvailable()}
+                workers={mathWorkerEntries()}
+                busy={mathWorkersBusy()}
+                onInitialize={openMathInitialize}
+                onOpen={openMathWorker}
+                onEnsure={(entry) => void ensureMathWorker(entry)}
+                onReEnable={(entry) => void ensureMathWorker(entry, true)}
+                onStop={(entry) => void stopMathWorker(entry)}
+                onTask={(entry) => void editMathWorkerTask(entry)}
+              />
+            </Show>
           </div>
 
           <SessionComposerRegion
@@ -3087,11 +3208,6 @@ export default function Page() {
             }
             childAgents={childAgentEntries()}
             onOpenChildAgent={openChildAgent}
-            mathWorkers={mathWorkerEntries()}
-            mathWorkersBusy={mathWorkersBusy()}
-            onOpenMathWorker={openMathWorker}
-            onEnsureMathWorker={(entry) => void ensureMathWorker(entry)}
-            onStopMathWorker={(entry) => void stopMathWorker(entry)}
             userMessages={userMessageMenu()}
             userMessagesLoading={ui.userMessagesLoading}
             onLoadAllUserMessages={() => void loadAllUserMessages()}

@@ -1,6 +1,16 @@
-import { closeSync, mkdirSync, openSync, writeFileSync, existsSync, readFileSync, unlinkSync } from "fs"
+import {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from "fs"
 import path from "path"
-import { Duration, Effect } from "effect"
+import { Duration, Effect, Option } from "effect"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
 import { MessageV2 } from "@/session/message-v2"
@@ -10,7 +20,9 @@ import { SessionID, MessageID, PartID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { layout, mathRoot, taskPath } from "./layout"
 import { killProcessGroup, pidAlive, selfArgv, spawnDetached } from "./spawn"
-import { patchWorker, readSwarm, stopPath, upsertWorker, type SwarmWorker } from "./swarm"
+import { clearStop, patchWorker, readSwarm, stopPath, upsertWorker, type SwarmWorker } from "./swarm"
+import { FactGraph } from "./fact-graph"
+import { GlobalMemory } from "./global-memory"
 import * as Log from "@opencode-ai/core/util/log"
 import { parse as parseJsonc } from "jsonc-parser"
 
@@ -54,6 +66,23 @@ export type StatusResult = {
   project?: string
   model?: string
   variant?: string
+  startedAt?: number
+  cost?: number
+  tokens?: number
+  taskUpdatedAt?: number
+  taskPreview?: string
+  factCount?: number
+  verificationCorrect?: number
+  verificationWrong?: number
+  verificationError?: number
+  latestVerification?: string
+}
+
+export type MathWorkerTaskInfo = {
+  sessionID: string
+  project: string
+  task: string
+  updatedAt: number
 }
 
 export type EnsureResult = StartResult & {
@@ -227,6 +256,7 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   intervalMs?: number
   model?: string
   variant?: string
+  reEnable?: boolean
   spawn?: StartInput["spawn"]
 }) {
   const sessions = yield* Session.Service
@@ -238,7 +268,14 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   const logFile = existing?.logFile ?? path.join(layout(input.projectDir).logs, `worker-${input.sessionID}.log`)
   const stop = stopPath(input.projectDir, input.sessionID)
   if (!existsSync(taskFile)) throw new Error(`math worker TASK is missing: ${taskFile}`)
-  if (existsSync(stop)) throw new Error(`math worker has a stop request; refusing restart: ${input.sessionID}`)
+  if (existsSync(stop)) {
+    if (!input.reEnable) throw new Error(`math worker has a stop request; refusing restart: ${input.sessionID}`)
+    if (existing && pidAlive(existing.pid)) {
+      throw new Error(`math worker is still stopping; wait for process exit before re-enabling: ${input.sessionID}`)
+    }
+    log.info("math worker re-enable requested", { sessionID: input.sessionID, projectDir: input.projectDir })
+    clearStop(input.projectDir, input.sessionID)
+  }
   if (existing && pidAlive(existing.pid)) {
     return {
       sessionID: input.sessionID,
@@ -316,6 +353,7 @@ export const ensureMathWorker = Effect.fn("MathWorker.ensure")(function* (input:
   intervalMs?: number
   model?: string
   variant?: string
+  reEnable?: boolean
   spawn?: StartInput["spawn"]
 }) {
   return yield* Effect.acquireUseRelease(
@@ -338,6 +376,17 @@ export function statusMathWorker(input: {
   })
   return workers.map((w) => {
     const alive = pidAlive(w.pid)
+    let taskUpdatedAt: number | undefined
+    let taskPreview: string | undefined
+    if (w.taskFile) {
+      try {
+        taskUpdatedAt = statSync(w.taskFile).mtimeMs
+        taskPreview = readFileSync(w.taskFile, "utf8").trim().replace(/\s+/g, " ").slice(0, 180)
+      } catch {
+        taskUpdatedAt = undefined
+        taskPreview = undefined
+      }
+    }
     return {
       sessionID: w.sessionID,
       project: path.basename(input.projectDir),
@@ -352,6 +401,9 @@ export function statusMathWorker(input: {
       logFile: w.logFile,
       model: w.model,
       variant: w.variant,
+      startedAt: w.startedAt,
+      taskUpdatedAt,
+      taskPreview,
       stopRequested: existsSync(stopPath(input.projectDir, w.sessionID)),
       restartable:
         !alive && !existsSync(stopPath(input.projectDir, w.sessionID)) && Boolean(w.taskFile && existsSync(w.taskFile)),
@@ -365,6 +417,19 @@ export const discoverMathWorkers = Effect.fn("MathWorker.discover")(function* (i
   sessionID?: string
 }) {
   const sessions = yield* Session.Service
+  const summary = yield* Effect.promise(async () => {
+    const facts = await new FactGraph(input.projectDir).list().catch(() => [])
+    const verification = await new GlobalMemory(input.projectDir).read("verification").catch(() => [])
+    const verdict = (value: unknown) => (typeof value === "string" ? value : "error")
+    const latest = verification.toSorted((a, b) => b.timestamp_utc.localeCompare(a.timestamp_utc))[0]
+    return {
+      factCount: facts.length,
+      verificationCorrect: verification.filter((entry) => verdict(entry.verdict) === "correct").length,
+      verificationWrong: verification.filter((entry) => verdict(entry.verdict) === "wrong").length,
+      verificationError: verification.filter((entry) => !["correct", "wrong"].includes(verdict(entry.verdict))).length,
+      latestVerification: latest?.claim.slice(0, 240),
+    }
+  })
   const children = (yield* sessions.children(input.parentSessionID)).filter(
     (child) => child.agent === "math-worker" && (!input.sessionID || child.id === input.sessionID),
   )
@@ -396,25 +461,146 @@ export const discoverMathWorkers = Effect.fn("MathWorker.discover")(function* (i
       transcriptUpdatedAt: child.time.updated,
       model: existing?.model,
       variant: existing?.variant,
+      startedAt: existing?.startedAt ?? child.time.created,
+      cost: child.cost,
+      tokens: child.tokens
+        ? child.tokens.input +
+          child.tokens.output +
+          child.tokens.reasoning +
+          child.tokens.cache.read +
+          child.tokens.cache.write
+        : undefined,
+      taskUpdatedAt: existing?.taskUpdatedAt,
+      taskPreview: existing?.taskPreview,
+      ...summary,
     })
   }
-  return [...rows.values()].sort((a, b) => a.sessionID.localeCompare(b.sessionID))
+  const result = [...rows.values()]
+    .map((row) => ({ ...row, ...summary }))
+    .sort((a, b) => a.sessionID.localeCompare(b.sessionID))
+  yield* Effect.forEach(
+    result.filter((row) => row.state === "dead" && !row.alive),
+    (row) =>
+      Effect.gen(function* () {
+        const sessionID = SessionID.make(row.sessionID)
+        const latest = yield* sessions.findMessage(sessionID, (message) => message.info.role === "assistant")
+        if (Option.isNone(latest)) return
+        if (latest.value.info.role !== "assistant" || latest.value.info.time.completed) return
+        log.info("math worker death reconcile start", {
+          sessionID: row.sessionID,
+          parentSessionID: input.parentSessionID,
+          pid: row.pid,
+          round: row.round,
+          messageID: latest.value.info.id,
+        })
+        yield* sessions.finalizeOrphanedAssistant(sessionID, {
+          abortSource: "orphan-finalizer",
+          abortReason: "Detached math-worker process is no longer alive.",
+        })
+        log.info("math worker death reconcile finish", {
+          sessionID: row.sessionID,
+          parentSessionID: input.parentSessionID,
+          pid: row.pid,
+          messageID: latest.value.info.id,
+        })
+      }).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() =>
+            log.warn("math worker death reconcile failed", {
+              sessionID: row.sessionID,
+              parentSessionID: input.parentSessionID,
+              pid: row.pid,
+              cause,
+            }),
+          ),
+        ),
+      ),
+    { concurrency: "unbounded", discard: true },
+  )
+  return result
 })
+
+export function readMathWorkerTask(projectDir: string, sessionID: string): MathWorkerTaskInfo {
+  const file = taskPath(projectDir, sessionID)
+  return {
+    sessionID,
+    project: path.basename(projectDir),
+    task: readFileSync(file, "utf8"),
+    updatedAt: statSync(file).mtimeMs,
+  }
+}
+
+export function updateMathWorkerTask(projectDir: string, sessionID: string, task: string): MathWorkerTaskInfo {
+  const next = task.trim()
+  if (!next) throw new Error("math worker TASK cannot be empty")
+  if (next.length > 100_000) throw new Error("math worker TASK is too large")
+  const file = taskPath(projectDir, sessionID)
+  if (!existsSync(file)) throw new Error(`math worker TASK is missing: ${file}`)
+  const tmp = `${file}.tmp`
+  writeFileSync(tmp, `${next}\n`, "utf8")
+  renameSync(tmp, file)
+  log.info("math worker task updated", { sessionID, projectDir, length: next.length })
+  return readMathWorkerTask(projectDir, sessionID)
+}
 
 export function stopMathWorker(input: { projectDir: string; sessionID: string; force?: boolean }): StatusResult {
   const swarm = readSwarm(input.projectDir)
   const worker = swarm.workers[input.sessionID]
   if (!worker) {
+    log.warn("math worker stop missing", { sessionID: input.sessionID, projectDir: input.projectDir })
     return { sessionID: input.sessionID, alive: false, state: "missing" }
   }
-  mkdirSync(path.dirname(stopPath(input.projectDir, input.sessionID)), { recursive: true })
-  writeFileSync(stopPath(input.projectDir, input.sessionID), `${Date.now()}\n`, "utf8")
+  const marker = stopPath(input.projectDir, input.sessionID)
+  const signal = input.force ? "SIGKILL" : "SIGTERM"
+  const aliveBefore = pidAlive(worker.pid)
+  log.info("math worker stop start", {
+    sessionID: input.sessionID,
+    projectDir: input.projectDir,
+    pid: worker.pid,
+    round: worker.round,
+    state: worker.state,
+    force: input.force === true,
+    signal,
+    marker,
+    markerPresent: existsSync(marker),
+    aliveBefore,
+  })
+  mkdirSync(path.dirname(marker), { recursive: true })
+  writeFileSync(marker, `${Date.now()}\n`, "utf8")
+  log.info("math worker stop marker written", { sessionID: input.sessionID, pid: worker.pid, marker })
   patchWorker(input.projectDir, input.sessionID, { state: "stopping" })
-  if (input.force && pidAlive(worker.pid)) {
-    log.info("math worker force kill", { sessionID: input.sessionID, pid: worker.pid })
-    killProcessGroup(worker.pid, "SIGKILL")
+  log.info("math worker stop state patched", { sessionID: input.sessionID, pid: worker.pid, state: "stopping" })
+  if (aliveBefore) {
+    log.info("math worker stop signal start", { sessionID: input.sessionID, pid: worker.pid, signal })
+    try {
+      killProcessGroup(worker.pid, signal)
+      log.info("math worker stop signal sent", { sessionID: input.sessionID, pid: worker.pid, signal })
+    } catch (error) {
+      const aliveAfterError = pidAlive(worker.pid)
+      const message = error instanceof Error ? error.message : String(error)
+      log.warn("math worker stop signal error", {
+        sessionID: input.sessionID,
+        pid: worker.pid,
+        signal,
+        aliveAfterError,
+        error: message,
+      })
+      if (aliveAfterError) throw error
+    }
   }
   const alive = pidAlive(worker.pid)
+  if (!alive) {
+    patchWorker(input.projectDir, input.sessionID, { state: "dead" })
+    log.info("math worker stop state patched", { sessionID: input.sessionID, pid: worker.pid, state: "dead" })
+  }
+  log.info("math worker stop finish", {
+    sessionID: input.sessionID,
+    pid: worker.pid,
+    signal: aliveBefore ? signal : undefined,
+    aliveBefore,
+    aliveAfter: alive,
+    state: alive ? "stopping" : "dead",
+  })
   return {
     sessionID: input.sessionID,
     alive,
@@ -454,12 +640,13 @@ export const writeHeartbeat = Effect.fn("MathWorker.heartbeat")(function* (input
     synthetic: true,
     time: { start: now, end: now },
   })
+  const stopRequested = existsSync(stopPath(input.projectDir, input.sessionID))
   patchWorker(input.projectDir, input.sessionID, {
     lastHeartbeatAt: now,
     round: input.round,
-    state: "running",
+    state: stopRequested ? "stopping" : "running",
   })
-  log.info("math worker heartbeat", { sessionID: input.sessionID, round: input.round })
+  log.info("math worker heartbeat", { sessionID: input.sessionID, round: input.round, stopRequested })
 })
 
 export function buildWorkerKickoff(input: { task: string; round: number }): string {
@@ -523,10 +710,11 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     parts: [{ type: "text", text: buildWorkerKickoff({ task, round: input.round }) }],
   })
   const lastFactId = latestAcceptedFactId(yield* sessions.messages({ sessionID: input.sessionID }))
+  const stopRequested = existsSync(stopPath(input.projectDir, input.sessionID))
   patchWorker(input.projectDir, input.sessionID, {
     lastHeartbeatAt: Date.now(),
     round: input.round,
-    state: "running",
+    state: stopRequested ? "stopping" : "running",
     lastRc: result.info.role === "assistant" && !result.info.error ? 0 : 1,
     lastFactId,
   })
@@ -536,6 +724,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     role: result.info.role,
     error: result.info.role === "assistant" ? result.info.error?.name : undefined,
     lastFactId,
+    stopRequested,
   })
   return result
 })
@@ -568,9 +757,12 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
     variant: input.variant ?? existing?.variant,
   })
   let round = existing?.round ?? 0
-  log.info("math worker loop start", { sessionID, intervalMs: input.intervalMs, pid: process.pid })
-  while (!existsSync(stopPath(input.projectDir, sessionID))) {
+  const marker = stopPath(input.projectDir, sessionID)
+  log.info("math worker loop start", { sessionID, intervalMs: input.intervalMs, pid: process.pid, marker })
+  while (!existsSync(marker)) {
     round += 1
+    const startedAt = Date.now()
+    log.info("math worker round start", { sessionID, round, pid: process.pid, markerPresent: false })
     if (input.heartbeatOnly) yield* writeHeartbeat({ sessionID, round, projectDir: input.projectDir })
     else
       yield* runWorkerRound({
@@ -580,10 +772,17 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
         model: input.model ?? existing?.model,
         variant: input.variant ?? existing?.variant,
       })
+    log.info("math worker round finish", {
+      sessionID,
+      round,
+      pid: process.pid,
+      durationMs: Date.now() - startedAt,
+      markerPresent: existsSync(marker),
+    })
     yield* Effect.sleep(Duration.millis(input.intervalMs))
   }
   patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })
-  log.info("math worker loop stop", { sessionID, round })
+  log.info("math worker loop stop", { sessionID, round, pid: process.pid, marker, markerPresent: true })
   return round
 })
 

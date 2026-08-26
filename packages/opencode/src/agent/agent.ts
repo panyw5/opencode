@@ -310,6 +310,7 @@ export const layer = Layer.effect(
             options: {},
             native: true,
             mode: "primary",
+            hidden: true,
             prompt: PROMPT_MATH_ORCHESTRATOR,
             permission: Permission.merge(
               defaults,

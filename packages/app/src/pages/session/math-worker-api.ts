@@ -23,6 +23,23 @@ export type MathWorkerStatus = {
   transcriptUpdatedAt?: number
   model?: string
   variant?: string
+  startedAt?: number
+  cost?: number
+  tokens?: number
+  taskUpdatedAt?: number
+  taskPreview?: string
+  factCount?: number
+  verificationCorrect?: number
+  verificationWrong?: number
+  verificationError?: number
+  latestVerification?: string
+}
+
+export type MathWorkerTaskInfo = {
+  sessionID: string
+  project: string
+  task: string
+  updatedAt: number
 }
 
 function endpoint(sdk: SDK, path: string) {
@@ -80,12 +97,13 @@ export function ensureMathWorker(input: {
   parentSessionID: string
   workerSessionID: string
   project?: string
+  reEnable?: boolean
 }): Promise<MathWorkerStatus> {
   const query = input.project ? `?project=${encodeURIComponent(input.project)}` : ""
   return request({
     ...input,
     path: `/session/${encodeURIComponent(input.parentSessionID)}/math-workers/${encodeURIComponent(input.workerSessionID)}/ensure${query}`,
-    init: { method: "POST", body: "{}" },
+    init: { method: "POST", body: JSON.stringify({ reEnable: input.reEnable ?? false }) },
   })
 }
 
@@ -103,5 +121,37 @@ export function stopMathWorker(input: {
     ...input,
     path: `/session/${encodeURIComponent(input.parentSessionID)}/math-workers/${encodeURIComponent(input.workerSessionID)}/stop${query}`,
     init: { method: "POST", body: JSON.stringify({ force: input.force ?? false }) },
+  })
+}
+
+export function getMathWorkerTask(input: {
+  sdk: SDK
+  platform: Platform
+  auth?: Auth
+  parentSessionID: string
+  workerSessionID: string
+  project?: string
+}): Promise<MathWorkerTaskInfo> {
+  const query = input.project ? `?project=${encodeURIComponent(input.project)}` : ""
+  return request({
+    ...input,
+    path: `/session/${encodeURIComponent(input.parentSessionID)}/math-workers/${encodeURIComponent(input.workerSessionID)}/task${query}`,
+  })
+}
+
+export function updateMathWorkerTask(input: {
+  sdk: SDK
+  platform: Platform
+  auth?: Auth
+  parentSessionID: string
+  workerSessionID: string
+  project?: string
+  task: string
+}): Promise<MathWorkerTaskInfo> {
+  const query = input.project ? `?project=${encodeURIComponent(input.project)}` : ""
+  return request({
+    ...input,
+    path: `/session/${encodeURIComponent(input.parentSessionID)}/math-workers/${encodeURIComponent(input.workerSessionID)}/task${query}`,
+    init: { method: "PUT", body: JSON.stringify({ task: input.task }) },
   })
 }

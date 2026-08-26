@@ -14,7 +14,13 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
-import { discoverMathWorkers, ensureMathWorker, stopMathWorker } from "@/math/worker"
+import {
+  discoverMathWorkers,
+  ensureMathWorker,
+  readMathWorkerTask,
+  stopMathWorker,
+  updateMathWorkerTask,
+} from "@/math/worker"
 import { mathRoot } from "@/math/layout"
 import { MathWorkerEvent } from "@/math/event"
 import { readSwarm } from "@/math/swarm"
@@ -46,6 +52,7 @@ import {
   MathWorkerEnsurePayload,
   MathWorkerQuery,
   MathWorkerStopPayload,
+  MathWorkerTaskPayload,
   MessagesQuery,
   PermissionResponsePayload,
   PromptPayload,
@@ -236,7 +243,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         }
       }
       const actualIDs = new Set(actual.map((row) => row.sessionID))
-      return [...actual, ...[...missing.values()].filter((row) => !actualIDs.has(row.sessionID))]
+      const result = [...actual, ...[...missing.values()].filter((row) => !actualIDs.has(row.sessionID))]
+      return result
     })
 
     const mathWorkerEnsure = Effect.fn("SessionHttpApi.mathWorkerEnsure")(function* (ctx: {
@@ -253,6 +261,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         projectDir,
         model: ctx.payload?.model,
         variant: ctx.payload?.variant,
+        reEnable: ctx.payload?.reEnable,
       }).pipe(Effect.catchCause(() => new HttpApiError.BadRequest({})))
       yield* bus.publish(MathWorkerEvent.Status, {
         sessionID: result.sessionID,
@@ -261,7 +270,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         alive: true,
         pid: result.pid,
         round: result.round,
-        reason: result.restarted ? "restarted" : "already-running",
+        reason: ctx.payload?.reEnable ? "re-enabled" : result.restarted ? "restarted" : "already-running",
       })
       const rows = yield* discoverMathWorkers({
         projectDir,
@@ -278,14 +287,32 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       query: typeof MathWorkerQuery.Type
       payload?: typeof MathWorkerStopPayload.Type
     }) {
+      log.info("math worker stop request", {
+        parentSessionID: ctx.params.sessionID,
+        workerSessionID: ctx.params.workerID,
+        project: ctx.query.project,
+        force: ctx.payload?.force === true,
+      })
       const parent = yield* requireSession(ctx.params.sessionID)
       yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
       const projectDir = mathProjectDirForWorker(parent, ctx.params.workerID, ctx.query.project)
       if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      log.info("math worker stop resolved", {
+        parentSessionID: parent.id,
+        workerSessionID: ctx.params.workerID,
+        projectDir,
+      })
       const result = stopMathWorker({
         projectDir,
         sessionID: ctx.params.workerID,
         force: ctx.payload?.force,
+      })
+      log.info("math worker stop result", {
+        parentSessionID: parent.id,
+        workerSessionID: result.sessionID,
+        pid: result.pid,
+        alive: result.alive,
+        state: result.state,
       })
       yield* bus.publish(MathWorkerEvent.Status, {
         sessionID: result.sessionID,
@@ -297,7 +324,42 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         lastFactId: result.last_fact_id,
         reason: ctx.payload?.force ? "force-stop" : "stop-requested",
       })
+      log.info("math worker stop event published", {
+        parentSessionID: parent.id,
+        workerSessionID: result.sessionID,
+        alive: result.alive,
+        state: result.state,
+      })
       return result
+    })
+
+    const mathWorkerTaskGet = Effect.fn("SessionHttpApi.mathWorkerTaskGet")(function* (ctx: {
+      params: { sessionID: SessionID; workerID: SessionID }
+      query: typeof MathWorkerQuery.Type
+    }) {
+      const parent = yield* requireSession(ctx.params.sessionID)
+      yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
+      const projectDir = mathProjectDirForWorker(parent, ctx.params.workerID, ctx.query.project)
+      if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      return yield* Effect.try({
+        try: () => readMathWorkerTask(projectDir, ctx.params.workerID),
+        catch: () => new HttpApiError.BadRequest({}),
+      })
+    })
+
+    const mathWorkerTaskUpdate = Effect.fn("SessionHttpApi.mathWorkerTaskUpdate")(function* (ctx: {
+      params: { sessionID: SessionID; workerID: SessionID }
+      query: typeof MathWorkerQuery.Type
+      payload: typeof MathWorkerTaskPayload.Type
+    }) {
+      const parent = yield* requireSession(ctx.params.sessionID)
+      yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
+      const projectDir = mathProjectDirForWorker(parent, ctx.params.workerID, ctx.query.project)
+      if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      return yield* Effect.try({
+        try: () => updateMathWorkerTask(projectDir, ctx.params.workerID, ctx.payload.task),
+        catch: () => new HttpApiError.BadRequest({}),
+      })
     })
 
     const todo = Effect.fn("SessionHttpApi.todo")(function* (ctx: { params: { sessionID: SessionID } }) {
@@ -693,6 +755,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("mathWorkers", mathWorkers)
       .handle("mathWorkerEnsure", mathWorkerEnsure)
       .handle("mathWorkerStop", mathWorkerStop)
+      .handle("mathWorkerTaskGet", mathWorkerTaskGet)
+      .handle("mathWorkerTaskUpdate", mathWorkerTaskUpdate)
       .handle("todo", todo)
       .handle("diff", diff)
       .handle("messages", messages)

@@ -3,6 +3,9 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { spawn } from "node:child_process"
 import { selfArgv } from "./spawn"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "math.verifier" })
 
 export type VerifyInput = {
   problem_id: string
@@ -187,6 +190,20 @@ type ProcessVerifierOptions = {
   run?: (inputFile: string) => Promise<string>
 }
 
+/**
+ * The CLI writes its verdict as one compact JSON line. Other runtime diagnostics
+ * may reach stdout before that frame, especially inside the Electron sidecar.
+ */
+export function extractVerifierProcessOutput(stdout: string): string {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const framed = lines.toReversed().find((line) => line.startsWith("{") && line.endsWith("}"))
+  if (!framed) throw new VerifyUnavailableError("math verifier process returned no bare JSON frame")
+  return framed
+}
+
 async function runVerifyProcess(
   workspace: string,
   inputFile: string,
@@ -203,6 +220,12 @@ async function runVerifyProcess(
     ...(model ? ["--model", model] : []),
   ])
   return new Promise((resolve, reject) => {
+    log.info("math verifier process spawning", {
+      executable: argv[0],
+      cwd: workspace,
+      timeoutMs,
+      model,
+    })
     const child = spawn(argv[0], argv.slice(1), { cwd: workspace, stdio: ["ignore", "pipe", "pipe"] })
     let stdout = ""
     let stderr = ""
@@ -211,12 +234,26 @@ async function runVerifyProcess(
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs)
     child.once("error", (error) => {
       clearTimeout(timer)
+      log.error("math verifier process spawn error", { executable: argv[0], error: error.message })
       reject(error)
     })
     child.once("exit", (code, signal) => {
       clearTimeout(timer)
-      if (code === 0) resolve(stdout.trim())
-      else reject(new Error(`math verifier exited code=${code} signal=${signal ?? "none"}: ${stderr.trim()}`))
+      log.info("math verifier process exited", {
+        code,
+        signal,
+        stdoutLines: stdout.split(/\r?\n/).filter(Boolean).length,
+        stderrLines: stderr.split(/\r?\n/).filter(Boolean).length,
+      })
+      if (code !== 0) {
+        reject(new Error(`math verifier exited code=${code} signal=${signal ?? "none"}: ${stderr.trim()}`))
+        return
+      }
+      try {
+        resolve(extractVerifierProcessOutput(stdout))
+      } catch (error) {
+        reject(error)
+      }
     })
   })
 }
@@ -233,7 +270,7 @@ export function sessionVerifier(options: ProcessVerifierOptions): Verifier {
         const raw = options.run
           ? await options.run(inputFile)
           : await runVerifyProcess(options.workspace, inputFile, options.timeoutMs ?? 3_600_000, options.model)
-        return decodeVerifyResult(JSON.parse(raw))
+        return parseVerifierText(raw)
       } catch (error) {
         if (error instanceof VerifyUnavailableError) throw error
         const message = error instanceof Error ? error.message : String(error)

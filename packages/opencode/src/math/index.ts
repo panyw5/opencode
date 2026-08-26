@@ -34,7 +34,7 @@ export {
   type VerificationReport,
 } from "./verifier"
 export { spawnDetached, pidAlive, killProcessGroup, selfArgv } from "./spawn"
-export { readSwarm, writeSwarm, upsertWorker, stopPath, type SwarmFile, type SwarmWorker } from "./swarm"
+export { clearStop, readSwarm, writeSwarm, upsertWorker, stopPath, type SwarmFile, type SwarmWorker } from "./swarm"
 export {
   startMathWorker,
   ensureMathWorker,

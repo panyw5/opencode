@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { ensureMathWorker, listMathWorkers, stopMathWorker } from "./math-worker-api"
+import { ensureMathWorker, getMathWorkerTask, listMathWorkers, stopMathWorker, updateMathWorkerTask } from "./math-worker-api"
 
 function fixture(response: unknown) {
   const requests: Array<{ url: string; init?: RequestInit }> = []
@@ -35,6 +35,7 @@ describe("math-worker-api", () => {
       parentSessionID: "parent",
       workerSessionID: "worker",
       project: "custom-swarm",
+      reEnable: true,
     })
     await stopMathWorker({
       sdk: input.sdk as never,
@@ -43,9 +44,27 @@ describe("math-worker-api", () => {
       workerSessionID: "worker",
       force: false,
     })
-    expect(input.requests.map((item) => item.init?.method)).toEqual(["POST", "POST"])
+    await getMathWorkerTask({
+      sdk: input.sdk as never,
+      platform: input.platform as never,
+      parentSessionID: "parent",
+      workerSessionID: "worker",
+      project: "custom-swarm",
+    })
+    await updateMathWorkerTask({
+      sdk: input.sdk as never,
+      platform: input.platform as never,
+      parentSessionID: "parent",
+      workerSessionID: "worker",
+      project: "custom-swarm",
+      task: "# redirected",
+    })
+    expect(input.requests.map((item) => item.init?.method)).toEqual(["POST", "POST", undefined, "PUT"])
     expect(input.requests[0]?.url).toContain("/math-workers/worker/ensure?project=custom-swarm&directory=")
+    expect(input.requests[0]?.init?.body).toBe('{"reEnable":true}')
     expect(input.requests[1]?.url).toContain("/math-workers/worker/stop")
     expect(input.requests[1]?.init?.body).toBe('{"force":false}')
+    expect(input.requests[2]?.url).toContain("/math-workers/worker/task?project=custom-swarm&directory=")
+    expect(input.requests[3]?.init?.body).toBe('{"task":"# redirected"}')
   })
 })

@@ -91,7 +91,7 @@ export function setWslConfig(config: WslConfig) {
   getStore().set(WSL_ENABLED_KEY, config.enabled)
 }
 
-export function preferAppEnv(startupPaths: DesktopStartupPaths) {
+export function preferAppEnv(startupPaths: DesktopStartupPaths, cliPath?: string) {
   const shell = process.platform === "win32" ? null : getUserShell()
   Object.assign(process.env, {
     ...(shell ? loadShellEnv(shell) : null),
@@ -101,6 +101,7 @@ export function preferAppEnv(startupPaths: DesktopStartupPaths) {
     // Enable promote / background=true subagent path for Desktop (Phase C/E).
     OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS: "true",
     OPENCODE_CLIENT: "desktop",
+    ...(cliPath ? { OPENCODE_CLI_PATH: cliPath } : {}),
   })
 }
 

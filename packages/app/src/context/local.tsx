@@ -8,6 +8,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { modelEnabled, modelProbe } from "@/testing/model-selection"
 import { Persist, persisted } from "@/utils/persist"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
+import { internalAgent, primaryAgents, selectableAgents } from "./agent-selection"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 
@@ -62,7 +63,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const models = useModels()
 
     const id = createMemo(() => params.id || undefined)
-    const list = createMemo(() => sync.data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
+    const available = createMemo(() => primaryAgents(sync.data.agent))
+    const list = createMemo(() => selectableAgents(sync.data.agent))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(
@@ -77,6 +79,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const [store, setStore] = createStore<{
       current?: string
+      locked?: string
       draft?: State
       promoting?: State
       last?: {
@@ -109,6 +112,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       if (items.length === 0) return undefined
       return items.find((item) => item.name === name) ?? items[0]
     }
+
+    const pickInternalAgent = (name: string | undefined) => internalAgent(available(), name)
 
     createEffect(() => {
       const items = list()
@@ -200,11 +205,19 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const agent = {
       list,
+      available(name: string) {
+        return !!pickInternalAgent(name)
+      },
+      locked() {
+        if (!store.locked) return undefined
+        return pickInternalAgent(store.locked)
+      },
       current() {
+        if (store.locked) return pickInternalAgent(store.locked)
         return pickAgent(scope()?.agent ?? store.current)
       },
       set(name: string | undefined) {
-        const item = pickAgent(name)
+        const item = store.locked ? pickInternalAgent(store.locked) : pickAgent(name)
         if (!item) {
           setStore("current", undefined)
           return
@@ -233,6 +246,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         })
       },
       move(direction: 1 | -1) {
+        if (store.locked) return
         const items = list()
         if (items.length === 0) {
           setStore("current", undefined)
@@ -245,6 +259,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const item = items[next]
         if (!item) return
         agent.set(item.name)
+      },
+      lock(name: string | undefined) {
+        const item = pickInternalAgent(name)
+        if (name && !item) return false
+        setStore("locked", item?.name)
+        if (item) agent.set(item.name)
+        return true
       },
     }
 

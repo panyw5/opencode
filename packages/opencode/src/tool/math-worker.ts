@@ -36,7 +36,7 @@ const EnsureParameters = Schema.Struct({
 
 const StopParameters = Schema.Struct({
   session_id: Schema.String.annotate({ description: "Worker session id" }),
-  force: Schema.optional(Schema.Boolean).annotate({ description: "Kill the process group instead of writing .stop" }),
+  force: Schema.optional(Schema.Boolean).annotate({ description: "Use SIGKILL instead of SIGTERM" }),
   project: Schema.optional(Schema.String).annotate({ description: "Math project name under .math/." }),
 })
 

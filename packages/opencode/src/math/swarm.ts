@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
+import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import path from "path"
 import { layout } from "./layout"
 
@@ -32,6 +32,17 @@ export function swarmPath(projectDir: string): string {
 
 export function stopPath(projectDir: string, sessionID: string): string {
   return path.join(projectDir, "stop", sessionID)
+}
+
+export function clearStop(projectDir: string, sessionID: string): boolean {
+  try {
+    unlinkSync(stopPath(projectDir, sessionID))
+    return true
+  } catch (error) {
+    const code = error && typeof error === "object" && "code" in error ? error.code : undefined
+    if (code === "ENOENT") return false
+    throw error
+  }
 }
 
 export function readSwarm(projectDir: string): SwarmFile {

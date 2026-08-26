@@ -1,4 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { Effect, Layer } from "effect"
@@ -9,11 +10,15 @@ import { Project } from "@/project/project"
 import { Server } from "@/server/server"
 import { SessionPaths } from "@/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
+import { MessageV2 } from "@/session/message-v2"
+import { MessageID } from "@/session/schema"
+import { ModelID, ProviderID } from "@/provider/schema"
 import { layout, mathRoot, taskPath } from "@/math/layout"
+import { killProcessGroup, pidAlive, spawnDetached } from "@/math/spawn"
 import { writeSwarm } from "@/math/swarm"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const instanceStoreLayer = InstanceStore.defaultLayer.pipe(
   Layer.provide(
@@ -33,12 +38,88 @@ async function body<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>
 }
 
+function processStopped(pid: number) {
+  const ps = spawnSync("ps", ["-p", String(pid), "-o", "state="], { encoding: "utf8" })
+  const state = (ps.stdout ?? "").trim()
+  return ps.status !== 0 || state === "" || state.startsWith("Z")
+}
+
 afterEach(async () => {
   await disposeAllInstances()
   await resetDatabase()
 })
 
 describe("Math worker HttpApi", () => {
+  it.instance(
+    "finalizes an orphaned assistant while listing a dead detached worker",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessions = yield* Session.Service
+        const parent = yield* sessions.create({ title: "math", agent: "math-orchestrator" })
+        const worker = yield* sessions.create({ title: "dead lemma", agent: "math-worker", parentID: parent.id })
+        const projectDir = mathRoot(test.directory, "dead-swarm")
+        yield* Effect.promise(() => mkdir(layout(projectDir).tasks, { recursive: true }))
+        yield* Effect.promise(() => writeFile(taskPath(projectDir, worker.id), "# dead lemma\n", "utf8"))
+        writeSwarm(projectDir, {
+          projectDir,
+          parentSessionID: parent.id,
+          workers: {
+            [worker.id]: {
+              sessionID: worker.id,
+              parentSessionID: parent.id,
+              pid: 987_654_321,
+              state: "running",
+              startedAt: Date.now(),
+              logFile: path.join(layout(projectDir).logs, `worker-${worker.id}.log`),
+              taskFile: taskPath(projectDir, worker.id),
+              round: 2,
+            },
+          },
+        })
+        const model = { providerID: ProviderID.make("test"), modelID: ModelID.make("test-model") }
+        const user = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: worker.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "math-worker",
+          model,
+        })
+        const assistant = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: worker.id,
+          parentID: user.id,
+          role: "assistant",
+          mode: "math-worker",
+          agent: "math-worker",
+          path: { cwd: test.directory, root: test.directory },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: model.modelID,
+          providerID: model.providerID,
+          time: { created: Date.now() },
+        } satisfies MessageV2.Assistant)
+
+        const response = yield* Effect.promise(() =>
+          Server.Default().app.request(endpoint(SessionPaths.mathWorkers, { sessionID: parent.id }), {
+            headers: { "x-opencode-directory": test.directory },
+          }),
+        )
+        expect(yield* Effect.promise(() => body(response))).toEqual([
+          expect.objectContaining({ sessionID: worker.id, alive: false, state: "dead" }),
+        ])
+
+        const messages = yield* sessions.messages({ sessionID: worker.id })
+        const finalized = messages.find((message) => message.info.id === assistant.id)
+        expect(finalized?.info.role).toBe("assistant")
+        if (!finalized || finalized.info.role !== "assistant") return
+        expect(finalized.info.time.completed).toBeNumber()
+        expect(finalized.info.error?.name).toBe("MessageAbortedError")
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
   it.instance(
     "reconciles, ensures, and stops durable workers",
     () =>
@@ -50,6 +131,21 @@ describe("Math worker HttpApi", () => {
         const projectDir = mathRoot(test.directory, "custom-swarm")
         yield* Effect.promise(() => mkdir(layout(projectDir).tasks, { recursive: true }))
         yield* Effect.promise(() => writeFile(taskPath(projectDir, worker.id), "# lemma\n", "utf8"))
+        const process = spawnDetached({
+          argv: ["/bin/sleep", "30"],
+          cwd: test.directory,
+          logFile: path.join(layout(projectDir).logs, "http-stop-signal.log"),
+        })
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            if (!pidAlive(process.pid)) return
+            try {
+              killProcessGroup(process.pid, "SIGKILL")
+            } catch {
+              // The stop endpoint may have reaped the process between the liveness check and cleanup.
+            }
+          }),
+        )
         writeSwarm(projectDir, {
           projectDir,
           parentSessionID: parent.id,
@@ -75,9 +171,17 @@ describe("Math worker HttpApi", () => {
           Server.Default().app.request(endpoint(SessionPaths.mathWorkers, { sessionID: parent.id }), { headers }),
         )
         const workers = yield* Effect.promise(() =>
-          body<Array<{ sessionID: string; project?: string; round?: number; last_fact_id?: string; variant?: string }>>(
-            listResponse,
-          ),
+          body<
+            Array<{
+              sessionID: string
+              project?: string
+              round?: number
+              last_fact_id?: string
+              variant?: string
+              taskPreview?: string
+              factCount?: number
+            }>
+          >(listResponse),
         )
         expect(workers).toEqual([
           expect.objectContaining({
@@ -86,6 +190,8 @@ describe("Math worker HttpApi", () => {
             round: 4,
             last_fact_id: "fact123",
             variant: "xhigh",
+            taskPreview: "# lemma",
+            factCount: 0,
           }),
         ])
 
@@ -141,6 +247,29 @@ describe("Math worker HttpApi", () => {
         )
         expect(yield* Effect.promise(() => body(ensureResponse))).toMatchObject({ sessionID: worker.id, alive: true })
 
+        const taskGetResponse = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathWorkerTask, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
+            { headers },
+          ),
+        )
+        expect(yield* Effect.promise(() => body(taskGetResponse))).toMatchObject({
+          sessionID: worker.id,
+          project: "custom-swarm",
+          task: "# lemma\n",
+        })
+
+        const taskUpdateResponse = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathWorkerTask, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
+            { headers, method: "PUT", body: JSON.stringify({ task: "# redirected\nProve lemma B." }) },
+          ),
+        )
+        expect(yield* Effect.promise(() => body(taskUpdateResponse))).toMatchObject({
+          sessionID: worker.id,
+          task: "# redirected\nProve lemma B.\n",
+        })
+
         const stopResponse = yield* Effect.promise(() =>
           Server.Default().app.request(
             `${endpoint(SessionPaths.mathWorkerStop, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
@@ -151,6 +280,27 @@ describe("Math worker HttpApi", () => {
           sessionID: worker.id,
           state: "stopping",
         })
+        yield* pollWithTimeout(
+          Effect.sync(() => (processStopped(process.pid) ? true : undefined)),
+          "stop endpoint did not terminate the detached worker process group",
+          "3 seconds",
+        )
+
+        const blockedEnsure = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathWorkerEnsure, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
+            { headers, method: "POST", body: "{}" },
+          ),
+        )
+        expect(blockedEnsure.status).toBe(400)
+
+        const earlyReEnable = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathWorkerEnsure, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
+            { headers, method: "POST", body: JSON.stringify({ reEnable: true }) },
+          ),
+        )
+        expect(earlyReEnable.status).toBe(400)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
