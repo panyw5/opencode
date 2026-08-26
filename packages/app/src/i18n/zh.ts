@@ -760,7 +760,6 @@ export const dict = {
   "session.mathSwarm.state.dead": "已停止",
   "session.mathSwarm.state.missing": "待重连",
   "session.mathSwarm.summary": "{{running}} 个运行中 · 共 {{total}} 个",
-  "session.mathSwarm.configure": "配置",
   "session.mathSwarm.empty": "尚无证据工人",
   "session.mathSwarm.empty.description": "定义问题和有界证明群后即可启动数学模式。",
   "session.mathSwarm.restart": "重启",

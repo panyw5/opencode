@@ -107,9 +107,6 @@ export function SessionMathFloat(props: {
                 </div>
               </div>
               <div class="flex items-center gap-1">
-                <Button size="small" variant="secondary" icon="plus" onClick={props.onInitialize}>
-                  {language.t("session.mathSwarm.configure")}
-                </Button>
                 <IconButton
                   icon="close"
                   size="normal"

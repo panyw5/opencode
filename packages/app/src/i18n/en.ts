@@ -814,7 +814,6 @@ export const dict = {
   "session.mathSwarm.state.dead": "dead",
   "session.mathSwarm.state.missing": "detached",
   "session.mathSwarm.summary": "{{running}} running · {{total}} total",
-  "session.mathSwarm.configure": "Configure",
   "session.mathSwarm.empty": "No evidence workers yet",
   "session.mathSwarm.empty.description": "Define a problem and a bounded roster to start Math Mode.",
   "session.mathSwarm.restart": "Restart",
