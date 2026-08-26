@@ -6,11 +6,15 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Git } from "../../src/git"
-import { Global } from "@opencode-ai/core/global"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { Truncate } from "../../src/tool/truncate"
 import { RepoCloneTool } from "../../src/tool/repo_clone"
 import { RepositoryCache } from "../../src/reference/repository-cache"
+import {
+  parseRemoteRepositoryReference,
+  repositoryCachePath,
+  repositoryLegacyCachePath,
+} from "../../src/util/repository"
 import { disposeAllInstances, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -96,6 +100,19 @@ describe("tool.repo_clone", () => {
         yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
         yield* git(remoteRepo, ["symbolic-ref", "HEAD", "refs/heads/main"])
 
+        const reference = parseRemoteRepositoryReference("owner/repo")
+        const canonical = repositoryCachePath(reference)
+        const legacy = repositoryLegacyCachePath(reference)
+        yield* fs.remove(canonical, { recursive: true, force: true }).pipe(Effect.ignore)
+        yield* fs.remove(legacy, { recursive: true, force: true }).pipe(Effect.ignore)
+        yield* Effect.addFinalizer(() =>
+          Effect.forEach(
+            [canonical, legacy],
+            (target) => fs.remove(target, { recursive: true, force: true }).pipe(Effect.ignore),
+            { discard: true },
+          ),
+        )
+
         const tool = yield* init()
         const cloned = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository: "owner/repo" }, ctx))
         const cached = yield* githubBase(
@@ -104,9 +121,16 @@ describe("tool.repo_clone", () => {
         )
 
         expect(cloned.metadata.status).toBe("cloned")
-        expect(cloned.metadata.localPath).toBe(path.join(Global.Path.repos, "github.com", "owner", "repo"))
+        expect(cloned.metadata.localPath).toBe(canonical)
         expect(cached.metadata.status).toBe("cached")
         expect(yield* fs.readFileString(path.join(cloned.metadata.localPath, "README.md"))).toBe("v1\n")
+
+        yield* fs.ensureDir(path.dirname(legacy))
+        yield* fs.rename(canonical, legacy)
+        const migrated = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository: "owner/repo" }, ctx))
+        expect(migrated.metadata.status).toBe("cached")
+        expect(migrated.metadata.localPath).toBe(canonical)
+        expect(yield* fs.existsSafe(legacy)).toBe(false)
       }),
     ),
   )
@@ -178,7 +202,9 @@ describe("tool.repo_clone", () => {
 
         expect(result.metadata.status).toBe("cloned")
         expect(result.metadata.branch).toBe("docs")
-        expect(result.metadata.localPath).toContain("repo@docs")
+        expect(result.metadata.localPath).toBe(
+          repositoryCachePath(parseRemoteRepositoryReference("owner/repo"), "docs"),
+        )
         expect(yield* fs.readFileString(path.join(result.metadata.localPath, "DOCS.md"))).toBe("docs\n")
       }),
     ),
@@ -211,13 +237,153 @@ describe("tool.repo_clone", () => {
         )
         const feature = yield* githubBase(
           `file://${remoteRoot}/`,
-          tool.execute({ repository: "branch-isolation-owner/branch-isolation-repo", branch: "feature/docs" }, ctx),
+          tool.execute(
+            { repository: "branch-isolation-owner/branch-isolation-repo", branch: "feature/docs" },
+            ctx,
+          ),
         )
 
         expect(main.metadata.localPath).not.toBe(feature.metadata.localPath)
-        expect(feature.metadata.localPath).toContain("repo@feature%2Fdocs")
+        expect(feature.metadata.localPath).toBe(
+          repositoryCachePath(
+            parseRemoteRepositoryReference("branch-isolation-owner/branch-isolation-repo"),
+            "feature/docs",
+          ),
+        )
         expect(yield* fs.readFileString(path.join(main.metadata.localPath, "README.md"))).toBe("main\n")
         expect(yield* fs.readFileString(path.join(feature.metadata.localPath, "README.md"))).toBe("feature\n")
+      }),
+    ),
+  )
+
+  it.live("migrates a matching legacy branch cache path without recloning", () =>
+    provideTmpdirInstance((_dir) =>
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const source = yield* tmpdirScoped({ git: true })
+        const remoteRoot = yield* tmpdirScoped()
+        const repository = "migration-owner/migration-repo"
+        const remoteDir = path.join(remoteRoot, "migration-owner")
+        const remoteRepo = path.join(remoteDir, "migration-repo.git")
+
+        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "main\n"))
+        yield* git(source, ["add", "."])
+        yield* git(source, ["commit", "-m", "main"])
+        yield* git(source, ["checkout", "-b", "docs"])
+        yield* Effect.promise(() => Bun.write(path.join(source, "DOCS.md"), "docs\n"))
+        yield* git(source, ["add", "."])
+        yield* git(source, ["commit", "-m", "docs"])
+        yield* fs.makeDirectory(remoteDir, { recursive: true }).pipe(Effect.orDie)
+        yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
+        yield* git(remoteRepo, ["symbolic-ref", "HEAD", "refs/heads/main"])
+
+        const reference = parseRemoteRepositoryReference(repository)
+        const current = repositoryCachePath(reference, "docs")
+        const legacy = repositoryLegacyCachePath(reference, "docs")
+        yield* fs.remove(current, { recursive: true, force: true }).pipe(Effect.ignore)
+        yield* fs.remove(legacy, { recursive: true, force: true }).pipe(Effect.ignore)
+        yield* Effect.addFinalizer(() =>
+          Effect.forEach(
+            [current, legacy],
+            (target) => fs.remove(target, { recursive: true, force: true }).pipe(Effect.ignore),
+            { discard: true },
+          ),
+        )
+
+        const tool = yield* init()
+        const first = yield* githubBase(
+          `file://${remoteRoot}/`,
+          tool.execute({ repository, branch: "docs" }, ctx),
+        )
+        expect(first.metadata.status).toBe("cloned")
+        yield* fs.ensureDir(path.dirname(legacy))
+        yield* fs.rename(current, legacy)
+
+        const migrated = yield* githubBase(
+          `file://${remoteRoot}/`,
+          Effect.all([1, 2].map(() => tool.execute({ repository, branch: "docs" }, ctx)), {
+            concurrency: "unbounded",
+          }),
+        )
+        expect(migrated.map((item) => item.metadata.status)).toEqual(["cached", "cached"])
+        expect(migrated.map((item) => item.metadata.localPath)).toEqual([current, current])
+        expect(yield* fs.existsSafe(legacy)).toBe(false)
+        expect(yield* fs.existsSafe(path.join(current, ".git"))).toBe(true)
+
+        yield* fs.ensureDir(path.dirname(legacy))
+        yield* fs.rename(current, legacy)
+        yield* git(legacy, ["checkout", "-B", "main"])
+        const wrongBranch = yield* githubBase(
+          `file://${remoteRoot}/`,
+          tool.execute({ repository, branch: "docs" }, ctx),
+        )
+        expect(wrongBranch.metadata.status).toBe("cloned")
+        expect(yield* fs.readFileString(path.join(current, "DOCS.md"))).toBe("docs\n")
+        expect(yield* git(legacy, ["branch", "--show-current"])).toBe("main")
+      }),
+    ),
+  )
+
+  it.live("does not migrate a colliding legacy path owned by another repository", () =>
+    provideTmpdirInstance((_dir) =>
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const source = yield* tmpdirScoped({ git: true })
+        const collisionSource = yield* tmpdirScoped({ git: true })
+        const remoteRoot = yield* tmpdirScoped()
+        const ownerDir = path.join(remoteRoot, "collision-owner")
+        const remoteRepo = path.join(ownerDir, "repo.git")
+        const collisionRepo = path.join(ownerDir, "repo@main.git")
+        const reference = parseRemoteRepositoryReference("collision-owner/repo")
+        const branchlessReference = parseRemoteRepositoryReference("collision-owner/repo@main")
+        const current = repositoryCachePath(reference, "main")
+        const branchlessCurrent = repositoryCachePath(branchlessReference)
+        const legacy = repositoryLegacyCachePath(reference, "main")
+
+        yield* Effect.promise(() => Bun.write(path.join(source, "README.md"), "target\n"))
+        yield* git(source, ["add", "."])
+        yield* git(source, ["commit", "-m", "target"])
+        yield* Effect.promise(() => Bun.write(path.join(collisionSource, "README.md"), "collision\n"))
+        yield* git(collisionSource, ["add", "."])
+        yield* git(collisionSource, ["commit", "-m", "collision"])
+        yield* fs.makeDirectory(ownerDir, { recursive: true }).pipe(Effect.orDie)
+        yield* git(remoteRoot, ["clone", "--bare", source, remoteRepo])
+        yield* git(remoteRoot, ["clone", "--bare", collisionSource, collisionRepo])
+        yield* git(remoteRepo, ["symbolic-ref", "HEAD", "refs/heads/main"])
+        yield* git(collisionRepo, ["symbolic-ref", "HEAD", "refs/heads/main"])
+
+        yield* fs.remove(current, { recursive: true, force: true }).pipe(Effect.ignore)
+        yield* fs.remove(branchlessCurrent, { recursive: true, force: true }).pipe(Effect.ignore)
+        yield* fs.remove(legacy, { recursive: true, force: true }).pipe(Effect.ignore)
+        yield* fs.ensureDir(path.dirname(legacy))
+        yield* git(path.dirname(legacy), ["clone", pathToFileURL(collisionRepo).href, legacy])
+        yield* Effect.addFinalizer(() =>
+          Effect.forEach(
+            [current, branchlessCurrent, legacy],
+            (target) => fs.remove(target, { recursive: true, force: true }).pipe(Effect.ignore),
+            { discard: true },
+          ),
+        )
+
+        const tool = yield* init()
+        const [result, branchless] = yield* githubBase(
+          `file://${remoteRoot}/`,
+          Effect.all(
+            [
+              tool.execute({ repository: "collision-owner/repo", branch: "main" }, ctx),
+              tool.execute({ repository: "collision-owner/repo@main" }, ctx),
+            ],
+            { concurrency: "unbounded" },
+          ),
+        )
+
+        expect(result.metadata.status).toBe("cloned")
+        expect(result.metadata.localPath).toBe(current)
+        expect(branchless.metadata.status).toBe("cached")
+        expect(branchless.metadata.localPath).toBe(branchlessCurrent)
+        expect(yield* fs.readFileString(path.join(current, "README.md"))).toBe("target\n")
+        expect(yield* fs.readFileString(path.join(branchlessCurrent, "README.md"))).toBe("collision\n")
+        expect(yield* fs.existsSafe(legacy)).toBe(false)
       }),
     ),
   )
@@ -241,9 +407,12 @@ describe("tool.repo_clone", () => {
         const tool = yield* init()
         const repository = "concurrent-owner/concurrent-repo"
         const first = yield* githubBase(`file://${remoteRoot}/`, tool.execute({ repository, branch: "feature/concurrent" }, ctx))
-        const results = yield* Effect.all(
-          [1, 2].map(() => githubBase(`file://${remoteRoot}/`, tool.execute({ repository, branch: "feature/concurrent", refresh: true }, ctx))),
-          { concurrency: "unbounded" },
+        const results = yield* githubBase(
+          `file://${remoteRoot}/`,
+          Effect.all(
+            [1, 2].map(() => tool.execute({ repository, branch: "feature/concurrent", refresh: true }, ctx)),
+            { concurrency: "unbounded" },
+          ),
         )
 
         expect(first.metadata.localPath).toBe(results[0].metadata.localPath)

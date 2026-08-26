@@ -5,6 +5,7 @@ import { Flock } from "@opencode-ai/core/util/flock"
 import { Git } from "@/git"
 import {
   repositoryCachePath,
+  repositoryLegacyCachePath,
   sameRepositoryReference,
   parseRepositoryReference,
   parseRemoteRepositoryReference,
@@ -165,6 +166,16 @@ export const validateBranch = Effect.fn("RepositoryCache.validateBranch")(functi
   }
 })
 
+const acquireCacheLock = (localPath: string) =>
+  Effect.acquireRelease(
+    Effect.promise((signal) => Flock.acquire(`repo-clone:${localPath}`, { signal })).pipe(
+      Effect.catch((error: unknown) =>
+        Effect.fail(new LockFailedError({ localPath, message: errorMessage(error) || `Failed to lock ${localPath}` })),
+      ),
+    ),
+    (lock) => Effect.promise(() => lock.release()).pipe(Effect.ignore),
+  )
+
 const ensureWithServices = Effect.fn("RepositoryCache.ensureWithServices")(function* (
   input: EnsureInput,
   services: {
@@ -177,124 +188,161 @@ const ensureWithServices = Effect.fn("RepositoryCache.ensureWithServices")(funct
   const repository = input.reference.label
   const remote = input.reference.remote
   const localPath = repositoryCachePath(input.reference, input.branch)
+  const legacyPath = repositoryLegacyCachePath(input.reference, input.branch)
   const cloneTarget = parseRepositoryReference(remote) ?? input.reference
+  const lockPaths = Array.from(new Set([localPath, legacyPath])).toSorted()
 
-  return yield* Effect.acquireUseRelease(
-    Effect.promise((signal) => Flock.acquire(`repo-clone:${localPath}`, { signal })).pipe(
-      Effect.catch((error: unknown) =>
-        Effect.fail(new LockFailedError({ localPath, message: errorMessage(error) || `Failed to lock ${localPath}` })),
-      ),
-    ),
-    () =>
-      Effect.gen(function* () {
-        yield* services.fs.ensureDir(path.dirname(localPath)).pipe(
-          Effect.catch((error: unknown) =>
-            Effect.fail(
-              new CacheOperationError({
-                operation: "ensure cache directory",
-                path: localPath,
-                message: errorMessage(error),
-              }),
-            ),
-          ),
-        )
+  return yield* Effect.scoped(
+    Effect.gen(function* () {
+      for (const lockPath of lockPaths) yield* acquireCacheLock(lockPath)
 
-        const exists = yield* services.fs.existsSafe(localPath)
-        const hasGitDir = yield* services.fs.existsSafe(path.join(localPath, ".git"))
-        const origin = hasGitDir
-          ? yield* services.git.run(["config", "--get", "remote.origin.url"], { cwd: localPath })
+      const currentExists = yield* services.fs.existsSafe(localPath)
+      if (!currentExists && (yield* services.fs.existsSafe(legacyPath))) {
+        const legacyHasGitDir = yield* services.fs.existsSafe(path.join(legacyPath, ".git"))
+        const legacyOrigin = legacyHasGitDir
+          ? yield* services.git.run(["config", "--get", "remote.origin.url"], { cwd: legacyPath })
           : undefined
-        const originReference = origin?.exitCode === 0 ? parseRepositoryReference(origin.text().trim()) : undefined
-        const reuse = hasGitDir && Boolean(originReference && sameRepositoryReference(originReference, cloneTarget))
-        if (exists && !reuse) {
-          yield* services.fs.remove(localPath, { recursive: true }).pipe(
+        const legacyReference =
+          legacyOrigin?.exitCode === 0 ? parseRepositoryReference(legacyOrigin.text().trim()) : undefined
+        const legacyBranch = legacyHasGitDir ? yield* services.git.branch(legacyPath) : undefined
+        const canMigrate =
+          legacyHasGitDir &&
+          Boolean(legacyReference && sameRepositoryReference(legacyReference, cloneTarget)) &&
+          (!input.branch || legacyBranch === input.branch)
+
+        if (canMigrate) {
+          yield* services.fs.ensureDir(path.dirname(localPath)).pipe(
             Effect.catch((error: unknown) =>
               Effect.fail(
                 new CacheOperationError({
-                  operation: "remove stale cache",
+                  operation: "prepare cache migration",
                   path: localPath,
                   message: errorMessage(error),
                 }),
               ),
             ),
           )
+          yield* services.fs.rename(legacyPath, localPath).pipe(
+            Effect.catch((error: unknown) =>
+              Effect.fail(
+                new CacheOperationError({
+                  operation: "migrate legacy cache",
+                  path: legacyPath,
+                  message: errorMessage(error),
+                }),
+              ),
+            ),
+          )
+        }
+      }
+
+      yield* services.fs.ensureDir(path.dirname(localPath)).pipe(
+        Effect.catch((error: unknown) =>
+          Effect.fail(
+            new CacheOperationError({
+              operation: "ensure cache directory",
+              path: localPath,
+              message: errorMessage(error),
+            }),
+          ),
+        ),
+      )
+
+      const exists = yield* services.fs.existsSafe(localPath)
+      const hasGitDir = yield* services.fs.existsSafe(path.join(localPath, ".git"))
+      const origin = hasGitDir
+        ? yield* services.git.run(["config", "--get", "remote.origin.url"], { cwd: localPath })
+        : undefined
+      const originReference = origin?.exitCode === 0 ? parseRepositoryReference(origin.text().trim()) : undefined
+      const reuse = hasGitDir && Boolean(originReference && sameRepositoryReference(originReference, cloneTarget))
+      if (exists && !reuse) {
+        yield* services.fs.remove(localPath, { recursive: true }).pipe(
+          Effect.catch((error: unknown) =>
+            Effect.fail(
+              new CacheOperationError({
+                operation: "remove stale cache",
+                path: localPath,
+                message: errorMessage(error),
+              }),
+            ),
+          ),
+        )
+      }
+
+      const currentBranch = hasGitDir ? yield* services.git.branch(localPath) : undefined
+      const status = statusForRepository({
+        reuse,
+        refresh: input.refresh,
+        branchMatches: input.branch ? currentBranch === input.branch : undefined,
+      })
+
+      if (status === "cloned") {
+        const clone = yield* services.git.run(
+          ["clone", "--depth", "100", ...(input.branch ? ["--branch", input.branch] : []), "--", remote, localPath],
+          { cwd: path.dirname(localPath) },
+        )
+        if (clone.exitCode !== 0) {
+          return yield* new CloneFailedError({
+            repository,
+            message: clone.stderr.toString().trim() || clone.text().trim() || `Failed to clone ${repository}`,
+          })
+        }
+      }
+
+      if (status === "refreshed") {
+        const fetch = yield* services.git.run(["fetch", "--all", "--prune"], { cwd: localPath })
+        if (fetch.exitCode !== 0) {
+          return yield* new FetchFailedError({
+            repository,
+            message: fetch.stderr.toString().trim() || fetch.text().trim() || `Failed to refresh ${repository}`,
+          })
         }
 
-        const currentBranch = hasGitDir ? yield* services.git.branch(localPath) : undefined
-        const status = statusForRepository({
-          reuse,
-          refresh: input.refresh,
-          branchMatches: input.branch ? currentBranch === input.branch : undefined,
+        if (input.branch) {
+          const checkout = yield* services.git.run(["checkout", "-B", input.branch, `origin/${input.branch}`], {
+            cwd: localPath,
+          })
+          if (checkout.exitCode !== 0) {
+            return yield* new CheckoutFailedError({
+              repository,
+              branch: input.branch,
+              message:
+                checkout.stderr.toString().trim() || checkout.text().trim() || `Failed to checkout ${input.branch}`,
+            })
+          }
+        }
+
+        const remoteHead = yield* services.git.run(["symbolic-ref", "refs/remotes/origin/HEAD"], { cwd: localPath })
+        const branch = yield* services.git.run(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: localPath })
+        const target = resetTarget({
+          requestedBranch: input.branch,
+          remoteHead: { code: remoteHead.exitCode, stdout: remoteHead.text().trim() },
+          branch: { code: branch.exitCode, stdout: branch.text().trim() },
         })
 
-        if (status === "cloned") {
-          const clone = yield* services.git.run(
-            ["clone", "--depth", "100", ...(input.branch ? ["--branch", input.branch] : []), "--", remote, localPath],
-            { cwd: path.dirname(localPath) },
-          )
-          if (clone.exitCode !== 0) {
-            return yield* new CloneFailedError({
-              repository,
-              message: clone.stderr.toString().trim() || clone.text().trim() || `Failed to clone ${repository}`,
-            })
-          }
-        }
-
-        if (status === "refreshed") {
-          const fetch = yield* services.git.run(["fetch", "--all", "--prune"], { cwd: localPath })
-          if (fetch.exitCode !== 0) {
-            return yield* new FetchFailedError({
-              repository,
-              message: fetch.stderr.toString().trim() || fetch.text().trim() || `Failed to refresh ${repository}`,
-            })
-          }
-
-          if (input.branch) {
-            const checkout = yield* services.git.run(["checkout", "-B", input.branch, `origin/${input.branch}`], {
-              cwd: localPath,
-            })
-            if (checkout.exitCode !== 0) {
-              return yield* new CheckoutFailedError({
-                repository,
-                branch: input.branch,
-                message:
-                  checkout.stderr.toString().trim() || checkout.text().trim() || `Failed to checkout ${input.branch}`,
-              })
-            }
-          }
-
-          const remoteHead = yield* services.git.run(["symbolic-ref", "refs/remotes/origin/HEAD"], { cwd: localPath })
-          const branch = yield* services.git.run(["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: localPath })
-          const target = resetTarget({
-            requestedBranch: input.branch,
-            remoteHead: { code: remoteHead.exitCode, stdout: remoteHead.text().trim() },
-            branch: { code: branch.exitCode, stdout: branch.text().trim() },
+        const reset = yield* services.git.run(["reset", "--hard", target], { cwd: localPath })
+        if (reset.exitCode !== 0) {
+          return yield* new ResetFailedError({
+            repository,
+            message: reset.stderr.toString().trim() || reset.text().trim() || `Failed to reset ${repository}`,
           })
-
-          const reset = yield* services.git.run(["reset", "--hard", target], { cwd: localPath })
-          if (reset.exitCode !== 0) {
-            return yield* new ResetFailedError({
-              repository,
-              message: reset.stderr.toString().trim() || reset.text().trim() || `Failed to reset ${repository}`,
-            })
-          }
         }
+      }
 
-        const head = yield* services.git.run(["rev-parse", "HEAD"], { cwd: localPath })
-        const branch = yield* services.git.branch(localPath)
-        const headText = head.exitCode === 0 ? head.text().trim() : undefined
+      const head = yield* services.git.run(["rev-parse", "HEAD"], { cwd: localPath })
+      const branch = yield* services.git.branch(localPath)
+      const headText = head.exitCode === 0 ? head.text().trim() : undefined
 
-        return {
-          repository,
-          host: input.reference.host,
-          remote,
-          localPath,
-          status,
-          head: headText,
-          branch,
-        } satisfies Result
-      }),
-    (lock) => Effect.promise(() => lock.release()).pipe(Effect.ignore),
+      return {
+        repository,
+        host: input.reference.host,
+        remote,
+        localPath,
+        status,
+        head: headText,
+        branch,
+      } satisfies Result
+    }),
   )
 })
 

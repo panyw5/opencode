@@ -5,10 +5,14 @@ import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Git } from "../../src/git"
-import { Global } from "@opencode-ai/core/global"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { Truncate } from "../../src/tool/truncate"
 import { RepoOverviewTool } from "../../src/tool/repo_overview"
+import {
+  parseRemoteRepositoryReference,
+  repositoryCachePath,
+  repositoryLegacyCachePath,
+} from "../../src/util/repository"
 import { disposeAllInstances, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -40,6 +44,21 @@ const it = testEffect(
 const init = Effect.fn("RepoOverviewToolTest.init")(function* () {
   const info = yield* RepoOverviewTool
   return yield* info.init()
+})
+
+const seedLegacyCache = Effect.fn("RepoOverviewToolTest.seedLegacyCache")(function* (
+  cache: string,
+  remote: string,
+  content: string,
+) {
+  const fs = yield* AppFileSystem.Service
+  const git = yield* Git.Service
+  yield* fs.remove(cache, { recursive: true, force: true }).pipe(Effect.ignore)
+  yield* fs.ensureDir(cache)
+  yield* git.run(["init"], { cwd: cache })
+  yield* git.run(["remote", "add", "origin", remote], { cwd: cache })
+  yield* fs.writeFileString(path.join(cache, "README.md"), content)
+  yield* Effect.addFinalizer(() => fs.remove(cache, { recursive: true, force: true }).pipe(Effect.ignore))
 })
 
 describe("tool.repo_overview", () => {
@@ -116,17 +135,59 @@ describe("tool.repo_overview", () => {
     provideTmpdirInstance((_dir) =>
       Effect.gen(function* () {
         const fs = yield* AppFileSystem.Service
-        const cached = path.join(Global.Path.repos, "github.com", "owner", "repo")
+        const reference = parseRemoteRepositoryReference("overview-owner/overview-repo")
+        const cached = repositoryLegacyCachePath(reference)
+        yield* seedLegacyCache(cached, reference.remote, "cached\n")
         yield* fs.writeWithDirs(path.join(cached, "package.json"), JSON.stringify({ name: "cached-repo" }, null, 2))
-        yield* fs.writeWithDirs(path.join(cached, "README.md"), "cached\n")
 
         const tool = yield* init()
-        const result = yield* tool.execute({ repository: "owner/repo" }, ctx)
+        const result = yield* tool.execute({ repository: "overview-owner/overview-repo" }, ctx)
 
         expect(result.metadata.path).toBe(cached)
-        expect(result.metadata.repository).toBe("owner/repo")
-        expect(result.output).toContain("Repository: owner/repo")
+        expect(result.metadata.repository).toBe("overview-owner/overview-repo")
+        expect(result.output).toContain("Repository: overview-owner/overview-repo")
         expect(result.output).toContain(`Path: ${cached}`)
+      }),
+    ),
+  )
+
+  it.live("prefers a canonical cache over a matching legacy cache", () =>
+    provideTmpdirInstance((_dir) =>
+      Effect.gen(function* () {
+        const fs = yield* AppFileSystem.Service
+        const reference = parseRemoteRepositoryReference("overview-priority/repo")
+        const canonical = repositoryCachePath(reference)
+        const legacy = repositoryLegacyCachePath(reference)
+        yield* seedLegacyCache(legacy, reference.remote, "legacy\n")
+        yield* fs.remove(canonical, { recursive: true, force: true }).pipe(Effect.ignore)
+        yield* fs.writeWithDirs(path.join(canonical, "README.md"), "canonical\n")
+        yield* Effect.addFinalizer(() => fs.remove(canonical, { recursive: true, force: true }).pipe(Effect.ignore))
+
+        const tool = yield* init()
+        const result = yield* tool.execute({ repository: "overview-priority/repo" }, ctx)
+
+        expect(result.metadata.path).toBe(canonical)
+        expect(result.output).toContain("Path: " + canonical)
+      }),
+    ),
+  )
+
+  it.live("rejects a colliding legacy cache owned by another repository", () =>
+    provideTmpdirInstance((_dir) =>
+      Effect.gen(function* () {
+        const owner = parseRemoteRepositoryReference("overview-collision/repo")
+        const requested = parseRemoteRepositoryReference("overview-collision/repo@main")
+        const collision = repositoryLegacyCachePath(owner, "main")
+        yield* seedLegacyCache(collision, owner.remote, "wrong repository\n")
+
+        const tool = yield* init()
+        const result = yield* tool.execute({ repository: requested.label }, ctx).pipe(Effect.exit)
+
+        expect(Exit.isFailure(result)).toBe(true)
+        if (Exit.isFailure(result)) {
+          const error = Cause.squash(result.cause)
+          expect(error instanceof Error ? error.message : String(error)).toContain("Use repo_clone first")
+        }
       }),
     ),
   )
@@ -146,19 +207,21 @@ describe("tool.repo_overview", () => {
     ),
   )
 
-  it.live("resolves cached repositories from host/path references", () =>
+  it.live("resolves legacy cached repositories from port-bearing host references", () =>
     provideTmpdirInstance((_dir) =>
       Effect.gen(function* () {
         const fs = yield* AppFileSystem.Service
-        const cached = path.join(Global.Path.repos, "gitlab.com", "group", "repo")
-        yield* fs.writeWithDirs(path.join(cached, "README.md"), "cached\n")
+        const repository = "https://gitlab.com:8443/group/repo"
+        const reference = parseRemoteRepositoryReference(repository)
+        const cached = repositoryLegacyCachePath(reference)
+        yield* seedLegacyCache(cached, reference.remote, "cached\n")
 
         const tool = yield* init()
-        const result = yield* tool.execute({ repository: "gitlab.com/group/repo" }, ctx)
+        const result = yield* tool.execute({ repository }, ctx)
 
         expect(result.metadata.path).toBe(cached)
-        expect(result.metadata.repository).toBe("gitlab.com/group/repo")
-        expect(result.output).toContain("Repository: gitlab.com/group/repo")
+        expect(result.metadata.repository).toBe("gitlab.com:8443/group/repo")
+        expect(result.output).toContain("Repository: gitlab.com:8443/group/repo")
       }),
     ),
   )

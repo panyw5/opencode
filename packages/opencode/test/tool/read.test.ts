@@ -4,7 +4,6 @@ import path from "path"
 import { Agent } from "../../src/agent/agent"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Global } from "@opencode-ai/core/global"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LSP } from "@/lsp/lsp"
@@ -19,6 +18,7 @@ import { disposeAllInstances, provideInstance, TestInstance, tmpdirScoped } from
 import { testEffect } from "../lib/effect"
 import { Reference } from "@/reference/reference"
 import { RepositoryCache } from "@/reference/repository-cache"
+import { parseRemoteRepositoryReference, repositoryCachePath } from "@/util/repository"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "fixtures")
 
@@ -260,7 +260,7 @@ describe("tool.read external_directory permission", () => {
   scout.live("does not ask for external_directory permission when reading configured references", () =>
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
-      const cache = path.join(Global.Path.repos, "github.com", "opencode-read-reference", "repo")
+      const cache = repositoryCachePath(parseRemoteRepositoryReference("opencode-read-reference/repo"))
       yield* fs.remove(cache, { recursive: true }).pipe(Effect.ignore)
       yield* Effect.addFinalizer(() => fs.remove(cache, { recursive: true }).pipe(Effect.ignore))
 

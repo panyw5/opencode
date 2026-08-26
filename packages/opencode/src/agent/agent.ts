@@ -224,6 +224,7 @@ export const layer = Layer.effect(
                       external_directory: {
                         ...readonlyExternalDirectory,
                         [path.join(Global.Path.repos, "*")]: "allow",
+                        [path.join(Global.Path.data, "repository-cache-v2", "*")]: "allow",
                       },
                     }),
                     user,

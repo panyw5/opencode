@@ -3,13 +3,13 @@ import path from "path"
 import { Effect, Layer } from "effect"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { Global } from "@opencode-ai/core/global"
 import { Config } from "../../src/config/config"
 import { ConfigReference } from "../../src/config/reference"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Git } from "../../src/git"
 import { Reference } from "../../src/reference/reference"
 import { RepositoryCache } from "../../src/reference/repository-cache"
+import { parseRemoteRepositoryReference, repositoryCachePath } from "../../src/util/repository"
 import { disposeAllInstances, provideTmpdirInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -118,12 +118,12 @@ describe("reference", () => {
       if (repo.kind === "git") {
         expect(repo.repository).toBe("Effect-TS/effect")
         expect(repo.branch).toBe("main")
-        expect(repo.path).toBe(path.join(Global.Path.repos, "github.com", "Effect-TS", "effect@main"))
+        expect(repo.path).toBe(repositoryCachePath(parseRemoteRepositoryReference("Effect-TS/effect"), "main"))
       }
       expect(repoString.kind).toBe("git")
       if (repoString.kind === "git") {
         expect(repoString.repository).toBe("owner/repo")
-        expect(repoString.path).toBe(path.join(Global.Path.repos, "github.com", "owner", "repo"))
+        expect(repoString.path).toBe(repositoryCachePath(parseRemoteRepositoryReference("owner/repo")))
       }
     }),
   )
@@ -170,7 +170,7 @@ describe("reference", () => {
       expect(references.map((reference) => reference.kind)).toEqual(["git", "git", "git"])
       const paths = references.filter((reference) => reference.kind === "git").map((reference) => reference.path)
       expect(new Set(paths).size).toBe(2)
-      expect(paths.some((value) => value.endsWith("repo@dev"))).toBe(true)
+      expect(paths).toContain(repositoryCachePath(parseRemoteRepositoryReference("owner/repo"), "dev"))
     }),
   )
 
@@ -200,7 +200,7 @@ describe("reference", () => {
       (_dir) =>
         Effect.gen(function* () {
           const fs = yield* AppFileSystem.Service
-          const cache = path.join(Global.Path.repos, "github.com", "opencode-reference-test", "repo")
+          const cache = repositoryCachePath(parseRemoteRepositoryReference("opencode-reference-test/repo"))
           yield* fs.remove(cache, { recursive: true }).pipe(Effect.ignore)
           yield* Effect.addFinalizer(() => fs.remove(cache, { recursive: true }).pipe(Effect.ignore))
 
@@ -244,7 +244,7 @@ describe("reference", () => {
   scout.live("refreshes configured git references on new instance init", () =>
     Effect.gen(function* () {
       const fs = yield* AppFileSystem.Service
-      const cache = path.join(Global.Path.repos, "github.com", "opencode-reference-refresh", "repo")
+      const cache = repositoryCachePath(parseRemoteRepositoryReference("opencode-reference-refresh/repo"))
       yield* fs.remove(cache, { recursive: true }).pipe(Effect.ignore)
       yield* Effect.addFinalizer(() => fs.remove(cache, { recursive: true }).pipe(Effect.ignore))
 
