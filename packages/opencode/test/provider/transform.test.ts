@@ -219,6 +219,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
       ...(result.reasoningSummary !== undefined ? { reasoningSummary: result.reasoningSummary } : {}),
       ...(result.textVerbosity !== undefined ? { textVerbosity: result.textVerbosity } : {}),
       ...(result.thinking !== undefined ? { thinking: result.thinking } : {}),
+      ...(result.effort !== undefined ? { effort: result.effort } : {}),
       ...(result.thinkingConfig !== undefined ? { thinkingConfig: result.thinkingConfig } : {}),
     })
     const options = (model: typeof mockModel) =>
@@ -239,6 +240,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
         ...mockModel,
         providerID: "moonshot",
         api: { ...mockModel.api, id: "kimi-k2.5", npm: "@ai-sdk/anthropic" },
+        capabilities: { ...mockModel.capabilities, reasoning: true },
         limit: { context: 200000, output: 10000 },
       }),
       googleGemini: options({
@@ -252,9 +254,10 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(matrix).toMatchInlineSnapshot(`
       {
         "anthropicKimi": {
+          "effort": "high",
           "thinking": {
-            "budgetTokens": 4999,
-            "type": "enabled",
+            "display": "summarized",
+            "type": "adaptive",
           },
         },
         "googleGemini": {
@@ -266,7 +269,6 @@ describe("ProviderTransform.options - setCacheKey", () => {
         "openaiCompatible": {
           "reasoningEffort": "medium",
           "reasoningSummary": "auto",
-          "textVerbosity": "low",
         },
         "openaiResponses": {
           "promptCacheKey": "<session>",
@@ -503,6 +505,99 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     const model = createGpt5Model("gpt-5.2-codex")
     const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
     expect(result.textVerbosity).toBeUndefined()
+  })
+
+  test("generic OpenAI-compatible GPT-5 models do not receive textVerbosity", () => {
+    const model = createGpt5Model("gpt-5.2")
+    model.providerID = "custom-compatible"
+    model.api.npm = "@ai-sdk/openai-compatible"
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(result.textVerbosity).toBeUndefined()
+  })
+
+  test("Bedrock Mantle GPT-5 models receive textVerbosity", () => {
+    const model = createGpt5Model("gpt-5.2")
+    model.providerID = "bedrock-mantle"
+    model.api.npm = "@ai-sdk/amazon-bedrock/mantle"
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(result.textVerbosity).toBe("low")
+  })
+})
+
+describe("ProviderTransform.options - Kimi adaptive thinking", () => {
+  const createModel = (overrides: Record<string, any>) =>
+    ({
+      id: "custom/model",
+      providerID: "custom",
+      api: { id: "model", url: "https://example.com", npm: "@ai-sdk/anthropic" },
+      name: "Model",
+      capabilities: {
+        temperature: true,
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: { text: true, audio: false, image: false, video: false, pdf: false },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved: false,
+      },
+      cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+      limit: { context: 200_000, output: 64_000 },
+      status: "active",
+      options: {},
+      headers: {},
+      ...overrides,
+    }) as any
+
+  test("does not inject Anthropic thinking when reasoning is disabled", () => {
+    const model = createModel({
+      providerID: "moonshotai",
+      api: { id: "kimi-k2.5", url: "https://api.moonshot.ai/anthropic", npm: "@ai-sdk/anthropic" },
+      capabilities: { reasoning: false },
+    })
+    const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+    expect(result.thinking).toBeUndefined()
+    expect(result.effort).toBeUndefined()
+  })
+
+  test("does not inject Anthropic thinking into OpenAI-compatible Kimi transports", () => {
+    const model = createModel({
+      providerID: "moonshotai",
+      api: { id: "kimi-k2.5", url: "https://api.moonshot.ai/v1", npm: "@ai-sdk/openai-compatible" },
+    })
+    const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+    expect(result.thinking).toBeUndefined()
+    expect(result.effort).toBeUndefined()
+  })
+
+  test("does not identify lookalike Moonshot hostnames as Kimi", () => {
+    const model = createModel({
+      api: {
+        id: "custom-model",
+        url: "https://api.moonshot.ai.example.com/anthropic",
+        npm: "@ai-sdk/anthropic",
+      },
+    })
+    const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+    expect(result.thinking).toBeUndefined()
+    expect(result.effort).toBeUndefined()
+  })
+
+  test("recognizes an exact Moonshot hostname without relying on model names", () => {
+    const model = createModel({
+      api: { id: "custom-model", url: "https://api.moonshot.ai/anthropic", npm: "@ai-sdk/anthropic" },
+    })
+    const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+    expect(result.thinking).toEqual({ type: "adaptive", display: "summarized" })
+    expect(result.effort).toBe("high")
+  })
+
+  test("does not identify Kimi and Moonshot lookalike IDs", () => {
+    for (const id of ["not-kimi", "not-moonshot"]) {
+      const model = createModel({ providerID: id, api: { id, url: "https://example.com", npm: "@ai-sdk/anthropic" } })
+      const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+      expect(result.thinking).toBeUndefined()
+      expect(result.effort).toBeUndefined()
+    }
   })
 })
 
@@ -3141,6 +3236,22 @@ describe("ProviderTransform.variants", () => {
     expect(result).toEqual({})
   })
 
+  test("Kimi Anthropic transports expose summarized adaptive effort variants", () => {
+    for (const npm of ["@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic"]) {
+      const model = createMockModel({
+        id: "moonshotai/kimi-k2-thinking",
+        providerID: "moonshotai",
+        api: { id: "kimi-k2-thinking", url: "https://api.moonshot.ai/anthropic", npm },
+      })
+      const result = ProviderTransform.variants(model)
+      expect(Object.keys(result)).toEqual(["low", "medium", "high", "xhigh", "max"])
+      expect(result.high).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        effort: "high",
+      })
+    }
+  })
+
   test("deepseek returns empty object", () => {
     const model = createMockModel({
       id: "deepseek/deepseek-chat",
@@ -3944,10 +4055,16 @@ describe("ProviderTransform.variants", () => {
   describe("@ai-sdk/anthropic", () => {
     for (const testCase of [
       {
+        name: "dated opus 4",
+        apiIds: ["claude-opus-4-20250514"],
+        efforts: ["high", "max"],
+        expectedHigh: { thinking: { type: "enabled", budgetTokens: 16000 } },
+      },
+      {
         name: "opus 4.5",
         apiIds: ["claude-opus-4-5-20251101", "claude-opus-4.5-20251101"],
         efforts: ["low", "medium", "high"],
-        expectedHigh: { effort: "high" },
+        expectedHigh: { thinking: { type: "enabled", budgetTokens: 16000 }, effort: "high" },
       },
       {
         name: "sonnet 4.6",
@@ -3964,6 +4081,18 @@ describe("ProviderTransform.variants", () => {
       {
         name: "opus 4.7",
         apiIds: ["claude-opus-4-7", "claude-opus-4.7"],
+        efforts: ["low", "medium", "high", "xhigh", "max"],
+        expectedHigh: { thinking: { type: "adaptive", display: "summarized" }, effort: "high" },
+      },
+      {
+        name: "opus 5",
+        apiIds: ["claude-opus-5", "claude-5-opus"],
+        efforts: ["low", "medium", "high", "xhigh", "max"],
+        expectedHigh: { thinking: { type: "adaptive", display: "summarized" }, effort: "high" },
+      },
+      {
+        name: "future unversioned Claude",
+        apiIds: ["claude-future"],
         efforts: ["low", "medium", "high", "xhigh", "max"],
         expectedHigh: { thinking: { type: "adaptive", display: "summarized" }, effort: "high" },
       },
@@ -4009,6 +4138,22 @@ describe("ProviderTransform.variants", () => {
       })
     })
 
+    test("Vertex Anthropic recognizes future Claude IDs", () => {
+      const model = createMockModel({
+        id: "google-vertex-anthropic/claude-opus-5@default",
+        providerID: "google-vertex-anthropic",
+        api: {
+          id: "claude-opus-5@default",
+          url: "https://us-central1-aiplatform.googleapis.com",
+          npm: "@ai-sdk/google-vertex/anthropic",
+        },
+      })
+      expect(ProviderTransform.variants(model).high).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        effort: "high",
+      })
+    })
+
     test("returns high and max with thinking config", () => {
       const model = createMockModel({
         id: "anthropic/claude-4",
@@ -4037,6 +4182,25 @@ describe("ProviderTransform.variants", () => {
   })
 
   describe("@ai-sdk/amazon-bedrock", () => {
+    test("anthropic opus 4.5 combines extended thinking with effort", () => {
+      const model = createMockModel({
+        id: "bedrock/anthropic-claude-opus-4-5",
+        providerID: "bedrock",
+        api: {
+          id: "us.anthropic.claude-opus-4-5-20251101-v1:0",
+          url: "https://bedrock.amazonaws.com",
+          npm: "@ai-sdk/amazon-bedrock",
+        },
+      })
+      expect(ProviderTransform.variants(model).high).toEqual({
+        reasoningConfig: {
+          type: "enabled",
+          budgetTokens: 16000,
+          maxReasoningEffort: "high",
+        },
+      })
+    })
+
     test("anthropic sonnet 4.6 returns adaptive reasoning options", () => {
       const model = createMockModel({
         id: "bedrock/anthropic-claude-sonnet-4-6",
@@ -4080,6 +4244,25 @@ describe("ProviderTransform.variants", () => {
         reasoningConfig: {
           type: "adaptive",
           maxReasoningEffort: "max",
+          display: "summarized",
+        },
+      })
+    })
+
+    test("anthropic opus 5 returns summarized adaptive reasoning options", () => {
+      const model = createMockModel({
+        id: "bedrock/anthropic-claude-opus-5",
+        providerID: "bedrock",
+        api: {
+          id: "us.anthropic.claude-opus-5-v1:0",
+          url: "https://bedrock.amazonaws.com",
+          npm: "@ai-sdk/amazon-bedrock",
+        },
+      })
+      expect(ProviderTransform.variants(model).high).toEqual({
+        reasoningConfig: {
+          type: "adaptive",
+          maxReasoningEffort: "high",
           display: "summarized",
         },
       })
@@ -4279,6 +4462,22 @@ describe("ProviderTransform.variants", () => {
           type: "adaptive",
         },
         effort: "max",
+      })
+    })
+
+    test("anthropic 5 models return summarized adaptive thinking variants", () => {
+      const model = createMockModel({
+        id: "sap-ai-core/anthropic--claude-opus-5",
+        providerID: "sap-ai-core",
+        api: {
+          id: "anthropic--claude-opus-5",
+          url: "https://api.ai.sap",
+          npm: "@jerome-benoit/sap-ai-provider-v2",
+        },
+      })
+      expect(ProviderTransform.variants(model).high).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        effort: "high",
       })
     })
 

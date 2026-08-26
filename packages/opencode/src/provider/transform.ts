@@ -25,6 +25,27 @@ export function sanitizeSurrogates(content: string) {
   return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
 }
 
+function isKimiFamily(model: Provider.Model) {
+  const named = (id: string) => {
+    const value = id.toLowerCase()
+    return ["kimi", "moonshot", "moonshotai"].some(
+      (name) => value === name || ["/", ".", "-", "_"].some((separator) => value.startsWith(`${name}${separator}`)),
+    )
+  }
+  if (
+    [model.providerID, model.api.id].some(named)
+  )
+    return true
+  const host = (() => {
+    try {
+      return new URL(model.api.url).hostname.toLowerCase()
+    } catch {
+      return ""
+    }
+  })()
+  return ["api.kimi.com", "api.moonshot.ai", "api.moonshot.cn", "api.moonshotai.cn"].includes(host)
+}
+
 // Maps npm package to the key the AI SDK expects for providerOptions
 function sdkKey(npm: string): string | undefined {
   switch (npm) {
@@ -657,14 +678,39 @@ function openaiCompatibleReasoningEfforts(id: string) {
   return gpt5CodexReasoningEfforts(apiId) ?? versionedGpt5ReasoningEfforts(apiId) ?? OPENAI_EFFORTS
 }
 
+function anthropicUsesModernAdaptiveThinking(apiId: string) {
+  if (!apiId.toLowerCase().includes("claude-")) return false
+  // Covers family-first IDs such as claude-opus-4.7 and version-first IDs such as claude-4.7-opus.
+  // Limit minors to two digits so release dates such as 20250514 are not interpreted as model versions.
+  const version = /claude-(?:[a-z]+-)?(\d+)(?:[.-](\d{1,2}))?(?:[.@-]|$)/i.exec(apiId)
+  if (!version) return true
+  const major = Number(version[1])
+  const minor = Number(version[2] ?? 0)
+  return major > 4 || (major === 4 && minor >= 7)
+}
+
 function anthropicAdaptiveEfforts(apiId: string): string[] | null {
-  if (["opus-4-7", "opus-4.7"].some((v) => apiId.includes(v))) {
+  if (anthropicUsesModernAdaptiveThinking(apiId)) {
     return ["low", "medium", "high", "xhigh", "max"]
   }
   if (["opus-4-6", "opus-4.6", "sonnet-4-6", "sonnet-4.6"].some((v) => apiId.includes(v))) {
     return ["low", "medium", "high", "max"]
   }
   return null
+}
+
+function anthropicOpus45(apiId: string) {
+  return ["opus-4-5", "opus-4.5"].some((value) => apiId.includes(value))
+}
+
+function anthropicOpus45Thinking(model: Provider.Model, effort: string) {
+  return {
+    thinking: {
+      type: "enabled",
+      budgetTokens: Math.min(16_000, Math.floor(model.limit.output / 2 - 1)),
+    },
+    effort,
+  }
 }
 
 function googleThinkingLevelEfforts(apiId: string) {
@@ -687,6 +733,14 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
 
   const id = model.id.toLowerCase()
   const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+  if (isKimiFamily(model) && ["@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic"].includes(model.api.npm)) {
+    return Object.fromEntries(
+      ["low", "medium", "high", "xhigh", "max"].map((effort) => [
+        effort,
+        { thinking: { type: "adaptive", display: "summarized" }, effort },
+      ]),
+    )
+  }
   if (
     id.includes("deepseek-chat") ||
     id.includes("deepseek-reasoner") ||
@@ -894,9 +948,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
             {
               thinking: {
                 type: "adaptive",
-                ...(model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
-                  ? { display: "summarized" }
-                  : {}),
+                ...(anthropicUsesModernAdaptiveThinking(model.api.id) ? { display: "summarized" } : {}),
               },
               effort,
             },
@@ -904,8 +956,8 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
         )
       }
 
-      if (["opus-4-5", "opus-4.5"].some((v) => model.api.id.includes(v))) {
-        return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { effort }]))
+      if (anthropicOpus45(model.api.id)) {
+        return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, anthropicOpus45Thinking(model, effort)]))
       }
 
       return {
@@ -933,9 +985,21 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
               reasoningConfig: {
                 type: "adaptive",
                 maxReasoningEffort: effort,
-                ...(model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
-                  ? { display: "summarized" }
-                  : {}),
+                ...(anthropicUsesModernAdaptiveThinking(model.api.id) ? { display: "summarized" } : {}),
+              },
+            },
+          ]),
+        )
+      }
+      if (anthropicOpus45(model.api.id)) {
+        return Object.fromEntries(
+          WIDELY_SUPPORTED_EFFORTS.map((effort) => [
+            effort,
+            {
+              reasoningConfig: {
+                type: "enabled",
+                budgetTokens: Math.min(16_000, Math.floor(model.limit.output / 2 - 1)),
+                maxReasoningEffort: effort,
               },
             },
           ]),
@@ -1051,6 +1115,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
               {
                 thinking: {
                   type: "adaptive",
+                  ...(anthropicUsesModernAdaptiveThinking(model.api.id) ? { display: "summarized" } : {}),
                 },
                 effort,
               },
@@ -1178,16 +1243,16 @@ export function options(input: {
     }
   }
 
-  // Enable thinking by default for kimi models using anthropic SDK
+  // Moonshot's Anthropic-compatible API uses adaptive effort rather than token budgets.
+  // Request summaries so thinking content survives replay on subsequent turns.
   const modelId = input.model.api.id.toLowerCase()
   if (
-    (input.model.api.npm === "@ai-sdk/anthropic" || input.model.api.npm === "@ai-sdk/google-vertex/anthropic") &&
-    (modelId.includes("k2p") || modelId.includes("kimi-k2.") || modelId.includes("kimi-k2p"))
+    ["@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic"].includes(input.model.api.npm) &&
+    isKimiFamily(input.model) &&
+    input.model.capabilities.reasoning
   ) {
-    result["thinking"] = {
-      type: "enabled",
-      budgetTokens: Math.min(16_000, Math.floor(input.model.limit.output / 2 - 1)),
-    }
+    result["thinking"] = { type: "adaptive", display: "summarized" }
+    result["effort"] = "high"
   }
 
   // Enable thinking for reasoning models on alibaba-cn (DashScope).
@@ -1215,13 +1280,13 @@ export function options(input: {
       result["reasoningSummary"] = "auto"
     }
 
-    // Only set textVerbosity for non-chat gpt-5.x models
-    // Chat models (e.g. gpt-5.2-chat-latest) only support "medium" verbosity
+    // Generic OpenAI-compatible APIs do not necessarily support OpenAI's verbosity parameter.
+    // Only enable the default for integrations known to implement it.
     if (
       input.model.api.id.includes("gpt-5.") &&
       !input.model.api.id.includes("codex") &&
       !input.model.api.id.includes("-chat") &&
-      input.model.providerID !== "azure"
+      (input.model.api.npm === "@ai-sdk/openai" || input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle")
     ) {
       result["textVerbosity"] = "low"
     }
