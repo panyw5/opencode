@@ -67,18 +67,35 @@ const Config = lazy(() => {
   return import("@/pages/config").then((mod) => {
     const done = performance.now()
     const sinceClickDone = typeof clickAt === "number" ? `${(done - clickAt).toFixed(1)}ms` : "n/a"
-    console.info(
-      `[config-perf] lazy import done loadMs=${(done - started).toFixed(1)} sinceClick=${sinceClickDone}`,
-    )
+    console.info(`[config-perf] lazy import done loadMs=${(done - started).toFixed(1)} sinceClick=${sinceClickDone}`)
     return mod
   })
 })
 const Scheduled = lazy(() => import("@/pages/scheduled"))
 const Loading = () => <div class="size-full" />
 
-// Kick off config chunk prefetch once the app shell is up (idle).
+// Config is not needed for the session shell. In the Windows Electron
+// renderer, Vite's dev-module graph made this prefetch compete with the first
+// workspace/session requests for several seconds, so wait until the app has
+// become interactive and the first paint has settled before starting it.
 if (typeof window !== "undefined") {
-  void import("@/utils/prefetch-config").then((m) => m.prefetchConfigPageWhenIdle())
+  const windowsElectron = navigator.userAgent.includes("Windows") && navigator.userAgent.includes("Electron")
+  if (windowsElectron) {
+    console.info("[config-perf] startup prefetch deferred platform=windows-electron")
+    window.addEventListener(
+      "opencode:startup-interactive",
+      () => {
+        console.info("[config-perf] startup interactive; scheduling deferred prefetch delayMs=5000")
+        window.setTimeout(() => {
+          void import("@/utils/prefetch-config").then((m) => m.prefetchConfigPageWhenIdle())
+        }, 5000)
+      },
+      { once: true },
+    )
+  } else {
+    // Keep the existing behavior for web and non-Windows desktop builds.
+    void import("@/utils/prefetch-config").then((m) => m.prefetchConfigPageWhenIdle())
+  }
 }
 
 const CONFIG_FALLBACK_SECTIONS = [

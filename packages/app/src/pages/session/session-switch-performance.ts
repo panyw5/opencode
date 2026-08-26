@@ -12,3 +12,8 @@ export function shouldRefreshStaleSession(input: {
 export function shouldFinishInitialScroll(input: { stableFrames: number; now: number; deadline: number }) {
   return input.stableFrames >= 3 || input.now >= input.deadline
 }
+
+/** Background child/todo requests must not compete with the first tab paint on Windows Electron. */
+export function sessionBackgroundDelay(userAgent: string) {
+  return userAgent.includes("Windows") && userAgent.includes("Electron") ? 1_000 : 250
+}

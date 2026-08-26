@@ -13,6 +13,7 @@
     "typecheck": "tsgo -b",
     "predev": "bun ./scripts/predev.ts",
     "dev": "electron-vite dev",
+    "profile:mouse-click": "bun ./scripts/profile-mouse-click.ts",
     "prebuild": "bun ./scripts/prebuild.ts",
     "build": "electron-vite build",
     "profile:session-tabs": "bun ./scripts/profile-session-tabs.ts",
