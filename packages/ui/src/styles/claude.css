@@ -15,7 +15,9 @@
 }
 
 html[data-theme="claude"] {
-  --claude-font-family: "Fira Code", "Fira Code Nerd Font", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --claude-font-family:
+    "Fira Code", "Fira Code Nerd Font", "SimHei", "Microsoft YaHei", "Microsoft YaHei UI", "PingFang SC",
+    "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", ui-monospace, SFMono-Regular, Menlo, monospace;
   --claude-message-font-size: calc(var(--font-size-base) + 1px);
   --claude-session-radius-lg: 16px;
   --claude-session-radius-md: 10px;
