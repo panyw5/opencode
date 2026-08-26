@@ -102,6 +102,8 @@ const emptyUserMessages: UserMessage[] = []
 const scrollBottomThreshold = 16
 const settleMs = 1_500
 const sessionBackgroundDelayMs = typeof navigator === "undefined" ? 250 : sessionBackgroundDelay(navigator.userAgent)
+const sessionTodoDelayMs =
+  typeof navigator === "undefined" ? 500 : sessionBackgroundDelay(navigator.userAgent, 500)
 const initialScrollRevealMs = 300
 const emptyFollowups: (FollowupDraft & { id: string })[] = []
 const smoothBottomSnapDistance = 900
@@ -955,6 +957,7 @@ export default function Page() {
       markSessionProfile(id, "route-effect", `cached=${String(cached)} stale=${String(stale)}`)
 
       const initialSync = untrack(() => sync.session.sync(id))
+      markSessionProfile(id, "todo-request-scheduled", `delayMs=${String(sessionTodoDelayMs)} force=${String(todos)}`)
 
       refreshFrame = requestAnimationFrame(() => {
         refreshFrame = undefined
@@ -962,7 +965,21 @@ export default function Page() {
           refreshTimer = undefined
           if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
           untrack(() => {
-            void sync.session.todo(id, todos ? { force: true } : undefined)
+            markSessionProfile(id, "todo-request-start", `force=${String(todos)}`)
+            void sync.session.todo(id, todos ? { force: true } : undefined).then(
+              () => {
+                if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
+                markSessionProfile(id, "todo-request-end")
+              },
+              (error) => {
+                if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
+                markSessionProfile(
+                  id,
+                  "todo-request-error",
+                  `error=${error instanceof Error ? error.message : String(error)}`,
+                )
+              },
+            )
           })
           const refresh = () => {
             if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
@@ -983,7 +1000,7 @@ export default function Page() {
             })
           }
           void initialSync.then(refresh, refresh)
-        }, 500)
+        }, sessionTodoDelayMs)
       })
     }),
   )

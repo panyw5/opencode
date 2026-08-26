@@ -31,5 +31,7 @@ describe("session switch performance", () => {
   test("defers secondary session requests longer in Windows Electron", () => {
     expect(sessionBackgroundDelay("Mozilla/5.0 Windows Electron/41")).toBe(1_000)
     expect(sessionBackgroundDelay("Mozilla/5.0 Mac OS X")).toBe(250)
+    expect(sessionBackgroundDelay("Mozilla/5.0 Windows Electron/41", 500)).toBe(1_000)
+    expect(sessionBackgroundDelay("Mozilla/5.0 Mac OS X", 500)).toBe(500)
   })
 })

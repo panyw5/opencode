@@ -13,7 +13,7 @@ export function shouldFinishInitialScroll(input: { stableFrames: number; now: nu
   return input.stableFrames >= 3 || input.now >= input.deadline
 }
 
-/** Background child/todo requests must not compete with the first tab paint on Windows Electron. */
-export function sessionBackgroundDelay(userAgent: string) {
-  return userAgent.includes("Windows") && userAgent.includes("Electron") ? 1_000 : 250
+/** Secondary session requests must not compete with the first tab paint on Windows Electron. */
+export function sessionBackgroundDelay(userAgent: string, fallback = 250) {
+  return userAgent.includes("Windows") && userAgent.includes("Electron") ? 1_000 : fallback
 }
