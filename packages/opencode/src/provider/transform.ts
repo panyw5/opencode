@@ -6,6 +6,7 @@ import type * as ModelsDev from "@opencode-ai/core/models-dev"
 import { iife } from "@/util/iife"
 import { isOpenAIProviderID } from "./id"
 import * as Log from "@opencode-ai/core/util/log"
+import { createHash } from "crypto"
 
 const log = Log.create({ service: "provider.transform" })
 
@@ -32,10 +33,7 @@ function isKimiFamily(model: Provider.Model) {
       (name) => value === name || ["/", ".", "-", "_"].some((separator) => value.startsWith(`${name}${separator}`)),
     )
   }
-  if (
-    [model.providerID, model.api.id].some(named)
-  )
-    return true
+  if ([model.providerID, model.api.id].some(named)) return true
   const host = (() => {
     try {
       return new URL(model.api.url).hostname.toLowerCase()
@@ -64,6 +62,28 @@ function sdkKey(npm: string): string | undefined {
       return "vertex"
     case "@ai-sdk/google":
       return "google"
+    case "@ai-sdk/alibaba":
+      return "alibaba"
+    case "@ai-sdk/cerebras":
+      return "cerebras"
+    case "@ai-sdk/cohere":
+      return "cohere"
+    case "@ai-sdk/deepinfra":
+      return "deepinfra"
+    case "@ai-sdk/groq":
+      return "groq"
+    case "@ai-sdk/mistral":
+      return "mistral"
+    case "@ai-sdk/perplexity":
+      return "perplexity"
+    case "@ai-sdk/togetherai":
+      return "togetherai"
+    case "@ai-sdk/vercel":
+      return "vercel"
+    case "@ai-sdk/xai":
+      return "xai"
+    case "venice-ai-sdk-provider":
+      return "venice"
     case "@ai-sdk/gateway":
       return "gateway"
     case "@openrouter/ai-sdk-provider":
@@ -77,6 +97,31 @@ function sdkKey(npm: string): string | undefined {
       return "openaiCompatible"
   }
   return undefined
+}
+
+export function promptCacheKey(sessionID: string) {
+  if (/^ses_[0-9a-f]{64}$/.test(sessionID)) return sessionID.slice(4)
+  if (/^ses_[0-9A-Za-z]{26}$/.test(sessionID)) return sessionID
+  return createHash("sha256")
+    .update(JSON.stringify(["opencode-prompt-cache-key-v1", sessionID]))
+    .digest("hex")
+}
+
+function promptCacheKeyField(input: {
+  model: Provider.Model
+  providerOptions?: Record<string, any>
+}): "promptCacheKey" | "prompt_cache_key" | undefined {
+  if (input.providerOptions?.setCacheKey === false) return
+  if (["@ai-sdk/deepinfra", "@ai-sdk/cerebras"].includes(input.model.api.npm)) return "prompt_cache_key"
+  if (
+    ["@ai-sdk/openai", "@ai-sdk/azure", "@ai-sdk/xai", "@ai-sdk/mistral", "venice-ai-sdk-provider"].includes(
+      input.model.api.npm,
+    ) ||
+    (input.model.providerID.startsWith("opencode") && input.model.api.id.includes("gpt-5")) ||
+    input.model.providerID === "venice" ||
+    input.providerOptions?.setCacheKey === true
+  )
+    return "promptCacheKey"
 }
 
 // TODO: fix this stupid inefficient dogshit function
@@ -101,12 +146,9 @@ function normalizeMessages(
   }
   const splitToolResultMedia = (messages: ModelMessage[]) => {
     if (
-      ![
-        "@ai-sdk/openai-compatible",
-        "@ai-sdk/openai",
-        "@ai-sdk/anthropic",
-        "@ai-sdk/google-vertex/anthropic",
-      ].includes(model.api.npm)
+      !["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic"].includes(
+        model.api.npm,
+      )
     ) {
       return messages
     }
@@ -957,7 +999,9 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
       }
 
       if (anthropicOpus45(model.api.id)) {
-        return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, anthropicOpus45Thinking(model, effort)]))
+        return Object.fromEntries(
+          WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, anthropicOpus45Thinking(model, effort)]),
+        )
       }
 
       return {
@@ -1186,7 +1230,6 @@ export function options(input: {
 
   if (input.model.api.npm === "@ai-sdk/azure") {
     result["store"] = false
-    result["promptCacheKey"] = input.sessionID
   }
 
   if (input.model.api.npm === "@openrouter/ai-sdk-provider" || input.model.api.npm === "@llmgateway/ai-sdk-provider") {
@@ -1219,18 +1262,14 @@ export function options(input: {
   // still need a stable prompt_cache_key. Codex routes cache identity from this
   // field; without it, Aether will not emit session-id/thread-id and the same
   // OpenCode session hops across upstream accounts.
-  const shouldSetPromptCacheKey =
-    input.providerOptions?.setCacheKey !== false &&
-    (isOpenAIProviderID(input.model.providerID) ||
-      input.model.api.npm === "@ai-sdk/openai" ||
-      input.model.api.npm === "@ai-sdk/xai" ||
-      input.providerOptions?.setCacheKey === true)
-  if (shouldSetPromptCacheKey) {
-    result["promptCacheKey"] = input.sessionID
-  }
-  log.info(
-    `promptCacheKey decision provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} setCacheKey=${String(input.providerOptions?.setCacheKey)} applied=${String(shouldSetPromptCacheKey)}`,
-  )
+  const cacheKeyField = promptCacheKeyField(input)
+  const cacheKey = cacheKeyField ? promptCacheKey(input.sessionID) : undefined
+  if (cacheKeyField && cacheKey) result[cacheKeyField] = cacheKey
+  const cacheKeyHashed =
+    cacheKey !== undefined &&
+    !/^ses_[0-9A-Za-z]{26}$/.test(input.sessionID) &&
+    !/^ses_[0-9a-f]{64}$/.test(input.sessionID)
+  log.info(`prompt cache key decision field=${cacheKeyField ?? "none"} hashed=${String(cacheKeyHashed)}`)
 
   if (input.model.api.npm === "@ai-sdk/google" || input.model.api.npm === "@ai-sdk/google-vertex") {
     if (input.model.capabilities.reasoning) {
@@ -1292,19 +1331,11 @@ export function options(input: {
     }
 
     if (input.model.providerID.startsWith("opencode")) {
-      result["promptCacheKey"] = input.sessionID
       result["include"] = ["reasoning.encrypted_content"]
       result["reasoningSummary"] = "auto"
     }
   }
 
-  if (input.model.providerID === "venice") {
-    result["promptCacheKey"] = input.sessionID
-  }
-
-  if (input.model.providerID === "openrouter") {
-    result["prompt_cache_key"] = input.sessionID
-  }
   if (input.model.api.npm === "@ai-sdk/gateway") {
     result["gateway"] = {
       caching: "auto",

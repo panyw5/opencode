@@ -1501,6 +1501,11 @@ it.instance(
       const messages = inputs.at(-1)?.messages
       if (!Array.isArray(messages)) throw new Error("expected LLM messages")
       expect(messages.at(-1)).toEqual({ role: "user", content: "second" })
+      expect(messages.filter((message) => message.role === "user").map((message) => message.content)).toEqual([
+        "first",
+        "second",
+      ])
+      expect(JSON.stringify(messages)).not.toContain("<system-reminder>")
     }),
   3_000,
 )

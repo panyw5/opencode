@@ -22,6 +22,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Permission } from "@/permission"
 import { LLMAISDK } from "@/session/llm/ai-sdk"
 import { Session as SessionNs } from "@/session/session"
+import { LLMRequestPrep } from "@/session/llm/request"
 
 type ConfigModel = NonNullable<NonNullable<Config.Info["provider"]>[string]["models"]>[string]
 
@@ -719,6 +720,74 @@ function createEventResponse(chunks: unknown[], includeDone = false) {
     headers: { "Content-Type": "text/event-stream" },
   })
 }
+
+it.instance(
+  "setCacheKey false removes cache keys after model, agent, variant, and plugin merges",
+  () =>
+    Effect.gen(function* () {
+      const fixture = loadFixture("openai", "gpt-5.2").model
+      const resolved = yield* Provider.use.getModel(ProviderID.openai, ModelID.make(fixture.id))
+      const provider = yield* Provider.use.getProvider(ProviderID.openai)
+      const flags = { client: "test" } as RuntimeFlags.Info
+      const sessionID = SessionID.make("ses_00000000000000000000000000")
+      const user = {
+        id: MessageID.make("msg_cache_key_disable"),
+        sessionID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "test",
+        model: { providerID: ProviderID.openai, modelID: resolved.id, variant: "disabled" },
+      } satisfies MessageV2.User
+      const agent = {
+        name: "test",
+        mode: "primary",
+        options: { prompt_cache_key: "agent-key" },
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      } satisfies Agent.Info
+      const plugin = {
+        trigger(name: string, _input: unknown, output: unknown) {
+          return Effect.sync(() => {
+            if (name === "chat.params") {
+              const params = output as { options: Record<string, unknown> }
+              params.options.promptCacheKey = "plugin-key"
+              params.options.prompt_cache_key = "plugin-key"
+            }
+            return output
+          })
+        },
+      } as unknown as Plugin.Interface
+      const model = {
+        ...resolved,
+        options: { ...resolved.options, promptCacheKey: "model-key" },
+        variants: { disabled: { promptCacheKey: "variant-key", prompt_cache_key: "variant-key" } },
+      }
+
+      const prepared = yield* LLMRequestPrep.prepare({
+        user,
+        sessionID,
+        model,
+        agent,
+        system: [],
+        messages: [{ role: "user", content: "Hello" }],
+        tools: {},
+        provider: { ...provider, options: { ...provider.options, setCacheKey: false } },
+        auth: undefined,
+        plugin,
+        flags,
+        isWorkflow: false,
+      })
+
+      expect(prepared.params.options.promptCacheKey).toBeUndefined()
+      expect(prepared.params.options.prompt_cache_key).toBeUndefined()
+      expect(JSON.stringify(ProviderTransform.providerOptions(model, prepared.params.options))).not.toContain(
+        "promptCache",
+      )
+      expect(JSON.stringify(ProviderTransform.providerOptions(model, prepared.params.options))).not.toContain(
+        "prompt_cache",
+      )
+    }),
+  { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
+)
 
 describe("session.llm.stream", () => {
   const vivgridFixture = { providerID: "vivgrid", modelID: "gemini-3.1-pro-preview" }
@@ -2065,7 +2134,12 @@ describe("session.llm.stream", () => {
           {
             type: "message_delta",
             delta: { stop_reason: "end_turn", stop_sequence: null, container: null },
-            usage: { input_tokens: 5, output_tokens: 1, cache_creation_input_tokens: null, cache_read_input_tokens: null },
+            usage: {
+              input_tokens: 5,
+              output_tokens: 1,
+              cache_creation_input_tokens: null,
+              cache_read_input_tokens: null,
+            },
           },
           { type: "message_stop" },
         ]
@@ -2390,10 +2464,7 @@ describe("session.llm.stream", () => {
           ),
         )
 
-        const resolved = yield* Provider.use.getModel(
-          ProviderID.make("vertex-test"),
-          ModelID.make(fixture.model.id),
-        )
+        const resolved = yield* Provider.use.getModel(ProviderID.make("vertex-test"), ModelID.make(fixture.model.id))
         const sessionID = SessionID.make("session-test-vertex-thought-replay")
         const agent = {
           name: "test",

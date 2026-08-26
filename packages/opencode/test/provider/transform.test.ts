@@ -3,7 +3,7 @@ import { ProviderTransform } from "@/provider/transform"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 
 describe("ProviderTransform.options - setCacheKey", () => {
-  const sessionID = "test-session-123"
+  const sessionID = "ses_00000000000000000000000000"
 
   const mockModel = {
     id: "anthropic/claude-3-5-sonnet",
@@ -161,19 +161,21 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBeUndefined()
   })
 
-  test("should use snake_case prompt_cache_key for OpenRouter", () => {
+  test("should not send an undocumented prompt cache key for OpenRouter", () => {
     const model = {
       ...mockModel,
       providerID: "openrouter",
       api: {
         id: "anthropic/claude-sonnet-4",
         url: "https://openrouter.ai/api/v1",
-        npm: "@ai-sdk/openai-compatible",
+        npm: "@openrouter/ai-sdk-provider",
       },
     }
     const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
-    expect(result.prompt_cache_key).toBe(sessionID)
+    expect(result.prompt_cache_key).toBeUndefined()
     expect(result.promptCacheKey).toBeUndefined()
+    expect(JSON.stringify(ProviderTransform.providerOptions(model, result))).not.toContain("promptCache")
+    expect(JSON.stringify(ProviderTransform.providerOptions(model, result))).not.toContain("prompt_cache")
   })
 
   test("should set promptCacheKey for Venice", () => {
@@ -183,12 +185,112 @@ describe("ProviderTransform.options - setCacheKey", () => {
       api: {
         id: "venice-uncensored",
         url: "https://api.venice.ai/api/v1",
-        npm: "@ai-sdk/openai-compatible",
+        npm: "venice-ai-sdk-provider",
       },
     }
     const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
     expect(result.promptCacheKey).toBe(sessionID)
     expect(result.prompt_cache_key).toBeUndefined()
+  })
+
+  test("normalizes unsafe or oversized external session IDs without losing isolation", () => {
+    const model = {
+      ...mockModel,
+      providerID: "openai",
+      api: { id: "gpt-5", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }
+    const standard = `ses_${"a".repeat(64)}`
+    const generated = "ses_00000000000000000000000000"
+    const external = "ses_external_thread_one"
+    const oversized = `ses_external_${"x".repeat(4096)}`
+    const other = `ses_external_${"y".repeat(4096)}`
+    const standardKey = ProviderTransform.options({ model, sessionID: standard, providerOptions: {} }).promptCacheKey
+    const generatedKey = ProviderTransform.options({ model, sessionID: generated, providerOptions: {} }).promptCacheKey
+    const externalKey = ProviderTransform.options({ model, sessionID: external, providerOptions: {} }).promptCacheKey
+    const first = ProviderTransform.options({ model, sessionID: oversized, providerOptions: {} }).promptCacheKey
+    const repeated = ProviderTransform.options({ model, sessionID: oversized, providerOptions: {} }).promptCacheKey
+    const second = ProviderTransform.options({ model, sessionID: other, providerOptions: {} }).promptCacheKey
+    const unicode = ProviderTransform.options({ model, sessionID: "ses_外部会话", providerOptions: {} }).promptCacheKey
+
+    expect(standardKey).toBe("a".repeat(64))
+    expect(generatedKey).toBe(generated)
+    expect(externalKey).toMatch(/^[0-9a-f]{64}$/)
+    expect(externalKey).toBe("8004ed34e51be440fd0e0b699db2ef6bbfe608ea845d4c0c6f849e6d9995a8e7")
+    expect(externalKey).not.toContain(external)
+    expect(first).toMatch(/^[0-9a-f]{64}$/)
+    expect(first).toBe(repeated)
+    expect(first).not.toBe(second)
+    expect(unicode).toMatch(/^[0-9a-f]{64}$/)
+    expect(first).not.toContain(oversized)
+  })
+
+  for (const item of [
+    { npm: "@ai-sdk/openai", namespace: "openai", field: "promptCacheKey" },
+    { npm: "@ai-sdk/azure", namespace: "azure", field: "promptCacheKey" },
+    { npm: "@ai-sdk/xai", namespace: "xai", field: "promptCacheKey" },
+    { npm: "@ai-sdk/mistral", namespace: "mistral", field: "promptCacheKey" },
+    { npm: "venice-ai-sdk-provider", namespace: "venice", field: "promptCacheKey" },
+    { npm: "@ai-sdk/deepinfra", namespace: "deepinfra", field: "prompt_cache_key" },
+    { npm: "@ai-sdk/cerebras", namespace: "cerebras", field: "prompt_cache_key" },
+  ] as const) {
+    test(`selects ${item.field} for ${item.npm} and honors explicit disable`, () => {
+      const model = {
+        ...mockModel,
+        providerID: "custom",
+        api: { id: "model", url: "https://example.com", npm: item.npm },
+      }
+      const enabled = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+      const disabled = ProviderTransform.options({ model, sessionID, providerOptions: { setCacheKey: false } })
+
+      expect(enabled[item.field]).toBe(sessionID)
+      expect([enabled.promptCacheKey, enabled.prompt_cache_key].filter((value) => value !== undefined)).toHaveLength(1)
+      const wire = ProviderTransform.providerOptions(model, enabled)
+      const namespaces = item.npm === "@ai-sdk/azure" ? ["azure", "openai"] : [item.namespace]
+      expect(Object.keys(wire).toSorted()).toEqual(namespaces.toSorted())
+      for (const namespace of namespaces) expect(wire[namespace]?.[item.field]).toBe(sessionID)
+      expect(disabled.promptCacheKey).toBeUndefined()
+      expect(disabled.prompt_cache_key).toBeUndefined()
+    })
+  }
+
+  test("keeps cache keys stable within a session and collision-free across the workload", () => {
+    const model = {
+      ...mockModel,
+      providerID: "openai",
+      api: { id: "gpt-5", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }
+    const generated = Array.from({ length: 128 }, (_, index) => `ses_${index.toString(36).padStart(26, "0")}`)
+    const external = Array.from({ length: 128 }, (_, index) => `ses_external_channel:thread-${index}`)
+    const unicode = Array.from({ length: 128 }, (_, index) => `ses_外部会话_${index}`)
+    const oversized = Array.from({ length: 128 }, (_, index) => `ses_external_${index}_${"x".repeat(4096)}`)
+    const workload = [...generated, ...external, ...unicode, ...oversized]
+    const keys = workload.map((sessionID) =>
+      Array.from(
+        { length: 3 },
+        () => ProviderTransform.options({ model, sessionID, providerOptions: {} }).promptCacheKey,
+      ),
+    )
+
+    expect(keys.every((samples) => samples.every((key) => key === samples[0]))).toBe(true)
+    expect(new Set(keys.map((samples) => samples[0])).size).toBe(workload.length)
+    expect(keys.flat().every((key) => typeof key === "string" && Buffer.byteLength(key) <= 64)).toBe(true)
+    expect(keys.slice(0, generated.length).map((samples) => samples[0])).toEqual(generated)
+    expect(
+      keys.slice(generated.length).every((samples, index) => samples[0] !== workload[generated.length + index]),
+    ).toBe(true)
+  })
+
+  test("keeps the Azure cache key before the GPT-5.5 early return", () => {
+    const model = {
+      ...mockModel,
+      providerID: "azure",
+      api: { id: "gpt-5.5", url: "https://azure.example.com", npm: "@ai-sdk/azure" },
+    }
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+
+    expect(result.store).toBe(false)
+    expect(result.reasoningSummary).toBe("auto")
+    expect(result.promptCacheKey).toBe(sessionID)
   })
 
   test("should scope OpenCode GPT-5 cache keys to the session", () => {
@@ -201,10 +303,12 @@ describe("ProviderTransform.options - setCacheKey", () => {
         npm: "@ai-sdk/openai-compatible",
       },
     }
-    const first = ProviderTransform.options({ model, sessionID: "session-a", providerOptions: {} })
-    const second = ProviderTransform.options({ model, sessionID: "session-b", providerOptions: {} })
-    expect(first.promptCacheKey).toBe("session-a")
-    expect(second.promptCacheKey).toBe("session-b")
+    const firstID = "ses_00000000000000000000000001"
+    const secondID = "ses_00000000000000000000000002"
+    const first = ProviderTransform.options({ model, sessionID: firstID, providerOptions: {} })
+    const second = ProviderTransform.options({ model, sessionID: secondID, providerOptions: {} })
+    expect(first.promptCacheKey).toBe(firstID)
+    expect(second.promptCacheKey).toBe(secondID)
     expect(first.promptCacheKey).not.toBe(second.promptCacheKey)
     expect(first.prompt_cache_key).toBeUndefined()
     expect(second.prompt_cache_key).toBeUndefined()
@@ -3125,15 +3229,33 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     })
   })
 
-  test("does not add explicit cache control when Anthropic automatic caching is enabled", () => {
-    const model = createModel({ providerID: "anthropic", api: { id: "claude-sonnet-4", url: "https://api.anthropic.com", npm: "@ai-sdk/anthropic" } })
-    const msgs = [
-      { role: "system", content: "You are a helpful assistant" },
-      { role: "user", content: "Hello" },
-    ] as any[]
-    const result = ProviderTransform.message(msgs, model, { cacheControl: { type: "ephemeral" } }) as any[]
-    expect(result[0].providerOptions).toBeUndefined()
-  })
+  for (const automatic of [
+    { providerID: "anthropic", npm: "@ai-sdk/anthropic" },
+    { providerID: "google-vertex-anthropic", npm: "@ai-sdk/google-vertex/anthropic" },
+  ]) {
+    test(`does not add or duplicate explicit cache control for automatic ${automatic.providerID} caching`, () => {
+      const model = createModel({
+        providerID: automatic.providerID,
+        api: { id: "claude-sonnet-4", url: "https://api.anthropic.com", npm: automatic.npm },
+      })
+      const msgs = [
+        { role: "system", content: "You are a helpful assistant" },
+        { role: "user", content: "Hello" },
+      ] as any[]
+      const first = ProviderTransform.message(structuredClone(msgs), model, {
+        cacheControl: { type: "ephemeral" },
+      }) as any[]
+      const repeated = ProviderTransform.message(first, model, {
+        cacheControl: { type: "ephemeral" },
+      }) as any[]
+      const explicit = (messages: any[]) =>
+        JSON.stringify(messages).match(/cacheControl|cache_control|cachePoint|copilot_cache_control/g)?.length ?? 0
+
+      expect(explicit(first)).toBe(0)
+      expect(explicit(repeated)).toBe(0)
+      expect(repeated).toEqual(first)
+    })
+  }
 
   test("google-vertex-anthropic applies cache control", () => {
     const model = createModel({

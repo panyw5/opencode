@@ -85,7 +85,8 @@ export const Info = Schema.Struct({
           description: "GitHub Enterprise URL for copilot authentication",
         }),
         setCacheKey: Schema.optional(Schema.Boolean).annotate({
-          description: "Enable promptCacheKey for this provider (default false)",
+          description:
+            "Override prompt cache key injection: true enables it for custom providers; false removes it from the final request. Supported SDKs enable it by default.",
         }),
         timeout: Schema.optional(
           Schema.Union([PositiveInt, Schema.Literal(false)]).annotate({
