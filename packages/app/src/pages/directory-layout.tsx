@@ -7,10 +7,13 @@ import { Portal } from "solid-js/web"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
 import { LocalProvider } from "@/context/local"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { SkillsProvider } from "@/context/skills"
 import { SyncProvider, useSync } from "@/context/sync"
+import { extraAgentByDirectory } from "@/pages/layout/extra-agents"
+import { newSessionProjectLabel } from "@/pages/layout/helpers"
 import { decode64 } from "@/utils/base64"
 import { StatusPopover } from "@/components/status-popover"
 
@@ -69,23 +72,40 @@ function ProjectStatusPortal() {
   const language = useLanguage()
   const params = useParams()
   const navigate = useNavigate()
+  const layout = useLayout()
   const mount = createMemo(() => document.getElementById("opencode-titlebar-center-project"))
+  const directory = createMemo(() => (params.dir ? (decode64(params.dir) ?? "") : ""))
+  const projectLabel = createMemo(() => {
+    const dir = directory()
+    return newSessionProjectLabel(dir, layout.projects.list(), {
+      extraName: extraAgentByDirectory(dir)?.label,
+      sidebarRoot: layout.sidebar.project(),
+    })
+  })
+  const tooltip = createMemo(() => {
+    const project = projectLabel()
+    if (!project) return language.t("command.session.new")
+    return language.t("command.session.new.tooltip", { project })
+  })
 
   return (
     <Show when={mount()}>
       {(node) => (
         <Portal mount={node()}>
           <div class="mr-2 flex items-center gap-1">
-            <Tooltip placement="bottom" value={language.t("command.session.new")}>
+            <Tooltip placement="bottom" value={tooltip()}>
               <IconButton
                 data-action="session-new-button"
                 icon="new-session"
                 size="normal"
                 variant="ghost"
                 class="titlebar-icon w-8 h-6 p-0 box-border"
-                aria-label={language.t("command.session.new")}
+                aria-label={tooltip()}
                 onClick={() => {
                   if (!params.dir) return
+                  console.debug(
+                    `[directory-layout] new-session dir=${directory() || "none"} project=${projectLabel() || "none"}`,
+                  )
                   navigate(`/${params.dir}/session`)
                 }}
               />

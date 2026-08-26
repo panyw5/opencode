@@ -183,6 +183,7 @@ export const dict = {
   "command.language.set": "使用语言：{{language}}",
 
   "command.session.new": "新建会话",
+  "command.session.new.tooltip": "在 {{project}} 下新建会话",
 
   "command.file.open": "打开文件",
 

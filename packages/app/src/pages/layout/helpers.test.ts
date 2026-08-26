@@ -35,6 +35,7 @@ import {
   stripImChannelTitle,
   stripScheduledSessionTitle,
   latestWorkspaceSession,
+  newSessionProjectLabel,
   waitForMatch,
   workingSessionTreeIDs,
   workspaceKey,
@@ -765,6 +766,20 @@ describe("layout workspace helpers", () => {
   test("formats fallback project display name", () => {
     expect(displayName({ worktree: "/tmp/app" })).toBe("app")
     expect(displayName({ worktree: "/tmp/app", name: "My App" })).toBe("My App")
+  })
+
+  test("resolves new-session tooltip project label", () => {
+    const projects = [
+      { name: "OpenCode", worktree: "/repo/opencode", sandboxes: ["/repo/opencode-wt"] },
+      { name: "Other", worktree: "/repo/other", sandboxes: [] },
+    ]
+    expect(newSessionProjectLabel("/repo/opencode", projects)).toBe("OpenCode")
+    expect(newSessionProjectLabel("/repo/opencode-wt", projects)).toBe("OpenCode")
+    expect(newSessionProjectLabel("/repo/other", projects)).toBe("Other")
+    expect(newSessionProjectLabel("/extra/codex", projects, { extraName: "Codex" })).toBe("Codex")
+    expect(newSessionProjectLabel("/unknown/workspace", projects, { sidebarRoot: "/repo/opencode" })).toBe("OpenCode")
+    expect(newSessionProjectLabel("/tmp/orphan-app", [])).toBe("orphan-app")
+    expect(newSessionProjectLabel(undefined, projects)).toBe("")
   })
 
   test("extracts api error message and fallback", () => {

@@ -57,6 +57,7 @@ export const dict = {
   "command.language.set": "使用語言: {{language}}",
 
   "command.session.new": "新增工作階段",
+  "command.session.new.tooltip": "在 {{project}} 下新增工作階段",
   "command.file.open": "開啟檔案",
   "command.tab.close": "關閉分頁",
   "command.context.addSelection": "將選取內容加入上下文",

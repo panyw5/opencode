@@ -179,6 +179,7 @@ export const dict = {
   "command.language.set": "Use language: {{language}}",
 
   "command.session.new": "New session",
+  "command.session.new.tooltip": "New session in {{project}}",
   "command.input.focus": "Focus input",
   "command.input.focus.description": "Focus the chat input field",
   "command.file.open": "Open file",

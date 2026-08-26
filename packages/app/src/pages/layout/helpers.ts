@@ -403,6 +403,23 @@ export function workingSessionTreeIDs(input: {
 export const displayName = (project: { name?: string; worktree: string }) =>
   project.name || getFilename(project.worktree)
 
+export function newSessionProjectLabel(
+  directory: string | undefined,
+  projects: Array<{ name?: string; worktree: string; sandboxes?: string[] }>,
+  options?: { extraName?: string; sidebarRoot?: string },
+) {
+  if (!directory) return ""
+  if (options?.extraName) return options.extraName
+  const owner = projectOwner(directory, projects)
+  if (owner) return displayName(owner.project)
+  const sidebarRoot = options?.sidebarRoot
+  if (sidebarRoot) {
+    const sidebar = projects.find((item) => workspaceKey(item.worktree) === workspaceKey(sidebarRoot))
+    if (sidebar) return displayName(sidebar)
+  }
+  return getFilename(directory) || directory
+}
+
 export type SessionGroupKey = "today" | "yesterday" | "thisWeek" | "thisMonth" | "older"
 
 function startOfDay(timestamp: number): number {
