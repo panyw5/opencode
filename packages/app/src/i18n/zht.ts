@@ -596,6 +596,9 @@ export const dict = {
   "session.new.worktree.mainWithBranch": "主分支 ({{branch}})",
   "session.new.worktree.create": "建立新的 worktree",
   "session.new.lastModified": "最後修改",
+  "session.new.path.copy": "複製",
+  "session.new.path.copied": "已複製",
+  "session.new.path.openFolder": "開啟所在資料夾",
 
   "session.header.search.placeholder": "搜尋 {{project}}",
   "session.header.searchFiles": "搜尋檔案",

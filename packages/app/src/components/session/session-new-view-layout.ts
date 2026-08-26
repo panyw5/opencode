@@ -10,3 +10,29 @@ export function sessionNewMeta(agent: boolean) {
   if (agent) return ""
   return "md:max-w-[var(--session-content-width)] md:mx-auto"
 }
+
+export type SessionNewOpenFolderKey =
+  | "command.project.openInFinder"
+  | "command.project.openInFileExplorer"
+  | "command.project.openInFileManager"
+
+export function sessionNewOpenFolderKey(os?: string): SessionNewOpenFolderKey {
+  if (os === "windows") return "command.project.openInFileExplorer"
+  if (os === "macos") return "command.project.openInFinder"
+  return "command.project.openInFileManager"
+}
+
+export function sessionNewCanOpenFolder(input: {
+  platform?: string
+  os?: string
+  local?: boolean
+  openPath?: boolean
+  openInFinder?: boolean
+}) {
+  if (input.platform !== "desktop" || !input.local) return false
+  return input.os === "windows" ? !!input.openPath : !!input.openInFinder
+}
+
+export function sessionNewOpenFolderVia(os?: string) {
+  return os === "windows" ? "openPath" : "openInFinder"
+}

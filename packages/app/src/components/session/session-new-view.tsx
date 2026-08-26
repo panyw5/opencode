@@ -3,16 +3,26 @@ import { createStore } from "solid-js/store"
 import { useSync } from "@/context/sync"
 import { useSDK } from "@/context/sdk"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Mark } from "@opencode-ai/ui/logo"
 import { Select } from "@opencode-ai/ui/select"
+import { showToast } from "@opencode-ai/ui/toast"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { workspaceKey } from "@/pages/layout/helpers"
 import { extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
-import { sessionNewMeta, sessionNewPane } from "./session-new-view-layout"
+import {
+  sessionNewCanOpenFolder,
+  sessionNewMeta,
+  sessionNewOpenFolderKey,
+  sessionNewOpenFolderVia,
+  sessionNewPane,
+} from "./session-new-view-layout"
 import { hermesMeta, hermesView } from "./session-new-view-meta"
 
 const MAIN_WORKTREE = "main"
@@ -33,11 +43,15 @@ export function NewSessionView(props: NewSessionViewProps) {
   const sync = useSync()
   const sdk = useSDK()
   const language = useLanguage()
+  const platform = usePlatform()
+  const server = useServer()
   const dialog = useDialog()
   const [view, setView] = createStore({
     width: typeof window === "undefined" ? 1280 : window.innerWidth,
     height: typeof window === "undefined" ? 960 : (window.visualViewport?.height ?? window.innerHeight),
   })
+  const [pathAction, setPathAction] = createStore({ copied: false, opening: false })
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   const git = createMemo(() => sync.project?.vcs === "git")
   const root = createMemo(() => {
     const directory = sync.data.path.directory || sdk.directory
@@ -141,6 +155,79 @@ export function NewSessionView(props: NewSessionViewProps) {
     console.debug(`[session-new] layout agent=${extraAgent()?.id ?? "none"} pane=${pane()} body=${body() || "none"}`)
   })
 
+  const canOpenFolder = createMemo(() =>
+    sessionNewCanOpenFolder({
+      platform: platform.platform,
+      os: platform.os,
+      local: !!server.isLocal(),
+      openPath: !!platform.openPath,
+      openInFinder: !!platform.openInFinder,
+    }),
+  )
+  const openFolderLabel = createMemo(() => language.t(sessionNewOpenFolderKey(platform.os)))
+
+  const copyProjectPath = () => {
+    const directory = root()
+    if (!directory) return
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    console.debug(`[session-new] copy path dir=${directory}`)
+    if (!clipboard?.writeText) {
+      console.debug(`[session-new] clipboard unavailable dir=${directory}`)
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: "Clipboard unavailable",
+      })
+      return
+    }
+    void clipboard.writeText(directory).then(
+      () => {
+        console.debug(`[session-new] copied path dir=${directory}`)
+        setPathAction("copied", true)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setPathAction("copied", false), 1_200)
+      },
+      (err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.debug(`[session-new] copy path failed dir=${directory} err=${message}`)
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: message,
+        })
+      },
+    )
+  }
+
+  const openProjectFolder = () => {
+    const directory = root()
+    if (!directory || pathAction.opening || !canOpenFolder()) return
+    console.debug(`[session-new] open folder dir=${directory} os=${platform.os ?? "unknown"}`)
+    setPathAction("opening", true)
+    const via = sessionNewOpenFolderVia(platform.os)
+    const task = via === "openPath" ? platform.openPath?.(directory) : platform.openInFinder?.(directory)
+    Promise.resolve(task)
+      .then(() => {
+        console.debug(`[session-new] opened folder dir=${directory}`)
+      })
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.debug(`[session-new] open folder failed dir=${directory} err=${message}`)
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: message,
+        })
+      })
+      .finally(() => {
+        setPathAction("opening", false)
+      })
+  }
+
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
+
   const chooseGenericAgentCwd = () => {
     dialog.show(() => (
       <DialogSelectDirectory
@@ -168,8 +255,41 @@ export function NewSessionView(props: NewSessionViewProps) {
             </div>
           </div>
           <div class={`w-full px-3 py-2 sm:px-5 ${body()}`.trim()}>
-            <div class="text-20-medium text-text-strong select-text break-words">{name()}</div>
-            <div class="mt-1 break-all text-12-medium text-text-weak select-text">{root()}</div>
+            <div class="text-28-medium text-text-strong select-text break-words">{name()}</div>
+            <div class="mt-2 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <span class="min-w-0 break-all text-12-medium text-text-weak select-text">{root()}</span>
+              <div class="inline-flex shrink-0 items-center gap-1">
+                <Tooltip value={language.t("session.header.open.copyPath")} placement="bottom" openDelay={400}>
+                  <Button
+                    size="small"
+                    variant="secondary"
+                    icon={pathAction.copied ? "check" : "copy"}
+                    data-action="session-new-copy-path"
+                    aria-label={language.t("session.header.open.copyPath")}
+                    onClick={copyProjectPath}
+                  >
+                    {pathAction.copied
+                      ? language.t("session.new.path.copied")
+                      : language.t("session.new.path.copy")}
+                  </Button>
+                </Tooltip>
+                <Show when={canOpenFolder()}>
+                  <Tooltip value={openFolderLabel()} placement="bottom" openDelay={400}>
+                    <Button
+                      size="small"
+                      variant="secondary"
+                      icon="folder"
+                      data-action="session-new-open-folder"
+                      aria-label={openFolderLabel()}
+                      disabled={pathAction.opening}
+                      onClick={openProjectFolder}
+                    >
+                      {language.t("session.new.path.openFolder")}
+                    </Button>
+                  </Tooltip>
+                </Show>
+              </div>
+            </div>
             <Show when={meta()}>
               {(metaInfo) => (
                 <div class="mt-5 grid gap-3 text-left">
