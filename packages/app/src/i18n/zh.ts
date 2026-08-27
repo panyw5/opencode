@@ -240,6 +240,7 @@ export const dict = {
 
   "command.permissions.autoaccept.enable": "自动接受权限",
   "command.permissions.autoaccept.disable": "停止自动接受权限",
+  "prompt.permissions.autoaccept.active": "自动授权",
 
   "command.workspace.toggle": "切换工作区",
   "command.workspace.toggle.description": "在侧边栏启用或禁用多个工作区",
