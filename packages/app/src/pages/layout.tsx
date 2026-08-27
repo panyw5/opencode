@@ -3213,15 +3213,19 @@ export default function Layout(props: ParentProps) {
     }
 
     const hasCurrentSession = onSessionRoute() && !!params.id
+    // When viewing an IM channel, the route directory is the channel's work
+    // folder, not an OpenCode project. We must navigate away so activeImChannel()
+    // clears and the sidebar switches back to the project session list.
+    const viewingImChannel = !!activeImChannel()
     // Default false: rail click switches project context / opens sidebar without
     // forcing a new-session route when nothing is currently displayed.
     const navigateWhenNoSession = options?.navigateWhenNoSession ?? false
     console.debug(
-      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} navigated=${!hasCurrentSession && navigateWhenNoSession}`,
+      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} viewing-im=${viewingImChannel} navigated=${viewingImChannel || (!hasCurrentSession && navigateWhenNoSession)}`,
     )
     setSidebarProjectRoot(project.worktree)
     warmProjectSessions(project.worktree)
-    if (!hasCurrentSession && navigateWhenNoSession) {
+    if (viewingImChannel || (!hasCurrentSession && navigateWhenNoSession)) {
       setSwitching(undefined)
       navigateWithSidebarReset(`/${base64Encode(project.worktree)}/session`)
     }
