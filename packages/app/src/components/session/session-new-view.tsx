@@ -6,6 +6,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { AppIcon } from "@opencode-ai/ui/app-icon"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Mark } from "@opencode-ai/ui/logo"
@@ -165,6 +166,7 @@ export function NewSessionView(props: NewSessionViewProps) {
     }),
   )
   const openFolderLabel = createMemo(() => language.t(sessionNewOpenFolderKey(platform.os)))
+  const folderIcon = createMemo(() => (platform.os === "windows" ? "file-explorer" : "finder"))
 
   const copyProjectPath = () => {
     const directory = root()
@@ -258,33 +260,48 @@ export function NewSessionView(props: NewSessionViewProps) {
             <div class="text-28-medium text-text-strong select-text break-words">{name()}</div>
             <div class="mt-2 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1">
               <span class="min-w-0 break-all text-12-medium text-text-weak select-text">{root()}</span>
-              <div class="inline-flex shrink-0 items-center gap-1">
-                <Tooltip value={language.t("session.header.open.copyPath")} placement="bottom" openDelay={400}>
+              <div class="flex h-[24px] box-border shrink-0 items-center overflow-hidden rounded-md border border-border-weak-base bg-surface-panel">
+                <Tooltip
+                  value={
+                    pathAction.copied
+                      ? language.t("session.new.path.copied")
+                      : language.t("session.header.open.copyPath")
+                  }
+                  placement="bottom"
+                  openDelay={400}
+                  class="flex h-full items-center"
+                >
                   <Button
-                    size="small"
-                    variant="secondary"
-                    icon={pathAction.copied ? "check" : "copy"}
+                    variant="ghost"
+                    class="rounded-none h-full px-0.5 border-none shadow-none"
                     data-action="session-new-copy-path"
                     aria-label={language.t("session.header.open.copyPath")}
                     onClick={copyProjectPath}
                   >
-                    {pathAction.copied
-                      ? language.t("session.new.path.copied")
-                      : language.t("session.new.path.copy")}
+                    <Icon name={pathAction.copied ? "check" : "copy"} size="small" class="text-icon-base" />
                   </Button>
                 </Tooltip>
                 <Show when={canOpenFolder()}>
-                  <Tooltip value={openFolderLabel()} placement="bottom" openDelay={400}>
+                  <Tooltip
+                    value={openFolderLabel()}
+                    placement="bottom"
+                    openDelay={400}
+                    class="flex h-full items-center"
+                  >
                     <Button
-                      size="small"
-                      variant="secondary"
-                      icon="folder"
+                      variant="ghost"
+                      class="rounded-none h-full px-0.5 border-none shadow-none disabled:!cursor-default"
+                      classList={{
+                        "bg-surface-raised-base-active": pathAction.opening,
+                      }}
                       data-action="session-new-open-folder"
                       aria-label={openFolderLabel()}
                       disabled={pathAction.opening}
                       onClick={openProjectFolder}
                     >
-                      {language.t("session.new.path.openFolder")}
+                      <div class="flex size-5 shrink-0 items-center justify-center [&_[data-component=app-icon]]:size-5">
+                        <AppIcon id={folderIcon()} />
+                      </div>
                     </Button>
                   </Tooltip>
                 </Show>
