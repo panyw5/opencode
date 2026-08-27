@@ -136,6 +136,15 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   const count = createMemo(() =>
     dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )
+  const unseenSummary = createMemo(() =>
+    dirs()
+      .flatMap((directory) =>
+        notification.project.unseen(directory).map((item) => {
+          return `${directory}:${item.type}:${item.session ?? "none"}:viewed=${item.viewed ? 1 : 0}`
+        }),
+      )
+      .join("|") || "none",
+  )
   const error = createMemo(() => dirs().some((directory) => notification.project.unseenHasError(directory)))
   const perms = createMemo(() =>
     dirs().some((directory) => {
@@ -156,12 +165,11 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   let last = ""
   createEffect(() => {
     if (!props.notify) return
-    const next = `${count()}:${error()}:${perms()}`
+    const next = `${count()}:${error()}:${perms()}:${unseenSummary()}`
     if (next === last) return
     last = next
-    if (!notify()) return
     console.debug(
-      `[project-icon] badge dir=${props.project.worktree} count=${count()} error=${error() ? 1 : 0} permission=${perms() ? 1 : 0}`,
+      `[project-icon] inspect root=${props.project.worktree} dirs=${dirs().join(",") || "none"} count=${count()} error=${error() ? 1 : 0} permission=${perms() ? 1 : 0} unseen=${unseenSummary()}`,
     )
   })
   return (
@@ -466,6 +474,18 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     loggedActivity = next
     console.debug(
       `[sidebar-session] activity id=${props.session.id} active=${ids.length > 0 ? "true" : "false"} sessions=${next || "none"}`,
+    )
+  })
+  let loggedNotification = ""
+  createEffect(() => {
+    const unseen = notification.session.unseen(props.session.id)
+    const next = unseen
+      .map((item) => `${item.type}:${item.directory ?? "none"}:viewed=${item.viewed ? 1 : 0}`)
+      .join("|")
+    if (next === loggedNotification) return
+    loggedNotification = next
+    console.debug(
+      `[sidebar-session] notifications id=${props.session.id} directory=${props.session.directory} unseen=${unseen.length} entries=${next || "none"}`,
     )
   })
   const isActive = createMemo(() => props.session.id === params.id)
