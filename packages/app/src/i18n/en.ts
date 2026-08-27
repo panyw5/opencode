@@ -851,7 +851,7 @@ export const dict = {
   "session.mathInitialize.controlBeat.description": "Periodically reconcile workers and verified facts in this session.",
   "session.mathInitialize.review": "Review prompt",
   "session.mathInitialize.start": "Initialize",
-  "session.mathInitialize.prepare": "Prepare prompt",
+  "session.mathInitialize.prepare": "Initialize Math Mode",
   "session.mathTask.title": "Reassign Math worker",
   "session.mathTask.description":
     "This atomically replaces the durable TASK. A running worker reads it at the start of its next round; the current turn is not interrupted.",

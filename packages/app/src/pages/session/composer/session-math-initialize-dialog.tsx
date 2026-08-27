@@ -2,14 +2,16 @@ import { Button } from "@opencode-ai/ui/button"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
+import { Icon } from "@opencode-ai/ui/icon"
+import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Show, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
+import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import { useLanguage } from "@/context/language"
 import {
   type MathInitializationConfig,
   defaultMathProjectName,
-  validMathProjectName,
 } from "@/pages/session/math-initialize"
 
 export function SessionMathInitializeDialog(props: {
@@ -27,9 +29,13 @@ export function SessionMathInitializeDialog(props: {
     xhighWorkers: "1",
     controlBeat: false,
   })
+  const workerModel = useBoundModelState({
+    value: () => store.workerModel,
+    onChange: (value) => setStore("workerModel", value),
+  })
+  const selectedModel = createMemo(() => workerModel.current())
   const valid = createMemo(
     () =>
-      validMathProjectName(store.project) &&
       store.problem.trim().length > 0 &&
       store.workerModel.trim().includes("/") &&
       Number(store.highWorkers) + Number(store.xhighWorkers) > 0,
@@ -53,46 +59,53 @@ export function SessionMathInitializeDialog(props: {
   return (
     <Dialog
       title={language.t("session.mathInitialize.title")}
-      class="mx-auto w-full max-w-[640px] !max-h-[calc(100dvh-64px)]"
+      size="large"
+      class="mx-auto h-full"
+      containerStyle={{ height: "min(calc(100vh - 32px), 720px)" }}
     >
       <form
-        class="min-h-0 overflow-y-auto flex flex-col gap-5 p-6 pt-0"
+        class="h-full min-h-0 overflow-y-auto flex flex-col gap-6 p-7 pt-1"
         onSubmit={(event) => {
           event.preventDefault()
           submit()
         }}
       >
-        <p class="text-12-regular leading-5 text-text-weak">{language.t("session.mathInitialize.description")}</p>
         <div class="grid gap-4 md:grid-cols-2">
-          <div>
-            <TextField
-              autofocus
-              label={language.t("session.mathInitialize.project")}
-              description={language.t("session.mathInitialize.project.description")}
-              value={store.project}
-              onChange={(value) => setStore("project", value)}
-              spellcheck={false}
-            />
-            <Show when={store.project.trim() && !validMathProjectName(store.project)}>
-              <p class="mt-1 text-11-regular text-text-danger">{language.t("session.mathInitialize.project.error")}</p>
-            </Show>
+          <div class="md:col-span-2 flex flex-col gap-2">
+            <label class="text-12-medium text-text-weak">{language.t("session.mathInitialize.model")}</label>
+            <ModelSelectorPopover
+              model={workerModel}
+              triggerAs={Button}
+              triggerProps={{
+                type: "button",
+                variant: "ghost",
+                class:
+                  "h-11 w-full justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong transition-colors hover:border-border-strong hover:bg-surface-base-hover",
+              }}
+            >
+              <div class="flex min-w-0 items-center gap-2">
+                <Show when={selectedModel()?.provider.id}>
+                  <ProviderIcon id={selectedModel()!.provider.id} class="size-4 shrink-0" />
+                </Show>
+                <span class="truncate">
+                  {selectedModel()
+                    ? `${selectedModel()!.provider.name} / ${selectedModel()!.name}`
+                    : store.workerModel || language.t("dialog.model.select.title")}
+                </span>
+              </div>
+              <Icon name="chevron-down" size="small" class="shrink-0 text-text-weak" />
+            </ModelSelectorPopover>
+            <p class="text-11-regular text-text-weak">{language.t("session.mathInitialize.model.description")}</p>
           </div>
-          <TextField
-            label={language.t("session.mathInitialize.model")}
-            description={language.t("session.mathInitialize.model.description")}
-            value={store.workerModel}
-            onChange={(value) => setStore("workerModel", value)}
-            placeholder="provider/model"
-            spellcheck={false}
-          />
           <div class="md:col-span-2">
             <TextField
+              autofocus
               multiline
               label={language.t("session.mathInitialize.problem")}
               description={language.t("session.mathInitialize.problem.description")}
               value={store.problem}
               onChange={(value) => setStore("problem", value)}
-              class="min-h-32"
+              class="min-h-44"
             />
           </div>
           <TextField
@@ -121,11 +134,17 @@ export function SessionMathInitializeDialog(props: {
             {language.t("session.mathInitialize.controlBeat")}
           </Checkbox>
         </div>
-        <div class="flex flex-wrap justify-end gap-2">
+        <div class="mt-auto flex flex-wrap justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
             {language.t("common.cancel")}
           </Button>
-          <Button type="submit" variant="primary" size="large" disabled={!valid()}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="large"
+            disabled={!valid()}
+            class="transition-[transform,box-shadow,filter] duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md hover:brightness-105 active:translate-y-0 active:scale-[0.97] active:shadow-sm motion-reduce:transform-none motion-reduce:transition-none"
+          >
             {language.t("session.mathInitialize.prepare")}
           </Button>
         </div>

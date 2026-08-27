@@ -796,7 +796,7 @@ export const dict = {
   "session.mathInitialize.controlBeat.description": "定期在当前会话中同步工人状态和已验证事实。",
   "session.mathInitialize.review": "检查提示词",
   "session.mathInitialize.start": "初始化",
-  "session.mathInitialize.prepare": "生成初始化提示词",
+  "session.mathInitialize.prepare": "初始化数学模式",
   "session.mathTask.title": "改派数学工人",
   "session.mathTask.description": "将原子替换 durable TASK；运行中的工人会在下一轮开始时读取，不会打断当前推理。",
   "session.mathTask.body": "工人 TASK",
