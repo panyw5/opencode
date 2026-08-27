@@ -51,6 +51,7 @@ import { permissionRequestNotFound } from "@/pages/session/composer/session-ques
 import {
   collectSessionTabSubtree,
   groupSessionTabs,
+  pickSessionTabNeighbor,
   reorderSessionTabGroups,
   type SessionTabGroup,
 } from "./session-tab-groups"
@@ -292,11 +293,14 @@ export function SessionTabsBar() {
     const closing = subtree.length > 0 ? subtree : [tab]
     const closingKeys = new Set(closing.map((item) => sessionBarKey(item)))
     const viewingClosed = closing.some((item) => isActive(item))
-    const firstClosed = all.findIndex((item) => closingKeys.has(sessionBarKey(item)))
-    const lastClosed = all.findLastIndex((item) => closingKeys.has(sessionBarKey(item)))
-    const neighbor =
-      (firstClosed > 0 ? all[firstClosed - 1] : undefined) ??
-      all.slice(Math.max(lastClosed, index) + 1).find((item) => !closingKeys.has(sessionBarKey(item)))
+    // Children are flattened into `all` for rendering, but automatic selection
+    // must only consider top-level (main-agent) session tabs. Otherwise the
+    // tab immediately to the left can be a child hidden inside another group.
+    const roots = groups().map((group) => group.tab)
+    const closedRootKeys = new Set(
+      roots.filter((item) => closingKeys.has(sessionBarKey(item))).map((item) => sessionBarKey(item)),
+    )
+    const neighbor = pickSessionTabNeighbor(groups(), sessionBarKey, closedRootKeys, tabKey)
 
     console.debug(
       `[session-bar] close parent=${tab.id} descendants=${
@@ -304,7 +308,9 @@ export function SessionTabsBar() {
           .filter((item) => sessionBarKey(item) !== tabKey)
           .map((item) => item.id)
           .join(",") || "none"
-      } viewingClosed=${String(viewingClosed)} neighbor=${neighbor?.id ?? "none"}`,
+      } viewingClosed=${String(viewingClosed)} roots=${roots.map((item) => item.id).join(",")} closedRoots=${[
+        ...closedRootKeys,
+      ].join(",")} flattenedIndex=${index} neighbor=${neighbor?.id ?? "none"}`,
     )
 
     layout.sessionBar.closeAll(closing)
