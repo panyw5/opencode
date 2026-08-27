@@ -2,7 +2,7 @@ import { DataProvider } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { createEffect, createMemo, type ParentProps, Show } from "solid-js"
+import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -13,7 +13,8 @@ import { SDKProvider, useSDK } from "@/context/sdk"
 import { SkillsProvider } from "@/context/skills"
 import { SyncProvider, useSync } from "@/context/sync"
 import { extraAgentByDirectory } from "@/pages/layout/extra-agents"
-import { newSessionProjectLabel } from "@/pages/layout/helpers"
+import { newSessionProjectLabel, splitI18nTemplate } from "@/pages/layout/helpers"
+import { RailTooltip } from "@/pages/layout/rail-tooltip"
 import { decode64 } from "@/utils/base64"
 import { StatusPopover } from "@/components/status-popover"
 
@@ -87,13 +88,25 @@ function ProjectStatusPortal() {
     if (!project) return language.t("command.session.new")
     return language.t("command.session.new.tooltip", { project })
   })
+  const tooltipTitle = () => {
+    const project = projectLabel()
+    if (!project) return language.t("command.session.new")
+    const parts = splitI18nTemplate(language.t("command.session.new.tooltip"), "project")
+    return (
+      <For each={parts}>
+        {(part) =>
+          part.type === "token" ? <span data-slot="rail-tooltip-mark">{project}</span> : part.value
+        }
+      </For>
+    )
+  }
 
   return (
     <Show when={mount()}>
       {(node) => (
         <Portal mount={node()}>
           <div class="mr-2 flex items-center gap-1">
-            <Tooltip placement="bottom" value={tooltip()}>
+            <RailTooltip title={tooltipTitle()} placement="bottom">
               <IconButton
                 data-action="session-new-button"
                 icon="new-session"
@@ -109,7 +122,7 @@ function ProjectStatusPortal() {
                   navigate(`/${params.dir}/session`)
                 }}
               />
-            </Tooltip>
+            </RailTooltip>
             <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
               <StatusPopover />
             </Tooltip>

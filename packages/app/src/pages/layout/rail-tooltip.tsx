@@ -60,15 +60,22 @@ function RailKeybind(props: { value: string }) {
   )
 }
 
+export function railTooltipPlacement(input: { mobile?: boolean; placement?: "right" | "bottom" }) {
+  if (input.placement) return input.placement
+  return input.mobile ? "bottom" : "right"
+}
+
 export function RailTooltip(props: {
   mobile?: boolean
-  title: string
+  placement?: "right" | "bottom"
+  title: JSX.Element
   keybind?: string
   inactive?: boolean
   children: JSX.Element
 }): JSX.Element {
   const [pos, setPos] = createSignal<{ left: number; top: number; x: string }>()
   let node: HTMLDivElement | undefined
+  const below = () => railTooltipPlacement(props) === "bottom"
 
   const hide = () => setPos(undefined)
 
@@ -76,7 +83,7 @@ export function RailTooltip(props: {
     if (!node) return
     const rect = node.getBoundingClientRect()
     setPos(
-      props.mobile
+      below()
         ? { left: rect.left + rect.width / 2, top: rect.bottom + 8, x: "-50%" }
         : { left: rect.right + 10, top: rect.top + rect.height / 2, x: "0" },
     )
@@ -137,7 +144,7 @@ export function RailTooltip(props: {
               style={{
                 left: `${p().left}px`,
                 top: `${p().top}px`,
-                transform: `translate(${p().x}, ${props.mobile ? "0" : "-50%"})`,
+                transform: `translate(${p().x}, ${below() ? "0" : "-50%"})`,
               }}
             >
               <span>{props.title}</span>

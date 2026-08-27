@@ -36,6 +36,7 @@ import {
   stripScheduledSessionTitle,
   latestWorkspaceSession,
   newSessionProjectLabel,
+  splitI18nTemplate,
   waitForMatch,
   workingSessionTreeIDs,
   workspaceKey,
@@ -780,6 +781,21 @@ describe("layout workspace helpers", () => {
     expect(newSessionProjectLabel("/unknown/workspace", projects, { sidebarRoot: "/repo/opencode" })).toBe("OpenCode")
     expect(newSessionProjectLabel("/tmp/orphan-app", [])).toBe("orphan-app")
     expect(newSessionProjectLabel(undefined, projects)).toBe("")
+  })
+
+  test("splits i18n templates so a token can be styled", () => {
+    expect(splitI18nTemplate("New session in {{project}}", "project")).toEqual([
+      { type: "text", value: "New session in " },
+      { type: "token" },
+    ])
+    expect(splitI18nTemplate("在 {{project}} 下新建会话", "project")).toEqual([
+      { type: "text", value: "在 " },
+      { type: "token" },
+      { type: "text", value: " 下新建会话" },
+    ])
+    expect(splitI18nTemplate("New session", "project")).toEqual([{ type: "text", value: "New session" }])
+    expect(splitI18nTemplate("{{project}}", "project")).toEqual([{ type: "token" }])
+    expect(splitI18nTemplate("", "project")).toEqual([])
   })
 
   test("extracts api error message and fallback", () => {

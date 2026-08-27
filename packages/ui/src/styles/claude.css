@@ -93,6 +93,10 @@ html[data-theme="claude"] [data-component="project-rail-label"] {
   border-radius: 7px;
 }
 
+html[data-theme="claude"] [data-component="project-rail-label"] [data-slot="rail-tooltip-mark"] {
+  border-radius: 6px;
+}
+
 html[data-theme="claude"] [data-component="user-message"] {
   font-size: var(--claude-message-font-size);
   line-height: 1.55;
