@@ -3998,6 +3998,15 @@ export default function Layout(props: ParentProps) {
         ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ProjectTasksPanel
             directory={() => sidebarProject()?.root ?? routeDir()}
+            worktrees={() => {
+              const project = sidebarProject()
+              return project ? workspaceIds(project) : []
+            }}
+            worktreeName={(directory) => {
+              const project = sidebarProject()
+              const [workspace] = globalSync.child(directory, { bootstrap: false })
+              return workspaceLabel(directory, workspace.vcs?.branch, project?.id)
+            }}
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}

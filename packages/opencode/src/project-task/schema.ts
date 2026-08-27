@@ -43,6 +43,11 @@ export const Info = Schema.Struct({
   status: Status,
   sessionCount: NonNegativeInt,
   progress: Progress,
+  /**
+   * Unique session directories currently mounting this task (worktree / sandbox roots).
+   * Empty when nothing is mounted; UI groups unmounted tasks under the main worktree.
+   */
+  sessionDirectories: Schema.Array(Schema.String),
   time: Schema.Struct({
     created: NonNegativeInt,
     updated: NonNegativeInt,

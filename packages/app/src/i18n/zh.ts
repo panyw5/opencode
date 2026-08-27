@@ -10,6 +10,7 @@ export const dict = {
   "projectTask.create": "新建项目任务",
   "projectTask.edit": "编辑项目任务",
   "projectTask.archive": "归档项目任务",
+  "projectTask.archive.action": "归档",
   "projectTask.archive.confirm": "确定归档 {{title}}？已关联的会话将被取消挂载。",
   "projectTask.loading": "正在加载项目任务…",
   "projectTask.empty": "暂无项目任务。创建一个开始跟踪工作。",
@@ -37,6 +38,8 @@ export const dict = {
   "projectTask.inject.title": "每轮注入任务上下文",
   "projectTask.inject.hint": "开启后，每轮 LLM 调用会收到已关联任务的描述、关联会话与待办。默认开启。",
   "projectTask.done.title": "已完成 ({{count}})",
+  "projectTask.archived.title": "已归档 ({{count}})",
+  "projectTask.worktree.title": "工作树: {{name}}",
   "command.projectTask.open": "打开项目任务",
   "command.projectTask.open.description": "在侧边栏显示当前项目的项目任务",
 

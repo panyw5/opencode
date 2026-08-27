@@ -25,6 +25,7 @@ export const dict = {
   "projectTask.create": "New project task",
   "projectTask.edit": "Edit project task",
   "projectTask.archive": "Archive project task",
+  "projectTask.archive.action": "Archive",
   "projectTask.archive.confirm": "Archive {{title}}? Linked sessions will be unmounted.",
   "projectTask.loading": "Loading project tasks…",
   "projectTask.empty": "No project tasks yet. Create one to start tracking work.",
@@ -54,6 +55,8 @@ export const dict = {
   "projectTask.inject.hint":
     "When enabled, each LLM turn receives the mounted task description, linked sessions, and open todos. Default is on.",
   "projectTask.done.title": "Done ({{count}})",
+  "projectTask.archived.title": "Archived ({{count}})",
+  "projectTask.worktree.title": "Worktree: {{name}}",
   "command.projectTask.open": "Open project tasks",
   "command.projectTask.open.description": "Show project tasks for the current project in the sidebar",
 

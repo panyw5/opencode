@@ -25,9 +25,11 @@ import { createStore } from "solid-js/store"
 import { DialogPromptEditor } from "@/components/dialog-prompt-editor"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
 import { OpenInApp } from "@/components/open-in-app"
+import { getFilename } from "@opencode-ai/core/util/path"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { errorMessage } from "./helpers"
+import { directoriesFromSessions, groupProjectTasksByWorktree, taskNeedsDirectoryHydrate } from "./project-task-groups"
 import {
   Empty,
   ErrorCard,
@@ -213,13 +215,14 @@ function ProjectTaskCard(props: {
           </Show>
           <TaskCardActionButton
             danger
+            icon="trash"
             disabled={!canAct() || props.task.status === "archived"}
             onClick={() => {
               setPending("archive")
               Promise.resolve(props.onArchive(props.task)).finally(() => setPending(undefined))
             }}
           >
-            {pending() === "archive" ? language.t("common.loading") : language.t("projectTask.archive")}
+            {pending() === "archive" ? language.t("common.loading") : language.t("projectTask.archive.action")}
           </TaskCardActionButton>
         </>
       }
@@ -539,6 +542,15 @@ function ProjectTaskDetailDialog(props: {
               )}
             </For>
             <div data-component="project-task-editor-toolbar" class="ml-auto flex items-center gap-2">
+              <OpenInApp path={prdPath()} logPrefix={`project-task-editor taskID=${props.task.id}`} />
+            </div>
+          </div>
+
+          <div
+            class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"
+            classList={{ "border-border-focus": state.mode === "edit" }}
+          >
+            <div class="flex shrink-0 justify-end px-3 pt-3">
               <div
                 role="group"
                 class="flex items-center rounded-lg border border-border-weak-base bg-background-stronger p-0.5"
@@ -570,14 +582,7 @@ function ProjectTaskDetailDialog(props: {
                   {language.t("trellis.tasks.edit")}
                 </button>
               </div>
-              <OpenInApp path={prdPath()} logPrefix={`project-task-editor taskID=${props.task.id}`} />
             </div>
-          </div>
-
-          <div
-            class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"
-            classList={{ "border-border-focus": state.mode === "edit" }}
-          >
             <Show when={state.loading}>
               <div class="flex flex-1 items-center justify-center gap-2 text-12-regular text-text-weak">
                 <Spinner />
@@ -722,8 +727,101 @@ function ProjectTaskDetailDialog(props: {
   )
 }
 
+function sortProjectTasks(tasks: ProjectTask[]) {
+  return tasks.slice().sort((a, b) => {
+    const rank = (status: ProjectTaskStatus) => {
+      if (status === "in_progress") return 0
+      if (status === "open") return 1
+      if (status === "done") return 2
+      return 3
+    }
+    return rank(a.status) - rank(b.status) || b.time.updated - a.time.updated
+  })
+}
+
+function ProjectTaskCards(props: {
+  tasks: ProjectTask[]
+  onOpen: (task: ProjectTask) => void
+  onArchive: (task: ProjectTask) => void | Promise<void>
+  onSetInProgress: (task: ProjectTask) => void | Promise<void>
+}): JSX.Element {
+  const language = useLanguage()
+  const tasks = createMemo(() => sortProjectTasks(props.tasks))
+  const activeTasks = createMemo(() => tasks().filter((task) => task.status === "open" || task.status === "in_progress"))
+  const doneTasks = createMemo(() => tasks().filter((task) => task.status === "done"))
+  const archivedTasks = createMemo(() => tasks().filter((task) => task.status === "archived"))
+  const [doneOpen, setDoneOpen] = createSignal(false)
+  const [archivedOpen, setArchivedOpen] = createSignal(false)
+
+  return (
+    <div class="flex flex-col gap-2">
+      <Show when={activeTasks().length > 0}>
+        <For each={activeTasks()}>
+          {(task) => (
+            <ProjectTaskCard
+              task={task}
+              onOpen={props.onOpen}
+              onArchive={props.onArchive}
+              onSetInProgress={props.onSetInProgress}
+            />
+          )}
+        </For>
+      </Show>
+      <Show when={doneTasks().length > 0}>
+        <Collapsible variant="ghost" open={doneOpen()} onOpenChange={setDoneOpen}>
+          <Collapsible.Trigger class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-12-medium text-text-base hover:bg-surface-raised-base-hover transition-colors">
+            <Collapsible.Arrow />
+            <span>{language.t("projectTask.done.title", { count: doneTasks().length })}</span>
+          </Collapsible.Trigger>
+          <Collapsible.Content>
+            <div class="flex flex-col gap-2 pt-2">
+              <For each={doneTasks()}>
+                {(task) => (
+                  <ProjectTaskCard
+                    task={task}
+                    onOpen={props.onOpen}
+                    onArchive={props.onArchive}
+                    onSetInProgress={props.onSetInProgress}
+                  />
+                )}
+              </For>
+            </div>
+          </Collapsible.Content>
+        </Collapsible>
+      </Show>
+      <Show when={archivedTasks().length > 0}>
+        <Collapsible variant="ghost" open={archivedOpen()} onOpenChange={setArchivedOpen}>
+          <Collapsible.Trigger
+            class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-12-medium text-text-base hover:bg-surface-raised-base-hover transition-colors"
+            data-component="project-task-archived"
+          >
+            <Collapsible.Arrow />
+            <span>{language.t("projectTask.archived.title", { count: archivedTasks().length })}</span>
+          </Collapsible.Trigger>
+          <Collapsible.Content>
+            <div class="flex flex-col gap-2 pt-2">
+              <For each={archivedTasks()}>
+                {(task) => (
+                  <ProjectTaskCard
+                    task={task}
+                    onOpen={props.onOpen}
+                    onArchive={props.onArchive}
+                    onSetInProgress={props.onSetInProgress}
+                  />
+                )}
+              </For>
+            </div>
+          </Collapsible.Content>
+        </Collapsible>
+      </Show>
+    </div>
+  )
+}
+
 export function ProjectTasksPanel(props: {
   directory: Accessor<string>
+  worktrees?: Accessor<string[]>
+  worktreeName?: (directory: string) => string
   width: Accessor<number>
   mobile?: boolean
   onBack: () => void
@@ -736,6 +834,29 @@ export function ProjectTasksPanel(props: {
   const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "" })
   let request = 0
 
+  async function hydrateSessionDirectories(listed: ProjectTask[], requestId: number): Promise<ProjectTask[]> {
+    const sdk = client()
+    return Promise.all(
+      listed.map(async (task) => {
+        if (task.sessionCount <= 0) return { ...task, sessionDirectories: task.sessionDirectories ?? [] }
+        try {
+          const detail = await sdk.projectTask.detail({ taskID: task.id })
+          if (requestId !== request) return { ...task, sessionDirectories: task.sessionDirectories ?? [] }
+          const dirs = directoriesFromSessions(detail.data?.sessions ?? [])
+          console.debug(
+            `[project-task] hydrate-dirs taskID=${task.id} title=${task.title} sessionCount=${String(task.sessionCount)} dirs=${dirs.join("|") || "-"}`,
+          )
+          return { ...task, sessionDirectories: dirs }
+        } catch (error) {
+          console.debug(
+            `[project-task] hydrate-dirs-failed taskID=${task.id} err=${error instanceof Error ? error.message : String(error)}`,
+          )
+          return { ...task, sessionDirectories: task.sessionDirectories ?? [] }
+        }
+      }),
+    )
+  }
+
   async function load(options?: { silent?: boolean }) {
     const current = ++request
     if (!dir()) {
@@ -744,9 +865,16 @@ export function ProjectTasksPanel(props: {
     }
     if (!options?.silent) setState({ loading: true, error: "" })
     try {
-      const result = await client().projectTask.list({})
+      const result = await client().projectTask.list({ includeArchived: "true" })
       if (current !== request) return
-      setState({ tasks: result.data ?? [], error: "" })
+      const listed = result.data ?? []
+      const needsHydrate = listed.some(taskNeedsDirectoryHydrate)
+      console.debug(
+        `[project-task] load directory=${dir()} listed=${listed.length} archived=${String(listed.filter((task) => task.status === "archived").length)} needsHydrate=${String(needsHydrate)} worktrees=${(props.worktrees?.() ?? []).length} silent=${String(!!options?.silent)}`,
+      )
+      const tasks = needsHydrate ? await hydrateSessionDirectories(listed, current) : listed
+      if (current !== request) return
+      setState({ tasks, error: "" })
     } catch (error) {
       if (current !== request) return
       setState("error", errorMessage(error, language.t("common.requestFailed")))
@@ -827,21 +955,32 @@ export function ProjectTasksPanel(props: {
   })
   onCleanup(stop)
 
-  const tasks = createMemo(() =>
-    state.tasks.slice().sort((a, b) => {
-      const rank = (status: ProjectTaskStatus) => {
-        if (status === "in_progress") return 0
-        if (status === "open") return 1
-        if (status === "done") return 2
-        return 3
-      }
-      return rank(a.status) - rank(b.status) || b.time.updated - a.time.updated
-    }),
+  const worktrees = createMemo(() => {
+    const listed = props.worktrees?.() ?? []
+    if (listed.length > 0) return listed
+    const root = dir()
+    return root ? [root] : []
+  })
+  const groups = createMemo(() =>
+    groupProjectTasksByWorktree({
+      tasks: state.tasks,
+      worktrees: worktrees(),
+    }).filter((group) => group.tasks.length > 0),
   )
+  const showWorktreeGroups = createMemo(() => worktrees().length > 1)
+  createEffect(() => {
+    const grouped = groups()
+    const summary = grouped
+      .map((group) => `${group.directory}:${group.tasks.length}`)
+      .join(",")
+    console.debug(
+      `[project-task] list-group directory=${dir() || "none"} worktrees=${worktrees().length} show=${String(showWorktreeGroups())} groups=${summary || "none"} dirs=${state.tasks.map((task) => `${task.id}:${(task.sessionDirectories ?? []).join("|") || "-"}`).join(",") || "none"}`,
+    )
+  })
+  const [worktreeOpen, setWorktreeOpen] = createStore({} as Record<string, boolean>)
+  const worktreeExpanded = (directory: string, taskCount: number) => worktreeOpen[directory] ?? taskCount > 0
 
-  const activeTasks = createMemo(() => tasks().filter((t) => t.status === "open" || t.status === "in_progress"))
-  const doneTasks = createMemo(() => tasks().filter((t) => t.status === "done" || t.status === "archived"))
-  const [doneOpen, setDoneOpen] = createSignal(false)
+  const worktreeLabel = (directory: string) => props.worktreeName?.(directory) || getFilename(directory)
 
   return (
     <TaskPanelShell
@@ -861,33 +1000,53 @@ export function ProjectTasksPanel(props: {
       <Show when={dir()} fallback={<Empty text={language.t("projectTask.empty")} />}>
         <Show when={!state.loading} fallback={<Empty text={language.t("projectTask.loading")} />}>
           <Show when={!state.error} fallback={<ErrorCard err={state.error} />}>
-            <Show when={tasks().length > 0} fallback={<Empty text={language.t("projectTask.empty")} />}>
-              <div class="flex flex-col gap-2">
-                <Show when={activeTasks().length > 0}>
-                  <For each={activeTasks()}>
-                    {(task) => (
-                      <ProjectTaskCard task={task} onOpen={open} onArchive={archive} onSetInProgress={setInProgress} />
+            <Show when={state.tasks.length > 0} fallback={<Empty text={language.t("projectTask.empty")} />}>
+              <Show
+                when={showWorktreeGroups()}
+                fallback={
+                  <ProjectTaskCards
+                    tasks={state.tasks}
+                    onOpen={open}
+                    onArchive={archive}
+                    onSetInProgress={setInProgress}
+                  />
+                }
+              >
+                <div class="flex flex-col gap-3">
+                  <For each={groups()}>
+                    {(group) => (
+                      <Collapsible
+                        variant="ghost"
+                        open={worktreeExpanded(group.directory, group.tasks.length)}
+                        onOpenChange={(open) => setWorktreeOpen(group.directory, open)}
+                      >
+                        <Collapsible.Trigger
+                          class="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-16-medium text-text-strong hover:bg-surface-raised-base-hover transition-colors"
+                          data-component="project-task-worktree"
+                          data-worktree={group.directory}
+                        >
+                          <Collapsible.Arrow />
+                          <Icon name="branch" class="shrink-0 text-icon-strong-base" />
+                          <span class="min-w-0 truncate">
+                            {language.t("projectTask.worktree.title", { name: worktreeLabel(group.directory) })}
+                          </span>
+                          <span class="ml-auto shrink-0 text-13-medium text-text-base">{group.tasks.length}</span>
+                        </Collapsible.Trigger>
+                        <Collapsible.Content>
+                          <div class="flex flex-col gap-2 pt-2 pl-2">
+                            <ProjectTaskCards
+                              tasks={group.tasks}
+                              onOpen={open}
+                              onArchive={archive}
+                              onSetInProgress={setInProgress}
+                            />
+                          </div>
+                        </Collapsible.Content>
+                      </Collapsible>
                     )}
                   </For>
-                </Show>
-                <Show when={doneTasks().length > 0}>
-                  <Collapsible variant="ghost" open={doneOpen()} onOpenChange={setDoneOpen}>
-                    <Collapsible.Trigger class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-12-medium text-text-base hover:bg-surface-raised-base-hover transition-colors">
-                      <Collapsible.Arrow />
-                      <span>{language.t("projectTask.done.title", { count: doneTasks().length })}</span>
-                    </Collapsible.Trigger>
-                    <Collapsible.Content>
-                      <div class="flex flex-col gap-2 pt-2">
-                        <For each={doneTasks()}>
-                          {(task) => (
-                            <ProjectTaskCard task={task} onOpen={open} onArchive={archive} onSetInProgress={setInProgress} />
-                          )}
-                        </For>
-                      </div>
-                    </Collapsible.Content>
-                  </Collapsible>
-                </Show>
-              </div>
+                </div>
+              </Show>
             </Show>
           </Show>
         </Show>

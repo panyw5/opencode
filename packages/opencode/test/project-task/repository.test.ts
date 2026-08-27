@@ -37,7 +37,7 @@ function cleanup() {
 }
 
 let sessionSeq = 0
-function seedSession(input?: { title?: string; mountedTaskID?: ProjectTaskID }) {
+function seedSession(input?: { title?: string; mountedTaskID?: ProjectTaskID; directory?: string }) {
   sessionSeq += 1
   const id = SessionID.make(`ses_project_task_test_${sessionSeq}`)
   const now = Date.now()
@@ -47,7 +47,7 @@ function seedSession(input?: { title?: string; mountedTaskID?: ProjectTaskID }) 
         id,
         project_id: projectID,
         slug: `s${sessionSeq}`,
-        directory,
+        directory: input?.directory ?? directory,
         title: input?.title ?? "Session",
         version: "test",
         mounted_task_id: input?.mountedTaskID ?? null,
@@ -107,6 +107,7 @@ describe("ProjectTaskRepository", () => {
     const listed = await Effect.runPromise(ProjectTaskRepository.list({ projectID }))
     expect(listed).toHaveLength(1)
     expect(listed[0].sessionCount).toBe(2)
+    expect(listed[0].sessionDirectories).toEqual([directory])
     expect(listed[0].progress).toEqual({
       total: 5,
       completed: 2,
@@ -139,5 +140,22 @@ describe("ProjectTaskRepository", () => {
 
     const withArchived = await Effect.runPromise(ProjectTaskRepository.list({ projectID, includeArchived: true }))
     expect(withArchived).toHaveLength(1)
+  })
+
+  test("lists unique session directories across worktrees", async () => {
+    seedProject()
+    const created = await Effect.runPromise(
+      ProjectTaskRepository.create(projectID, {
+        title: "Split by worktree",
+        status: "open",
+      }),
+    )
+    seedSession({ title: "main", mountedTaskID: created.id, directory })
+    seedSession({ title: "sandbox", mountedTaskID: created.id, directory: `${directory}-wt` })
+
+    const listed = await Effect.runPromise(ProjectTaskRepository.list({ projectID }))
+    expect(listed).toHaveLength(1)
+    expect(listed[0].sessionCount).toBe(2)
+    expect(listed[0].sessionDirectories.toSorted()).toEqual([directory, `${directory}-wt`].toSorted())
   })
 })
