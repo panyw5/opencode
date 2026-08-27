@@ -354,7 +354,7 @@ type PromptSubmitInput = {
   onNewSessionWorktreeReset?: () => void
   shouldQueue?: Accessor<boolean>
   onQueue?: (draft: FollowupDraft) => void
-  onAbort?: () => void
+  onAbort?: () => void | Promise<void>
   onSubmit?: () => void
   onSubmitted?: () => void
 }
@@ -413,7 +413,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
     console.debug(`[abort] optimistic local state sessionID=${sessionID} msgCompleted=${optimisticTarget ?? "none"} dt=${performance.now() - t0}`)
 
-    input.onAbort?.()
+    try {
+      await input.onAbort?.()
+      console.debug(`[abort] pre-abort hook done sessionID=${sessionID} dt=${performance.now() - t0}`)
+    } catch (error) {
+      console.error(
+        `[abort] pre-abort hook failed sessionID=${sessionID} err=${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
 
     const queued = pending.get(sessionID)
     if (queued) {

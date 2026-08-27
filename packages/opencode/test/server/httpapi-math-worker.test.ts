@@ -270,6 +270,29 @@ describe("Math worker HttpApi", () => {
           task: "# redirected\nProve lemma B.\n",
         })
 
+        const user = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: worker.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "math-worker",
+          model: { providerID: ProviderID.make("test"), modelID: ModelID.make("test-model") },
+        })
+        yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: worker.id,
+          parentID: user.id,
+          role: "assistant",
+          mode: "math-worker",
+          agent: "math-worker",
+          path: { cwd: test.directory, root: test.directory },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: ModelID.make("test-model"),
+          providerID: ProviderID.make("test"),
+          time: { created: Date.now() },
+        } satisfies MessageV2.Assistant)
+
         const stopResponse = yield* Effect.promise(() =>
           Server.Default().app.request(
             `${endpoint(SessionPaths.mathWorkerStop, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
@@ -280,6 +303,13 @@ describe("Math worker HttpApi", () => {
           sessionID: worker.id,
           state: "stopping",
         })
+        const stoppedMessages = yield* sessions.messages({ sessionID: worker.id })
+        const stoppedAssistant = stoppedMessages.findLast((message) => message.info.role === "assistant")
+        expect(stoppedAssistant?.info.role).toBe("assistant")
+        if (stoppedAssistant?.info.role === "assistant") {
+          expect(stoppedAssistant.info.time.completed).toBeNumber()
+          expect(stoppedAssistant.info.error?.name).toBe("MessageAbortedError")
+        }
         yield* pollWithTimeout(
           Effect.sync(() => (processStopped(process.pid) ? true : undefined)),
           "stop endpoint did not terminate the detached worker process group",

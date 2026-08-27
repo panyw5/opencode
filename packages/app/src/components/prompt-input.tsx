@@ -92,7 +92,7 @@ interface PromptInputProps {
   onEditLoaded?: () => void
   shouldQueue?: () => boolean
   onQueue?: (draft: FollowupDraft) => void
-  onAbort?: () => void
+  onAbort?: () => void | Promise<void>
   onSubmit?: () => void
   onSubmitted?: () => void
   onScrollToBottom?: () => void

@@ -5,6 +5,7 @@ import { Session } from "@/session/session"
 import { Permission } from "@/permission"
 import {
   buildWorkerKickoff,
+  completedWorkerFactId,
   discoverMathWorkers,
   ensureMathWorker,
   latestAcceptedFactId,
@@ -109,6 +110,7 @@ describe("math.worker", () => {
       expect(prompt).toContain("round 3")
       expect(prompt).toContain("Prove lemma L")
       expect(prompt).toContain("fact_submit")
+      expect(prompt).toContain("MATH_WORKER_TASK_COMPLETE")
       const config = JSON.parse(
         workerMcpConfig({ projectDir: "/tmp/math", workspace: "/tmp/work", sessionID: "ses_test" }),
       )
@@ -132,6 +134,23 @@ describe("math.worker", () => {
         },
       ] as unknown as MessageV2.WithParts[]
       expect(latestAcceptedFactId(messages)).toBe("abc123")
+    }),
+  )
+
+  it.instance("accepts a worker completion marker only with a verified fact", () =>
+    Effect.gen(function* () {
+      const message = {
+        info: { role: "assistant" },
+        parts: [{ type: "text", text: "Proof complete.\nMATH_WORKER_TASK_COMPLETE" }],
+      } as unknown as MessageV2.WithParts
+      expect(completedWorkerFactId(message, "fact123")).toBe("fact123")
+      expect(completedWorkerFactId(message, undefined)).toBeUndefined()
+
+      const partial = {
+        info: { role: "assistant" },
+        parts: [{ type: "text", text: "MATH_WORKER_TASK_COMPLETE is not justified yet." }],
+      } as unknown as MessageV2.WithParts
+      expect(completedWorkerFactId(partial, "fact123")).toBeUndefined()
     }),
   )
 

@@ -637,6 +637,7 @@ export function SessionComposerRegion(props: {
   onNewSessionWorktreeReset: () => void
   onSubmit: () => void
   onSubmitted?: () => void
+  onAbort?: () => void | Promise<void>
   onResponseSubmit: () => void
   onScrollToBottom: () => void
   scrollState?: { overflow: boolean; bottom: boolean }
@@ -1196,7 +1197,10 @@ export function SessionComposerRegion(props: {
                 onEditLoaded={props.followup?.onEditLoaded}
                 shouldQueue={props.followup?.queue}
                 onQueue={props.followup?.onQueue}
-                onAbort={props.followup?.onAbort}
+                onAbort={async () => {
+                  props.followup?.onAbort()
+                  await props.onAbort?.()
+                }}
                 onSubmit={props.onSubmit}
                 onSubmitted={props.onSubmitted}
                 onScrollToBottom={props.onScrollToBottom}

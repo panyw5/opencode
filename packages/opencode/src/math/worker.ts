@@ -656,11 +656,28 @@ export function buildWorkerKickoff(input: { task: string; round: number }): stri
     "Search verified facts before relying on prior work. Global memory and prior reports are hypotheses, never proof bricks.",
     "Record useful plans, obstacles, dead ends, and partial findings with math-truth memory tools while working.",
     "Submit a self-contained statement and proof through math-truth fact_submit only when every step is justified. Cite only verified fact_id values as predecessors.",
+    "When the entire assigned TASK is discharged by an accepted fact chain, put the exact standalone line MATH_WORKER_TASK_COMPLETE in your final response. Never emit it for partial progress, a rejected submission, or an open gap.",
     "Do not run code or spawn subagents. If the problem remains open, preserve progress in shared memory and finish the round normally.",
     "",
     "# Assigned TASK",
     input.task.trim(),
   ].join("\n")
+}
+
+export const WORKER_TASK_COMPLETE_MARKER = "MATH_WORKER_TASK_COMPLETE"
+
+export function hasWorkerCompletionMarker(message: MessageV2.WithParts): boolean {
+  if (message.info.role !== "assistant") return false
+  return message.parts.some(
+    (part) =>
+      part.type === "text" &&
+      part.text.split(/\r?\n/).some((line) => line.trim() === WORKER_TASK_COMPLETE_MARKER),
+  )
+}
+
+export function completedWorkerFactId(message: MessageV2.WithParts, lastFactId: string | undefined): string | undefined {
+  if (!lastFactId || !hasWorkerCompletionMarker(message)) return
+  return lastFactId
 }
 
 export function latestAcceptedFactId(messages: MessageV2.WithParts[]): string | undefined {
@@ -710,6 +727,8 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     parts: [{ type: "text", text: buildWorkerKickoff({ task, round: input.round }) }],
   })
   const lastFactId = latestAcceptedFactId(yield* sessions.messages({ sessionID: input.sessionID }))
+  const completionMarkerPresent = hasWorkerCompletionMarker(result)
+  const completedFactId = completedWorkerFactId(result, lastFactId)
   const stopRequested = existsSync(stopPath(input.projectDir, input.sessionID))
   patchWorker(input.projectDir, input.sessionID, {
     lastHeartbeatAt: Date.now(),
@@ -724,9 +743,11 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     role: result.info.role,
     error: result.info.role === "assistant" ? result.info.error?.name : undefined,
     lastFactId,
+    completionMarkerPresent,
+    completionAccepted: completedFactId !== undefined,
     stopRequested,
   })
-  return result
+  return { result, completedFactId }
 })
 
 export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
@@ -758,20 +779,34 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
   })
   let round = existing?.round ?? 0
   const marker = stopPath(input.projectDir, sessionID)
+  let completedFactId: string | undefined
   log.info("math worker loop start", { sessionID, intervalMs: input.intervalMs, pid: process.pid, marker })
   while (!existsSync(marker)) {
     round += 1
     const startedAt = Date.now()
     log.info("math worker round start", { sessionID, round, pid: process.pid, markerPresent: false })
     if (input.heartbeatOnly) yield* writeHeartbeat({ sessionID, round, projectDir: input.projectDir })
-    else
-      yield* runWorkerRound({
+    else {
+      const outcome = yield* runWorkerRound({
         sessionID,
         round,
         projectDir: input.projectDir,
         model: input.model ?? existing?.model,
         variant: input.variant ?? existing?.variant,
       })
+      completedFactId = outcome.completedFactId
+      log.info("math worker completion decision", {
+        sessionID,
+        round,
+        completed: completedFactId !== undefined,
+        completedFactId,
+      })
+      if (completedFactId) {
+        writeFileSync(marker, `completed fact_id=${completedFactId} round=${round} ts=${Date.now()}\n`, "utf8")
+        patchWorker(input.projectDir, sessionID, { state: "stopping", lastFactId: completedFactId })
+        log.info("math worker completion marker written", { sessionID, round, completedFactId, marker })
+      }
+    }
     log.info("math worker round finish", {
       sessionID,
       round,
@@ -779,10 +814,18 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
       durationMs: Date.now() - startedAt,
       markerPresent: existsSync(marker),
     })
-    yield* Effect.sleep(Duration.millis(input.intervalMs))
+    if (!completedFactId) yield* Effect.sleep(Duration.millis(input.intervalMs))
   }
   patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })
-  log.info("math worker loop stop", { sessionID, round, pid: process.pid, marker, markerPresent: true })
+  log.info("math worker loop stop", {
+    sessionID,
+    round,
+    pid: process.pid,
+    marker,
+    markerPresent: true,
+    reason: completedFactId ? "task-complete" : "stop-requested",
+    completedFactId,
+  })
   return round
 })
 

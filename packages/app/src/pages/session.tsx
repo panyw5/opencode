@@ -541,6 +541,51 @@ export default function Page() {
       console.warn("[math-swarm] refresh failed", error)
     }
   }
+  createEffect(
+    on(
+      () => {
+        const current = info()
+        if (current?.agent !== "math-worker" || !current.parentID) return
+        return { parentSessionID: current.parentID, workerSessionID: current.id }
+      },
+      (target) => {
+        if (!target) return
+        let cancelled = false
+        const reconcileChild = async () => {
+          console.debug(
+            `[math-swarm] child reconcile start parent=${target.parentSessionID} worker=${target.workerSessionID}`,
+          )
+          try {
+            const workers = await listMathWorkers({
+              sdk,
+              platform,
+              auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+              parentSessionID: target.parentSessionID,
+            })
+            if (cancelled) return
+            const worker = workers.find((entry) => entry.sessionID === target.workerSessionID)
+            const running = worker?.alive === true && worker.state === "running"
+            globalSync.session.status.set(sdk.directory, target.workerSessionID, {
+              type: running ? "busy" : "idle",
+            })
+            console.debug(
+              `[math-swarm] child reconcile finish parent=${target.parentSessionID} worker=${target.workerSessionID} found=${String(!!worker)} alive=${String(worker?.alive ?? false)} state=${worker?.state ?? "missing"} ui=${running ? "busy" : "idle"}`,
+            )
+          } catch (error) {
+            console.warn(
+              `[math-swarm] child reconcile failed parent=${target.parentSessionID} worker=${target.workerSessionID} error=${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
+        }
+        void reconcileChild()
+        const timer = window.setInterval(() => void reconcileChild(), 10_000)
+        onCleanup(() => {
+          cancelled = true
+          window.clearInterval(timer)
+        })
+      },
+    ),
+  )
   createEffect(() => {
     const parentSessionID = params.id
     if (!parentSessionID || !mathSwarmEnabled()) {
@@ -1493,6 +1538,25 @@ export default function Page() {
     } finally {
       setMathSwarm("busy", entry.sessionID, false)
     }
+  }
+  const stopCurrentMathWorkerOnAbort = async () => {
+    const current = info()
+    if (current?.agent !== "math-worker" || !current.parentID) return
+    const worker = mathSwarm.workers.find((entry) => entry.sessionID === current.id)
+    console.debug(
+      `[math-swarm] composer stop start parent=${current.parentID} worker=${current.id} project=${worker?.project ?? "default"}`,
+    )
+    const result = await stopMathWorkerApi({
+      sdk,
+      platform,
+      auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+      parentSessionID: current.parentID,
+      workerSessionID: current.id,
+      project: worker?.project,
+    })
+    console.debug(
+      `[math-swarm] composer stop finish parent=${current.parentID} worker=${current.id} alive=${result.alive} state=${result.state}`,
+    )
   }
   const editMathWorkerTask = async (entry: SessionMathWorkerEntry) => {
     const parentSessionID = params.id
@@ -3172,6 +3236,7 @@ export default function Page() {
             onSubmitted={() => {
               resumeScroll()
             }}
+            onAbort={stopCurrentMathWorkerOnAbort}
             onResponseSubmit={resumeScroll}
             onScrollToBottom={resumeScroll}
             scrollState={ui.scroll}

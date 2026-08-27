@@ -44,7 +44,11 @@ export function SessionMathFloat(props: {
   const stateLabel = (entry: SessionMathWorkerEntry) => {
     if (entry.state === "running") return language.t("session.mathSwarm.state.running")
     if (entry.state === "stopping") return language.t("session.mathSwarm.state.stopping")
-    if (entry.state === "dead") return language.t("session.mathSwarm.state.dead")
+    if (entry.state === "dead") {
+      return language.t(
+        entry.stopRequested ? "session.mathSwarm.state.dead" : "session.mathSwarm.state.interrupted",
+      )
+    }
     return language.t("session.mathSwarm.state.missing")
   }
   const detail = (entry: SessionMathWorkerEntry) => {
