@@ -165,8 +165,16 @@
 
 [data-component="icon-button"].titlebar-icon {
   width: 32px;
-  height: 24px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   aspect-ratio: auto;
+  box-sizing: border-box;
+}
+
+[data-component="icon-button"].titlebar-icon [data-component="icon"] {
+  width: 20px;
+  height: 20px;
 }
 
 [data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] {

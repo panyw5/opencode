@@ -99,7 +99,7 @@ function ProjectStatusPortal() {
                 icon="new-session"
                 size="normal"
                 variant="ghost"
-                class="titlebar-icon w-8 h-6 p-0 box-border"
+                class="titlebar-icon w-8 h-8 p-0 box-border"
                 aria-label={tooltip()}
                 onClick={() => {
                   if (!params.dir) return

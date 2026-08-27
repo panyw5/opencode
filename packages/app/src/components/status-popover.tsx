@@ -597,14 +597,14 @@ export function StatusPopover() {
       triggerAs={Button}
       triggerProps={{
         variant: "ghost",
-        class: "titlebar-icon w-8 h-6 p-0 box-border",
+        class: "titlebar-icon w-8 h-8 p-0 box-border",
         "aria-label": language.t("status.popover.trigger"),
         style: { scale: 1 },
       }}
       trigger={
-        <div class="relative size-4">
-          <div class="badge-mask-tight size-4 flex items-center justify-center">
-            <Icon name={shown() ? "status-active" : "status"} size="small" />
+        <div class="relative size-5">
+          <div class="badge-mask-tight size-5 flex items-center justify-center">
+            <Icon name={shown() ? "status-active" : "status"} size="normal" />
           </div>
           <div
             classList={{
