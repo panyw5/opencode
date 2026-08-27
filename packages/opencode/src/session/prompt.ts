@@ -2066,23 +2066,25 @@ export const layer = Layer.effect(
             const bypassAgentCheck = lastUserMsg?.parts.some((p) => p.type === "agent") ?? false
             const promptOps = yield* ops()
 
-            const tools = yield* SessionTools.resolve({
-              agent,
-              session,
-              model,
-              processor: handle,
-              bypassAgentCheck,
-              messages: msgs,
-              promptOps,
-            }).pipe(
-              Effect.provideService(Plugin.Service, plugin),
-              Effect.provideService(Permission.Service, permission),
-              Effect.provideService(ToolRegistry.Service, registry),
-              Effect.provideService(MCP.Service, mcp),
-              Effect.provideService(Truncate.Service, truncate),
-            )
+            const tools = isLastStep
+              ? {}
+              : yield* SessionTools.resolve({
+                  agent,
+                  session,
+                  model,
+                  processor: handle,
+                  bypassAgentCheck,
+                  messages: msgs,
+                  promptOps,
+                }).pipe(
+                  Effect.provideService(Plugin.Service, plugin),
+                  Effect.provideService(Permission.Service, permission),
+                  Effect.provideService(ToolRegistry.Service, registry),
+                  Effect.provideService(MCP.Service, mcp),
+                  Effect.provideService(Truncate.Service, truncate),
+                )
 
-            if (lastUser.format?.type === "json_schema") {
+            if (!isLastStep && lastUser.format?.type === "json_schema") {
               tools["StructuredOutput"] = createStructuredOutputTool({
                 schema: lastUser.format.schema,
                 onSuccess(output) {
@@ -2107,7 +2109,7 @@ export const layer = Layer.effect(
             // earlier in the loop (see project-task inject above), so it is already in
             // modelMsgs via toModelMessages — do not also push into system.
             const format = lastUser.format ?? { type: "text" as const }
-            if (format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
+            if (!isLastStep && format.type === "json_schema") system.push(STRUCTURED_OUTPUT_SYSTEM_PROMPT)
             const result = yield* handle.process({
               user: lastUser,
               agent,
@@ -2118,12 +2120,21 @@ export const layer = Layer.effect(
               messages: [...modelMsgs, ...(isLastStep ? [{ role: "assistant" as const, content: MAX_STEPS }] : [])],
               tools,
               model,
-              toolChoice: format.type === "json_schema" ? "required" : undefined,
+              toolChoice: isLastStep ? "none" : format.type === "json_schema" ? "required" : undefined,
             })
 
             if (structured !== undefined) {
               handle.message.structured = structured
               handle.message.finish = handle.message.finish ?? "stop"
+              yield* sessions.updateMessage(handle.message)
+              return "break" as const
+            }
+
+            if (isLastStep && format.type === "json_schema" && !handle.message.error) {
+              handle.message.error = new MessageV2.StructuredOutputError({
+                message: "Model did not produce structured output before reaching the step limit",
+                retries: 0,
+              }).toObject()
               yield* sessions.updateMessage(handle.message)
               return "break" as const
             }
@@ -2140,6 +2151,7 @@ export const layer = Layer.effect(
               }
             }
 
+            if (isLastStep) return "break" as const
             if (result === "stop") return "break" as const
             if (result === "compact") {
               if (compactRetries >= MAX_COMPACTION_RETRIES) {

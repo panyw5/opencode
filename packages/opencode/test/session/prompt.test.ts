@@ -937,6 +937,7 @@ it.instance("injects the max-steps guard on the first request when steps is one"
     const inputs = yield* llm.inputs
     expect(inputs).toHaveLength(1)
     expect(JSON.stringify(inputs[0]?.messages)).toContain("CRITICAL - MAXIMUM STEPS REACHED")
+    expect(inputs[0]?.tools).toBeUndefined()
   }),
 )
 
@@ -967,6 +968,69 @@ it.instance("injects the max-steps guard only on the final configured step", () 
     expect(inputs).toHaveLength(2)
     expect(JSON.stringify(inputs[0]?.messages)).not.toContain("CRITICAL - MAXIMUM STEPS REACHED")
     expect(JSON.stringify(inputs[1]?.messages)).toContain("CRITICAL - MAXIMUM STEPS REACHED")
+    expect(inputs[0]?.tools).toBeDefined()
+    expect(inputs[1]?.tools).toBeUndefined()
+  }),
+)
+
+it.instance("does not start another turn when the final step returns a tool call", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { model: "test/test-model", steps: 1 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+    })
+    yield* llm.push(reply().tool("bash", { command: "echo should-not-run" }).stop())
+
+    yield* prompt.loop({ sessionID: session.id })
+
+    expect(yield* llm.calls).toBe(1)
+    const inputs = yield* llm.inputs
+    expect(inputs).toHaveLength(1)
+    expect(inputs[0]?.tools).toBeUndefined()
+  }),
+)
+
+it.instance("ends strict json schema mode without materializing its tool after the step limit", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { model: "test/test-model", steps: 1 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ title: "Pinned" })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      format: {
+        type: "json_schema",
+        schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+        retryCount: 0,
+      },
+      parts: [{ type: "text", text: "hello" }],
+    })
+    yield* llm.text('{"answer":"done"}')
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+
+    expect(yield* llm.calls).toBe(1)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.error?.name).toBe("StructuredOutputError")
+    const inputs = yield* llm.inputs
+    expect(inputs[0]?.tools).toBeUndefined()
   }),
 )
 
