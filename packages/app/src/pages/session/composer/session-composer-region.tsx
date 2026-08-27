@@ -31,6 +31,7 @@ import type { SessionComposerState } from "@/pages/session/composer/session-comp
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
+import { canShowUserMessageMenuItems } from "@/pages/session/composer/session-user-message-menu"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 
 function ComposerDockExit(props: {
@@ -244,17 +245,23 @@ type SessionUserMessageEntry = {
 function SessionUserMessageMenu(props: {
   entries: SessionUserMessageEntry[]
   loading: boolean
+  complete: boolean
+  count: number
   onLoadAll: () => void
   onOpen: (entry: SessionUserMessageEntry) => void
 }) {
   const language = useLanguage()
   const [open, setOpen] = createSignal(false)
+  const showItems = createMemo(() =>
+    canShowUserMessageMenuItems({ loading: props.loading, complete: props.complete }),
+  )
 
   createEffect(() => {
     if (!open()) return
     console.debug(
-      `[user-message-menu] open entries=${String(props.entries.length)} loading=${String(props.loading)}`,
+      `[user-message-menu] open count=${String(props.count)} entries=${String(props.entries.length)} loading=${String(props.loading)} complete=${String(props.complete)} showItems=${String(showItems())}`,
     )
+    if (props.complete || props.loading) return
     props.onLoadAll()
   })
 
@@ -266,11 +273,11 @@ function SessionUserMessageMenu(props: {
         size="small"
         icon="speech-bubble"
         class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
-        aria-label="查看用户消息"
+        aria-label={language.t("session.userMessages.open")}
         data-testid="session-user-message-menu-trigger"
       >
-        <span>查看用户消息</span>
-        <span class="text-11-medium text-text-weak">({props.entries.length})</span>
+        <span>{language.t("session.userMessages.button")}</span>
+        <span class="text-11-medium text-text-weak">({props.count})</span>
         <Icon name="chevron-down" size="small" class="text-icon-weak" />
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
@@ -285,31 +292,39 @@ function SessionUserMessageMenu(props: {
         >
           <DropdownMenu.Group>
             <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-              <span>用户消息</span>
-              <Show when={props.loading}>
-                <span class="ml-2 normal-case tracking-normal">正在载入全部消息…</span>
-              </Show>
+              <span>{language.t("session.userMessages.menuLabel")}</span>
             </DropdownMenu.GroupLabel>
-            <For each={props.entries}>
-              {(entry, index) => (
-                <DropdownMenu.Item
-                  class="min-w-0"
-                  onSelect={() => props.onOpen(entry)}
-                  data-testid="session-user-message-menu-item"
-                >
-                  <div class="min-w-0 flex flex-col gap-1">
-                    <DropdownMenu.ItemLabel class="truncate text-13-medium text-text-strong">
-                      {entry.text}
-                    </DropdownMenu.ItemLabel>
-                    <DropdownMenu.ItemDescription class="text-11-regular text-text-weak">
-                      <span>第 {index() + 1} 条</span>
-                      <span> - </span>
-                      <span>{formatChildAgentTime(entry.created, language.intl())}</span>
-                    </DropdownMenu.ItemDescription>
-                  </div>
+            <Show
+              when={showItems()}
+              fallback={
+                <DropdownMenu.Item disabled data-testid="session-user-message-menu-loading">
+                  <DropdownMenu.ItemLabel class="text-13-regular text-text-weak">
+                    {language.t("session.userMessages.loading")}
+                  </DropdownMenu.ItemLabel>
                 </DropdownMenu.Item>
-              )}
-            </For>
+              }
+            >
+              <For each={props.entries}>
+                {(entry, index) => (
+                  <DropdownMenu.Item
+                    class="min-w-0"
+                    onSelect={() => props.onOpen(entry)}
+                    data-testid="session-user-message-menu-item"
+                  >
+                    <div class="min-w-0 flex flex-col gap-1">
+                      <DropdownMenu.ItemLabel class="truncate text-13-medium text-text-strong">
+                        {entry.text}
+                      </DropdownMenu.ItemLabel>
+                      <DropdownMenu.ItemDescription class="text-11-regular text-text-weak">
+                        <span>{language.t("session.userMessages.index", { index: index() + 1 })}</span>
+                        <span> - </span>
+                        <span>{formatChildAgentTime(entry.created, language.intl())}</span>
+                      </DropdownMenu.ItemDescription>
+                    </div>
+                  </DropdownMenu.Item>
+                )}
+              </For>
+            </Show>
           </DropdownMenu.Group>
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
@@ -665,6 +680,8 @@ export function SessionComposerRegion(props: {
   onOpenChildAgent?: (entry: SessionChildAgentEntry) => void
   userMessages?: SessionUserMessageEntry[]
   userMessagesLoading?: boolean
+  userMessagesComplete?: boolean
+  userMessageCount?: number
   onLoadAllUserMessages?: () => void
   onOpenUserMessage?: (entry: SessionUserMessageEntry) => void
   subagentNavigation?: {
@@ -790,8 +807,16 @@ export function SessionComposerRegion(props: {
     const onOpen = props.onOpenUserMessage
     const onLoadAll = props.onLoadAllUserMessages
     const entries = props.userMessages ?? []
-    if (!onOpen || !onLoadAll || entries.length === 0) return undefined
-    return { entries, loading: !!props.userMessagesLoading, onLoadAll, onOpen }
+    const count = props.userMessageCount ?? entries.length
+    if (!onOpen || !onLoadAll || count === 0) return undefined
+    return {
+      entries,
+      count,
+      loading: !!props.userMessagesLoading,
+      complete: props.userMessagesComplete ?? true,
+      onLoadAll,
+      onOpen,
+    }
   })
   const visibleSubagentNavigation = createMemo(() => {
     if (platform.platform !== "desktop") return undefined
@@ -1109,7 +1134,9 @@ export function SessionComposerRegion(props: {
                       {(menu) => (
                         <SessionUserMessageMenu
                           entries={menu().entries}
+                          count={menu().count}
                           loading={menu().loading}
+                          complete={menu().complete}
                           onLoadAll={menu().onLoadAll}
                           onOpen={menu().onOpen}
                         />
