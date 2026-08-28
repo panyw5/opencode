@@ -3429,11 +3429,28 @@ function CustomEditor(props: {
   onAddFetchedModel: (id: string, name: string) => void
 }) {
   const language = useLanguage()
+  const [confirmDelete, setConfirmDelete] = createSignal(false)
   const npmOptions = createMemo(() => customProviderNpmPackages(props.form.npm))
   const selectedNpm = createMemo(() => props.form.npm?.trim() || OPENAI_COMPATIBLE)
 
+  createEffect(on(() => `${props.form.mode}:${props.form.providerID}`, () => setConfirmDelete(false), { defer: true }))
+
+  const deleteProvider = () => {
+    if (!confirmDelete()) {
+      setConfirmDelete(true)
+      return
+    }
+    setConfirmDelete(false)
+    props.onDelete()
+  }
+
   return (
-    <div class="flex h-full min-h-0 flex-col">
+    <div
+      class="flex h-full min-h-0 flex-col"
+      classList={{ "pointer-events-none select-none": props.busy || props.form.deleting }}
+      aria-busy={props.busy || props.form.deleting}
+      inert={props.busy || props.form.deleting ? true : undefined}
+    >
       <Show
         when={props.item || props.form.mode === "create"}
         fallback={<div class="px-4 py-10 text-13-regular text-text-weak">{language.t("config.custom.select")}</div>}
@@ -3465,8 +3482,14 @@ function CustomEditor(props: {
               </Toggle>
             </Show>
             <Show when={props.form.mode !== "create"}>
-              <Button size="large" variant="ghost" onClick={props.onDelete} disabled={props.busy}>
-                {language.t("config.action.delete")}
+              <Button
+                size="large"
+                variant="ghost"
+                class={confirmDelete() ? "text-text-danger-base" : undefined}
+                onClick={deleteProvider}
+                disabled={props.busy}
+              >
+                {confirmDelete() ? language.t("config.skills.delete.confirm") : language.t("config.action.delete")}
               </Button>
             </Show>
             <SaveButton
@@ -7363,21 +7386,46 @@ export default function ConfigPage() {
     const id = state.custom.mode === "edit" ? state.customID : state.custom.providerID.trim()
     if (!id) return
     setState("custom", "deleting", true)
+    setState("providerBusy", id)
     const nextProvider = { ...(cfg().provider ?? {}) } as NonNullable<Config["provider"]>
     nextProvider[id] = {} as ProviderCfg
     const nextDisabled = (cfg().disabled_providers ?? []).filter((item) => item !== id)
     const next = { ...cfg(), provider: nextProvider, disabled_providers: nextDisabled }
+    console.info("[config] custom provider delete requested", {
+      providerID: id,
+      providerInConfig: id in (cfg().provider ?? {}),
+      providerCount: Object.keys(cfg().provider ?? {}).length,
+    })
     await globalSDK.client.auth
       .remove({ providerID: id })
-      .catch(() => undefined)
+      .then(() => console.info("[config] custom provider credentials removed", { providerID: id }))
+      .catch((err: unknown) =>
+        console.info("[config] custom provider credentials remove skipped", {
+          providerID: id,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      )
       .then(() => globalSync.updateConfig(next, { refreshProviders: false }))
-      .then((synced) => {
+      .then(async (synced) => {
+        console.info("[config] custom provider config delete completed", {
+          providerID: id,
+          providerStillInConfig: id in (synced.provider ?? {}),
+        })
+        const persisted = await globalSync.refreshConfig(mainDomain)
+        const providerStillInConfig = id in (persisted.provider ?? {})
+        console.info("[config] custom provider delete persistence verified", {
+          providerID: id,
+          providerStillInConfig,
+        })
+        if (providerStillInConfig) {
+          throw new Error(t("config.custom.deleteStillConfigured", { provider: id }))
+        }
+        await refreshProviderState()
         batch(() => {
-          setConfig(synced)
+          setConfig(persisted)
           globalSync.provider.remove(id)
           createCustomProvider()
         })
-        refreshProviderStateInBackground()
         showToast({ variant: "success", title: t("config.action.delete"), description: id })
       })
       .catch((err: unknown) => {
@@ -7386,7 +7434,10 @@ export default function ConfigPage() {
           description: err instanceof Error ? err.message : String(err),
         })
       })
-      .finally(() => setState("custom", "deleting", false))
+      .finally(() => {
+        setState("custom", "deleting", false)
+        if (state.providerBusy === id) setState("providerBusy", "")
+      })
   }
 
   function isConfigCustom(id: string) {

@@ -4,6 +4,7 @@ import { Server } from "../../src/server/server"
 import * as Log from "@opencode-ai/core/util/log"
 import { Global } from "@opencode-ai/core/global"
 import { Effect, Fiber } from "effect"
+import { parse } from "jsonc-parser"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
 import { it } from "../lib/effect"
@@ -113,6 +114,62 @@ describe("config HttpApi", () => {
           formatter: false,
           lsp: false,
         })
+      } finally {
+        ;(Global.Path as { config: string }).config = previousConfigPath
+      }
+    }),
+  )
+
+  it.live(
+    "removes a global provider through the config HttpApi",
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirEffect({})
+      const previousConfigPath = Global.Path.config
+      ;(Global.Path as { config: string }).config = tmp.path
+
+      try {
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(tmp.path, "config.json"),
+            JSON.stringify({
+              provider: {
+                keep: { npm: "@ai-sdk/openai-compatible", models: { model: { name: "Model" } } },
+                remove: { npm: "@ai-sdk/openai-compatible", models: { model: { name: "Model" } } },
+              },
+            }),
+          ),
+        )
+        yield* Effect.promise(() =>
+          Bun.write(path.join(tmp.path, "opencode.jsonc"), "{}"),
+        )
+
+        const response = yield* Effect.promise(() =>
+          Promise.resolve(
+            app().request("/global/config", {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ provider: { remove: {} } }),
+            }),
+          ),
+        )
+
+        expect(response.status).toBe(200)
+        const refresh = yield* Effect.promise(() =>
+          Promise.resolve(app().request("/global/config/refresh", { method: "POST" })),
+        )
+        expect(refresh.status).toBe(200)
+        const refreshBody = yield* Effect.promise(() => refresh.text())
+        expect(JSON.parse(refreshBody)).toMatchObject({
+          provider: { keep: { npm: "@ai-sdk/openai-compatible" } },
+        })
+        const persistedPrimaryText = yield* Effect.promise(() =>
+          Bun.file(path.join(tmp.path, "opencode.jsonc")).text(),
+        )
+        const persistedLegacyText = yield* Effect.promise(() => Bun.file(path.join(tmp.path, "config.json")).text())
+        const persistedPrimary = parse(persistedPrimaryText)
+        const persistedLegacy = parse(persistedLegacyText)
+        expect(persistedPrimary.provider?.remove).toBeUndefined()
+        expect(persistedLegacy.provider?.remove).toBeUndefined()
       } finally {
         ;(Global.Path as { config: string }).config = previousConfigPath
       }

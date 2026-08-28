@@ -13,6 +13,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
 import { GlobalUpgradeInput } from "../groups/global"
+import { isRecord } from "@/util/record"
 
 const log = Log.create({ service: "server" })
 
@@ -83,7 +84,21 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
+      const providerDeletes = Object.entries(ctx.payload.provider ?? {})
+        .filter(([, provider]) => isRecord(provider) && Object.keys(provider).length === 0)
+        .map(([providerID]) => providerID)
+      if (providerDeletes.length > 0) {
+        log.info("global config provider deletion received", { providerIDs: providerDeletes.join(",") })
+      }
       const result = yield* config.updateGlobal(ctx.payload)
+      if (providerDeletes.length > 0) {
+        log.info("global config provider deletion completed", {
+          providerIDs: providerDeletes.join(","),
+          remainingProviderIDs: providerDeletes
+            .filter((providerID) => providerID in (result.info.provider ?? {}))
+            .join(","),
+        })
+      }
       if (result.changed) {
         GlobalBus.emit("event", {
           directory: "global",

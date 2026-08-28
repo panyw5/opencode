@@ -1807,6 +1807,8 @@ export const dict = {
     "Edit the custom provider config inline. This updates `provider`, `disabled_providers`, and auth when needed.",
   "config.custom.saveProvider": "Save provider",
   "config.custom.savingProvider": "Saving provider",
+  "config.custom.deleteStillConfigured":
+    "Provider {{provider}} is still defined by a project or external config file and could not be deleted here.",
   "config.custom.field.providerID": "provider id",
   "config.custom.field.npm": "npm",
   "config.custom.field.name": "name",

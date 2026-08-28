@@ -1754,6 +1754,8 @@ export const dict = {
     "直接在这里编辑自定义提供商配置。这会在需要时更新 `provider`、`disabled_providers` 和 auth。",
   "config.custom.saveProvider": "保存提供商",
   "config.custom.savingProvider": "正在保存",
+  "config.custom.deleteStillConfigured":
+    "提供商 {{provider}} 仍由项目配置或外部配置文件定义，无法在此处删除。",
   "config.custom.field.providerID": "提供商 ID",
   "config.custom.field.npm": "NPM 包",
   "config.custom.field.name": "名称",

@@ -379,6 +379,14 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
       (providerApiKey && patch === "")
         ? undefined
         : patch
+    if (value === undefined) {
+      const document = ConfigParse.jsonc(input, "config patch")
+      let current: unknown = document
+      for (const key of path) {
+        if (!isRecord(current) || !(key in current)) return input
+        current = current[key]
+      }
+    }
     const edits = modify(input, path, value, {
       formattingOptions: {
         insertSpaces: true,
@@ -532,6 +540,31 @@ export const layer = Layer.effect(
         yield* fs.writeFileString(file, next).pipe(Effect.catch(() => Effect.void))
         log.info("migrated channels out of main config", { path: file })
       }
+    })
+
+    const deleteProvidersFromSiblingConfigs = Effect.fnUntraced(function* (
+      primary: string,
+      providerIDs: string[],
+    ) {
+      let changed = false
+      for (const file of mainConfigCandidates()) {
+        if (file === primary) continue
+        const before = yield* readConfigFile(file)
+        if (!before) continue
+        const existing = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
+        const present = providerIDs.filter((providerID) => providerID in (existing.provider ?? {}))
+        if (present.length === 0) continue
+        const provider = Object.fromEntries(present.map((providerID) => [providerID, {}]))
+        const updated = patchJsonc(before, { provider })
+        if (updated === before) continue
+        yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
+        changed = true
+        log.info("global config provider deletion removed sibling definitions", {
+          file,
+          providerIDs: present.join(","),
+        })
+      }
+      return changed
     })
 
     const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
@@ -953,7 +986,17 @@ export const layer = Layer.effect(
       const channelsTouched = "channels" in config
       const patch = writableGlobal(config)
       const existingForLog = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
+      const providerDeletes: string[] = []
       for (const [providerID, provider] of Object.entries(patch.provider ?? {})) {
+        if (Object.keys(provider).length === 0) {
+          providerDeletes.push(providerID)
+          log.info("global config provider deletion applying", {
+            providerID,
+            file,
+            existed: providerID in (existingForLog.provider ?? {}),
+          })
+          continue
+        }
         if (!("models" in provider)) continue
         const previousModels = Object.keys(existingForLog.provider?.[providerID]?.models ?? {})
         const nextModels = Object.keys(provider.models ?? {})
@@ -1000,6 +1043,9 @@ export const layer = Layer.effect(
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
 
+      const siblingProvidersChanged =
+        providerDeletes.length > 0 ? yield* deleteProvidersFromSiblingConfigs(file, providerDeletes) : false
+
       // Also scrub sibling main config files if they still carry legacy channels.
       yield* stripLegacyChannelsFromMainConfigs()
 
@@ -1026,7 +1072,7 @@ export const layer = Layer.effect(
         }
       }
 
-      changed = changed || channelsChanged
+      changed = changed || siblingProvidersChanged || channelsChanged
 
       yield* invalidate()
 

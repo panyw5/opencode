@@ -28,6 +28,7 @@ export default function ProviderEnabledBlock(props: {
         {(item) => (
           <ProviderListButton
             active={props.activePick === `provider:${item.id}`}
+            disabled={props.busyId === item.id}
             item={item}
             models={props.modelsBadge(item.models.length)}
             onClick={() => props.onSelect(item.id)}
