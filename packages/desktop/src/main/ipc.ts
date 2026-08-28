@@ -16,6 +16,7 @@ import type {
   WslConfig,
 } from "../preload/types"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
+import { getAppLaunchPlan, getPowerShellLauncherArgs } from "./apps"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
 import {
   abortExtraAgentTest,
@@ -69,6 +70,7 @@ import {
   setDshPluginEnabledState,
   testCliAgent,
 } from "./cli-agents"
+import { write as writeLog } from "./logging"
 
 const pickerFilters = (ext?: string[]) => {
   if (!ext || ext.length === 0) return undefined
@@ -251,12 +253,47 @@ export function registerIpcHandlers(deps: Deps) {
   })
 
   ipcMain.handle("open-path", async (_event: IpcMainInvokeEvent, path: string, app?: string) => {
-    if (!app) return shell.openPath(path)
-    await new Promise<void>((resolve, reject) => {
-      const [cmd, args] =
-        process.platform === "darwin" ? (["open", ["-a", app, path]] as const) : ([app, [path]] as const)
-      execFile(cmd, args, (err) => (err ? reject(err) : resolve()))
-    })
+    writeLog("open-path", "request received", { path, app: app ?? "default", platform: process.platform })
+    try {
+      if (!app) {
+        writeLog("open-path", "opening with system default", { path })
+        const result = await shell.openPath(path)
+        if (result) throw new Error(result)
+        writeLog("open-path", "system default open completed", { path })
+        return
+      }
+
+      const plan = getAppLaunchPlan(path, app)
+      writeLog("open-path", "application launch planned", {
+        path,
+        command: plan.command,
+        mode: plan.mode,
+        argumentCount: plan.mode === "wait" ? plan.args.length : 0,
+      })
+
+      if (plan.mode === "powershell") {
+        const args = getPowerShellLauncherArgs(plan.command, plan.cwd)
+        writeLog("open-path", "starting PowerShell launcher", { path, command: plan.command })
+        await new Promise<void>((resolve, reject) => {
+          execFile(plan.command, args, { windowsHide: true }, (error) => (error ? reject(error) : resolve()))
+        })
+        writeLog("open-path", "PowerShell window launched", { path, command: plan.command })
+        return
+      }
+
+      await new Promise<void>((resolve, reject) => {
+        execFile(plan.command, plan.args, (error) => (error ? reject(error) : resolve()))
+      })
+      writeLog("open-path", "application open completed", { path, command: plan.command })
+    } catch (error) {
+      writeLog(
+        "open-path",
+        "application open failed",
+        { path, app: app ?? "default", error: error instanceof Error ? error.message : String(error) },
+        "error",
+      )
+      throw error
+    }
   })
   ipcMain.handle("open-in-finder", (_event: IpcMainInvokeEvent, path: string) => openInFinder(path))
   ipcMain.handle("open-in-editor", (_event: IpcMainInvokeEvent, editor: string, path: string) =>

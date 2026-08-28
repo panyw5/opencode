@@ -10,6 +10,34 @@ const exists = (path: string) =>
     .then(() => true)
     .catch(() => false)
 
+export type AppLaunchPlan =
+  | { mode: "wait"; command: string; args: string[] }
+  | { mode: "powershell"; command: string; cwd: string }
+
+export function getAppLaunchPlan(
+  path: string,
+  appName: string,
+  platform: NodeJS.Platform = process.platform,
+): AppLaunchPlan {
+  if (platform === "darwin") return { mode: "wait", command: "open", args: ["-a", appName, path] }
+
+  const executable = appName.replace(/^.*[\\/]/, "").toLowerCase()
+  if (platform === "win32" && ["powershell", "powershell.exe", "pwsh", "pwsh.exe"].includes(executable)) {
+    return { mode: "powershell", command: appName, cwd: path }
+  }
+
+  return { mode: "wait", command: appName, args: [path] }
+}
+
+export function getPowerShellLauncherArgs(command: string, cwd: string) {
+  const quote = (value: string) => `'${value.replace(/'/g, "''")}'`
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `Start-Process -FilePath ${quote(command)} -ArgumentList @('-NoExit') -WorkingDirectory ${quote(cwd)}`,
+  ].join("; ")
+  return ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", Buffer.from(script, "utf16le").toString("base64")]
+}
+
 export function checkAppExists(appName: string) {
   if (process.platform === "win32") return true
   if (process.platform === "linux") return true
