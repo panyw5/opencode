@@ -45,6 +45,14 @@ const Schedule = Schema.Union([
   }),
 ]).annotate({ description: "When the scheduled task should run" })
 
+const Model = Schema.Struct({
+  providerID: Text.annotate({ description: "Provider ID, for example anthropic or openai" }),
+  modelID: Text.annotate({ description: "Model ID exposed by the provider" }),
+  variant: Schema.optional(Text).annotate({
+    description: "Optional model variant controlling reasoning or thinking intensity, for example low, medium, or high",
+  }),
+}).annotate({ description: "Model and optional reasoning or thinking intensity used when the task runs" })
+
 export const Parameters = Schema.Struct({
   name: Text.annotate({ description: "Short name shown in the scheduled tasks UI" }),
   prompt: Text.annotate({ description: "Prompt the agent should execute when the task runs" }),
@@ -213,6 +221,9 @@ const UpdateParameters = Schema.Struct({
     description:
       "existing_session continues this session on every run (default); new_session creates a separate session for each run",
   }),
+  model: Schema.optional(Model).annotate({
+    description: "New model and optional reasoning or thinking intensity used when the task runs",
+  }),
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Whether the task should be enabled. Disabled tasks do not fire until re-enabled.",
   }),
@@ -230,6 +241,10 @@ export const ScheduledTaskUpdateTool = Tool.define<typeof UpdateParameters, { ta
           taskID: params.taskID,
           name: params.name,
           scheduleKind: params.schedule?.kind,
+          executionMode: params.executionMode,
+          modelProviderID: params.model?.providerID,
+          modelID: params.model?.modelID,
+          modelVariant: params.model?.variant,
         })
         yield* ctx.ask({
           permission: "scheduled_task_update",
@@ -240,6 +255,7 @@ export const ScheduledTaskUpdateTool = Tool.define<typeof UpdateParameters, { ta
             name: params.name,
             schedule: params.schedule,
             executionMode: params.executionMode,
+            model: params.model,
             enabled: params.enabled,
           },
         })
@@ -249,12 +265,13 @@ export const ScheduledTaskUpdateTool = Tool.define<typeof UpdateParameters, { ta
           params.prompt === undefined &&
           params.schedule === undefined &&
           params.executionMode === undefined &&
+          params.model === undefined &&
           params.enabled === undefined
         ) {
           return {
             title: "No scheduled task fields to update",
             output: JSON.stringify(
-              { error: "Provide at least one of name, prompt, schedule, executionMode, enabled" },
+              { error: "Provide at least one of name, prompt, schedule, executionMode, model, enabled" },
               null,
               2,
             ),
@@ -263,11 +280,31 @@ export const ScheduledTaskUpdateTool = Tool.define<typeof UpdateParameters, { ta
         }
         const existing = yield* ScheduledTaskRepository.get(taskID)
         if (!existing) return notFoundOutput(params.taskID, { task: null })
+        const sessionID =
+          params.executionMode === "existing_session"
+            ? ctx.sessionID
+            : params.executionMode === "new_session"
+              ? null
+              : undefined
+        log.info("scheduled task update resolved", {
+          sessionID: ctx.sessionID,
+          taskID,
+          previousExecutionMode: existing.executionMode,
+          nextExecutionMode: params.executionMode,
+          boundSessionID: sessionID,
+          previousModelProviderID: existing.model.providerID,
+          previousModelID: existing.model.modelID,
+          nextModelProviderID: params.model?.providerID,
+          nextModelID: params.model?.modelID,
+          nextModelVariant: params.model?.variant,
+        })
         const task = yield* ScheduledTaskMutate.update(taskID, {
           name: params.name,
           prompt: params.prompt,
           schedule: params.schedule,
           executionMode: params.executionMode,
+          sessionID,
+          model: params.model,
           enabled: params.enabled,
         })
         log.info("scheduled task update completed", { sessionID: ctx.sessionID, taskID: task.id })

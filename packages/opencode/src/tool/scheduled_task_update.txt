@@ -1,5 +1,5 @@
 Update an existing scheduled task by ID.
 
-Use this tool when the user asks to change an existing scheduled task, such as renaming it, editing its prompt, rescheduling it, toggling between `existing_session` and `new_session` execution, or enabling/disabling it. Obtain the task ID from scheduled_task_list.
+Use this tool when the user asks to change an existing scheduled task, such as renaming it, editing its prompt, rescheduling it, changing its model or reasoning/thinking intensity, toggling between `existing_session` and `new_session` execution, or enabling/disabling it. Obtain the task ID from scheduled_task_list.
 
-Provide at least one of name, prompt, schedule, executionMode, or enabled. Changing the schedule or enabled state recomputes the next run time.
+Provide at least one of name, prompt, schedule, executionMode, model, or enabled. Changing the schedule or enabled state recomputes the next run time. Setting executionMode to `existing_session` binds the task to the current session; setting it to `new_session` clears that binding.
