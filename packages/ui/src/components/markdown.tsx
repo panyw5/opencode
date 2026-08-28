@@ -1024,10 +1024,7 @@ export function Markdown(
 
   onMount(() => {
     if (info.streaming) {
-      console.debug("[markdown] mount", {
-        key: info.key,
-        text: info.text,
-      })
+      console.debug(`[markdown] mount key=${info.key || "none"} text=${String(info.text)}`)
     }
     setReady(true)
   })
@@ -1035,10 +1032,7 @@ export function Markdown(
   onCleanup(() => {
     live = false
     if (info.streaming) {
-      console.debug("[markdown] cleanup", {
-        key: info.key,
-        text: info.text,
-      })
+      console.debug(`[markdown] cleanup key=${info.key || "none"} text=${String(info.text)}`)
     }
   })
 

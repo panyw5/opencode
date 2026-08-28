@@ -226,8 +226,12 @@ export function SessionTabsBar() {
   }
 
   const open = async (tab: SessionBarTab) => {
-    await selectServer(tab.directory)
-    const href = `/${base64Encode(tab.directory)}/session/${tab.id}`
+    // Copy store proxies before awaiting: the source tab may be removed while
+    // server selection or route navigation is still in flight.
+    const directory = tab.directory
+    const id = tab.id
+    await selectServer(directory)
+    const href = `/${base64Encode(directory)}/session/${id}`
     navigate(href)
   }
 
@@ -251,6 +255,22 @@ export function SessionTabsBar() {
       },
       tabKey,
     )
+  }
+
+  const cool = (closing: SessionBarTab[]) => {
+    const byDirectory = new Map<string, string[]>()
+    for (const item of closing) {
+      const directory = workspaceKey(item.directory)
+      const ids = byDirectory.get(directory)
+      if (ids) ids.push(item.id)
+      else byDirectory.set(directory, [item.id])
+    }
+    for (const [directory, ids] of byDirectory) globalSync.session.cool(directory, ids)
+  }
+
+  const coolAfterRouteCommit = (closing: SessionBarTab[]) => {
+    const snapshot = closing.map((item) => ({ directory: item.directory, id: item.id }))
+    requestAnimationFrame(() => requestAnimationFrame(() => cool(snapshot)))
   }
 
   const close = (tab: SessionBarTab) => {
@@ -284,21 +304,25 @@ export function SessionTabsBar() {
     layout.sessionBar.closeAll(closing)
     if (!viewingClosed) {
       console.debug(`[session-bar] close stay route id=${params.id ?? "none"}`)
+      cool(closing)
       return
     }
     if (neighbor) {
       console.debug(`[session-bar] close navigate neighbor id=${neighbor.id}`)
       void open(neighbor)
+      coolAfterRouteCommit(closing)
       return
     }
     // Closing the last tab leaves a fresh draft, mirroring the new-session page.
     if (params.dir) {
       console.debug(`[session-bar] close navigate draft dir=${params.dir}`)
       navigate(`/${params.dir}/session`)
+      coolAfterRouteCommit(closing)
       return
     }
     console.debug("[session-bar] close navigate home")
     navigate("/")
+    coolAfterRouteCommit(closing)
   }
 
   const hasOpenDescendants = (tab: SessionBarTab) => subtreeFor(tab).length > 1
@@ -314,9 +338,13 @@ export function SessionTabsBar() {
       `[session-bar] close descendants parent=${tab.id} descendants=${closing.map((item) => item.id).join(",")} viewingClosed=${String(viewingClosed)}`,
     )
     layout.sessionBar.closeAll(closing)
-    if (!viewingClosed) return
+    if (!viewingClosed) {
+      cool(closing)
+      return
+    }
     console.debug(`[session-bar] close descendants navigate parent id=${tab.id}`)
     void open(tab)
+    coolAfterRouteCommit(closing)
   }
 
   const closeDraft = (directory = draftDirectory()) => {

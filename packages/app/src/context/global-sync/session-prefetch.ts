@@ -1,7 +1,14 @@
-const key = (directory: string, sessionID: string) => `${directory}\n${sessionID}`
+import { workspaceKey } from "@/pages/layout/helpers"
+
+const key = (directory: string, sessionID: string) => `${workspaceKey(directory)}\n${sessionID}`
 
 export const SESSION_PREFETCH_TTL = 15_000
 export const SESSION_PREFETCH_MAX = 200
+
+export function neighboringMessagePrefetch<T>(items: readonly T[], index: number) {
+  if (index < 0 || index >= items.length) return []
+  return [items[index - 1], items[index + 1]].filter((item): item is T => item !== undefined)
+}
 
 type Meta = {
   count: number
@@ -25,6 +32,7 @@ export function shouldSkipSessionPrefetch(input: { message: boolean; info?: Meta
 const cache = new Map<string, Meta>()
 const inflight = new Map<string, Promise<Meta | undefined>>()
 const rev = new Map<string, number>()
+const cold = new Set<string>()
 
 const version = (id: string) => rev.get(id) ?? 0
 
@@ -34,6 +42,20 @@ export function getSessionPrefetch(directory: string, sessionID: string) {
 
 export function getSessionPrefetchPromise(directory: string, sessionID: string) {
   return inflight.get(key(directory, sessionID))
+}
+
+export function isSessionCold(directory: string, sessionID: string) {
+  return cold.has(key(directory, sessionID))
+}
+
+export function markSessionCold(directory: string, sessionIDs: Iterable<string>) {
+  for (const sessionID of sessionIDs) {
+    if (sessionID) cold.add(key(directory, sessionID))
+  }
+}
+
+export function markSessionHot(directory: string, sessionID: string) {
+  cold.delete(key(directory, sessionID))
 }
 
 export function clearSessionPrefetchInflight() {
@@ -104,8 +126,8 @@ export function clearSessionPrefetch(directory: string, sessionIDs: Iterable<str
 }
 
 export function clearSessionPrefetchDirectory(directory: string) {
-  const prefix = `${directory}\n`
-  const keys = new Set([...cache.keys(), ...inflight.keys(), ...rev.keys()])
+  const prefix = `${workspaceKey(directory)}\n`
+  const keys = new Set([...cache.keys(), ...inflight.keys(), ...rev.keys(), ...cold.keys()])
   let removed = 0
   for (const id of keys) {
     if (!id.startsWith(prefix)) continue
@@ -113,6 +135,7 @@ export function clearSessionPrefetchDirectory(directory: string) {
     rev.set(id, version(id) + 1)
     cache.delete(id)
     inflight.delete(id)
+    cold.delete(id)
     if (!pending) rev.delete(id)
     removed += 1
   }

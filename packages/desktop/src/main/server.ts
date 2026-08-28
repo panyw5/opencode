@@ -115,6 +115,7 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
     const cwd = options.startupPaths.defaultWorkspaceCwd
     await deps.makeDirectory(cwd, { recursive: true })
     const child = deps.forkSidecar(sidecar, cwd, options.startupPaths)
+    options.onStderr?.(`sidecar lifecycle forked cwd=${cwd}`)
     let exited = false
     let expectedExit = false
     let ready = false
@@ -127,7 +128,9 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
 
     const onProcessGone = (_event: unknown, details: Details) => {
       if (details.type !== "Utility" || details.name !== SIDECAR_SERVICE_NAME) return
-      options.onStderr?.(`utility process gone reason=${details.reason} exitCode=${details.exitCode}`)
+      options.onStderr?.(
+        `sidecar lifecycle gone type=${details.type} name=${details.name} reason=${details.reason} exitCode=${details.exitCode}`,
+      )
     }
 
     deps.app.on("child-process-gone", onProcessGone)
@@ -136,6 +139,9 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
       exited = true
       deps.app.off("child-process-gone", onProcessGone)
       child.off("message", onRuntimeMessage)
+      options.onStderr?.(
+        `sidecar lifecycle exit code=${String(code)} ready=${String(ready)} expected=${String(expectedExit)}`,
+      )
       options.onExit?.(code)
       if (ready && !expectedExit) options.onUnexpectedExit?.(code)
       exit.resolve(code)
@@ -234,11 +240,15 @@ export function createSpawnLocalServer(deps: SpawnLocalServerDeps) {
           if (stopping) return stopping
           if (exited) return Promise.resolve()
           expectedExit = true
+          options.onStderr?.(`sidecar lifecycle stop-requested exited=${String(exited)} ready=${String(ready)}`)
           child.postMessage({ type: "stop" })
           stopping = Promise.race([
             exit.promise.then(() => undefined),
             deps.delay(deps.stopTimeout).then(() => {
-              if (!exited) child.kill()
+              if (!exited) {
+                options.onStderr?.(`sidecar lifecycle stop-timeout timeoutMs=${String(deps.stopTimeout)} action=kill`)
+                child.kill()
+              }
             }),
           ])
           return stopping

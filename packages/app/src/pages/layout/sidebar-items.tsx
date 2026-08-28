@@ -625,7 +625,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       )
   }
 
-  const warm = (span: number, priority: "high" | "low") => {
+  const warm = (priority: "high" | "low") => {
     const nav = props.navList?.()
     const list = nav?.some((item) => item.id === props.session.id && item.directory === props.session.directory)
       ? nav
@@ -636,13 +636,10 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     const idx = list.findIndex((item) => item.id === props.session.id && item.directory === props.session.directory)
     if (idx === -1) return
 
-    for (let step = 1; step <= span; step++) {
-      const next = list[idx + step]
-      if (next) props.prefetchSession(next, step === 1 ? "high" : priority)
-
-      const prev = list[idx - step]
-      if (prev) props.prefetchSession(prev, step === 1 ? "high" : priority)
-    }
+    const next = list[idx + 1]
+    if (next) props.prefetchSession(next, priority)
+    const prev = list[idx - 1]
+    if (prev) props.prefetchSession(prev, priority)
   }
 
   const hoverPrefetch = {
@@ -654,11 +651,11 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     hoverPrefetch.current = undefined
   }
   const scheduleHoverPrefetch = () => {
-    warm(1, "high")
+    warm("high")
     if (hoverPrefetch.current !== undefined) return
     hoverPrefetch.current = setTimeout(() => {
       hoverPrefetch.current = undefined
-      warm(2, "low")
+      warm("low")
     }, 80)
   }
 
@@ -680,8 +677,8 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
       sidebarOpened={layout.sidebar.opened}
       select={() => props.selectSession(props.session)}
       warmHover={() => undefined}
-      warmPress={() => warm(2, "high")}
-      warmFocus={() => warm(2, "high")}
+      warmPress={() => warm("high")}
+      warmFocus={() => warm("high")}
       cancelHoverPrefetch={cancelHoverPrefetch}
       detail={detail}
       reduced={props.reduced}

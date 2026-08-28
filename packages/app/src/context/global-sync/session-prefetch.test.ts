@@ -4,6 +4,10 @@ import {
   clearSessionPrefetchDirectory,
   getSessionPrefetch,
   getSessionPrefetchStats,
+  isSessionCold,
+  markSessionCold,
+  markSessionHot,
+  neighboringMessagePrefetch,
   runSessionPrefetch,
   SESSION_PREFETCH_MAX,
   setSessionPrefetch,
@@ -11,6 +15,20 @@ import {
 } from "./session-prefetch"
 
 describe("session prefetch", () => {
+  test("prefetches message bodies for only the immediate neighbors", () => {
+    const items = ["a", "b", "c", "d"]
+    expect(neighboringMessagePrefetch(items, 2)).toEqual(["b", "d"])
+    expect(neighboringMessagePrefetch(items, 0)).toEqual(["b"])
+    expect(neighboringMessagePrefetch(items, -1)).toEqual([])
+  })
+
+  test("keeps cooled sessions out of prefetch until explicitly reopened", () => {
+    markSessionCold("/tmp/cold", ["ses_1"])
+    expect(isSessionCold("/tmp/cold", "ses_1")).toBe(true)
+    markSessionHot("/tmp/cold", "ses_1")
+    expect(isSessionCold("/tmp/cold", "ses_1")).toBe(false)
+  })
+
   test("stores and clears message metadata by directory", () => {
     clearSessionPrefetch("/tmp/a", ["ses_1"])
     clearSessionPrefetch("/tmp/b", ["ses_1"])

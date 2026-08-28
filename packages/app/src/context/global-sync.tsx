@@ -27,7 +27,12 @@ import { bootstrapDirectory, bootstrapGlobal } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
 import { createRefreshQueue } from "./global-sync/queue"
-import { clearSessionPrefetch, clearSessionPrefetchDirectory } from "./global-sync/session-prefetch"
+import {
+  clearSessionPrefetch,
+  clearSessionPrefetchDirectory,
+  markSessionCold,
+} from "./global-sync/session-prefetch"
+import { canCoolSessionCache, coolSessionCaches } from "./global-sync/session-cache"
 import { loadRootSessions } from "./global-sync/session-load"
 import { sessionDataMutation } from "./global-sync/session-data-event"
 import { createSessionService } from "./global-sync/session-service"
@@ -427,6 +432,31 @@ function createGlobalSync() {
 
   const sessionApi = {
     ...sessionService.api,
+    cool(directory: string, sessionIDs: string[]) {
+      const key = storeKey(directory)
+      const child = children.lookup(key)
+      if (!child) {
+        console.debug(
+          `[global-sync] session cache cool skip directory=${key} requested=${String(sessionIDs.length)} reason=missing-store`,
+        )
+        return []
+      }
+      const cooling = sessionIDs.filter((sessionID) => canCoolSessionCache(child[0], sessionID))
+      const kept = sessionIDs.filter((sessionID) => !cooling.includes(sessionID))
+      console.debug(
+        `[global-sync] session cache cool directory=${key} requested=${String(sessionIDs.length)} cooled=${String(cooling.length)} kept=${String(kept.length)} keptIDs=${kept.join(",") || "none"}`,
+      )
+      if (cooling.length === 0) return []
+      clearSessionPrefetch(key, cooling)
+      markSessionCold(key, cooling)
+      sessionService.api.clear(key, cooling)
+      child[1](
+        produce((draft) => {
+          coolSessionCaches(draft, cooling)
+        }),
+      )
+      return cooling
+    },
     status: {
       ...sessionService.api.status,
       refreshLoaded: refreshLoadedSessionStatuses,
