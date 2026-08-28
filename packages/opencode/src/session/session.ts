@@ -542,6 +542,7 @@ export interface Interface {
     model?: Schema.Schema.Type<typeof Model>
     permission?: Permission.Ruleset
     workspaceID?: WorkspaceID
+    archived?: boolean
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
@@ -622,8 +623,10 @@ export const layer: Layer.Layer<
       directory: string
       path?: string
       permission?: Permission.Ruleset
+      archived?: boolean
     }) {
       const ctx = yield* InstanceState.context
+      const now = Date.now()
       const result: Info = {
         id: SessionID.descending(input.id),
         slug: Slug.create(),
@@ -642,8 +645,9 @@ export const layer: Layer.Layer<
         cost: 0,
         tokens: EmptyTokens,
         time: {
-          created: Date.now(),
-          updated: Date.now(),
+          created: now,
+          updated: now,
+          archived: input.archived ? now : undefined,
         },
       }
       log.info("created", result)
@@ -809,6 +813,7 @@ export const layer: Layer.Layer<
       model?: Schema.Schema.Type<typeof Model>
       permission?: Permission.Ruleset
       workspaceID?: WorkspaceID
+      archived?: boolean
     }) {
       const ctx = yield* InstanceState.context
       const workspace = yield* InstanceState.workspaceID
@@ -821,6 +826,7 @@ export const layer: Layer.Layer<
         model: input?.model,
         permission: input?.permission,
         workspaceID: input?.workspaceID ?? workspace,
+        archived: input?.archived,
       })
     })
 

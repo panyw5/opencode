@@ -4,6 +4,10 @@ import { z } from "zod"
 import { createGateway, type MathGateway, type MathGatewayConfig, ToolNotFoundError } from "./gateway"
 import { type MathToolName } from "./roles"
 import { httpVerifier, sessionVerifier, type Verifier } from "./verifier"
+import { readSwarm } from "./swarm"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "math.mcp" })
 
 const StringMap = z.record(z.string(), z.string())
 
@@ -90,10 +94,24 @@ export function buildMathMcpServer(gateway: MathGateway): McpServer {
 export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier {
   const url = env.OPENCODE_MATH_VERIFY_URL
   if (url) return httpVerifier(url)
-  return sessionVerifier({
-    workspace: env.OPENCODE_MATH_WORKSPACE || process.cwd(),
-    model: env.OPENCODE_MATH_VERIFY_MODEL,
-  })
+  const workspace = env.OPENCODE_MATH_WORKSPACE || process.cwd()
+  return {
+    async verify(input) {
+      const projectModel = projectVerifierModel(env)
+      const model = projectModel ?? env.OPENCODE_MATH_VERIFY_MODEL
+      log.info("math verifier model selected", {
+        problemID: input.problem_id,
+        model,
+        source: projectModel ? "project" : env.OPENCODE_MATH_VERIFY_MODEL ? "environment" : "default",
+      })
+      return sessionVerifier({ workspace, model }).verify(input)
+    },
+  }
+}
+
+export function projectVerifierModel(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  if (!env.OPENCODE_MATH_PROJECT_DIR) return undefined
+  return readSwarm(env.OPENCODE_MATH_PROJECT_DIR).verifierModel
 }
 
 export function gatewayFromEnv(

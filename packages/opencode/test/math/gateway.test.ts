@@ -78,7 +78,7 @@ describe("math.gateway", () => {
     expect((await new GlobalMemory(tmp.path).read("verification")).at(-1)?.verdict).toBe("wrong")
   })
 
-  test("missing verifier writes no fact and no verification trace", async () => {
+  test("missing verifier writes no fact and records the system error", async () => {
     await using tmp = await tmpdir()
     const gw = createGateway({
       projectDir: tmp.path,
@@ -96,7 +96,11 @@ describe("math.gateway", () => {
     expect(res.verdict).toBe("error")
     expect(res.error).toContain("service down")
     expect(await new FactGraph(tmp.path).list()).toEqual([])
-    expect(await new GlobalMemory(tmp.path).read("verification")).toEqual([])
+    expect((await new GlobalMemory(tmp.path).read("verification")).at(-1)).toMatchObject({
+      claim: "s",
+      verdict: "error",
+      error: "service down",
+    })
   })
 
   test("accepted-but-revoked-predecessor still traces", async () => {

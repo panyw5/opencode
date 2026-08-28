@@ -1,5 +1,13 @@
 export const MATH_ORCHESTRATOR_AGENT = "math-orchestrator"
 
+export function mathModeIsInitializing(input: {
+  sessionID?: string
+  requestedSessionID?: string
+  workerCount: number
+}): boolean {
+  return Boolean(input.sessionID && input.sessionID === input.requestedSessionID && input.workerCount === 0)
+}
+
 export function mathModeLocksAgent(input: {
   prepared: boolean
   sessionAgent?: string

@@ -1,4 +1,5 @@
 import * as Log from "@opencode-ai/core/util/log"
+import { withSQLiteLockRetry } from "./sqlite-lock"
 
 const log = Log.create({ service: "db.upstream-migration" })
 
@@ -427,20 +428,30 @@ function completed(db: MigrationClient) {
   return new Set(rawAll(db, "SELECT id FROM migration").map((row) => String(row.id)))
 }
 
-function runMigration(db: MigrationClient, migration: Migration) {
-  db.run("BEGIN IMMEDIATE")
-  try {
-    migration.up(db)
-    db.run(`INSERT OR IGNORE INTO migration (id, time_completed) VALUES (${quoteString(migration.id)}, ${Date.now()})`)
-    db.run("COMMIT")
-  } catch (err) {
-    try {
-      db.run("ROLLBACK")
-    } catch {
-      // Preserve the migration failure.
-    }
-    throw err
-  }
+function runMigration(db: MigrationClient, migration: Migration, dbPath?: string) {
+  return withSQLiteLockRetry(
+    () => {
+      db.run("BEGIN IMMEDIATE")
+      try {
+        migration.up(db)
+        db.run(
+          `INSERT OR IGNORE INTO migration (id, time_completed) VALUES (${quoteString(migration.id)}, ${Date.now()})`,
+        )
+        db.run("COMMIT")
+      } catch (err) {
+        try {
+          db.run("ROLLBACK")
+        } catch {
+          // Preserve the migration failure.
+        }
+        throw err
+      }
+    },
+    {
+      operation: `upstream migration ${migration.id}`,
+      databasePath: dbPath,
+    },
+  )
 }
 
 export function apply(db: MigrationClient, dbPath: string) {
@@ -464,7 +475,7 @@ export function apply(db: MigrationClient, dbPath: string) {
       count: pending.length,
       migrations: pending.map((migration) => migration.id),
     })
-    for (const migration of pending) runMigration(db, migration)
+    for (const migration of pending) runMigration(db, migration, dbPath)
   }
 
   // Always re-assert fork invariants (idempotent; no core-row deletes).

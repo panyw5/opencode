@@ -262,6 +262,10 @@ async function runVerifyProcess(
 export function sessionVerifier(options: ProcessVerifierOptions): Verifier {
   return {
     async verify(input) {
+      log.info("math verifier confined to problem workspace", {
+        problemID: input.problem_id,
+        workspace: options.workspace,
+      })
       const root = await mkdtemp(path.join(tmpdir(), "opencode-math-verify-"))
       const inputFile = path.join(root, "input.json")
       try {

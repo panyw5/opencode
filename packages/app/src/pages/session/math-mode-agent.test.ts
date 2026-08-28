@@ -1,5 +1,17 @@
 import { describe, expect, test } from "bun:test"
-import { mathModeLocksAgent } from "./math-mode-agent"
+import { mathModeIsInitializing, mathModeLocksAgent } from "./math-mode-agent"
+
+describe("mathModeIsInitializing", () => {
+  test("stays pending for the submitted session until a worker is listed", () => {
+    expect(mathModeIsInitializing({ sessionID: "parent", requestedSessionID: "parent", workerCount: 0 })).toBe(true)
+    expect(mathModeIsInitializing({ sessionID: "parent", requestedSessionID: "parent", workerCount: 1 })).toBe(false)
+  })
+
+  test("does not leak the pending state to another session", () => {
+    expect(mathModeIsInitializing({ sessionID: "other", requestedSessionID: "parent", workerCount: 0 })).toBe(false)
+    expect(mathModeIsInitializing({ sessionID: undefined, requestedSessionID: "parent", workerCount: 0 })).toBe(false)
+  })
+})
 
 describe("mathModeLocksAgent", () => {
   test("locks an orchestrator session and a parent with durable workers", () => {

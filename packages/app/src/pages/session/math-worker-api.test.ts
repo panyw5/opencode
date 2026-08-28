@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { ensureMathWorker, getMathWorkerTask, listMathWorkers, stopMathWorker, updateMathWorkerTask } from "./math-worker-api"
+import {
+  ensureMathWorker,
+  getMathWorkerTask,
+  listMathDetails,
+  listMathWorkers,
+  stopMathWorker,
+  updateMathWorkerTask,
+} from "./math-worker-api"
 
 function fixture(response: unknown) {
   const requests: Array<{ url: string; init?: RequestInit }> = []
@@ -24,6 +31,23 @@ describe("math-worker-api", () => {
     expect(result[0]?.sessionID).toBe("worker")
     expect(input.requests[0]?.url).toBe(
       "http://127.0.0.1:4096/session/parent%2Fid/math-workers?directory=%2Ftmp%2Fmath+project",
+    )
+  })
+
+  test("lists paginated Math Mode details", async () => {
+    const input = fixture({ kind: "wrong", total: 29, offset: 20, limit: 20, items: [] })
+    const result = await listMathDetails({
+      sdk: input.sdk as never,
+      platform: input.platform as never,
+      parentSessionID: "parent/id",
+      project: "proof swarm",
+      kind: "wrong",
+      offset: 20,
+      limit: 20,
+    })
+    expect(result.total).toBe(29)
+    expect(input.requests[0]?.url).toBe(
+      "http://127.0.0.1:4096/session/parent%2Fid/math-details?project=proof+swarm&kind=wrong&offset=20&limit=20&directory=%2Ftmp%2Fmath+project",
     )
   })
 

@@ -36,15 +36,18 @@ describe("math.worker", () => {
       const test = yield* TestInstance
       const spawned: string[][] = []
       const spawnedEnv: Array<NodeJS.ProcessEnv | undefined> = []
+      const spawnedCwd: string[] = []
       const result = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "lemma-slice",
         task: "# prove the rank obstruction\n",
         model: "test/prover",
+        verifierModel: "test/verifier",
         variant: "xhigh",
         spawn: (input) => {
           spawned.push(input.argv)
           spawnedEnv.push(input.env)
+          spawnedCwd.push(input.cwd)
           return { pid: 987_654_321 }
         },
       })
@@ -56,13 +59,18 @@ describe("math.worker", () => {
       expect(spawned[0]?.join(" ")).toContain("--model test/prover --variant xhigh")
       expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"math-truth"')
       expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"worker"')
+      expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"OPENCODE_MATH_VERIFY_MODEL":"test/verifier"')
 
-      const projectDir = mathRoot(test.directory, path.basename(test.directory) || "default")
+      const projectDir = mathRoot(test.directory, parent.id)
+      expect(projectDir).toContain(path.join(".math", "problems"))
+      expect(spawnedCwd).toEqual([projectDir])
+      expect(spawnedEnv[0]?.OPENCODE_MATH_WORKSPACE).toBe(projectDir)
       const swarm = readSwarm(projectDir)
       expect(swarm.workers[result.sessionID]?.pid).toBe(987_654_321)
       expect(swarm.workers[result.sessionID]?.parentSessionID).toBe(parent.id)
       expect(swarm.workers[result.sessionID]?.model).toBe("test/prover")
       expect(swarm.workers[result.sessionID]?.variant).toBe("xhigh")
+      expect(swarm.verifierModel).toBe("test/verifier")
 
       const rows = statusMathWorker({ projectDir, parentSessionID: parent.id })
       expect(rows.some((r) => r.sessionID === result.sessionID)).toBe(true)
@@ -112,10 +120,17 @@ describe("math.worker", () => {
       expect(prompt).toContain("fact_submit")
       expect(prompt).toContain("MATH_WORKER_TASK_COMPLETE")
       const config = JSON.parse(
-        workerMcpConfig({ projectDir: "/tmp/math", workspace: "/tmp/work", sessionID: "ses_test" }),
+        workerMcpConfig({
+          projectDir: "/tmp/math",
+          workspace: "/tmp/work",
+          sessionID: "ses_test",
+          verifierModel: "test/verifier",
+        }),
       )
       expect(config.mcp["math-truth"].command.join(" ")).toContain("math mcp --role worker")
       expect(config.mcp["math-truth"].environment.OPENCODE_MATH_WORKSPACE).toBe("/tmp/work")
+      expect(config.mcp["math-truth"].environment.OPENCODE_MATH_VERIFY_MODEL).toBe("test/verifier")
+      expect(config.agent["math-worker"].permission.external_directory).toBe("deny")
     }),
   )
 

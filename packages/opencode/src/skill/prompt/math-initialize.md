@@ -1,6 +1,6 @@
 # Initialize a Math Mode swarm
 
-1. Identify the current mathematical project and its target obligations.
+1. Identify the current mathematical problem and its target obligations. Every initialization must use its own problem ID and isolated workspace under `.math/problems/<problem-id>`; never reuse another problem's store.
 2. Call `math_worker_status` before creating anything. Treat returned child session IDs as durable worker identities.
 3. Reconnect to existing transcripts. If a worker is dead and `restartable=true`, call `math_worker_ensure` with that session ID. Never replace it with a new worker unless its workstream is intentionally retired.
 4. Ask for or choose a bounded roster only when no existing roster covers the obligations.

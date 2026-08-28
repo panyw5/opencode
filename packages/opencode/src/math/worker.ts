@@ -20,7 +20,7 @@ import { SessionID, MessageID, PartID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { layout, mathRoot, taskPath } from "./layout"
 import { killProcessGroup, pidAlive, selfArgv, spawnDetached } from "./spawn"
-import { clearStop, patchWorker, readSwarm, stopPath, upsertWorker, type SwarmWorker } from "./swarm"
+import { clearStop, patchWorker, readSwarm, setVerifierModel, stopPath, upsertWorker, type SwarmWorker } from "./swarm"
 import { FactGraph } from "./fact-graph"
 import { GlobalMemory } from "./global-memory"
 import * as Log from "@opencode-ai/core/util/log"
@@ -36,6 +36,7 @@ export type StartInput = {
   intervalMs?: number
   model?: string
   variant?: string
+  verifierModel?: string
   /** Injected in tests. Production uses spawnDetached(selfArgv(...)). */
   spawn?: (input: { argv: string[]; cwd: string; logFile: string; env?: NodeJS.ProcessEnv }) => { pid: number }
 }
@@ -76,6 +77,7 @@ export type StatusResult = {
   verificationWrong?: number
   verificationError?: number
   latestVerification?: string
+  verifierModel?: string
 }
 
 export type MathWorkerTaskInfo = {
@@ -91,8 +93,8 @@ export type EnsureResult = StartResult & {
   round: number
 }
 
-function resolveProjectDir(workspace: string, project?: string): string {
-  return mathRoot(workspace, project || path.basename(workspace) || "default")
+function resolveProjectDir(workspace: string, project: string | undefined, parentSessionID: string): string {
+  return mathRoot(workspace, project || parentSessionID)
 }
 
 function acquireEnsureLock(projectDir: string, sessionID: string): () => void {
@@ -140,6 +142,7 @@ export function workerMcpConfig(input: {
   workspace: string
   sessionID: string
   baseContent?: string
+  verifierModel?: string
 }) {
   const command = selfArgv([
     "math",
@@ -156,8 +159,32 @@ export function workerMcpConfig(input: {
   const parsed = input.baseContent ? parseJsonc(input.baseContent) : undefined
   const base = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
   const existingMcp = base.mcp && typeof base.mcp === "object" && !Array.isArray(base.mcp) ? base.mcp : {}
+  const existingAgent =
+    base.agent && typeof base.agent === "object" && !Array.isArray(base.agent)
+      ? (base.agent as Record<string, unknown>)
+      : {}
+  const workerAgent =
+    existingAgent["math-worker"] &&
+    typeof existingAgent["math-worker"] === "object" &&
+    !Array.isArray(existingAgent["math-worker"])
+      ? (existingAgent["math-worker"] as Record<string, unknown>)
+      : {}
+  const workerPermission =
+    workerAgent.permission && typeof workerAgent.permission === "object" && !Array.isArray(workerAgent.permission)
+      ? workerAgent.permission
+      : {}
   return JSON.stringify({
     ...base,
+    agent: {
+      ...existingAgent,
+      "math-worker": {
+        ...workerAgent,
+        permission: {
+          ...workerPermission,
+          external_directory: "deny",
+        },
+      },
+    },
     mcp: {
       ...existingMcp,
       "math-truth": {
@@ -169,8 +196,8 @@ export function workerMcpConfig(input: {
           OPENCODE_MATH_ROLE: "worker",
           OPENCODE_MATH_AUTHOR: input.sessionID,
           OPENCODE_MATH_PROBLEM_ID: path.basename(input.projectDir) || "default",
-          ...(process.env.OPENCODE_MATH_VERIFY_MODEL
-            ? { OPENCODE_MATH_VERIFY_MODEL: process.env.OPENCODE_MATH_VERIFY_MODEL }
+          ...((input.verifierModel ?? process.env.OPENCODE_MATH_VERIFY_MODEL)
+            ? { OPENCODE_MATH_VERIFY_MODEL: (input.verifierModel ?? process.env.OPENCODE_MATH_VERIFY_MODEL)! }
             : {}),
         },
         timeout: 3_600_000,
@@ -187,10 +214,17 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     agent: "math-worker",
   })
   const directory = session.directory
-  const projectDir = resolveProjectDir(directory, input.project)
+  const projectDir = resolveProjectDir(directory, input.project, input.parentSessionID)
+  const verifierModel = input.verifierModel ?? readSwarm(projectDir).verifierModel
+  if (input.verifierModel) setVerifierModel(projectDir, input.verifierModel)
   mkdirSync(layout(projectDir).tasks, { recursive: true })
   mkdirSync(layout(projectDir).logs, { recursive: true })
-  log.info("math worker session created", { sessionID: session.id, parent: input.parentSessionID })
+  log.info("math worker problem workspace resolved", {
+    sessionID: session.id,
+    parent: input.parentSessionID,
+    problemID: path.basename(projectDir),
+    projectDir,
+  })
 
   const taskFile = taskPath(projectDir, session.id)
   writeFileSync(taskFile, input.task.trim() + "\n", "utf8")
@@ -204,7 +238,7 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     "--project-dir",
     projectDir,
     "--dir",
-    directory,
+    projectDir,
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
     ...((input.model ?? process.env.OPENCODE_MATH_WORKER_MODEL)
       ? ["--model", (input.model ?? process.env.OPENCODE_MATH_WORKER_MODEL)!]
@@ -214,19 +248,22 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
   const spawn = input.spawn ?? spawnDetached
   const { pid } = spawn({
     argv,
-    cwd: directory,
+    cwd: projectDir,
     logFile,
     env: {
       OPENCODE_CONFIG_CONTENT: workerMcpConfig({
         projectDir,
-        workspace: directory,
+        workspace: projectDir,
         sessionID: session.id,
         baseContent: process.env.OPENCODE_CONFIG_CONTENT,
+        verifierModel,
       }),
-      OPENCODE_MATH_WORKSPACE: directory,
+      OPENCODE_MATH_WORKSPACE: projectDir,
+      OPENCODE_MATH_PROJECT_DIR: projectDir,
+      OPENCODE_MATH_ROLE: "worker",
     },
   })
-  log.info("math worker spawned", { sessionID: session.id, pid, argv: argv.join(" ") })
+  log.info("math worker spawned", { sessionID: session.id, pid, cwd: projectDir, argv: argv.join(" ") })
 
   upsertWorker(projectDir, {
     sessionID: session.id,
@@ -256,6 +293,7 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   intervalMs?: number
   model?: string
   variant?: string
+  verifierModel?: string
   reEnable?: boolean
   spawn?: StartInput["spawn"]
 }) {
@@ -264,6 +302,11 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   if (session.agent !== "math-worker") throw new Error(`session is not a math-worker: ${input.sessionID}`)
 
   const existing = readSwarm(input.projectDir).workers[input.sessionID]
+  if (input.verifierModel) {
+    log.info("math verifier model updated", { projectDir: input.projectDir, model: input.verifierModel })
+    setVerifierModel(input.projectDir, input.verifierModel)
+  }
+  const verifierModel = input.verifierModel ?? readSwarm(input.projectDir).verifierModel
   const taskFile = existing?.taskFile ?? taskPath(input.projectDir, input.sessionID)
   const logFile = existing?.logFile ?? path.join(layout(input.projectDir).logs, `worker-${input.sessionID}.log`)
   const stop = stopPath(input.projectDir, input.sessionID)
@@ -298,24 +341,32 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     "--project-dir",
     input.projectDir,
     "--dir",
-    session.directory,
+    input.projectDir,
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
     ...((input.model ?? existing?.model) ? ["--model", (input.model ?? existing?.model)!] : []),
     ...((input.variant ?? existing?.variant) ? ["--variant", (input.variant ?? existing?.variant)!] : []),
   ])
   const spawn = input.spawn ?? spawnDetached
+  log.info("math worker restart confined to problem workspace", {
+    sessionID: input.sessionID,
+    problemID: path.basename(input.projectDir),
+    projectDir: input.projectDir,
+  })
   const { pid } = spawn({
     argv,
-    cwd: session.directory,
+    cwd: input.projectDir,
     logFile,
     env: {
       OPENCODE_CONFIG_CONTENT: workerMcpConfig({
         projectDir: input.projectDir,
-        workspace: session.directory,
+        workspace: input.projectDir,
         sessionID: input.sessionID,
         baseContent: process.env.OPENCODE_CONFIG_CONTENT,
+        verifierModel,
       }),
-      OPENCODE_MATH_WORKSPACE: session.directory,
+      OPENCODE_MATH_WORKSPACE: input.projectDir,
+      OPENCODE_MATH_PROJECT_DIR: input.projectDir,
+      OPENCODE_MATH_ROLE: "worker",
     },
   })
   const round = existing?.round ?? 0
@@ -353,6 +404,7 @@ export const ensureMathWorker = Effect.fn("MathWorker.ensure")(function* (input:
   intervalMs?: number
   model?: string
   variant?: string
+  verifierModel?: string
   reEnable?: boolean
   spawn?: StartInput["spawn"]
 }) {
@@ -404,6 +456,7 @@ export function statusMathWorker(input: {
       startedAt: w.startedAt,
       taskUpdatedAt,
       taskPreview,
+      verifierModel: swarm.verifierModel,
       stopRequested: existsSync(stopPath(input.projectDir, w.sessionID)),
       restartable:
         !alive && !existsSync(stopPath(input.projectDir, w.sessionID)) && Boolean(w.taskFile && existsSync(w.taskFile)),
@@ -472,6 +525,7 @@ export const discoverMathWorkers = Effect.fn("MathWorker.discover")(function* (i
         : undefined,
       taskUpdatedAt: existing?.taskUpdatedAt,
       taskPreview: existing?.taskPreview,
+      verifierModel: existing?.verifierModel ?? readSwarm(input.projectDir).verifierModel,
       ...summary,
     })
   }

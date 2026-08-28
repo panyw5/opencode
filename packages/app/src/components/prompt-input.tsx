@@ -93,7 +93,8 @@ interface PromptInputProps {
   shouldQueue?: () => boolean
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void | Promise<void>
-  onSubmit?: () => void
+  onSubmit?: (sessionID: string) => void
+  onSubmitFailed?: (sessionID: string) => void
   onSubmitted?: () => void
   onScrollToBottom?: () => void
   scrollState?: { overflow: boolean; bottom: boolean }
@@ -1788,10 +1789,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     shouldQueue: props.shouldQueue,
     onQueue: props.onQueue,
     onAbort: props.onAbort,
-    onSubmit: () => {
+    onSubmit: (sessionID) => {
       console.debug("[prompt-submit]", { stage: "submitting-set" })
       setStore("submitting", true)
-      props.onSubmit?.()
+      props.onSubmit?.(sessionID)
+    },
+    onSubmitFailed: (sessionID) => {
+      props.onSubmitFailed?.(sessionID)
     },
     onSubmitted: () => {
       setSubmit(true)

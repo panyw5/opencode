@@ -7,9 +7,14 @@ export function assertProjectName(name: string): string {
   return name
 }
 
-/** `<workspace>/.math/<project>` — user project, not the OpenCode source tree. */
-export function mathRoot(workspace: string, project: string): string {
-  return path.join(workspace, ".math", assertProjectName(project))
+/** `<workspace>/.math/problems` — container for isolated Math Mode problems. */
+export function mathProblemsRoot(workspace: string): string {
+  return path.join(workspace, ".math", "problems")
+}
+
+/** `<workspace>/.math/problems/<problem>` — one isolated Math Mode problem workspace. */
+export function mathRoot(workspace: string, problem: string): string {
+  return path.join(mathProblemsRoot(workspace), assertProjectName(problem))
 }
 
 export type MathLayout = {

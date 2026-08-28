@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js"
 import { createGateway } from "../../src/math/gateway"
-import { buildMathMcpServer } from "../../src/math/mcp"
+import { buildMathMcpServer, projectVerifierModel } from "../../src/math/mcp"
+import { setVerifierModel } from "../../src/math/swarm"
 import { stubVerifier } from "../../src/math/verifier"
 import { tmpdir } from "../fixture/fixture"
 
@@ -22,6 +23,16 @@ async function connect(role: string, dir: string) {
 }
 
 describe("math.mcp", () => {
+  test("reads verifier model updates dynamically from project state", async () => {
+    await using tmp = await tmpdir()
+    const env = { OPENCODE_MATH_PROJECT_DIR: tmp.path }
+    expect(projectVerifierModel(env)).toBeUndefined()
+    setVerifierModel(tmp.path, "test/verifier-a")
+    expect(projectVerifierModel(env)).toBe("test/verifier-a")
+    setVerifierModel(tmp.path, "test/verifier-b")
+    expect(projectVerifierModel(env)).toBe("test/verifier-b")
+  })
+
   test("orchestrator tools/list does not include fact_submit", async () => {
     await using tmp = await tmpdir()
     const { client } = await connect("orchestrator", tmp.path)

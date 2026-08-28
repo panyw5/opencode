@@ -4,6 +4,7 @@ import { effectCmd, fail } from "../effect-cmd"
 import { serveMathMcp, verifierFromEnv } from "@/math/mcp"
 import { ensureMathWorker, runWorkerLoop, startMathWorker, statusMathWorker, stopMathWorker } from "@/math/worker"
 import { mathRoot } from "@/math/layout"
+import { migrateLegacyMathProject } from "@/math/migrate"
 import { buildVerifierPrompt, parseVerifierText, readVerifyInput } from "@/math/verifier"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
@@ -12,6 +13,9 @@ import { SessionID } from "@/session/schema"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect } from "effect"
 import path from "path"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "math.verify.command" })
 
 function resolveMathProjectDir(projectDir: string | undefined, workspace: string): string {
   return (
@@ -27,12 +31,43 @@ export const MathCommand = cmd({
       .command(MathMcpCommand)
       .command(MathWorkerCommand)
       .command(MathVerifyCommand)
+      .command(MathMigrateCommand)
       .command(MathStartCommand)
       .command(MathEnsureCommand)
       .command(MathStatusCommand)
       .command(MathStopCommand)
       .demandCommand(),
   async handler() {},
+})
+
+export const MathMigrateCommand = cmd({
+  command: "migrate",
+  describe: "copy one legacy .math/<name> store into an isolated problem workspace",
+  builder: (yargs) =>
+    yargs
+      .option("source", {
+        type: "string",
+        demandOption: true,
+        describe: "legacy project name directly under .math/",
+      })
+      .option("problem", {
+        type: "string",
+        demandOption: true,
+        describe: "new problem ID under .math/problems/",
+      })
+      .option("dir", {
+        type: "string",
+        describe: "workspace containing the legacy .math directory (default: cwd)",
+      }),
+  handler(args) {
+    const workspace = args.dir ? path.resolve(process.cwd(), args.dir) : process.cwd()
+    const result = migrateLegacyMathProject({
+      workspace,
+      source: args.source,
+      problem: args.problem,
+    })
+    process.stdout.write(JSON.stringify(result) + "\n")
+  },
 })
 
 export const MathVerifyCommand = effectCmd({
@@ -52,9 +87,12 @@ export const MathVerifyCommand = effectCmd({
     }).pipe(Effect.orDie)
     const sessions = yield* Session.Service
     const prompts = yield* SessionPrompt.Service
-    const session = yield* sessions.create({ title: "math-verifier", agent: "math-verifier" })
+    log.info("creating archived verifier session", { inputFile })
+    const session = yield* sessions.create({ title: "math-verifier", agent: "math-verifier", archived: true })
+    log.info("archived verifier session created", { sessionID: session.id, archived: session.time.archived })
     const modelName = typeof args.model === "string" ? args.model : process.env.OPENCODE_MATH_VERIFY_MODEL
     const model = modelName ? Provider.parseModel(modelName) : undefined
+    log.info("starting verifier prompt", { sessionID: session.id, model: modelName })
     const result = yield* prompts
       .prompt({
         sessionID: session.id,
@@ -64,8 +102,16 @@ export const MathVerifyCommand = effectCmd({
       })
       .pipe(
         Effect.ensuring(sessions.setArchived({ sessionID: session.id, time: Date.now() })),
+        Effect.tapCause((cause) =>
+          Effect.sync(() => log.error("verifier prompt failed", { sessionID: session.id, cause: String(cause) })),
+        ),
         Effect.catchCause((cause) => fail(`math verifier session failed: ${String(cause)}`)),
       )
+    log.info("verifier prompt completed", {
+      sessionID: session.id,
+      role: result.info.role,
+      error: result.info.role === "assistant" ? result.info.error : undefined,
+    })
     if (result.info.role !== "assistant" || result.info.error) {
       const detail = result.info.role === "assistant" ? JSON.stringify(result.info.error) : "no assistant response"
       return yield* fail(`math verifier session failed: ${detail}`)
@@ -97,7 +143,7 @@ export const MathMcpCommand = cmd({
       .option("project-dir", {
         type: "string",
         describe:
-          "math project root (contains fact_graph/ and global_memory/). Default: OPENCODE_MATH_PROJECT_DIR or cwd/.math/<name>",
+          "math problem workspace (contains fact_graph/ and global_memory/). Default: OPENCODE_MATH_PROJECT_DIR or cwd/.math/problems/<name>",
       })
       .option("author", {
         type: "string",
@@ -109,7 +155,7 @@ export const MathMcpCommand = cmd({
       }),
   async handler(args) {
     const projectDir =
-      args.projectDir || process.env.OPENCODE_MATH_PROJECT_DIR || path.join(process.cwd(), ".math", "default")
+      args.projectDir || process.env.OPENCODE_MATH_PROJECT_DIR || mathRoot(process.cwd(), "default")
     await serveMathMcp({
       projectDir,
       role: args.role || process.env.OPENCODE_MATH_ROLE || "verifier",
@@ -200,7 +246,7 @@ export const MathStartCommand = effectCmd({
       .option("title", { type: "string", default: "math-worker", describe: "child session title" })
       .option("task", { type: "string", default: "", describe: "TASK.md body" })
       .option("parent", { type: "string", demandOption: true, describe: "parent (orchestrator) session id" })
-      .option("project", { type: "string", describe: "math project name under .math/" })
+      .option("project", { type: "string", describe: "math problem ID under .math/problems/" })
       .option("interval", { type: "number", describe: "heartbeat interval ms" })
       .option("model", { type: "string", describe: "worker model as provider/model" })
       .option("variant", { type: "string", describe: "worker model effort/variant" }),

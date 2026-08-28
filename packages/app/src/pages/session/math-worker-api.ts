@@ -33,6 +33,52 @@ export type MathWorkerStatus = {
   verificationWrong?: number
   verificationError?: number
   latestVerification?: string
+  verifierModel?: string
+}
+
+export type MathDetailKind = "facts" | "correct" | "wrong" | "error"
+
+export type MathVerificationReport = {
+  summary: string
+  criticalErrors: string[]
+  gaps: string[]
+}
+
+export type MathFactDetail = {
+  kind: "fact"
+  id: string
+  factId: string
+  problemId: string
+  author: string
+  predecessors: string[]
+  statement: string
+  proof: string
+  intuition?: string
+  glossaryIntroduces: Record<string, string>
+}
+
+export type MathVerificationDetail = {
+  kind: "correct" | "wrong" | "error"
+  id: string
+  timestamp: string
+  workerSessionID?: string
+  statement: string
+  proof?: string
+  evidence: string
+  factId?: string
+  writeError?: string
+  error?: string
+  report?: MathVerificationReport
+}
+
+export type MathDetailItem = MathFactDetail | MathVerificationDetail
+
+export type MathDetailPage = {
+  kind: MathDetailKind
+  total: number
+  offset: number
+  limit: number
+  items: MathDetailItem[]
 }
 
 export type MathWorkerTaskInfo = {
@@ -90,6 +136,28 @@ export function listMathWorkers(input: {
   })
 }
 
+export function listMathDetails(input: {
+  sdk: SDK
+  platform: Platform
+  auth?: Auth
+  parentSessionID: string
+  project: string
+  kind: MathDetailKind
+  offset?: number
+  limit?: number
+}): Promise<MathDetailPage> {
+  const query = new URLSearchParams({ project: input.project, kind: input.kind })
+  if (input.offset !== undefined) query.set("offset", String(input.offset))
+  if (input.limit !== undefined) query.set("limit", String(input.limit))
+  console.debug(
+    `[math-details] api request parent=${input.parentSessionID} project=${input.project} kind=${input.kind} offset=${input.offset ?? 0} limit=${input.limit ?? 20}`,
+  )
+  return request({
+    ...input,
+    path: `/session/${encodeURIComponent(input.parentSessionID)}/math-details?${query.toString()}`,
+  })
+}
+
 export function ensureMathWorker(input: {
   sdk: SDK
   platform: Platform
@@ -98,12 +166,16 @@ export function ensureMathWorker(input: {
   workerSessionID: string
   project?: string
   reEnable?: boolean
+  verifierModel?: string
 }): Promise<MathWorkerStatus> {
   const query = input.project ? `?project=${encodeURIComponent(input.project)}` : ""
   return request({
     ...input,
     path: `/session/${encodeURIComponent(input.parentSessionID)}/math-workers/${encodeURIComponent(input.workerSessionID)}/ensure${query}`,
-    init: { method: "POST", body: JSON.stringify({ reEnable: input.reEnable ?? false }) },
+    init: {
+      method: "POST",
+      body: JSON.stringify({ reEnable: input.reEnable ?? false, verifierModel: input.verifierModel }),
+    },
   })
 }
 

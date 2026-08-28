@@ -6,7 +6,6 @@ import { discoverMathWorkers, ensureMathWorker, startMathWorker, stopMathWorker 
 import { mathRoot } from "@/math/layout"
 import { MathWorkerEvent } from "@/math/event"
 import { Bus } from "@/bus"
-import path from "path"
 import DESCRIPTION_START from "./math_worker_start.txt"
 import DESCRIPTION_STATUS from "./math_worker_status.txt"
 import DESCRIPTION_STOP from "./math_worker_stop.txt"
@@ -16,28 +15,30 @@ const StartParameters = Schema.Struct({
   title: Schema.String.annotate({ description: "Short title for the worker session" }),
   task: Schema.String.annotate({ description: "TASK.md body: which slice of the proof this worker owns" }),
   project: Schema.optional(Schema.String).annotate({
-    description: "Math project name under .math/. Defaults to the workspace directory name.",
+    description: "Math problem ID under .math/problems/. Defaults to the parent Math Mode session ID.",
   }),
   model: Schema.optional(Schema.String).annotate({ description: "Worker model as provider/model" }),
+  verifier_model: Schema.optional(Schema.String).annotate({ description: "Verifier model as provider/model" }),
   variant: Schema.optional(Schema.String).annotate({ description: "Worker model effort/variant, e.g. high or xhigh" }),
 })
 
 const StatusParameters = Schema.Struct({
   session_id: Schema.optional(Schema.String).annotate({ description: "If set, only this worker" }),
-  project: Schema.optional(Schema.String).annotate({ description: "Math project name under .math/." }),
+  project: Schema.optional(Schema.String).annotate({ description: "Math problem ID under .math/problems/." }),
 })
 
 const EnsureParameters = Schema.Struct({
   session_id: Schema.String.annotate({ description: "Existing math-worker session id" }),
-  project: Schema.optional(Schema.String).annotate({ description: "Math project name under .math/." }),
+  project: Schema.optional(Schema.String).annotate({ description: "Math problem ID under .math/problems/." }),
   model: Schema.optional(Schema.String).annotate({ description: "Worker model as provider/model" }),
+  verifier_model: Schema.optional(Schema.String).annotate({ description: "Verifier model as provider/model" }),
   variant: Schema.optional(Schema.String).annotate({ description: "Worker model effort/variant" }),
 })
 
 const StopParameters = Schema.Struct({
   session_id: Schema.String.annotate({ description: "Worker session id" }),
   force: Schema.optional(Schema.Boolean).annotate({ description: "Use SIGKILL instead of SIGTERM" }),
-  project: Schema.optional(Schema.String).annotate({ description: "Math project name under .math/." }),
+  project: Schema.optional(Schema.String).annotate({ description: "Math problem ID under .math/problems/." }),
 })
 
 export const MathWorkerStartTool = Tool.define(
@@ -62,6 +63,7 @@ export const MathWorkerStartTool = Tool.define(
             task: params.task,
             project: params.project,
             model: params.model,
+            verifierModel: params.verifier_model,
             variant: params.variant,
           }).pipe(Effect.provideService(Session.Service, sessions))
           yield* bus.publish(MathWorkerEvent.Status, {
@@ -100,7 +102,7 @@ export const MathWorkerStatusTool = Tool.define(
             metadata: {},
           })
           const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
-          const projectDir = mathRoot(parent.directory, params.project || path.basename(parent.directory) || "default")
+          const projectDir = mathRoot(parent.directory, params.project || parent.id)
           const rows = yield* discoverMathWorkers({
             projectDir,
             sessionID: params.session_id,
@@ -145,11 +147,12 @@ export const MathWorkerEnsureTool = Tool.define(
             metadata: { sessionID: params.session_id },
           })
           const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
-          const projectDir = mathRoot(parent.directory, params.project || path.basename(parent.directory) || "default")
+          const projectDir = mathRoot(parent.directory, params.project || parent.id)
           const result = yield* ensureMathWorker({
             sessionID: SessionID.make(params.session_id),
             projectDir,
             model: params.model,
+            verifierModel: params.verifier_model,
             variant: params.variant,
           }).pipe(Effect.provideService(Session.Service, sessions), Effect.orDie)
           yield* bus.publish(MathWorkerEvent.Status, {
@@ -188,7 +191,7 @@ export const MathWorkerStopTool = Tool.define(
             metadata: { force: params.force ?? false },
           })
           const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
-          const projectDir = mathRoot(parent.directory, params.project || path.basename(parent.directory) || "default")
+          const projectDir = mathRoot(parent.directory, params.project || parent.id)
           const result = stopMathWorker({
             projectDir,
             sessionID: params.session_id,

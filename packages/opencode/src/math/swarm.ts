@@ -23,6 +23,7 @@ export type SwarmWorker = {
 export type SwarmFile = {
   projectDir: string
   parentSessionID?: string
+  verifierModel?: string
   workers: Record<string, SwarmWorker>
 }
 
@@ -56,6 +57,7 @@ export function readSwarm(projectDir: string): SwarmFile {
     return {
       projectDir,
       parentSessionID: typeof parsed.parentSessionID === "string" ? parsed.parentSessionID : undefined,
+      verifierModel: typeof parsed.verifierModel === "string" ? parsed.verifierModel : undefined,
       workers,
     }
   } catch {
@@ -85,6 +87,14 @@ export function patchWorker(projectDir: string, sessionID: string, patch: Partia
   const prev = swarm.workers[sessionID]
   if (!prev) return swarm
   swarm.workers[sessionID] = { ...prev, ...patch, sessionID }
+  writeSwarm(projectDir, swarm)
+  return swarm
+}
+
+export function setVerifierModel(projectDir: string, model: string): SwarmFile {
+  const swarm = readSwarm(projectDir)
+  swarm.projectDir = projectDir
+  swarm.verifierModel = model
   writeSwarm(projectDir, swarm)
   return swarm
 }

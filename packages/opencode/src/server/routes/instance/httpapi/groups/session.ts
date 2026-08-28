@@ -49,6 +49,56 @@ export const MathWorkerQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   project: Schema.optional(Schema.String),
 })
+export const MathDetailKind = Schema.Literals(["facts", "correct", "wrong", "error"])
+export const MathDetailsQuery = Schema.Struct({
+  ...WorkspaceRoutingQueryFields,
+  project: Schema.String,
+  kind: MathDetailKind,
+  offset: Schema.optional(
+    Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
+  ),
+  limit: Schema.optional(
+    Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100)),
+  ),
+})
+export const MathVerificationReport = Schema.Struct({
+  summary: Schema.String,
+  criticalErrors: Schema.Array(Schema.String),
+  gaps: Schema.Array(Schema.String),
+})
+export const MathFactDetail = Schema.Struct({
+  kind: Schema.Literal("fact"),
+  id: Schema.String,
+  factId: Schema.String,
+  problemId: Schema.String,
+  author: Schema.String,
+  predecessors: Schema.Array(Schema.String),
+  statement: Schema.String,
+  proof: Schema.String,
+  intuition: Schema.optional(Schema.String),
+  glossaryIntroduces: Schema.Record(Schema.String, Schema.String),
+})
+export const MathVerificationDetail = Schema.Struct({
+  kind: Schema.Literals(["correct", "wrong", "error"]),
+  id: Schema.String,
+  timestamp: Schema.String,
+  workerSessionID: Schema.optional(Schema.String),
+  statement: Schema.String,
+  proof: Schema.optional(Schema.String),
+  evidence: Schema.String,
+  factId: Schema.optional(Schema.String),
+  writeError: Schema.optional(Schema.String),
+  error: Schema.optional(Schema.String),
+  report: Schema.optional(MathVerificationReport),
+})
+export const MathDetailItem = Schema.Union([MathFactDetail, MathVerificationDetail])
+export const MathDetailPage = Schema.Struct({
+  kind: MathDetailKind,
+  total: Schema.Number,
+  offset: Schema.Number,
+  limit: Schema.Number,
+  items: Schema.Array(MathDetailItem),
+})
 export const MathWorkerStatus = Schema.Struct({
   sessionID: Schema.String,
   project: Schema.optional(Schema.String),
@@ -77,10 +127,12 @@ export const MathWorkerStatus = Schema.Struct({
   verificationWrong: Schema.optional(Schema.Number),
   verificationError: Schema.optional(Schema.Number),
   latestVerification: Schema.optional(Schema.String),
+  verifierModel: Schema.optional(Schema.String),
 })
 export const MathWorkerEnsurePayload = Schema.Struct({
   model: Schema.optional(Schema.String),
   variant: Schema.optional(Schema.String),
+  verifierModel: Schema.optional(Schema.String),
   reEnable: Schema.optional(Schema.Boolean),
 })
 export const MathWorkerStopPayload = Schema.Struct({ force: Schema.optional(Schema.Boolean) })
@@ -134,6 +186,7 @@ export const SessionPaths = {
   get: `${root}/:sessionID`,
   children: `${root}/:sessionID/children`,
   mathWorkers: `${root}/:sessionID/math-workers`,
+  mathDetails: `${root}/:sessionID/math-details`,
   mathWorkerEnsure: `${root}/:sessionID/math-workers/:workerID/ensure`,
   mathWorkerStop: `${root}/:sessionID/math-workers/:workerID/stop`,
   mathWorkerTask: `${root}/:sessionID/math-workers/:workerID/task`,
@@ -225,6 +278,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.mathWorkers",
             summary: "Get Math Mode workers",
             description: "Reconcile durable math-worker child sessions with detached process status.",
+          }),
+        ),
+        HttpApiEndpoint.get("mathDetails", SessionPaths.mathDetails, {
+          params: { sessionID: SessionID },
+          query: MathDetailsQuery,
+          success: described(MathDetailPage, "Math Mode fact and verification details"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.mathDetails",
+            summary: "Get Math Mode details",
+            description: "List accepted facts or proof verification records for a Math Mode project.",
           }),
         ),
         HttpApiEndpoint.post("mathWorkerEnsure", SessionPaths.mathWorkerEnsure, {

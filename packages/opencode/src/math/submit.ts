@@ -78,6 +78,21 @@ export async function factSubmit(
     })
   } catch (e) {
     const error = e instanceof VerifyUnavailableError || e instanceof Error ? e.message : String(e)
+    await ctx.globalMemory.append({
+      kind: "verification",
+      claim: input.statement,
+      evidence: error,
+      author: ctx.author,
+      verifiable: false,
+      links: { source_id: input.source_id ?? null, predecessors: input.predecessors ?? [] },
+      extra: {
+        verdict: "error",
+        fact_id: null,
+        write_error: null,
+        error,
+        verification_report: null,
+      },
+    })
     return { accepted: false, verdict: "error", error, undefined_symbols: undefinedSyms }
   }
 

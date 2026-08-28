@@ -11,11 +11,13 @@ import { Server } from "@/server/server"
 import { SessionPaths } from "@/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"
-import { MessageID } from "@/session/schema"
+import { MessageID, PartID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { layout, mathRoot, taskPath } from "@/math/layout"
 import { killProcessGroup, pidAlive, spawnDetached } from "@/math/spawn"
-import { writeSwarm } from "@/math/swarm"
+import { readSwarm, writeSwarm } from "@/math/swarm"
+import { FactGraph } from "@/math/fact-graph"
+import { GlobalMemory } from "@/math/global-memory"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
@@ -50,6 +52,122 @@ afterEach(async () => {
 })
 
 describe("Math worker HttpApi", () => {
+  it.instance(
+    "lists Math Mode fact and verification details",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessions = yield* Session.Service
+        const parent = yield* sessions.create({ title: "math", agent: "math-orchestrator" })
+        const worker = yield* sessions.create({ title: "lemma", agent: "math-worker", parentID: parent.id })
+        const historicalParent = yield* sessions.create({ title: "older math", agent: "math-orchestrator" })
+        const historicalWorker = yield* sessions.create({
+          title: "older lemma",
+          agent: "math-worker",
+          parentID: historicalParent.id,
+        })
+        const projectDir = mathRoot(test.directory, "detail-swarm")
+        const facts = new FactGraph(projectDir)
+        const factId = yield* Effect.promise(() =>
+          facts.add({
+            problem_id: "P",
+            author: worker.id,
+            statement: "A holds",
+            proof: "Proof of A",
+          }),
+        )
+        const user = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: historicalWorker.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "math-worker",
+          model: { providerID: ProviderID.make("test"), modelID: ModelID.make("test-model") },
+        })
+        const assistant = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: historicalWorker.id,
+          parentID: user.id,
+          role: "assistant",
+          mode: "math-worker",
+          agent: "math-worker",
+          path: { cwd: test.directory, root: test.directory },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: ModelID.make("test-model"),
+          providerID: ProviderID.make("test"),
+          time: { created: Date.now(), completed: Date.now() },
+        } satisfies MessageV2.Assistant)
+        yield* sessions.updatePart({
+          id: PartID.ascending(),
+          sessionID: historicalWorker.id,
+          messageID: assistant.id,
+          type: "tool",
+          callID: "call_wrong_proof",
+          tool: "math-truth_fact_submit",
+          state: {
+            status: "completed",
+            input: { statement: "B holds", proof: "Attempted proof of B" },
+            output: JSON.stringify({ accepted: false, verdict: "wrong" }),
+            title: "fact_submit",
+            metadata: {},
+            time: { start: Date.now(), end: Date.now() },
+          },
+        })
+        yield* Effect.promise(() =>
+          new GlobalMemory(projectDir).append({
+            kind: "verification",
+            claim: "B holds",
+            evidence: "gap in step 2",
+            author: historicalWorker.id,
+            verifiable: false,
+            extra: {
+              verdict: "wrong",
+              verification_report: {
+                summary: "Rejected",
+                critical_errors: ["Unsupported step"],
+                gaps: ["Prove step 2"],
+              },
+            },
+          }),
+        )
+
+        const headers = { "x-opencode-directory": test.directory }
+        const factsResponse = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathDetails, { sessionID: parent.id })}?project=detail-swarm&kind=facts`,
+            { headers },
+          ),
+        )
+        expect(yield* Effect.promise(() => body(factsResponse))).toMatchObject({
+          kind: "facts",
+          total: 1,
+          items: [{ kind: "fact", factId, statement: "A holds", proof: "Proof of A" }],
+        })
+
+        const wrongResponse = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathDetails, { sessionID: parent.id })}?project=detail-swarm&kind=wrong`,
+            { headers },
+          ),
+        )
+        expect(yield* Effect.promise(() => body(wrongResponse))).toMatchObject({
+          kind: "wrong",
+          total: 1,
+          items: [
+            {
+              kind: "wrong",
+              workerSessionID: historicalWorker.id,
+              statement: "B holds",
+              proof: "Attempted proof of B",
+              report: { summary: "Rejected", criticalErrors: ["Unsupported step"], gaps: ["Prove step 2"] },
+            },
+          ],
+        })
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
   it.instance(
     "finalizes an orphaned assistant while listing a dead detached worker",
     () =>
@@ -242,10 +360,15 @@ describe("Math worker HttpApi", () => {
         const ensureResponse = yield* Effect.promise(() =>
           Server.Default().app.request(
             `${endpoint(SessionPaths.mathWorkerEnsure, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
-            { headers, method: "POST", body: "{}" },
+            { headers, method: "POST", body: JSON.stringify({ verifierModel: "test/verifier" }) },
           ),
         )
-        expect(yield* Effect.promise(() => body(ensureResponse))).toMatchObject({ sessionID: worker.id, alive: true })
+        expect(yield* Effect.promise(() => body(ensureResponse))).toMatchObject({
+          sessionID: worker.id,
+          alive: true,
+          verifierModel: "test/verifier",
+        })
+        expect(readSwarm(projectDir).verifierModel).toBe("test/verifier")
 
         const taskGetResponse = yield* Effect.promise(() =>
           Server.Default().app.request(

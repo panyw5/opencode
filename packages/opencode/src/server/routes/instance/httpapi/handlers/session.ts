@@ -21,8 +21,9 @@ import {
   stopMathWorker,
   updateMathWorkerTask,
 } from "@/math/worker"
-import { mathRoot } from "@/math/layout"
+import { mathProblemsRoot, mathRoot } from "@/math/layout"
 import { MathWorkerEvent } from "@/math/event"
+import { attachVerificationProofs, readMathDetailPage, verificationAttempts } from "@/math/details"
 import { readSwarm } from "@/math/swarm"
 import { taskPath } from "@/math/layout"
 import { MessageID, PartID, SessionID } from "@/session/schema"
@@ -34,7 +35,6 @@ import {
 import { NamedError } from "@opencode-ai/core/util/error"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
-import path from "node:path"
 import { existsSync, readdirSync } from "node:fs"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -50,6 +50,7 @@ import {
   InitPayload,
   ListQuery,
   MathWorkerEnsurePayload,
+  MathDetailsQuery,
   MathWorkerQuery,
   MathWorkerStopPayload,
   MathWorkerTaskPayload,
@@ -178,7 +179,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           return []
         }
       }
-      const base = path.join(parent.directory, ".math")
+      const base = mathProblemsRoot(parent.directory)
       let names: string[] = []
       try {
         names = readdirSync(base, { withFileTypes: true })
@@ -187,8 +188,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       } catch {
         names = []
       }
-      const fallback = path.basename(parent.directory) || "default"
-      return [...new Set([fallback, "default", ...names])].flatMap((name) => {
+      return [...new Set([parent.id, ...names])].flatMap((name) => {
         try {
           return [mathRoot(parent.directory, name)]
         } catch {
@@ -247,6 +247,90 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return result
     })
 
+    const mathDetails = Effect.fn("SessionHttpApi.mathDetails")(function* (ctx: {
+      params: { sessionID: SessionID }
+      query: typeof MathDetailsQuery.Type
+    }) {
+      log.info("math details request start", {
+        parentSessionID: ctx.params.sessionID,
+        project: ctx.query.project,
+        kind: ctx.query.kind,
+        offset: ctx.query.offset ?? 0,
+        limit: ctx.query.limit ?? 20,
+      })
+      const parent = yield* requireSession(ctx.params.sessionID)
+      let projectDir: string
+      try {
+        projectDir = mathRoot(parent.directory, ctx.query.project)
+      } catch {
+        return yield* new HttpApiError.BadRequest({})
+      }
+      const page = yield* Effect.promise(() =>
+        readMathDetailPage({
+          projectDir,
+          kind: ctx.query.kind,
+          offset: ctx.query.offset ?? 0,
+          limit: ctx.query.limit ?? 20,
+        }),
+      )
+      log.info("math details project page loaded", {
+        parentSessionID: parent.id,
+        projectDir,
+        kind: page.kind,
+        offset: page.offset,
+        items: page.items.length,
+        total: page.total,
+      })
+      const authors = new Set(
+        page.items.flatMap((item) => (item.kind !== "fact" && item.workerSessionID ? [item.workerSessionID] : [])),
+      )
+      if (authors.size === 0) {
+        log.info("math details request finish", {
+          parentSessionID: parent.id,
+          kind: page.kind,
+          items: page.items.length,
+          transcriptWorkers: 0,
+        })
+        return page
+      }
+      const candidates = yield* Effect.forEach([...authors], (sessionID) =>
+        session.get(SessionID.make(sessionID)).pipe(Effect.orElseSucceed(() => undefined)),
+      )
+      const workerIDs = candidates.flatMap((worker) =>
+        worker?.agent === "math-worker" && worker.directory === parent.directory ? [worker.id] : [],
+      )
+      const validWorkers = new Set<string>(workerIDs)
+      const sanitized = {
+        ...page,
+        items: page.items.map((item) =>
+          item.kind !== "fact" && item.workerSessionID && !validWorkers.has(item.workerSessionID)
+            ? { ...item, workerSessionID: undefined }
+            : item,
+        ),
+      }
+      const proofWorkers = new Set(
+        sanitized.items.flatMap((item) =>
+          item.kind !== "fact" && !item.proof && item.workerSessionID ? [item.workerSessionID] : [],
+        ),
+      )
+      const transcriptWorkerIDs = workerIDs.filter((workerID) => proofWorkers.has(workerID))
+      const attempts = yield* Effect.forEach(transcriptWorkerIDs, (workerSessionID) =>
+        session.messages({ sessionID: workerSessionID }).pipe(
+          Effect.map((messages) => verificationAttempts(workerSessionID, messages)),
+          Effect.orElseSucceed(() => []),
+        ),
+      )
+      const result = attachVerificationProofs(sanitized, attempts.flat())
+      log.info("math details request finish", {
+        parentSessionID: parent.id,
+        kind: result.kind,
+        items: result.items.length,
+        transcriptWorkers: transcriptWorkerIDs.length,
+        attempts: attempts.flat().length,
+      })
+      return result
+    })
+
     const mathWorkerEnsure = Effect.fn("SessionHttpApi.mathWorkerEnsure")(function* (ctx: {
       params: { sessionID: SessionID; workerID: SessionID }
       query: typeof MathWorkerQuery.Type
@@ -261,6 +345,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         projectDir,
         model: ctx.payload?.model,
         variant: ctx.payload?.variant,
+        verifierModel: ctx.payload?.verifierModel,
         reEnable: ctx.payload?.reEnable,
       }).pipe(Effect.catchCause(() => new HttpApiError.BadRequest({})))
       yield* bus.publish(MathWorkerEvent.Status, {
@@ -762,6 +847,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("get", get)
       .handle("children", children)
       .handle("mathWorkers", mathWorkers)
+      .handle("mathDetails", mathDetails)
       .handle("mathWorkerEnsure", mathWorkerEnsure)
       .handle("mathWorkerStop", mathWorkerStop)
       .handle("mathWorkerTaskGet", mathWorkerTaskGet)
