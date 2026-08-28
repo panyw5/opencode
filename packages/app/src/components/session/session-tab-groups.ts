@@ -121,3 +121,34 @@ export function reorderSessionTabGroups<T>(
   next.splice(toIndex, 0, next.splice(fromIndex, 1)[0])
   return next
 }
+
+/**
+ * Pick a fallback tab after closing a tab or its descendant subtree.
+ * Fallbacks are always group roots, never child tabs.
+ */
+export function pickSessionTabNeighbor<T>(
+  groups: readonly SessionTabGroup<T>[],
+  keyOf: (tab: T) => string,
+  closingKeys: ReadonlySet<string>,
+  closedKey: string,
+): T | undefined {
+  const rootIndex = groups.findIndex((group) => {
+    if (keyOf(group.tab) === closedKey) return true
+    return group.children.some((item) => keyOf(item.tab) === closedKey)
+  })
+  if (rootIndex === -1) return undefined
+
+  const group = groups[rootIndex]
+  const rootKey = keyOf(group.tab)
+  if (!closingKeys.has(rootKey)) return group.tab
+
+  for (let index = rootIndex - 1; index >= 0; index -= 1) {
+    const candidate = groups[index]?.tab
+    if (candidate && !closingKeys.has(keyOf(candidate))) return candidate
+  }
+  for (let index = rootIndex + 1; index < groups.length; index += 1) {
+    const candidate = groups[index]?.tab
+    if (candidate && !closingKeys.has(keyOf(candidate))) return candidate
+  }
+  return undefined
+}

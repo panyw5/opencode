@@ -2266,9 +2266,23 @@ export default function Page() {
   )
 
   let userMessageLoadRun = 0
+  createEffect(
+    on(
+      () => params.id,
+      () => {
+        userMessageLoadRun += 1
+        setUi("userMessagesLoading", false)
+      },
+    ),
+  )
   const loadAllUserMessages = async () => {
     const id = params.id
-    if (!id || ui.userMessagesLoading || !historyMore()) return
+    if (!id || ui.userMessagesLoading || !historyMore()) {
+      console.debug(
+        `[user-message-menu] load-skip sid=${id ?? "none"} loading=${String(ui.userMessagesLoading)} more=${String(historyMore())}`,
+      )
+      return
+    }
 
     const run = ++userMessageLoadRun
     setUi("userMessagesLoading", true)
@@ -3009,6 +3023,8 @@ export default function Page() {
             onOpenChildAgent={openChildAgent}
             userMessages={userMessageMenu()}
             userMessagesLoading={ui.userMessagesLoading}
+            userMessagesComplete={!historyMore()}
+            userMessageCount={visibleUserMessages().length}
             onLoadAllUserMessages={() => void loadAllUserMessages()}
             onOpenUserMessage={(entry) => {
               const message = visibleUserMessages().find((item) => item.id === entry.id)

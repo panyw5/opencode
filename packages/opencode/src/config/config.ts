@@ -368,8 +368,18 @@ function globalConfigFile() {
 }
 
 function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
-  if (!isRecord(patch)) {
-    const edits = modify(input, path, patch, {
+  const providerDelete = path.length === 2 && path[0] === "provider" && isRecord(patch) && Object.keys(patch).length === 0
+  const providerModels = path.length === 3 && path[0] === "provider" && path[2] === "models"
+  const providerHeaders = path.length === 4 && path[0] === "provider" && path[2] === "options" && path[3] === "headers"
+  const providerApiKey = path.length === 4 && path[0] === "provider" && path[2] === "options" && path[3] === "apiKey"
+  if (!isRecord(patch) || providerDelete || providerModels || providerHeaders) {
+    const value =
+      providerDelete ||
+      (providerHeaders && isRecord(patch) && Object.keys(patch).length === 0) ||
+      (providerApiKey && patch === "")
+        ? undefined
+        : patch
+    const edits = modify(input, path, value, {
       formattingOptions: {
         insertSpaces: true,
         tabSize: 2,
@@ -381,10 +391,29 @@ function patchJsonc(input: string, patch: unknown, path: string[] = []): string 
   return Object.entries(patch).reduce((result, [key, value]) => patchJsonc(result, value, [...path, key]), input)
 }
 
-/** MCP editors submit the complete server map, so its absence is a deletion rather than a merge omission. */
+/** MCP and provider model editors submit complete maps, so omitted entries are deletions rather than merge omissions. */
 function mergeWritableConfig(existing: Info, patch: Info): Info {
   const merged = mergeDeep(writable(existing), writable(patch)) as Info
   if ("mcp" in patch) merged.mcp = patch.mcp
+  for (const [providerID, provider] of Object.entries(patch.provider ?? {})) {
+    if (Object.keys(provider).length === 0) {
+      if (merged.provider) delete merged.provider[providerID]
+      continue
+    }
+    const target = merged.provider?.[providerID]
+    if (!target) continue
+    if ("models" in provider) target.models = provider.models
+    if (provider.options && "headers" in provider.options) {
+      if (Object.keys(provider.options.headers ?? {}).length === 0) delete target.options?.headers
+      else {
+        target.options ??= {}
+        target.options.headers = provider.options.headers
+      }
+    }
+    if (provider.options && "apiKey" in provider.options && provider.options.apiKey === "") {
+      delete target.options?.apiKey
+    }
+  }
   return merged
 }
 
@@ -923,6 +952,20 @@ export const layer = Layer.effect(
       const channelsPatch = config.channels
       const channelsTouched = "channels" in config
       const patch = writableGlobal(config)
+      const existingForLog = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
+      for (const [providerID, provider] of Object.entries(patch.provider ?? {})) {
+        if (!("models" in provider)) continue
+        const previousModels = Object.keys(existingForLog.provider?.[providerID]?.models ?? {})
+        const nextModels = Object.keys(provider.models ?? {})
+        const removedModels = previousModels.filter((modelID) => !nextModels.includes(modelID))
+        if (removedModels.length === 0) continue
+        log.info("global config provider model deletion requested", {
+          providerID,
+          previousModelCount: previousModels.length,
+          nextModelCount: nextModels.length,
+          removedModels: removedModels.join(","),
+        })
+      }
 
       let next: Info
       let changed: boolean

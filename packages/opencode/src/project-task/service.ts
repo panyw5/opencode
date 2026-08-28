@@ -117,6 +117,9 @@ export const layer = Layer.effect(
       for (const row of rows) {
         out.push(yield* hydrate(row))
       }
+      console.debug(
+        `[project-task] list projectID=${pid} count=${out.length} dirs=${out.map((task) => `${task.id}:${task.sessionDirectories.join("|") || "-"}`).join(",") || "none"}`,
+      )
       return out
     })
 

@@ -5,7 +5,12 @@ import { Git } from "@/git"
 import { assertExternalDirectoryEffect } from "./external-directory"
 import DESCRIPTION from "./repo_overview.txt"
 import * as Tool from "./tool"
-import { parseRepositoryReference, repositoryCachePath } from "@/util/repository"
+import {
+  parseRepositoryReference,
+  repositoryCachePath,
+  repositoryLegacyCachePath,
+  sameRepositoryReference,
+} from "@/util/repository"
 import { InstanceState } from "@/effect/instance-state"
 
 export const Parameters = Schema.Struct({
@@ -120,9 +125,17 @@ export const RepoOverviewTool = Tool.define<typeof Parameters, Metadata, AppFile
       if (!parsed) throw new Error("Repository must be a git URL, host/path reference, or GitHub owner/repo shorthand")
 
       const repository = parsed.label
+      const canonical = repositoryCachePath(parsed)
+      const legacy = repositoryLegacyCachePath(parsed)
+      let cached = canonical
+      if (!(yield* fs.existsSafe(canonical)) && (yield* fs.existsSafe(path.join(legacy, ".git")))) {
+        const origin = yield* git.run(["config", "--get", "remote.origin.url"], { cwd: legacy })
+        const legacyReference = origin.exitCode === 0 ? parseRepositoryReference(origin.text().trim()) : undefined
+        if (legacyReference && sameRepositoryReference(legacyReference, parsed)) cached = legacy
+      }
       return {
         repository,
-        path: repositoryCachePath(parsed),
+        path: cached,
       }
     })
 

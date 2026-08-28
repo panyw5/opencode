@@ -10,6 +10,7 @@ export const dict = {
   "projectTask.create": "新建项目任务",
   "projectTask.edit": "编辑项目任务",
   "projectTask.archive": "归档项目任务",
+  "projectTask.archive.action": "归档",
   "projectTask.archive.confirm": "确定归档 {{title}}？已关联的会话将被取消挂载。",
   "projectTask.loading": "正在加载项目任务…",
   "projectTask.empty": "暂无项目任务。创建一个开始跟踪工作。",
@@ -36,6 +37,9 @@ export const dict = {
   "projectTask.mount.unmount": "取消关联",
   "projectTask.inject.title": "每轮注入任务上下文",
   "projectTask.inject.hint": "开启后，每轮 LLM 调用会收到已关联任务的描述、关联会话与待办。默认开启。",
+  "projectTask.done.title": "已完成 ({{count}})",
+  "projectTask.archived.title": "已归档 ({{count}})",
+  "projectTask.worktree.title": "工作树: {{name}}",
   "command.projectTask.open": "打开项目任务",
   "command.projectTask.open.description": "在侧边栏显示当前项目的项目任务",
 
@@ -182,6 +186,7 @@ export const dict = {
   "command.language.set": "使用语言：{{language}}",
 
   "command.session.new": "新建会话",
+  "command.session.new.tooltip": "在 {{project}} 下新建会话",
 
   "command.file.open": "打开文件",
 
@@ -235,6 +240,7 @@ export const dict = {
 
   "command.permissions.autoaccept.enable": "自动接受权限",
   "command.permissions.autoaccept.disable": "停止自动接受权限",
+  "prompt.permissions.autoaccept.active": "自动授权",
 
   "command.workspace.toggle": "切换工作区",
   "command.workspace.toggle.description": "在侧边栏启用或禁用多个工作区",
@@ -645,6 +651,7 @@ export const dict = {
   "toast.session.hooks.enabled.description": "本会话的插件 hooks 已启用。",
   "toast.session.generateTitle.success.title": "标题已生成",
   "toast.session.generateTitle.failed.title": "生成标题失败",
+  "toast.session.updateTitle.success.title": "标题已更新",
   "toast.session.hooks.failed.title": "更新 hook 控制失败",
   "toast.session.hooks.failed.description": "无法更新此会话的 hook 控制。",
   "toast.session.listFailed.title": "无法加载 {{project}} 的会话",
@@ -747,6 +754,11 @@ export const dict = {
   "session.childAgents.button": "查看子智能体会话",
   "session.childAgents.open": "打开子智能体会话",
   "session.childAgents.menuLabel": "子智能体会话",
+  "session.userMessages.button": "查看用户消息",
+  "session.userMessages.open": "查看用户消息",
+  "session.userMessages.menuLabel": "用户消息",
+  "session.userMessages.loading": "加载中",
+  "session.userMessages.index": "第 {{index}} 条",
   "session.childAgents.background": "背景",
   "session.childAgents.index": "#{{index}}",
   "session.childAgents.indexResume": "#{{index}} 续跑",
@@ -806,6 +818,9 @@ export const dict = {
   "session.new.worktree.mainWithBranch": "主分支（{{branch}}）",
   "session.new.worktree.create": "创建新的 worktree",
   "session.new.lastModified": "最后修改",
+  "session.new.path.copy": "复制",
+  "session.new.path.copied": "已复制",
+  "session.new.path.openFolder": "打开所在文件夹",
   "session.header.search.placeholder": "搜索 {{project}}",
   "session.header.searchFiles": "搜索文件",
   "session.header.openIn": "打开方式",
@@ -840,6 +855,8 @@ export const dict = {
   "session.share.copy.copyLink": "复制链接",
   "session.copyInfo": "复制会话信息",
   "session.generateTitle": "生成标题",
+  "session.editTitle": "编辑标题",
+  "session.editTitle.placeholder": "输入此会话的标题",
   "session.restore": "恢复",
   "session.restore.failed.title": "恢复会话失败",
 
@@ -1339,8 +1356,6 @@ export const dict = {
   "error.childStore.storeCreateFailed": "创建存储失败",
   "terminal.connectionLost.abnormalClose": "WebSocket 异常关闭：{{code}}",
   "config.title": "配置页面",
-  "config.nav.workspace": "工作区",
-  "config.nav.connections": "连接与自动化",
   "config.nav.providersDescription": "配置供应商与模型",
   "config.nav.agentsDescription": "配置智能体 md 文件",
   "config.nav.skillsDescription": "配置技能，技能市场",

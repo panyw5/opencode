@@ -2,15 +2,19 @@ import { DataProvider } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { createEffect, createMemo, type ParentProps, Show } from "solid-js"
+import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
 import { LocalProvider } from "@/context/local"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { SkillsProvider } from "@/context/skills"
 import { SyncProvider, useSync } from "@/context/sync"
+import { extraAgentByDirectory } from "@/pages/layout/extra-agents"
+import { newSessionProjectLabel, splitI18nTemplate } from "@/pages/layout/helpers"
+import { RailTooltip } from "@/pages/layout/rail-tooltip"
 import { decode64 } from "@/utils/base64"
 import { StatusPopover } from "@/components/status-popover"
 
@@ -69,27 +73,56 @@ function ProjectStatusPortal() {
   const language = useLanguage()
   const params = useParams()
   const navigate = useNavigate()
+  const layout = useLayout()
   const mount = createMemo(() => document.getElementById("opencode-titlebar-center-project"))
+  const directory = createMemo(() => (params.dir ? (decode64(params.dir) ?? "") : ""))
+  const projectLabel = createMemo(() => {
+    const dir = directory()
+    return newSessionProjectLabel(dir, layout.projects.list(), {
+      extraName: extraAgentByDirectory(dir)?.label,
+      sidebarRoot: layout.sidebar.project(),
+    })
+  })
+  const tooltip = createMemo(() => {
+    const project = projectLabel()
+    if (!project) return language.t("command.session.new")
+    return language.t("command.session.new.tooltip", { project })
+  })
+  const tooltipTitle = () => {
+    const project = projectLabel()
+    if (!project) return language.t("command.session.new")
+    const parts = splitI18nTemplate(language.t("command.session.new.tooltip"), "project")
+    return (
+      <For each={parts}>
+        {(part) =>
+          part.type === "token" ? <span data-slot="rail-tooltip-mark">{project}</span> : part.value
+        }
+      </For>
+    )
+  }
 
   return (
     <Show when={mount()}>
       {(node) => (
         <Portal mount={node()}>
           <div class="mr-2 flex items-center gap-1">
-            <Tooltip placement="bottom" value={language.t("command.session.new")}>
+            <RailTooltip title={tooltipTitle()} placement="bottom">
               <IconButton
                 data-action="session-new-button"
                 icon="new-session"
                 size="normal"
                 variant="ghost"
-                class="titlebar-icon w-8 h-6 p-0 box-border"
-                aria-label={language.t("command.session.new")}
+                class="titlebar-icon w-8 h-8 p-0 box-border"
+                aria-label={tooltip()}
                 onClick={() => {
                   if (!params.dir) return
+                  console.debug(
+                    `[directory-layout] new-session dir=${directory() || "none"} project=${projectLabel() || "none"}`,
+                  )
                   navigate(`/${params.dir}/session`)
                 }}
               />
-            </Tooltip>
+            </RailTooltip>
             <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
               <StatusPopover />
             </Tooltip>

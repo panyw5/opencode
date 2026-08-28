@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { collectSessionTabSubtree, groupSessionTabs, reorderSessionTabGroups } from "./session-tab-groups"
+import {
+  collectSessionTabSubtree,
+  groupSessionTabs,
+  pickSessionTabNeighbor,
+  reorderSessionTabGroups,
+} from "./session-tab-groups"
 
 type Tab = {
   id: string
@@ -157,5 +162,21 @@ describe("reorderSessionTabGroups", () => {
       "b",
     ])
     expect(reorderSessionTabGroups(groups, "a", "a", (tab) => tab.id).map((item) => item.tab.id)).toEqual(["a", "b"])
+  })
+})
+
+describe("pickSessionTabNeighbor", () => {
+  test("never selects a child tab when closing a root", () => {
+    const tabs = [{ id: "left" }, { id: "root" }, { id: "child", parentID: "root" }, { id: "right" }]
+    const groups = group(tabs)
+
+    expect(pickSessionTabNeighbor(groups, (tab) => tab.id, new Set(["root"]), "root")?.id).toBe("left")
+  })
+
+  test("selects the main-agent parent when closing an active child", () => {
+    const tabs = [{ id: "left" }, { id: "root" }, { id: "child", parentID: "root" }, { id: "right" }]
+    const groups = group(tabs)
+
+    expect(pickSessionTabNeighbor(groups, (tab) => tab.id, new Set(), "child")?.id).toBe("root")
   })
 })

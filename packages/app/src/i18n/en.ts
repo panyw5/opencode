@@ -25,6 +25,7 @@ export const dict = {
   "projectTask.create": "New project task",
   "projectTask.edit": "Edit project task",
   "projectTask.archive": "Archive project task",
+  "projectTask.archive.action": "Archive",
   "projectTask.archive.confirm": "Archive {{title}}? Linked sessions will be unmounted.",
   "projectTask.loading": "Loading project tasks…",
   "projectTask.empty": "No project tasks yet. Create one to start tracking work.",
@@ -53,6 +54,9 @@ export const dict = {
   "projectTask.inject.title": "Inject task context each turn",
   "projectTask.inject.hint":
     "When enabled, each LLM turn receives the mounted task description, linked sessions, and open todos. Default is on.",
+  "projectTask.done.title": "Done ({{count}})",
+  "projectTask.archived.title": "Archived ({{count}})",
+  "projectTask.worktree.title": "Worktree: {{name}}",
   "command.projectTask.open": "Open project tasks",
   "command.projectTask.open.description": "Show project tasks for the current project in the sidebar",
 
@@ -178,6 +182,7 @@ export const dict = {
   "command.language.set": "Use language: {{language}}",
 
   "command.session.new": "New session",
+  "command.session.new.tooltip": "New session in {{project}}",
   "command.input.focus": "Focus input",
   "command.input.focus.description": "Focus the chat input field",
   "command.file.open": "Open file",
@@ -216,6 +221,7 @@ export const dict = {
   "command.prompt.mode.normal": "Prompt",
   "command.permissions.autoaccept.enable": "Auto-accept permissions",
   "command.permissions.autoaccept.disable": "Stop auto-accepting permissions",
+  "prompt.permissions.autoaccept.active": "Auto-accept",
   "command.workspace.toggle": "Toggle workspaces",
   "command.workspace.toggle.description": "Enable or disable multiple workspaces in the sidebar",
   "command.session.undo": "Undo",
@@ -675,6 +681,7 @@ export const dict = {
 
   "toast.session.generateTitle.success.title": "Title generated",
   "toast.session.generateTitle.failed.title": "Failed to generate title",
+  "toast.session.updateTitle.success.title": "Title updated",
 
   "toast.session.listFailed.title": "Failed to load sessions for {{project}}",
   "toast.session.listFailed.openclaw.title": "Failed to load OpenClaw sessions",
@@ -783,6 +790,8 @@ export const dict = {
   "session.review.noSnapshot": "Snapshot tracking is disabled in config, so session changes are unavailable",
   "session.review.noChanges": "No changes",
   "session.generateTitle": "Generate title",
+  "session.editTitle": "Edit title",
+  "session.editTitle.placeholder": "Enter a title for this session",
   "session.review.noUncommittedChanges": "No uncommitted changes yet",
   "session.review.noBranchChanges": "No branch changes yet",
 
@@ -801,6 +810,11 @@ export const dict = {
   "session.childAgents.button": "Subagents ({{count}})",
   "session.childAgents.open": "Open subagent call",
   "session.childAgents.menuLabel": "Subagent calls",
+  "session.userMessages.button": "View user messages",
+  "session.userMessages.open": "View user messages",
+  "session.userMessages.menuLabel": "User messages",
+  "session.userMessages.loading": "Loading",
+  "session.userMessages.index": "#{{index}}",
   "session.childAgents.background": "Background",
   "session.childAgents.index": "#{{index}}",
   "session.childAgents.indexResume": "#{{index}} resume",
@@ -873,6 +887,9 @@ export const dict = {
   "session.new.worktree.mainWithBranch": "Main branch ({{branch}})",
   "session.new.worktree.create": "Create new worktree",
   "session.new.lastModified": "Last modified",
+  "session.new.path.copy": "Copy",
+  "session.new.path.copied": "Copied",
+  "session.new.path.openFolder": "Open containing folder",
 
   "session.header.search.placeholder": "Search {{project}}",
   "session.header.searchFiles": "Search files",
@@ -1382,8 +1399,6 @@ export const dict = {
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
   "config.title": "Config page",
-  "config.nav.workspace": "Workspace",
-  "config.nav.connections": "Connections & automation",
   "config.nav.providersDescription": "Configure providers and models",
   "config.nav.agentsDescription": "Configure agent markdown files",
   "config.nav.skillsDescription": "Configure skills and browse the marketplace",

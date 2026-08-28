@@ -169,6 +169,20 @@
   }
 }
 
+[data-component="button"].titlebar-icon {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+[data-component="button"].titlebar-icon [data-component="icon"] {
+  width: 20px;
+  height: 20px;
+}
+
 [data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
   background-color: var(--surface-base-active);
 }

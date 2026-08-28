@@ -194,6 +194,43 @@
     will-change: opacity, transform;
   }
 
+  [data-component="session-tab-permission-capsule"] [data-component="button"] {
+    transition:
+      background-color 140ms ease,
+      border-color 140ms ease,
+      color 140ms ease,
+      box-shadow 140ms ease,
+      transform 100ms ease;
+  }
+
+  [data-component="session-tab-permission-capsule"] [data-component="button"][data-variant="primary"] {
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--text-strong) 24%, transparent);
+  }
+
+  [data-component="session-tab-permission-capsule"] [data-component="button"][data-variant="primary"]:hover:not(:disabled),
+  [data-component="session-tab-permission-capsule"]
+    [data-component="button"][data-variant="primary"]:focus-visible:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--text-strong) 38%, transparent);
+  }
+
+  [data-component="session-tab-permission-capsule"] [data-component="button"][data-variant="ghost"]:hover:not(:disabled),
+  [data-component="session-tab-permission-capsule"]
+    [data-component="button"][data-variant="ghost"]:focus-visible:not(:disabled) {
+    border-color: color-mix(in srgb, var(--border-strong-base) 72%, transparent);
+    background-color: color-mix(in srgb, var(--surface-base-hover) 88%, var(--surface-warning-base));
+    color: var(--text-strong);
+    transform: translateY(-1px);
+    box-shadow:
+      0 3px 8px color-mix(in srgb, black 14%, transparent),
+      inset 0 0 0 1px color-mix(in srgb, var(--text-strong) 8%, transparent);
+  }
+
+  [data-component="session-tab-permission-capsule"] [data-component="button"]:active:not(:disabled) {
+    transform: translateY(1px) scale(0.96);
+    box-shadow: inset 0 1px 3px color-mix(in srgb, black 20%, transparent);
+  }
+
   [data-component="session-tab-permission-capsule"][data-positioned="true"][data-state="open"] {
     animation: session-tab-permission-enter 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }

@@ -15,6 +15,7 @@ import {
   ScheduledTaskUpdateTool,
 } from "@/tool/scheduled-task"
 import type { Tool } from "@/tool/tool"
+import { ToolJsonSchema } from "@/tool/json-schema"
 import { Truncate } from "@/tool/truncate"
 import { ScheduledTask } from "@/scheduled-task/service"
 import type { Run } from "@/scheduled-task/schema"
@@ -214,7 +215,22 @@ describe("tool.scheduled_task_get", () => {
 })
 
 describe("tool.scheduled_task_update", () => {
-  it.instance("updates a task's prompt, schedule, and enabled state", () =>
+  it.instance("exposes model and reasoning intensity to the LLM", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskUpdateTool
+      const tool = yield* info.init()
+      const schema = ToolJsonSchema.fromTool(tool)
+      const properties = schema.properties as Record<string, { properties?: Record<string, unknown> }>
+
+      expect(properties.model).toBeDefined()
+      expect(properties.model?.properties?.providerID).toBeDefined()
+      expect(properties.model?.properties?.modelID).toBeDefined()
+      expect(properties.model?.properties?.variant).toBeDefined()
+      expect(tool.description).toContain("reasoning/thinking intensity")
+    }),
+  )
+
+  it.instance("updates all user-facing fields and binds the current session", () =>
     Effect.gen(function* () {
       const info = yield* ScheduledTaskUpdateTool
       const tool = yield* info.init()
@@ -243,18 +259,62 @@ describe("tool.scheduled_task_update", () => {
           name: "New name",
           prompt: "New prompt",
           schedule: { kind: "every", interval: 86_400_000 },
+          executionMode: "existing_session",
+          model: { providerID: "new-provider", modelID: "new-model", variant: "high" },
           enabled: false,
         },
         ctx,
       )
-      const task = JSON.parse(result.output) as { name: string; prompt: string; enabled: boolean }
+      const task = JSON.parse(result.output) as {
+        name: string
+        prompt: string
+        enabled: boolean
+        schedule: { kind: string; interval: number }
+        executionMode: string
+        sessionID?: string
+        model: { providerID: string; modelID: string; variant?: string }
+      }
 
       expect(requests[0]?.permission).toBe("scheduled_task_update")
+      expect(requests[0]?.metadata).toMatchObject({
+        executionMode: "existing_session",
+        model: { providerID: "new-provider", modelID: "new-model", variant: "high" },
+      })
       expect(task.name).toBe("New name")
       expect(task.prompt).toBe("New prompt")
       expect(task.schedule).toEqual({ kind: "every", interval: 86_400_000 })
+      expect(task.executionMode).toBe("existing_session")
+      expect(task.sessionID).toBe(session.id)
+      expect(task.model).toEqual({ providerID: "new-provider", modelID: "new-model", variant: "high" })
       expect(task.enabled).toBe(false)
-      expect((yield* ScheduledTaskRepository.get(existing.id))?.name).toBe("New name")
+      expect(yield* ScheduledTaskRepository.get(existing.id)).toEqual(result.metadata.task)
+    }),
+  )
+
+  it.instance("clears the session binding when switching to new sessions", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskUpdateTool
+      const tool = yield* info.init()
+      const { session, ctx } = yield* context(() => Effect.void)
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Bound task",
+        prompt: "Old prompt",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        sessionID: session.id,
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const result = yield* tool.execute({ taskID: existing.id, executionMode: "new_session" }, ctx)
+
+      expect(result.metadata.task?.executionMode).toBe("new_session")
+      expect(result.metadata.task?.sessionID).toBeUndefined()
+      expect((yield* ScheduledTaskRepository.get(existing.id))?.sessionID).toBeUndefined()
     }),
   )
 

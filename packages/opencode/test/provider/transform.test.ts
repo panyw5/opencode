@@ -3,7 +3,7 @@ import { ProviderTransform } from "@/provider/transform"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 
 describe("ProviderTransform.options - setCacheKey", () => {
-  const sessionID = "test-session-123"
+  const sessionID = "ses_00000000000000000000000000"
 
   const mockModel = {
     id: "anthropic/claude-3-5-sonnet",
@@ -69,7 +69,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBeUndefined()
   })
 
-  test("should set promptCacheKey for openai provider regardless of setCacheKey", () => {
+  test("should set promptCacheKey for openai provider by default", () => {
     const openaiModel = {
       ...mockModel,
       providerID: "openai",
@@ -81,6 +81,24 @@ describe("ProviderTransform.options - setCacheKey", () => {
     }
     const result = ProviderTransform.options({ model: openaiModel, sessionID, providerOptions: {} })
     expect(result.promptCacheKey).toBe(sessionID)
+  })
+
+  test("should not set promptCacheKey for openai when explicitly disabled", () => {
+    const openaiModel = {
+      ...mockModel,
+      providerID: "openai",
+      api: {
+        id: "gpt-4",
+        url: "https://api.openai.com",
+        npm: "@ai-sdk/openai",
+      },
+    }
+    const result = ProviderTransform.options({
+      model: openaiModel,
+      sessionID,
+      providerOptions: { setCacheKey: false },
+    })
+    expect(result.promptCacheKey).toBeUndefined()
   })
 
   test("should set promptCacheKey for custom @ai-sdk/openai providers like aether", () => {
@@ -97,6 +115,38 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBe(sessionID)
   })
 
+  test("should set promptCacheKey for the xAI SDK by default regardless of provider ID", () => {
+    const xaiModel = {
+      ...mockModel,
+      providerID: "custom-xai",
+      api: {
+        id: "grok-4",
+        url: "https://api.x.ai",
+        npm: "@ai-sdk/xai",
+      },
+    }
+    const result = ProviderTransform.options({ model: xaiModel, sessionID, providerOptions: {} })
+    expect(result.promptCacheKey).toBe(sessionID)
+  })
+
+  test("should not set promptCacheKey for the xAI SDK when explicitly disabled", () => {
+    const xaiModel = {
+      ...mockModel,
+      providerID: "xai",
+      api: {
+        id: "grok-4",
+        url: "https://api.x.ai",
+        npm: "@ai-sdk/xai",
+      },
+    }
+    const result = ProviderTransform.options({
+      model: xaiModel,
+      sessionID,
+      providerOptions: { setCacheKey: false },
+    })
+    expect(result.promptCacheKey).toBeUndefined()
+  })
+
   test("should not set promptCacheKey for openai-compatible providers without setCacheKey", () => {
     const compatibleModel = {
       ...mockModel,
@@ -111,19 +161,21 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(result.promptCacheKey).toBeUndefined()
   })
 
-  test("should use snake_case prompt_cache_key for OpenRouter", () => {
+  test("should not send an undocumented prompt cache key for OpenRouter", () => {
     const model = {
       ...mockModel,
       providerID: "openrouter",
       api: {
         id: "anthropic/claude-sonnet-4",
         url: "https://openrouter.ai/api/v1",
-        npm: "@ai-sdk/openai-compatible",
+        npm: "@openrouter/ai-sdk-provider",
       },
     }
     const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
-    expect(result.prompt_cache_key).toBe(sessionID)
+    expect(result.prompt_cache_key).toBeUndefined()
     expect(result.promptCacheKey).toBeUndefined()
+    expect(JSON.stringify(ProviderTransform.providerOptions(model, result))).not.toContain("promptCache")
+    expect(JSON.stringify(ProviderTransform.providerOptions(model, result))).not.toContain("prompt_cache")
   })
 
   test("should set promptCacheKey for Venice", () => {
@@ -133,12 +185,112 @@ describe("ProviderTransform.options - setCacheKey", () => {
       api: {
         id: "venice-uncensored",
         url: "https://api.venice.ai/api/v1",
-        npm: "@ai-sdk/openai-compatible",
+        npm: "venice-ai-sdk-provider",
       },
     }
     const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
     expect(result.promptCacheKey).toBe(sessionID)
     expect(result.prompt_cache_key).toBeUndefined()
+  })
+
+  test("normalizes unsafe or oversized external session IDs without losing isolation", () => {
+    const model = {
+      ...mockModel,
+      providerID: "openai",
+      api: { id: "gpt-5", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }
+    const standard = `ses_${"a".repeat(64)}`
+    const generated = "ses_00000000000000000000000000"
+    const external = "ses_external_thread_one"
+    const oversized = `ses_external_${"x".repeat(4096)}`
+    const other = `ses_external_${"y".repeat(4096)}`
+    const standardKey = ProviderTransform.options({ model, sessionID: standard, providerOptions: {} }).promptCacheKey
+    const generatedKey = ProviderTransform.options({ model, sessionID: generated, providerOptions: {} }).promptCacheKey
+    const externalKey = ProviderTransform.options({ model, sessionID: external, providerOptions: {} }).promptCacheKey
+    const first = ProviderTransform.options({ model, sessionID: oversized, providerOptions: {} }).promptCacheKey
+    const repeated = ProviderTransform.options({ model, sessionID: oversized, providerOptions: {} }).promptCacheKey
+    const second = ProviderTransform.options({ model, sessionID: other, providerOptions: {} }).promptCacheKey
+    const unicode = ProviderTransform.options({ model, sessionID: "ses_外部会话", providerOptions: {} }).promptCacheKey
+
+    expect(standardKey).toBe("a".repeat(64))
+    expect(generatedKey).toBe(generated)
+    expect(externalKey).toMatch(/^[0-9a-f]{64}$/)
+    expect(externalKey).toBe("8004ed34e51be440fd0e0b699db2ef6bbfe608ea845d4c0c6f849e6d9995a8e7")
+    expect(externalKey).not.toContain(external)
+    expect(first).toMatch(/^[0-9a-f]{64}$/)
+    expect(first).toBe(repeated)
+    expect(first).not.toBe(second)
+    expect(unicode).toMatch(/^[0-9a-f]{64}$/)
+    expect(first).not.toContain(oversized)
+  })
+
+  for (const item of [
+    { npm: "@ai-sdk/openai", namespace: "openai", field: "promptCacheKey" },
+    { npm: "@ai-sdk/azure", namespace: "azure", field: "promptCacheKey" },
+    { npm: "@ai-sdk/xai", namespace: "xai", field: "promptCacheKey" },
+    { npm: "@ai-sdk/mistral", namespace: "mistral", field: "promptCacheKey" },
+    { npm: "venice-ai-sdk-provider", namespace: "venice", field: "promptCacheKey" },
+    { npm: "@ai-sdk/deepinfra", namespace: "deepinfra", field: "prompt_cache_key" },
+    { npm: "@ai-sdk/cerebras", namespace: "cerebras", field: "prompt_cache_key" },
+  ] as const) {
+    test(`selects ${item.field} for ${item.npm} and honors explicit disable`, () => {
+      const model = {
+        ...mockModel,
+        providerID: "custom",
+        api: { id: "model", url: "https://example.com", npm: item.npm },
+      }
+      const enabled = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+      const disabled = ProviderTransform.options({ model, sessionID, providerOptions: { setCacheKey: false } })
+
+      expect(enabled[item.field]).toBe(sessionID)
+      expect([enabled.promptCacheKey, enabled.prompt_cache_key].filter((value) => value !== undefined)).toHaveLength(1)
+      const wire = ProviderTransform.providerOptions(model, enabled)
+      const namespaces = item.npm === "@ai-sdk/azure" ? ["azure", "openai"] : [item.namespace]
+      expect(Object.keys(wire).toSorted()).toEqual(namespaces.toSorted())
+      for (const namespace of namespaces) expect(wire[namespace]?.[item.field]).toBe(sessionID)
+      expect(disabled.promptCacheKey).toBeUndefined()
+      expect(disabled.prompt_cache_key).toBeUndefined()
+    })
+  }
+
+  test("keeps cache keys stable within a session and collision-free across the workload", () => {
+    const model = {
+      ...mockModel,
+      providerID: "openai",
+      api: { id: "gpt-5", url: "https://api.openai.com", npm: "@ai-sdk/openai" },
+    }
+    const generated = Array.from({ length: 128 }, (_, index) => `ses_${index.toString(36).padStart(26, "0")}`)
+    const external = Array.from({ length: 128 }, (_, index) => `ses_external_channel:thread-${index}`)
+    const unicode = Array.from({ length: 128 }, (_, index) => `ses_外部会话_${index}`)
+    const oversized = Array.from({ length: 128 }, (_, index) => `ses_external_${index}_${"x".repeat(4096)}`)
+    const workload = [...generated, ...external, ...unicode, ...oversized]
+    const keys = workload.map((sessionID) =>
+      Array.from(
+        { length: 3 },
+        () => ProviderTransform.options({ model, sessionID, providerOptions: {} }).promptCacheKey,
+      ),
+    )
+
+    expect(keys.every((samples) => samples.every((key) => key === samples[0]))).toBe(true)
+    expect(new Set(keys.map((samples) => samples[0])).size).toBe(workload.length)
+    expect(keys.flat().every((key) => typeof key === "string" && Buffer.byteLength(key) <= 64)).toBe(true)
+    expect(keys.slice(0, generated.length).map((samples) => samples[0])).toEqual(generated)
+    expect(
+      keys.slice(generated.length).every((samples, index) => samples[0] !== workload[generated.length + index]),
+    ).toBe(true)
+  })
+
+  test("keeps the Azure cache key before the GPT-5.5 early return", () => {
+    const model = {
+      ...mockModel,
+      providerID: "azure",
+      api: { id: "gpt-5.5", url: "https://azure.example.com", npm: "@ai-sdk/azure" },
+    }
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+
+    expect(result.store).toBe(false)
+    expect(result.reasoningSummary).toBe("auto")
+    expect(result.promptCacheKey).toBe(sessionID)
   })
 
   test("should scope OpenCode GPT-5 cache keys to the session", () => {
@@ -151,10 +303,12 @@ describe("ProviderTransform.options - setCacheKey", () => {
         npm: "@ai-sdk/openai-compatible",
       },
     }
-    const first = ProviderTransform.options({ model, sessionID: "session-a", providerOptions: {} })
-    const second = ProviderTransform.options({ model, sessionID: "session-b", providerOptions: {} })
-    expect(first.promptCacheKey).toBe("session-a")
-    expect(second.promptCacheKey).toBe("session-b")
+    const firstID = "ses_00000000000000000000000001"
+    const secondID = "ses_00000000000000000000000002"
+    const first = ProviderTransform.options({ model, sessionID: firstID, providerOptions: {} })
+    const second = ProviderTransform.options({ model, sessionID: secondID, providerOptions: {} })
+    expect(first.promptCacheKey).toBe(firstID)
+    expect(second.promptCacheKey).toBe(secondID)
     expect(first.promptCacheKey).not.toBe(second.promptCacheKey)
     expect(first.prompt_cache_key).toBeUndefined()
     expect(second.prompt_cache_key).toBeUndefined()
@@ -169,6 +323,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
       ...(result.reasoningSummary !== undefined ? { reasoningSummary: result.reasoningSummary } : {}),
       ...(result.textVerbosity !== undefined ? { textVerbosity: result.textVerbosity } : {}),
       ...(result.thinking !== undefined ? { thinking: result.thinking } : {}),
+      ...(result.effort !== undefined ? { effort: result.effort } : {}),
       ...(result.thinkingConfig !== undefined ? { thinkingConfig: result.thinkingConfig } : {}),
     })
     const options = (model: typeof mockModel) =>
@@ -189,6 +344,7 @@ describe("ProviderTransform.options - setCacheKey", () => {
         ...mockModel,
         providerID: "moonshot",
         api: { ...mockModel.api, id: "kimi-k2.5", npm: "@ai-sdk/anthropic" },
+        capabilities: { ...mockModel.capabilities, reasoning: true },
         limit: { context: 200000, output: 10000 },
       }),
       googleGemini: options({
@@ -202,9 +358,10 @@ describe("ProviderTransform.options - setCacheKey", () => {
     expect(matrix).toMatchInlineSnapshot(`
       {
         "anthropicKimi": {
+          "effort": "high",
           "thinking": {
-            "budgetTokens": 4999,
-            "type": "enabled",
+            "display": "summarized",
+            "type": "adaptive",
           },
         },
         "googleGemini": {
@@ -216,7 +373,6 @@ describe("ProviderTransform.options - setCacheKey", () => {
         "openaiCompatible": {
           "reasoningEffort": "medium",
           "reasoningSummary": "auto",
-          "textVerbosity": "low",
         },
         "openaiResponses": {
           "promptCacheKey": "<session>",
@@ -453,6 +609,99 @@ describe("ProviderTransform.options - gpt-5 textVerbosity", () => {
     const model = createGpt5Model("gpt-5.2-codex")
     const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
     expect(result.textVerbosity).toBeUndefined()
+  })
+
+  test("generic OpenAI-compatible GPT-5 models do not receive textVerbosity", () => {
+    const model = createGpt5Model("gpt-5.2")
+    model.providerID = "custom-compatible"
+    model.api.npm = "@ai-sdk/openai-compatible"
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(result.textVerbosity).toBeUndefined()
+  })
+
+  test("Bedrock Mantle GPT-5 models receive textVerbosity", () => {
+    const model = createGpt5Model("gpt-5.2")
+    model.providerID = "bedrock-mantle"
+    model.api.npm = "@ai-sdk/amazon-bedrock/mantle"
+    const result = ProviderTransform.options({ model, sessionID, providerOptions: {} })
+    expect(result.textVerbosity).toBe("low")
+  })
+})
+
+describe("ProviderTransform.options - Kimi adaptive thinking", () => {
+  const createModel = (overrides: Record<string, any>) =>
+    ({
+      id: "custom/model",
+      providerID: "custom",
+      api: { id: "model", url: "https://example.com", npm: "@ai-sdk/anthropic" },
+      name: "Model",
+      capabilities: {
+        temperature: true,
+        reasoning: true,
+        attachment: false,
+        toolcall: true,
+        input: { text: true, audio: false, image: false, video: false, pdf: false },
+        output: { text: true, audio: false, image: false, video: false, pdf: false },
+        interleaved: false,
+      },
+      cost: { input: 0, output: 0, cache: { read: 0, write: 0 } },
+      limit: { context: 200_000, output: 64_000 },
+      status: "active",
+      options: {},
+      headers: {},
+      ...overrides,
+    }) as any
+
+  test("does not inject Anthropic thinking when reasoning is disabled", () => {
+    const model = createModel({
+      providerID: "moonshotai",
+      api: { id: "kimi-k2.5", url: "https://api.moonshot.ai/anthropic", npm: "@ai-sdk/anthropic" },
+      capabilities: { reasoning: false },
+    })
+    const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+    expect(result.thinking).toBeUndefined()
+    expect(result.effort).toBeUndefined()
+  })
+
+  test("does not inject Anthropic thinking into OpenAI-compatible Kimi transports", () => {
+    const model = createModel({
+      providerID: "moonshotai",
+      api: { id: "kimi-k2.5", url: "https://api.moonshot.ai/v1", npm: "@ai-sdk/openai-compatible" },
+    })
+    const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+    expect(result.thinking).toBeUndefined()
+    expect(result.effort).toBeUndefined()
+  })
+
+  test("does not identify lookalike Moonshot hostnames as Kimi", () => {
+    const model = createModel({
+      api: {
+        id: "custom-model",
+        url: "https://api.moonshot.ai.example.com/anthropic",
+        npm: "@ai-sdk/anthropic",
+      },
+    })
+    const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+    expect(result.thinking).toBeUndefined()
+    expect(result.effort).toBeUndefined()
+  })
+
+  test("recognizes an exact Moonshot hostname without relying on model names", () => {
+    const model = createModel({
+      api: { id: "custom-model", url: "https://api.moonshot.ai/anthropic", npm: "@ai-sdk/anthropic" },
+    })
+    const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+    expect(result.thinking).toEqual({ type: "adaptive", display: "summarized" })
+    expect(result.effort).toBe("high")
+  })
+
+  test("does not identify Kimi and Moonshot lookalike IDs", () => {
+    for (const id of ["not-kimi", "not-moonshot"]) {
+      const model = createModel({ providerID: id, api: { id, url: "https://example.com", npm: "@ai-sdk/anthropic" } })
+      const result = ProviderTransform.options({ model, sessionID: "session", providerOptions: {} })
+      expect(result.thinking).toBeUndefined()
+      expect(result.effort).toBeUndefined()
+    }
   })
 })
 
@@ -2980,6 +3229,34 @@ describe("ProviderTransform.message - cache control on gateway", () => {
     })
   })
 
+  for (const automatic of [
+    { providerID: "anthropic", npm: "@ai-sdk/anthropic" },
+    { providerID: "google-vertex-anthropic", npm: "@ai-sdk/google-vertex/anthropic" },
+  ]) {
+    test(`does not add or duplicate explicit cache control for automatic ${automatic.providerID} caching`, () => {
+      const model = createModel({
+        providerID: automatic.providerID,
+        api: { id: "claude-sonnet-4", url: "https://api.anthropic.com", npm: automatic.npm },
+      })
+      const msgs = [
+        { role: "system", content: "You are a helpful assistant" },
+        { role: "user", content: "Hello" },
+      ] as any[]
+      const first = ProviderTransform.message(structuredClone(msgs), model, {
+        cacheControl: { type: "ephemeral" },
+      }) as any[]
+      const repeated = ProviderTransform.message(first, model, {
+        cacheControl: { type: "ephemeral" },
+      }) as any[]
+      const explicit = (messages: any[]) =>
+        JSON.stringify(messages).match(/cacheControl|cache_control|cachePoint|copilot_cache_control/g)?.length ?? 0
+
+      expect(explicit(first)).toBe(0)
+      expect(explicit(repeated)).toBe(0)
+      expect(repeated).toEqual(first)
+    })
+  }
+
   test("google-vertex-anthropic applies cache control", () => {
     const model = createModel({
       providerID: "google-vertex-anthropic",
@@ -3079,6 +3356,22 @@ describe("ProviderTransform.variants", () => {
     })
     const result = ProviderTransform.variants(model)
     expect(result).toEqual({})
+  })
+
+  test("Kimi Anthropic transports expose summarized adaptive effort variants", () => {
+    for (const npm of ["@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic"]) {
+      const model = createMockModel({
+        id: "moonshotai/kimi-k2-thinking",
+        providerID: "moonshotai",
+        api: { id: "kimi-k2-thinking", url: "https://api.moonshot.ai/anthropic", npm },
+      })
+      const result = ProviderTransform.variants(model)
+      expect(Object.keys(result)).toEqual(["low", "medium", "high", "xhigh", "max"])
+      expect(result.high).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        effort: "high",
+      })
+    }
   })
 
   test("deepseek returns empty object", () => {
@@ -3884,10 +4177,16 @@ describe("ProviderTransform.variants", () => {
   describe("@ai-sdk/anthropic", () => {
     for (const testCase of [
       {
+        name: "dated opus 4",
+        apiIds: ["claude-opus-4-20250514"],
+        efforts: ["high", "max"],
+        expectedHigh: { thinking: { type: "enabled", budgetTokens: 16000 } },
+      },
+      {
         name: "opus 4.5",
         apiIds: ["claude-opus-4-5-20251101", "claude-opus-4.5-20251101"],
         efforts: ["low", "medium", "high"],
-        expectedHigh: { effort: "high" },
+        expectedHigh: { thinking: { type: "enabled", budgetTokens: 16000 }, effort: "high" },
       },
       {
         name: "sonnet 4.6",
@@ -3904,6 +4203,18 @@ describe("ProviderTransform.variants", () => {
       {
         name: "opus 4.7",
         apiIds: ["claude-opus-4-7", "claude-opus-4.7"],
+        efforts: ["low", "medium", "high", "xhigh", "max"],
+        expectedHigh: { thinking: { type: "adaptive", display: "summarized" }, effort: "high" },
+      },
+      {
+        name: "opus 5",
+        apiIds: ["claude-opus-5", "claude-5-opus"],
+        efforts: ["low", "medium", "high", "xhigh", "max"],
+        expectedHigh: { thinking: { type: "adaptive", display: "summarized" }, effort: "high" },
+      },
+      {
+        name: "future unversioned Claude",
+        apiIds: ["claude-future"],
         efforts: ["low", "medium", "high", "xhigh", "max"],
         expectedHigh: { thinking: { type: "adaptive", display: "summarized" }, effort: "high" },
       },
@@ -3949,6 +4260,22 @@ describe("ProviderTransform.variants", () => {
       })
     })
 
+    test("Vertex Anthropic recognizes future Claude IDs", () => {
+      const model = createMockModel({
+        id: "google-vertex-anthropic/claude-opus-5@default",
+        providerID: "google-vertex-anthropic",
+        api: {
+          id: "claude-opus-5@default",
+          url: "https://us-central1-aiplatform.googleapis.com",
+          npm: "@ai-sdk/google-vertex/anthropic",
+        },
+      })
+      expect(ProviderTransform.variants(model).high).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        effort: "high",
+      })
+    })
+
     test("returns high and max with thinking config", () => {
       const model = createMockModel({
         id: "anthropic/claude-4",
@@ -3977,6 +4304,25 @@ describe("ProviderTransform.variants", () => {
   })
 
   describe("@ai-sdk/amazon-bedrock", () => {
+    test("anthropic opus 4.5 combines extended thinking with effort", () => {
+      const model = createMockModel({
+        id: "bedrock/anthropic-claude-opus-4-5",
+        providerID: "bedrock",
+        api: {
+          id: "us.anthropic.claude-opus-4-5-20251101-v1:0",
+          url: "https://bedrock.amazonaws.com",
+          npm: "@ai-sdk/amazon-bedrock",
+        },
+      })
+      expect(ProviderTransform.variants(model).high).toEqual({
+        reasoningConfig: {
+          type: "enabled",
+          budgetTokens: 16000,
+          maxReasoningEffort: "high",
+        },
+      })
+    })
+
     test("anthropic sonnet 4.6 returns adaptive reasoning options", () => {
       const model = createMockModel({
         id: "bedrock/anthropic-claude-sonnet-4-6",
@@ -4020,6 +4366,25 @@ describe("ProviderTransform.variants", () => {
         reasoningConfig: {
           type: "adaptive",
           maxReasoningEffort: "max",
+          display: "summarized",
+        },
+      })
+    })
+
+    test("anthropic opus 5 returns summarized adaptive reasoning options", () => {
+      const model = createMockModel({
+        id: "bedrock/anthropic-claude-opus-5",
+        providerID: "bedrock",
+        api: {
+          id: "us.anthropic.claude-opus-5-v1:0",
+          url: "https://bedrock.amazonaws.com",
+          npm: "@ai-sdk/amazon-bedrock",
+        },
+      })
+      expect(ProviderTransform.variants(model).high).toEqual({
+        reasoningConfig: {
+          type: "adaptive",
+          maxReasoningEffort: "high",
           display: "summarized",
         },
       })
@@ -4219,6 +4584,22 @@ describe("ProviderTransform.variants", () => {
           type: "adaptive",
         },
         effort: "max",
+      })
+    })
+
+    test("anthropic 5 models return summarized adaptive thinking variants", () => {
+      const model = createMockModel({
+        id: "sap-ai-core/anthropic--claude-opus-5",
+        providerID: "sap-ai-core",
+        api: {
+          id: "anthropic--claude-opus-5",
+          url: "https://api.ai.sap",
+          npm: "@jerome-benoit/sap-ai-provider-v2",
+        },
+      })
+      expect(ProviderTransform.variants(model).high).toEqual({
+        thinking: { type: "adaptive", display: "summarized" },
+        effort: "high",
       })
     })
 

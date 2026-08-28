@@ -14,10 +14,16 @@ import {
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { Button } from "@opencode-ai/ui/button"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
+import { getFilename } from "@opencode-ai/core/util/path"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 
 import {
   cycleSessionBarIndex,
@@ -45,6 +51,7 @@ import { permissionRequestNotFound } from "@/pages/session/composer/session-ques
 import {
   collectSessionTabSubtree,
   groupSessionTabs,
+  pickSessionTabNeighbor,
   reorderSessionTabGroups,
   type SessionTabGroup,
 } from "./session-tab-groups"
@@ -114,6 +121,26 @@ export function SessionTabsBar() {
     return decode64(slug) ?? ""
   })
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
+  const activeTab = createMemo(() => {
+    const id = params.id
+    const directory = routeDir()
+    if (!id || !directory) return undefined
+    return tabs().find((tab) => tab.id === id && workspaceKey(tab.directory) === workspaceKey(directory))
+  })
+  const activeSession = createMemo(() => {
+    const tab = activeTab()
+    if (!tab) return undefined
+    const [child] = globalSync.child(tab.directory, { bootstrap: false })
+    return child.session.find((session) => session.id === tab.id)
+  })
+  const currentSessionTitle = createMemo(() => {
+    const title = activeSession()?.title ?? activeTab()?.title
+    return cleanTitle(title ?? language.t("session.tab.session"))
+  })
+  const projectName = (directory: string) => {
+    const owner = projectOwner(directory, layout.projects.list())
+    return owner?.project.name || getFilename(owner?.project.worktree ?? directory) || directory
+  }
   // An id-less `/:dir/session` route is a not-yet-created session. Keep one
   // persisted draft tab per workspace until the first message promotes it.
   const draftDirectory = createMemo(() => {
@@ -286,11 +313,14 @@ export function SessionTabsBar() {
     const closing = subtree.length > 0 ? subtree : [tab]
     const closingKeys = new Set(closing.map((item) => sessionBarKey(item)))
     const viewingClosed = closing.some((item) => isActive(item))
-    const firstClosed = all.findIndex((item) => closingKeys.has(sessionBarKey(item)))
-    const lastClosed = all.findLastIndex((item) => closingKeys.has(sessionBarKey(item)))
-    const neighbor =
-      (firstClosed > 0 ? all[firstClosed - 1] : undefined) ??
-      all.slice(Math.max(lastClosed, index) + 1).find((item) => !closingKeys.has(sessionBarKey(item)))
+    // Children are flattened into `all` for rendering, but automatic selection
+    // must only consider top-level (main-agent) session tabs. Otherwise the
+    // tab immediately to the left can be a child hidden inside another group.
+    const roots = groups().map((group) => group.tab)
+    const closedRootKeys = new Set(
+      roots.filter((item) => closingKeys.has(sessionBarKey(item))).map((item) => sessionBarKey(item)),
+    )
+    const neighbor = pickSessionTabNeighbor(groups(), sessionBarKey, closedRootKeys, tabKey)
 
     console.debug(
       `[session-bar] close parent=${tab.id} descendants=${
@@ -298,7 +328,9 @@ export function SessionTabsBar() {
           .filter((item) => sessionBarKey(item) !== tabKey)
           .map((item) => item.id)
           .join(",") || "none"
-      } viewingClosed=${String(viewingClosed)} neighbor=${neighbor?.id ?? "none"}`,
+      } viewingClosed=${String(viewingClosed)} roots=${roots.map((item) => item.id).join(",")} closedRoots=${[
+        ...closedRootKeys,
+      ].join(",")} flattenedIndex=${index} neighbor=${neighbor?.id ?? "none"}`,
     )
 
     layout.sessionBar.closeAll(closing)
@@ -451,6 +483,38 @@ export function SessionTabsBar() {
     return `${sessionBarKey(active)}:${tabs().length}`
   })
 
+  const compactSessionItem = (tab: SessionBarTab) => {
+    const active = isActive(tab)
+    const title = () => cleanTitle(tab.title ?? language.t("session.tab.session"))
+    return (
+      <DropdownMenu.Item
+        class="min-w-0"
+        classList={{ "bg-surface-interactive-weak-hover": active }}
+        onSelect={() => void open(tab)}
+        aria-current={active ? "page" : undefined}
+      >
+        <span class="flex size-5 shrink-0 items-center justify-center text-icon-weak" aria-hidden="true">
+          <Icon
+            name={tab.parentID ? "branch" : "bubble-5"}
+            size="small"
+            classList={{ "[transform:scaleY(-1)]": !!tab.parentID }}
+          />
+        </span>
+        <div class="flex min-w-0 flex-1 items-center gap-3">
+          <DropdownMenu.ItemLabel class="min-w-0 flex-1 truncate text-13-medium text-text-strong">
+            {title()}
+          </DropdownMenu.ItemLabel>
+          <DropdownMenu.ItemDescription class="max-w-[42%] shrink-0 truncate text-right text-11-regular text-text-weak">
+            {projectName(tab.directory)}
+          </DropdownMenu.ItemDescription>
+        </div>
+        <Show when={active}>
+          <Icon name="check-small" size="small" class="shrink-0 text-icon-weak" />
+        </Show>
+      </DropdownMenu.Item>
+    )
+  }
+
   createEffect(() => {
     const target = scrollTarget()
     if (!shown() || !target) return
@@ -492,58 +556,113 @@ export function SessionTabsBar() {
       data-component="session-tabs-bar"
       role="toolbar"
       aria-label={language.t("session.tabs.bar.label")}
-      class="hidden h-full min-w-0 flex-1 items-center gap-1 px-1 xl:flex"
+      class="flex h-full min-w-0 flex-1 items-center gap-1 px-1"
       style={{ "--tabs-bar-height": "36px" }}
     >
+      <Show when={onSessionRoute()}>
+        <div class="relative flex min-w-0 flex-1 items-center xl:hidden">
+          <div class="pointer-events-none absolute inset-x-0 flex min-w-0 items-center justify-center px-12">
+            <span class="max-w-[48%] truncate text-13-medium text-text-strong">{currentSessionTitle()}</span>
+          </div>
+          <DropdownMenu gutter={4} placement="bottom-start">
+            <div class="ml-auto flex min-w-0 max-w-[48%] items-center gap-1 rounded-md px-2">
+              <span class="min-w-0 truncate text-11-regular text-text-weak">{projectName(routeDir())}</span>
+              <DropdownMenu.Trigger
+                as={IconButton}
+                icon="chevron-down"
+                variant="ghost"
+                class="titlebar-icon size-7 shrink-0 rounded-md p-0 text-icon-weak hover:text-icon-base data-[expanded]:bg-surface-base-active"
+                aria-label={language.t("session.tabs.bar.label")}
+              />
+            </div>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                class="session-child-agent-scrollbar w-[520px] max-w-[calc(100vw-32px)]"
+                style={{
+                  "max-height": "min(520px, calc(100dvh - 64px))",
+                  "overflow-y": "auto",
+                  "overscroll-behavior": "contain",
+                }}
+              >
+                <DropdownMenu.Group>
+                  <For each={orderedTabs()}>{(tab) => compactSessionItem(tab)}</For>
+                  <For each={visibleDrafts()}>
+                    {(directory) => (
+                      <DropdownMenu.Item class="min-w-0" onSelect={() => void openDraft(directory)}>
+                        <span
+                          class="flex size-5 shrink-0 items-center justify-center text-icon-weak"
+                          aria-hidden="true"
+                        >
+                          <Icon name="bubble-5" size="small" />
+                        </span>
+                        <div class="flex min-w-0 flex-1 items-center gap-3">
+                          <DropdownMenu.ItemLabel class="min-w-0 flex-1 truncate text-13-medium text-text-strong">
+                            {language.t("session.tab.session")}
+                          </DropdownMenu.ItemLabel>
+                          <DropdownMenu.ItemDescription class="max-w-[42%] shrink-0 truncate text-right text-11-regular text-text-weak">
+                            {projectName(directory)}
+                          </DropdownMenu.ItemDescription>
+                        </div>
+                      </DropdownMenu.Item>
+                    )}
+                  </For>
+                </DropdownMenu.Group>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu>
+        </div>
+      </Show>
       <Show when={shown()}>
-        <DragDropProvider
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragOver={handleDragOver}
-          collisionDetector={closestCenter}
-        >
-          <DragDropSensors />
-          <ConstrainDragYAxis />
-          <div ref={tabsViewport} class="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
-            <SortableProvider ids={keys()}>
-              <For each={keys()}>
-                {(key) => (
-                  <SessionTabGroup
-                    tabKey={key}
-                    group={() => groupsByKey().get(key)}
-                    active={(tab) => isActive(tab)}
-                    hasOpenDescendants={hasOpenDescendants}
-                    onOpen={(tab) => void open(tab)}
-                    onClose={close}
-                    onCloseDescendants={closeDescendants}
+        <div class="hidden min-w-0 flex-1 items-center xl:flex">
+          <DragDropProvider
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            collisionDetector={closestCenter}
+          >
+            <DragDropSensors />
+            <ConstrainDragYAxis />
+            <div ref={tabsViewport} class="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
+              <SortableProvider ids={keys()}>
+                <For each={keys()}>
+                  {(key) => (
+                    <SessionTabGroup
+                      tabKey={key}
+                      group={() => groupsByKey().get(key)}
+                      active={(tab) => isActive(tab)}
+                      hasOpenDescendants={hasOpenDescendants}
+                      onOpen={(tab) => void open(tab)}
+                      onClose={close}
+                      onCloseDescendants={closeDescendants}
+                    />
+                  )}
+                </For>
+              </SortableProvider>
+              <For each={visibleDrafts()}>
+                {(directory) => (
+                  <DraftTab
+                    directory={directory}
+                    active={!params.id && workspaceKey(directory) === workspaceKey(routeDir())}
+                    onOpen={() => void openDraft(directory)}
+                    onClose={() => closeDraft(directory)}
                   />
                 )}
               </For>
-            </SortableProvider>
-            <For each={visibleDrafts()}>
-              {(directory) => (
-                <DraftTab
-                  directory={directory}
-                  active={!params.id && workspaceKey(directory) === workspaceKey(routeDir())}
-                  onOpen={() => void openDraft(directory)}
-                  onClose={() => closeDraft(directory)}
-                />
-              )}
-            </For>
-          </div>
-          <DragOverlay>
-            <Show when={state.activeDraggable} keyed>
-              {(key) => {
-                const title = () => tabs().find((item) => sessionBarKey(item) === key)?.title
-                return (
-                  <div data-component="tabs-drag-preview">
-                    <span class="truncate px-2 text-13-medium">{title() ?? ""}</span>
-                  </div>
-                )
-              }}
-            </Show>
-          </DragOverlay>
-        </DragDropProvider>
+            </div>
+            <DragOverlay>
+              <Show when={state.activeDraggable} keyed>
+                {(key) => {
+                  const title = () => tabs().find((item) => sessionBarKey(item) === key)?.title
+                  return (
+                    <div data-component="tabs-drag-preview">
+                      <span class="truncate px-2 text-13-medium">{title() ?? ""}</span>
+                    </div>
+                  )
+                }}
+              </Show>
+            </DragOverlay>
+          </DragDropProvider>
+        </div>
       </Show>
     </div>
   )
@@ -760,6 +879,7 @@ function SessionTab(props: {
   const language = useLanguage()
   const notification = useNotification()
   const permission = usePermission()
+  const dialog = useDialog()
   const [state, setState] = createStore({ generatingTitle: false })
   const [child] = globalSync.child(props.tab.directory, { bootstrap: false })
   let triggerEl: HTMLElement | undefined
@@ -951,6 +1071,13 @@ function SessionTab(props: {
       })
   }
 
+  const editTitle = () => {
+    console.debug(`[session-tab] edit title open id=${props.tab.id} dir=${props.tab.directory}`)
+    dialog.show(() => (
+      <DialogEditSessionTitle directory={props.tab.directory} sessionID={props.tab.id} initialTitle={title()} />
+    ))
+  }
+
   return (
     <ContextMenu modal={false} onOpenChange={props.onMenuOpenChange}>
       <ContextMenu.Trigger
@@ -1083,6 +1210,18 @@ function SessionTab(props: {
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{language.t("session.generateTitle")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="session-tab-edit-title"
+            data-session={base64Encode(props.tab.id)}
+            onSelect={editTitle}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="edit" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.editTitle")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
           <ContextMenu.Separator />
           <ContextMenu.Item
             data-action="session-tab-close-descendants"
@@ -1125,6 +1264,99 @@ function SessionTab(props: {
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu>
+  )
+}
+
+function DialogEditSessionTitle(props: { directory: string; sessionID: string; initialTitle: string }) {
+  const dialog = useDialog()
+  const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
+  const language = useLanguage()
+  const [state, setState] = createStore({ title: props.initialTitle, saving: false })
+
+  const save = () => {
+    if (state.saving) return
+    const title = state.title.trim()
+    if (!title) return
+    const domain = domainFromDirectory(props.directory)
+    setState("saving", true)
+    console.debug(`[session-tab] edit title start id=${props.sessionID} dir=${props.directory} domain=${domain}`)
+    const [, setSessionStore] = globalSync.child(props.directory, { bootstrap: false })
+    void globalSDK
+      .forDomain(domain)
+      .client.session.update(
+        {
+          sessionID: props.sessionID,
+          directory: props.directory,
+          title,
+        },
+        { throwOnError: true },
+      )
+      .then(
+        () => {
+          setSessionStore("session", (list) =>
+            list.map((item) => (item.id === props.sessionID ? { ...item, title } : item)),
+          )
+          dialog.close()
+          console.debug(`[session-tab] edit title saved id=${props.sessionID} title=${title}`)
+          showToast({
+            variant: "success",
+            icon: "circle-check",
+            title: language.t("toast.session.updateTitle.success.title"),
+            description: title,
+          })
+        },
+        (err: unknown) => {
+          const message =
+            err instanceof Error
+              ? err.message
+              : typeof err === "object" && err && "message" in err
+                ? String((err as { message: unknown }).message)
+                : String(err)
+          console.debug(`[session-tab] edit title failed id=${props.sessionID} err=${message}`)
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+            description: message,
+          })
+        },
+      )
+      .finally(() => {
+        setState("saving", false)
+        console.debug(`[session-tab] edit title settled id=${props.sessionID}`)
+      })
+  }
+
+  const handleSubmit = (event: SubmitEvent) => {
+    event.preventDefault()
+    save()
+  }
+
+  return (
+    <Dialog title={language.t("session.editTitle")} fit class="w-full max-w-[480px] mx-auto">
+      <form onSubmit={handleSubmit} class="flex flex-col gap-6 p-6 pt-0">
+        <TextField
+          autofocus
+          type="text"
+          placeholder={language.t("session.editTitle.placeholder")}
+          value={state.title}
+          onChange={(v) => setState("title", v)}
+          onKeyDown={(event: KeyboardEvent) => {
+            if (event.key !== "Enter") return
+            event.preventDefault()
+            save()
+          }}
+        />
+        <div class="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button type="submit" variant="primary" size="large" disabled={state.saving || !state.title.trim()}>
+            {state.saving ? language.t("common.saving") : language.t("common.save")}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   )
 }
 

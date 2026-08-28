@@ -145,6 +145,15 @@
   letter-spacing: var(--letter-spacing-tightest);
 }
 
+.text-28-medium {
+  font-family: var(--font-family-sans);
+  font-size: 28px;
+  font-style: normal;
+  font-weight: var(--font-weight-medium);
+  line-height: 120%;
+  letter-spacing: var(--letter-spacing-tightest);
+}
+
 /* Custom utilities for project switcher */
 
 .bg-surface-panel {
@@ -164,4 +173,20 @@
 .backdrop-blur-2xl {
   -webkit-backdrop-filter: blur(40px);
   backdrop-filter: blur(40px);
+}
+
+/* Theme-accented token inside rail/titlebar tooltips (e.g. project name). */
+[data-component="project-rail-label"] [data-slot="rail-tooltip-mark"] {
+  display: inline-flex;
+  align-items: center;
+  max-width: 28ch;
+  margin-inline: 0.2em 0.05em;
+  padding: 0 0.4em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-interactive-base) 16%, transparent);
+  color: var(--text-interactive-base);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-interactive-base) 28%, transparent);
 }

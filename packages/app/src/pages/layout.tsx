@@ -1338,7 +1338,15 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.sidebar.toggle"),
         category: language.t("command.category.view"),
         keybind: "mod+b",
-        onSelect: () => layout.sidebar.toggle(),
+        onSelect: () => {
+          // xl breakpoint = 1280px; below that the desktop sidebar is
+          // CSS-hidden and the mobile overlay sidebar is used instead.
+          if (window.innerWidth < 1280) {
+            layout.mobileSidebar.toggle()
+          } else {
+            layout.sidebar.toggle()
+          }
+        },
       },
       {
         id: "projectTask.open",
@@ -3201,15 +3209,19 @@ export default function Layout(props: ParentProps) {
     }
 
     const hasCurrentSession = onSessionRoute() && !!params.id
+    // When viewing an IM channel, the route directory is the channel's work
+    // folder, not an OpenCode project. We must navigate away so activeImChannel()
+    // clears and the sidebar switches back to the project session list.
+    const viewingImChannel = !!activeImChannel()
     // Default false: rail click switches project context / opens sidebar without
     // forcing a new-session route when nothing is currently displayed.
     const navigateWhenNoSession = options?.navigateWhenNoSession ?? false
     console.debug(
-      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} navigated=${!hasCurrentSession && navigateWhenNoSession}`,
+      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} viewing-im=${viewingImChannel} navigated=${viewingImChannel || (!hasCurrentSession && navigateWhenNoSession)}`,
     )
     setSidebarProjectRoot(project.worktree)
     warmProjectSessions(project.worktree)
-    if (!hasCurrentSession && navigateWhenNoSession) {
+    if (viewingImChannel || (!hasCurrentSession && navigateWhenNoSession)) {
       setSwitching(undefined)
       navigateWithSidebarReset(`/${base64Encode(project.worktree)}/session`)
     }
@@ -3986,6 +3998,15 @@ export default function Layout(props: ParentProps) {
         ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ProjectTasksPanel
             directory={() => sidebarProject()?.root ?? routeDir()}
+            worktrees={() => {
+              const project = sidebarProject()
+              return project ? workspaceIds(project) : []
+            }}
+            worktreeName={(directory) => {
+              const project = sidebarProject()
+              const [workspace] = globalSync.child(directory, { bootstrap: false })
+              return workspaceLabel(directory, workspace.vcs?.branch, project?.id)
+            }}
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}

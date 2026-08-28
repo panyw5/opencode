@@ -21,6 +21,7 @@ function makeDetail(overrides?: Partial<Detail>): Detail {
     descriptionPath: ".project-tasks/ptask_test/prd.md",
     status: "in_progress",
     sessionCount: 1,
+    sessionDirectories: ["/tmp"],
     progress: { total: 2, completed: 1, inProgress: 1, pending: 0, cancelled: 0 },
     time: { created: 1, updated: 2 },
     sessions: [

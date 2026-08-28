@@ -1,4 +1,5 @@
 import path from "path"
+import { createHash } from "crypto"
 import { fileURLToPath } from "url"
 import { Schema } from "effect"
 import { Global } from "@opencode-ai/core/global"
@@ -81,7 +82,7 @@ function parts(input: string) {
 }
 
 function safeHost(input: string) {
-  return Boolean(input) && !input.startsWith("-") && !/[\s/\\]/.test(input)
+  return Boolean(input) && input !== "." && input !== ".." && !input.startsWith("-") && !/[\s/\\]/.test(input)
 }
 
 function safeSegment(input: string) {
@@ -201,7 +202,13 @@ export function parseRemoteRepositoryReference(input: string) {
 }
 
 export function validateRepositoryBranch(branch: string) {
-  if (!/^[A-Za-z0-9/_.-]+$/.test(branch) || branch.startsWith("-") || branch.includes("..")) {
+  const parts = branch.split("/")
+  if (
+    !/^[A-Za-z0-9/_.-]+$/.test(branch) ||
+    branch.startsWith("-") ||
+    branch.includes("..") ||
+    parts.some((part) => !part || part.startsWith(".") || part.endsWith(".") || part.endsWith(".lock"))
+  ) {
     throw new InvalidRepositoryBranchError({
       branch,
       message:
@@ -219,8 +226,19 @@ export function parseGitHubRemote(input: string) {
   return { owner: parsed.owner, repo: parsed.repo }
 }
 
-export function repositoryCachePath(input: Reference) {
-  return path.join(Global.Path.repos, ...input.host.split(":"), ...input.segments)
+export function repositoryLegacyCachePath(input: Reference, branch?: string) {
+  const base = path.join(Global.Path.repos, ...input.host.split(":"), ...input.segments)
+  return branch ? `${base}@${encodeURIComponent(branch)}` : base
+}
+
+function cacheSegment(input: readonly string[]) {
+  return createHash("sha256").update(JSON.stringify(input)).digest("hex")
+}
+
+export function repositoryCachePath(input: Reference, branch?: string) {
+  const repository = cacheSegment([input.host, ...input.segments])
+  if (!branch) return path.join(Global.Path.data, "repository-cache-v2", "default", repository)
+  return path.join(Global.Path.data, "repository-cache-v2", "branches", repository, cacheSegment([branch]))
 }
 
 export function repositoryCacheIdentity(input: Reference) {

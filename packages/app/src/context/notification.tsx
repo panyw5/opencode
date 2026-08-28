@@ -55,6 +55,10 @@ type ErrorSoundLog = {
   error?: unknown
 }
 
+function notificationDebugValue(notification: Notification) {
+  return `${notification.type}:${notification.session ?? "none"}:${notification.directory ?? "none"}:viewed=${notification.viewed ? 1 : 0}`
+}
+
 function pruneNotifications(list: Notification[]) {
   const cutoff = Date.now() - NOTIFICATION_TTL_MS
   const pruned = list.filter((n) => n.time >= cutoff)
@@ -220,6 +224,19 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
 
     const meta = { pruned: false, disposed: false }
 
+    createEffect(() => {
+      if (!ready() || meta.disposed) return
+      const domains = Object.entries(store.byDomain)
+        .map(([domain, list]) => {
+          const unseen = (list ?? []).filter((notification) => !notification.viewed)
+          return `${domain}:all=${list?.length ?? 0}:unseen=${unseen.length}:${unseen
+            .map(notificationDebugValue)
+            .join(",") || "none"}`
+        })
+        .join("|")
+      console.debug(`[notification] ready ${domains || "domains=none"}`)
+    })
+
     const domainIndex = () => index.byDomain[currentDomain()] ?? createNotificationIndexPerDomain()
 
     const updateUnseen = (domain: DomainId, scope: "session" | "project", key: string, unseen: Notification[]) => {
@@ -313,6 +330,10 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       const keep = new Set(list)
       const removed = domainList.filter((n) => !keep.has(n))
 
+      console.debug(
+        `[notification] append domain=${domain} item=${notificationDebugValue(notification)} before=${domainList.length} after=${list.length} removed=${removed.length}`,
+      )
+
       batch(() => {
         if (keep.has(notification)) appendToIndex(notification, domain)
         removed.forEach((n) => removeFromIndex(n, domain))
@@ -356,10 +377,23 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       domain: DomainId,
     ) => {
       const sessionID = event.properties.sessionID
+      console.debug(`[notification] idle received domain=${domain} directory=${directory} session=${sessionID ?? "none"}`)
       void lookup(directory, sessionID).then((session) => {
-        if (meta.disposed) return
-        if (!shouldNotifyTurnComplete(session)) return
-        if (isQuickAssistantSession(directory, session)) return
+        console.debug(
+          `[notification] idle lookup directory=${directory} session=${sessionID ?? "none"} found=${session ? 1 : 0} parent=${session?.parentID ?? "none"} archived=${session?.time.archived ?? "none"}`,
+        )
+        if (meta.disposed) {
+          console.debug(`[notification] idle skip reason=disposed directory=${directory} session=${sessionID ?? "none"}`)
+          return
+        }
+        if (!shouldNotifyTurnComplete(session)) {
+          console.debug(`[notification] idle skip reason=not-notifiable directory=${directory} session=${sessionID ?? "none"}`)
+          return
+        }
+        if (isQuickAssistantSession(directory, session)) {
+          console.debug(`[notification] idle skip reason=quick-assistant directory=${directory} session=${sessionID ?? "none"}`)
+          return
+        }
 
         if (settings.sounds.agentEnabled()) {
           void playSoundById(settings.sounds.agent())
@@ -390,9 +424,19 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       domain: DomainId,
     ) => {
       const sessionID = event.properties.sessionID
+      console.debug(`[notification] error received domain=${domain} directory=${directory} session=${sessionID ?? "none"}`)
       void lookup(directory, sessionID).then((session) => {
-        if (meta.disposed) return
-        if (session?.parentID) return
+        console.debug(
+          `[notification] error lookup directory=${directory} session=${sessionID ?? "none"} found=${session ? 1 : 0} parent=${session?.parentID ?? "none"}`,
+        )
+        if (meta.disposed) {
+          console.debug(`[notification] error skip reason=disposed directory=${directory} session=${sessionID ?? "none"}`)
+          return
+        }
+        if (session?.parentID) {
+          console.debug(`[notification] error skip reason=child directory=${directory} session=${sessionID}`)
+          return
+        }
 
         if (settings.sounds.errorsEnabled()) {
           void logErrorSound(platform, {
@@ -440,6 +484,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       const directory = e.name
       const domain = e.domain
       const time = Date.now()
+      console.debug(`[notification] event type=${event.type} domain=${domain} directory=${directory}`)
       if (event.type === "session.idle") {
         handleSessionIdle(directory, event, time, domain)
         return
@@ -451,17 +496,35 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       const directory = currentDirectory()
       const session = currentSession()
       const domain = currentDomain()
-      if (!directory) return
-      if (!session) return
+      if (!directory) {
+        console.debug(`[notification] mark-current skip reason=no-directory domain=${domain}`)
+        return
+      }
+      if (!session) {
+        console.debug(`[notification] mark-current skip reason=no-session domain=${domain} directory=${directory}`)
+        return
+      }
       const domainIdx = index.byDomain[domain]
-      if (!domainIdx) return
+      if (!domainIdx) {
+        console.debug(`[notification] mark-current skip reason=no-domain-index domain=${domain} directory=${directory} session=${session}`)
+        return
+      }
       const unseen = domainIdx.session.unseen[session] ?? empty
+      console.debug(
+        `[notification] mark-current inspect domain=${domain} directory=${directory} session=${session} unseen=${unseen
+          .map(notificationDebugValue)
+          .join(",") || "none"}`,
+      )
       if (unseen.length === 0) return
-      if (!unseen.some((item) => item.directory === directory)) return
+      if (!unseen.some((item) => item.directory === directory)) {
+        console.debug(`[notification] mark-current skip reason=directory-mismatch directory=${directory} session=${session}`)
+        return
+      }
 
       const domainList = store.byDomain[domain] ?? []
       const nextList = markCurrentNotifications(domainList, session, directory)
       if (nextList === domainList) return
+      console.debug(`[notification] mark-current apply domain=${domain} directory=${directory} session=${session}`)
       batch(() => {
         setStore("byDomain", domain, nextList)
         const nextSession = unseen.filter((item) => item.directory !== directory)
@@ -512,6 +575,11 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           const domainIdx = index.byDomain[domain]
           if (!domainIdx) return
           const unseen = domainIdx.session.unseen[session] ?? empty
+          console.debug(
+            `[notification] mark-session-viewed domain=${domain} session=${session} unseen=${unseen
+              .map(notificationDebugValue)
+              .join(",") || "none"}`,
+          )
           if (!unseen.length) return
 
           const projects = [
@@ -555,6 +623,11 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           const domainIdx = index.byDomain[domain]
           if (!domainIdx) return
           const unseen = domainIdx.project.unseen[directory] ?? empty
+          console.debug(
+            `[notification] mark-project-viewed domain=${domain} directory=${directory} unseen=${unseen
+              .map(notificationDebugValue)
+              .join(",") || "none"}`,
+          )
           if (!unseen.length) return
 
           const sessions = [
