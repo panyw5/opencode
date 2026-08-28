@@ -38,6 +38,8 @@ import { sessionDataMutation } from "./global-sync/session-data-event"
 import { createSessionService } from "./global-sync/session-service"
 import type { SessionChildStore } from "./global-sync/session-service-types"
 import {
+  sessionsToReconcileOnStreamConnect,
+  sessionToReconcileOnStatusEvent,
   shouldRefreshSessionStatusOnVisibility,
   type SessionStatusRefreshReason,
 } from "./global-sync/session-status-refresh"
@@ -412,6 +414,49 @@ function createGlobalSync() {
     })
   clearSessionControllers = sessionService.clearDirectory
 
+  const reconcileSessionMessages = async (directory: string, sessionIDs: string[], reason: string) => {
+    if (sessionIDs.length === 0) return
+    console.info(
+      `[global-sync] session message reconcile start directory=${directory} reason=${reason} sessions=${sessionIDs.join(",")}`,
+    )
+    const results = await Promise.allSettled(
+      sessionIDs.map(async (sessionID) => {
+        const result = await sessionService.api.messages.load({
+          directory,
+          sessionID,
+          limit: 80,
+          mode: "prepend",
+        })
+        console.info(
+          `[global-sync] session message reconcile session directory=${directory} reason=${reason} session=${sessionID} committed=${String(result.committed)} count=${String(result.count)}`,
+        )
+      }),
+    )
+    const failed = results.filter((result) => result.status === "rejected")
+    if (failed.length > 0) {
+      console.warn(
+        `[global-sync] session message reconcile partial directory=${directory} reason=${reason} failed=${String(failed.length)} total=${String(results.length)}`,
+      )
+    }
+    console.info(
+      `[global-sync] session message reconcile done directory=${directory} reason=${reason} total=${String(results.length)}`,
+    )
+  }
+
+  const reconcileBusySessionMessages = (directory: string, reason: string) => {
+    const child = children.lookup(storeKey(directory))
+    if (!child) return
+    const sessionIDs = sessionsToReconcileOnStreamConnect(child[0].session_status, child[0].message)
+    if (sessionIDs.length === 0) return
+    void reconcileSessionMessages(directory, sessionIDs, reason)
+      .then(() => sessionService.api.status.refresh(directory, "server-connected"))
+      .catch((error) => {
+        console.warn(
+          `[global-sync] busy session reconcile failed directory=${directory} reason=${reason} error=${error instanceof Error ? error.message : String(error)}`,
+        )
+      })
+  }
+
   async function refreshConfig(domain = currentDomain()): Promise<Config> {
     const refreshed = await runtime(domain).client.global.config.refresh()
     if (!refreshed.data) throw new Error(language.t("common.requestFailed"))
@@ -687,6 +732,12 @@ function createGlobalSync() {
     const recent = !!bootingRoot.get(dirDomain) || Date.now() - (bootedAt.get(dirDomain) ?? 0) < 1500
 
     if (directory === "global") {
+      if (event.type === "server.connected") {
+        for (const loadedDirectory of directoriesInDomain(emittingDomain)) {
+          if (!loaded.dir[loadedDirectory]) continue
+          reconcileBusySessionMessages(loadedDirectory, "event-stream-connected")
+        }
+      }
       // Route to the emitting domain's bucket regardless of which domain is visible.
       // Hidden domains must continue to process their own global events.
       applyGlobalEvent({
@@ -733,6 +784,7 @@ function createGlobalSync() {
     const { key, child, domain: resolvedDomain } = resolved
     children.mark(key)
     const [store, setStore] = child
+    const completedSession = sessionToReconcileOnStatusEvent(event, store.session_status)
     // Re-broadcast under the store key so SDKProvider listeners subscribed to the
     // route directory still receive events when the wire path is a realpath alias.
     if (key !== directory) {
@@ -770,6 +822,13 @@ function createGlobalSync() {
             .then((x) => setStore("lsp", x.data ?? []))
         },
       })
+      if (completedSession) {
+        void reconcileSessionMessages(key, [completedSession], "session-completed").catch((error) => {
+          console.warn(
+            `[global-sync] completed session reconcile failed directory=${key} session=${completedSession} error=${error instanceof Error ? error.message : String(error)}`,
+          )
+        })
+      }
     } catch (err) {
       const props = (event as { properties?: unknown }).properties as
         | {
