@@ -12,6 +12,13 @@ export function mathProblemsRoot(workspace: string): string {
   return path.join(workspace, ".math", "problems")
 }
 
+/** `<workspace>/.math/<project>` — read-only compatibility path for pre-isolation stores. */
+export function legacyMathRoot(workspace: string, project: string): string {
+  const name = assertProjectName(project)
+  if (name === "problems") throw new Error("the .math/problems directory is not a legacy math project")
+  return path.join(workspace, ".math", name)
+}
+
 /** `<workspace>/.math/problems/<problem>` — one isolated Math Mode problem workspace. */
 export function mathRoot(workspace: string, problem: string): string {
   return path.join(mathProblemsRoot(workspace), assertProjectName(problem))

@@ -21,7 +21,7 @@ import {
   stopMathWorker,
   updateMathWorkerTask,
 } from "@/math/worker"
-import { mathProblemsRoot, mathRoot } from "@/math/layout"
+import { legacyMathRoot, mathProblemsRoot, mathRoot } from "@/math/layout"
 import { MathWorkerEvent } from "@/math/event"
 import { attachVerificationProofs, readMathDetailPage, verificationAttempts } from "@/math/details"
 import { readSwarm } from "@/math/swarm"
@@ -36,6 +36,7 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import { existsSync, readdirSync } from "node:fs"
+import path from "node:path"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
@@ -174,7 +175,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const mathProjectDirs = (parent: Session.Info, project?: string) => {
       if (project) {
         try {
-          return [mathRoot(parent.directory, project)]
+          const current = mathRoot(parent.directory, project)
+          const legacy = legacyMathRoot(parent.directory, project)
+          const existing = [current, legacy].filter((dir) => existsSync(dir))
+          return existing.length > 0 ? existing : [current]
         } catch {
           return []
         }
@@ -188,13 +192,29 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       } catch {
         names = []
       }
-      return [...new Set([parent.id, ...names])].flatMap((name) => {
+      const current = [...new Set([parent.id, ...names])].flatMap((name) => {
         try {
           return [mathRoot(parent.directory, name)]
         } catch {
           return []
         }
       })
+      let legacyNames: string[] = []
+      try {
+        legacyNames = readdirSync(path.join(parent.directory, ".math"), { withFileTypes: true })
+          .filter((entry) => entry.isDirectory() && entry.name !== "problems")
+          .map((entry) => entry.name)
+      } catch {
+        legacyNames = []
+      }
+      const legacy = legacyNames.flatMap((name) => {
+        try {
+          return [legacyMathRoot(parent.directory, name)]
+        } catch {
+          return []
+        }
+      })
+      return [...new Set([...current, ...legacy])]
     }
 
     const mathProjectDirForWorker = (parent: Session.Info, workerID: SessionID, project?: string) => {
@@ -204,7 +224,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         if (record) return record.parentSessionID === parent.id
         return existsSync(taskPath(dir, workerID))
       })
-      return matches.length === 1 ? matches[0] : undefined
+      if (matches.length <= 1) return matches[0]
+      const current = matches.filter((dir) => path.dirname(dir) === mathProblemsRoot(parent.directory))
+      return current.length === 1 ? current[0] : undefined
     }
 
     const requireMathWorker = Effect.fn("SessionHttpApi.requireMathWorker")(function* (input: {
@@ -230,7 +252,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           Effect.map((rows) => ({ projectDir, rows })),
         ),
       )
-      const actual: Array<(typeof batches)[number]["rows"][number]> = []
+      const actual = new Map<string, (typeof batches)[number]["rows"][number]>()
       const missing = new Map<string, (typeof batches)[number]["rows"][number]>()
       for (const batch of batches) {
         for (const row of batch.rows) {
@@ -239,11 +261,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             continue
           }
           const record = readSwarm(batch.projectDir).workers[row.sessionID]
-          if (record?.parentSessionID === parent.id) actual.push(row)
+          if (record?.parentSessionID === parent.id && !actual.has(row.sessionID)) actual.set(row.sessionID, row)
         }
       }
-      const actualIDs = new Set(actual.map((row) => row.sessionID))
-      const result = [...actual, ...[...missing.values()].filter((row) => !actualIDs.has(row.sessionID))]
+      const actualIDs = new Set(actual.keys())
+      const result = [...actual.values(), ...[...missing.values()].filter((row) => !actualIDs.has(row.sessionID))]
       return result
     })
 
@@ -259,12 +281,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         limit: ctx.query.limit ?? 20,
       })
       const parent = yield* requireSession(ctx.params.sessionID)
-      let projectDir: string
-      try {
-        projectDir = mathRoot(parent.directory, ctx.query.project)
-      } catch {
-        return yield* new HttpApiError.BadRequest({})
-      }
+      const dirs = mathProjectDirs(parent, ctx.query.project)
+      const projectDir = dirs.find((dir) => existsSync(dir)) ?? dirs[0]
+      if (!projectDir) return yield* new HttpApiError.BadRequest({})
       const page = yield* Effect.promise(() =>
         readMathDetailPage({
           projectDir,

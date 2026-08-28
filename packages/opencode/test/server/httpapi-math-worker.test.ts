@@ -164,6 +164,27 @@ describe("Math worker HttpApi", () => {
             },
           ],
         })
+
+        const legacyDir = path.join(test.directory, ".math", "legacy-swarm")
+        const legacyFactId = yield* Effect.promise(() =>
+          new FactGraph(legacyDir).add({
+            problem_id: "legacy",
+            author: worker.id,
+            statement: "Legacy fact",
+            proof: "Legacy proof",
+          }),
+        )
+        const legacyResponse = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathDetails, { sessionID: parent.id })}?project=legacy-swarm&kind=facts`,
+            { headers },
+          ),
+        )
+        expect(yield* Effect.promise(() => body(legacyResponse))).toMatchObject({
+          kind: "facts",
+          total: 1,
+          items: [{ factId: legacyFactId, statement: "Legacy fact", proof: "Legacy proof" }],
+        })
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
