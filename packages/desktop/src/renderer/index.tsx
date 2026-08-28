@@ -512,6 +512,17 @@ desktopApi.onWindowsShortcut((shortcut) => {
 })
 listenForDeepLinks()
 
+const rendererFault = (kind: "error" | "unhandledrejection", value: unknown, location = "") => {
+  const detail = value instanceof Error ? (value.stack ?? value.message) : String(value)
+  console.error(`[renderer-fault] kind=${kind}${location ? ` location=${location}` : ""} detail=${detail}`)
+}
+
+window.addEventListener("error", (event) => {
+  const location = `${event.filename || "unknown"}:${event.lineno}:${event.colno}`
+  rendererFault("error", event.error ?? event.message, location)
+})
+window.addEventListener("unhandledrejection", (event) => rendererFault("unhandledrejection", event.reason))
+
 render(() => {
   const [extraAgentVersion, setExtraAgentVersion] = createSignal(0)
   let refreshExtraAgents: (() => Promise<ExtraAgentServer[] | undefined>) | undefined

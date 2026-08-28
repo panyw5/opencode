@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import { createVirtualizer } from "@tanstack/solid-virtual"
 import { createRoot, createSignal } from "solid-js"
+import type { ToolPart } from "@opencode-ai/sdk/v2"
+import { DeferredMessagePart, type DeferredMessagePartProps } from "../src/pages/session/timeline/deferred-tool-part"
 
 test("reactive count updates preserve measured row sizes", () => {
   createRoot((dispose) => {
@@ -43,4 +45,49 @@ test("logical scroll offset includes pending measurement adjustments", () => {
     expect(virtualizer.getLogicalScrollOffset()).toBe(140)
     dispose()
   })
+})
+
+test("deferred tool cleanup does not read stale parent control-flow props", () => {
+  const part: ToolPart = {
+    id: "part-1",
+    sessionID: "session-1",
+    messageID: "message-1",
+    type: "tool",
+    callID: "call-1",
+    tool: "bash",
+    state: {
+      status: "completed",
+      input: {},
+      output: "",
+      title: "",
+      metadata: {},
+      time: { start: 1, end: 2 },
+    },
+  }
+  const runtime = globalThis as unknown as { React?: { createElement: (...args: unknown[]) => unknown } }
+  const previous = runtime.React
+  // The component is called directly so only its setup and cleanup execute.
+  runtime.React = { createElement: () => null }
+
+  try {
+    createRoot((dispose) => {
+      let mounted = true
+      const props = {
+        sessionID: "session-1",
+        get part() {
+          if (!mounted) throw new Error("stale part read")
+          return part
+        },
+        message: {},
+        defaultOpen: false,
+      } as DeferredMessagePartProps
+
+      DeferredMessagePart(props)
+      mounted = false
+
+      expect(dispose).not.toThrow()
+    })
+  } finally {
+    runtime.React = previous
+  }
 })
