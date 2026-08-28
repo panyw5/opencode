@@ -837,12 +837,9 @@ export function SessionComposerRegion(props: {
   )
 
   createEffect(() => {
-    console.debug("[composer-scroll-to-latest] state", {
-      visible: jumpToLatestVisible(),
-      hasHandler: !!props.onScrollToBottom,
-      overflow: !!props.scrollState?.overflow,
-      atBottom: !!props.scrollState?.bottom,
-    })
+    console.debug(
+      `[composer-scroll-to-latest] visible=${String(jumpToLatestVisible())} handler=${String(!!props.onScrollToBottom)} overflow=${String(!!props.scrollState?.overflow)} bottom=${String(!!props.scrollState?.bottom)}`,
+    )
   })
 
   const refreshBackgroundShells = () => {

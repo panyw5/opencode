@@ -58,11 +58,13 @@ parentPort.on("message", (event) => {
 
 async function start(command: StartCommand) {
   try {
+    console.error(`sidecar lifecycle start pid=${String(process.pid)} port=${String(command.port)} migrate=${String(command.needsMigration)}`)
     prepareSidecarEnv(command.password)
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
     const { Database, Log, Server } = await import("virtual:opencode-server")
+    console.error(`sidecar lifecycle bundle-ready pid=${String(process.pid)}`)
     await Log.init({ level: "WARN" })
 
     if (command.needsMigration) {
@@ -89,6 +91,7 @@ async function start(command: StartCommand) {
       password: command.password,
       cors: ["oc://renderer"],
     })
+    console.error(`sidecar lifecycle listen-ready pid=${String(process.pid)} port=${String(command.port)}`)
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
     parentPort.postMessage({ type: "error", error: serializeError(error) })
@@ -98,8 +101,10 @@ async function start(command: StartCommand) {
 
 async function stop() {
   try {
+    console.error(`sidecar lifecycle stop-begin pid=${String(process.pid)} listener=${String(!!listener)}`)
     await listener?.stop()
   } finally {
+    console.error(`sidecar lifecycle stop-settled pid=${String(process.pid)}`)
     listener = undefined
     parentPort.postMessage({ type: "stopped" })
     setImmediate(() => process.exit(0))

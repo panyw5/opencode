@@ -375,7 +375,9 @@ describe("spawnLocalServer crash and shutdown edge cases", () => {
     app.emit("child-process-gone", {}, { type: "Utility", name: "other service", reason: "crashed", exitCode: 1 })
     app.emit("child-process-gone", {}, { type: "GPU", name: "opencode server", reason: "crashed", exitCode: 1 })
 
-    expect(stderr).toEqual(["utility process gone reason=crashed exitCode=1"])
+    expect(stderr.filter((line) => line.includes("lifecycle gone"))).toEqual([
+      "sidecar lifecycle gone type=Utility name=opencode server reason=crashed exitCode=1",
+    ])
 
     child.emitMessage({ type: "ready" })
     await started

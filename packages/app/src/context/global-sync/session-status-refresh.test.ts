@@ -6,6 +6,8 @@ import {
   isSessionStatusRefreshBoundary,
   mergeSessionStatusRefresh,
   SESSION_STATUS_VISIBILITY_REFRESH_MS,
+  sessionsToReconcileOnStreamConnect,
+  sessionToReconcileOnStatusEvent,
   shouldRefreshSessionStatusOnVisibility,
 } from "./session-status-refresh"
 
@@ -118,5 +120,47 @@ describe("session-status-refresh", () => {
       message: "wait",
       next: 2,
     })
+  })
+
+  test("stream reconnect selects loaded busy sessions for message reconciliation", () => {
+    expect(
+      sessionsToReconcileOnStreamConnect(
+        {
+          ses_loaded: { type: "busy" },
+          ses_unloaded: { type: "busy" },
+          ses_idle: { type: "idle" },
+        } as Record<string, SessionStatus>,
+        {
+          ses_loaded: [],
+          ses_idle: [{ id: "msg_idle" } as Message],
+        },
+      ),
+    ).toEqual(["ses_loaded"])
+  })
+
+  test("idle status event selects a session only when it was locally busy", () => {
+    const statuses = {
+      ses_busy: { type: "busy" },
+      ses_idle: { type: "idle" },
+    } as Record<string, SessionStatus>
+
+    expect(
+      sessionToReconcileOnStatusEvent(
+        { type: "session.status", properties: { sessionID: "ses_busy", status: { type: "idle" } } },
+        statuses,
+      ),
+    ).toBe("ses_busy")
+    expect(
+      sessionToReconcileOnStatusEvent(
+        { type: "session.status", properties: { sessionID: "ses_idle", status: { type: "idle" } } },
+        statuses,
+      ),
+    ).toBeUndefined()
+    expect(
+      sessionToReconcileOnStatusEvent(
+        { type: "session.status", properties: { sessionID: "ses_busy", status: { type: "retry" } } },
+        statuses,
+      ),
+    ).toBeUndefined()
   })
 })

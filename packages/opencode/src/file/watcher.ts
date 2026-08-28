@@ -91,12 +91,27 @@ export const layer = Layer.effect(
           log.info("watcher backend", { directory: ctx.directory, platform: process.platform, backend })
           const bridge = yield* EffectBridge.make()
           const subs: ParcelWatcher.AsyncSubscription[] = []
+          const closed = new WeakSet<ParcelWatcher.AsyncSubscription>()
+          const close = async (sub: ParcelWatcher.AsyncSubscription, dir: string, reason: string) => {
+            if (closed.has(sub)) return
+            closed.add(sub)
+            log.warn(`unsubscribe begin directory=${dir} reason=${reason}`)
+            await sub.unsubscribe()
+            log.warn(`unsubscribe settled directory=${dir} reason=${reason}`)
+          }
           yield* Effect.addFinalizer(() =>
-            Effect.promise(() => Promise.allSettled(subs.map((sub) => sub.unsubscribe()))),
+            Effect.promise(async () => {
+              log.warn(`finalize begin directory=${ctx.directory} subscriptions=${String(subs.length)}`)
+              for (const sub of subs) await close(sub, ctx.directory, "scope-finalizer").catch(() => undefined)
+              log.warn(`finalize settled directory=${ctx.directory} subscriptions=${String(subs.length)}`)
+            }),
           )
 
           const cb: ParcelWatcher.SubscribeCallback = bridge.bind((err, evts) => {
-            // if (err) return
+            if (err) {
+              log.warn(`callback error directory=${ctx.directory} error=${String(err)}`)
+              return
+            }
             for (const evt of evts) {
               if (evt.type === "create") void Bus.publish(ctx, Event.Updated, { file: evt.path, event: "add" })
               if (evt.type === "update") void Bus.publish(ctx, Event.Updated, { file: evt.path, event: "change" })
@@ -105,15 +120,17 @@ export const layer = Layer.effect(
           })
 
           const subscribe = (dir: string, ignore: string[]) => {
+            log.warn(`subscribe begin directory=${dir} backend=${backend} ignoreCount=${String(ignore.length)}`)
             const pending = w.subscribe(dir, cb, { ignore, backend })
             return Effect.gen(function* () {
               const sub = yield* Effect.promise(() => pending)
               subs.push(sub)
+              log.warn(`subscribe success directory=${dir} backend=${backend}`)
             }).pipe(
               Effect.timeout(SUBSCRIBE_TIMEOUT_MS),
               Effect.catchCause((cause) => {
                 log.error("failed to subscribe", { dir, cause: Cause.pretty(cause) })
-                pending.then((s) => s.unsubscribe()).catch(() => {})
+                pending.then((sub) => close(sub, dir, "subscribe-timeout")).catch(() => undefined)
                 return Effect.void
               }),
             )

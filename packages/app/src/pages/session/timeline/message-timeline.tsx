@@ -378,9 +378,35 @@ export function MessageTimeline(props: {
   // (live-shrink guard + contentHeight signal + row cache persistence).
   const rowHeightHandlers = new Map<string, (raw: number) => number>()
   const elementRowKey = new WeakMap<HTMLElement, string>()
+  let mounted = true
   const pendingNearBottomShrinks = new Map<number, { key: string; size: number }>()
   const deferredFastMeasurements = new Map<number, { key: string; size: number }>()
   let deferredFastMeasurementTimer: number | undefined
+  const observerMeasurements = new Map<string, { element: HTMLElement; size: number }>()
+  let observerMeasurementFrame: number | undefined
+  const scheduleObserverMeasurement = (key: string, element: HTMLElement, size: number) => {
+    observerMeasurements.set(key, { element, size })
+    if (observerMeasurementFrame !== undefined) return
+    observerMeasurementFrame = requestAnimationFrame(() => {
+      observerMeasurementFrame = undefined
+      if (!mounted) return
+      const pending = [...observerMeasurements.entries()]
+      observerMeasurements.clear()
+      if (lagging()) timelineLag("observer-frame", `rows=${String(pending.length)}`)
+      for (const [rowKey, measurement] of pending) {
+        if (!measurement.element.isConnected || elementRowKey.get(measurement.element) !== rowKey) continue
+        const index = Number.parseInt(measurement.element.dataset.index ?? "", 10)
+        if (!Number.isFinite(index)) continue
+        const item = virtualizer.measurementsCache[index]
+        if (!item || String(item.key) !== rowKey) continue
+        const handler = rowHeightHandlers.get(rowKey)
+        const next = handler ? handler(measurement.size) : measurement.size
+        const current = virtualizer.itemSizeCache.get(item.key) ?? item.size
+        if (Math.abs(next - current) < 0.5) continue
+        virtualizer.resizeItem(index, next)
+      }
+    })
+  }
 
   // Programmatic scrolls (anchor restore, TanStack scroll adjustments,
   // scrollToIndex/scrollToEnd) must not be mistaken for user scrolling: they
@@ -750,8 +776,13 @@ export function MessageTimeline(props: {
       const fromEntry = heightFromResizeObserverEntry(entry)
       if (fromEntry !== undefined) {
         const key = elementRowKey.get(element)
-        const handler = key ? rowHeightHandlers.get(key) : undefined
-        return handler ? handler(fromEntry) : fromEntry
+        if (key) scheduleObserverMeasurement(key, element, fromEntry)
+        const index = Number.parseInt(element.dataset.index ?? "", 10)
+        const current = Number.isFinite(index) ? virtualizer.measurementsCache[index]?.size : undefined
+        // Do not synchronously mutate virtual row geometry from inside the
+        // ResizeObserver delivery. Chromium reports an observer loop when the
+        // Solid virtualizer then mounts/moves rows before delivery completes.
+        return typeof current === "number" && current > 0 ? current : fromEntry
       }
       if (entry && lagging()) {
         const key = elementRowKey.get(element) ?? "unknown"
@@ -1018,6 +1049,7 @@ export function MessageTimeline(props: {
   })
 
   onCleanup(() => {
+    mounted = false
     if (lagging()) {
       console.debug(
         `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
@@ -1027,6 +1059,8 @@ export function MessageTimeline(props: {
     pendingNearBottomShrinks.clear()
     deferredFastMeasurements.clear()
     if (deferredFastMeasurementTimer !== undefined) window.clearTimeout(deferredFastMeasurementTimer)
+    observerMeasurements.clear()
+    if (observerMeasurementFrame !== undefined) cancelAnimationFrame(observerMeasurementFrame)
     // Persist measured row heights into the row-level cache so the next mount
     // (tab switch, session re-entry) can reuse them without re-measuring.
     const width = estimatorWidth()
@@ -1132,6 +1166,7 @@ export function MessageTimeline(props: {
     // Track the scroll viewport size for row height estimation (estimate.ts).
     listResizeObserver?.disconnect()
     listResizeObserver = new ResizeObserver((entries) => {
+      if (!mounted || !root.isConnected) return
       const entry = entries[0]
       const box = entry?.borderBoxSize
       const border = Array.isArray(box) ? box[0] : box

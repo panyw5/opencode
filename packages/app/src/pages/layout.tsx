@@ -39,15 +39,17 @@ import { useProviders } from "@/hooks/use-providers"
 import { showToast, Toast, toaster } from "@opencode-ai/ui/toast"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { clearWorkspaceTerminals } from "@/context/terminal"
-import { dropSessionCaches, pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
+import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
 import {
   clearSessionPrefetchDirectory,
   clearSessionPrefetch,
   getSessionPrefetch,
   isSessionPrefetchCurrent,
+  isSessionCold,
   runSessionPrefetch,
   setSessionPrefetch,
   shouldSkipSessionPrefetch,
+  neighboringMessagePrefetch,
 } from "@/context/global-sync/session-prefetch"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
@@ -962,15 +964,14 @@ export default function Layout(props: ParentProps) {
     running: number
   }
 
-  const prefetchChunk = 200
+  const prefetchChunk = 80
   const prefetchConcurrency = 2
-  const prefetchPendingLimit = 10
-  const span = 4
+  const prefetchPendingLimit = 2
   const prefetchToken = { value: 0 }
   const prefetchAttempts = new Set<string>()
   const prefetchQueues = new Map<string, PrefetchQueue>()
 
-  const PREFETCH_MAX_SESSIONS_PER_DIR = 10
+  const PREFETCH_MAX_SESSIONS_PER_DIR = SESSION_CACHE_LIMIT
   const prefetchedByDir = new Map<string, Set<string>>()
 
   const lruFor = (directory: string) => {
@@ -1106,6 +1107,7 @@ export default function Layout(props: ParentProps) {
     // sync.session.sync (which uses sdk.directory).
     const directory = session.directory ? workspaceKey(session.directory) : session.directory
     if (!directory) return
+    if (isSessionCold(directory, session.id)) return
 
     const [store] = globalSync.child(directory, { bootstrap: false })
     const cached = untrack(() => {
@@ -1154,13 +1156,7 @@ export default function Layout(props: ParentProps) {
   }
 
   const warm = (sessions: Session[], index: number) => {
-    for (let offset = 1; offset <= span; offset++) {
-      const next = sessions[index + offset]
-      if (next) prefetchSession(next, offset === 1 ? "high" : "low")
-
-      const prev = sessions[index - offset]
-      if (prev) prefetchSession(prev, offset === 1 ? "high" : "low")
-    }
+    for (const session of neighboringMessagePrefetch(sessions, index)) prefetchSession(session, "high")
   }
 
   createEffect(() => {
