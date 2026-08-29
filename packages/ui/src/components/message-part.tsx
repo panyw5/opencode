@@ -3537,6 +3537,7 @@ type CodexChatMessage = {
   role: "user" | "assistant" | "system"
   kind: string
   label: string
+  title?: string
   text: string
   status?: string
   streaming?: boolean
@@ -3655,7 +3656,8 @@ function codexChatMessages(
         role: "system",
         kind: item.kind,
         label: item.kind,
-        text,
+        title: item.kind === "command" ? item.title?.trim() : undefined,
+        text: item.kind === "command" ? item.text?.trim() ?? "" : text,
         status: item.status,
         streaming: running && item.status === "running",
       })
@@ -3881,32 +3883,76 @@ function CodexSessionDialog(props: {
                       {item().role === "user" ? "A" : item().role === "assistant" ? assistantAvatar() : "·"}
                     </div>
                     <div data-slot="codex-chat-bubble" data-role={item().role} data-kind={item().kind}>
-                      <div data-slot="codex-chat-label">
-                        <span>{item().label}</span>
-                        <Show when={item().streaming}>
-                          <span data-slot="codex-chat-streaming">{streamingLabel()}</span>
-                        </Show>
-                        <Show when={item().status && !item().streaming}>
-                          <span data-slot="codex-chat-status">{item().status}</span>
-                        </Show>
-                      </div>
                       <Show
-                        when={item().text.trim()}
+                        when={item().kind === "command"}
                         fallback={
-                          <div data-slot="codex-chat-waiting">
-                            <Spinner />
-                            <span>{emptyRunningLabel()}</span>
-                          </div>
+                          <>
+                            <div data-slot="codex-chat-label">
+                              <span>{item().label}</span>
+                              <Show when={item().streaming}>
+                                <span data-slot="codex-chat-streaming">{streamingLabel()}</span>
+                              </Show>
+                              <Show when={item().status && !item().streaming}>
+                                <span data-slot="codex-chat-status">{item().status}</span>
+                              </Show>
+                            </div>
+                            <Show
+                              when={item().text.trim()}
+                              fallback={
+                                <div data-slot="codex-chat-waiting">
+                                  <Spinner />
+                                  <span>{emptyRunningLabel()}</span>
+                                </div>
+                              }
+                            >
+                              <div data-slot="codex-chat-text" data-role={item().role}>
+                                <Show
+                                  when={item().role === "assistant"}
+                                  fallback={<pre data-slot="codex-chat-pre">{item().text}</pre>}
+                                >
+                                  <Markdown text={item().text} cacheKey={`consult-${item().id}`} />
+                                </Show>
+                              </div>
+                            </Show>
+                          </>
                         }
                       >
-                        <div data-slot="codex-chat-text" data-role={item().role}>
-                          <Show
-                            when={item().role === "assistant"}
-                            fallback={<pre data-slot="codex-chat-pre">{item().text}</pre>}
-                          >
-                            <Markdown text={item().text} cacheKey={`consult-${item().id}`} />
-                          </Show>
-                        </div>
+                        <Collapsible variant="ghost" class="codex-command-collapsible">
+                          <Collapsible.Trigger>
+                            <div data-slot="codex-command-summary">
+                              <div data-slot="codex-chat-label">
+                                <span>{item().label}</span>
+                                <Show when={item().streaming}>
+                                  <span data-slot="codex-chat-streaming">{streamingLabel()}</span>
+                                </Show>
+                                <Show when={item().status && !item().streaming}>
+                                  <span data-slot="codex-chat-status">{item().status}</span>
+                                </Show>
+                              </div>
+                              <Show when={item().title}>
+                                {(title) => <code data-slot="codex-command-title">{title()}</code>}
+                              </Show>
+                            </div>
+                            <Collapsible.Arrow />
+                          </Collapsible.Trigger>
+                          <Collapsible.Content>
+                            <Show
+                              when={item().text.trim()}
+                              fallback={
+                                <Show when={item().streaming}>
+                                  <div data-slot="codex-chat-waiting">
+                                    <Spinner />
+                                    <span>{emptyRunningLabel()}</span>
+                                  </div>
+                                </Show>
+                              }
+                            >
+                              <div data-slot="codex-chat-text" data-role={item().role}>
+                                <pre data-slot="codex-chat-pre">{item().text}</pre>
+                              </div>
+                            </Show>
+                          </Collapsible.Content>
+                        </Collapsible>
                       </Show>
                     </div>
                   </div>
