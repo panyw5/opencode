@@ -13,7 +13,7 @@ import { isExtraAgentDirectory, mainDomain } from "@/pages/layout/extra-agents"
 import { sameWorkspacePath, workspaceKey } from "@/pages/layout/helpers"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
-import { removeSessionTabSubtree, withParentSessionTab } from "@/components/session/session-bar-parent"
+import { removeSessionTabSubtree } from "@/components/session/session-bar-parent"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 const DEFAULT_PANEL_WIDTH = 344
@@ -729,9 +729,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         /** Open (or focus) a session tab. Dedupes by directory+id, appends to the end. */
         open(directory: string, id: string, title?: string, parentID?: string | null) {
           const key = workspaceKey(directory)
-          if (typeof parentID === "string" && parentID !== id) {
-            setStore("sessionBar", "all", (prev) => withParentSessionTab(prev ?? [], directory, parentID, MAX_SESSION_BAR_TABS))
-          }
           const existing = (store.sessionBar?.all ?? []).find(
             (tab) => tab.id === id && workspaceKey(tab.directory) === key,
           )
@@ -823,11 +820,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           const title = info.title ?? current?.title
           if (current?.title !== title || current?.parentID !== info.parentID) {
             setStore("sessionBar", "all", index, { ...current, title, parentID: info.parentID })
-          }
-          if (typeof info.parentID === "string" && info.parentID !== id) {
-            setStore("sessionBar", "all", (prev) =>
-              withParentSessionTab(prev ?? [], directory, info.parentID!, MAX_SESSION_BAR_TABS),
-            )
           }
         },
       },

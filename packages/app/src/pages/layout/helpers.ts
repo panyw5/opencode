@@ -128,8 +128,9 @@ export async function waitForMatch<T>(
   const delay = opts?.delay ?? 10
   for (let count = 0; count < tries; count += 1) {
     await new Promise((resolve) => setTimeout(resolve, delay))
-    if (match(read())) return
+    if (match(read())) return true
   }
+  return false
 }
 
 function sortSessions(_now: number) {

@@ -351,13 +351,23 @@ describe("layout workspace helpers", () => {
       key = "sidecar"
     }, 0)
 
-    await waitForMatch(
+    const matched = await waitForMatch(
       () => key,
       (value) => value === "sidecar",
       { tries: 10, delay: 1 },
     )
 
     expect(key).toBe("sidecar")
+    expect(matched).toBe(true)
+  })
+
+  test("reports when async state never matches", async () => {
+    const matched = await waitForMatch(
+      () => "openclaw",
+      (value) => value === "sidecar",
+      { tries: 1, delay: 0 },
+    )
+    expect(matched).toBe(false)
   })
 
   test("keeps local first while preserving known order", () => {

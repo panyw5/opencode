@@ -90,6 +90,55 @@ test("session can be archived via header menu", async ({ page, sdk, gotoSession 
   })
 })
 
+test("restoring an archived session allows its tab to open again", async ({ page, sdk, gotoSession }) => {
+  const stamp = Date.now()
+  const title = `e2e restore archived ${stamp}`
+
+  await withSession(sdk, title, async (session) => {
+    await gotoSession()
+    await sdk.session.update({
+      sessionID: session.id,
+      time: { archived: Date.now() },
+    })
+
+    await expect
+      .poll(
+        async () => {
+          const data = await sdk.session.get({ sessionID: session.id }).then((r) => r.data)
+          return data?.time?.archived
+        },
+        { timeout: 30_000 },
+      )
+      .not.toBeUndefined()
+
+    await page.getByRole("button", { name: "opencode", exact: true }).first().click()
+    const archivedSessions = page.getByRole("button", { name: /archived/i })
+    await expect(archivedSessions).toBeVisible()
+    await archivedSessions.click()
+    const dialog = page.getByRole("dialog")
+    const archivedTitle = dialog.getByText(title, { exact: true })
+    await expect(archivedTitle).toBeVisible()
+    const archivedRow = archivedTitle.locator("..").locator("..")
+    await archivedRow.getByRole("button", { name: "Restore", exact: true }).click()
+
+    await expect
+      .poll(
+        async () => {
+          const data = await sdk.session.get({ sessionID: session.id }).then((r) => r.data)
+          return data?.time?.archived ?? null
+        },
+        { timeout: 30_000 },
+      )
+      .toBeNull()
+
+    await gotoSession(session.id)
+    await expect(page.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`)).toHaveAttribute(
+      "data-active",
+      "true",
+    )
+  })
+})
+
 test("session can be deleted via header menu", async ({ page, sdk, gotoSession }) => {
   const stamp = Date.now()
   const title = `e2e delete test ${stamp}`

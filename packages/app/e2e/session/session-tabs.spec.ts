@@ -1,6 +1,7 @@
 import { test, expect } from "../fixtures"
 import { cleanupSession, sessionIDFromUrl, withSession } from "../actions"
 import { projectSwitchSelector, promptSelector, sessionItemSelector, sessionNewButtonSelector } from "../selectors"
+import { sessionPath } from "../utils"
 
 type TabPermissionRequest = {
   id: string
@@ -93,6 +94,12 @@ test("new session draft tab stays visible when switching sessions", async ({ pag
 })
 
 test("new session draft tab closes after the first message creates a session", async ({ page, sdk, gotoSession }) => {
+  const logs: string[] = []
+  page.on("console", (message) => {
+    const text = message.text()
+    if (text.includes("[session-tabs]") || text.includes("[session-bar]")) logs.push(text)
+  })
+  page.on("pageerror", (error) => logs.push(`[pageerror] ${error.message}`))
   await page.setViewportSize({ width: 1400, height: 800 })
   await gotoSession()
 
@@ -102,7 +109,9 @@ test("new session draft tab closes after the first message creates a session", a
   await page.locator(promptSelector).fill(`e2e promote draft ${Date.now()}`)
   await page.keyboard.press("Enter")
 
-  await expect.poll(() => sessionIDFromUrl(page.url()) ?? "", { timeout: 30_000 }).not.toBe("")
+  await expect
+    .poll(() => sessionIDFromUrl(page.url()) ?? "", { timeout: 30_000, message: logs.join("\n") })
+    .not.toBe("")
   const sessionID = sessionIDFromUrl(page.url())
   if (!sessionID) throw new Error(`Failed to resolve session id from ${page.url()}`)
 
@@ -115,6 +124,164 @@ test("new session draft tab closes after the first message creates a session", a
   } finally {
     await cleanupSession({ sdk, sessionID })
   }
+})
+
+test("cold start reconciliation removes an archived persisted tab", async ({ page, sdk, gotoSession, directory }) => {
+  await withSession(sdk, `e2e cold reconcile ${Date.now()}`, async (session) => {
+    await gotoSession(session.id)
+    await expect(page.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`)).toBeVisible()
+    await expect
+      .poll(() =>
+        page.evaluate((sessionID) => {
+          const value = localStorage.getItem("opencode.global.dat:layout")
+          if (!value) return false
+          const parsed = JSON.parse(value) as { sessionBar?: { all?: Array<{ id?: string }> } }
+          return parsed.sessionBar?.all?.some((tab) => tab.id === sessionID) ?? false
+        }, session.id),
+      )
+      .toBe(true)
+
+    const context = page.context()
+    await page.close()
+    await sdk.session.update({ sessionID: session.id, time: { archived: Date.now() } })
+
+    const restoredPage = await context.newPage()
+    const logs: string[] = []
+    restoredPage.on("console", (message) => {
+      const text = message.text()
+      if (text.includes("[session-tabs]")) logs.push(text)
+    })
+    restoredPage.on("pageerror", (error) => logs.push(`[pageerror] ${error.message}`))
+    await restoredPage.goto(sessionPath(directory))
+
+    await expect
+      .poll(() => logs.some((entry) => entry.includes("reconcile committed")), { message: logs.join("\n") })
+      .toBe(true)
+    await expect(
+      restoredPage.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`),
+    ).toHaveCount(0)
+    await restoredPage.close()
+  })
+})
+
+test("cold start reconciliation removes a deleted persisted tab", async ({ page, sdk, gotoSession, directory }) => {
+  await withSession(sdk, `e2e deleted reconcile ${Date.now()}`, async (session) => {
+    await gotoSession(session.id)
+    await expect(page.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`)).toBeVisible()
+    await expect
+      .poll(() =>
+        page.evaluate((sessionID) => {
+          const value = localStorage.getItem("opencode.global.dat:layout")
+          if (!value) return false
+          const parsed = JSON.parse(value) as { sessionBar?: { all?: Array<{ id?: string }> } }
+          return parsed.sessionBar?.all?.some((tab) => tab.id === sessionID) ?? false
+        }, session.id),
+      )
+      .toBe(true)
+
+    const context = page.context()
+    await page.close()
+    await sdk.session.delete({ sessionID: session.id })
+
+    const restoredPage = await context.newPage()
+    const logs: string[] = []
+    restoredPage.on("console", (message) => {
+      const text = message.text()
+      if (text.includes("[session-tabs]")) logs.push(text)
+    })
+    await restoredPage.goto(sessionPath(directory))
+
+    await expect
+      .poll(() => logs.some((entry) => entry.includes("status=404")), { message: logs.join("\n") })
+      .toBe(true)
+    await expect(
+      restoredPage.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`),
+    ).toHaveCount(0)
+    await restoredPage.close()
+  })
+})
+
+test("cold start reconciliation retains a tab when verification fails", async ({ page, sdk, gotoSession, directory }) => {
+  await withSession(sdk, `e2e reconcile failure ${Date.now()}`, async (session) => {
+    await gotoSession(session.id)
+    await expect(page.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`)).toBeVisible()
+    await expect
+      .poll(() =>
+        page.evaluate((sessionID) => {
+          const value = localStorage.getItem("opencode.global.dat:layout")
+          if (!value) return false
+          const parsed = JSON.parse(value) as { sessionBar?: { all?: Array<{ id?: string }> } }
+          return parsed.sessionBar?.all?.some((tab) => tab.id === sessionID) ?? false
+        }, session.id),
+      )
+      .toBe(true)
+
+    const context = page.context()
+    await page.close()
+    const restoredPage = await context.newPage()
+    const logs: string[] = []
+    const failVerification = async (route: any) => {
+      await route.fulfill({ status: 418, contentType: "application/json", body: JSON.stringify({ error: "offline" }) })
+    }
+    restoredPage.on("console", (message) => {
+      const text = message.text()
+      if (text.includes("[session-tabs]")) logs.push(text)
+    })
+    restoredPage.on("pageerror", (error) => logs.push(`[pageerror] ${error.message}`))
+    await restoredPage.route(`**/session/${session.id}`, failVerification)
+    try {
+      await restoredPage.bringToFront()
+      await restoredPage.goto(sessionPath(directory))
+      await expect(
+        restoredPage.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`),
+      ).toBeVisible()
+      await expect
+        .poll(() => logs.some((entry) => entry.includes("persisted reconcile requested")), { message: logs.join("\n") })
+        .toBe(true)
+      await expect(
+        restoredPage.locator(`[data-component="session-tab"][data-session-id="${session.id}"]`),
+      ).toBeVisible()
+    } finally {
+      await restoredPage.unroute(`**/session/${session.id}`, failVerification)
+      await restoredPage.close()
+    }
+  })
+})
+
+test("closing the active session tab commits after routing to its neighbor", async ({ page, sdk, gotoSession }) => {
+  await withSession(sdk, `e2e close active first ${Date.now()}`, async (first) => {
+    await withSession(sdk, `e2e close active second ${Date.now()}`, async (second) => {
+      await gotoSession(first.id)
+      await gotoSession(second.id)
+
+      const firstTab = page.locator(`[data-component="session-tab"][data-session-id="${first.id}"]`)
+      const secondTab = page.locator(`[data-component="session-tab"][data-session-id="${second.id}"]`)
+      await expect(firstTab).toBeVisible()
+      await expect(secondTab).toHaveAttribute("data-active", "true")
+
+      await secondTab.locator('[data-action="session-tab-close"]').click()
+      await expect.poll(() => sessionIDFromUrl(page.url())).toBe(first.id)
+      await expect(secondTab).toHaveCount(0)
+      await expect(firstTab).toHaveAttribute("data-active", "true")
+    })
+  })
+})
+
+test("closing a background session tab does not change the active route", async ({ page, sdk, gotoSession }) => {
+  await withSession(sdk, `e2e close background first ${Date.now()}`, async (first) => {
+    await withSession(sdk, `e2e close background second ${Date.now()}`, async (second) => {
+      await gotoSession(first.id)
+      await gotoSession(second.id)
+
+      const firstTab = page.locator(`[data-component="session-tab"][data-session-id="${first.id}"]`)
+      const secondTab = page.locator(`[data-component="session-tab"][data-session-id="${second.id}"]`)
+      await firstTab.locator('[data-action="session-tab-close"]').click()
+
+      await expect(firstTab).toHaveCount(0)
+      await expect.poll(() => sessionIDFromUrl(page.url())).toBe(second.id)
+      await expect(secondTab).toHaveAttribute("data-active", "true")
+    })
+  })
 })
 
 test("session tab can reveal its project sessions in the sidebar", async ({ page, sdk, gotoSession, slug }) => {

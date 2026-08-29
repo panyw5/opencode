@@ -14,6 +14,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client"
 import type { State, VcsCache } from "./types"
 import { dropSessionCaches } from "./session-cache"
+import { publishSessionLifecycle } from "./session-lifecycle"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -136,6 +137,7 @@ export function applyDirectoryEvent(input: {
       const info = (event.properties as { info: Session }).info
       const result = Binary.search(input.store.session, info.id, (s) => s.id)
       if (info.time.archived) {
+        publishSessionLifecycle({ type: "archived", directory: input.directory, session: info })
         const removed = result.found
         if (result.found) {
           input.setStore(
@@ -151,6 +153,7 @@ export function applyDirectoryEvent(input: {
         input.setStore("sessionTotal", (value) => Math.max(0, value - 1))
         break
       }
+      if (!result.found) publishSessionLifecycle({ type: "restored", directory: input.directory, session: info })
       if (result.found) {
         input.setStore("session", result.index, reconcile(info))
         break
@@ -165,6 +168,7 @@ export function applyDirectoryEvent(input: {
     }
     case "session.deleted": {
       const info = (event.properties as { info: Session }).info
+      publishSessionLifecycle({ type: "deleted", directory: input.directory, session: info })
       const result = Binary.search(input.store.session, info.id, (s) => s.id)
       const removed = result.found
       if (removed) {
