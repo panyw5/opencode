@@ -4,7 +4,7 @@ import { app, crashReporter, netLog, shell } from "electron"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { ZipWriter, BlobWriter, BlobReader } from "@zip.js/zip.js"
 import { dirname, join } from "node:path"
-import { brokenConsoleCode } from "./logging-error"
+import { brokenConsoleCode, guardBrokenConsoleStream } from "./logging-error"
 
 const MAX_LOG_AGE_DAYS = 7
 const TAIL_LINES = 1000
@@ -192,17 +192,33 @@ async function writeZip(output: string, entries: Entry[]) {
 }
 
 function initConsoleTransport() {
+  let disabled = false
+  const disable = (source: "write" | "stdout" | "stderr", error: unknown) => {
+    const code = brokenConsoleCode(error)
+    if (!code) return false
+    if (disabled) return true
+    disabled = true
+    log.transports.console.level = false
+    // Console output is disabled before this call, so the diagnostic is
+    // persisted to the run's main.log without recursively touching stdout.
+    write("main", "console transport disabled after terminal write failure", { code, source }, "warn")
+    return true
+  }
+
+  guardBrokenConsoleStream(process.stdout, (code) => disable("stdout", { code }))
+  guardBrokenConsoleStream(process.stderr, (code) => disable("stderr", { code }))
+
   const consoleWrite = log.transports.console.writeFn.bind(log.transports.console)
   log.transports.console.writeFn = (options) => {
     try {
       consoleWrite(options)
     } catch (err) {
-      const code = brokenConsoleCode(err)
-      if (!code) throw err
-      log.transports.console.level = false
-      // Console output is disabled before this call, so the diagnostic is
-      // persisted to the run's main.log without recursively touching stdout.
-      write("main", "console transport disabled after stdout write failure", { code }, "warn")
+      if (!disable("write", err)) throw err
     }
   }
+
+  write("main", "console transport initialized", {
+    stdoutTTY: Boolean(process.stdout.isTTY),
+    stderrTTY: Boolean(process.stderr.isTTY),
+  })
 }

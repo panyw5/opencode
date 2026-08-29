@@ -10,3 +10,15 @@ export function brokenConsoleCode(error: unknown) {
   const code = error.code
   return typeof code === "string" && BROKEN_CONSOLE_CODES.has(code) ? code : undefined
 }
+
+type ErrorStream = {
+  prependListener(event: "error", listener: (error: unknown) => void): unknown
+}
+
+export function guardBrokenConsoleStream(stream: ErrorStream, onBroken: (code: string) => void) {
+  stream.prependListener("error", (error) => {
+    const code = brokenConsoleCode(error)
+    if (!code) throw error
+    onBroken(code)
+  })
+}
