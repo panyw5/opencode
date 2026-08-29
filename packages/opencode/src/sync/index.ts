@@ -16,6 +16,9 @@ import { serviceUse } from "@/effect/service-use"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EffectBridge } from "@/effect/bridge"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "sync" })
 
 // Keep `Event["data"]` mutable because projectors mutate the persisted shape
 // when writing to the database. Bus payloads (`Properties`) stay readonly —
@@ -54,7 +57,7 @@ export interface Interface {
   readonly run: <Def extends Definition>(
     def: Def,
     data: Event<Def>["data"],
-    options?: { publish?: boolean },
+    options?: { publish?: boolean; awaitPublish?: boolean },
   ) => Effect.Effect<void>
   readonly replay: (event: SerializedEvent, options?: { publish: boolean; ownerID?: string }) => Effect.Effect<void>
   readonly replayAll: (
@@ -147,6 +150,7 @@ export const layer = Layer.effect(Service)(
 
       const { publish = true } = options || {}
       const bridge = yield* EffectBridge.make()
+      const pending = options?.awaitPublish ? ([] as Promise<void>[]) : undefined
 
       // Note that this is an "immediate" transaction which is critical.
       // We need to make sure we can safely read and write with nothing
@@ -162,12 +166,26 @@ export const layer = Layer.effect(Service)(
           const seq = row?.seq != null ? row.seq + 1 : 0
 
           const event = { id, seq, aggregateID: agg, data }
-          process(def, event, { bus, bridge, publish, experimentalWorkspaces: flags.experimentalWorkspaces })
+          process(def, event, { bus, bridge, publish, pending, experimentalWorkspaces: flags.experimentalWorkspaces })
         },
         {
           behavior: "immediate",
         },
       )
+      if (pending?.length) {
+        yield* Effect.promise(() =>
+          Promise.allSettled(pending).then((results) => {
+            for (const result of results) {
+              if (result.status === "fulfilled") continue
+              log.error("post-commit publish failed", {
+                type: def.type,
+                aggregateID: agg,
+                cause: result.reason instanceof Error ? result.reason.message : String(result.reason),
+              })
+            }
+          }),
+        )
+      }
     })
 
     const remove: Interface["remove"] = Effect.fn("SyncEvent.remove")(function* (aggregateID) {
@@ -297,6 +315,7 @@ function process<Def extends Definition>(
     bus: ProjectBus.Interface
     bridge: EffectBridge.Shape
     publish: boolean
+    pending?: Promise<void>[]
     ownerID?: string
     experimentalWorkspaces: boolean
   },
@@ -342,30 +361,38 @@ function process<Def extends Definition>(
       const result = convertEvent(def.type, event.data)
       // The bridge was built inside the caller's fiber so it already carries
       // InstanceRef/WorkspaceRef and the full Effect context. Both the bus
-      // publish and the GlobalBus emit run inside the forked Effect so they
-      // share the same instance/workspace lookup.
-      const publish = (data: unknown) =>
-        options.bridge.fork(
-          Effect.gen(function* () {
-            yield* options.bus.publish(def, data as Properties<Def>, { id: event.id })
-            const instance = yield* InstanceState.context
-            const workspace = yield* InstanceState.workspaceID
-            GlobalBus.emit("event", {
-              directory: instance.directory,
-              project: instance.project.id,
-              workspace,
-              payload: {
-                type: "sync",
-                syncEvent: {
-                  type: versionedType(def.type, def.version),
-                  ...event,
-                },
+      // publish and the GlobalBus emit therefore share the same lookup state.
+      const effect = (data: unknown) =>
+        Effect.gen(function* () {
+          yield* options.bus.publish(def, data as Properties<Def>, { id: event.id })
+          const instance = yield* InstanceState.context
+          const workspace = yield* InstanceState.workspaceID
+          GlobalBus.emit("event", {
+            directory: instance.directory,
+            project: instance.project.id,
+            workspace,
+            payload: {
+              type: "sync",
+              syncEvent: {
+                type: versionedType(def.type, def.version),
+                ...event,
               },
-            })
-          }),
-        )
+            },
+          })
+        })
+      const publish = (data: unknown) => {
+        if (!options.pending) {
+          options.bridge.fork(effect(data))
+          return
+        }
+        options.pending.push(options.bridge.promise(effect(data)))
+      }
       if (result instanceof Promise) {
-        void result.then(publish)
+        if (options.pending) {
+          options.pending.push(result.then((data) => options.bridge.promise(effect(data))))
+        } else {
+          void result.then(publish)
+        }
       } else {
         publish(result)
       }

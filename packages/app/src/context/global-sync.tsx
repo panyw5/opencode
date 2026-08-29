@@ -784,6 +784,35 @@ function createGlobalSync() {
     children.mark(key)
     const [store, setStore] = child
     const completedSession = sessionToReconcileOnStatusEvent(event, store.session_status)
+    const revertTrace = (() => {
+      const props = ((event as { properties?: unknown }).properties ?? {}) as {
+        sessionID?: string
+        messageID?: string
+        info?: { id?: string; revert?: { messageID?: string } | null }
+      }
+      const sessionID = props.sessionID ?? props.info?.id
+      if (!sessionID) return
+      if (event.type !== "message.removed" && event.type !== "session.updated") return
+      const current = store.session.find((item) => item.id === sessionID)
+      if (event.type === "session.updated" && props.info?.revert === undefined && !current?.revert) return
+      return {
+        eventID: (event as { id?: string }).id,
+        sessionID,
+        messageID: props.messageID,
+        revertMessageID: props.info?.revert?.messageID,
+      }
+    })()
+    if (revertTrace) {
+      const current = store.session.find((item) => item.id === revertTrace.sessionID)
+      console.debug("[session-revert-sync]", {
+        stage: "event-received",
+        directory: key,
+        type: event.type,
+        ...revertTrace,
+        cachedMessages: store.message[revertTrace.sessionID]?.length ?? 0,
+        cachedRevertMessageID: current?.revert?.messageID,
+      })
+    }
     // Re-broadcast under the store key so SDKProvider listeners subscribed to the
     // route directory still receive events when the wire path is a realpath alias.
     if (key !== directory) {
@@ -826,6 +855,17 @@ function createGlobalSync() {
           console.warn(
             `[global-sync] completed session reconcile failed directory=${key} session=${completedSession} error=${error instanceof Error ? error.message : String(error)}`,
           )
+        })
+      }
+      if (revertTrace) {
+        const current = store.session.find((item) => item.id === revertTrace.sessionID)
+        console.debug("[session-revert-sync]", {
+          stage: "event-applied",
+          directory: key,
+          type: event.type,
+          ...revertTrace,
+          cachedMessages: store.message[revertTrace.sessionID]?.length ?? 0,
+          cachedRevertMessageID: current?.revert?.messageID,
         })
       }
     } catch (err) {

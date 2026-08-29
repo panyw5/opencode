@@ -556,7 +556,7 @@ export interface Interface {
     revert: Info["revert"]
     summary: Info["summary"]
   }) => Effect.Effect<void>
-  readonly clearRevert: (sessionID: SessionID) => Effect.Effect<void>
+  readonly clearRevert: (sessionID: SessionID, options?: { awaitPublish?: boolean }) => Effect.Effect<void>
   readonly setSummary: (input: { sessionID: SessionID; summary: Info["summary"] }) => Effect.Effect<void>
   readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
   readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<MessageV2.WithParts[], NotFound>
@@ -866,7 +866,8 @@ export const layer: Layer.Layer<
       return session
     })
 
-    const patch = (sessionID: SessionID, info: Patch) => sync.run(Event.Updated, { sessionID, info })
+    const patch = (sessionID: SessionID, info: Patch, options?: { awaitPublish?: boolean }) =>
+      sync.run(Event.Updated, { sessionID, info }, options)
 
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } })
@@ -909,8 +910,11 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { summary: input.summary, time: { updated: Date.now() }, revert: input.revert })
     })
 
-    const clearRevert = Effect.fn("Session.clearRevert")(function* (sessionID: SessionID) {
-      yield* patch(sessionID, { time: { updated: Date.now() }, revert: null })
+    const clearRevert = Effect.fn("Session.clearRevert")(function* (
+      sessionID: SessionID,
+      options?: { awaitPublish?: boolean },
+    ) {
+      yield* patch(sessionID, { time: { updated: Date.now() }, revert: null }, options)
     })
 
     const setSummary = Effect.fn("Session.setSummary")(function* (input: {
