@@ -16,7 +16,7 @@
 
 html[data-theme="claude"] {
   --claude-font-family:
-    "SimHei", "Microsoft YaHei", "Microsoft YaHei UI", "PingFang SC",
+    "PingFang SC", -apple-system, BlinkMacSystemFont, "SimHei", "Microsoft YaHei", "Microsoft YaHei UI",
     "Hiragino Sans GB", "Noto Sans CJK SC", "Source Han Sans SC", ui-monospace, SFMono-Regular, Menlo, monospace;
   --claude-code-font-family: "Fira Code", "Fira Code Nerd Font", ui-monospace, SFMono-Regular, Menlo, monospace;
   --claude-message-font-size: calc(var(--font-size-base) + 1px);
@@ -123,6 +123,12 @@ html[data-theme="claude"] [data-component="user-message"] [data-slot="user-messa
 html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] {
   font-size: var(--claude-message-font-size);
   line-height: 1.65;
+}
+
+html[data-theme="claude"] [data-component="user-message"] [data-component="markdown"] code,
+html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] code {
+  font-family: var(--claude-code-font-family);
+  font-feature-settings: var(--font-family-mono--font-feature-settings);
 }
 
 html[data-theme="claude"] [data-timeline-row] [data-component="text-part"] [data-component="markdown"] h1 {
