@@ -1,10 +1,28 @@
 import { describe, expect, test } from "bun:test"
 import type { CommandOption } from "@/context/command"
-import { HOME_COMMAND_IDS, NEW_SESSION_COMMAND_IDS, pickCommandOptions } from "./dialog-select-file-utils"
+import { COMMON_COMMAND_IDS, HOME_COMMAND_IDS, NEW_SESSION_COMMAND_IDS, pickCommandOptions } from "./dialog-select-file-utils"
 
 const command = (id: string): CommandOption => ({ id, title: id })
 
 describe("pickCommandOptions", () => {
+  test("prioritizes recent sessions in the default command palette", () => {
+    const options = [
+      command("workspace.new"),
+      command("session.new"),
+      command("session.recent"),
+      command("session.previous"),
+    ]
+
+    const result = pickCommandOptions(options, COMMON_COMMAND_IDS)
+
+    expect(result.map((item) => item.id)).toEqual([
+      "session.recent",
+      "session.new",
+      "workspace.new",
+      "session.previous",
+    ])
+  })
+
   test("prioritizes recent sessions and omits new session on the new session page", () => {
     const options = [
       command("terminal.toggle"),

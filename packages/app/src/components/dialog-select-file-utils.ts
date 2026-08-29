@@ -3,6 +3,7 @@ import type { CommandOption } from "@/context/command"
 export const ENTRY_LIMIT = 5
 
 export const COMMON_COMMAND_IDS = [
+  "session.recent",
   "session.new",
   "workspace.new",
   "session.previous",
