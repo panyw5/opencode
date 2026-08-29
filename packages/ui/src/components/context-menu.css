@@ -1,6 +1,6 @@
 [data-component="context-menu-content"],
 [data-component="context-menu-sub-content"] {
-  --context-menu-item-hover-bg: light-dark(rgba(0, 0, 0, 0.06), var(--surface-raised-base-hover));
+  --context-menu-item-hover-bg: var(--surface-base-hover);
   --context-menu-frosted-bg: light-dark(
     color-mix(in srgb, var(--background-stronger) 82%, transparent),
     rgb(12 12 14 / 0.34)

@@ -1,6 +1,6 @@
 [data-component="dropdown-menu-content"],
 [data-component="dropdown-menu-sub-content"] {
-  --dropdown-menu-item-hover-bg: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+  --dropdown-menu-item-hover-bg: var(--surface-base-hover);
   --dropdown-menu-frosted-bg: light-dark(
     color-mix(in srgb, var(--background-stronger) 82%, transparent),
     color-mix(in srgb, var(--background-stronger) 70%, transparent)

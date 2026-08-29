@@ -236,8 +236,12 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   tokens["text-on-brand-strong"] = on(brandh)
 
   tokens["button-primary-base"] = neutral[11]
+  tokens["button-primary-text"] = isDark ? neutral[0] : "#ffffff"
+  tokens["button-primary-hover"] = tokens["button-primary-base"]
+  tokens["button-primary-active"] = tokens["button-primary-base"]
   tokens["button-secondary-base"] = isDark ? neutral[2] : neutral[0]
   tokens["button-secondary-hover"] = isDark ? neutral[3] : neutral[1]
+  tokens["button-secondary-active"] = tokens["button-secondary-base"]
   tokens["button-ghost-hover"] = neutralAlpha[1]
   tokens["button-ghost-hover2"] = neutralAlpha[2]
 
@@ -434,6 +438,20 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
 
   for (const [key, value] of Object.entries(overrides)) {
     tokens[key] = value
+  }
+
+  if (!("button-primary-hover" in overrides)) {
+    const base = tokens["button-primary-base"]
+    tokens["button-primary-hover"] =
+      !isDark && base.startsWith("#") ? shift(base as HexColor, { l: -0.04 }) : tokens["icon-strong-hover"]
+  }
+  if (!("button-primary-active" in overrides)) {
+    const base = tokens["button-primary-base"]
+    tokens["button-primary-active"] =
+      !isDark && base.startsWith("#") ? shift(base as HexColor, { l: -0.08 }) : tokens["icon-strong-active"]
+  }
+  if (!("button-secondary-active" in overrides)) {
+    tokens["button-secondary-active"] = isDark ? tokens["button-secondary-base"] : tokens["surface-base-active"]
   }
 
   if (colors.compact && "text-weak" in overrides && !("text-weaker" in overrides)) {
