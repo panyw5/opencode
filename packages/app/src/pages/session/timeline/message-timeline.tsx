@@ -17,6 +17,7 @@ import {
   createVirtualizer,
   defaultRangeExtractor,
   elementScroll,
+  observeElementOffset as observeVirtualElementOffset,
   type VirtualItem,
   type Virtualizer,
 } from "@tanstack/solid-virtual"
@@ -764,6 +765,7 @@ export function MessageTimeline(props: {
   let virtualContent: HTMLDivElement | undefined
   let resizePinFrame: number | undefined
   let resizePinnedIndexes: number[] = []
+  const [visibleRange, setVisibleRange] = createStore({ start: -1, end: -1 })
   // Explicit annotation: the measureElement option reads the virtualizer's
   // measurement cache, which would otherwise create a circular type inference.
   const virtualizer: Virtualizer<HTMLDivElement, HTMLDivElement> = createVirtualizer<HTMLDivElement, HTMLDivElement>({
@@ -771,6 +773,43 @@ export function MessageTimeline(props: {
       return timelineRows().length
     },
     getScrollElement: () => listRoot() ?? null,
+    // TanStack's default element observer only reports after a scroll event.
+    // Initial session positioning can write scrollTop before that listener is
+    // attached, leaving its virtual range at offset 0 until the user scrolls.
+    // Read the physical offset once at observer attachment to close that race.
+    observeElementOffset: (instance, callback) => {
+      let active = true
+      let observed = false
+      const cleanup = observeVirtualElementOffset(instance, (offset, scrolling) => {
+        if (!active) return
+        observed = true
+        callback(offset, scrolling)
+      })
+      const root = instance.scrollElement
+      if (!root) return cleanup
+      const syncOffset = (phase: "bind" | "frame") => {
+        if (!mounted || !root.isConnected) return
+        if (phase === "frame" && observed) return
+        const offset = root.scrollTop
+        if (lagging()) {
+          timelineLag(
+            `offset-${phase}`,
+            `physical=${Math.round(offset)} logical=${Math.round(instance.getLogicalScrollOffset())} rows=${String(timelineRows().length)}`,
+          )
+        }
+        callback(offset, false)
+      }
+      syncOffset("bind")
+      // Parent initial-scroll positioning runs during the same mount turn as
+      // observer attachment. Re-read on the next frame in case that write did
+      // not produce a browser scroll event.
+      const frame = requestAnimationFrame(() => syncOffset("frame"))
+      return () => {
+        active = false
+        cancelAnimationFrame(frame)
+        cleanup?.()
+      }
+    },
     initialMeasurementsCache: initialMeasurements,
     measureElement: (element: HTMLElement, entry: ResizeObserverEntry | undefined) => {
       const fromEntry = heightFromResizeObserverEntry(entry)
@@ -856,6 +895,12 @@ export function MessageTimeline(props: {
           ...(lastIndex >= 0 && props.shouldAnchorBottom() ? [lastIndex] : []),
         ]),
       ].sort((a, b) => a - b)
+    },
+    onChange: (instance) => {
+      const start = instance.range?.startIndex ?? -1
+      const end = instance.range?.endIndex ?? -1
+      if (visibleRange.start === start && visibleRange.end === end) return
+      setVisibleRange({ start, end })
     },
   })
   const resizeItem = virtualizer.resizeItem
@@ -1082,30 +1127,59 @@ export function MessageTimeline(props: {
     props.setRevealMessage?.(() => {})
     props.setScrollToEnd?.(() => {})
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
+    if (renderOverlayFrame !== undefined) cancelAnimationFrame(renderOverlayFrame)
     if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
   })
 
+  let renderOverlayFrame: number | undefined
   let renderOverlayTimer: number | undefined
+  let renderOverlayPendingID: string | undefined
   createEffect(
     on(
       sessionID,
       (id, previous) => {
         if (!id) {
+          renderOverlayPendingID = undefined
           props.onRenderOverlayStatusChange?.("hidden")
           return
         }
-        if (id !== previous) props.onRenderOverlayStatusChange?.("showing")
+        if (id !== previous) {
+          if (renderOverlayFrame !== undefined) cancelAnimationFrame(renderOverlayFrame)
+          if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
+          renderOverlayPendingID = id
+          props.onRenderOverlayStatusChange?.("showing")
+        }
       },
-      { defer: true },
     ),
   )
+  const releaseRenderOverlay = (id: string) => {
+    renderOverlayFrame = undefined
+    if (!mounted || sessionID() !== id || renderOverlayPendingID !== id) return
+    if (props.isInitialScrollSettling()) {
+      renderOverlayFrame = requestAnimationFrame(() => releaseRenderOverlay(id))
+      return
+    }
+    renderOverlayPendingID = undefined
+    if (lagging()) timelineLag("overlay-ready", `rows=${String(timelineRows().length)}`)
+    props.onRenderOverlayStatusChange?.("hiding")
+    if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
+    renderOverlayTimer = window.setTimeout(() => {
+      if (!mounted || sessionID() !== id) return
+      props.onRenderOverlayStatusChange?.("hidden")
+    }, 180)
+  }
   createEffect(() => {
-    if (!timelineRows().length) return
-    requestAnimationFrame(() => {
-      props.onRenderOverlayStatusChange?.("hiding")
-      if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
-      renderOverlayTimer = window.setTimeout(() => props.onRenderOverlayStatusChange?.("hidden"), 180)
-    })
+    const rows = timelineRows().length
+    const id = sessionID()
+    if (!id || renderOverlayPendingID !== id) return
+    if (!rows) {
+      if (sessionMessages().length > 0) return
+      renderOverlayPendingID = undefined
+      props.onRenderOverlayStatusChange?.("hidden")
+      return
+    }
+    if (renderOverlayFrame !== undefined) cancelAnimationFrame(renderOverlayFrame)
+    renderOverlayFrame = requestAnimationFrame(() => releaseRenderOverlay(id))
   })
 
   let restoreScrollTopDebug: (() => void) | undefined
@@ -1551,17 +1625,21 @@ export function MessageTimeline(props: {
       equals: sameVirtualItemGeometry,
     })
     const row = createMemo(() => timelineRowByKey().get(input.rowKey) ?? initialRow)
-    // Streaming rows (active group + last row) must stay fully rendered:
-    // content-visibility would freeze their growing height (risk #1). All
-    // other rows skip subtree layout/paint while outside the browser's
-    // relevance buffer.
-    const rowVisibility = createMemo(() =>
-      timelineRowContentVisibility({
-        index: item().index,
+    // Streaming rows (active group + last row) and rows inside the virtualizer's
+    // visible range must stay fully rendered. Chromium can retain a stale
+    // `content-visibility:auto` skip state after the initial programmatic
+    // scroll, leaving a visible long Markdown row blank until the user
+    // scrolls. Only offscreen overscan rows may skip subtree layout/paint.
+    const rowVisibility = createMemo(() => {
+      const current = item()
+      return timelineRowContentVisibility({
+        index: current.index,
         activeIndex: activeAssistantRowIndex(),
         lastIndex: timelineRows().length - 1,
-      }),
-    )
+        visibleStartIndex: visibleRange.start,
+        visibleEndIndex: visibleRange.end,
+      })
+    })
     // Visibility and streaming state are separate concerns. The last row stays
     // visible so completed Markdown can paint immediately, but that must not
     // make a completed text row use the live-growth-only shrink guard.

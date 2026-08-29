@@ -254,8 +254,18 @@ export function timelineRowContentVisibility(input: {
   index: number
   activeIndex: number | undefined
   lastIndex: number
+  visibleStartIndex?: number
+  visibleEndIndex?: number
 }) {
-  return input.index === input.activeIndex || input.index === input.lastIndex ? "visible" : "auto"
+  if (input.index === input.activeIndex || input.index === input.lastIndex) return "visible"
+  if (
+    input.visibleStartIndex === undefined ||
+    input.visibleEndIndex === undefined ||
+    input.visibleStartIndex < 0 ||
+    input.visibleEndIndex < input.visibleStartIndex
+  )
+    return "auto"
+  return input.index >= input.visibleStartIndex && input.index <= input.visibleEndIndex ? "visible" : "auto"
 }
 
 /**

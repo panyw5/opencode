@@ -411,6 +411,26 @@ test("does not contain the active or last streaming row", () => {
   expect(timelineRowContentVisibility({ index: 7, activeIndex: undefined, lastIndex: 7 })).toBe("visible")
 })
 
+test("does not skip a virtual row inside the visible range", () => {
+  const range = { visibleStartIndex: 3, visibleEndIndex: 5 }
+  expect(
+    timelineRowContentVisibility({
+      index: 3,
+      activeIndex: undefined,
+      lastIndex: 8,
+      ...range,
+    }),
+  ).toBe("visible")
+  expect(
+    timelineRowContentVisibility({
+      index: 2,
+      activeIndex: undefined,
+      lastIndex: 8,
+      ...range,
+    }),
+  ).toBe("auto")
+})
+
 test("snaps small live bottom deltas and eases only mid-size jumps", () => {
   expect(shouldEaseLiveBottom(16, { min: 64, max: 900 })).toBe(false)
   expect(shouldEaseLiveBottom(64, { min: 64, max: 900 })).toBe(false)
