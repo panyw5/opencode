@@ -1736,6 +1736,11 @@ export const layer = Layer.effect(
         return yield* lastAssistant(input.sessionID)
       }
       const currentStatus = yield* status.get(input.sessionID)
+      yield* elog.info("prompt admission", {
+        sessionID: input.sessionID,
+        status: currentStatus.type,
+        noReply: input.noReply === true,
+      })
       if (currentStatus.type === "idle") {
         yield* sessions.finalizeOrphanedAssistant(input.sessionID, {
           staleAfterMs: Session.ORPHANED_ASSISTANT_STALE_AFTER_MS,
@@ -1753,6 +1758,10 @@ export const layer = Layer.effect(
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
       yield* sessions.touch(input.sessionID)
+      yield* elog.info("prompt message written", {
+        sessionID: input.sessionID,
+        messageID: message.info.id,
+      })
 
       // The message written above may supersede a question that is still
       // blocking the active run (e.g. a background task result injected while
@@ -1762,6 +1771,12 @@ export const layer = Layer.effect(
       // jobs); wait briefly for it to unwind so ensureRunning starts a fresh
       // run for the new message instead of awaiting the stale one.
       const superseded = yield* question.expireSuperseded({ sessionID: input.sessionID })
+      yield* elog.info("prompt post-write question sweep", {
+        sessionID: input.sessionID,
+        messageID: message.info.id,
+        superseded,
+        status: (yield* status.get(input.sessionID)).type,
+      })
       if (superseded > 0) {
         yield* elog.info("expired superseded questions after writing prompt", {
           sessionID: input.sessionID,
@@ -1787,6 +1802,30 @@ export const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
+      const response = yield* loop({ sessionID: input.sessionID })
+      const responseParentID = response.info.role === "assistant" ? response.info.parentID : undefined
+      yield* elog.info("prompt loop returned", {
+        sessionID: input.sessionID,
+        messageID: message.info.id,
+        responseID: response.info.id,
+        responseParentID,
+      })
+      if (responseParentID === message.info.id) return response
+
+      // loop() coalesces concurrent callers onto the active runner. If this
+      // prompt arrived before that runner registered its final question, the
+      // first await returns the old turn's response. Retry once the old runner
+      // is idle, but only while this remains the newest user message; a newer
+      // prompt has its own caller responsible for advancing the session.
+      const latest = yield* sessions
+        .findMessage(input.sessionID, (item) => item.info.role === "user")
+        .pipe(Effect.orDie)
+      if (Option.isNone(latest) || latest.value.info.id !== message.info.id) return response
+      yield* elog.info("retrying prompt after coalesced run", {
+        sessionID: input.sessionID,
+        messageID: message.info.id,
+        responseID: response.info.id,
+      })
       return yield* loop({ sessionID: input.sessionID })
     })
 

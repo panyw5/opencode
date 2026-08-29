@@ -2907,6 +2907,94 @@ noLLMServer.instance(
 )
 
 it.instance(
+  "prompt submitted before question registration skips the stale question and processes the prompt",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const question = yield* Question.Service
+
+      const session = yield* sessions.create({
+        title: "Late question registration",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "finish the task, then ask a question" }],
+      })
+
+      const gate = Promise.withResolvers<void>()
+      yield* llm.push(
+        reply()
+          .text("task finished")
+          .tool("question", {
+            questions: [
+              {
+                question: "What next?",
+                header: "Next",
+                options: [{ label: "Done", description: "finish" }],
+              },
+            ],
+          })
+          .wait(gate.promise),
+      )
+      yield* llm.text("processed queued prompt")
+
+      const firstRun = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      const queuedRun = yield* prompt
+        .prompt({
+          sessionID: session.id,
+          agent: "build",
+          parts: [{ type: "text", text: "submit" }],
+        })
+        .pipe(Effect.forkChild)
+
+      const queuedMessageID = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const messages = yield* sessions.messages({ sessionID: session.id })
+          const found = messages.find(
+            (message) =>
+              message.info.role === "user" &&
+              message.parts.some((part) => part.type === "text" && part.text === "submit"),
+          )
+          return found?.info.id
+        }),
+        "queued prompt was not persisted before the question arrived",
+      )
+
+      gate.resolve()
+
+      const result = yield* awaitWithTimeout(
+        Fiber.join(queuedRun),
+        "queued prompt stayed blocked after its superseded question arrived",
+        "3 seconds",
+      )
+      yield* awaitWithTimeout(Fiber.join(firstRun), "original run did not unwind", "3 seconds")
+
+      expect(yield* llm.calls).toBe(2)
+      expect(result.info.role).toBe("assistant")
+      expect(result.info.role === "assistant" ? result.info.parentID : undefined).toBe(queuedMessageID)
+      expect(result.parts.some((part) => part.type === "text" && part.text === "processed queued prompt")).toBe(true)
+      expect((yield* question.list()).filter((item) => item.sessionID === session.id)).toHaveLength(0)
+
+      const messages = yield* sessions.messages({ sessionID: session.id })
+      const questionPart = messages
+        .flatMap((item) => item.parts)
+        .find((part): part is MessageV2.ToolPart => part.type === "tool" && part.tool === "question")
+      expect(questionPart?.state.status).toBe("error")
+      expect(
+        questionPart?.state.status === "error" ? questionPart.state.metadata?.questionRequest : undefined,
+      ).toBeUndefined()
+    }),
+  30_000,
+)
+
+it.instance(
   "background inject expires superseded pending question and continues the session",
   () =>
     Effect.gen(function* () {
