@@ -226,6 +226,7 @@ export async function listConfigFiles(directory?: string | null): Promise<Config
   for (const ext of ["jsonc", "json"]) {
     files.push(await configFile(`global-opencode-${ext}`, `opencode.${ext}`, join(configRoot, `opencode.${ext}`), "global", "config"))
   }
+  files.push(await configFile("global-config-json", "config.json", join(configRoot, "config.json"), "global", "config"))
   files.push(await configFile("global-agents-md", "AGENTS.md", join(configRoot, "AGENTS.md"), "global", "agents"))
 
   if (directory) {

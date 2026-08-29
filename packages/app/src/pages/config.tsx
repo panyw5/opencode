@@ -107,6 +107,20 @@ import { CONFIG_PAGE_REFRESH_EVENT, refreshAfterConfigWrite } from "@/utils/conf
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
 import {
+  changedProviderEntry,
+  declaredMcpEntries,
+  declaredMcpEntry,
+  declaredProviderEntry,
+  globalProviderPatch,
+  formatArgv,
+  mcpDeclarationRecords,
+  mcpSelectionID,
+  parseArgv,
+  parseMcpSelectionID,
+  selectProjectMcpConfig,
+  updateProjectMcpText,
+} from "./config-persistence"
+import {
   CHANNEL_PLATFORMS,
   channelPick,
   ConfigChannelsDetail,
@@ -3919,41 +3933,53 @@ export default function ConfigPage() {
         const type = entry ? ((entry.type as string) ?? "unknown") : "unknown"
         const detail = entry
           ? type === "local"
-            ? ((entry.command as string[]) ?? []).join(" ")
+            ? formatArgv((entry.command as string[]) ?? [])
             : type === "remote"
               ? ((entry.url as string) ?? "")
               : ""
           : ""
-        return { name: name_, type, detail, status }
+        return { id: mcpSelectionID({ scope: "global", directory: "", name: name_ }), name: name_, type, detail, status }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
   })
 
+  const [projectMcpRecords, { refetch: refetchProjectMcpRecords }] = createResource(
+    () => sync.data.path?.directory,
+    async (directory) => (directory ? loadConfigRecords(directory, "project") : []),
+  )
+
   const mcpProject = createMemo(() => {
-    const globalCfg = globalSync.data.config.mcp ?? {}
+    const directory = sync.data.path?.directory ?? ""
+    const declared = declaredMcpEntries(projectMcpRecords.latest ?? [])
     const mergedCfg = sync.data.config?.mcp ?? {}
     const dirMcp = sync.data.mcp ?? {}
-    const globalNames = new Set(Object.keys(globalCfg))
-    const items = Object.keys(mergedCfg)
-      .filter((name_) => !globalNames.has(name_) && !state.mcpGlobalDeleting[name_])
+    const items = Object.keys(declared)
+      .filter((name_) => !state.mcpGlobalDeleting[name_])
       .map((name_) => {
         const entry = mergedCfg[name_] as Record<string, unknown> | undefined
         const status = dirMcp[name_]?.status ?? "disabled"
         const type = entry ? ((entry.type as string) ?? "unknown") : "unknown"
         const detail = entry
           ? type === "local"
-            ? ((entry.command as string[]) ?? []).join(" ")
+            ? formatArgv((entry.command as string[]) ?? [])
             : type === "remote"
               ? ((entry.url as string) ?? "")
               : ""
           : ""
-        return { name: name_, type, detail, status, draft: false }
+        return {
+          id: mcpSelectionID({ scope: "project", directory, name: name_ }),
+          name: name_,
+          type,
+          detail,
+          status,
+          draft: false,
+        }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
     if (state.pick === MCP_NEW && state.mcpTargetDirectory === sync.data.path?.directory) {
       const name = state.mcpNewName.trim() || t("config.mcp.add")
       const detail = state.mcpForm.type === "local" ? state.mcpForm.command.trim() : state.mcpForm.url.trim()
-      return [{ name, type: state.mcpForm.type, detail, status: "disabled", draft: true }, ...items]
+      return [{ id: MCP_NEW, name, type: state.mcpForm.type, detail, status: "disabled", draft: true }, ...items]
     }
     return items
   })
@@ -3966,9 +3992,10 @@ export default function ConfigPage() {
 
   const selectedMcpName = createMemo(() => {
     if (state.pick === MCP_NEW) return undefined
-    if (!state.pick.startsWith("mcp:")) return undefined
-    return state.pick.slice(4)
+    return parseMcpSelectionID(state.pick)?.name
   })
+
+  const selectedMcpSelection = createMemo(() => parseMcpSelectionID(state.pick))
 
   const selectedMcpStatus = createMemo(() => {
     const n = selectedMcpName()
@@ -3979,17 +4006,14 @@ export default function ConfigPage() {
   const selectedMcpConfig = createMemo(() => {
     const n = selectedMcpName()
     if (!n) return undefined
-    const cfg = globalSync.data.config.mcp ?? {}
-    const global = cfg[n] as Record<string, unknown> | undefined
-    if (global) return global
+    const selected = selectedMcpSelection()
+    if (selected?.scope === "global") return globalSync.data.config.mcp?.[n] as Record<string, unknown> | undefined
     return sync.data.config?.mcp?.[n] as Record<string, unknown> | undefined
   })
 
   const selectedMcpDirectory = createMemo(() => {
-    const n = selectedMcpName()
-    if (!n) return ""
-    if ((globalSync.data.config.mcp ?? {})[n]) return ""
-    return sync.data.config?.mcp?.[n] ? (sync.data.path?.directory ?? "") : ""
+    const selected = selectedMcpSelection()
+    return selected?.scope === "project" ? selected.directory : ""
   })
 
   createEffect(
@@ -4000,7 +4024,7 @@ export default function ConfigPage() {
         const entryType = ((entry.type as string) ?? "local") as "local" | "remote"
         setState("mcpForm", {
           type: entryType,
-          command: entryType === "local" ? ((entry.command as string[]) ?? []).join(" ") : "",
+          command: entryType === "local" ? formatArgv((entry.command as string[]) ?? []) : "",
           url: entryType === "remote" ? ((entry.url as string) ?? "") : "",
           environment:
             entryType === "local" && entry.environment
@@ -4038,6 +4062,25 @@ export default function ConfigPage() {
     return Object.keys(result).length > 0 ? result : undefined
   }
 
+  async function loadConfigRecords(directory: string | null, scope: "global" | "project") {
+    if (!platform.listConfigFiles || !platform.readLocalFile || !platform.writeLocalFile)
+      throw new Error(t("config.error.globalConfigUnavailable"))
+    const files = (await platform.listConfigFiles(directory)).filter(
+      (file) => file.scope === scope && file.kind === "config",
+    )
+    return Promise.all(
+      files.map(async (file) => ({
+        file,
+        text: file.exists ? ((await platform.readLocalFile!(file.path)) ?? "{}") : "{}",
+      })),
+    )
+  }
+
+  async function writeConfigRecord(path: string, text: string) {
+    if (!platform.writeLocalFile) throw new Error(t("config.error.globalConfigUnavailable"))
+    await platform.writeLocalFile(path, text)
+  }
+
   async function saveMcpServer() {
     const isNew = state.pick === MCP_NEW
     const n = isNew ? state.mcpNewName.trim() : selectedMcpName()
@@ -4045,16 +4088,12 @@ export default function ConfigPage() {
     const targetDirectory = isNew ? state.mcpTargetDirectory : selectedMcpDirectory()
     const targetStore = targetDirectory ? globalSync.child(targetDirectory, { bootstrap: false }) : undefined
     const currentConfig = targetDirectory ? targetStore?.[0].config : globalSync.data.config
-    if (isNew) {
-      const existing = currentConfig?.mcp ?? {}
-      if (existing[n]) return
-    }
     setState("mcpSaving", true)
     try {
       const form = state.mcpForm
       let config: Record<string, unknown>
       if (form.type === "local") {
-        const parts = form.command.trim().split(/\s+/).filter(Boolean)
+        const parts = parseArgv(form.command)
         if (parts.length === 0) return
         config = { type: "local", command: parts }
         const env = parseKeyValue(form.environment)
@@ -4068,18 +4107,57 @@ export default function ConfigPage() {
       const current = currentConfig?.mcp ?? {}
       if (targetDirectory && targetStore) {
         const client = globalSDK.forDomain(mainDomain).createClient({ directory: targetDirectory, throwOnError: true })
+        const records = await loadConfigRecords(targetDirectory, "project")
+        if (isNew && declaredMcpEntry(records, n)) throw new Error(`Project MCP server ${n} already exists.`)
+        const target = selectProjectMcpConfig(records, n, isNew)
+        if (!target) throw new Error(`No project config declares MCP server ${n}.`)
+        const text = updateProjectMcpText(
+          target.text,
+          n,
+          config as never,
+          isNew ? undefined : current[n],
+          isNew ? undefined : declaredMcpEntry(records, n),
+        )
+        console.info(`[config] project MCP save target=${target.file.path} name=${n} fields=mcp`)
+        await writeConfigRecord(target.file.path, text)
+        await globalSDK.forDomain(mainDomain).client.instance.dispose({ directory: targetDirectory }).catch(() => undefined)
         await client.mcp.add({ name: n, config: config as never })
-        const next = { ...currentConfig, mcp: { ...current, [n]: config as never } } as Config
-        const result = await client.config.update({ config: next })
-        targetStore[1]("config", result.data ?? next)
+        const result = await client.config.get()
+        if (result.data) targetStore[1]("config", result.data)
+        await refetchProjectMcpRecords()
       } else {
-        await globalSDK.client.mcp.add({ name: n, config: config as never })
-        await globalSync.updateConfig({ mcp: { ...current, [n]: config as never } })
+        const records = await loadConfigRecords(null, "global")
+        if (isNew && declaredMcpEntry(records, n)) throw new Error(`Global MCP server ${n} already exists.`)
+        const target = selectProjectMcpConfig(records, n, isNew)
+        if (!target) throw new Error(`No global config declares MCP server ${n}.`)
+        const text = updateProjectMcpText(
+          target.text,
+          n,
+          config as never,
+          isNew ? undefined : current[n],
+          isNew ? undefined : declaredMcpEntry(records, n),
+        )
+        console.info(`[config] global MCP save target=${target.file.path} name=${n} fields=mcp`)
+        await writeConfigRecord(target.file.path, text)
+        await globalSync.refreshConfig(mainDomain)
+        const directory = sync.data.path?.directory
+        if (directory) {
+          const domainClient = globalSDK.forDomain(mainDomain)
+          await domainClient.client.instance.dispose({ directory }).catch(() => undefined)
+          const client = domainClient.createClient({ directory, throwOnError: true })
+          const result = await client.config.get()
+          if (result.data) globalSync.child(directory, { bootstrap: false })[1]("config", result.data)
+        } else {
+          await globalSDK.forDomain(mainDomain).client.mcp.add({ name: n, config: config as never })
+        }
       }
       setState("mcpDirty", false)
       if (isNew) {
         batch(() => {
-          setState("pick", `mcp:${n}`)
+          setState(
+            "pick",
+            mcpSelectionID({ scope: targetDirectory ? "project" : "global", directory: targetDirectory, name: n }),
+          )
           setState("mcpNewName", "")
           setState("mcpTargetDirectory", "")
         })
@@ -4094,23 +4172,35 @@ export default function ConfigPage() {
     if (!n) return
     const targetDirectory = selectedMcpDirectory()
     const targetStore = targetDirectory ? globalSync.child(targetDirectory, { bootstrap: false }) : undefined
-    const currentConfig = targetDirectory ? targetStore?.[0].config : globalSync.data.config
-    const current = currentConfig?.mcp ?? {}
-    const next: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(current)) {
-      if (k !== n) next[k] = v
-    }
     if (targetDirectory && targetStore) {
       const client = globalSDK.forDomain(mainDomain).createClient({ directory: targetDirectory, throwOnError: true })
-      const config = { ...currentConfig, mcp: next as never } as Config
-      const result = await client.config.update({ config })
-      targetStore[1]("config", result.data ?? config)
+      const records = await loadConfigRecords(targetDirectory, "project")
+      const declarations = mcpDeclarationRecords(records, n)
+      if (declarations.length === 0) throw new Error(`No project config declares MCP server ${n}.`)
+      for (const target of declarations) {
+        const text = updateProjectMcpText(target.text, n, undefined)
+        console.info(`[config] project MCP delete target=${target.file.path} name=${n} fields=mcp`)
+        await writeConfigRecord(target.file.path, text)
+      }
+      await globalSDK.forDomain(mainDomain).client.instance.dispose({ directory: targetDirectory }).catch(() => undefined)
+      const result = await client.config.get()
+      if (result.data) targetStore[1]("config", result.data)
+      await refetchProjectMcpRecords()
     } else {
       setState("mcpGlobalDeleting", n, true)
       try {
-        await globalSync.updateConfig({ mcp: next as never })
+        const records = await loadConfigRecords(null, "global")
+        const declarations = mcpDeclarationRecords(records, n)
+        if (declarations.length === 0) throw new Error(`No global config declares MCP server ${n}.`)
+        for (const target of declarations) {
+          const text = updateProjectMcpText(target.text, n, undefined)
+          console.info(`[config] global MCP delete target=${target.file.path} name=${n} fields=mcp`)
+          await writeConfigRecord(target.file.path, text)
+        }
+        await globalSync.refreshConfig(mainDomain)
         const directory = sync.data.path?.directory
         if (directory) {
+          await globalSDK.forDomain(mainDomain).client.instance.dispose({ directory }).catch(() => undefined)
           const client = globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
           const result = await client.config.get()
           if (result.data) globalSync.child(directory, { bootstrap: false })[1]("config", result.data)
@@ -4125,7 +4215,11 @@ export default function ConfigPage() {
   function toggleMcp(name: string, enabled: boolean) {
     if (state.mcpBusy === name) return
     setState("mcpBusy", name)
-    const action = enabled ? globalSDK.client.mcp.connect({ name }) : globalSDK.client.mcp.disconnect({ name })
+    const directory = sync.data.path?.directory
+    const client = directory
+      ? globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
+      : globalSDK.forDomain(mainDomain).client
+    const action = enabled ? client.mcp.connect({ name }) : client.mcp.disconnect({ name })
     void action
       .catch((err: unknown) => {
         showToast({
@@ -5886,7 +5980,7 @@ export default function ConfigPage() {
       return state.pick === COMMAND_NEW ? [COMMAND_NEW, ...list] : list
     }
     if (section === "mcp") {
-      const list = [...mcpGlobal(), ...mcpProject()].map((s) => `mcp:${s.name}`)
+      const list = [...mcpGlobal(), ...mcpProject()].map((server) => server.id)
       return state.pick === MCP_NEW ? [MCP_NEW, ...list] : list
     }
     if (section === "channels") {
@@ -7335,32 +7429,88 @@ export default function ConfigPage() {
     setState("custom", "saving", true)
     const prev = state.custom.mode === "edit" ? state.customID : undefined
     const id = result.providerID
-    const nextProvider = { ...(cfg().provider ?? {}) } as NonNullable<Config["provider"]>
-    if (prev && prev !== id) nextProvider[prev] = {} as ProviderCfg
-    nextProvider[id] = result.config as ProviderCfg
-    if (!nextProvider[id].options) nextProvider[id].options = {}
-    nextProvider[id].options = {
-      ...nextProvider[id].options,
+    const configuredKey = prev === id ? cfg().provider?.[id]?.options?.apiKey : undefined
+    const initialKey =
+      typeof configuredKey === "string"
+        ? configuredKey
+        : prev === id
+          ? (selectedCustom()?.key ?? state.custom.apiKey)
+          : ""
+    const keyChanged = state.customApiDirty && result.key !== initialKey
+    const nextEntry = result.config as ProviderCfg
+    if (!nextEntry.options) nextEntry.options = {}
+    nextEntry.options = {
+      ...nextEntry.options,
       ...(result.key ? { apiKey: result.key } : {}),
     }
-    if (!result.key && nextProvider[id].options) nextProvider[id].options.apiKey = ""
-    const nextDisabled = (cfg().disabled_providers ?? []).filter((item) => item !== id && item !== prev)
-    const next = { ...cfg(), provider: nextProvider, disabled_providers: nextDisabled }
+    if (!result.key && nextEntry.options) nextEntry.options.apiKey = ""
+    const currentDisabled = cfg().disabled_providers ?? []
+    const nextDisabled = currentDisabled.filter((item) => item !== id && item !== prev)
+    let declared: ProviderCfg | undefined
+    if (prev === id) {
+      try {
+        if (!platform.listConfigFiles || !platform.readLocalFile)
+          throw new Error(t("config.error.globalConfigUnavailable"))
+        const files = (await platform.listConfigFiles(null)).filter(
+          (file) => file.scope === "global" && file.kind === "config",
+        )
+        const records = await Promise.all(
+          files.map(async (file) => ({
+            file,
+            text: file.exists ? ((await platform.readLocalFile!(file.path)) ?? "{}") : "{}",
+          })),
+        )
+        declared = declaredProviderEntry(records, id) as ProviderCfg | undefined
+        if (!declared) throw new Error(`No global config declares provider ${id}.`)
+      } catch (err) {
+        console.info(`[config] custom provider save blocked provider=${id} reason=raw-config-unavailable`)
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+        setState("custom", "saving", false)
+        return
+      }
+    }
+    const changed = changedProviderEntry(
+      prev === id ? cfg().provider?.[id] : undefined,
+      nextEntry,
+      keyChanged,
+      declared,
+    )
+    const nextProvider = {
+      ...(prev && prev !== id ? { [prev]: {} as ProviderCfg } : {}),
+      ...(changed ? { [id]: changed } : {}),
+    } as NonNullable<Config["provider"]>
+    const patch = globalProviderPatch(
+      nextProvider,
+      JSON.stringify(currentDisabled) === JSON.stringify(nextDisabled) ? undefined : nextDisabled,
+    )
     const previousModels = Object.keys(cfg().provider?.[prev ?? id]?.models ?? {})
-    const nextModels = Object.keys(nextProvider[id]?.models ?? {})
+    const nextModels = Object.keys(nextEntry.models ?? {})
     console.info("[config] custom provider save payload", {
       providerID: id,
       previousModelCount: previousModels.length,
       nextModelCount: nextModels.length,
       removedModels: previousModels.filter((modelID) => !nextModels.includes(modelID)),
     })
-    const tasks: Promise<unknown>[] = []
-    if (prev && prev !== id) tasks.push(globalSDK.client.auth.remove({ providerID: prev }).catch(() => undefined))
-    if (state.customApiDirty || result.key)
-      tasks.push(globalSDK.client.auth.remove({ providerID: id }).catch(() => undefined))
-    await Promise.all(tasks)
-      .then(() => globalSync.updateConfig(next, { refreshProviders: false }))
-      .then((synced) => {
+    await Promise.resolve()
+      .then(() => {
+        const fields = Object.keys(patch).sort().join(",") || "none"
+        const providerFields = changed ? Object.keys(changed).sort().join(",") : "none"
+        const providerOptionFields = changed?.options ? Object.keys(changed.options).sort().join(",") : "none"
+        console.info(
+          `[config] custom provider save fields=${fields} provider=${id} providerFields=${providerFields} optionFields=${providerOptionFields}`,
+        )
+        if (fields === "none") return globalSync.refreshConfig(mainDomain)
+        return globalSync.updateConfig(patch, { refreshProviders: false })
+      })
+      .then(async (synced) => {
+        const authRemovals = [
+          ...(prev && prev !== id ? [prev] : []),
+          ...(keyChanged ? [id] : []),
+        ]
+        await Promise.all(authRemovals.map((providerID) => globalSDK.client.auth.remove({ providerID })))
         batch(() => {
           setConfig(synced)
           if (prev && prev !== id) globalSync.provider.remove(prev)
@@ -7387,10 +7537,13 @@ export default function ConfigPage() {
     if (!id) return
     setState("custom", "deleting", true)
     setState("providerBusy", id)
-    const nextProvider = { ...(cfg().provider ?? {}) } as NonNullable<Config["provider"]>
-    nextProvider[id] = {} as ProviderCfg
-    const nextDisabled = (cfg().disabled_providers ?? []).filter((item) => item !== id)
-    const next = { ...cfg(), provider: nextProvider, disabled_providers: nextDisabled }
+    const nextProvider = { [id]: {} as ProviderCfg } as NonNullable<Config["provider"]>
+    const currentDisabled = cfg().disabled_providers ?? []
+    const nextDisabled = currentDisabled.filter((item) => item !== id)
+    const patch = globalProviderPatch(
+      nextProvider,
+      JSON.stringify(currentDisabled) === JSON.stringify(nextDisabled) ? undefined : nextDisabled,
+    )
     console.info("[config] custom provider delete requested", {
       providerID: id,
       providerInConfig: id in (cfg().provider ?? {}),
@@ -7405,7 +7558,10 @@ export default function ConfigPage() {
           error: err instanceof Error ? err.message : String(err),
         }),
       )
-      .then(() => globalSync.updateConfig(next, { refreshProviders: false }))
+      .then(() => {
+        console.info(`[config] custom provider delete fields=provider,disabled_providers provider=${id}`)
+        return globalSync.updateConfig(patch, { refreshProviders: false })
+      })
       .then(async (synced) => {
         console.info("[config] custom provider config delete completed", {
           providerID: id,
@@ -8173,11 +8329,11 @@ export default function ConfigPage() {
                                 <For each={mcpGlobal()}>
                                   {(server) => (
                                     <PluginListButton
-                                      active={state.pick === `mcp:${server.name}`}
+                                      active={state.pick === server.id}
                                       title={server.name}
                                       note={server.detail}
                                       meta={server.type !== "unknown" ? server.type : undefined}
-                                      onClick={() => setState("pick", `mcp:${server.name}`)}
+                                      onClick={() => setState("pick", server.id)}
                                       extra={
                                         <Toggle
                                           checked={server.status === "connected"}
@@ -8208,11 +8364,11 @@ export default function ConfigPage() {
                               <For each={mcpProject()}>
                                 {(server) => (
                                   <PluginListButton
-                                    active={server.draft ? state.pick === MCP_NEW : state.pick === `mcp:${server.name}`}
+                                    active={server.draft ? state.pick === MCP_NEW : state.pick === server.id}
                                     title={server.name}
                                     note={server.detail}
                                     meta={server.type !== "unknown" ? server.type : undefined}
-                                    onClick={() => setState("pick", server.draft ? MCP_NEW : `mcp:${server.name}`)}
+                                    onClick={() => setState("pick", server.draft ? MCP_NEW : server.id)}
                                     extra={
                                       <Show when={!server.draft}>
                                         <Toggle
@@ -8845,7 +9001,19 @@ export default function ConfigPage() {
                           </div>
                           <div class="flex shrink-0 items-center gap-2">
                             <Show when={!isNew()}>
-                              <Button size="small" variant="ghost" icon="trash" onClick={() => void deleteMcpServer()}>
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                icon="trash"
+                                onClick={() =>
+                                  void deleteMcpServer().catch((err: unknown) =>
+                                    showToast({
+                                      title: language.t("common.requestFailed"),
+                                      description: err instanceof Error ? err.message : String(err),
+                                    }),
+                                  )
+                                }
+                              >
                                 {t("config.mcp.editor.delete")}
                               </Button>
                             </Show>
@@ -8862,7 +9030,14 @@ export default function ConfigPage() {
                             </Show>
                             <SaveButton
                               disabled={!state.mcpDirty || state.mcpSaving || (isNew() && !state.mcpNewName.trim())}
-                              onClick={() => void saveMcpServer()}
+                              onClick={() =>
+                                void saveMcpServer().catch((err: unknown) =>
+                                  showToast({
+                                    title: language.t("common.requestFailed"),
+                                    description: err instanceof Error ? err.message : String(err),
+                                  }),
+                                )
+                              }
                               label={state.mcpSaving ? "..." : t("config.mcp.editor.save")}
                             />
                           </div>

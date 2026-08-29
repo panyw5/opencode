@@ -1075,6 +1075,7 @@ export const layer = Layer.effect(
       changed = changed || siblingProvidersChanged || channelsChanged
 
       yield* invalidate()
+      next = yield* getGlobal()
 
       // Restart IM channel runtimes when channel config changes (best-effort).
       if (channelsChanged && next.channels !== undefined) {

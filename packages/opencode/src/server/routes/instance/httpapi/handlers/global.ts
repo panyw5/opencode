@@ -84,6 +84,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     })
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
+      log.info("global config update received", { fields: Object.keys(ctx.payload).sort().join(",") })
       const providerDeletes = Object.entries(ctx.payload.provider ?? {})
         .filter(([, provider]) => isRecord(provider) && Object.keys(provider).length === 0)
         .map(([providerID]) => providerID)

@@ -121,6 +121,45 @@ describe("config HttpApi", () => {
   )
 
   it.live(
+    "returns the merged global config after updating the primary file",
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirEffect({})
+      const previousConfigPath = Global.Path.config
+      ;(Global.Path as { config: string }).config = tmp.path
+
+      try {
+        yield* Effect.promise(() =>
+          Promise.all([
+            Bun.write(
+              path.join(tmp.path, "config.json"),
+              JSON.stringify({ provider: { inherited: { name: "Inherited" } } }),
+            ),
+            Bun.write(path.join(tmp.path, "opencode.jsonc"), JSON.stringify({ $schema: "https://opencode.ai/config.json" })),
+          ]),
+        )
+
+        const response = yield* Effect.promise(() =>
+          Promise.resolve(
+            app().request("/global/config", {
+              method: "PATCH",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ username: "patched-user" }),
+            }),
+          ),
+        )
+
+        expect(response.status).toBe(200)
+        expect(yield* Effect.promise(() => response.json())).toMatchObject({
+          username: "patched-user",
+          provider: { inherited: { name: "Inherited" } },
+        })
+      } finally {
+        ;(Global.Path as { config: string }).config = previousConfigPath
+      }
+    }),
+  )
+
+  it.live(
     "removes a global provider through the config HttpApi",
     Effect.gen(function* () {
       const tmp = yield* tmpdirEffect({})
