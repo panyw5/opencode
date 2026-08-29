@@ -4060,7 +4060,7 @@ ToolRegistry.register({
           <Tooltip value={i18n.t("ui.tool.codex.view")} placement="top" gutter={4} lazyMount>
             <IconButton
               icon="eye"
-              size="normal"
+              size="large"
               variant="ghost"
               onMouseDown={(e) => e.preventDefault()}
               onClick={openViewer}
@@ -4071,7 +4071,7 @@ ToolRegistry.register({
             <Tooltip value={i18n.t("ui.tool.codex.stop")} placement="top" gutter={4} lazyMount>
               <IconButton
                 icon="stop"
-                size="normal"
+                size="large"
                 variant="ghost"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={stopSession}
@@ -4184,7 +4184,7 @@ ToolRegistry.register({
           <Tooltip value={i18n.t("ui.tool.claude.view")} placement="top" gutter={4} lazyMount>
             <IconButton
               icon="eye"
-              size="normal"
+              size="large"
               variant="ghost"
               onMouseDown={(e) => e.preventDefault()}
               onClick={openViewer}
@@ -4195,7 +4195,7 @@ ToolRegistry.register({
             <Tooltip value={i18n.t("ui.tool.claude.stop")} placement="top" gutter={4} lazyMount>
               <IconButton
                 icon="stop"
-                size="normal"
+                size="large"
                 variant="ghost"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={stopSession}
@@ -4302,7 +4302,7 @@ ToolRegistry.register({
           <Tooltip value={i18n.t("ui.tool.grok.view")} placement="top" gutter={4} lazyMount>
             <IconButton
               icon="eye"
-              size="normal"
+              size="large"
               variant="ghost"
               onMouseDown={(e) => e.preventDefault()}
               onClick={openViewer}
@@ -4313,7 +4313,7 @@ ToolRegistry.register({
             <Tooltip value={i18n.t("ui.tool.grok.stop")} placement="top" gutter={4} lazyMount>
               <IconButton
                 icon="stop"
-                size="normal"
+                size="large"
                 variant="ghost"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={stopSession}
@@ -4415,7 +4415,7 @@ ToolRegistry.register({
           <Tooltip value={i18n.t("ui.tool.dsh.view")} placement="top" gutter={4} lazyMount>
             <IconButton
               icon="eye"
-              size="normal"
+              size="large"
               variant="ghost"
               onMouseDown={(e) => e.preventDefault()}
               onClick={openViewer}
@@ -4426,7 +4426,7 @@ ToolRegistry.register({
             <Tooltip value={i18n.t("ui.tool.dsh.stop")} placement="top" gutter={4} lazyMount>
               <IconButton
                 icon="stop"
-                size="normal"
+                size="large"
                 variant="ghost"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={stopSession}
