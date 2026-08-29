@@ -3527,6 +3527,7 @@ function CustomEditor(props: {
                 label={language.t("config.custom.field.providerID")}
                 placeholder="my-provider"
                 value={props.form.providerID}
+                readOnly={props.form.mode === "edit"}
                 onChange={(value) => props.onField("providerID", value)}
                 validationState={props.form.err.providerID ? "invalid" : undefined}
                 error={props.form.err.providerID}
