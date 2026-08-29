@@ -198,6 +198,7 @@ export default function Scheduled() {
         const query = new URLSearchParams(location.search)
         const requested = tasks.find((task) => task.id === query.get("task"))
         if (requested && query.get("edit") === "true") resetForm(requested)
+        else if (requested) selectTask(requested)
         else if (query.get("create") === "true") resetForm()
       }
     } catch (error) {

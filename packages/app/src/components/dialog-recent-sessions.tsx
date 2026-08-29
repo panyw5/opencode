@@ -4,14 +4,14 @@ import { List } from "@opencode-ai/ui/list"
 import { Icon } from "@opencode-ai/ui/icon"
 import { DateTime } from "luxon"
 import { createMemo, Show, type Accessor } from "solid-js"
-import type { GlobalSession, Session } from "@opencode-ai/sdk/v2/client"
+import type { GlobalSession } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { getFilename } from "@opencode-ai/core/util/path"
 
 export function DialogRecentSessions(props: {
   load: () => Promise<GlobalSession[]>
   currentSessionID?: Accessor<string | undefined>
-  onSelect: (session: Session) => void
+  onSelect: (session: GlobalSession) => void
 }) {
   const dialog = useDialog()
   const language = useLanguage()

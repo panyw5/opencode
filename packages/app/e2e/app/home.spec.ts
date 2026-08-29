@@ -6,10 +6,26 @@ test("home renders and shows core entrypoints", async ({ page }) => {
   await page.goto("/")
   const nav = page.locator('[data-component="sidebar-nav-desktop"]')
 
+  await expect(nav.locator('[data-action="home-open"]')).toHaveAttribute("aria-current", "page")
   await expect(page.getByRole("button", { name: "Open project" }).first()).toBeVisible()
+  await expect(page.getByRole("combobox", { name: "Project path" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Recent sessions" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Recent projects" })).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Upcoming scheduled tasks" })).toBeVisible()
   await expect(nav.getByText("No projects open")).toBeVisible()
   await expect(nav.getByText("Open a project to get started")).toBeVisible()
   await expect(page.getByRole("button", { name: serverNamePattern })).toBeVisible()
+})
+
+test("fixed rail home button returns from another route", async ({ page }) => {
+  await page.goto("/config")
+  const home = page.locator('[data-component="sidebar-nav-desktop"] [data-action="home-open"]')
+
+  await expect(home).not.toHaveAttribute("aria-current", "page")
+  await home.click()
+
+  await expect(page.locator('[data-component="home-dashboard"]')).toBeVisible()
+  await expect(home).toHaveAttribute("aria-current", "page")
 })
 
 test("server picker dialog opens from home", async ({ page }) => {

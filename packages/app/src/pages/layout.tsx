@@ -4015,6 +4015,14 @@ export default function Layout(props: ParentProps) {
     <SidebarContent
       mobile={mobile}
       opened={() => layout.sidebar.opened()}
+      homeLabel={() => language.t("home.title")}
+      homeActive={() => location.pathname === "/"}
+      onOpenHome={() => {
+        setStore("sidebarPanel", "project")
+        layout.sidebar.close()
+        layout.mobileSidebar.hide()
+        void sessionTabs.activate({ type: "home" })
+      }}
       projects={projects}
       renderProject={(project) => <SortableProject ctx={projectSidebarCtx} project={project} mobile={mobile} />}
       handleDragStart={handleDragStart}
