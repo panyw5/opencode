@@ -445,12 +445,13 @@ function ensureMathWrapper(block: HTMLElement, labels: CopyLabels) {
   ensureCopyButtons(wrapper, labels, mathCopyButtonPositions(wrapper))
 }
 
-function markCodeLinks(root: HTMLDivElement) {
+function markCodeLinks(root: HTMLDivElement, fileLinks = true) {
   const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
   for (const code of codeNodes) {
     const file = fileLink(code.textContent ?? "")
     const parent = code.parentElement instanceof HTMLAnchorElement ? code.parentElement : null
     if (file) {
+      if (!fileLinks) continue
       if (parent) {
         applyFileLink(parent, file)
         continue
@@ -486,7 +487,7 @@ function markCodeLinks(root: HTMLDivElement) {
   }
 }
 
-function decorate(root: HTMLDivElement, labels: CopyLabels) {
+function decorate(root: HTMLDivElement, labels: CopyLabels, options: { fileLinks?: boolean } = {}) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
     ensureCodeWrapper(block, labels)
@@ -497,8 +498,9 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
     if (block instanceof HTMLElement) ensureMathWrapper(block, labels)
   }
 
-  markFileLinks(root)
-  markCodeLinks(root)
+  const fileLinks = options.fileLinks !== false
+  if (fileLinks) markFileLinks(root)
+  markCodeLinks(root, fileLinks)
 }
 
 function labelsEqual(root: HTMLDivElement, labels: CopyLabels) {
@@ -510,7 +512,7 @@ function setLabels(root: HTMLDivElement, labels: CopyLabels) {
   root.dataset.copiedLabel = labels.copied
 }
 
-function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
+function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels, options: { fileLinks?: boolean } = {}) {
   const timeouts = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>()
 
   const updateLabel = (button: HTMLButtonElement) => {
@@ -591,7 +593,7 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
     }
   }
 
-  decorate(root, labels)
+  decorate(root, labels, options)
 
   const buttons = Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]'))
   for (const button of buttons) {
@@ -846,6 +848,7 @@ export function Markdown(
     highlight?: "full" | "defer"
     chunked?: boolean
     math?: "full" | "defer"
+    fileLinks?: boolean
   },
 ) {
   const [local, others] = splitProps(props, [
@@ -863,6 +866,7 @@ export function Markdown(
     "highlight",
     "chunked",
     "math",
+    "fileLinks",
   ])
   const marked = useMarked()
   const i18n = useI18n()
@@ -1132,6 +1136,7 @@ export function Markdown(
     }
 
     const next = untrack(labels)
+    const fileLinks = local.fileLinks !== false
     const prevHtml = container.dataset.html ?? ""
     const isStreaming = local.streaming
     const chunked = local.chunked
@@ -1227,7 +1232,7 @@ export function Markdown(
       const setup = () => {
         if (!live || !container.isConnected) return
         if (copyCleanup) copyCleanup()
-        copyCleanup = setupCodeCopy(container, next)
+        copyCleanup = setupCodeCopy(container, next, { fileLinks })
         setLabels(container, next)
       }
       if ("requestIdleCallback" in window) {
@@ -1312,6 +1317,7 @@ export function Markdown(
   createEffect(() => {
     const container = root()
     const next = labels()
+    const fileLinks = local.fileLinks !== false
     if (!container) return
     if (isServer) return
     if (!container.dataset.html) return
@@ -1321,7 +1327,7 @@ export function Markdown(
     const setup = () => {
       if (!live || !container.isConnected) return
       if (copyCleanup) copyCleanup()
-      copyCleanup = setupCodeCopy(container, next)
+      copyCleanup = setupCodeCopy(container, next, { fileLinks })
       setLabels(container, next)
     }
     if ("requestIdleCallback" in window) {
@@ -1342,6 +1348,7 @@ export function Markdown(
     <div
       data-component="markdown"
       data-markdown-stage={stage()}
+      data-file-links={local.fileLinks === false ? "false" : undefined}
       classList={{
         ...(local.classList ?? {}),
         [local.class ?? ""]: !!local.class,

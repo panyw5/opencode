@@ -2422,6 +2422,7 @@ ToolRegistry.register({
             <div data-component="tool-output" data-scrollable>
               <Markdown
                 text={output()}
+                fileLinks={false}
                 eager={props.markdownEager}
                 viewport={props.markdownViewport}
                 stage={props.markdownStage}

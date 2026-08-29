@@ -95,6 +95,29 @@ describe("markdown fileLink", () => {
   test("ignores inline code commands containing file paths", () => {
     expect(fileLink("pytest tests/test_backend.py tests/test_operator_spaces.py -q")).toBeUndefined()
   })
+
+  test("finds grep result file headers", () => {
+    const text = [
+      "Found 2 matches",
+      "/Users/lelouch/apps/opencode/packages/ui/src/components/message-part.tsx:",
+      "  Line 2414:          title: i18n.t(\"ui.tool.grep\"),",
+    ].join("\n")
+
+    const raw = "/Users/lelouch/apps/opencode/packages/ui/src/components/message-part.tsx"
+    const start = text.indexOf(raw)
+    expect(findFileLinks(text)).toEqual([
+      {
+        raw,
+        start,
+        end: start + raw.length,
+        link: {
+          path: raw,
+          line: undefined,
+          col: undefined,
+        },
+      },
+    ])
+  })
 })
 
 describe("markdown math", () => {
