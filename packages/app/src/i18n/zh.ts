@@ -740,6 +740,7 @@ export const dict = {
   "home.recentSessions": "最近会话",
   "home.recentSessions.viewAll": "查看全部",
   "home.recentSessions.empty": "还没有最近会话",
+  "home.recentSessions.noUserMessage": "暂无用户消息",
   "home.upcomingTasks": "即将运行的定时任务",
   "home.upcomingTasks.manage": "管理",
   "home.upcomingTasks.empty": "近期没有即将运行的定时任务",

@@ -784,6 +784,7 @@ export const dict = {
   "home.recentSessions": "Recent sessions",
   "home.recentSessions.viewAll": "View all",
   "home.recentSessions.empty": "No recent sessions yet",
+  "home.recentSessions.noUserMessage": "No recent user message",
   "home.upcomingTasks": "Upcoming scheduled tasks",
   "home.upcomingTasks.manage": "Manage",
   "home.upcomingTasks.empty": "No scheduled tasks are coming up",

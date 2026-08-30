@@ -10,7 +10,11 @@ import { useNavigate } from "@solidjs/router"
 import { DateTime } from "luxon"
 import { createEffect, createMemo, createResource, For, onCleanup, Show } from "solid-js"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
-import { mergeRecentSessions, RECENT_SESSION_LIMIT } from "@/components/dialog-recent-sessions-utils"
+import {
+  latestUserMessageText,
+  mergeRecentSessions,
+  RECENT_SESSION_LIMIT,
+} from "@/components/dialog-recent-sessions-utils"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import { DialogSelectServer } from "@/components/dialog-select-server"
 import { useGlobalSDK } from "@/context/global-sdk"
@@ -83,6 +87,40 @@ export default function Home() {
     return mergeRecentSessions([result.data ?? []])
   }
   const [sessions, { refetch: refetchSessions }] = createResource(dashboardSource, loadRecentSessions)
+  const homeSessions = createMemo(() => (sessions() ?? []).slice(0, HOME_SESSION_LIMIT))
+  const [latestUserMessages] = createResource(
+    () => homeSessions().map((session) => ({ id: session.id, directory: session.directory })),
+    async (items) => {
+      const previews = await Promise.all(
+        items.map(async (session) => {
+          console.debug(`[home-recent] loading latest user message session=${session.id} directory=${session.directory}`)
+          try {
+            let before: string | undefined
+            for (let page = 1; page <= 5; page++) {
+              const result = await sdk.client.session.messages({
+                sessionID: session.id,
+                directory: session.directory,
+                limit: 20,
+                before,
+              })
+              const text = latestUserMessageText(result.data ?? [])
+              console.debug(
+                `[home-recent] loaded message page session=${session.id} page=${String(page)} count=${String(result.data?.length ?? 0)} preview=${text ? "yes" : "no"}`,
+              )
+              if (text) return [session.id, text] as const
+              before = result.response.headers.get("x-next-cursor") ?? undefined
+              if (!before) break
+            }
+            return [session.id, undefined] as const
+          } catch (error) {
+            console.error(`[home-recent] failed latest user message session=${session.id} directory=${session.directory}`, error)
+            return [session.id, undefined] as const
+          }
+        }),
+      )
+      return Object.fromEntries(previews) as Record<string, string | undefined>
+    },
+  )
   const [tasks, { refetch: refetchTasks }] = createResource(dashboardSource, async () => {
     const result = await sdk.client.scheduledTask.list()
     return (result.data ?? [])
@@ -241,7 +279,7 @@ export default function Home() {
                   fallback={<div class="px-3 py-10 text-center text-12-regular text-text-weak">{language.t("home.recentSessions.empty")}</div>}
                 >
                   <ul class="home-work-list divide-y divide-border-weak-base">
-                    <For each={(sessions() ?? []).slice(0, HOME_SESSION_LIMIT)}>
+                    <For each={homeSessions()}>
                       {(session) => (
                         <li>
                           <button
@@ -255,6 +293,9 @@ export default function Home() {
                             <span class="min-w-0 flex-1">
                               <span class="block truncate text-13-medium text-text-strong">
                                 {session.title?.trim() || session.id.slice(0, 8)}
+                              </span>
+                              <span class="mt-0.5 block truncate text-12-regular text-text-base">
+                                {latestUserMessages()?.[session.id] ?? language.t("home.recentSessions.noUserMessage")}
                               </span>
                               <span class="mt-0.5 block truncate text-11-regular text-text-weak">
                                 {session.project?.name || getFilename(session.project?.worktree ?? session.directory) || displayPath(session.directory)}

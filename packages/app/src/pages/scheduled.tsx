@@ -408,10 +408,6 @@ export default function Scheduled() {
           </Button>
           <div class="min-w-0">
             <h1 class="truncate text-18-medium text-text-strong">{language.t("scheduled.title")}</h1>
-            <p class="truncate text-12-regular text-text-weak">
-              <Show when={routeProject()}>{(project) => `${project().name || getFilename(project().worktree)} · `}</Show>
-              {language.t("scheduled.subtitle")}
-            </p>
           </div>
         </div>
         <Button icon="plus" variant="primary" onClick={() => resetForm()}>
