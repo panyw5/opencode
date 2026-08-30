@@ -26,7 +26,7 @@ import { useModels } from "@/context/models"
 import { decode64 } from "@/utils/base64"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
-import { projectOwner } from "@/pages/layout/helpers"
+import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
 import { filterActiveProjects, filterTasksForActiveProjects } from "@/pages/scheduled-utils"
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
@@ -70,6 +70,7 @@ export default function Scheduled() {
   const location = useLocation()
   const params = useParams()
   let routeIntentHandled = false
+  let listRequest = 0
   const [state, setState] = createStore({
     tasks: [] as ScheduledTask[],
     runs: [] as ScheduledTaskRun[],
@@ -195,11 +196,13 @@ export default function Scheduled() {
   })
   const selected = createMemo(() => state.tasks.find((task) => task.id === state.selectedID))
 
-  async function load() {
-    setState({ loading: true, error: "" })
+  async function load(options?: { silent?: boolean }) {
+    const current = ++listRequest
+    if (!options?.silent) setState({ loading: true, error: "" })
     try {
       const directory = routeDirectory()
       const result = await sdk.client.scheduledTask.list(directory ? { directory } : undefined)
+      if (current !== listRequest) return
       const tasks = result.data ?? []
       setState("tasks", tasks)
       if (state.selectedID && !tasks.some((task) => task.id === state.selectedID)) setState("selectedID", undefined)
@@ -212,8 +215,10 @@ export default function Scheduled() {
         else if (query.get("create") === "true") resetForm()
       }
     } catch (error) {
+      if (current !== listRequest) return
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
+      if (current !== listRequest) return
       setState("loading", false)
     }
   }
@@ -392,7 +397,9 @@ export default function Scheduled() {
   // listenAll: name=directory, details.type=event type (e.g. scheduled-task.created)
   const stop = sdk.listenAll((event) => {
     if (!event.details.type.startsWith("scheduled-task.")) return
-    void load()
+    const directory = routeDirectory()
+    if (directory && workspaceKey(event.name) !== workspaceKey(directory)) return
+    void load({ silent: true })
     const id = state.selectedID
     if (id) void loadRuns(id)
   })

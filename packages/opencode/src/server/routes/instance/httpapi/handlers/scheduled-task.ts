@@ -1,4 +1,3 @@
-import { Project } from "@/project/project"
 import { ProjectLocation } from "@/project/location"
 import { ScheduledTask } from "@/scheduled-task/service"
 import { ScheduledTaskID } from "@/scheduled-task/schema"
@@ -16,8 +15,6 @@ const log = Log.create({ service: "scheduled-task-http" })
 export const scheduledTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "scheduled-task", (handlers) =>
   Effect.gen(function* () {
     const scheduled = yield* ScheduledTask.Service
-    const projects = yield* Project.Service
-
     return handlers
       .handle("list", (ctx: { query: typeof ListQuery.Type }) =>
         Effect.gen(function* () {
@@ -37,9 +34,11 @@ export const scheduledTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "sche
             ? ctx.query.locationID
             : persistedLocation
               ? persistedLocation.id
-              : canonicalDirectory
-                ? (yield* projects.fromDirectory(canonicalDirectory)).location.id
               : undefined
+          if (canonicalDirectory && !locationID) {
+            log.warn("scheduled task list skipped unresolved directory", { directory: canonicalDirectory })
+            return []
+          }
           const tasks = yield* scheduled.list({
             projectID: ctx.query.projectID,
             locationID,
@@ -53,9 +52,7 @@ export const scheduledTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "sche
               ? "query"
               : persistedLocation
                 ? "persisted-location"
-                : canonicalDirectory
-                  ? "project-resolution"
-                  : "none",
+                : "none",
             durationMs: Date.now() - started,
             count: tasks.length,
           })

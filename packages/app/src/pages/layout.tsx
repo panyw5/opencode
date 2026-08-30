@@ -4092,6 +4092,7 @@ export default function Layout(props: ParentProps) {
           />
         ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ProjectTasksPanel
+            projectID={() => sidebarProject()?.id ?? ""}
             directory={() => sidebarProject()?.root ?? routeDir()}
             worktrees={() => {
               const project = sidebarProject()

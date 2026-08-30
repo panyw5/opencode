@@ -36,6 +36,7 @@ export function SessionProjectTaskMount(props: {
   })
   const [triggerWidth, setTriggerWidth] = createSignal(0)
   let triggerEl: HTMLButtonElement | undefined
+  let taskRequest = 0
 
   const measureTrigger = () => {
     if (!triggerEl) return
@@ -79,16 +80,20 @@ export function SessionProjectTaskMount(props: {
   }
 
   async function loadTasks(options?: { silent?: boolean }) {
+    const current = ++taskRequest
     if (!options?.silent) setState({ loading: true, error: "" })
     try {
       const result = await sdk.client.projectTask.list({})
+      if (current !== taskRequest) return
       setState({
         tasks: (result.data ?? []).filter((task) => task.status !== "archived"),
         error: "",
       })
     } catch (error) {
+      if (current !== taskRequest) return
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
+      if (current !== taskRequest) return
       setState("loading", false)
     }
   }
@@ -107,7 +112,13 @@ export function SessionProjectTaskMount(props: {
 
   const stop = globalSDK.listenAll((event) => {
     const type = event.details.type
-    if (type.startsWith("project-task.") || type === "session.updated" || type === "sync") {
+    const properties =
+      "properties" in event.details
+        ? (event.details.properties as { projectID?: string; info?: { id?: string } } | undefined)
+        : undefined
+    const sameProject = !properties?.projectID || properties.projectID === session()?.projectID
+    const sameSession = !properties?.info?.id || properties.info.id === sessionID()
+    if ((type.startsWith("project-task.") && sameProject) || (type === "session.updated" && sameSession) || type === "sync") {
       void loadTasks({ silent: true })
     }
   })

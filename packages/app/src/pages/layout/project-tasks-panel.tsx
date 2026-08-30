@@ -30,6 +30,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
 import { errorMessage } from "./helpers"
 import { directoriesFromSessions, groupProjectTasksByWorktree, taskNeedsDirectoryHydrate } from "./project-task-groups"
+import { projectTaskEventMatchesScope, sameProjectTaskPanelScope } from "./project-tasks-panel-scope"
 import {
   Empty,
   ErrorCard,
@@ -819,6 +820,7 @@ function ProjectTaskCards(props: {
 }
 
 export function ProjectTasksPanel(props: {
+  projectID: Accessor<string>
   directory: Accessor<string>
   worktrees?: Accessor<string[]>
   worktreeName?: (directory: string) => string
@@ -829,7 +831,12 @@ export function ProjectTasksPanel(props: {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
-  const dir = createMemo(() => props.directory())
+  const scope = createMemo(
+    () => ({ projectID: props.projectID(), directory: props.directory().replaceAll("\\", "/").replace(/\/+$/, "") }),
+    { projectID: "", directory: "" },
+    { equals: sameProjectTaskPanelScope },
+  )
+  const dir = createMemo(() => scope().directory)
   const client = createMemo(() => globalSDK.createClient({ directory: dir().replace(/\\/g, "/"), throwOnError: true }))
   const [state, setState] = createStore({ tasks: [] as ProjectTask[], loading: true, error: "" })
   let request = 0
@@ -884,13 +891,19 @@ export function ProjectTasksPanel(props: {
     }
   }
 
+  function upsertTask(task: ProjectTask) {
+    const index = state.tasks.findIndex((item) => item.id === task.id)
+    if (index === -1) setState("tasks", (items) => [...items, task])
+    else setState("tasks", index, (current) => ({ ...current, ...task }))
+  }
+
   function open(task: ProjectTask) {
     dialog.show(() => (
       <ProjectTaskDetailDialog
         task={task}
         directory={dir()}
         client={client()}
-        onChanged={() => load({ silent: true })}
+        onChanged={() => Promise.resolve()}
       />
     ))
   }
@@ -898,8 +911,8 @@ export function ProjectTasksPanel(props: {
   async function archive(task: ProjectTask) {
     if (!window.confirm(language.t("projectTask.archive.confirm", { title: task.title }))) return
     try {
-      await client().projectTask.archive({ taskID: task.id })
-      await load({ silent: true })
+      const result = await client().projectTask.archive({ taskID: task.id })
+      if (result.data) upsertTask(result.data)
     } catch (error) {
       setState("error", errorMessage(error, language.t("common.requestFailed")))
     }
@@ -907,25 +920,25 @@ export function ProjectTasksPanel(props: {
 
   async function setInProgress(task: ProjectTask) {
     try {
-      await client().projectTask.update({
+      const result = await client().projectTask.update({
         taskID: task.id,
         projectTaskUpdateInput: { status: "in_progress" },
       })
-      await load({ silent: true })
+      if (result.data) upsertTask(result.data)
     } catch (error) {
       setState("error", errorMessage(error, language.t("common.requestFailed")))
     }
   }
 
   const createTask = async (name: string, content: string) => {
-    await client().projectTask.create({
+    const result = await client().projectTask.create({
       projectTaskCreateInput: {
         title: name,
         description: content,
         status: "open",
       },
     })
-    await load({ silent: true })
+    if (result.data) upsertTask(result.data)
   }
 
   const newTask = () => {
@@ -945,12 +958,15 @@ export function ProjectTasksPanel(props: {
   }
 
   createEffect(() => {
-    dir()
+    scope()
     void load()
   })
 
   const stop = globalSDK.listenAll((event) => {
     if (!event.details.type.startsWith("project-task.")) return
+    const properties =
+      "properties" in event.details ? (event.details.properties as { projectID?: string } | undefined) : undefined
+    if (!projectTaskEventMatchesScope({ directory: event.name, projectID: properties?.projectID }, scope())) return
     void load({ silent: true })
   })
   onCleanup(stop)
