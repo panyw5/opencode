@@ -24,8 +24,7 @@ import { HomePathInput } from "@/pages/home-path-input"
 import "./home.css"
 
 const HOME_SESSION_LIMIT = 6
-const HOME_PROJECT_LIMIT = 5
-const HOME_TASK_LIMIT = 4
+const HOME_TASK_LIMIT = 10
 
 function SectionHeader(props: { id: string; title: string; action?: string; onAction?: () => void }) {
   return (
@@ -54,17 +53,17 @@ export default function Home() {
   const language = useLanguage()
   const sessionTabs = useSessionTabs()
   const homedir = createMemo(() => sync.data.path.home)
-  const recentProjects = createMemo(() =>
+  const latestProject = createMemo(() =>
     sync.data.project
       .slice()
       .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
-      .slice(0, HOME_PROJECT_LIMIT),
+      .at(0)?.worktree,
   )
   const warmed = createMemo(() => {
     const last = server.projects.last()
     if (last) return [last]
-    const first = recentProjects()[0]?.worktree
-    return first ? [first] : []
+    const latest = latestProject()
+    return latest ? [latest] : []
   })
   createResource(
     () => (sync.ready ? warmed() : undefined),
@@ -209,7 +208,7 @@ export default function Home() {
           <HomePathInput home={homedir()} onOpen={openProject} onBrowse={() => void chooseProject()} />
         </section>
 
-        <div class="mt-9 grid min-w-0 items-start gap-x-8 gap-y-9 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.8fr)]">
+        <div class="mt-9 grid min-w-0 items-start gap-x-8 gap-y-9 lg:grid-cols-2">
           <section class="home-section home-section-primary min-w-0" aria-labelledby="home-recent-sessions">
             <SectionHeader
               id="home-recent-sessions"
@@ -275,37 +274,58 @@ export default function Home() {
             </Show>
           </section>
 
-          <div class="grid min-w-0 gap-9 sm:grid-cols-2 lg:grid-cols-1">
-            <section class="home-section min-w-0" aria-labelledby="home-recent-projects">
-              <SectionHeader
-                id="home-recent-projects"
-                title={language.t("home.recentProjects")}
-                action={language.t("command.project.open")}
-                onAction={() => void chooseProject()}
-              />
+          <section class="home-section min-w-0" aria-labelledby="home-upcoming-tasks">
+            <SectionHeader
+              id="home-upcoming-tasks"
+              title={language.t("home.upcomingTasks")}
+              action={language.t("home.upcomingTasks.manage")}
+              onAction={() => navigate("/scheduled")}
+            />
+            <Show
+              when={!tasks.loading}
+              fallback={
+                <div class="flex min-h-28 items-center justify-center">
+                  <Spinner />
+                </div>
+              }
+            >
               <Show
-                when={sync.ready}
-                fallback={<div class="px-3 py-8 text-center text-12-regular text-text-weak">{language.t("common.loading")}</div>}
+                when={!tasks.error}
+                fallback={
+                  <button
+                    type="button"
+                    class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
+                    onClick={() => void refetchTasks()}
+                  >
+                    {language.t("home.section.loadError")}
+                  </button>
+                }
               >
                 <Show
-                  when={recentProjects().length > 0}
-                  fallback={<div class="px-3 py-8 text-center text-12-regular text-text-weak">{language.t("home.empty.description")}</div>}
+                  when={(tasks() ?? []).length > 0}
+                  fallback={<div class="px-3 py-8 text-center text-12-regular text-text-weak">{language.t("home.upcomingTasks.empty")}</div>}
                 >
                   <ul class="home-work-list divide-y divide-border-weak-base">
-                    <For each={recentProjects()}>
-                      {(project) => (
+                    <For each={tasks() ?? []}>
+                      {(task) => (
                         <li>
                           <button
                             type="button"
-                            class="home-work-row group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 text-left outline-none"
-                            onClick={() => openProject(project.worktree)}
+                            class="home-work-row group flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left outline-none"
+                            onClick={() => navigate(`/scheduled?task=${encodeURIComponent(task.id)}`)}
                           >
-                            <Icon name="folder" size="small" class="shrink-0 text-icon-weak group-hover:text-icon-base" />
-                            <span class="min-w-0 flex-1 truncate font-mono text-12-regular text-text-base">
-                              {displayPath(project.worktree)}
+                            <span class={`mt-1.5 size-2 shrink-0 rounded-full ${taskTone(task)}`} aria-hidden="true" />
+                            <span class="min-w-0 flex-1">
+                              <span class="block truncate text-12-medium text-text-strong">{task.name}</span>
+                              <span class="mt-0.5 block truncate text-11-regular text-text-weak">
+                                {task.projectName || displayPath(task.directory)}
+                              </span>
                             </span>
-                            <span class="shrink-0 text-11-regular text-text-weaker">
-                              {relativeTime(project.time.updated ?? project.time.created)}
+                            <span class="shrink-0 text-right text-11-regular text-text-weaker">
+                              <span class="block text-text-weak">{taskStatus(task)}</span>
+                              <span class="mt-0.5 block" title={new Date(task.nextRunAt!).toLocaleString(language.intl())}>
+                                {relativeTime(task.nextRunAt!)}
+                              </span>
                             </span>
                           </button>
                         </li>
@@ -314,71 +334,8 @@ export default function Home() {
                   </ul>
                 </Show>
               </Show>
-            </section>
-
-            <section class="home-section min-w-0" aria-labelledby="home-upcoming-tasks">
-              <SectionHeader
-                id="home-upcoming-tasks"
-                title={language.t("home.upcomingTasks")}
-                action={language.t("home.upcomingTasks.manage")}
-                onAction={() => navigate("/scheduled")}
-              />
-              <Show
-                when={!tasks.loading}
-                fallback={
-                  <div class="flex min-h-28 items-center justify-center">
-                    <Spinner />
-                  </div>
-                }
-              >
-                <Show
-                  when={!tasks.error}
-                  fallback={
-                    <button
-                      type="button"
-                      class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
-                      onClick={() => void refetchTasks()}
-                    >
-                      {language.t("home.section.loadError")}
-                    </button>
-                  }
-                >
-                  <Show
-                    when={(tasks() ?? []).length > 0}
-                    fallback={<div class="px-3 py-8 text-center text-12-regular text-text-weak">{language.t("home.upcomingTasks.empty")}</div>}
-                  >
-                    <ul class="home-work-list divide-y divide-border-weak-base">
-                      <For each={tasks() ?? []}>
-                        {(task) => (
-                          <li>
-                            <button
-                              type="button"
-                              class="home-work-row group flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left outline-none"
-                              onClick={() => navigate(`/scheduled?task=${encodeURIComponent(task.id)}`)}
-                            >
-                              <span class={`mt-1.5 size-2 shrink-0 rounded-full ${taskTone(task)}`} aria-hidden="true" />
-                              <span class="min-w-0 flex-1">
-                                <span class="block truncate text-12-medium text-text-strong">{task.name}</span>
-                                <span class="mt-0.5 block truncate text-11-regular text-text-weak">
-                                  {task.projectName || displayPath(task.directory)}
-                                </span>
-                              </span>
-                              <span class="shrink-0 text-right text-11-regular text-text-weaker">
-                                <span class="block text-text-weak">{taskStatus(task)}</span>
-                                <span class="mt-0.5 block" title={new Date(task.nextRunAt!).toLocaleString(language.intl())}>
-                                  {relativeTime(task.nextRunAt!)}
-                                </span>
-                              </span>
-                            </button>
-                          </li>
-                        )}
-                      </For>
-                    </ul>
-                  </Show>
-                </Show>
-              </Show>
-            </section>
-          </div>
+            </Show>
+          </section>
         </div>
       </main>
     </div>
