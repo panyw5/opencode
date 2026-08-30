@@ -4018,10 +4018,17 @@ export default function Layout(props: ParentProps) {
       homeLabel={() => language.t("home.title")}
       homeActive={() => location.pathname === "/"}
       onOpenHome={() => {
+        const started = performance.now()
+        ;(window as Window & { __homeNavClickAt?: number }).__homeNavClickAt = started
+        console.debug(`[home-perf] nav-click at=${started.toFixed(1)}ms pathname=${location.pathname}`)
         setStore("sidebarPanel", "project")
         layout.sidebar.close()
         layout.mobileSidebar.hide()
-        void sessionTabs.activate({ type: "home" })
+        void sessionTabs.activate({ type: "home" }).then((navigated) => {
+          console.debug(
+            `[home-perf] nav-complete duration=${(performance.now() - started).toFixed(1)}ms navigated=${navigated}`,
+          )
+        })
       }}
       projects={projects}
       renderProject={(project) => <SortableProject ctx={projectSidebarCtx} project={project} mobile={mobile} />}

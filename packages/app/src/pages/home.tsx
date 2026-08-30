@@ -8,7 +8,8 @@ import { Logo } from "@opencode-ai/ui/logo"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useNavigate } from "@solidjs/router"
 import { DateTime } from "luxon"
-import { createEffect, createMemo, createResource, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createRenderEffect, createResource, For, onCleanup, Show } from "solid-js"
+import { createStore, reconcile } from "solid-js/store"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import {
   latestUserMessageText,
@@ -47,6 +48,10 @@ function SectionHeader(props: { id: string; title: string; action?: string; onAc
 }
 
 export default function Home() {
+  const mountedAt = performance.now()
+  const navClickAt = (window as Window & { __homeNavClickAt?: number }).__homeNavClickAt
+  const sinceClick = typeof navClickAt === "number" ? `${(mountedAt - navClickAt).toFixed(1)}ms` : "n/a"
+  console.debug(`[home-perf] component-start at=${mountedAt.toFixed(1)}ms sinceClick=${sinceClick}`)
   const sdk = useGlobalSDK()
   const sync = useGlobalSync()
   const layout = useLayout()
@@ -72,12 +77,15 @@ export default function Home() {
   createResource(
     () => (sync.ready ? warmed() : undefined),
     async (dirs) => {
+      const started = performance.now()
+      console.debug(`[home-perf] warm-start sinceClick=${typeof navClickAt === "number" ? `${(started - navClickAt).toFixed(1)}ms` : "n/a"} dirs=${dirs.length}`)
       await Promise.allSettled(
         dirs.map(async (dir) => {
           sync.child(dir, { bootstrap: true })
           await Promise.race([sync.project.loadSessions(dir, { silent: true }), new Promise((resolve) => setTimeout(resolve, 1500))])
         }),
       )
+      console.debug(`[home-perf] warm-end duration=${(performance.now() - started).toFixed(1)}ms dirs=${dirs.length}`)
     },
   )
 
@@ -88,39 +96,46 @@ export default function Home() {
   }
   const [sessions, { refetch: refetchSessions }] = createResource(dashboardSource, loadRecentSessions)
   const homeSessions = createMemo(() => (sessions() ?? []).slice(0, HOME_SESSION_LIMIT))
-  const [latestUserMessages] = createResource(
-    () => homeSessions().map((session) => ({ id: session.id, directory: session.directory })),
-    async (items) => {
-      const previews = await Promise.all(
-        items.map(async (session) => {
-          console.debug(`[home-recent] loading latest user message session=${session.id} directory=${session.directory}`)
-          try {
-            let before: string | undefined
-            for (let page = 1; page <= 5; page++) {
-              const result = await sdk.client.session.messages({
-                sessionID: session.id,
-                directory: session.directory,
-                limit: 20,
-                before,
-              })
-              const text = latestUserMessageText(result.data ?? [])
-              console.debug(
-                `[home-recent] loaded message page session=${session.id} page=${String(page)} count=${String(result.data?.length ?? 0)} preview=${text ? "yes" : "no"}`,
-              )
-              if (text) return [session.id, text] as const
-              before = result.response.headers.get("x-next-cursor") ?? undefined
-              if (!before) break
-            }
-            return [session.id, undefined] as const
-          } catch (error) {
-            console.error(`[home-recent] failed latest user message session=${session.id} directory=${session.directory}`, error)
-            return [session.id, undefined] as const
+  const [latestUserMessages, setLatestUserMessages] = createStore<Record<string, string | undefined>>({})
+  let previewGeneration = 0
+  createEffect(() => {
+    const items = homeSessions().map((session) => ({ id: session.id, directory: session.directory }))
+    const generation = ++previewGeneration
+    const started = performance.now()
+    console.debug(`[home-perf] previews-start at=${started.toFixed(1)}ms sessions=${items.length}`)
+    void Promise.all(
+      items.map(async (session) => {
+        console.debug(`[home-recent] loading latest user message session=${session.id} directory=${session.directory}`)
+        try {
+          let before: string | undefined
+          for (let page = 1; page <= 5; page++) {
+            const result = await sdk.client.session.messages({
+              sessionID: session.id,
+              directory: session.directory,
+              limit: 20,
+              before,
+            })
+            const text = latestUserMessageText(result.data ?? [])
+            console.debug(
+              `[home-recent] loaded message page session=${session.id} page=${String(page)} count=${String(result.data?.length ?? 0)} preview=${text ? "yes" : "no"}`,
+            )
+            if (text) return [session.id, text] as const
+            before = result.response.headers.get("x-next-cursor") ?? undefined
+            if (!before) break
           }
-        }),
-      )
-      return Object.fromEntries(previews) as Record<string, string | undefined>
-    },
-  )
+          return [session.id, undefined] as const
+        } catch (error) {
+          console.error(`[home-recent] failed latest user message session=${session.id} directory=${session.directory}`, error)
+          return [session.id, undefined] as const
+        }
+      }),
+    ).then((previews) => {
+      if (generation !== previewGeneration) return
+      console.debug(`[home-perf] previews-end duration=${(performance.now() - started).toFixed(1)}ms sessions=${items.length}`)
+      setLatestUserMessages(reconcile(Object.fromEntries(previews) as Record<string, string | undefined>))
+    })
+  })
+  onCleanup(() => previewGeneration++)
   const [tasks, { refetch: refetchTasks }] = createResource(dashboardSource, async () => {
     const result = await sdk.client.scheduledTask.list()
     return (result.data ?? [])
@@ -136,11 +151,17 @@ export default function Home() {
   onCleanup(stop)
 
   let sent = false
-  createEffect(() => {
+  createRenderEffect(() => {
     if (sent || !sync.ready) return
     sent = true
+    console.debug(`[home-perf] sync-ready duration=${(performance.now() - mountedAt).toFixed(1)}ms`)
     queueMicrotask(() => window.dispatchEvent(new CustomEvent("opencode:startup-interactive")))
   })
+
+  const firstFrame = requestAnimationFrame(() => {
+    console.debug(`[home-perf] first-frame duration=${(performance.now() - mountedAt).toFixed(1)}ms`)
+  })
+  onCleanup(() => cancelAnimationFrame(firstFrame))
 
   const serverDotClass = createMemo(() => {
     const healthy = server.healthy()
@@ -220,7 +241,14 @@ export default function Home() {
   }
 
   return (
-    <div data-component="home-shell" class="size-full overflow-y-auto bg-background-base">
+    <div
+      ref={() => {
+        const visibleAt = performance.now()
+        console.debug(`[home-perf] dom-created sinceClick=${typeof navClickAt === "number" ? `${(visibleAt - navClickAt).toFixed(1)}ms` : "n/a"}`)
+      }}
+      data-component="home-shell"
+      class="size-full overflow-y-auto bg-background-base"
+    >
       <main data-component="home-dashboard" class="mx-auto w-full max-w-6xl px-4 py-7 sm:px-6 md:py-10 lg:px-8">
         <header class="home-masthead flex items-start justify-between gap-6">
           <div class="min-w-0">
@@ -295,7 +323,7 @@ export default function Home() {
                                 {session.title?.trim() || session.id.slice(0, 8)}
                               </span>
                               <span class="mt-0.5 block truncate text-12-regular text-text-base">
-                                {latestUserMessages()?.[session.id] ?? language.t("home.recentSessions.noUserMessage")}
+                                {latestUserMessages[session.id] ?? language.t("home.recentSessions.noUserMessage")}
                               </span>
                               <span class="mt-0.5 block truncate text-11-regular text-text-weak">
                                 {session.project?.name || getFilename(session.project?.worktree ?? session.directory) || displayPath(session.directory)}
