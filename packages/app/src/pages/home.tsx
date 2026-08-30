@@ -205,7 +205,6 @@ export default function Home() {
         <section class="home-command-deck relative z-10 mt-8 rounded-2xl border border-border-weak-base bg-surface-raised-base p-4 shadow-sm sm:p-5">
           <div class="mb-4">
             <h2 class="text-15-medium text-text-strong">{language.t("home.quickAdd.title")}</h2>
-            <p class="mt-1 text-12-regular text-text-weak">{language.t("home.quickAdd.description")}</p>
           </div>
           <HomePathInput home={homedir()} onOpen={openProject} onBrowse={() => void chooseProject()} />
         </section>

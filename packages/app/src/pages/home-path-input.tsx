@@ -180,8 +180,8 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
     <div ref={(node) => (rootRef = node)} data-component="home-path-input" class="home-path-launcher relative">
       <div class="flex flex-col gap-2 sm:flex-row">
         <div class="relative min-w-0 flex-1">
-          <div class="pointer-events-none absolute left-3 top-1/2 z-[1] flex size-4 -translate-y-1/2 items-center justify-center text-icon-weak">
-            <Icon name="folder-add-left" size="small" />
+          <div class="pointer-events-none absolute left-3 top-1/2 z-[1] flex size-5 -translate-y-1/2 items-center justify-center text-icon-weak">
+            <Icon name="terminal" size="normal" />
           </div>
           <input
             ref={(node) => (inputRef = node)}
@@ -203,7 +203,7 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
             autocorrect="off"
             autocapitalize="off"
             placeholder={language.t("home.quickAdd.placeholder")}
-            class="home-path-field h-11 w-full rounded-lg border border-border-weak-base bg-background-base pl-10 pr-3 font-mono text-14-regular text-text-strong outline-none transition-colors placeholder:text-text-weaker focus:border-border-strong-base focus:ring-1 focus:ring-border-strong-base"
+            class="home-path-field h-11 w-full rounded-lg border border-border-weak-base bg-background-base pl-10 pr-3 text-14-mono text-text-strong outline-none transition-colors placeholder:text-text-weaker focus:border-border-strong-base focus:ring-1 focus:ring-border-strong-base"
           />
           <Show when={dropdownOpen()}>
             <div
@@ -254,11 +254,11 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
             </div>
           </Show>
         </div>
-        <div class="flex shrink-0 gap-2">
+        <div class="flex shrink-0 items-center gap-2">
           <Button
             size="large"
             variant="primary"
-            class="min-w-24 flex-1 justify-center sm:flex-none"
+            class="!h-11 min-w-24 flex-1 justify-center sm:flex-none"
             disabled={state.selecting || !targetPath()}
             onClick={() => void submit()}
           >
@@ -267,7 +267,7 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
           <Button
             size="large"
             variant="secondary"
-            class="justify-center px-3"
+            class="!h-11 justify-center px-3"
             aria-label={language.t("home.quickAdd.browse")}
             onClick={props.onBrowse}
           >
@@ -280,10 +280,6 @@ export function HomePathInput(props: { home: string; onOpen: (directory: string)
           {state.error}
         </div>
       </Show>
-      <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-11-regular text-text-weaker">
-        <span>{language.t("home.quickAdd.hint.complete")}</span>
-        <span>{language.t("home.quickAdd.hint.add")}</span>
-      </div>
     </div>
   )
 }
