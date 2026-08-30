@@ -32,6 +32,8 @@ import { Vcs } from "@/project/vcs"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { WorkspaceAdapterRuntime } from "./workspace-adapter-runtime"
+import { ProjectLocation } from "@/project/location"
+import { toLogicalPath } from "@opencode-ai/core/util/path"
 
 export const Info = Schema.Struct({
   ...WorkspaceInfoSchema.fields,
@@ -181,6 +183,7 @@ export const layer = Layer.effect(
     const vcs = yield* Vcs.Service
     const flags = yield* RuntimeFlags.Service
     const fs = yield* AppFileSystem.Service
+    const instances = yield* InstanceStore.Service
     const connections = new Map<WorkspaceID, ConnectionStatus>()
     const syncFibers = yield* FiberMap.make<WorkspaceID, void, SyncLoopError>()
 
@@ -576,6 +579,39 @@ export const layer = Layer.effect(
       }
 
       yield* WorkspaceAdapterRuntime.create(adapter, config, env)
+      const target = yield* WorkspaceAdapterRuntime.target(info)
+      if (target.type === "local") {
+        const available = yield* fs.isDir(target.directory).pipe(Effect.catch(() => Effect.succeed(false)))
+        const instance = available
+          ? yield* instances.load({ directory: target.directory }).pipe(
+              Effect.catchCause((cause) =>
+                Effect.sync(() => {
+                  log.warn("workspace location resolution failed", {
+                    workspaceID: info.id,
+                    directory: target.directory,
+                    cause,
+                  })
+                }),
+              ),
+            )
+          : undefined
+        if (!available) {
+          log.info("workspace location resolution deferred", {
+            workspaceID: info.id,
+            directory: target.directory,
+            reason: "directory-unavailable",
+          })
+        }
+        if (instance && instance.project.id === info.projectID) {
+          yield* db((database) =>
+            database
+              .update(WorkspaceTable)
+              .set({ location_id: instance.location.id })
+              .where(eq(WorkspaceTable.id, info.id))
+              .run(),
+          )
+        }
+      }
       yield* Effect.all(
         [
           waitEvent({
@@ -873,6 +909,12 @@ export const layer = Layer.effect(
               projectID: item.projectID,
               timeUsed: Date.now(),
             }
+            const directory = info.directory
+            const location = directory
+              ? yield* Effect.sync(() =>
+                  ProjectLocation.getByCanonicalDirectory(toLogicalPath(AppFileSystem.resolve(directory))),
+                )
+              : undefined
 
             yield* db((db) => {
               db.insert(WorkspaceTable)
@@ -884,6 +926,7 @@ export const layer = Layer.effect(
                   directory: info.directory,
                   extra: info.extra,
                   project_id: info.projectID,
+                  location_id: location?.projectID === info.projectID ? location.id : undefined,
                   time_used: info.timeUsed,
                 })
                 .run()

@@ -3435,6 +3435,7 @@ export class Session2 extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
+      locationID?: string
       scope?: "project"
       path?: string
       roots?: boolean | "true" | "false"
@@ -3452,6 +3453,7 @@ export class Session2 extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "query", key: "locationID" },
             { in: "query", key: "scope" },
             { in: "query", key: "path" },
             { in: "query", key: "roots" },
@@ -4708,11 +4710,13 @@ export class ScheduledTask extends HeyApiClient {
   /**
    * List scheduled tasks
    *
-   * List scheduled Agent prompt tasks across projects, optionally filtered by project or state.
+   * List scheduled Agent prompt tasks across projects, optionally filtered by location, directory, project, or state.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
       projectID?: string
+      locationID?: string
+      directory?: string
       enabled?: "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
@@ -4723,6 +4727,8 @@ export class ScheduledTask extends HeyApiClient {
         {
           args: [
             { in: "query", key: "projectID" },
+            { in: "query", key: "locationID" },
+            { in: "query", key: "directory" },
             { in: "query", key: "enabled" },
           ],
         },

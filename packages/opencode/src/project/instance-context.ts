@@ -1,11 +1,13 @@
 import { LocalContext } from "@/util/local-context"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import type * as Project from "./project"
+import type { ProjectLocation } from "./location"
 
 export interface InstanceContext {
   directory: string
   worktree: string
   project: Project.Info
+  location: ProjectLocation.Info
 }
 
 export const context = LocalContext.create<InstanceContext>("instance")

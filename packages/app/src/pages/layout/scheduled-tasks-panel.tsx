@@ -769,13 +769,14 @@ export function ScheduledTasksPanel(props: {
   async function load(options?: { silent?: boolean }) {
     const current = ++request
     const projectID = props.projectID()
-    if (!projectID) {
+    const directory = props.directory()
+    if (!projectID || !directory) {
       setState({ tasks: [], loading: false, error: "" })
       return
     }
     if (!options?.silent) setState({ loading: true, error: "" })
     try {
-      const result = await sdk.client.scheduledTask.list({ projectID })
+      const result = await sdk.client.scheduledTask.list({ directory })
       if (current !== request) return
       setState({ tasks: result.data ?? [], error: "" })
     } catch (error) {

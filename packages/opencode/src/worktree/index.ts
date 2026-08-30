@@ -408,6 +408,12 @@ export const layer: Layer.Layer<
           yield* stopFsmonitor(directory)
           yield* cleanDirectory(directory)
         }
+        yield* project.removeSandbox(ctx.project.id, directory)
+        log.info("worktree location removed", {
+          projectID: ctx.project.id,
+          directory,
+          reason: "worktree-entry-missing",
+        })
         return true
       }
 
@@ -430,6 +436,12 @@ export const layer: Layer.Layer<
       }
 
       yield* cleanDirectory(entry.path)
+      yield* project.removeSandbox(ctx.project.id, directory)
+      log.info("worktree location removed", {
+        projectID: ctx.project.id,
+        directory,
+        reason: "worktree-removed",
+      })
 
       const branch = entry.branch?.replace(/^refs\/heads\//, "")
       if (branch) {

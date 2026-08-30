@@ -1,6 +1,6 @@
 import { Database, and, asc, desc, eq, gt, inArray, isNull, lt, or } from "@/storage/db"
 import { Effect, Schema } from "effect"
-import { ProjectID } from "@/project/schema"
+import { ProjectID, type LocationID } from "@/project/schema"
 import { ScheduledTaskRunTable, ScheduledTaskTable } from "./scheduled-task.sql"
 import {
   CreateInput,
@@ -23,7 +23,7 @@ export type ClaimResult = { type: "claimed"; run: Run } | { type: "duplicate" } 
 
 export type MissResult = { type: "created"; run: Run } | { type: "duplicate" }
 
-export function create(input: CreateInput, now = Date.now()): Effect.Effect<Info> {
+export function create(input: CreateInput & { locationID?: LocationID }, now = Date.now()): Effect.Effect<Info> {
   return Effect.sync(() => {
     ScheduledTaskSchedule.validate(input.schedule)
     const id = ScheduledTaskID.ascending()
@@ -31,6 +31,7 @@ export function create(input: CreateInput, now = Date.now()): Effect.Effect<Info
     const row: typeof ScheduledTaskTable.$inferInsert = {
       id,
       project_id: input.projectID,
+      location_id: input.locationID,
       project_name: input.projectName,
       directory: input.directory,
       name: input.name,
@@ -58,10 +59,28 @@ export function get(id: ScheduledTaskID): Effect.Effect<Info | undefined> {
   })
 }
 
-export function list(input?: { projectID?: string; enabled?: boolean }): Effect.Effect<Info[]> {
+export function getLocationID(id: ScheduledTaskID): Effect.Effect<LocationID | undefined> {
+  return Effect.sync(() =>
+    Database.use(
+      (db) =>
+        db
+          .select({ locationID: ScheduledTaskTable.location_id })
+          .from(ScheduledTaskTable)
+          .where(eq(ScheduledTaskTable.id, id))
+          .get()?.locationID ?? undefined,
+    ),
+  )
+}
+
+export function list(input?: {
+  projectID?: string
+  locationID?: LocationID
+  enabled?: boolean
+}): Effect.Effect<Info[]> {
   return Effect.sync(() => {
     const conditions: ReturnType<typeof eq>[] = []
     if (input?.projectID) conditions.push(eq(ScheduledTaskTable.project_id, ProjectID.make(input.projectID)))
+    if (input?.locationID) conditions.push(eq(ScheduledTaskTable.location_id, input.locationID))
     if (input?.enabled !== undefined) conditions.push(eq(ScheduledTaskTable.enabled, input.enabled))
     const rows = Database.use((db) => {
       const query = db.select().from(ScheduledTaskTable).orderBy(asc(ScheduledTaskTable.time_created))
@@ -242,13 +261,13 @@ export function renew(input: {
       const owned = db
         .select({ id: ScheduledTaskRunTable.id })
         .from(ScheduledTaskRunTable)
-      .where(
-        and(
-          eq(ScheduledTaskRunTable.id, input.runID),
-          eq(ScheduledTaskRunTable.owner_id, input.ownerID),
-          inArray(ScheduledTaskRunTable.status, ["running", "retrying"]),
-        ),
-      )
+        .where(
+          and(
+            eq(ScheduledTaskRunTable.id, input.runID),
+            eq(ScheduledTaskRunTable.owner_id, input.ownerID),
+            inArray(ScheduledTaskRunTable.status, ["running", "retrying"]),
+          ),
+        )
         .get()
       if (!owned) return false
       db.update(ScheduledTaskRunTable)

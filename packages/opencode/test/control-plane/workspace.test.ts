@@ -447,6 +447,9 @@ describe("workspace CRUD", () => {
           projectID: instance.project.id,
           extra: null,
         })
+        const row = Database.use((db) =>
+          db.select().from(WorkspaceTable).where(eq(WorkspaceTable.id, workspaceID)).get(),
+        )
 
         expect(info).toEqual({
           id: workspaceID,
@@ -460,6 +463,7 @@ describe("workspace CRUD", () => {
         })
         expect(yield* workspace.get(workspaceID)).toEqual(info)
         expect(yield* workspace.list(instance.project)).toEqual([info])
+        expect(row?.location_id).toBe(instance.location.id)
         expect(recorded.calls.configure).toHaveLength(1)
         expect(recorded.calls.configure[0]).toMatchObject({ id: workspaceID, type, directory: null })
         expect(recorded.calls.create).toHaveLength(1)

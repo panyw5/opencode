@@ -6746,6 +6746,7 @@ export type SessionListData = {
   query?: {
     directory?: string
     workspace?: string
+    locationID?: string
     scope?: "project"
     path?: string
     roots?: boolean | "true" | "false"
@@ -7998,6 +7999,8 @@ export type ScheduledTaskListData = {
   path?: never
   query?: {
     projectID?: string
+    locationID?: string
+    directory?: string
     enabled?: "true" | "false"
   }
   url: "/scheduled-task"

@@ -7,11 +7,13 @@ import { Context } from "../util/context"
 import { Project } from "./project"
 import { State } from "./state"
 import { InstanceRuntime } from "./instance-runtime"
+import type { ProjectLocation } from "./location"
 
 export interface Shape {
   directory: string
   worktree: string
   project: Project.Info
+  location: ProjectLocation.Info
 }
 const context = Context.create<Shape>("instance")
 const cache = new Map<string, Promise<Shape>>()
@@ -33,20 +35,28 @@ function emit(directory: string) {
   })
 }
 
-function boot(input: { directory: string; init?: () => Promise<any>; project?: Project.Info; worktree?: string }) {
+function boot(input: {
+  directory: string
+  init?: () => Promise<any>
+  project?: Project.Info
+  worktree?: string
+  location?: ProjectLocation.Info
+}) {
   return iife(async () => {
     const at = Date.now()
     const ctx =
-      input.project && input.worktree
+      input.project && input.worktree && input.location
         ? {
             directory: input.directory,
             worktree: input.worktree,
             project: input.project,
+            location: input.location,
           }
-        : await InstanceRuntime.load({ directory: input.directory }).then(({ project, worktree }) => ({
+        : await InstanceRuntime.load({ directory: input.directory }).then(({ project, worktree, location }) => ({
             directory: input.directory,
             worktree,
             project,
+            location,
           }))
     log.info("instance.boot", {
       directory: input.directory,
@@ -118,6 +128,9 @@ export const Instance = {
   },
   get project() {
     return context.use().project
+  },
+  get location() {
+    return context.use().location
   },
   /**
    * Check if a path is within the project boundary.

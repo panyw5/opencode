@@ -25,7 +25,7 @@ import { ModelV2 } from "@opencode-ai/core/model"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import * as DateTime from "effect/DateTime"
 import * as Log from "@opencode-ai/core/util/log"
-import { eq } from "drizzle-orm"
+import { desc, eq } from "drizzle-orm"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -126,13 +126,23 @@ const insertLegacyAssistantMessage = (sessionID: SessionIDType, time = 1) =>
       time: { created: DateTime.makeUnsafe(time) },
       content: [],
     })
-    Database.use((db) =>
-      db
+    Database.use((db) => {
+      const previous = db
+        .select({ seq: SessionMessageTable.seq })
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, sessionID))
+        .orderBy(desc(SessionMessageTable.seq))
+        .get()
+      const seq = (previous?.seq ?? -1) + 1
+      // eslint-disable-next-line no-console
+      console.log(`[httpapi-session.fixture] insert legacy assistant sessionID=${sessionID} seq=${seq}`)
+      return db
         .insert(SessionMessageTable)
         .values([
           {
             id: message.id,
             session_id: sessionID,
+            seq,
             type: message.type,
             time_created: time,
             data: {
@@ -143,26 +153,36 @@ const insertLegacyAssistantMessage = (sessionID: SessionIDType, time = 1) =>
             } as NonNullable<(typeof SessionMessageTable.$inferInsert)["data"]>,
           },
         ])
-        .run(),
-    )
+        .run()
+    })
   })
 
 const insertCorruptV2Message = (sessionID: SessionIDType, time = 1) =>
   Effect.sync(() =>
-    Database.use((db) =>
-      db
+    Database.use((db) => {
+      const previous = db
+        .select({ seq: SessionMessageTable.seq })
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.session_id, sessionID))
+        .orderBy(desc(SessionMessageTable.seq))
+        .get()
+      const seq = (previous?.seq ?? -1) + 1
+      // eslint-disable-next-line no-console
+      console.log(`[httpapi-session.fixture] insert corrupt v2 sessionID=${sessionID} seq=${seq}`)
+      return db
         .insert(SessionMessageTable)
         .values([
           {
             id: SessionMessage.ID.create(),
             session_id: sessionID,
+            seq,
             type: "assistant",
             time_created: time,
             data: {} as NonNullable<(typeof SessionMessageTable.$inferInsert)["data"]>,
           },
         ])
-        .run(),
-    ),
+        .run()
+    }),
   )
 
 const setLegacySummaryDiff = (sessionID: SessionIDType) =>

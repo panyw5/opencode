@@ -1,4 +1,4 @@
-import { ProjectID } from "@/project/schema"
+import { LocationID, ProjectID } from "@/project/schema"
 import { ScheduledTask } from "@/scheduled-task/service"
 import { CreateInput, Info, Run, ScheduledTaskID, UpdateInput } from "@/scheduled-task/schema"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
@@ -12,6 +12,8 @@ const root = "/scheduled-task"
 
 export const ListQuery = Schema.Struct({
   projectID: Schema.optional(ProjectID),
+  locationID: Schema.optional(LocationID),
+  directory: Schema.optional(Schema.String),
   enabled: Schema.optional(QueryBoolean),
 })
 
@@ -36,7 +38,8 @@ export const ScheduledTaskApi = HttpApi.make("scheduled-task").add(
         OpenApi.annotations({
           identifier: "scheduledTask.list",
           summary: "List scheduled tasks",
-          description: "List scheduled Agent prompt tasks across projects, optionally filtered by project or state.",
+          description:
+            "List scheduled Agent prompt tasks across projects, optionally filtered by location, directory, project, or state.",
         }),
       ),
       HttpApiEndpoint.post("create", ScheduledTaskPaths.list, {

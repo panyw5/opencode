@@ -1,5 +1,5 @@
 import { Database as BunDatabase } from "bun:sqlite"
-import { afterAll, beforeAll, describe, expect } from "bun:test"
+import { afterAll, beforeAll, beforeEach, describe, expect } from "bun:test"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -18,6 +18,10 @@ const prev = process.env["OPENCODE_DISABLE_CHANNEL_DB"]
 beforeAll(async () => {
   process.env["OPENCODE_DISABLE_CHANNEL_DB"] = "0"
   ;({ Database } = await import(`../../src/storage/db?test=${Date.now()}`))
+})
+
+beforeEach(() => {
+  Database.close()
 })
 
 afterAll(() => {

@@ -11,6 +11,10 @@ import { TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { MessageID, SessionID } from "../../src/session/schema"
 import { ScheduledTaskUnattended } from "../../src/scheduled-task/unattended"
+import { InstanceState } from "../../src/effect/instance-state"
+import { Database } from "../../src/storage/db"
+import { PermissionTable } from "../../src/session/session.sql"
+import { PermissionScopeTable } from "../../src/permission/scope.sql"
 
 const bus = Bus.layer
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
@@ -75,6 +79,74 @@ const list = () =>
     const permission = yield* Permission.Service
     return yield* permission.list()
   })
+
+it.instance(
+  "loads explicit scopes in global, project, then location precedence",
+  () =>
+    Effect.gen(function* () {
+      Database.use((db) => db.delete(PermissionScopeTable).run())
+      yield* Effect.addFinalizer(() => Effect.sync(() => Database.use((db) => db.delete(PermissionScopeTable).run())))
+      const ctx = yield* InstanceState.context
+      yield* Permission.setScopedRules(
+        { scope: "global" },
+        [{ permission: "bash", pattern: "*", action: "allow" }],
+      )
+      yield* Permission.setScopedRules(
+        { scope: "project", projectID: ctx.project.id },
+        [{ permission: "bash", pattern: "*", action: "deny" }],
+      )
+      yield* Permission.setScopedRules(
+        { scope: "location", locationID: ctx.location.id },
+        [{ permission: "bash", pattern: "*", action: "allow" }],
+      )
+
+      yield* ask({
+        sessionID: SessionID.make("session_scoped_allow"),
+        permission: "bash",
+        patterns: ["pwd"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      })
+      expect(yield* list()).toHaveLength(0)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "ignores legacy project permission rows without explicit scope",
+  () =>
+    Effect.gen(function* () {
+      Database.use((db) => db.delete(PermissionScopeTable).run())
+      const ctx = yield* InstanceState.context
+      Database.use((db) =>
+        db
+          .insert(PermissionTable)
+          .values({
+            project_id: ctx.project.id,
+            data: [{ permission: "bash", pattern: "*", action: "allow" }],
+            time_created: Date.now(),
+            time_updated: Date.now(),
+          })
+          .run(),
+      )
+
+      const fiber = yield* ask({
+        sessionID: SessionID.make("session_legacy_fail_closed"),
+        permission: "bash",
+        patterns: ["pwd"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+      const pending = yield* waitForPending(1)
+      expect(pending).toHaveLength(1)
+      yield* reply({ requestID: pending[0].id, reply: "reject" })
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+    }),
+  { git: true },
+)
 
 // fromConfig tests
 

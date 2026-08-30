@@ -2,6 +2,8 @@ import { Agent } from "@/agent/agent"
 import { GlobalBus } from "@/bus/global"
 import { Identifier } from "@/id/id"
 import { InstanceStore } from "@/project/instance-store"
+import { Project } from "@/project/project"
+import type { LocationID } from "@/project/schema"
 import { ProviderID, ModelID } from "@/provider/schema"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
@@ -35,8 +37,10 @@ const LEASE_MS = 60_000
 const LEASE_HEARTBEAT = "20 seconds"
 const MISSED_GRACE_MS = 5_000
 
+const isMissed = (scheduledAt: number, now: number) => scheduledAt < now - MISSED_GRACE_MS
+
 export interface Interface {
-  readonly list: (input?: { projectID?: string; enabled?: boolean }) => Effect.Effect<Info[]>
+  readonly list: (input?: { projectID?: string; locationID?: LocationID; enabled?: boolean }) => Effect.Effect<Info[]>
   readonly get: (id: ScheduledTaskID) => Effect.Effect<Info, NotFoundError>
   readonly create: (input: CreateInput) => Effect.Effect<Info>
   readonly update: (id: ScheduledTaskID, input: UpdateInput) => Effect.Effect<Info, NotFoundError>
@@ -51,6 +55,7 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const instances = yield* InstanceStore.Service
+    const projects = yield* Project.Service
     const sessions = yield* Session.Service
     const prompts = yield* SessionPrompt.Service
     const statuses = yield* SessionStatus.Service
@@ -101,8 +106,30 @@ export const layer = Layer.effect(
     })
 
     const executePrompt = Effect.fn("ScheduledTask.executePrompt")(function* (task: Info, run: Run) {
+      const instance = yield* instances.load({ directory: task.directory })
+      const persistedLocationID = yield* ScheduledTaskRepository.getLocationID(task.id)
+      const projectMismatch = task.projectID !== instance.project.id
+      const locationMismatch = persistedLocationID !== undefined && persistedLocationID !== instance.location.id
+      const identity = {
+        taskID: task.id,
+        runID: run.id,
+        directory: task.directory,
+        taskProjectID: task.projectID,
+        resolvedProjectID: instance.project.id,
+        persistedLocationID,
+        resolvedLocationID: instance.location.id,
+        projectMismatch,
+        locationMismatch,
+      }
+      if (projectMismatch || locationMismatch) log.warn("scheduled task identity mismatch", identity)
+      else log.info("scheduled task project identity resolved", identity)
       return yield* instances.provide(
-        { directory: task.directory },
+        {
+          directory: task.directory,
+          worktree: instance.worktree,
+          project: instance.project,
+          location: instance.location,
+        },
         Effect.gen(function* () {
           let sessionID = task.sessionID
           if (task.executionMode === "existing_session") {
@@ -250,9 +277,22 @@ export const layer = Layer.effect(
       for (const task of yield* ScheduledTaskRepository.due(now)) {
         if (recovered.has(task.id) || task.nextRunAt === undefined) continue
         const scheduledAt = task.nextRunAt
-        const missed = yield* ScheduledTaskRepository.markMissed({ taskID: task.id, scheduledAt, now })
-        if (missed.type === "created") yield* emitRun(task, missed.run)
-        yield* ScheduledTaskRepository.advance(task, scheduledAt, now)
+        const missed = isMissed(scheduledAt, now)
+        log.info("scheduled task startup occurrence classified", {
+          taskID: task.id,
+          scheduledAt,
+          now,
+          latenessMs: now - scheduledAt,
+          graceMs: MISSED_GRACE_MS,
+          action: missed ? "missed" : "run",
+        })
+        if (missed) {
+          const result = yield* ScheduledTaskRepository.markMissed({ taskID: task.id, scheduledAt, now })
+          if (result.type === "created") yield* emitRun(task, result.run)
+          yield* ScheduledTaskRepository.advance(task, scheduledAt, now)
+          continue
+        }
+        yield* startOccurrence(task, scheduledAt)
       }
     })
 
@@ -261,7 +301,7 @@ export const layer = Layer.effect(
         const now = Date.now()
         for (const task of yield* ScheduledTaskRepository.due(now)) {
           if (task.nextRunAt === undefined) continue
-          if (task.nextRunAt < now - MISSED_GRACE_MS) {
+          if (isMissed(task.nextRunAt, now)) {
             const missed = yield* ScheduledTaskRepository.markMissed({
               taskID: task.id,
               scheduledAt: task.nextRunAt,
@@ -277,13 +317,18 @@ export const layer = Layer.effect(
       }
     })
 
+    const claims = yield* projects.claimLegacy()
+    log.info("scheduled task startup legacy claim completed", claims)
     yield* recover()
     yield* poll().pipe(Effect.forkIn(scope))
 
     return Service.of({
       list: (input) => ScheduledTaskRepository.list(input),
       get: find,
-      create: ScheduledTaskCreate.create,
+      create: Effect.fn("ScheduledTask.create")(function* (input) {
+        const resolved = yield* projects.fromDirectory(input.directory)
+        return yield* ScheduledTaskCreate.create(input, resolved.location.id)
+      }),
       update: Effect.fn("ScheduledTask.update")(function* (id, input) {
         const task = yield* ScheduledTaskRepository.update(id, input)
         if (!task) return yield* new NotFoundError({ taskID: id })
@@ -312,6 +357,7 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide([
     InstanceStore.defaultLayer,
+    Project.defaultLayer,
     Session.defaultLayer,
     SessionPrompt.defaultLayer,
     SessionStatus.defaultLayer,

@@ -113,20 +113,23 @@ export const ScheduledTaskCreateTool = Tool.define<typeof Parameters, Metadata, 
           modelID: selectedModel.modelID,
         })
 
-        const task = yield* ScheduledTaskCreate.create({
-          projectID: instance.project.id,
-          projectName: instance.project.name,
-          directory: instance.directory,
-          name: params.name,
-          prompt: params.prompt,
-          schedule: params.schedule,
-          executionMode,
-          sessionID: executionMode === "existing_session" ? ctx.sessionID : undefined,
-          agent: ctx.agent,
-          model: selectedModel,
-          enabled: params.enabled,
-          unattended: true,
-        })
+        const task = yield* ScheduledTaskCreate.create(
+          {
+            projectID: instance.project.id,
+            projectName: instance.project.name,
+            directory: instance.directory,
+            name: params.name,
+            prompt: params.prompt,
+            schedule: params.schedule,
+            executionMode,
+            sessionID: executionMode === "existing_session" ? ctx.sessionID : undefined,
+            agent: ctx.agent,
+            model: selectedModel,
+            enabled: params.enabled,
+            unattended: true,
+          },
+          instance.location.id,
+        )
         log.info("scheduled task tool completed", { sessionID: ctx.sessionID, taskID: task.id })
 
         return {
@@ -159,8 +162,14 @@ export const ScheduledTaskListTool = Tool.define<typeof ListParameters, { count:
           metadata: {},
         })
         const instance = yield* InstanceState.context
-        const list = yield* ScheduledTaskRepository.list({
+        log.info("scheduled task list scope resolved", {
+          sessionID: ctx.sessionID,
           projectID: instance.project.id,
+          locationID: instance.location.id,
+          directory: instance.directory,
+        })
+        const list = yield* ScheduledTaskRepository.list({
+          locationID: instance.location.id,
           enabled: params.enabled,
         })
         log.info("scheduled task list completed", { sessionID: ctx.sessionID, count: list.length })

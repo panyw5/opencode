@@ -6,6 +6,7 @@ import { SessionTable } from "../../src/session/session.sql"
 import { ProjectTable } from "../../src/project/project.sql"
 import { ProjectID } from "../../src/project/schema"
 import { SessionID } from "../../src/session/schema"
+import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import * as Log from "@opencode-ai/core/util/log"
 import { $ } from "bun"
 import { tmpdirScoped } from "../fixture/fixture"
@@ -58,32 +59,36 @@ function ensureGlobal() {
 }
 
 describe("migrateFromGlobal", () => {
-  it.live("migrates global sessions on first project creation", () =>
+  it.live("claims a legacy global session without changing directory identity", () =>
     Effect.gen(function* () {
-      // 1. Start with git init but no commits — creates "global" project row
+      // 1. Start with git init but no commits — creates a stable directory project.
       const tmp = yield* tmpdirScoped()
       yield* Effect.promise(() => $`git init`.cwd(tmp).quiet())
       yield* Effect.promise(() => $`git config user.name "Test"`.cwd(tmp).quiet())
       yield* Effect.promise(() => $`git config user.email "test@opencode.test"`.cwd(tmp).quiet())
       yield* Effect.promise(() => $`git config commit.gpgsign false`.cwd(tmp).quiet())
       const projects = yield* Project.Service
-      const { project: pre } = yield* projects.fromDirectory(tmp)
-      expect(pre.id).toBe(ProjectID.global)
+      const { project: pre, location: preLocation } = yield* projects.fromDirectory(tmp)
+      expect(pre.id).toStartWith("dir:")
+      expect(pre.id).not.toBe(ProjectID.global)
 
-      // 2. Seed a session under "global" with matching directory
+      // 2. Seed a session under "global" with matching directory.
+      yield* Effect.sync(() => ensureGlobal())
       const id = legacySessionID()
       yield* Effect.sync(() => seed({ id, dir: tmp, project: ProjectID.global }))
 
-      // 3. Make a commit so the project gets a real ID
+      // 3. A first commit must not change the project ID.
       yield* Effect.promise(() => $`git commit --allow-empty -m "root"`.cwd(tmp).quiet())
 
-      const { project: real } = yield* projects.fromDirectory(tmp)
-      expect(real.id).not.toBe(ProjectID.global)
+      const { project: real, location: realLocation } = yield* projects.fromDirectory(tmp)
+      expect(real.id).toBe(pre.id)
+      expect(realLocation.id).toBe(preLocation.id)
 
-      // 4. The session should have been migrated to the real project ID
+      // 4. The matching session is claimed by the stable project.
       const row = Database.use((db) => db.select().from(SessionTable).where(eq(SessionTable.id, id)).get())
       expect(row).toBeDefined()
       expect(row!.project_id).toBe(real.id)
+      expect(row!.location_id).toBe(realLocation.id)
     }),
   )
 
@@ -104,13 +109,80 @@ describe("migrateFromGlobal", () => {
       const id = legacySessionID()
       yield* Effect.sync(() => seed({ id, dir: tmp, project: ProjectID.global }))
 
-      // 4. Call fromDirectory again — project row already exists,
-      //    so the current code skips migration entirely. This is the bug.
+      // 4. Re-resolving an existing project still performs exact-directory claiming.
       yield* projects.fromDirectory(tmp)
 
       const row = Database.use((db) => db.select().from(SessionTable).where(eq(SessionTable.id, id)).get())
       expect(row).toBeDefined()
       expect(row!.project_id).toBe(project.id)
+    }),
+  )
+
+  it.live("keeps scheduled tasks visible and runnable through git initialization", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const projects = yield* Project.Service
+      const { project: before } = yield* projects.fromDirectory(tmp)
+      const task = yield* ScheduledTaskRepository.create({
+        projectID: before.id,
+        directory: tmp,
+        name: "Identity transition",
+        prompt: "Run after git init",
+        schedule: { kind: "at", at: Date.now() + 60_000 },
+        executionMode: "new_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test" },
+        unattended: true,
+      })
+
+      yield* Effect.promise(() => $`git init`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git config user.name Test`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git config user.email test@opencode.test`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git config commit.gpgsign false`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git commit --allow-empty -m root`.cwd(tmp).quiet())
+      const { project: after } = yield* projects.fromDirectory(tmp)
+
+      expect(after.id).toBe(before.id)
+      expect((yield* ScheduledTaskRepository.list({ projectID: after.id })).map((item) => item.id)).toContain(task.id)
+      expect((yield* ScheduledTaskRepository.update(task.id, { name: "Still manageable" }))?.name).toBe(
+        "Still manageable",
+      )
+      const run = yield* ScheduledTaskRepository.claim({
+        taskID: task.id,
+        scheduledAt: Date.now(),
+        ownerID: "identity-transition",
+        leaseUntil: Date.now() + 60_000,
+      })
+      expect(run.type).toBe("claimed")
+    }),
+  )
+
+  it.live("claims legacy sessions by each persisted directory", () =>
+    Effect.gen(function* () {
+      const first = yield* tmpdirScoped()
+      const second = yield* tmpdirScoped()
+      const projects = yield* Project.Service
+      yield* Effect.sync(() => ensureGlobal())
+
+      const firstSession = legacySessionID()
+      const secondSession = legacySessionID()
+      yield* Effect.sync(() => seed({ id: firstSession, dir: first, project: ProjectID.global }))
+      yield* Effect.sync(() => seed({ id: secondSession, dir: second, project: ProjectID.global }))
+
+      const claims = yield* projects.claimLegacy()
+      expect(claims.sessions).toBe(2)
+
+      const firstRow = Database.use((db) =>
+        db.select().from(SessionTable).where(eq(SessionTable.id, firstSession)).get(),
+      )
+      const secondRow = Database.use((db) =>
+        db.select().from(SessionTable).where(eq(SessionTable.id, secondSession)).get(),
+      )
+      expect(firstRow?.project_id).toStartWith("dir:")
+      expect(secondRow?.project_id).toStartWith("dir:")
+      expect(firstRow?.project_id).not.toBe(secondRow?.project_id)
+
+      expect((yield* projects.claimLegacy()).sessions).toBe(0)
     }),
   )
 

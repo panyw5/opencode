@@ -26,7 +26,7 @@ import { useModels } from "@/context/models"
 import { decode64 } from "@/utils/base64"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
-import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
+import { projectOwner } from "@/pages/layout/helpers"
 import { filterActiveProjects, filterTasksForActiveProjects } from "@/pages/scheduled-utils"
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
@@ -189,9 +189,7 @@ export default function Scheduled() {
   const filtered = createMemo(() => {
     const directory = routeDirectory()
     const projectID = routeProject()?.id ?? state.projectID
-    if (directory && !routeProject()) {
-      return state.tasks.filter((task) => workspaceKey(task.directory) === workspaceKey(directory))
-    }
+    if (directory) return state.tasks
     const active = filterTasksForActiveProjects(state.tasks, projects())
     return projectID === "all" ? active : active.filter((task) => task.projectID === projectID)
   })
@@ -200,7 +198,8 @@ export default function Scheduled() {
   async function load() {
     setState({ loading: true, error: "" })
     try {
-      const result = await sdk.client.scheduledTask.list()
+      const directory = routeDirectory()
+      const result = await sdk.client.scheduledTask.list(directory ? { directory } : undefined)
       const tasks = result.data ?? []
       setState("tasks", tasks)
       if (state.selectedID && !tasks.some((task) => task.id === state.selectedID)) setState("selectedID", undefined)

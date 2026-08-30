@@ -32,7 +32,7 @@ import { MessageV2 } from "./message-v2"
 import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
-import { ProjectID } from "../project/schema"
+import { LocationID, ProjectID } from "../project/schema"
 import { ProjectTaskID } from "../project-task/schema"
 import { WorkspaceID } from "../control-plane/schema"
 import { SessionID, MessageID, PartID } from "./schema"
@@ -59,11 +59,13 @@ function readDiagnostic(id: SessionID) {
     return {
       dbPath: Database.getPath(),
       dataPath: Global.Path.data,
-      messageCount: Database.use((db) =>
-        db.select({ id: MessageTable.id }).from(MessageTable).where(eq(MessageTable.session_id, id)).all().length,
+      messageCount: Database.use(
+        (db) =>
+          db.select({ id: MessageTable.id }).from(MessageTable).where(eq(MessageTable.session_id, id)).all().length,
       ),
-      childCount: Database.use((db) =>
-        db.select({ id: SessionTable.id }).from(SessionTable).where(eq(SessionTable.parent_id, id)).all().length,
+      childCount: Database.use(
+        (db) =>
+          db.select({ id: SessionTable.id }).from(SessionTable).where(eq(SessionTable.parent_id, id)).all().length,
       ),
     }
   } catch (error) {
@@ -318,6 +320,7 @@ export const MessagesInput = Schema.Struct({
 })
 export type ListInput = {
   directory?: string
+  locationID?: LocationID
   scope?: "project"
   path?: string
   workspaceID?: WorkspaceID
@@ -649,6 +652,13 @@ export const layer: Layer.Layer<
       log.info("created", result)
 
       yield* sync.run(Event.Created, { sessionID: result.id, info: result })
+      yield* db((database) =>
+        database
+          .update(SessionTable)
+          .set({ location_id: ctx.location.id, time_updated: SessionTable.time_updated })
+          .where(eq(SessionTable.id, result.id))
+          .run(),
+      )
 
       if (!flags.experimentalWorkspaces) {
         // This only exist for backwards compatibility. We should not be
@@ -678,10 +688,10 @@ export const layer: Layer.Layer<
 
     const list = Effect.fn("Session.list")(function* (input?: ListInput) {
       const ctx = yield* InstanceState.context
-    // eslint-disable-next-line no-console
-    console.log(
-      `[session.list] instance projectID=${ctx.project.id} worktree=${ctx.worktree} directory=${ctx.directory} inputDirectory=${input?.directory} inputPath=${input?.path} roots=${input?.roots}`,
-    )
+      // eslint-disable-next-line no-console
+      console.log(
+        `[session.list] instance projectID=${ctx.project.id} locationID=${ctx.location?.id ?? "lightweight-unresolved"} worktree=${ctx.worktree} directory=${ctx.directory} inputDirectory=${input?.directory} inputLocationID=${input?.locationID} inputPath=${input?.path} roots=${input?.roots}`,
+      )
       return Array.from(
         listByProject({ projectID: ctx.project.id, experimentalWorkspaces: flags.experimentalWorkspaces, ...input }),
       )
@@ -772,7 +782,9 @@ export const layer: Layer.Layer<
       const now = Date.now()
       const existingMetadata = part.state.status === "running" ? (part.state.metadata ?? {}) : {}
       const childMetadata =
-        input.childSessionID === undefined ? {} : { sessionId: input.childSessionID, childSessionID: input.childSessionID }
+        input.childSessionID === undefined
+          ? {}
+          : { sessionId: input.childSessionID, childSessionID: input.childSessionID }
       const outputMetadata = input.output === undefined ? {} : { output: input.output }
       const metadata = {
         ...existingMetadata,
@@ -877,7 +889,10 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { title: input.title, time: { updated: Date.now() } })
     })
 
-    const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number | null }) {
+    const setArchived = Effect.fn("Session.setArchived")(function* (input: {
+      sessionID: SessionID
+      time?: number | null
+    }) {
       yield* patch(input.sessionID, { time: { archived: input.time, updated: Date.now() } })
     })
 
@@ -1076,11 +1091,10 @@ export const layer: Layer.Layer<
           if (child) linkedChildren.set(part.id, child)
         }
 
-        yield* Effect.forEach(
-          childCandidates,
-          (child) => finalizeOrphanedAssistantInner(child.id, visited, options),
-          { concurrency: "unbounded", discard: true },
-        )
+        yield* Effect.forEach(childCandidates, (child) => finalizeOrphanedAssistantInner(child.id, visited, options), {
+          concurrency: "unbounded",
+          discard: true,
+        })
 
         for (const part of message.parts) {
           if (!isActiveTool(part)) continue
@@ -1192,9 +1206,10 @@ function* listByProject(
 ) {
   // eslint-disable-next-line no-console
   console.log(
-    `[session.listByProject] input projectID=${input.projectID} directory=${input.directory} path=${input.path} scope=${input.scope} roots=${input.roots} start=${input.start} limit=${input.limit}`,
+    `[session.listByProject] input projectID=${input.projectID} locationID=${input.locationID} directory=${input.directory} path=${input.path} scope=${input.scope} roots=${input.roots} start=${input.start} limit=${input.limit}`,
   )
   const conditions = [eq(SessionTable.project_id, input.projectID)]
+  if (input.locationID) conditions.push(eq(SessionTable.location_id, input.locationID))
 
   if (input.workspaceID) {
     conditions.push(eq(SessionTable.workspace_id, input.workspaceID))
@@ -1204,9 +1219,7 @@ function* listByProject(
       const conds = [eq(SessionTable.path, input.path), like(SessionTable.path, `${input.path}/%`)]
 
       conditions.push(
-        input.directory
-          ? or(...conds, and(isNull(SessionTable.path), directoryEq(input.directory))!)!
-          : or(...conds)!,
+        input.directory ? or(...conds, and(isNull(SessionTable.path), directoryEq(input.directory))!)! : or(...conds)!,
       )
     }
   } else if (input.scope !== "project" && !input.experimentalWorkspaces) {
@@ -1236,10 +1249,15 @@ function* listByProject(
       .where(and(...conditions))
       .orderBy(desc(SessionTable.time_updated), desc(SessionTable.id))
       .limit(limit)
-      .all()
+      .all(),
   )
   // eslint-disable-next-line no-console
-  console.log(`[session.listByProject] rows count=${rows.length} firstIDs=${rows.slice(0, 3).map((r) => r.id).join(",")}`)
+  console.log(
+    `[session.listByProject] rows count=${rows.length} firstIDs=${rows
+      .slice(0, 3)
+      .map((r) => r.id)
+      .join(",")}`,
+  )
   for (const row of rows) {
     yield fromRow(row)
   }
@@ -1247,6 +1265,7 @@ function* listByProject(
 
 export function* listGlobal(input?: {
   directory?: string
+  locationID?: LocationID
   roots?: boolean
   start?: number
   cursor?: number
@@ -1256,6 +1275,9 @@ export function* listGlobal(input?: {
 }) {
   const conditions: SQL[] = []
 
+  if (input?.locationID) {
+    conditions.push(eq(SessionTable.location_id, input.locationID))
+  }
   if (input?.directory) {
     conditions.push(directoryEq(input.directory))
   }

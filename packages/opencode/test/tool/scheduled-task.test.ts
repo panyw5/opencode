@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect } from "bun:test"
 import { Agent } from "@/agent/agent"
 import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ScheduledTaskRunTable, ScheduledTaskTable } from "@/scheduled-task/scheduled-task.sql"
-import { Database } from "@/storage/db"
+import { Database, eq } from "@/storage/db"
 import { MessageID } from "@/session/schema"
 import { Session } from "@/session/session"
 import {
@@ -23,6 +23,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { Effect, Exit, Layer } from "effect"
 import { disposeAllInstances } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { InstanceState } from "@/effect/instance-state"
 
 void Log.init({ print: false })
 
@@ -86,6 +87,10 @@ describe("tool.scheduled_task_create", () => {
         ctx,
       )
       const task = result.metadata.task
+      const instance = yield* InstanceState.context
+      const row = Database.use((db) =>
+        db.select().from(ScheduledTaskTable).where(eq(ScheduledTaskTable.id, task.id)).get(),
+      )
 
       expect(requests).toHaveLength(1)
       expect(requests[0]?.permission).toBe("scheduled_task_create")
@@ -96,6 +101,7 @@ describe("tool.scheduled_task_create", () => {
       expect(task.model).toEqual({ providerID: "test", modelID: "test-model", variant: "fast" })
       expect(task.schedule).toEqual({ kind: "every", interval: 3_600_000 })
       expect(task.nextRunAt).toBeGreaterThan(task.time.created)
+      expect(row?.location_id).toBe(instance.location.id)
       expect(yield* ScheduledTaskRepository.get(task.id)).toEqual(task)
     }),
   )
@@ -146,7 +152,7 @@ describe("tool.scheduled_task_create", () => {
 })
 
 describe("tool.scheduled_task_list", () => {
-  it.instance("lists tasks scoped to the active project", () =>
+  it.instance("lists tasks scoped to the active location", () =>
     Effect.gen(function* () {
       const info = yield* ScheduledTaskListTool
       const tool = yield* info.init()
@@ -156,11 +162,25 @@ describe("tool.scheduled_task_list", () => {
           requests.push(request)
         }),
       )
+      const instance = yield* InstanceState.context
       const existing = yield* ScheduledTaskRepository.create({
         projectID: session.projectID,
+        locationID: instance.location.id,
         directory: session.directory,
         name: "Listed task",
         prompt: "Do the thing",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "existing_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+      yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Legacy task without location",
+        prompt: "Do not leak into the location list",
         schedule: { kind: "every", interval: 3_600_000 },
         executionMode: "existing_session",
         agent: "build",
@@ -336,9 +356,7 @@ describe("tool.scheduled_task_update", () => {
         unattended: true,
       })
 
-      const exit = yield* tool
-        .execute({ taskID: existing.id, name: "Changed" }, ctx)
-        .pipe(Effect.exit)
+      const exit = yield* tool.execute({ taskID: existing.id, name: "Changed" }, ctx).pipe(Effect.exit)
 
       expect(Exit.isFailure(exit)).toBe(true)
       expect((yield* ScheduledTaskRepository.get(existing.id))?.name).toBe("Untouched")
@@ -373,7 +391,7 @@ describe("tool.scheduled_task_delete", () => {
       const result = yield* tool.execute({ taskID: existing.id }, ctx)
 
       expect(requests[0]?.permission).toBe("scheduled_task_delete")
-      expect((yield* ScheduledTaskRepository.get(existing.id))).toBeUndefined()
+      expect(yield* ScheduledTaskRepository.get(existing.id)).toBeUndefined()
       expect(result.metadata.taskID).toBe(existing.id)
     }),
   )
@@ -454,7 +472,13 @@ describe("tool.scheduled_task_run_now", () => {
         enabled: true,
         unattended: true,
       })
-      const run = { id: existing.id, taskID: existing.id, scheduledAt: Date.now(), status: "running", attempt: 0 } as unknown as Run
+      const run = {
+        id: existing.id,
+        taskID: existing.id,
+        scheduledAt: Date.now(),
+        status: "running",
+        attempt: 0,
+      } as unknown as Run
 
       const result = yield* tool.execute({ taskID: existing.id }, ctx).pipe(
         Effect.provide(

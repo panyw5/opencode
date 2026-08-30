@@ -23,7 +23,7 @@ import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import { SessionMessageTable } from "../../src/session/session.sql"
+import { SessionMessageTable, SessionTable } from "../../src/session/session.sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -58,6 +58,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ProjectTask } from "@/project-task/service"
+import { InstanceState } from "@/effect/instance-state"
 
 void Log.init({ print: false })
 
@@ -447,6 +448,18 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
 
 // Loop semantics
 
+noLLMServer.instance("session creation persists the active location internally", () =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const ctx = yield* InstanceState.context
+    const chat = yield* sessions.create({ title: "Location dual-write" })
+    const row = Database.use((db) => db.select().from(SessionTable).where(Database.eq(SessionTable.id, chat.id)).get())
+
+    expect(row?.location_id).toBe(ctx.location.id)
+    expect("locationID" in chat).toBe(false)
+  }),
+)
+
 noLLMServer.instance(
   "loop exits immediately when last assistant has stop finish",
   () =>
@@ -705,9 +718,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
     yield* llm.text("parent received child report")
 
     const result = yield* prompt.loop({ sessionID: parent.id })
-    expect(result.parts.some((part) => part.type === "text" && part.text === "parent received child report")).toBe(
-      true,
-    )
+    expect(result.parts.some((part) => part.type === "text" && part.text === "parent received child report")).toBe(true)
 
     const inputs = yield* llm.inputs
     expect(inputs).toHaveLength(3)
@@ -728,9 +739,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       .flatMap((message) => message.parts)
       .find(
         (part): part is MessageV2.TextPart =>
-          part.type === "text" &&
-          part.synthetic === true &&
-          part.metadata?.kind === "project-task-injection",
+          part.type === "text" && part.synthetic === true && part.metadata?.kind === "project-task-injection",
       )
     expect(parentInjected?.metadata?.audience).toBe("parent")
     expect(parentInjected?.text).toContain(marker)
@@ -757,9 +766,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       .flatMap((message) => message.parts)
       .find(
         (part): part is MessageV2.TextPart =>
-          part.type === "text" &&
-          part.synthetic === true &&
-          part.metadata?.kind === "project-task-injection",
+          part.type === "text" && part.synthetic === true && part.metadata?.kind === "project-task-injection",
       )
     expect(injected?.metadata?.audience).toBe("subagent")
     expect(injected?.metadata?.taskID).toBe(task.id)
@@ -2007,53 +2014,49 @@ const researchSkillWithLatexExamples = [
   "- **数值计算** 使用 $2\\times 10\\times 8 = 160$",
 ].join("\n")
 
-it.instance("command replaces arguments before resolving markdown references", () =>
-  Effect.gen(function* () {
-    const { dir, llm } = yield* useServerConfig(providerCfg)
-    yield* writeText(
-      path.join(dir, ".opencode", "skills", "research", "SKILL.md"),
-      researchSkillWithLatexExamples,
-    )
-    yield* writeText(
-      path.join(dir, ".opencode", "commands", "research.md"),
-      [
-        "---",
-        "description: Test research command",
-        "---",
-        "",
-        "Use @.opencode/skills/research/SKILL.md for instructions.",
-        "",
-        "Question: $ARGUMENTS",
-      ].join("\n"),
-    )
+it.instance(
+  "command replaces arguments before resolving markdown references",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      yield* writeText(path.join(dir, ".opencode", "skills", "research", "SKILL.md"), researchSkillWithLatexExamples)
+      yield* writeText(
+        path.join(dir, ".opencode", "commands", "research.md"),
+        [
+          "---",
+          "description: Test research command",
+          "---",
+          "",
+          "Use @.opencode/skills/research/SKILL.md for instructions.",
+          "",
+          "Question: $ARGUMENTS",
+        ].join("\n"),
+      )
 
-    const { prompt, chat } = yield* boot()
-    yield* llm.text("done")
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
 
-    const result = yield* prompt.command({
-      sessionID: chat.id,
-      command: "research",
-      arguments: "帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。",
-    })
+      const result = yield* prompt.command({
+        sessionID: chat.id,
+        command: "research",
+        arguments: "帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。",
+      })
 
-    expect(result.info.role).toBe("assistant")
-    const inputs = yield* llm.inputs
-    const messages = JSON.stringify(inputs.at(-1)?.messages)
-    expect(messages).toContain("$1\\\\times 1\\\\times H$")
-    expect(messages).toContain("$2\\\\times 10\\\\times 8 = 160$")
-    expect(messages).toContain("帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。")
-    expect(messages).not.toContain("使用 帮我查一下什么文献介绍了 Zhu")
-  }),
+      expect(result.info.role).toBe("assistant")
+      const inputs = yield* llm.inputs
+      const messages = JSON.stringify(inputs.at(-1)?.messages)
+      expect(messages).toContain("$1\\\\times 1\\\\times H$")
+      expect(messages).toContain("$2\\\\times 10\\\\times 8 = 160$")
+      expect(messages).toContain("帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。")
+      expect(messages).not.toContain("使用 帮我查一下什么文献介绍了 Zhu")
+    }),
   { git: true },
 )
 
 it.instance("skill-backed slash command appends arguments without replacing LaTeX dollar examples", () =>
   Effect.gen(function* () {
     const { dir, llm } = yield* useServerConfig(providerCfg)
-    yield* writeText(
-      path.join(dir, ".opencode", "skills", "research", "SKILL.md"),
-      researchSkillWithLatexExamples,
-    )
+    yield* writeText(path.join(dir, ".opencode", "skills", "research", "SKILL.md"), researchSkillWithLatexExamples)
 
     const { prompt, chat } = yield* boot()
     yield* llm.text("done")
@@ -3079,8 +3082,9 @@ it.instance(
       const result = yield* prompt.loop({ sessionID: session.id })
       expect(yield* llm.calls).toBe(2)
       expect(result.info.role).toBe("assistant")
-      expect(result.parts.some((part) => part.type === "text" && part.text === "resumed after background task result"))
-        .toBe(true)
+      expect(
+        result.parts.some((part) => part.type === "text" && part.text === "resumed after background task result"),
+      ).toBe(true)
 
       const inputs = yield* llm.inputs
       expect(inputs).toHaveLength(2)

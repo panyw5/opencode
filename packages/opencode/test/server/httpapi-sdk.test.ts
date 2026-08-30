@@ -796,7 +796,7 @@ describe("HttpApi SDK", () => {
           statuses: statuses({ before, init, after }),
           before: {
             vcs: record(before.data).vcs ?? null,
-            worktree: record(before.data).worktree,
+            worktreeSelected: record(before.data).worktree === directory,
           },
           init: {
             vcs: record(init.data).vcs,
