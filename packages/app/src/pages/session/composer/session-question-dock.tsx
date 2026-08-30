@@ -17,6 +17,7 @@ import { ACCEPTED_IMAGE_TYPES } from "@/constants/file-picker"
 import { PromptImageAttachments } from "@/components/prompt-input/image-attachments"
 import { uuid } from "@/utils/uuid"
 import {
+  createQuestionSubmissionGuard,
   questionAnswered,
   questionAttachments,
   questionReply,
@@ -60,6 +61,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   let root: HTMLDivElement | undefined
   let replied = false
   let max = ""
+  const submission = createQuestionSubmissionGuard()
 
   const question = createMemo(() => questions()[store.tab])
   const options = createMemo(() => question()?.options ?? [])
@@ -154,7 +156,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
           return
         }
         e.preventDefault()
-        next()
+        next("command-enter")
         return
       }
 
@@ -234,12 +236,9 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     const message = err instanceof Error ? err.message : String(err)
     clearQuestionHandoff(props.request.id)
     if (questionRequestNotFound(err, props.request.id)) {
+      console.info(`[question-dock] request already settled id=${props.request.id} session=${props.request.sessionID}`)
       removeStaleQuestion()
       void refreshQuestions().catch(() => undefined)
-      showToast({
-        title: language.t("common.requestFailed"),
-        description: `Question request is no longer pending: ${props.request.id}`,
-      })
       return
     }
 
@@ -248,6 +247,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
 
   const replyMutation = useMutation(() => ({
     mutationFn: async (answers: QuestionAnswer[]) => {
+      console.debug(`[question-dock] reply dispatch id=${props.request.id} session=${props.request.sessionID}`)
       return sdk.client.question.reply({ requestID: props.request.id, answers })
     },
     onMutate: (answers: QuestionAnswer[]) => {
@@ -255,48 +255,73 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       rememberQuestionHandoff({ request: props.request, answers })
     },
     onSuccess: () => {
+      console.debug(`[question-dock] reply success id=${props.request.id} session=${props.request.sessionID}`)
       replied = true
       questionCache.delete(props.request.id)
     },
-    onError: fail,
+    onError: (err) => {
+      submission.release()
+      fail(err)
+    },
   }))
 
   const rejectMutation = useMutation(() => ({
     mutationFn: async () => {
+      console.debug(`[question-dock] reject dispatch id=${props.request.id} session=${props.request.sessionID}`)
       return sdk.client.question.reject({ requestID: props.request.id })
     },
     onMutate: () => {
       props.onSubmit()
     },
     onSuccess: () => {
+      console.debug(`[question-dock] reject success id=${props.request.id} session=${props.request.sessionID}`)
       replied = true
       questionCache.delete(props.request.id)
     },
-    onError: fail,
+    onError: (err) => {
+      submission.release()
+      fail(err)
+    },
   }))
 
   const sending = createMemo(() => replyMutation.isPending || rejectMutation.isPending)
 
   createEffect(() => setStore("sending", sending()))
 
-  const reply = (answers: QuestionAnswer[]) => {
-    if (sending()) return
+  const reply = (answers: QuestionAnswer[], source: "command-enter" | "submit-button") => {
+    if (sending() || !submission.acquire()) {
+      console.debug(
+        `[question-dock] reply blocked id=${props.request.id} session=${props.request.sessionID} source=${source}`,
+      )
+      return
+    }
+    console.debug(
+      `[question-dock] reply acquired id=${props.request.id} session=${props.request.sessionID} source=${source}`,
+    )
     replyMutation.mutate(answers)
   }
 
-  const reject = () => {
-    if (sending()) return
+  const reject = (source: "dismiss-button" = "dismiss-button") => {
+    if (sending() || !submission.acquire()) {
+      console.debug(
+        `[question-dock] reject blocked id=${props.request.id} session=${props.request.sessionID} source=${source}`,
+      )
+      return
+    }
+    console.debug(
+      `[question-dock] reject acquired id=${props.request.id} session=${props.request.sessionID} source=${source}`,
+    )
     rejectMutation.mutate()
   }
 
-  const submit = () => {
+  const submit = (source: "command-enter" | "submit-button") => {
     const answers = questionReply(questions(), store.answers, store.images)
     captureQuestionFlipSource({
       requestID: props.request.id,
       sessionID: props.request.sessionID,
       source: root,
     })
-    reply(answers)
+    reply(answers, source)
   }
 
   const pick = (answer: string, custom: boolean = false) => {
@@ -422,12 +447,12 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     }
   }
 
-  const next = () => {
+  const next = (source: "command-enter" | "submit-button") => {
     if (sending()) return
     if (store.editing) commitCustom()
 
     if (store.tab >= total() - 1) {
-      submit()
+      submit(source)
       return
     }
 
@@ -484,7 +509,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
       }
       footer={
         <>
-          <Button variant="ghost" size="large" disabled={sending()} onClick={reject}>
+          <Button variant="ghost" size="large" disabled={sending()} onClick={() => reject()}>
             {language.t("ui.common.dismiss")}
           </Button>
           <div data-slot="question-footer-actions">
@@ -493,7 +518,12 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
                 {language.t("ui.common.back")}
               </Button>
             </Show>
-            <Button variant={last() ? "primary" : "secondary"} size="large" disabled={sending()} onClick={next}>
+            <Button
+              variant={last() ? "primary" : "secondary"}
+              size="large"
+              disabled={sending()}
+              onClick={() => next("submit-button")}
+            >
               {last() ? language.t("ui.common.submit") : language.t("ui.common.next")}
             </Button>
           </div>

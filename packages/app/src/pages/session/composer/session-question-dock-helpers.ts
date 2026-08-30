@@ -5,6 +5,21 @@ import { sortMessages } from "@/utils/message-order"
 
 export type QuestionImage = ImageAttachmentPart
 
+export function createQuestionSubmissionGuard() {
+  let locked = false
+
+  return {
+    acquire() {
+      if (locked) return false
+      locked = true
+      return true
+    },
+    release() {
+      locked = false
+    },
+  }
+}
+
 function extractBase64(url: string): string {
   // Recursively strip all data URL prefixes to get pure base64
   const comma = url.indexOf(",")
