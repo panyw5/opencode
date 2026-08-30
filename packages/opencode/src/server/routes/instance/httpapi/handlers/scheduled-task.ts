@@ -1,12 +1,17 @@
 import { Project } from "@/project/project"
+import { ProjectLocation } from "@/project/location"
 import { ScheduledTask } from "@/scheduled-task/service"
 import { ScheduledTaskID } from "@/scheduled-task/schema"
+import * as Log from "@opencode-ai/core/util/log"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { toLogicalPath } from "@opencode-ai/core/util/path"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ListQuery, RunsQuery } from "../groups/scheduled-task"
 
 const notFound = () => new HttpApiError.NotFound({})
+const log = Log.create({ service: "scheduled-task-http" })
 
 export const scheduledTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "scheduled-task", (handlers) =>
   Effect.gen(function* () {
@@ -16,16 +21,45 @@ export const scheduledTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "sche
     return handlers
       .handle("list", (ctx: { query: typeof ListQuery.Type }) =>
         Effect.gen(function* () {
+          const started = Date.now()
+          log.info("scheduled task list scope resolution started", {
+            projectID: ctx.query.projectID,
+            locationID: ctx.query.locationID,
+            directory: ctx.query.directory,
+          })
+          const canonicalDirectory = ctx.query.directory
+            ? toLogicalPath(AppFileSystem.resolve(ctx.query.directory))
+            : undefined
+          const persistedLocation = canonicalDirectory
+            ? ProjectLocation.getByCanonicalDirectory(canonicalDirectory)
+            : undefined
           const locationID = ctx.query.locationID
             ? ctx.query.locationID
-            : ctx.query.directory
-              ? (yield* projects.fromDirectory(ctx.query.directory)).location.id
+            : persistedLocation
+              ? persistedLocation.id
+              : canonicalDirectory
+                ? (yield* projects.fromDirectory(canonicalDirectory)).location.id
               : undefined
-          return yield* scheduled.list({
+          const tasks = yield* scheduled.list({
             projectID: ctx.query.projectID,
             locationID,
             enabled: ctx.query.enabled,
           })
+          log.info("scheduled task list scope resolution completed", {
+            projectID: ctx.query.projectID,
+            locationID,
+            directory: ctx.query.directory,
+            locationSource: ctx.query.locationID
+              ? "query"
+              : persistedLocation
+                ? "persisted-location"
+                : canonicalDirectory
+                  ? "project-resolution"
+                  : "none",
+            durationMs: Date.now() - started,
+            count: tasks.length,
+          })
+          return tasks
         }),
       )
       .handle("create", (ctx) =>
