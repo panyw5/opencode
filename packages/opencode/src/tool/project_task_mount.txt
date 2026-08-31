@@ -1,6 +1,7 @@
 Mount or unmount a project-level task on the current session.
 
-Each session can mount at most one project task. Mounting replaces any previous mount.
+Each session can mount at most one project task.
+Mounting replaces any previous mount.
 Session todos (`todowrite`) stay local to the session and roll up under the mounted project task in the UI.
 
 ## When to use
@@ -8,13 +9,7 @@ Session todos (`todowrite`) stay local to the session and roll up under the moun
 - Switch this session to a different project task (pass the new taskID)
 - Clear the mount (`unmount=true` or empty taskID)
 
-## When NOT to use
-- Creating a new project task → `project_task_create` then mount the returned id
-- Updating title/description/status → `project_task_update` (mount does not edit the task)
-- Session-only steps → `todowrite`
-
 ## Rules
-- Do NOT create a new task just to mount — `project_task_list` first, then mount the exact `id` from the list return
-- Never hand-copy taskIDs from chat or inject briefs — resolve via list (or create/mount tool return)
-- Pass `taskID` to mount; pass `unmount=true` (or omit/empty taskID) to clear
-- After mount, keep session work in `todowrite`; keep project-level status in `project_task_update`
+- Before mounting: use `project_task_list` for exact taskID
+- Do NOT create a new task just to mount
+- After mount, keep per-session checklist in `todowrite`

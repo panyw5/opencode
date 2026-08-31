@@ -1,20 +1,11 @@
-List project-level tasks for the current project.
+List project-level tasks for the current workspace/worktree.
 
-Returns title, status, sessionCount, and aggregated session-todo progress for each task.
+Returns title, status, sessionCount, and aggregated session-todo progress
 
 ## When to use
-- Before creating a task (check for duplicates / existing coverage)
-- Before mounting or updating — discover taskIDs
+- [Mandatory] Before creating a task (check for duplicates / existing coverage)
+- [Mandatory] Before project task `get` / `mount` / `update` — discover taskIDs
 - User asks what project tasks exist or their progress
 
-## When NOT to use
-- You already have the taskID and need full detail → `project_task_get`
-- Changing a task → `project_task_update` (after list/get if needed)
-- Session-only checklist → `todowrite`
-
 ## Rules
-- Prefer list before `project_task_create` when unsure whether a task already exists
-- ALWAYS call this before `get` / `mount` / `update` when you need a target task's id — copy the exact `id` from this tool's return value
-- NEVER retype or hand-copy taskIDs from chat/history/inject briefs (easy to mistype)
-- Use returned `id` values for `get` / `mount` / `update` — do not invent IDs
-- Archived tasks are hidden unless `includeArchived=true`
+- Archived tasks are hidden from `project_task_list` unless `includeArchived=true`

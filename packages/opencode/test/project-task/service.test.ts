@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { existsSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import path from "node:path"
 import { Effect } from "effect"
 import { eq } from "drizzle-orm"
@@ -7,7 +7,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { ProjectTask } from "@/project-task/service"
 import * as ProjectTaskRepository from "@/project-task/repository"
 import { ProjectTaskTable } from "@/project-task/project-task.sql"
-import { descriptionRelativePath } from "@/project-task/description-file"
+import { descriptionRelativePath, progressRelativePath } from "@/project-task/description-file"
 import { ProjectTaskID } from "@/project-task/schema"
 import { Database } from "@/storage/db"
 import { testEffect } from "../lib/effect"
@@ -15,6 +15,20 @@ import { testEffect } from "../lib/effect"
 const it = testEffect(ProjectTask.defaultLayer)
 
 describe("ProjectTask service reads", () => {
+  it.instance("creates an empty progress record for a new task", () =>
+    Effect.gen(function* () {
+      const ctx = yield* InstanceState.context
+      const service = yield* ProjectTask.Service
+      const task = yield* service.create({ title: "New task", description: "Task brief" })
+      const description = path.join(ctx.worktree, descriptionRelativePath(task.id))
+      const progress = path.join(ctx.worktree, progressRelativePath(task.id))
+
+      expect(existsSync(description)).toBe(true)
+      expect(existsSync(progress)).toBe(true)
+      expect(readFileSync(progress, "utf8")).toBe("")
+    }),
+  )
+
   it.instance("list does not migrate a legacy description until get explicitly hydrates it", () =>
     Effect.gen(function* () {
       const ctx = yield* InstanceState.context

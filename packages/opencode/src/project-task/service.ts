@@ -9,6 +9,7 @@ import {
   descriptionRelativePath,
   ensureDescriptionFile,
   readDescriptionFile,
+  progressRelativePath,
   taskFilesAnchor,
   writeDescriptionFile,
 } from "./description-file"
@@ -169,6 +170,7 @@ export const layer = Layer.effect(
         description: body,
       })
       yield* Effect.promise(() => writeDescriptionFile(anchor, task.descriptionPath, body))
+      yield* Effect.promise(() => writeDescriptionFile(anchor, progressRelativePath(task.id), ""))
       // Return with body already known (file write succeeded).
       const created: Info = { ...task, description: body }
       yield* emit(dir, { type: Event.Created.type, properties: created })

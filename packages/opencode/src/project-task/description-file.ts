@@ -12,6 +12,9 @@ export const PROJECT_TASKS_ROOT = ".project-tasks"
 /** Canonical brief filename inside each task folder. */
 export const DESCRIPTION_FILENAME = "prd.md"
 
+/** Progress record filename inside each task folder. */
+export const PROGRESS_FILENAME = "progress.md"
+
 /** Pre-rename workspace root / brief filename; migrated into PROJECT_TASKS_ROOT on hydrate. */
 export const LEGACY_PROJECT_TASKS_ROOT = ".opentasks"
 export const LEGACY_DESCRIPTION_FILENAME = "description.md"
@@ -19,6 +22,11 @@ export const LEGACY_DESCRIPTION_FILENAME = "description.md"
 /** Relative path: `.project-tasks/<taskID>/prd.md` */
 export function descriptionRelativePath(taskID: ProjectTaskID | string): string {
   return path.posix.join(PROJECT_TASKS_ROOT, String(taskID), DESCRIPTION_FILENAME)
+}
+
+/** Relative path: `.project-tasks/<taskID>/progress.md` */
+export function progressRelativePath(taskID: ProjectTaskID | string): string {
+  return path.posix.join(PROJECT_TASKS_ROOT, String(taskID), PROGRESS_FILENAME)
 }
 
 /** Legacy relative path: `.opentasks/<taskID>/description.md` (migrated on hydrate). */
