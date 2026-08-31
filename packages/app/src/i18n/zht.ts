@@ -58,6 +58,7 @@ export const dict = {
 
   "command.session.new": "新增工作階段",
   "command.session.new.tooltip": "在 {{project}} 下新增工作階段",
+  "command.session.new.selectProject": "選擇新增工作階段的專案",
   "command.file.open": "開啟檔案",
   "command.tab.close": "關閉分頁",
   "command.context.addSelection": "將選取內容加入上下文",

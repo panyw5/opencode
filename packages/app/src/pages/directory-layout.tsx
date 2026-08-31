@@ -1,13 +1,17 @@
 import { DataProvider } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
+import { getFilename } from "@opencode-ai/core/util/path"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js"
 import { Portal } from "solid-js/web"
+import { Avatar } from "@opencode-ai/ui/avatar"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
-import { useLayout } from "@/context/layout"
+import { getAvatarColors, useLayout } from "@/context/layout"
 import { LocalProvider } from "@/context/local"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { SkillsProvider } from "@/context/skills"
@@ -100,29 +104,97 @@ function ProjectStatusPortal() {
       </For>
     )
   }
+  const projects = createMemo(() => layout.projects.rail())
+  const newSessionIn = (projectDirectory: string) => {
+    console.debug(
+      `[directory-layout] new-session-project current=${directory() || "none"} target=${projectDirectory}`,
+    )
+    navigate(`/${base64Encode(projectDirectory)}/session`)
+  }
 
   return (
     <Show when={mount()}>
       {(node) => (
         <Portal mount={node()}>
           <div class="mr-2 flex items-center gap-1">
-            <RailTooltip title={tooltipTitle()} placement="bottom">
-              <IconButton
-                data-action="session-new-button"
-                icon="new-session"
-                size="normal"
-                variant="ghost"
-                class="titlebar-icon w-8 h-8 p-0 box-border"
-                aria-label={tooltip()}
-                onClick={() => {
-                  if (!params.dir) return
-                  console.debug(
-                    `[directory-layout] new-session dir=${directory() || "none"} project=${projectLabel() || "none"}`,
-                  )
-                  navigate(`/${params.dir}/session`)
-                }}
-              />
-            </RailTooltip>
+            <div class="flex items-center">
+              <RailTooltip title={tooltipTitle()} placement="bottom">
+                <IconButton
+                  data-action="session-new-button"
+                  icon="new-session"
+                  size="normal"
+                  variant="ghost"
+                  class="titlebar-icon w-8 h-8 p-0 box-border"
+                  aria-label={tooltip()}
+                  onClick={() => {
+                    if (!params.dir) return
+                    console.debug(
+                      `[directory-layout] new-session dir=${directory() || "none"} project=${projectLabel() || "none"}`,
+                    )
+                    navigate(`/${params.dir}/session`)
+                  }}
+                />
+              </RailTooltip>
+              <DropdownMenu gutter={4} placement="bottom-end">
+                <Tooltip placement="bottom" value={language.t("command.session.new.selectProject")}>
+                  <DropdownMenu.Trigger
+                    as={IconButton}
+                    data-action="session-new-project-menu"
+                    icon="chevron-down"
+                    size="normal"
+                    variant="ghost"
+                    class="titlebar-icon w-6 h-8 p-0 box-border data-[expanded]:bg-surface-base-active"
+                    aria-label={language.t("command.session.new.selectProject")}
+                  />
+                </Tooltip>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    class="session-child-agent-scrollbar w-80 max-w-[calc(100vw-32px)]"
+                    style={{
+                      "max-height": "min(520px, calc(100dvh - 64px))",
+                      "overflow-y": "auto",
+                      "overscroll-behavior": "contain",
+                    }}
+                  >
+                    <DropdownMenu.Group>
+                      <For each={projects()}>
+                        {(project) => {
+                          const name = () => project.name || getFilename(project.worktree)
+                          const current = () => project.worktree === directory()
+                          return (
+                            <DropdownMenu.Item
+                              data-action="session-new-project-item"
+                              data-project={base64Encode(project.worktree)}
+                              class="min-w-0"
+                              aria-current={current() ? "page" : undefined}
+                              onSelect={() => newSessionIn(project.worktree)}
+                            >
+                              <Avatar
+                                fallback={name()}
+                                src={project.icon?.override}
+                                {...getAvatarColors(project.icon?.color)}
+                                class="size-5 rounded shrink-0"
+                              />
+                              <div class="flex min-w-0 flex-1 items-center gap-3">
+                                <DropdownMenu.ItemLabel class="min-w-0 flex-1 truncate text-13-medium text-text-strong">
+                                  {name()}
+                                </DropdownMenu.ItemLabel>
+                                <DropdownMenu.ItemDescription class="max-w-[55%] shrink-0 truncate text-right text-11-regular text-text-weak">
+                                  {project.worktree}
+                                </DropdownMenu.ItemDescription>
+                              </div>
+                              <Show when={current()}>
+                                <Icon name="check-small" size="small" class="shrink-0 text-icon-weak" />
+                              </Show>
+                            </DropdownMenu.Item>
+                          )
+                        }}
+                      </For>
+                    </DropdownMenu.Group>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
+            </div>
             <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
               <StatusPopover />
             </Tooltip>

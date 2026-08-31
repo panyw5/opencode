@@ -187,6 +187,7 @@ export const dict = {
 
   "command.session.new": "新建会话",
   "command.session.new.tooltip": "在 {{project}} 下新建会话",
+  "command.session.new.selectProject": "选择新建会话的项目",
 
   "command.file.open": "打开文件",
 

@@ -183,6 +183,7 @@ export const dict = {
 
   "command.session.new": "New session",
   "command.session.new.tooltip": "New session in {{project}}",
+  "command.session.new.selectProject": "Choose project for new session",
   "command.input.focus": "Focus input",
   "command.input.focus.description": "Focus the chat input field",
   "command.file.open": "Open file",

@@ -13,6 +13,9 @@ export const sessionTodoFloatToggleSelector = '[data-component="session-todo-flo
 export const sessionStatusFloatSelector = '[data-component="session-status-float"]'
 export const sessionStatusFloatPanelSelector = '[data-slot="session-status-float-panel"]'
 export const sessionNewButtonSelector = '[data-action="session-new-button"]'
+export const sessionNewProjectMenuSelector = '[data-action="session-new-project-menu"]'
+export const sessionNewProjectItemSelector = (slug: string) =>
+  `[data-action="session-new-project-item"][data-project="${slug}"]`
 export const sessionTodoToggleSelector = '[data-action="session-todo-toggle"]'
 export const sessionTodoToggleButtonSelector = '[data-action="session-todo-toggle-button"]'
 export const sessionTodoListSelector = '[data-slot="session-todo-list"]'
