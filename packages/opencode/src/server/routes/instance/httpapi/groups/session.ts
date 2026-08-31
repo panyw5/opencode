@@ -1,5 +1,6 @@
 import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
+import { LocationID } from "@/project/schema"
 import { Plugin } from "@/plugin"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Session } from "@/session/session"
@@ -27,6 +28,7 @@ import { QueryBoolean } from "./query"
 const root = "/session"
 export const ListQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
+  locationID: Schema.optional(LocationID),
   scope: Schema.optional(Schema.Literals(["project"])),
   path: Schema.optional(Schema.String),
   roots: Schema.optional(QueryBoolean),

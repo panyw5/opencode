@@ -67,18 +67,35 @@ const Config = lazy(() => {
   return import("@/pages/config").then((mod) => {
     const done = performance.now()
     const sinceClickDone = typeof clickAt === "number" ? `${(done - clickAt).toFixed(1)}ms` : "n/a"
-    console.info(
-      `[config-perf] lazy import done loadMs=${(done - started).toFixed(1)} sinceClick=${sinceClickDone}`,
-    )
+    console.info(`[config-perf] lazy import done loadMs=${(done - started).toFixed(1)} sinceClick=${sinceClickDone}`)
     return mod
   })
 })
 const Scheduled = lazy(() => import("@/pages/scheduled"))
 const Loading = () => <div class="size-full" />
 
-// Kick off config chunk prefetch once the app shell is up (idle).
+// Config is not needed for the session shell. In the Windows Electron
+// renderer, Vite's dev-module graph made this prefetch compete with the first
+// workspace/session requests for several seconds, so wait until the app has
+// become interactive and the first paint has settled before starting it.
 if (typeof window !== "undefined") {
-  void import("@/utils/prefetch-config").then((m) => m.prefetchConfigPageWhenIdle())
+  const windowsElectron = navigator.userAgent.includes("Windows") && navigator.userAgent.includes("Electron")
+  if (windowsElectron) {
+    console.info("[config-perf] startup prefetch deferred platform=windows-electron")
+    window.addEventListener(
+      "opencode:startup-interactive",
+      () => {
+        console.info("[config-perf] startup interactive; scheduling deferred prefetch delayMs=5000")
+        window.setTimeout(() => {
+          void import("@/utils/prefetch-config").then((m) => m.prefetchConfigPageWhenIdle())
+        }, 5000)
+      },
+      { once: true },
+    )
+  } else {
+    // Keep the existing behavior for web and non-Windows desktop builds.
+    void import("@/utils/prefetch-config").then((m) => m.prefetchConfigPageWhenIdle())
+  }
 }
 
 const CONFIG_FALLBACK_SECTIONS = [
@@ -169,11 +186,8 @@ function ConfigLoadingShell() {
               <div class="min-w-0 text-20-medium text-text-strong">{language.t("config.title")}</div>
             </div>
             <div class="config-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
-              <div class="px-2 pb-2 pt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
-                {language.t("config.nav.workspace")}
-              </div>
               <div class="flex flex-col gap-1">
-                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 5)}>
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(0, 7)}>
                   {(section) => (
                     <SectionButton
                       current={false}
@@ -185,11 +199,8 @@ function ConfigLoadingShell() {
                 </For>
               </div>
               <div class="mx-2 my-3 h-px bg-[linear-gradient(90deg,var(--border-weak-base),transparent)]" />
-              <div class="px-2 pb-2 text-[10px] font-medium uppercase tracking-[0.1em] text-text-weaker">
-                {language.t("config.nav.connections")}
-              </div>
               <div class="flex flex-col gap-1">
-                <For each={CONFIG_FALLBACK_SECTIONS.slice(5)}>
+                <For each={CONFIG_FALLBACK_SECTIONS.slice(7)}>
                   {(section) => (
                     <Show when={section.id !== "claws" || showClawsSection()}>
                       <SectionButton

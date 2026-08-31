@@ -10,6 +10,7 @@ import { InstanceRuntime } from "../../src/project/instance-runtime"
 import { Worktree } from "../../src/worktree"
 import { disposeAllInstances, provideInstance, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { ProjectLocation } from "@/project/location"
 
 const it = testEffect(
   Layer.mergeAll(Worktree.defaultLayer, AppFileSystem.defaultLayer, CrossSpawnSpawner.defaultLayer, Git.defaultLayer),
@@ -181,6 +182,26 @@ describe("Worktree", () => {
   })
 
   describe("create + remove lifecycle", () => {
+    it.instance(
+      "creates and marks the linked worktree location unavailable",
+      () =>
+        Effect.gen(function* () {
+          const svc = yield* Worktree.Service
+          const ready = yield* waitReady().pipe(Effect.forkScoped)
+          const info = yield* svc.create({ name: "location-lifecycle" })
+          yield* Fiber.join(ready)
+          const fs = yield* AppFileSystem.Service
+          const canonicalDirectory = yield* fs.realPath(info.directory)
+
+          const location = ProjectLocation.getByCanonicalDirectory(canonicalDirectory)
+          expect(location?.kind).toBe("git_worktree")
+
+          yield* svc.remove({ directory: info.directory })
+          expect(ProjectLocation.getByCanonicalDirectory(canonicalDirectory)?.vcsState).toBe("unavailable")
+        }),
+      { git: true },
+    )
+
     it.instance(
       "create returns worktree info and remove cleans up",
       () =>

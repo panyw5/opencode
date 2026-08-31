@@ -6,6 +6,7 @@ import {
   clearSessionPrefetch,
   getSessionPrefetch,
   getSessionPrefetchPromise,
+  markSessionHot,
 } from "./global-sync/session-prefetch"
 import { markSessionProfile } from "@/utils/session-profile"
 import { useGlobalSync } from "./global-sync"
@@ -284,6 +285,7 @@ const initialMessagePageSize = 80
         },
         async sync(sessionID: string, opts?: { force?: boolean }) {
           const directory = sdk.directory
+          markSessionHot(directory, sessionID)
           const [store, setStore] = globalSync.child(directory)
           const key = keyFor(directory, sessionID)
           markSessionProfile(sessionID, "sync-enter", `force=${String(!!opts?.force)}`)

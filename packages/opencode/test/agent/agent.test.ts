@@ -124,6 +124,13 @@ scout.instance("scout agent allows repo cloning and repo cache reads", () =>
         scout!.permission,
       ).action,
     ).toBe("allow")
+    expect(
+      Permission.evaluate(
+        "external_directory",
+        path.join(Global.Path.data, "repository-cache-v2", "branches", "host", "repo", "branch-main", "README.md"),
+        scout!.permission,
+      ).action,
+    ).toBe("allow")
   }),
 )
 

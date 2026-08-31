@@ -15,6 +15,7 @@ import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { BackgroundJob } from "@/background/job"
 import { ModelID, ProviderID } from "@/provider/schema"
+import { InstanceState } from "@/effect/instance-state"
 
 void Log.init({ print: false })
 const it = testEffect(
@@ -37,6 +38,28 @@ afterEach(async () => {
 })
 
 describe("session.list", () => {
+  it.instance(
+    "filters by location while preserving project aggregation when omitted",
+    () =>
+      Effect.gen(function* () {
+        const location = (yield* InstanceState.context).location
+        const current = yield* withSession({ title: "current-location" })
+        const legacy = yield* withSession({ title: "legacy-without-location" })
+        Database.use((db) =>
+          db.update(SessionTable).set({ location_id: null }).where(eq(SessionTable.id, legacy.id)).run(),
+        )
+
+        const locationIDs = (yield* SessionNs.use.list({ locationID: location.id })).map((session) => session.id)
+        expect(locationIDs).toContain(current.id)
+        expect(locationIDs).not.toContain(legacy.id)
+
+        const projectIDs = (yield* SessionNs.use.list({ scope: "project" })).map((session) => session.id)
+        expect(projectIDs).toContain(current.id)
+        expect(projectIDs).toContain(legacy.id)
+      }),
+    { git: true },
+  )
+
   it.instance(
     "does not filter by directory when directory is omitted",
     () =>

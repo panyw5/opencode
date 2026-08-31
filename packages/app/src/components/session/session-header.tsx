@@ -22,6 +22,7 @@ import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
 import { dict as enDict } from "@/i18n/en"
+import { StatusPopover } from "@/components/status-popover"
 import { OPEN_APPS, apps, getOpenPlan, type OpenApp, type OS } from "./open-app"
 
 
@@ -331,6 +332,9 @@ export function SessionHeader() {
                   </Show>
                 </div>
               </Show>
+              <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
+                <StatusPopover />
+              </Tooltip>
               <div class="flex items-center gap-1">
                 <TooltipKeybind
                   title={language.t("command.terminal.toggle")}
@@ -338,13 +342,13 @@ export function SessionHeader() {
                 >
                   <Button
                     variant="ghost"
-                    class="group/terminal-toggle titlebar-icon w-8 h-6 p-0 box-border shrink-0"
+                    class="group/terminal-toggle titlebar-icon w-8 h-8 p-0 box-border shrink-0"
                     onClick={toggleTerminal}
                     aria-label={language.t("command.terminal.toggle")}
                     aria-expanded={view().terminal.opened()}
                     aria-controls="terminal-panel"
                   >
-                    <Icon size="small" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
+                    <Icon size="normal" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
                   </Button>
                 </TooltipKeybind>
 
@@ -355,26 +359,26 @@ export function SessionHeader() {
                   >
                     <Button
                       variant="ghost"
-                      class="group/review-toggle titlebar-icon w-8 h-6 p-0 box-border"
+                      class="group/review-toggle titlebar-icon w-8 h-8 p-0 box-border"
                       onClick={() => view().reviewPanel.toggle()}
                       aria-label={language.t("command.review.toggle")}
                       aria-expanded={view().reviewPanel.opened()}
                       aria-controls="session-side-panel"
                     >
-                      <Icon size="small" name={view().reviewPanel.opened() ? "review-active" : "review"} />
+                      <Icon size="normal" name={view().reviewPanel.opened() ? "review-active" : "review"} />
                     </Button>
                   </TooltipKeybind>
 
                   <Tooltip value={language.t("command.filePreview.toggle")}>
                     <Button
                       variant="ghost"
-                      class="group/file-preview-toggle titlebar-icon w-8 h-6 p-0 box-border"
+                      class="group/file-preview-toggle titlebar-icon w-8 h-8 p-0 box-border"
                       onClick={() => view().filePreview.toggle()}
                       aria-label={language.t("command.filePreview.toggle")}
                       aria-expanded={view().filePreview.opened()}
                       aria-controls="session-side-panel"
                     >
-                      <Icon size="small" name="file" />
+                      <Icon size="normal" name="file" />
                     </Button>
                   </Tooltip>
 
@@ -384,15 +388,15 @@ export function SessionHeader() {
                   >
                     <Button
                       variant="ghost"
-                      class="titlebar-icon w-8 h-6 p-0 box-border"
+                      class="titlebar-icon w-8 h-8 p-0 box-border"
                       onClick={() => layout.fileTree.toggle()}
                       aria-label={language.t("command.fileTree.toggle")}
                       aria-expanded={layout.fileTree.opened()}
                       aria-controls="file-tree-panel"
                     >
-                      <div class="relative flex items-center justify-center size-4">
+                      <div class="relative flex items-center justify-center size-5">
                         <Icon
-                          size="small"
+                          size="normal"
                           name="file-tree"
                           classList={{
                             "text-icon-strong": layout.fileTree.opened(),

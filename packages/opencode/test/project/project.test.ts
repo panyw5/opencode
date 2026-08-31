@@ -7,13 +7,16 @@ import path from "path"
 import { tmpdirScoped } from "../fixture/fixture"
 import { GlobalBus } from "../../src/bus/global"
 import { ProjectID } from "../../src/project/schema"
-import { Cause, Effect, Exit, Layer, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Schema, Sink, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { testEffect } from "../lib/effect"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { ProjectAlias } from "@/project/alias"
+import { Database } from "@/storage/db"
+import { ProjectTable } from "@/project/project.sql"
 
 void Log.init({ print: false })
 
@@ -31,46 +34,54 @@ function run<A, E>(fn: (svc: Project.Interface) => Effect.Effect<A, E>) {
 
 /**
  * Creates a mock ChildProcessSpawner layer that intercepts git subcommands
- * matching `failArg` and returns exit code 128, while delegating everything
- * else to the real CrossSpawnSpawner.
+ * matching `failArg` and returns exit code 128. The other probes return the
+ * minimum deterministic output needed to reach the selected failure.
  */
 function mockGitFailure(failArg: string) {
-  return Layer.effect(
+  const handle = (code: number, text = "", stderr = "") =>
+    ChildProcessSpawner.makeHandle({
+      pid: ChildProcessSpawner.ProcessId(0),
+      exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(code)),
+      isRunning: Effect.succeed(false),
+      kill: () => Effect.void,
+      stdin: Sink.drain,
+      stdout: text ? Stream.make(encoder.encode(text)) : Stream.empty,
+      stderr: stderr ? Stream.make(encoder.encode(stderr)) : Stream.empty,
+      all: Stream.empty,
+      getInputFd: () => Sink.drain,
+      getOutputFd: () => Stream.empty,
+      unref: Effect.succeed(Effect.void),
+    })
+
+  return Layer.succeed(
     ChildProcessSpawner.ChildProcessSpawner,
-    Effect.gen(function* () {
-      const real = yield* ChildProcessSpawner.ChildProcessSpawner
-      return ChildProcessSpawner.make(
-        Effect.fnUntraced(function* (command) {
-          const std = ChildProcess.isStandardCommand(command) ? command : undefined
-          if (std?.command === "git" && std.args.some((a) => a === failArg)) {
-            return ChildProcessSpawner.makeHandle({
-              pid: ChildProcessSpawner.ProcessId(0),
-              exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(128)),
-              isRunning: Effect.succeed(false),
-              kill: () => Effect.void,
-              stdin: { [Symbol.for("effect/Sink/TypeId")]: Symbol.for("effect/Sink/TypeId") } as any,
-              stdout: Stream.empty,
-              stderr: Stream.make(encoder.encode("fatal: simulated failure\n")),
-              all: Stream.empty,
-              getInputFd: () => ({ [Symbol.for("effect/Sink/TypeId")]: Symbol.for("effect/Sink/TypeId") }) as any,
-              getOutputFd: () => Stream.empty,
-              unref: Effect.succeed(Effect.void),
-            })
-          }
-          return yield* real.spawn(command)
-        }),
-      )
-    }),
-  ).pipe(Layer.provide(CrossSpawnSpawner.defaultLayer))
+    ChildProcessSpawner.make(
+      Effect.fnUntraced(function* (command) {
+        const std = ChildProcess.isStandardCommand(command) ? command : undefined
+        if (std?.command !== "git") throw new Error(`Unexpected command: ${std?.command ?? command._tag}`)
+        if (std.args.some((arg) => arg === failArg)) return handle(128, "", "fatal: simulated failure\n")
+        if (std.args.includes("--git-common-dir")) return handle(0, ".git\n")
+        if (std.args.includes("core.bare")) return handle(0, "false\n")
+        if (std.args.includes("remote")) return handle(2)
+        if (std.args.includes("rev-list")) return handle(0, `${"a".repeat(40)}\n`)
+        if (std.args.includes("--show-toplevel")) return handle(0, "/tmp/project\n")
+        throw new Error(`Unexpected git arguments: ${std.args.join(" ")}`)
+      }),
+    ),
+  )
 }
 
 function projectLayerWithFailure(failArg: string) {
   return Project.layer.pipe(
-    Layer.provide(mockGitFailure(failArg)),
-    Layer.provide(Bus.defaultLayer),
-    Layer.provide(AppFileSystem.defaultLayer),
-    Layer.provide(NodePath.layer),
-    Layer.provide(RuntimeFlags.defaultLayer),
+    Layer.provide(
+      Layer.mergeAll(
+        mockGitFailure(failArg),
+        Bus.defaultLayer,
+        AppFileSystem.defaultLayer,
+        NodePath.layer,
+        RuntimeFlags.defaultLayer,
+      ),
+    ),
   )
 }
 
@@ -133,12 +144,12 @@ describe("Project.fromDirectory", () => {
       const { project } = yield* run((svc) => svc.fromDirectory(tmp))
 
       expect(project).toBeDefined()
-      expect(project.id).toBe(ProjectID.global)
+      expect(project.id).toStartWith("dir:")
       expect(project.vcs).toBe("git")
       expect(project.worktree).toBe(tmp)
 
       const opencodeFile = path.join(tmp, ".git", "opencode")
-      expect(yield* Effect.promise(() => Bun.file(opencodeFile).exists())).toBe(false)
+      expect(yield* Effect.promise(() => Bun.file(opencodeFile).text())).toBe(project.id)
     }),
   )
 
@@ -158,26 +169,180 @@ describe("Project.fromDirectory", () => {
     }),
   )
 
-it.live("uses global project for non-git directory", () =>
-  Effect.gen(function* () {
-    const tmp = yield* tmpdirScoped()
-    const { project: a } = yield* run((svc) => svc.fromDirectory(tmp))
-    const { project: b } = yield* run((svc) => svc.fromDirectory(tmp))
-    expect(a.id).toBe(ProjectID.global)
-    expect(b.id).toBe(a.id)
-    expect(a.worktree).toBe("/")
-    expect(a.vcs).toBeUndefined()
-    expect("vcs" in a).toBe(false)
-    expect(Schema.encodeUnknownSync(Project.Info)(a)).toEqual(a)
-  }),
-)
+  it.live("uses a stable directory project for non-git directories", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const { project: a, location: firstLocation } = yield* run((svc) => svc.fromDirectory(tmp))
+      const { project: b, location: secondLocation } = yield* run((svc) => svc.fromDirectory(tmp))
+      expect(a.id).toStartWith("dir:")
+      expect(a.id).not.toBe(ProjectID.global)
+      expect(b.id).toBe(a.id)
+      expect(a.worktree).toBe(tmp)
+      expect(a.vcs).toBeUndefined()
+      expect("vcs" in a).toBe(false)
+      expect(secondLocation.id).toBe(firstLocation.id)
+      expect(firstLocation.projectID).toBe(a.id)
+      expect(firstLocation.kind).toBe("directory")
+      expect(firstLocation.vcsState).toBe("none")
+      expect(Schema.encodeUnknownSync(Project.Info)(a)).toEqual(a)
+    }),
+  )
 
-  it.live("derives stable project ID from root commit", () =>
+  it.live("isolates separate non-git directories", () =>
+    Effect.gen(function* () {
+      const first = yield* tmpdirScoped()
+      const second = yield* tmpdirScoped()
+      const { project: a } = yield* run((svc) => svc.fromDirectory(first))
+      const { project: b } = yield* run((svc) => svc.fromDirectory(second))
+
+      expect(a.id).toStartWith("dir:")
+      expect(b.id).toStartWith("dir:")
+      expect(a.id).not.toBe(b.id)
+      expect(a.worktree).toBe(first)
+      expect(b.worktree).toBe(second)
+    }),
+  )
+
+  it.live("keeps a non-git project ID through git init and the first commit", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const { project: before, location: beforeLocation } = yield* run((svc) => svc.fromDirectory(tmp))
+
+      yield* Effect.promise(() => $`git init`.cwd(tmp).quiet())
+      const { project: unborn, location: unbornLocation } = yield* run((svc) => svc.fromDirectory(tmp))
+      expect(unborn.id).toBe(before.id)
+      expect(unborn.vcs).toBe("git")
+      expect(unbornLocation.id).toBe(beforeLocation.id)
+      expect(unbornLocation.vcsState).toBe("unborn")
+      expect(yield* Effect.promise(() => Bun.file(path.join(tmp, ".git", "opencode")).text())).toBe(before.id)
+
+      yield* Effect.promise(() => $`git config commit.gpgsign false`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git config user.email test@opencode.test`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git config user.name Test`.cwd(tmp).quiet())
+      yield* Effect.promise(() => Bun.write(path.join(tmp, "README.md"), "stable identity\n"))
+      yield* Effect.promise(() => $`git add README.md`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git commit -m initial`.cwd(tmp).quiet())
+      const { project: committed, location: committedLocation } = yield* run((svc) => svc.fromDirectory(tmp))
+      expect(committed.id).toBe(before.id)
+      expect(committed.vcs).toBe("git")
+      expect(committedLocation.id).toBe(beforeLocation.id)
+      expect(committedLocation.vcsState).toBe("ready")
+    }),
+  )
+
+  it.live("keeps directory identity when git metadata is removed", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const { project: before, location: beforeLocation } = yield* run((svc) => svc.fromDirectory(tmp))
+      yield* Effect.promise(() => $`git init`.cwd(tmp).quiet())
+      const { project: git, location: gitLocation } = yield* run((svc) => svc.fromDirectory(tmp))
+      expect(git.id).toBe(before.id)
+      expect(gitLocation.id).toBe(beforeLocation.id)
+
+      yield* Effect.promise(() => $`rm -rf .git`.cwd(tmp).quiet())
+      const { project: after, location: afterLocation } = yield* run((svc) => svc.fromDirectory(tmp))
+      expect(after.id).toBe(before.id)
+      expect(after.vcs).toBeUndefined()
+      expect(afterLocation.id).toBe(beforeLocation.id)
+      expect(afterLocation.vcsState).toBe("none")
+    }),
+  )
+
+  it.live("uses an opaque stable project ID while recording root evidence", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
       const { project: a } = yield* run((svc) => svc.fromDirectory(tmp))
       const { project: b } = yield* run((svc) => svc.fromDirectory(tmp))
+      expect(a.id).toStartWith("project_")
       expect(b.id).toBe(a.id)
+      const root = (yield* Effect.promise(() => $`git rev-list --max-parents=0 HEAD`.cwd(tmp).text())).trim()
+      expect(ProjectAlias.listByProject(a.id)).toEqual(
+        expect.arrayContaining([expect.objectContaining({ kind: "root_commit", value: root, confidence: "low" })]),
+      )
+    }),
+  )
+
+  it.live("reuses an existing legacy root-hash project without rewriting its ID", () =>
+    Effect.gen(function* () {
+      const source = yield* tmpdirScoped({ git: true })
+      const clone = source + "-legacy-root-clone"
+      yield* Effect.addFinalizer(() => Effect.promise(() => $`rm -rf ${clone}`.quiet().nothrow()).pipe(Effect.ignore))
+      const root = (yield* Effect.promise(() => $`git rev-list --max-parents=0 HEAD`.cwd(source).text())).trim()
+      const legacyID = ProjectID.make(root)
+      const now = Date.now()
+      Database.use((db) =>
+        db
+          .insert(ProjectTable)
+          .values({
+            id: legacyID,
+            worktree: `/legacy/${root}`,
+            sandboxes: [],
+            time_created: now,
+            time_updated: now,
+          })
+          .run(),
+      )
+      yield* Effect.promise(() => $`git clone ${source} ${clone}`.quiet())
+
+      const resolved = yield* run((svc) => svc.fromDirectory(clone))
+
+      expect(resolved.project.id).toBe(legacyID)
+      expect(resolved.location.projectID).toBe(legacyID)
+    }),
+  )
+
+  it.live("keeps project and location IDs stable across a history rewrite", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ git: true })
+      const before = yield* run((svc) => svc.fromDirectory(tmp))
+      const originalRoot = (yield* Effect.promise(() => $`git rev-list --max-parents=0 HEAD`.cwd(tmp).text())).trim()
+
+      yield* Effect.promise(() => $`git checkout --orphan rewritten-${Date.now()}`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git rm -rf .`.cwd(tmp).quiet().nothrow())
+      yield* Effect.promise(() => Bun.write(path.join(tmp, "REWRITTEN.md"), "rewritten history\n"))
+      yield* Effect.promise(() => $`git add REWRITTEN.md`.cwd(tmp).quiet())
+      yield* Effect.promise(() => $`git commit -m rewritten`.cwd(tmp).quiet())
+
+      const after = yield* run((svc) => svc.fromDirectory(tmp))
+      const rewrittenRoot = (yield* Effect.promise(() => $`git rev-list --max-parents=0 HEAD`.cwd(tmp).text())).trim()
+
+      expect(after.project.id).toBe(before.project.id)
+      expect(after.location.id).toBe(before.location.id)
+      expect(rewrittenRoot).not.toBe(originalRoot)
+      expect(ProjectAlias.listByProject(before.project.id)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "root_commit", value: originalRoot }),
+          expect.objectContaining({ kind: "root_commit", value: rewrittenRoot }),
+        ]),
+      )
+    }),
+  )
+
+  it.live("keeps project and location IDs stable when a shallow clone is deepened", () =>
+    Effect.gen(function* () {
+      const source = yield* tmpdirScoped({ git: true })
+      yield* Effect.promise(() => Bun.write(path.join(source, "second.txt"), "second\n"))
+      yield* Effect.promise(() => $`git add second.txt`.cwd(source).quiet())
+      yield* Effect.promise(() => $`git commit -m second`.cwd(source).quiet())
+      const clone = source + "-shallow"
+      yield* Effect.addFinalizer(() => Effect.promise(() => $`rm -rf ${clone}`.quiet().nothrow()).pipe(Effect.ignore))
+      yield* Effect.promise(() => $`git clone --depth 1 ${`file://${source}`} ${clone}`.quiet())
+
+      const before = yield* run((svc) => svc.fromDirectory(clone))
+      const shallowRoot = (yield* Effect.promise(() => $`git rev-list --max-parents=0 HEAD`.cwd(clone).text())).trim()
+      yield* Effect.promise(() => $`git fetch --unshallow`.cwd(clone).quiet())
+      const after = yield* run((svc) => svc.fromDirectory(clone))
+      const fullRoot = (yield* Effect.promise(() => $`git rev-list --max-parents=0 HEAD`.cwd(clone).text())).trim()
+
+      expect(after.project.id).toBe(before.project.id)
+      expect(after.location.id).toBe(before.location.id)
+      expect(fullRoot).not.toBe(shallowRoot)
+      expect(ProjectAlias.listByProject(before.project.id)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: "root_commit", value: shallowRoot }),
+          expect.objectContaining({ kind: "root_commit", value: fullRoot }),
+        ]),
+      )
     }),
   )
 })
@@ -191,7 +356,7 @@ describe("Project.fromDirectory git failure paths", () => {
       // rev-list fails because HEAD doesn't exist yet: this is the natural scenario.
       const { project } = yield* run((svc) => svc.fromDirectory(tmp))
       expect(project.vcs).toBe("git")
-      expect(project.id).toBe(ProjectID.global)
+      expect(project.id).toStartWith("dir:")
       expect(project.worktree).toBe(tmp)
     }),
   )
@@ -213,6 +378,24 @@ describe("Project.fromDirectory git failure paths", () => {
       const { project, sandbox } = yield* run((svc) => svc.fromDirectory(tmp))
       expect(project.worktree).toBe(tmp)
       expect(sandbox).toBe(tmp)
+    }),
+  )
+
+  failureIt("--git-common-dir").live("keeps a linked worktree identity when git-common-dir fails", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ git: true })
+      const expected = ProjectID.make(`dir:${"b".repeat(40)}`)
+      yield* Effect.promise(() => Bun.write(path.join(tmp, ".git", "opencode"), expected))
+      const worktree = path.join(tmp, "..", `${path.basename(tmp)}-common-dir-failure`)
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() => $`git worktree remove ${worktree}`.cwd(tmp).quiet().nothrow()).pipe(Effect.ignore),
+      )
+      yield* Effect.promise(() => $`git worktree add ${worktree} -b common-dir-failure-${Date.now()}`.cwd(tmp).quiet())
+
+      const { project, sandbox } = yield* run((svc) => svc.fromDirectory(worktree))
+      expect(project.id).toBe(expected)
+      expect(project.worktree).toBe(tmp)
+      expect(sandbox).toBe(worktree)
     }),
   )
 })
@@ -258,7 +441,7 @@ describe("Project.fromDirectory with worktrees", () => {
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
 
-      const { project: main } = yield* run((svc) => svc.fromDirectory(tmp))
+      const { project: main, location: mainLocation } = yield* run((svc) => svc.fromDirectory(tmp))
 
       const worktreePath = path.join(tmp, "..", path.basename(tmp) + "-wt-shared")
       yield* Effect.addFinalizer(() =>
@@ -271,9 +454,12 @@ describe("Project.fromDirectory with worktrees", () => {
       )
       yield* Effect.promise(() => $`git worktree add ${worktreePath} -b shared-${Date.now()}`.cwd(tmp).quiet())
 
-      const { project: wt } = yield* run((svc) => svc.fromDirectory(worktreePath))
+      const { project: wt, location: worktreeLocation } = yield* run((svc) => svc.fromDirectory(worktreePath))
 
       expect(wt.id).toBe(main.id)
+      expect(worktreeLocation.id).not.toBe(mainLocation.id)
+      expect(mainLocation.kind).toBe("git_main")
+      expect(worktreeLocation.kind).toBe("git_worktree")
 
       // Cache should live in the common .git dir, not the worktree's .git file
       const cache = path.join(tmp, ".git", "opencode")
@@ -282,7 +468,7 @@ describe("Project.fromDirectory with worktrees", () => {
     }),
   )
 
-  it.live("separate clones of the same repo should share project ID", () =>
+  it.live("separate local clones default to different projects and locations", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
 
@@ -295,10 +481,86 @@ describe("Project.fromDirectory with worktrees", () => {
       yield* Effect.promise(() => $`git clone --bare ${tmp} ${bare}`.quiet())
       yield* Effect.promise(() => $`git clone ${bare} ${clone}`.quiet())
 
-      const { project: a } = yield* run((svc) => svc.fromDirectory(tmp))
-      const { project: b } = yield* run((svc) => svc.fromDirectory(clone))
+      const { project: a, location: locationA } = yield* run((svc) => svc.fromDirectory(tmp))
+      const { project: b, location: locationB } = yield* run((svc) => svc.fromDirectory(clone))
 
-      expect(b.id).toBe(a.id)
+      expect(b.id).not.toBe(a.id)
+      expect(locationB.id).not.toBe(locationA.id)
+    }),
+  )
+
+  it.live("associates clones when one normalized remote alias identifies a unique project", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ git: true })
+      const bare = tmp + "-remote-bare"
+      const firstClone = tmp + "-remote-first"
+      const secondClone = tmp + "-remote-second"
+      const remote = `https://example.com/org/repository-${crypto.randomUUID()}.git`
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() => $`rm -rf ${bare} ${firstClone} ${secondClone}`.quiet().nothrow()).pipe(Effect.ignore),
+      )
+      yield* Effect.promise(() => $`git clone --bare ${tmp} ${bare}`.quiet())
+      yield* Effect.promise(() => $`git clone ${bare} ${firstClone}`.quiet())
+      yield* Effect.promise(() => $`git clone ${bare} ${secondClone}`.quiet())
+      yield* Effect.promise(() => $`git remote set-url origin ${remote}`.cwd(firstClone).quiet())
+      yield* Effect.promise(() => $`git remote set-url origin ${remote}`.cwd(secondClone).quiet())
+
+      const first = yield* run((svc) => svc.fromDirectory(firstClone))
+      const second = yield* run((svc) => svc.fromDirectory(secondClone))
+
+      expect(second.project.id).toBe(first.project.id)
+      expect(second.location.id).not.toBe(first.location.id)
+      expect(first.location.kind).toBe("git_clone")
+      expect(second.location.kind).toBe("git_clone")
+      expect(second.project.worktree).toBe(first.project.worktree)
+      expect(second.project.sandboxes).toContain(second.location.directory)
+    }),
+  )
+
+  it.live("does not associate a clone when its normalized remote has multiple project candidates", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ git: true })
+      const bare = tmp + "-ambiguous-bare"
+      const firstClone = tmp + "-ambiguous-first"
+      const secondClone = tmp + "-ambiguous-second"
+      const remote = `https://example.com/org/ambiguous-${crypto.randomUUID()}.git`
+      yield* Effect.addFinalizer(() =>
+        Effect.promise(() => $`rm -rf ${bare} ${firstClone} ${secondClone}`.quiet().nothrow()).pipe(Effect.ignore),
+      )
+      yield* Effect.promise(() => $`git clone --bare ${tmp} ${bare}`.quiet())
+      yield* Effect.promise(() => $`git clone ${bare} ${firstClone}`.quiet())
+      yield* Effect.promise(() => $`git clone ${bare} ${secondClone}`.quiet())
+      yield* Effect.promise(() => $`git remote set-url origin ${remote}`.cwd(firstClone).quiet())
+      yield* Effect.promise(() => $`git remote set-url origin ${remote}`.cwd(secondClone).quiet())
+
+      const first = yield* run((svc) => svc.fromDirectory(firstClone))
+      const otherProjectID = ProjectID.ascending()
+      const now = Date.now()
+      Database.use((db) =>
+        db
+          .insert(ProjectTable)
+          .values({
+            id: otherProjectID,
+            worktree: `/tmp/${otherProjectID}`,
+            sandboxes: [],
+            time_created: now,
+            time_updated: now,
+          })
+          .run(),
+      )
+      const normalized = ProjectAlias.normalizeRemoteUrl(remote)
+      if (!normalized) throw new Error("test remote did not normalize")
+      ProjectAlias.upsert({
+        projectID: otherProjectID,
+        kind: "remote_url",
+        value: normalized,
+        confidence: "medium",
+      })
+
+      const second = yield* run((svc) => svc.fromDirectory(secondClone))
+
+      expect(second.project.id).not.toBe(first.project.id)
+      expect(second.project.id).not.toBe(otherProjectID)
     }),
   )
 

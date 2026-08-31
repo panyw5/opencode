@@ -39,6 +39,7 @@ export const layer = Layer.effect(
     const sync = yield* SyncEvent.Service
 
     const revert = Effect.fn("SessionRevert.revert")(function* (input: RevertInput) {
+      log.info("revert start", input)
       yield* state.assertNotBusy(input.sessionID)
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
       let lastUser: MessageV2.User | undefined
@@ -68,7 +69,20 @@ export const layer = Layer.effect(
         }
       }
 
-      if (!rev) return session
+      if (!rev) {
+        log.warn("revert boundary not found", { ...input, messages: all.length })
+        return session
+      }
+
+      log.info("revert boundary resolved", {
+        sessionID: input.sessionID,
+        requestedMessageID: input.messageID,
+        requestedPartID: input.partID,
+        messageID: rev.messageID,
+        partID: rev.partID,
+        messages: all.length,
+        patches: patches.length,
+      })
 
       rev.snapshot = session.revert?.snapshot ?? (yield* snap.track())
       if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
@@ -87,7 +101,13 @@ export const layer = Layer.effect(
           files: diffs.length,
         },
       })
-      return yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const result = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      log.info("revert complete", {
+        sessionID: input.sessionID,
+        messageID: result.revert?.messageID,
+        partID: result.revert?.partID,
+      })
+      return result
     })
 
     const unrevert = Effect.fn("SessionRevert.unrevert")(function* (input: { sessionID: SessionID }) {
@@ -119,11 +139,23 @@ export const layer = Layer.effect(
         }
         remove.push(msg)
       }
+      log.info("cleanup start", {
+        sessionID,
+        messageID,
+        partID: session.revert.partID,
+        messages: msgs.length,
+        removeMessages: remove.length,
+      })
       for (const msg of remove) {
-        yield* sync.run(MessageV2.Event.Removed, {
-          sessionID,
-          messageID: msg.info.id,
-        })
+        log.info("cleanup remove message", { sessionID, messageID: msg.info.id })
+        yield* sync.run(
+          MessageV2.Event.Removed,
+          {
+            sessionID,
+            messageID: msg.info.id,
+          },
+          { awaitPublish: true },
+        )
       }
       if (session.revert.partID && target) {
         const partID = session.revert.partID
@@ -132,15 +164,22 @@ export const layer = Layer.effect(
           const removeParts = target.parts.slice(idx)
           target.parts = target.parts.slice(0, idx)
           for (const part of removeParts) {
-            yield* sync.run(MessageV2.Event.PartRemoved, {
-              sessionID,
-              messageID: target.info.id,
-              partID: part.id,
-            })
+            log.info("cleanup remove part", { sessionID, messageID: target.info.id, partID: part.id })
+            yield* sync.run(
+              MessageV2.Event.PartRemoved,
+              {
+                sessionID,
+                messageID: target.info.id,
+                partID: part.id,
+              },
+              { awaitPublish: true },
+            )
           }
         }
       }
-      yield* sessions.clearRevert(sessionID)
+      log.info("cleanup clear revert", { sessionID, messageID, removeMessages: remove.length })
+      yield* sessions.clearRevert(sessionID, { awaitPublish: true })
+      log.info("cleanup complete", { sessionID, messageID, removeMessages: remove.length })
     })
 
     return Service.of({ revert, unrevert, cleanup })

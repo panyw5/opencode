@@ -48,12 +48,13 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 math mode (fact graph MCP + detached workers)
 
 命令：
-  opencode math mcp     run the math truth MCP server over stdio
-  opencode math worker  run a detached math-worker loop (heartbeat; does not follow sidecar
-                        lifetime)
-  opencode math start   create a math-worker session and spawn it detached
-  opencode math status  list math-worker pid / alive / last heartbeat
-  opencode math stop    stop a math-worker (write .stop; --force kills the process group)
+  opencode math mcp      run the math truth MCP server over stdio
+  opencode math worker   run a detached math-worker prompt loop (does not follow sidecar lifetime)
+  opencode math migrate  copy one legacy .math/<name> store into an isolated problem workspace
+  opencode math start    create a math-worker session and spawn it detached
+  opencode math ensure   restart a dead math-worker using the same session id
+  opencode math status   list math-worker pid / alive / last heartbeat
+  opencode math stop     stop a math-worker process group (SIGTERM; --force uses SIGKILL)
 
 选项：
   -h, --help        show help                                                                 [布尔]
@@ -523,8 +524,8 @@ run the math truth MCP server over stdio
       --pure         run without external plugins                                             [布尔]
       --role         which tools this process may expose (unset/unknown = verifier, fail-closed)
                               [字符串] [可选值: "worker", "orchestrator", "verifier", "all", "main"]
-      --project-dir  math project root (contains fact_graph/ and global_memory/). Default:
-                     OPENCODE_MATH_PROJECT_DIR or cwd/.math/<name>                          [字符串]
+      --project-dir  math problem workspace (contains fact_graph/ and global_memory/). Default:
+                     OPENCODE_MATH_PROJECT_DIR or cwd/.math/problems/<name>                 [字符串]
       --author       attribution id written on gm_add / fact_submit                         [字符串]
       --problem-id   problem_id stamped on written facts                                    [字符串]"
 `;
@@ -532,7 +533,7 @@ run the math truth MCP server over stdio
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode math worker --help 1`] = `
 "opencode math worker
 
-run a detached math-worker loop (heartbeat; does not follow sidecar lifetime)
+run a detached math-worker prompt loop (does not follow sidecar lifetime)
 
 选项：
   -h, --help         show help                                                                [布尔]
@@ -545,6 +546,8 @@ run a detached math-worker loop (heartbeat; does not follow sidecar lifetime)
       --project-dir  math project root for swarm.json / .stop / logs                        [字符串]
       --dir          workspace directory (Instance cwd)                                     [字符串]
       --interval     heartbeat interval in milliseconds                        [数字] [默认值: 2000]
+      --model        worker model as provider/model (or OPENCODE_MATH_WORKER_MODEL)         [字符串]
+      --variant      worker model effort/variant                                            [字符串]
       --parent       parent session id when --create is set                                 [字符串]"
 `;
 
@@ -562,8 +565,10 @@ create a math-worker session and spawn it detached
       --title       child session title                             [字符串] [默认值: "math-worker"]
       --task        TASK.md body                                               [字符串] [默认值: ""]
       --parent      parent (orchestrator) session id                                 [字符串] [必需]
-      --project     math project name under .math/                                          [字符串]
-      --interval    heartbeat interval ms                                                     [数字]"
+      --project     math problem ID under .math/problems/                                   [字符串]
+      --interval    heartbeat interval ms                                                     [数字]
+      --model       worker model as provider/model                                          [字符串]
+      --variant     worker model effort/variant                                             [字符串]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode math status --help 1`] = `
@@ -585,7 +590,7 @@ list math-worker pid / alive / last heartbeat
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode math stop --help 1`] = `
 "opencode math stop
 
-stop a math-worker (write .stop; --force kills the process group)
+stop a math-worker process group (SIGTERM; --force uses SIGKILL)
 
 选项：
   -h, --help         show help                                                                [布尔]
@@ -594,7 +599,7 @@ stop a math-worker (write .stop; --force kills the process group)
       --log-level    log level                   [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure         run without external plugins                                             [布尔]
       --session      worker session id                                               [字符串] [必需]
-      --force        killpg SIGKILL                                           [布尔] [默认值: false]
+      --force        use SIGKILL instead of SIGTERM                           [布尔] [默认值: false]
       --project-dir                                                                         [字符串]"
 `;
 

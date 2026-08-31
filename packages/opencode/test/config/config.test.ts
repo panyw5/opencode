@@ -375,6 +375,237 @@ test("replaces the MCP map in global JSONC config", async () => {
   }
 })
 
+test("replaces a provider model map in global JSONC config", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.jsonc"),
+        `{
+  // Preserve config comments while removing stale provider models.
+  "provider": {
+    "axonhub": {
+      "name": "AxonHub",
+      "npm": "@ai-sdk/openai-compatible",
+      "models": {
+        "keep-me": { "name": "Keep Me" },
+        "remove-me": { "name": "Remove Me" }
+      }
+    }
+  }
+}`,
+      )
+    },
+  })
+
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = tmp.path
+  await clear(true)
+
+  try {
+    await saveGlobal({
+      provider: {
+        axonhub: {
+          name: "AxonHub",
+          npm: "@ai-sdk/openai-compatible",
+          models: { "keep-me": { name: "Keep Me" } },
+        },
+      },
+    })
+
+    const file = path.join(tmp.path, "opencode.jsonc")
+    const writtenConfig = await Filesystem.readText(file)
+    const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(writtenConfig, file), file)
+    expect(writtenConfig).toContain("Preserve config comments")
+    expect(parsed.provider?.axonhub?.models).toEqual({ "keep-me": { name: "Keep Me" } })
+  } finally {
+    ;(Global.Path as { config: string }).config = prev
+    await clear(true)
+  }
+})
+
+test("replaces a provider model map in global JSON config", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await writeConfig(
+        dir,
+        {
+          provider: {
+            axonhub: {
+              name: "AxonHub",
+              npm: "@ai-sdk/openai-compatible",
+              models: {
+                "keep-me": { name: "Keep Me" },
+                "remove-me": { name: "Remove Me" },
+              },
+            },
+          },
+        },
+        "opencode.json",
+      )
+    },
+  })
+
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = tmp.path
+  await clear(true)
+
+  try {
+    await saveGlobal({
+      provider: {
+        axonhub: {
+          name: "AxonHub",
+          npm: "@ai-sdk/openai-compatible",
+          models: { "keep-me": { name: "Keep Me" } },
+        },
+      },
+    })
+
+    const writtenConfig = await Filesystem.readJson<Config.Info>(path.join(tmp.path, "opencode.json"))
+    expect(writtenConfig.provider?.axonhub?.models).toEqual({ "keep-me": { name: "Keep Me" } })
+  } finally {
+    ;(Global.Path as { config: string }).config = prev
+    await clear(true)
+  }
+})
+
+test("replaces provider headers in global JSONC config", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.jsonc"),
+        JSON.stringify({
+          provider: {
+            axonhub: {
+              npm: "@ai-sdk/openai-compatible",
+              models: { model: { name: "Model" } },
+              options: {
+                baseURL: "https://example.com/v1",
+                headers: { keep: "yes", remove: "stale" },
+              },
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = tmp.path
+  await clear(true)
+
+  try {
+    await saveGlobal({
+      provider: {
+        axonhub: {
+          npm: "@ai-sdk/openai-compatible",
+          models: { model: { name: "Model" } },
+          options: {
+            baseURL: "https://example.com/v1",
+            headers: { keep: "yes" },
+          },
+        },
+      },
+    })
+
+    const file = path.join(tmp.path, "opencode.jsonc")
+    const writtenConfig = await Filesystem.readText(file)
+    const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(writtenConfig, file), file)
+    expect(parsed.provider?.axonhub?.options?.headers).toEqual({ keep: "yes" })
+
+    await saveGlobal({
+      provider: {
+        axonhub: {
+          npm: "@ai-sdk/openai-compatible",
+          models: { model: { name: "Model" } },
+          options: { baseURL: "https://example.com/v1", headers: {} },
+        },
+      },
+    })
+    const clearedConfig = await Filesystem.readText(file)
+    const cleared = ConfigParse.schema(Config.Info, ConfigParse.jsonc(clearedConfig, file), file)
+    expect(cleared.provider?.axonhub?.options?.headers).toBeUndefined()
+  } finally {
+    ;(Global.Path as { config: string }).config = prev
+    await clear(true)
+  }
+})
+
+test("removes a cleared provider API key from global JSONC config", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.jsonc"),
+        JSON.stringify({
+          provider: {
+            axonhub: {
+              npm: "@ai-sdk/openai-compatible",
+              models: { model: { name: "Model" } },
+              options: { baseURL: "https://example.com/v1", apiKey: "remove-me" },
+            },
+          },
+        }),
+      )
+    },
+  })
+
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = tmp.path
+  await clear(true)
+
+  try {
+    await saveGlobal({
+      provider: {
+        axonhub: {
+          npm: "@ai-sdk/openai-compatible",
+          models: { model: { name: "Model" } },
+          options: { baseURL: "https://example.com/v1", apiKey: "" },
+        },
+      },
+    })
+
+    const file = path.join(tmp.path, "opencode.jsonc")
+    const writtenConfig = await Filesystem.readText(file)
+    const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(writtenConfig, file), file)
+    expect(parsed.provider?.axonhub?.options?.apiKey).toBeUndefined()
+  } finally {
+    ;(Global.Path as { config: string }).config = prev
+    await clear(true)
+  }
+})
+
+test("removes a provider from global JSONC config with an empty provider patch", async () => {
+  await using tmp = await tmpdir({
+    init: async (dir) => {
+      await Filesystem.write(
+        path.join(dir, "opencode.jsonc"),
+        JSON.stringify({
+          provider: {
+            keep: { npm: "@ai-sdk/openai-compatible", models: { model: { name: "Model" } } },
+            remove: { npm: "@ai-sdk/openai-compatible", models: { model: { name: "Model" } } },
+          },
+        }),
+      )
+    },
+  })
+
+  const prev = Global.Path.config
+  ;(Global.Path as { config: string }).config = tmp.path
+  await clear(true)
+
+  try {
+    await saveGlobal({ provider: { remove: {} } })
+
+    const file = path.join(tmp.path, "opencode.jsonc")
+    const writtenConfig = await Filesystem.readText(file)
+    const parsed = ConfigParse.schema(Config.Info, ConfigParse.jsonc(writtenConfig, file), file)
+    expect(parsed.provider?.keep).toBeDefined()
+    expect(parsed.provider?.remove).toBeUndefined()
+  } finally {
+    ;(Global.Path as { config: string }).config = prev
+    await clear(true)
+  }
+})
+
 test("persists channels to channels.json not opencode.jsonc", async () => {
   await using tmp = await tmpdir({
     init: async (dir) => {

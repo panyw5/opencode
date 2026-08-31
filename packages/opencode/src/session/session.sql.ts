@@ -1,12 +1,13 @@
 import { sqliteTable, text, integer, index, primaryKey, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { ProjectTable } from "../project/project.sql"
+import { ProjectLocationTable } from "../project/location.sql"
 import { ProjectTaskTable } from "../project-task/project-task.sql"
 import type { MessageV2 } from "./message-v2"
 import type { SessionMessage } from "@opencode-ai/core/session-message"
 import type { Prompt } from "@opencode-ai/core/session-prompt"
 import type { Snapshot } from "../snapshot"
 import type { Permission } from "../permission"
-import type { ProjectID } from "../project/schema"
+import type { LocationID, ProjectID } from "../project/schema"
 import type { ProjectTaskID } from "../project-task/schema"
 import type { SessionID, MessageID, PartID } from "./schema"
 import type { WorkspaceID } from "../control-plane/schema"
@@ -15,7 +16,20 @@ import { Timestamps } from "../storage/schema.sql"
 type PartData = Omit<MessageV2.Part, "id" | "sessionID" | "messageID">
 type InfoData<T extends MessageV2.Info = MessageV2.Info> = T extends unknown ? Omit<T, "id" | "sessionID"> : never
 type SessionMessageData = Omit<(typeof SessionMessage.Message)["Encoded"], "type" | "id">
-type SessionInputDelivery = "queued" | "accepted" | "rejected"
+export type SessionInputDelivery = "immediate" | "deferred"
+/** Stable source-event key; unlike MessageID it may use an `evt_` prefix. */
+export type SessionInputID = string
+export type SessionInputPrompt = Prompt & {
+  /** The parent context used when the notification is materialized after restart. */
+  agent?: string
+  model?: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
+  /** Synthetic text-part metadata retained verbatim for history compatibility. */
+  metadata?: Record<string, unknown>
+}
 
 export const SessionTable = sqliteTable(
   "session",
@@ -25,6 +39,9 @@ export const SessionTable = sqliteTable(
       .$type<ProjectID>()
       .notNull()
       .references(() => ProjectTable.id, { onDelete: "cascade" }),
+    location_id: text()
+      .$type<LocationID>()
+      .references(() => ProjectLocationTable.id, { onDelete: "set null" }),
     workspace_id: text().$type<WorkspaceID>(),
     parent_id: text().$type<SessionID>(),
     slug: text().notNull(),
@@ -78,6 +95,7 @@ export const SessionTable = sqliteTable(
   },
   (table) => [
     index("session_project_idx").on(table.project_id),
+    index("session_location_idx").on(table.location_id),
     index("session_project_parent_time_idx").on(table.project_id, table.parent_id, table.time_updated, table.id),
     index("session_project_directory_parent_time_idx").on(
       table.project_id,
@@ -175,12 +193,12 @@ export const SessionMessageTable = sqliteTable(
 export const SessionInputTable = sqliteTable(
   "session_input",
   {
-    id: text().$type<SessionMessage.ID>().primaryKey(),
+    id: text().$type<SessionInputID>().primaryKey(),
     session_id: text()
       .$type<SessionID>()
       .notNull()
       .references(() => SessionTable.id, { onDelete: "cascade" }),
-    prompt: text({ mode: "json" }).notNull().$type<Prompt>(),
+    prompt: text({ mode: "json" }).notNull().$type<SessionInputPrompt>(),
     delivery: text().$type<SessionInputDelivery>().notNull(),
     admitted_seq: integer().notNull(),
     promoted_seq: integer(),

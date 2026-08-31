@@ -1,6 +1,6 @@
 import { InstanceState } from "@/effect/instance-state"
 import { Identifier } from "@/id/id"
-import { Cause, Clock, Context, Deferred, Effect, Fiber, Layer, Scope, SynchronizedRef } from "effect"
+import { Cause, Clock, Context, Deferred, Effect, Exit, Fiber, Layer, Scope, SynchronizedRef } from "effect"
 
 export type Status = "running" | "completed" | "error" | "cancelled"
 
@@ -19,7 +19,9 @@ export type Info = {
 type Active = {
   info: Info
   done: Deferred.Deferred<Info>
+  cleanup: Deferred.Deferred<void>
   fiber?: Fiber.Fiber<void, unknown>
+  token: object
   promoted: Deferred.Deferred<Info>
   onPromote?: Effect.Effect<void>
 }
@@ -98,6 +100,7 @@ export const layer = Layer.effect(
 
     const finish = Effect.fn("BackgroundJob.finish")(function* (
       id: string,
+      token: object,
       status: Exclude<Status, "running">,
       data?: { output?: string; error?: string },
     ) {
@@ -107,6 +110,7 @@ export const layer = Layer.effect(
         (jobs): readonly [FinishResult, Map<string, Active>] => {
           const job = jobs.get(id)
           if (!job) return [{}, jobs]
+          if (job.token !== token) return [{}, jobs]
           if (job.info.status !== "running") return [{ info: snapshot(job) }, jobs]
           const next = {
             ...job,
@@ -142,56 +146,102 @@ export const layer = Layer.effect(
     const start: Interface["start"] = Effect.fn("BackgroundJob.start")(function* (input) {
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
-          const s = yield* InstanceState.get(state)
           const id = input.id ?? Identifier.ascending("job")
-          const started_at = yield* Clock.currentTimeMillis
-          const done = yield* Deferred.make<Info>()
-          const promoted = yield* Deferred.make<Info>()
+          while (true) {
+            const s = yield* InstanceState.get(state)
+            const started_at = yield* Clock.currentTimeMillis
+            const done = yield* Deferred.make<Info>()
+            const cleanup = yield* Deferred.make<void>()
+            const promoted = yield* Deferred.make<Info>()
+            const scope = yield* Scope.make()
+            const token = {}
 
-          // Register the job before forking work so list/get/promote see it
-          // as soon as run starts (startImmediately can interleave with modify).
-          type RegisterResult =
-            | { kind: "existing"; info: Info }
-            | { kind: "created"; info: Info }
-          const registered = yield* SynchronizedRef.modify(s.jobs, (jobs): readonly [RegisterResult, Map<string, Active>] => {
-            const existing = jobs.get(id)
-            if (existing?.info.status === "running") {
-              return [{ kind: "existing", info: snapshot(existing) }, jobs]
-            }
-            const job: Active = {
-              info: {
-                id,
-                type: input.type,
-                title: input.title,
-                status: "running",
-                started_at,
-                metadata: input.metadata,
+            // Register the job before forking work so list/get/promote see it
+            // as soon as run starts (startImmediately can interleave with modify).
+            type RegisterResult =
+              | { kind: "existing"; info: Info }
+              | { kind: "wait"; cleanup: Deferred.Deferred<void>; token: object }
+              | { kind: "created"; info: Info }
+            const registered = yield* SynchronizedRef.modify(
+              s.jobs,
+              (jobs): readonly [RegisterResult, Map<string, Active>] => {
+                const existing = jobs.get(id)
+                if (existing?.info.status === "running") {
+                  return [{ kind: "existing", info: snapshot(existing) }, jobs]
+                }
+                if (existing) return [{ kind: "wait", cleanup: existing.cleanup, token: existing.token }, jobs]
+                const job: Active = {
+                  info: {
+                    id,
+                    type: input.type,
+                    title: input.title,
+                    status: "running",
+                    started_at,
+                    metadata: input.metadata,
+                  },
+                  done,
+                  cleanup,
+                  token,
+                  promoted,
+                  onPromote: input.onPromote,
+                }
+                return [{ kind: "created", info: snapshot(job) }, new Map(jobs).set(id, job)]
               },
-              done,
-              promoted,
-              onPromote: input.onPromote,
+            )
+            if (registered.kind === "existing") {
+              yield* Scope.close(scope, Exit.void).pipe(Effect.ignore)
+              return registered.info
             }
-            return [{ kind: "created", info: snapshot(job) }, new Map(jobs).set(id, job)]
-          })
-          if (registered.kind === "existing") return registered.info
+            if (registered.kind === "wait") {
+              yield* Scope.close(scope, Exit.void).pipe(Effect.ignore)
+              yield* restore(Deferred.await(registered.cleanup))
+              yield* SynchronizedRef.update(s.jobs, (jobs) => {
+                const existing = jobs.get(id)
+                if (!existing || existing.token !== registered.token || existing.info.status === "running") return jobs
+                const next = new Map(jobs)
+                next.delete(id)
+                return next
+              })
+              continue
+            }
 
-          const fiber = yield* restore(input.run).pipe(
-            Effect.matchCauseEffect({
-              onSuccess: (output) => finish(id, "completed", { output }),
-              onFailure: (cause) =>
-                finish(id, Cause.hasInterruptsOnly(cause) ? "cancelled" : "error", {
-                  error: errorText(Cause.squash(cause)),
-                }),
-            }),
-            Effect.asVoid,
-            Effect.forkIn(s.scope, { startImmediately: true }),
-          )
-          yield* SynchronizedRef.update(s.jobs, (jobs) => {
-            const job = jobs.get(id)
-            if (!job || job.info.status !== "running") return jobs
-            return new Map(jobs).set(id, { ...job, fiber })
-          })
-          return registered.info
+            const ready = yield* Deferred.make<void>()
+            const close = (exit: Exit.Exit<unknown, unknown>) =>
+              Scope.close(scope, exit).pipe(Effect.exit, Effect.asVoid)
+            const fiber = yield* restore(
+              Deferred.await(ready).pipe(Effect.andThen(input.run.pipe(Scope.provide(scope)))),
+            ).pipe(
+              Effect.matchCauseEffect({
+                onSuccess: (output) =>
+                  finish(id, token, "completed", { output }).pipe(Effect.andThen(close(Exit.void))),
+                onFailure: (cause) =>
+                  finish(id, token, Cause.hasInterruptsOnly(cause) ? "cancelled" : "error", {
+                    error: errorText(Cause.squash(cause)),
+                  }).pipe(
+                    Effect.andThen(
+                      close(Exit.failCause(cause)),
+                    ),
+                  ),
+              }),
+              Effect.ensuring(
+                close(Exit.void).pipe(Effect.andThen(Deferred.succeed(cleanup, undefined)), Effect.asVoid),
+              ),
+              Effect.asVoid,
+              Effect.forkIn(s.scope, { startImmediately: true }),
+            )
+            const installed = yield* SynchronizedRef.modify(s.jobs, (jobs): readonly [boolean, Map<string, Active>] => {
+              const job = jobs.get(id)
+              if (!job || job.token !== token || job.info.status !== "running") return [false, jobs]
+              return [true, new Map(jobs).set(id, { ...job, fiber })]
+            })
+            if (installed) {
+              yield* Deferred.succeed(ready, undefined)
+            } else {
+              yield* Fiber.interrupt(fiber).pipe(Effect.ignore)
+              yield* Fiber.await(fiber).pipe(Effect.ignore)
+            }
+            return registered.info
+          }
         }),
       )
     })
@@ -199,10 +249,12 @@ export const layer = Layer.effect(
     const wait: Interface["wait"] = Effect.fn("BackgroundJob.wait")(function* (input) {
       const job = (yield* SynchronizedRef.get((yield* InstanceState.get(state)).jobs)).get(input.id)
       if (!job) return { timedOut: false }
-      if (job.info.status !== "running") return { info: snapshot(job), timedOut: false }
-      if (input.timeout === undefined) return { info: yield* Deferred.await(job.done), timedOut: false }
-      if (input.timeout <= 0) return { info: snapshot(job), timedOut: true }
-      const info = yield* Deferred.await(job.done).pipe(Effect.timeoutOption(input.timeout))
+      const result = Deferred.await(job.done).pipe(
+        Effect.andThen((info) => Deferred.await(job.cleanup).pipe(Effect.as(info))),
+      )
+      if (job.info.status !== "running" && input.timeout === undefined) return { info: yield* result, timedOut: false }
+      if (input.timeout === undefined) return { info: yield* result, timedOut: false }
+      const info = yield* result.pipe(Effect.timeoutOption(Math.max(0, input.timeout)))
       if (info._tag === "Some") return { info: info.value, timedOut: false }
       return { info: snapshot(job), timedOut: true }
     })
@@ -238,22 +290,28 @@ export const layer = Layer.effect(
     })
 
     const cancel: Interface["cancel"] = Effect.fn("BackgroundJob.cancel")(function* (id) {
-      const job = (yield* SynchronizedRef.get((yield* InstanceState.get(state)).jobs)).get(id)
-      if (!job) return
-      if (job.info.status !== "running") return snapshot(job)
+      return yield* Effect.uninterruptible(
+        Effect.gen(function* () {
+          const job = (yield* SynchronizedRef.get((yield* InstanceState.get(state)).jobs)).get(id)
+          if (!job) return
+          if (job.info.status !== "running") return snapshot(job)
 
-      // Mark cancelled before awaiting the fiber. Task runs register
-      // `Effect.onInterrupt(() => SessionPrompt.cancel(sessionID))`, and that
-      // cancel path re-enters BackgroundJob.cancel for the same id. If we
-      // still looked "running" while Fiber.await-ing ourselves, the nested
-      // cancel would deadlock and the session runner would never stop.
-      const fiber = job.fiber
-      const info = yield* finish(id, "cancelled")
-      if (fiber) {
-        yield* Fiber.interrupt(fiber).pipe(Effect.ignore)
-        yield* Fiber.await(fiber).pipe(Effect.ignore)
-      }
-      return info
+          // Mark cancelled before awaiting the fiber. Task runs register
+          // `Effect.onInterrupt(() => SessionPrompt.cancel(sessionID))`, and that
+          // cancel path re-enters BackgroundJob.cancel for the same id. If we
+          // still looked "running" while Fiber.await-ing ourselves, the nested
+          // cancel would deadlock and the session runner would never stop.
+          const fiber = job.fiber
+          const info = yield* finish(id, job.token, "cancelled")
+          if (fiber) {
+            yield* Fiber.interrupt(fiber).pipe(Effect.ignore)
+            yield* Fiber.await(fiber).pipe(Effect.ignore)
+          } else {
+            yield* Deferred.await(job.cleanup)
+          }
+          return info
+        }),
+      )
     })
 
     return Service.of({ list, get, start, wait, waitForPromotion, promote, cancel })

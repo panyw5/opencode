@@ -29,6 +29,21 @@ type SmokeWindow = Window & {
 test.describe("smoke: session timeline", () => {
   test.setTimeout(240_000)
 
+  test("keeps visible timeline rows paintable after loading", async ({ page }) => {
+    await mockOpenCodeServer(page, {
+      sessions: fixture.sessions,
+      provider: fixture.provider,
+      directory: fixture.directory,
+      project: fixture.project,
+      pageMessages,
+    })
+    await configureSmokePage(page, fixture.directory)
+
+    await selectHomeProject(page, fixture.project.name)
+    await navigateToSession(page, fixture.directory, fixture.targetID, fixture.expected.targetTitle)
+    await expectSessionReady(page)
+  })
+
   test("expands patch files rendered from patch-only metadata", async ({ page }) => {
     await mockOpenCodeServer(page, {
       sessions: fixture.sessions,
@@ -60,6 +75,7 @@ test.describe("smoke: session timeline", () => {
     await navigateToSession(page, fixture.directory, fixture.sourceID, fixture.expected.sourceTitle)
     await expectSessionReady(page)
     await navigateToSession(page, fixture.directory, fixture.targetID, fixture.expected.targetTitle)
+    await expectSessionReady(page)
     const expectedPartIDs = fixture.expected.targetPartIDs
     const expectedMessageIDs = fixture.expected.targetMessageIDs
     await expectSessionTimelineReady(page, expectedPartIDs, expectedMessageIDs, errors)
@@ -134,7 +150,7 @@ async function configureSmokePage(page: Page, directory: string) {
       [el.dataset.timelinePartId, ...(el.dataset.timelinePartIds?.split(",") ?? [])].filter((id): id is string => !!id)
 
     smoke.__timelineSmokeState = () => {
-      const scroller = [...document.querySelectorAll<HTMLElement>(".scroll-view__viewport")].find((el) =>
+      const scroller = [...document.querySelectorAll<HTMLElement>('[data-slot="scroll-view-viewport"]')].find((el) =>
         el.querySelector("[data-timeline-row], [data-session-title]"),
       )
       if (!scroller) {
@@ -469,4 +485,29 @@ async function navigateToSession(page: Page, directory: string, sessionId: strin
 
 async function expectSessionReady(page: Page) {
   await expect(page.locator('[data-component="prompt-input"]')).toBeVisible()
+  await expect(page.locator('[data-slot="session-render-overlay"]')).toHaveCount(0)
+  const scroller = page
+    .locator('[data-slot="scroll-view-viewport"]')
+    .filter({ has: page.locator("[data-timeline-key]") })
+    .first()
+  await expect(scroller).toBeVisible()
+  await expect
+    .poll(() =>
+      scroller.evaluate((root) => {
+        const viewport = root.getBoundingClientRect()
+        const rows = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")].filter((row) => {
+          const rect = row.getBoundingClientRect()
+          return rect.bottom > viewport.top && rect.top < viewport.bottom
+        })
+        return (
+          rows.length > 0 &&
+          rows.some((row) => !!row.textContent?.trim() || !!row.querySelector("img,svg,canvas,video")) &&
+          rows.every((row) => {
+            const measured = row.querySelector<HTMLElement>("[data-index]")
+            return !!measured && getComputedStyle(measured).contentVisibility === "visible"
+          })
+        )
+      }),
+    )
+    .toBe(true)
 }

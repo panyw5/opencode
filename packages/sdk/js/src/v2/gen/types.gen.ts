@@ -443,6 +443,8 @@ export type ProjectTask = {
   status: ProjectTaskStatus
   sessionCount: number
   progress: ProjectTaskProgress
+  /** Unique session directories currently mounting this task. */
+  sessionDirectories: Array<string>
   time: {
     created: number
     updated: number
@@ -2120,6 +2122,8 @@ export type ProjectTaskDetail = {
   status: ProjectTaskStatus
   sessionCount: number
   progress: ProjectTaskProgress
+  /** Unique session directories currently mounting this task. */
+  sessionDirectories: Array<string>
   time: {
     created: number
     updated: number
@@ -6742,6 +6746,7 @@ export type SessionListData = {
   query?: {
     directory?: string
     workspace?: string
+    locationID?: string
     scope?: "project"
     path?: string
     roots?: boolean | "true" | "false"
@@ -7994,6 +7999,8 @@ export type ScheduledTaskListData = {
   path?: never
   query?: {
     projectID?: string
+    locationID?: string
+    directory?: string
     enabled?: "true" | "false"
   }
   url: "/scheduled-task"

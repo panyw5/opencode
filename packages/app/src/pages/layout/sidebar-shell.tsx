@@ -12,6 +12,7 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import type { IconName } from "@opencode-ai/ui/icon"
 import { Popover } from "@opencode-ai/ui/popover"
 import { Icon } from "@opencode-ai/ui/icon"
+import { Mark } from "@opencode-ai/ui/logo"
 import { type LocalProject } from "@/context/layout"
 import { ScoopJoin } from "./scoop-join"
 import { RailTooltip } from "./rail-tooltip"
@@ -39,6 +40,9 @@ export type SidebarImChannel = {
 export const SidebarContent = (props: {
   mobile?: boolean
   opened: Accessor<boolean>
+  homeLabel: Accessor<string>
+  homeActive: Accessor<boolean>
+  onOpenHome: () => void
   projects: Accessor<LocalProject[]>
   renderProject: (project: LocalProject) => JSX.Element
   handleDragStart: (event: unknown) => void
@@ -136,6 +140,26 @@ export const SidebarContent = (props: {
         data-component="sidebar-rail"
         class="relative z-20 w-16 shrink-0 bg-background-base flex flex-col items-center overflow-hidden arc-sidebar-scope"
       >
+        <div class="shrink-0 flex w-full flex-col items-center px-2 pt-3 pb-2">
+          <RailTooltip mobile={props.mobile} title={props.homeLabel()} inactive={props.homeActive()}>
+            <button
+              type="button"
+              data-action="home-open"
+              aria-label={props.homeLabel()}
+              aria-current={props.homeActive() ? "page" : undefined}
+              class="flex size-10 items-center justify-center rounded-xl border outline-none transition-[background-color,border-color,box-shadow,color,transform] duration-150 focus-visible:ring-2 focus-visible:ring-border-focus-base"
+              classList={{
+                "border-border-brand-base bg-surface-interactive-selected text-icon-strong shadow-xs": props.homeActive(),
+                "border-transparent bg-transparent text-icon-weak hover:border-border-base hover:bg-surface-base-hover hover:text-icon-base active:scale-[0.96]":
+                  !props.homeActive(),
+              }}
+              onClick={props.onOpenHome}
+            >
+              <Mark class="size-5" />
+            </button>
+          </RailTooltip>
+          <div aria-hidden="true" class="mt-3 h-px w-7 bg-border-weaker-base" />
+        </div>
         <div class="flex-1 min-h-0 w-full">
           <DragDropProvider
             onDragStart={props.handleDragStart}

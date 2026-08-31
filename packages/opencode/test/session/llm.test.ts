@@ -22,6 +22,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Permission } from "@/permission"
 import { LLMAISDK } from "@/session/llm/ai-sdk"
 import { Session as SessionNs } from "@/session/session"
+import { LLMRequestPrep } from "@/session/llm/request"
 
 type ConfigModel = NonNullable<NonNullable<Config.Info["provider"]>[string]["models"]>[string]
 
@@ -720,6 +721,74 @@ function createEventResponse(chunks: unknown[], includeDone = false) {
   })
 }
 
+it.instance(
+  "setCacheKey false removes cache keys after model, agent, variant, and plugin merges",
+  () =>
+    Effect.gen(function* () {
+      const fixture = loadFixture("openai", "gpt-5.2").model
+      const resolved = yield* Provider.use.getModel(ProviderID.openai, ModelID.make(fixture.id))
+      const provider = yield* Provider.use.getProvider(ProviderID.openai)
+      const flags = { client: "test" } as RuntimeFlags.Info
+      const sessionID = SessionID.make("ses_00000000000000000000000000")
+      const user = {
+        id: MessageID.make("msg_cache_key_disable"),
+        sessionID,
+        role: "user",
+        time: { created: Date.now() },
+        agent: "test",
+        model: { providerID: ProviderID.openai, modelID: resolved.id, variant: "disabled" },
+      } satisfies MessageV2.User
+      const agent = {
+        name: "test",
+        mode: "primary",
+        options: { prompt_cache_key: "agent-key" },
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      } satisfies Agent.Info
+      const plugin = {
+        trigger(name: string, _input: unknown, output: unknown) {
+          return Effect.sync(() => {
+            if (name === "chat.params") {
+              const params = output as { options: Record<string, unknown> }
+              params.options.promptCacheKey = "plugin-key"
+              params.options.prompt_cache_key = "plugin-key"
+            }
+            return output
+          })
+        },
+      } as unknown as Plugin.Interface
+      const model = {
+        ...resolved,
+        options: { ...resolved.options, promptCacheKey: "model-key" },
+        variants: { disabled: { promptCacheKey: "variant-key", prompt_cache_key: "variant-key" } },
+      }
+
+      const prepared = yield* LLMRequestPrep.prepare({
+        user,
+        sessionID,
+        model,
+        agent,
+        system: [],
+        messages: [{ role: "user", content: "Hello" }],
+        tools: {},
+        provider: { ...provider, options: { ...provider.options, setCacheKey: false } },
+        auth: undefined,
+        plugin,
+        flags,
+        isWorkflow: false,
+      })
+
+      expect(prepared.params.options.promptCacheKey).toBeUndefined()
+      expect(prepared.params.options.prompt_cache_key).toBeUndefined()
+      expect(JSON.stringify(ProviderTransform.providerOptions(model, prepared.params.options))).not.toContain(
+        "promptCache",
+      )
+      expect(JSON.stringify(ProviderTransform.providerOptions(model, prepared.params.options))).not.toContain(
+        "prompt_cache",
+      )
+    }),
+  { config: () => openAIConfig(loadFixture("openai", "gpt-5.2").model, `${state.server!.url.origin}/v1`) },
+)
+
 describe("session.llm.stream", () => {
   const vivgridFixture = { providerID: "vivgrid", modelID: "gemini-3.1-pro-preview" }
   it.instance(
@@ -903,6 +972,116 @@ describe("session.llm.stream", () => {
         expect(capture.body.tool_choice).toBe("auto")
       }),
     { config: () => deepSeekV4Config({ extra_body: { thinking: { type: "disabled" } } }) },
+  )
+
+  const mistralFixture = { providerID: "mistral", modelID: "mistral-small-latest" }
+  it.instance(
+    "replays native Mistral reasoning from chat history",
+    () =>
+      Effect.gen(function* () {
+        const fixture = loadFixture(mistralFixture.providerID, mistralFixture.modelID)
+        const request = waitRequest(
+          "/chat/completions",
+          createEventResponse(
+            [
+              {
+                id: "chatcmpl-mistral",
+                object: "chat.completion.chunk",
+                created: 0,
+                model: fixture.model.id,
+                choices: [{ index: 0, delta: { role: "assistant", content: "Hello" } }],
+              },
+              {
+                id: "chatcmpl-mistral",
+                object: "chat.completion.chunk",
+                created: 0,
+                model: fixture.model.id,
+                choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+              },
+            ],
+            true,
+          ),
+        )
+
+        const resolved = yield* Provider.use.getModel(
+          ProviderID.make(mistralFixture.providerID),
+          ModelID.make(fixture.model.id),
+        )
+        const sessionID = SessionID.make("session-test-mistral-reasoning")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+        const user = {
+          id: MessageID.make("msg_user-mistral-reasoning"),
+          sessionID,
+          role: "user",
+          time: { created: Date.now() },
+          agent: agent.name,
+          model: { providerID: ProviderID.make(mistralFixture.providerID), modelID: resolved.id },
+        } satisfies MessageV2.User
+
+        const thinking = {
+          type: "thinking",
+          thinking: [
+            { type: "text", text: "thinking" },
+            {
+              type: "tool_reference",
+              tool: "web_search",
+              title: "Example result",
+              url: "https://example.com/tool",
+              favicon: "https://example.com/favicon.ico",
+              description: "Example description",
+            },
+            { type: "reference", reference_ids: [1, "source-2"] },
+          ],
+          closed: true,
+          signature: "sig-123",
+        }
+
+        yield* drain({
+          user,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            { role: "user", content: "Hello" },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "thinking",
+                  providerOptions: { mistral: { thinking } },
+                },
+                { type: "text", text: "Previous answer" },
+              ],
+            },
+            { role: "user", content: "Continue" },
+          ] satisfies ModelMessage[],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const messages = capture.body.messages as Array<Record<string, unknown>>
+        expect(messages.find((message) => message.role === "assistant")).toEqual({
+          role: "assistant",
+          content: [thinking, { type: "text", text: "Previous answer" }],
+        })
+      }),
+    {
+      config: () => ({
+        enabled_providers: [mistralFixture.providerID],
+        provider: {
+          [mistralFixture.providerID]: {
+            options: { apiKey: "test-key", baseURL: `${state.server!.url.origin}/v1` },
+          },
+        },
+      }),
+    },
   )
 
   const alibabaQwenFixture = { providerID: "alibaba", modelID: "qwen-plus" }
@@ -1927,6 +2106,115 @@ describe("session.llm.stream", () => {
     },
   )
 
+  it.instance(
+    "replays Anthropic signed reasoning from assistant history",
+    () =>
+      Effect.gen(function* () {
+        const model = loadFixture("anthropic", "claude-opus-4-6").model
+        const chunks = [
+          {
+            type: "message_start",
+            message: {
+              id: "msg-signed-reasoning",
+              model: model.id,
+              usage: { input_tokens: 5, cache_creation_input_tokens: null, cache_read_input_tokens: null },
+            },
+          },
+          {
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "text", text: "" },
+          },
+          {
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "text_delta", text: "Hello" },
+          },
+          { type: "content_block_stop", index: 0 },
+          {
+            type: "message_delta",
+            delta: { stop_reason: "end_turn", stop_sequence: null, container: null },
+            usage: {
+              input_tokens: 5,
+              output_tokens: 1,
+              cache_creation_input_tokens: null,
+              cache_read_input_tokens: null,
+            },
+          },
+          { type: "message_stop" },
+        ]
+        const request = waitRequest("/messages", createEventResponse(chunks))
+
+        const resolved = yield* Provider.use.getModel(ProviderID.make("anthropic"), ModelID.make(model.id))
+        const sessionID = SessionID.make("session-test-anthropic-signed-reasoning")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-anthropic-signed-reasoning"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make("anthropic"), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            { role: "user", content: "Hello" },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "Let me think about this...",
+                  providerOptions: { anthropic: { signature: "sig-abc-123" } },
+                },
+                { type: "text", text: "Here is my answer" },
+              ],
+            },
+            { role: "user", content: "Continue" },
+          ] satisfies ModelMessage[],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const body = capture.body
+        const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>
+        const assistantMsg = messages.find((m) => m.role === "assistant")
+        expect(assistantMsg).toBeDefined()
+        const thinkingBlock = assistantMsg!.content.find((p) => p.type === "thinking")
+        expect(thinkingBlock).toBeDefined()
+        expect(thinkingBlock!.thinking).toBe("Let me think about this...")
+        expect(thinkingBlock!.signature).toBe("sig-abc-123")
+      }),
+    {
+      config: () => {
+        const model = loadFixture("anthropic", "claude-opus-4-6").model
+        return {
+          enabled_providers: ["anthropic"],
+          provider: {
+            anthropic: {
+              name: "Anthropic",
+              env: ["ANTHROPIC_API_KEY"],
+              npm: "@ai-sdk/anthropic",
+              api: "https://api.anthropic.com/v1",
+              models: { [model.id]: configModel(model) as ConfigModel },
+              options: { apiKey: "test-anthropic-key", baseURL: `${state.server!.url.origin}/v1` },
+            },
+          },
+        }
+      },
+    },
+  )
+
   const geminiFixture = { providerID: "google", modelID: "gemini-2.5-flash" }
   it.instance(
     "sends Google API payload for Gemini models",
@@ -1990,6 +2278,260 @@ describe("session.llm.stream", () => {
         provider: {
           [geminiFixture.providerID]: {
             options: { apiKey: "test-google-key", baseURL: `${state.server!.url.origin}/v1beta` },
+          },
+        },
+      }),
+    },
+  )
+
+  const gemini3FlashPreviewFixture = { providerID: "google", modelID: "gemini-3-flash-preview" }
+  it.instance(
+    "sends thinkingConfig for Gemini 3 Flash reasoning models",
+    () =>
+      Effect.gen(function* () {
+        const fixture = loadFixture(gemini3FlashPreviewFixture.providerID, gemini3FlashPreviewFixture.modelID)
+        const pathSuffix = `/v1beta/models/${fixture.model.id}:streamGenerateContent`
+        const request = waitRequest(
+          pathSuffix,
+          createEventResponse(
+            [
+              {
+                candidates: [{ content: { parts: [{ text: "Hello" }] }, finishReason: "STOP" }],
+                usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+              },
+            ],
+            true,
+          ),
+        )
+
+        const resolved = yield* Provider.use.getModel(
+          ProviderID.make(gemini3FlashPreviewFixture.providerID),
+          ModelID.make(fixture.model.id),
+        )
+        const sessionID = SessionID.make("session-test-gemini-3-flash-thinking")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-gemini-3-flash-thinking"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make(gemini3FlashPreviewFixture.providerID), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [{ role: "user", content: "Hello" }],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const body = capture.body
+        const generationConfig = body.generationConfig as
+          | { thinkingConfig?: { includeThoughts?: boolean; thinkingLevel?: string } }
+          | undefined
+
+        expect(capture.url.pathname).toBe(pathSuffix)
+        expect(generationConfig?.thinkingConfig).toEqual({
+          includeThoughts: true,
+          thinkingLevel: "high",
+        })
+      }),
+    {
+      config: () => ({
+        enabled_providers: [gemini3FlashPreviewFixture.providerID],
+        provider: {
+          [gemini3FlashPreviewFixture.providerID]: {
+            options: { apiKey: "test-google-key", baseURL: `${state.server!.url.origin}/v1beta` },
+          },
+        },
+      }),
+    },
+  )
+
+  it.instance(
+    "replays Google thoughtSignature from assistant history",
+    () =>
+      Effect.gen(function* () {
+        const fixture = loadFixture(gemini3FlashPreviewFixture.providerID, gemini3FlashPreviewFixture.modelID)
+        const pathSuffix = `/v1beta/models/${fixture.model.id}:streamGenerateContent`
+        const request = waitRequest(
+          pathSuffix,
+          createEventResponse(
+            [
+              {
+                candidates: [{ content: { parts: [{ text: "Hello" }] }, finishReason: "STOP" }],
+                usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+              },
+            ],
+            true,
+          ),
+        )
+
+        const resolved = yield* Provider.use.getModel(
+          ProviderID.make(gemini3FlashPreviewFixture.providerID),
+          ModelID.make(fixture.model.id),
+        )
+        const sessionID = SessionID.make("session-test-google-thought-replay")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-google-thought-replay"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make(gemini3FlashPreviewFixture.providerID), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            { role: "user", content: "Hello" },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "thinking",
+                  providerOptions: { google: { thoughtSignature: "sig-123" } },
+                },
+                { type: "text", text: "Previous answer" },
+              ],
+            },
+            { role: "user", content: "Continue" },
+          ] satisfies ModelMessage[],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const body = capture.body
+        const contents = body.contents as Array<{
+          role: string
+          parts: Array<{ text?: string; thought?: boolean; thoughtSignature?: string }>
+        }>
+        const modelContent = contents.find((c) => c.role === "model")
+        expect(modelContent).toBeDefined()
+        const reasoningPart = modelContent!.parts.find((p) => p.thought === true)
+        expect(reasoningPart).toBeDefined()
+        expect(reasoningPart!.thoughtSignature).toBe("sig-123")
+        const textPart = modelContent!.parts.find((p) => p.text === "Previous answer")
+        expect(textPart).toBeDefined()
+      }),
+    {
+      config: () => ({
+        enabled_providers: [gemini3FlashPreviewFixture.providerID],
+        provider: {
+          [gemini3FlashPreviewFixture.providerID]: {
+            options: { apiKey: "test-google-key", baseURL: `${state.server!.url.origin}/v1beta` },
+          },
+        },
+      }),
+    },
+  )
+
+  it.instance(
+    "replays Vertex thoughtSignature from providerOptions.vertex",
+    () =>
+      Effect.gen(function* () {
+        const fixture = loadFixture("google", "gemini-3-flash-preview")
+        const pathSuffix = `/v1beta/models/${fixture.model.id}:streamGenerateContent`
+        const request = waitRequest(
+          pathSuffix,
+          createEventResponse(
+            [
+              {
+                candidates: [{ content: { parts: [{ text: "Hello" }] }, finishReason: "STOP" }],
+                usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1, totalTokenCount: 2 },
+              },
+            ],
+            true,
+          ),
+        )
+
+        const resolved = yield* Provider.use.getModel(ProviderID.make("vertex-test"), ModelID.make(fixture.model.id))
+        const sessionID = SessionID.make("session-test-vertex-thought-replay")
+        const agent = {
+          name: "test",
+          mode: "primary",
+          options: {},
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        } satisfies Agent.Info
+
+        yield* drain({
+          user: {
+            id: MessageID.make("msg_user-vertex-thought-replay"),
+            sessionID,
+            role: "user",
+            time: { created: Date.now() },
+            agent: agent.name,
+            model: { providerID: ProviderID.make("vertex-test"), modelID: resolved.id },
+          } satisfies MessageV2.User,
+          sessionID,
+          model: resolved,
+          agent,
+          system: ["You are a helpful assistant."],
+          messages: [
+            { role: "user", content: "Hello" },
+            {
+              role: "assistant",
+              content: [
+                {
+                  type: "reasoning",
+                  text: "thinking",
+                  providerOptions: { vertex: { thoughtSignature: "sig-vertex-456" } },
+                },
+                { type: "text", text: "Previous answer" },
+              ],
+            },
+            { role: "user", content: "Continue" },
+          ] satisfies ModelMessage[],
+          tools: {},
+        })
+
+        const capture = yield* Effect.promise(() => request)
+        const body = capture.body
+        const contents = body.contents as Array<{
+          role: string
+          parts: Array<{ text?: string; thought?: boolean; thoughtSignature?: string }>
+        }>
+        const modelContent = contents.find((c) => c.role === "model")
+        expect(modelContent).toBeDefined()
+        const reasoningPart = modelContent!.parts.find((p) => p.thought === true)
+        expect(reasoningPart).toBeDefined()
+        expect(reasoningPart!.thoughtSignature).toBe("sig-vertex-456")
+      }),
+    {
+      config: () => ({
+        enabled_providers: ["vertex-test"],
+        provider: {
+          "vertex-test": {
+            name: "Vertex Test",
+            npm: "@ai-sdk/google-vertex",
+            api: "https://vertexai.googleapis.com",
+            env: ["GOOGLE_APPLICATION_CREDENTIALS"],
+            models: {
+              "gemini-3-flash-preview": configModel(loadFixture("google", "gemini-3-flash-preview").model),
+            },
+            options: {
+              apiKey: "test-vertex-key",
+              baseURL: `${state.server!.url.origin}/v1beta`,
+            },
           },
         },
       }),

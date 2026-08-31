@@ -4,6 +4,14 @@ import inter from "../assets/fonts/inter.woff2"
 import ibmPlexMonoBold from "../assets/fonts/ibm-plex-mono-bold.woff2"
 import ibmPlexMonoMedium from "../assets/fonts/ibm-plex-mono-medium.woff2"
 import ibmPlexMonoRegular from "../assets/fonts/ibm-plex-mono.woff2"
+import windowsMonoBold from "../assets/fonts/BlexMonoNerdFontMono-Bold.woff2"
+import windowsMonoMedium from "../assets/fonts/BlexMonoNerdFontMono-Medium.woff2"
+import windowsMonoRegular from "../assets/fonts/BlexMonoNerdFontMono-Regular.woff2"
+
+const windowsMono = typeof navigator !== "undefined" && navigator.userAgent.includes("Windows")
+const monoRegular = windowsMono ? windowsMonoRegular : ibmPlexMonoRegular
+const monoMedium = windowsMono ? windowsMonoMedium : ibmPlexMonoMedium
+const monoBold = windowsMono ? windowsMonoBold : ibmPlexMonoBold
 
 export const Font = () => {
   return (
@@ -26,21 +34,21 @@ export const Font = () => {
         }
         @font-face {
           font-family: "IBM Plex Mono";
-          src: url("${ibmPlexMonoRegular}") format("woff2");
+           src: url("${monoRegular}") format("woff2");
           font-display: swap;
           font-style: normal;
           font-weight: 400;
         }
         @font-face {
           font-family: "IBM Plex Mono";
-          src: url("${ibmPlexMonoMedium}") format("woff2");
+           src: url("${monoMedium}") format("woff2");
           font-display: swap;
           font-style: normal;
           font-weight: 500;
         }
         @font-face {
           font-family: "IBM Plex Mono";
-          src: url("${ibmPlexMonoBold}") format("woff2");
+           src: url("${monoBold}") format("woff2");
           font-display: swap;
           font-style: normal;
           font-weight: 700;
@@ -63,21 +71,21 @@ export const Font = () => {
          */
         @font-face {
           font-family: "BlexMono Nerd Font Mono";
-          src: url("${ibmPlexMonoRegular}") format("woff2");
+           src: url("${monoRegular}") format("woff2");
           font-display: swap;
           font-style: normal;
           font-weight: 400;
         }
         @font-face {
           font-family: "BlexMono Nerd Font Mono";
-          src: url("${ibmPlexMonoMedium}") format("woff2");
+           src: url("${monoMedium}") format("woff2");
           font-display: swap;
           font-style: normal;
           font-weight: 500;
         }
         @font-face {
           font-family: "BlexMono Nerd Font Mono";
-          src: url("${ibmPlexMonoBold}") format("woff2");
+           src: url("${monoBold}") format("woff2");
           font-display: swap;
           font-style: normal;
           font-weight: 700;
@@ -85,7 +93,7 @@ export const Font = () => {
       `}</Style>
       <Show when={typeof location === "undefined" || location.protocol !== "file:"}>
         <Link rel="preload" href={inter} as="font" type="font/woff2" crossorigin="anonymous" />
-        <Link rel="preload" href={ibmPlexMonoRegular} as="font" type="font/woff2" crossorigin="anonymous" />
+        <Link rel="preload" href={monoRegular} as="font" type="font/woff2" crossorigin="anonymous" />
       </Show>
     </>
   )

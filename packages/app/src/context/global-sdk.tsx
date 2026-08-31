@@ -163,7 +163,9 @@ export function GlobalSDKProvider(props: ParentProps) {
       const FLUSH_EVENT_LIMIT = 12
       const STREAM_YIELD_MS = 8
       const RECONNECT_DELAY_MS = 250
-      const HEARTBEAT_TIMEOUT_MS = 15_000
+      // The sidecar targets a 10s heartbeat, but a busy event stream can delay
+      // individual heartbeats. Allow several missed beats before reconnecting.
+      const HEARTBEAT_TIMEOUT_MS = 45_000
       let queue: Queued[] = []
       let buffer: Queued[] = []
       let flushing: Queued[] | undefined
@@ -183,6 +185,8 @@ export function GlobalSDKProvider(props: ParentProps) {
       // are worth logging immediately.
       let everConnected = false
       let failedAttempts = 0
+      let attemptID = 0
+      let abortReason: "heartbeat-timeout" | "visibility" | "provider-stop" | undefined
       const LOG_ERROR_AFTER_FAILED_ATTEMPTS = 4
 
       const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -282,7 +286,13 @@ export function GlobalSDKProvider(props: ParentProps) {
       const resetHeartbeat = () => {
         lastEventAt = Date.now()
         if (heartbeat) clearTimeout(heartbeat)
-        heartbeat = setTimeout(() => attempt?.abort(), HEARTBEAT_TIMEOUT_MS)
+        heartbeat = setTimeout(() => {
+          abortReason = "heartbeat-timeout"
+          console.warn(
+            `[global-sdk] event stream heartbeat timeout domain=${domain} attempt=${String(attemptID)} silenceMs=${String(Date.now() - lastEventAt)} timeoutMs=${String(HEARTBEAT_TIMEOUT_MS)}`,
+          )
+          attempt?.abort()
+        }, HEARTBEAT_TIMEOUT_MS)
       }
       const clearHeartbeat = () => {
         if (!heartbeat) return
@@ -293,22 +303,39 @@ export function GlobalSDKProvider(props: ParentProps) {
         if (typeof document === "undefined") return
         if (document.visibilityState !== "visible") return
         if (Date.now() - lastEventAt < HEARTBEAT_TIMEOUT_MS) return
+        abortReason = "visibility"
+        console.info(
+          `[global-sdk] event stream visibility reconnect domain=${domain} attempt=${String(attemptID)} silenceMs=${String(Date.now() - lastEventAt)}`,
+        )
         attempt?.abort()
       }
       if (typeof document !== "undefined") document.addEventListener("visibilitychange", onVisibility)
-
       void (async () => {
         while (!abort.signal.aborted) {
           attempt = new AbortController()
+          attemptID++
+          abortReason = undefined
           lastEventAt = Date.now()
-          const onAbort = () => attempt?.abort()
+          const startedAt = Date.now()
+          let eventCount = 0
+          let lastEventType = "none"
+          const onAbort = () => {
+            abortReason = "provider-stop"
+            attempt?.abort()
+          }
           abort.signal.addEventListener("abort", onAbort)
+          console.info(
+            `[global-sdk] event stream connecting domain=${domain} attempt=${String(attemptID)} url=${url}`,
+          )
           try {
             const events = await eventSdk.global.event({
               signal: attempt.signal,
               onSseError: (error) => {
                 if (aborted(error) || streamErrorLogged) return
                 streamErrorLogged = true
+                console.warn(
+                  `[global-sdk] event stream SSE error domain=${domain} attempt=${String(attemptID)} error=${error instanceof Error ? error.message : String(error)}`,
+                )
               },
             })
             let yielded = Date.now()
@@ -318,8 +345,15 @@ export function GlobalSDKProvider(props: ParentProps) {
               streamErrorLogged = false
               everConnected = true
               failedAttempts = 0
+              eventCount++
               const directory = event.directory ?? "global"
               const payload = event.payload
+              lastEventType = payload.type
+              if (eventCount === 1) {
+                console.info(
+                  `[global-sdk] event stream connected domain=${domain} attempt=${String(attemptID)} firstType=${payload.type} connectMs=${String(Date.now() - startedAt)}`,
+                )
+              }
               const k = key(directory, payload)
               if (k) {
                 const i = coalesced.get(k)
@@ -346,12 +380,18 @@ export function GlobalSDKProvider(props: ParentProps) {
               (everConnected || failedAttempts >= LOG_ERROR_AFTER_FAILED_ATTEMPTS)
             ) {
               streamErrorLogged = true
+              console.warn(
+                `[global-sdk] event stream failed domain=${domain} attempt=${String(attemptID)} events=${String(eventCount)} lastType=${lastEventType} durationMs=${String(Date.now() - startedAt)} error=${error instanceof Error ? error.message : String(error)}`,
+              )
             }
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
             attempt = undefined
             clearHeartbeat()
             failedAttempts++
+            console.info(
+              `[global-sdk] event stream ended domain=${domain} attempt=${String(attemptID)} reason=${abortReason ?? "stream-ended"} events=${String(eventCount)} lastType=${lastEventType} durationMs=${String(Date.now() - startedAt)} failedAttempts=${String(failedAttempts)}`,
+            )
           }
           if (abort.signal.aborted) return
           await wait(RECONNECT_DELAY_MS)

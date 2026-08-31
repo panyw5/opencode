@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import type { Project } from "@opencode-ai/sdk/v2/client"
-import { upsertProject } from "./bootstrap"
+import type { PermissionRequest, Project } from "@opencode-ai/sdk/v2/client"
+import { mergePermissionRefresh, upsertProject } from "./bootstrap"
+
+const permission = (id: string, sessionID = "session") =>
+  ({ id, sessionID, permission: "bash", patterns: ["*"] }) as PermissionRequest
 
 describe("upsertProject", () => {
   test("inserts missing projects in id order", () => {
@@ -18,5 +21,43 @@ describe("upsertProject", () => {
     expect(next).toHaveLength(1)
     expect(next[0]?.worktree).toBe("/repo")
     expect(next[0]?.vcs).toBe("git")
+  })
+})
+
+describe("mergePermissionRefresh", () => {
+  test("preserves a permission asked while the list request is in flight", () => {
+    const asked = permission("new")
+    const result = mergePermissionRefresh({}, { session: [asked] }, [])
+
+    expect(result).toEqual({ session: [asked] })
+  })
+
+  test("does not resurrect a permission replied to while the list request is in flight", () => {
+    const replied = permission("replied")
+    const result = mergePermissionRefresh({ session: [replied] }, {}, [replied])
+
+    expect(result).toEqual({})
+  })
+
+  test("keeps snapshot authority when no event changed local state", () => {
+    const stale = permission("stale")
+    const remote = permission("remote", "other")
+    const result = mergePermissionRefresh({ session: [stale] }, { session: [stale] }, [remote])
+
+    expect(result).toEqual({ other: [remote] })
+  })
+
+  test("merges remote state with concurrent additions and removals", () => {
+    const removed = permission("a")
+    const kept = permission("b")
+    const added = permission("c")
+    const remote = permission("d", "other")
+    const result = mergePermissionRefresh(
+      { session: [removed, kept] },
+      { session: [kept, added] },
+      [removed, kept, remote],
+    )
+
+    expect(result).toEqual({ session: [kept, added], other: [remote] })
   })
 })

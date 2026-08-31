@@ -8,6 +8,9 @@ import * as ProjectTaskRepository from "./repository"
 import {
   descriptionRelativePath,
   ensureDescriptionFile,
+  INITIAL_PROGRESS_CONTENT,
+  readDescriptionFile,
+  progressRelativePath,
   taskFilesAnchor,
   writeDescriptionFile,
 } from "./description-file"
@@ -109,14 +112,25 @@ export const layer = Layer.effect(
 
     const list: Interface["list"] = Effect.fn("ProjectTask.list")(function* (input) {
       const pid = yield* projectID()
+      const dir = yield* anchorDirectory()
       const rows = yield* ProjectTaskRepository.listRows({
         projectID: pid,
         includeArchived: input?.includeArchived,
       })
       const out: Info[] = []
       for (const row of rows) {
-        out.push(yield* hydrate(row))
+        const descriptionPath = row.descriptionPath || descriptionRelativePath(row.id)
+        const content = yield* Effect.promise(() => readDescriptionFile(dir, descriptionPath))
+        out.push(
+          ProjectTaskRepository.toInfo(
+            { ...row, descriptionPath },
+            content ?? row.legacyDescription ?? "",
+          ),
+        )
       }
+      console.debug(
+        `[project-task] list projectID=${pid} count=${out.length} dirs=${out.map((task) => `${task.id}:${task.sessionDirectories.join("|") || "-"}`).join(",") || "none"}`,
+      )
       return out
     })
 
@@ -157,6 +171,7 @@ export const layer = Layer.effect(
         description: body,
       })
       yield* Effect.promise(() => writeDescriptionFile(anchor, task.descriptionPath, body))
+      yield* Effect.promise(() => writeDescriptionFile(anchor, progressRelativePath(task.id), INITIAL_PROGRESS_CONTENT))
       // Return with body already known (file write succeeded).
       const created: Info = { ...task, description: body }
       yield* emit(dir, { type: Event.Created.type, properties: created })

@@ -16,7 +16,7 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, For, onCleanup, onMount, Show, type Accessor, type JSX } from "solid-js"
+import { createEffect, createMemo, For, onCleanup, onMount, Show, untrack, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
@@ -26,6 +26,11 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
+import {
+  sameScheduledTaskPanelScope,
+  scheduledTaskEventMatchesScope,
+  type ScheduledTaskPanelScope,
+} from "./scheduled-tasks-panel-scope"
 
 const formatDate = (value?: number) => (value ? new Date(value).toLocaleString() : "-")
 
@@ -765,21 +770,41 @@ export function ScheduledTasksPanel(props: {
   const dialog = useDialog()
   const [state, setState] = createStore({ tasks: [] as ScheduledTask[], loading: true, error: "" })
   let request = 0
+  const activeScope = createMemo<ScheduledTaskPanelScope>(
+    () => ({ projectID: props.projectID(), directory: props.directory().replaceAll("\\", "/").replace(/\/+$/, "") }),
+    { projectID: "", directory: "" },
+    { equals: sameScheduledTaskPanelScope },
+  )
 
-  async function load(options?: { silent?: boolean }) {
+  async function load(options?: { silent?: boolean; source?: string; scope?: ScheduledTaskPanelScope }) {
     const current = ++request
-    const projectID = props.projectID()
-    if (!projectID) {
+    const scope = options?.scope ?? untrack(activeScope)
+    const { projectID, directory } = scope
+    const started = performance.now()
+    console.debug(
+      `[scheduled-panel] load start request=${current} source=${options?.source ?? "unknown"} silent=${Boolean(options?.silent)} projectID=${projectID} directory=${directory}`,
+    )
+    if (!projectID || !directory) {
+      console.debug(`[scheduled-panel] load empty-scope request=${current}`)
       setState({ tasks: [], loading: false, error: "" })
       return
     }
     if (!options?.silent) setState({ loading: true, error: "" })
     try {
-      const result = await sdk.client.scheduledTask.list({ projectID })
-      if (current !== request) return
+      const result = await sdk.client.scheduledTask.list({ directory })
+      if (current !== request) {
+        console.debug(`[scheduled-panel] load stale request=${current} latest=${request}`)
+        return
+      }
+      console.debug(
+        `[scheduled-panel] load success request=${current} durationMs=${Math.round(performance.now() - started)} count=${result.data?.length ?? 0}`,
+      )
       setState({ tasks: result.data ?? [], error: "" })
     } catch (error) {
       if (current !== request) return
+      console.debug(
+        `[scheduled-panel] load error request=${current} durationMs=${Math.round(performance.now() - started)} error=${error instanceof Error ? error.message : String(error)}`,
+      )
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
       if (current !== request) return
@@ -805,13 +830,18 @@ export function ScheduledTasksPanel(props: {
   }
 
   createEffect(() => {
-    props.projectID()
-    void load()
+    const scope = activeScope()
+    void load({ source: "scope-effect", scope })
   })
   // listenAll: name=directory, details.type=event type (e.g. scheduled-task.created)
   const stop = sdk.listenAll((event) => {
     if (!event.details.type.startsWith("scheduled-task.")) return
-    void load({ silent: true })
+    const scope = activeScope()
+    if (!scheduledTaskEventMatchesScope(event.name, scope)) return
+    console.debug(
+      `[scheduled-panel] event type=${event.details.type} directory=${event.name} activeDirectory=${scope.directory}`,
+    )
+    void load({ silent: true, source: `event:${event.details.type}`, scope })
   })
   onCleanup(stop)
 
@@ -856,7 +886,7 @@ export function ScheduledTasksPanel(props: {
                 size="large"
                 class="rounded-lg"
                 disabled={state.loading}
-                onClick={() => void load()}
+                onClick={() => void load({ source: "manual" })}
                 aria-label={language.t("scheduled.refresh")}
               />
             </Tooltip>

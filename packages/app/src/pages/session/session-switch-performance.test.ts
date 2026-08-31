@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { shouldFinishInitialScroll, shouldRefreshStaleSession } from "./session-switch-performance"
+import {
+  sessionBackgroundDelay,
+  shouldFinishInitialScroll,
+  shouldRefreshStaleSession,
+} from "./session-switch-performance"
 
 describe("session switch performance", () => {
   test("skips a stale refresh when the initial sync refreshed the cache", () => {
@@ -22,5 +26,12 @@ describe("session switch performance", () => {
 
   test("retains the deadline fallback for unstable layouts", () => {
     expect(shouldFinishInitialScroll({ stableFrames: 0, now: 1_000, deadline: 1_000 })).toBe(true)
+  })
+
+  test("defers secondary session requests longer in Windows Electron", () => {
+    expect(sessionBackgroundDelay("Mozilla/5.0 Windows Electron/41")).toBe(1_000)
+    expect(sessionBackgroundDelay("Mozilla/5.0 Mac OS X")).toBe(250)
+    expect(sessionBackgroundDelay("Mozilla/5.0 Windows Electron/41", 500)).toBe(1_000)
+    expect(sessionBackgroundDelay("Mozilla/5.0 Mac OS X", 500)).toBe(500)
   })
 })

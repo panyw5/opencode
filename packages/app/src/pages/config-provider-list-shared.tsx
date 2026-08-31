@@ -59,6 +59,7 @@ function ProviderSdkChip(props: { badge: ProviderSdkBadge }) {
 
 export function ProviderListButton(props: {
   active: boolean
+  disabled?: boolean
   item: ConfigProviderItem
   models: string
   onClick: () => void
@@ -66,6 +67,7 @@ export function ProviderListButton(props: {
 }) {
   const badge = createMemo(() => providerSdkBadge(props.item))
   const press = (event: KeyboardEvent) => {
+    if (props.disabled) return
     if (event.key !== "Enter" && event.key !== " ") return
     event.preventDefault()
     props.onClick()
@@ -74,13 +76,18 @@ export function ProviderListButton(props: {
   return (
     <div
       role="button"
-      tabIndex={0}
+      tabIndex={props.disabled ? -1 : 0}
+      aria-disabled={props.disabled}
       class={CONFIG_MIDDLE_ITEM_CLASS}
       classList={{
-        [CONFIG_MIDDLE_ITEM_ACTIVE_CLASS]: props.active,
-        [CONFIG_MIDDLE_ITEM_INACTIVE_CLASS]: !props.active,
+        [CONFIG_MIDDLE_ITEM_ACTIVE_CLASS]: props.active && !props.disabled,
+        [CONFIG_MIDDLE_ITEM_INACTIVE_CLASS]: !props.active && !props.disabled,
+        "cursor-not-allowed border-border-weak-base bg-surface-secondary/60 opacity-50 grayscale": props.disabled,
       }}
-      onClick={props.onClick}
+      onClick={() => {
+        if (props.disabled) return
+        props.onClick()
+      }}
       onKeyDown={press}
     >
       <div class="min-w-0 flex-1">
@@ -92,9 +99,9 @@ export function ProviderListButton(props: {
             class="shrink-0 rounded-full border px-2 py-0.5 text-11-medium transition-colors"
             classList={{
               "border-[color-mix(in_srgb,var(--surface-brand-base)_35%,var(--border-base))] bg-[color-mix(in_srgb,var(--surface-brand-base)_14%,var(--surface-secondary))] text-text-strong":
-                props.active,
+                props.active && !props.disabled,
               "border-border-weak-base bg-surface-secondary/70 text-text-weak group-hover:border-border-base group-hover:bg-surface-secondary group-hover:text-text-base":
-                !props.active,
+                !props.active || props.disabled,
             }}
           >
             {props.models}

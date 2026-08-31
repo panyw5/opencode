@@ -68,6 +68,7 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { SessionStatus } from "@/session/status"
+import { SessionInput } from "@/session/input"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import {
   ScheduledTaskCreateTool,
@@ -133,6 +134,7 @@ export const layer: Layer.Layer<
   | Format.Service
   | Truncate.Service
   | RuntimeFlags.Service
+  | SessionInput.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -479,7 +481,12 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(Agent.defaultLayer),
       Layer.provide(Session.defaultLayer),
       Layer.provide(
-        Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundShell.defaultLayer),
+        Layer.mergeAll(
+          SessionStatus.defaultLayer,
+          BackgroundJob.defaultLayer,
+          BackgroundShell.defaultLayer,
+          SessionInput.defaultLayer,
+        ),
       ),
       Layer.provide(Provider.defaultLayer),
       Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),

@@ -1,8 +1,8 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, untrack } from "solid-js"
+import { For, Show, createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { Portal } from "solid-js/web"
 import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
-import { useLocation, useNavigate, useParams } from "@solidjs/router"
+import { useLocation, useParams } from "@solidjs/router"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -14,10 +14,16 @@ import {
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { Button } from "@opencode-ai/ui/button"
 import { ContextMenu } from "@opencode-ai/ui/context-menu"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@opencode-ai/ui/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
+import { getFilename } from "@opencode-ai/core/util/path"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 
 import {
   cycleSessionBarIndex,
@@ -32,13 +38,13 @@ import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { ServerConnection, useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
+import { useSessionTabs } from "@/context/session-tabs"
 import { dict as enDict } from "@/i18n/en"
 import { decode64 } from "@/utils/base64"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
-import { domainFromDirectory, extraAgentByDirectory, mainDomain } from "@/pages/layout/extra-agents"
-import { projectOwner, waitForMatch, workspaceKey } from "@/pages/layout/helpers"
+import { domainFromDirectory } from "@/pages/layout/extra-agents"
+import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
 import { visiblyWorking } from "@/pages/session/session-working"
 import { sessionPermissionRequest } from "@/pages/session/composer/session-request-tree"
 import { permissionRequestNotFound } from "@/pages/session/composer/session-question-dock-helpers"
@@ -52,6 +58,11 @@ import { pickWarmDirectories, shouldFetchTabMeta } from "./session-tab-warm"
 
 const SESSION_TAB_PERMISSION_EXIT_MS = 160
 
+const apiErrorStatus = (error: unknown) => {
+  const value = error as { status?: unknown; cause?: { status?: unknown }; response?: { status?: unknown } }
+  return value?.status ?? value?.cause?.status ?? value?.response?.status
+}
+
 /**
  * Global session tabs bar. One tab per open session, across projects.
  * The ordered tab list is persisted in the Layout context (`sessionBar`);
@@ -61,10 +72,10 @@ export function SessionTabsBar() {
   const layout = useLayout()
   const settings = useSettings()
   const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const command = useCommand()
-  const server = useServer()
-  const navigate = useNavigate()
+  const sessionTabs = useSessionTabs()
   const params = useParams()
   const location = useLocation()
   type DictKey = keyof typeof enDict
@@ -73,7 +84,6 @@ export function SessionTabsBar() {
   const [state, setState] = createStore({
     activeDraggable: undefined as string | undefined,
   })
-  const [closedDraft, setClosedDraft] = createSignal("")
   let tabsViewport: HTMLDivElement | undefined
   let revealFrame: number | undefined
   const metadataLoads = new Set<string>()
@@ -114,6 +124,27 @@ export function SessionTabsBar() {
     return decode64(slug) ?? ""
   })
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
+  const activeTab = createMemo(() => {
+    const id = params.id
+    const directory = routeDir()
+    if (!id || !directory) return undefined
+    const key = sessionBarKey({ directory, id })
+    return tabs().find((tab) => sessionBarKey(tab) === key)
+  })
+  const activeSession = createMemo(() => {
+    const tab = activeTab()
+    if (!tab) return undefined
+    const [child] = globalSync.child(tab.directory, { bootstrap: false })
+    return child.session.find((session) => session.id === tab.id)
+  })
+  const currentSessionTitle = createMemo(() => {
+    const title = activeSession()?.title ?? activeTab()?.title
+    return cleanTitle(title ?? language.t("session.tab.session"))
+  })
+  const projectName = (directory: string) => {
+    const owner = projectOwner(directory, layout.projects.list())
+    return owner?.project.name || getFilename(owner?.project.worktree ?? directory) || directory
+  }
   // An id-less `/:dir/session` route is a not-yet-created session. Keep one
   // persisted draft tab per workspace until the first message promotes it.
   const draftDirectory = createMemo(() => {
@@ -121,35 +152,14 @@ export function SessionTabsBar() {
     if (params.id) return ""
     return routeDir()
   })
-  const visibleDrafts = createMemo(() => visibleSessionBarDrafts(drafts(), draftDirectory(), closedDraft()))
+  const visibleDrafts = createMemo(() => visibleSessionBarDrafts(drafts(), draftDirectory()))
   const shown = createMemo(() => {
     if (!settings.general.sessionTabsBar()) return false
     return tabs().length > 0 || visibleDrafts().length > 0
   })
 
-  createEffect(() => {
-    const directory = draftDirectory()
-    if (!directory) {
-      if (closedDraft()) setClosedDraft("")
-      return
-    }
-    if (!layout.ready()) {
-      console.debug(`[session-bar] draft route waiting layout storage directory=${directory}`)
-      return
-    }
-    if (closedDraft() === workspaceKey(directory)) return
-    const stored = untrack(() => layout.sessionBar.drafts())
-    console.debug(
-      `[session-bar] draft route observed directory=${directory} idless=true stored=${stored.length} route=${location.pathname}`,
-    )
-    // `openDraft` reads and writes the persisted drafts list. Keep that state
-    // outside this route-driven effect so closing a promoted draft cannot
-    // retrigger the old id-less route and immediately recreate it.
-    untrack(() => layout.sessionBar.openDraft(directory))
-  })
-
   const isActive = (tab: SessionBarTab) =>
-    !!params.id && tab.id === params.id && workspaceKey(tab.directory) === workspaceKey(routeDir())
+    !!params.id && sessionBarKey(tab) === sessionBarKey({ directory: routeDir(), id: params.id })
 
   // Only the directory behind the active route warms its full session list on
   // cold start. Background-tab directories stay cold: their titles come from
@@ -162,6 +172,96 @@ export function SessionTabsBar() {
     }
   })
 
+  const reconciledDirectories = new Map<string, string>()
+  const reconciliationInFlight = new Map<string, { marker: string; epoch: number }>()
+  const reconcilePersistedTabs = async (directory: string, marker: string, snapshot: SessionBarTab[]) => {
+    const key = workspaceKey(directory)
+    if (reconciledDirectories.get(key) === marker) return
+    if (reconciliationInFlight.get(key)?.marker === marker) return
+
+    const epoch = sessionTabs.beginReconcile(directory)
+    reconciliationInFlight.set(key, { marker, epoch })
+    console.debug(
+      `[session-tabs] persisted reconcile requested directory=${directory} marker=${marker} epoch=${epoch} tabs=${snapshot.length}`,
+    )
+    try {
+      const client = globalSDK
+        .forDomain(domainFromDirectory(directory))
+        .createClient({ directory, throwOnError: false })
+      console.debug(`[session-tabs] persisted reconcile client ready directory=${directory} epoch=${epoch}`)
+      const entries = await Promise.all(
+        snapshot.map(async (tab) => {
+          try {
+            const result = await client.session.get({ sessionID: tab.id })
+            const value = result.data
+            if (!value) {
+              const status = result.response?.status
+              console.debug(
+                `[session-tabs] persisted reconcile probe directory=${tab.directory} id=${tab.id} epoch=${epoch} status=${String(status ?? "unknown")}`,
+              )
+              return { tab, state: status === 404 ? ("deleted" as const) : ("unknown" as const) }
+            }
+            return {
+              tab: {
+                directory: tab.directory,
+                id: value.id,
+                title: value.title,
+                parentID: value.parentID,
+              },
+              state: value.time.archived ? ("archived" as const) : ("present" as const),
+            }
+          } catch (error) {
+            const status = apiErrorStatus(error)
+            console.debug(
+              `[session-tabs] persisted reconcile probe directory=${tab.directory} id=${tab.id} epoch=${epoch} status=${String(status ?? "unknown")}`,
+            )
+            return { tab, state: status === 404 ? ("deleted" as const) : ("unknown" as const) }
+          }
+        }),
+      )
+      console.debug(
+        `[session-tabs] persisted reconcile probes complete directory=${directory} epoch=${epoch} states=${entries.map((entry) => entry.state).join(",")}`,
+      )
+      const committed = await sessionTabs.reconcileDirectory({ directory, epoch, entries })
+      if (committed && entries.every((entry) => entry.state !== "unknown")) {
+        reconciledDirectories.set(key, marker)
+      }
+    } catch (error) {
+      console.debug(
+        `[session-tabs] persisted reconcile failed directory=${directory} epoch=${epoch} error=${String(error)}`,
+      )
+      await sessionTabs.reconcileDirectory({
+        directory,
+        epoch,
+        entries: snapshot.map((tab) => ({ tab, state: "unknown" })),
+      })
+    } finally {
+      if (reconciliationInFlight.get(key)?.epoch === epoch) reconciliationInFlight.delete(key)
+    }
+  }
+
+  createEffect(() => {
+    if (!layout.ready()) return
+    const byDirectory = new Map<string, { directory: string; tabs: SessionBarTab[] }>()
+    for (const tab of tabs()) {
+      const key = workspaceKey(tab.directory)
+      const found = byDirectory.get(key)
+      if (found) found.tabs.push(tab)
+      else byDirectory.set(key, { directory: tab.directory, tabs: [tab] })
+    }
+    for (const value of byDirectory.values()) {
+      try {
+        const runtime = globalSDK.forDomain(domainFromDirectory(value.directory))
+        const marker = `${runtime.url}:${runtime.version}`
+        void reconcilePersistedTabs(value.directory, marker, value.tabs.map((tab) => ({ ...tab })))
+      } catch (error) {
+        console.debug(
+          `[session-tabs] persisted reconcile unavailable directory=${value.directory} error=${String(error)}`,
+        )
+      }
+    }
+  })
+
   const fetchTabMeta = (tab: SessionBarTab) => {
     const key = sessionBarKey(tab)
     if (metadataLoads.has(key)) return
@@ -170,7 +270,7 @@ export function SessionTabsBar() {
       .ensure(tab.directory, tab.id)
       .then((value) => {
         if (!value) return
-        layout.sessionBar.setInfo(tab.directory, tab.id, {
+        sessionTabs.updateMeta(tab.directory, tab.id, {
           title: value.title,
           parentID: value.parentID ?? null,
         })
@@ -190,7 +290,7 @@ export function SessionTabsBar() {
         continue
       }
       if (session) {
-        layout.sessionBar.setInfo(tab.directory, tab.id, {
+        sessionTabs.updateMeta(tab.directory, tab.id, {
           title: session.title,
           parentID: session.parentID ?? null,
         })
@@ -198,44 +298,10 @@ export function SessionTabsBar() {
     }
   })
 
-  const selectServer = async (directory: string) => {
-    // Tabs can point at sessions served by another server connection (extra agents).
-    const extra = extraAgentByDirectory(directory)
-    if (extra) {
-      const conn = server.list.find((item) => item.integration === extra.id)
-      if (conn) {
-        const key = ServerConnection.key(conn)
-        server.setActive(key)
-        await waitForMatch(
-          () => server.key,
-          (value) => value === key,
-        )
-      }
-      return
-    }
-    if (server.domain !== mainDomain) {
-      const key = server.lastNonExtraAgent
-      if (key) {
-        server.setActive(key)
-        await waitForMatch(
-          () => server.key,
-          (value) => value === key,
-        )
-      }
-    }
-  }
+  const open = (tab: SessionBarTab) =>
+    sessionTabs.activate({ type: "session", directory: tab.directory, id: tab.id })
 
-  const open = async (tab: SessionBarTab) => {
-    await selectServer(tab.directory)
-    const href = `/${base64Encode(tab.directory)}/session/${tab.id}`
-    navigate(href)
-  }
-
-  const openDraft = async (directory: string) => {
-    console.debug(`[session-bar] draft open route directory=${directory}`)
-    await selectServer(directory)
-    navigate(`/${base64Encode(directory)}/session`)
-  }
+  const openDraft = (directory: string) => sessionTabs.activate({ type: "draft", directory })
 
   const subtreeFor = (tab: SessionBarTab) => {
     const all = orderedTabs()
@@ -254,93 +320,19 @@ export function SessionTabsBar() {
   }
 
   const close = (tab: SessionBarTab) => {
-    const all = orderedTabs()
-    const tabKey = sessionBarKey(tab)
-    const index = all.findIndex((item) => sessionBarKey(item) === tabKey)
-    if (index === -1) {
-      console.debug(`[session-bar] close skip missing tab id=${tab.id} directory=${tab.directory}`)
-      return
-    }
-
-    const subtree = subtreeFor(tab)
-    const closing = subtree.length > 0 ? subtree : [tab]
-    const closingKeys = new Set(closing.map((item) => sessionBarKey(item)))
-    const viewingClosed = closing.some((item) => isActive(item))
-    const firstClosed = all.findIndex((item) => closingKeys.has(sessionBarKey(item)))
-    const lastClosed = all.findLastIndex((item) => closingKeys.has(sessionBarKey(item)))
-    const neighbor =
-      (firstClosed > 0 ? all[firstClosed - 1] : undefined) ??
-      all.slice(Math.max(lastClosed, index) + 1).find((item) => !closingKeys.has(sessionBarKey(item)))
-
-    console.debug(
-      `[session-bar] close parent=${tab.id} descendants=${
-        closing
-          .filter((item) => sessionBarKey(item) !== tabKey)
-          .map((item) => item.id)
-          .join(",") || "none"
-      } viewingClosed=${String(viewingClosed)} neighbor=${neighbor?.id ?? "none"}`,
-    )
-
-    layout.sessionBar.closeAll(closing)
-    if (!viewingClosed) {
-      console.debug(`[session-bar] close stay route id=${params.id ?? "none"}`)
-      return
-    }
-    if (neighbor) {
-      console.debug(`[session-bar] close navigate neighbor id=${neighbor.id}`)
-      void open(neighbor)
-      return
-    }
-    // Closing the last tab leaves a fresh draft, mirroring the new-session page.
-    if (params.dir) {
-      console.debug(`[session-bar] close navigate draft dir=${params.dir}`)
-      navigate(`/${params.dir}/session`)
-      return
-    }
-    console.debug("[session-bar] close navigate home")
-    navigate("/")
+    void sessionTabs.requestClose(tab)
   }
 
   const hasOpenDescendants = (tab: SessionBarTab) => subtreeFor(tab).length > 1
 
   const closeDescendants = (tab: SessionBarTab) => {
-    const closing = subtreeFor(tab).slice(1)
-    if (closing.length === 0) {
-      console.debug(`[session-bar] close descendants skip none id=${tab.id} directory=${tab.directory}`)
-      return
-    }
-    const viewingClosed = closing.some((item) => isActive(item))
-    console.debug(
-      `[session-bar] close descendants parent=${tab.id} descendants=${closing.map((item) => item.id).join(",")} viewingClosed=${String(viewingClosed)}`,
-    )
-    layout.sessionBar.closeAll(closing)
-    if (!viewingClosed) return
-    console.debug(`[session-bar] close descendants navigate parent id=${tab.id}`)
-    void open(tab)
+    void sessionTabs.requestCloseDescendants(tab)
   }
 
   const closeDraft = (directory = draftDirectory()) => {
     if (!directory) return
-    const active = !params.id && workspaceKey(directory) === workspaceKey(routeDir())
-    console.debug(`[session-bar] draft close request directory=${directory} active=${String(active)}`)
-    if (active) {
-      console.debug(`[session-bar] draft close suppress directory=${directory}`)
-      setClosedDraft(workspaceKey(directory))
-    }
-    layout.sessionBar.closeDraft(directory)
-    if (!active) return
-
-    const last = orderedTabs().at(-1)
-    if (last) {
-      void open(last)
-      return
-    }
-    const next = drafts().find((item) => workspaceKey(item) !== workspaceKey(directory))
-    if (next) {
-      void openDraft(next)
-      return
-    }
-    navigate("/")
+    console.debug(`[session-tabs] draft close delegated directory=${directory}`)
+    void sessionTabs.requestCloseDraft(directory)
   }
 
   // Cycle through open tabs, then any persisted draft tabs at the end.
@@ -423,6 +415,38 @@ export function SessionTabsBar() {
     return `${sessionBarKey(active)}:${tabs().length}`
   })
 
+  const compactSessionItem = (tab: SessionBarTab) => {
+    const active = isActive(tab)
+    const title = () => cleanTitle(tab.title ?? language.t("session.tab.session"))
+    return (
+      <DropdownMenu.Item
+        class="min-w-0"
+        classList={{ "bg-surface-interactive-weak-hover": active }}
+        onSelect={() => void open(tab)}
+        aria-current={active ? "page" : undefined}
+      >
+        <span class="flex size-5 shrink-0 items-center justify-center text-icon-weak" aria-hidden="true">
+          <Icon
+            name={tab.parentID ? "branch" : "bubble-5"}
+            size="small"
+            classList={{ "[transform:scaleY(-1)]": !!tab.parentID }}
+          />
+        </span>
+        <div class="flex min-w-0 flex-1 items-center gap-3">
+          <DropdownMenu.ItemLabel class="min-w-0 flex-1 truncate text-13-medium text-text-strong">
+            {title()}
+          </DropdownMenu.ItemLabel>
+          <DropdownMenu.ItemDescription class="max-w-[42%] shrink-0 truncate text-right text-11-regular text-text-weak">
+            {projectName(tab.directory)}
+          </DropdownMenu.ItemDescription>
+        </div>
+        <Show when={active}>
+          <Icon name="check-small" size="small" class="shrink-0 text-icon-weak" />
+        </Show>
+      </DropdownMenu.Item>
+    )
+  }
+
   createEffect(() => {
     const target = scrollTarget()
     if (!shown() || !target) return
@@ -464,58 +488,113 @@ export function SessionTabsBar() {
       data-component="session-tabs-bar"
       role="toolbar"
       aria-label={language.t("session.tabs.bar.label")}
-      class="hidden h-full min-w-0 flex-1 items-center gap-1 px-1 xl:flex"
+      class="flex h-full min-w-0 flex-1 items-center gap-1 px-1"
       style={{ "--tabs-bar-height": "36px" }}
     >
+      <Show when={onSessionRoute()}>
+        <div class="relative flex min-w-0 flex-1 items-center xl:hidden">
+          <div class="pointer-events-none absolute inset-x-0 flex min-w-0 items-center justify-center px-12">
+            <span class="max-w-[48%] truncate text-13-medium text-text-strong">{currentSessionTitle()}</span>
+          </div>
+          <DropdownMenu gutter={4} placement="bottom-start">
+            <div class="ml-auto flex min-w-0 max-w-[48%] items-center gap-1 rounded-md px-2">
+              <span class="min-w-0 truncate text-11-regular text-text-weak">{projectName(routeDir())}</span>
+              <DropdownMenu.Trigger
+                as={IconButton}
+                icon="chevron-down"
+                variant="ghost"
+                class="titlebar-icon size-7 shrink-0 rounded-md p-0 text-icon-weak hover:text-icon-base data-[expanded]:bg-surface-base-active"
+                aria-label={language.t("session.tabs.bar.label")}
+              />
+            </div>
+            <DropdownMenu.Portal>
+              <DropdownMenu.Content
+                class="session-child-agent-scrollbar w-[520px] max-w-[calc(100vw-32px)]"
+                style={{
+                  "max-height": "min(520px, calc(100dvh - 64px))",
+                  "overflow-y": "auto",
+                  "overscroll-behavior": "contain",
+                }}
+              >
+                <DropdownMenu.Group>
+                  <For each={orderedTabs()}>{(tab) => compactSessionItem(tab)}</For>
+                  <For each={visibleDrafts()}>
+                    {(directory) => (
+                      <DropdownMenu.Item class="min-w-0" onSelect={() => void openDraft(directory)}>
+                        <span
+                          class="flex size-5 shrink-0 items-center justify-center text-icon-weak"
+                          aria-hidden="true"
+                        >
+                          <Icon name="bubble-5" size="small" />
+                        </span>
+                        <div class="flex min-w-0 flex-1 items-center gap-3">
+                          <DropdownMenu.ItemLabel class="min-w-0 flex-1 truncate text-13-medium text-text-strong">
+                            {language.t("session.tab.session")}
+                          </DropdownMenu.ItemLabel>
+                          <DropdownMenu.ItemDescription class="max-w-[42%] shrink-0 truncate text-right text-11-regular text-text-weak">
+                            {projectName(directory)}
+                          </DropdownMenu.ItemDescription>
+                        </div>
+                      </DropdownMenu.Item>
+                    )}
+                  </For>
+                </DropdownMenu.Group>
+              </DropdownMenu.Content>
+            </DropdownMenu.Portal>
+          </DropdownMenu>
+        </div>
+      </Show>
       <Show when={shown()}>
-        <DragDropProvider
-          onDragStart={handleDragStart}
-          onDragEnd={handleDragEnd}
-          onDragOver={handleDragOver}
-          collisionDetector={closestCenter}
-        >
-          <DragDropSensors />
-          <ConstrainDragYAxis />
-          <div ref={tabsViewport} class="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
-            <SortableProvider ids={keys()}>
-              <For each={keys()}>
-                {(key) => (
-                  <SessionTabGroup
-                    tabKey={key}
-                    group={() => groupsByKey().get(key)}
-                    active={(tab) => isActive(tab)}
-                    hasOpenDescendants={hasOpenDescendants}
-                    onOpen={(tab) => void open(tab)}
-                    onClose={close}
-                    onCloseDescendants={closeDescendants}
+        <div class="hidden min-w-0 flex-1 items-center xl:flex">
+          <DragDropProvider
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragOver={handleDragOver}
+            collisionDetector={closestCenter}
+          >
+            <DragDropSensors />
+            <ConstrainDragYAxis />
+            <div ref={tabsViewport} class="flex h-full min-w-0 flex-1 items-center gap-1 overflow-x-auto no-scrollbar">
+              <SortableProvider ids={keys()}>
+                <For each={keys()}>
+                  {(key) => (
+                    <SessionTabGroup
+                      tabKey={key}
+                      group={() => groupsByKey().get(key)}
+                      active={(tab) => isActive(tab)}
+                      hasOpenDescendants={hasOpenDescendants}
+                      onOpen={(tab) => void open(tab)}
+                      onClose={close}
+                      onCloseDescendants={closeDescendants}
+                    />
+                  )}
+                </For>
+              </SortableProvider>
+              <For each={visibleDrafts()}>
+                {(directory) => (
+                  <DraftTab
+                    directory={directory}
+                    active={!params.id && workspaceKey(directory) === workspaceKey(routeDir())}
+                    onOpen={() => void openDraft(directory)}
+                    onClose={() => closeDraft(directory)}
                   />
                 )}
               </For>
-            </SortableProvider>
-            <For each={visibleDrafts()}>
-              {(directory) => (
-                <DraftTab
-                  directory={directory}
-                  active={!params.id && workspaceKey(directory) === workspaceKey(routeDir())}
-                  onOpen={() => void openDraft(directory)}
-                  onClose={() => closeDraft(directory)}
-                />
-              )}
-            </For>
-          </div>
-          <DragOverlay>
-            <Show when={state.activeDraggable} keyed>
-              {(key) => {
-                const title = () => tabs().find((item) => sessionBarKey(item) === key)?.title
-                return (
-                  <div data-component="tabs-drag-preview">
-                    <span class="truncate px-2 text-13-medium">{title() ?? ""}</span>
-                  </div>
-                )
-              }}
-            </Show>
-          </DragOverlay>
-        </DragDropProvider>
+            </div>
+            <DragOverlay>
+              <Show when={state.activeDraggable} keyed>
+                {(key) => {
+                  const title = () => tabs().find((item) => sessionBarKey(item) === key)?.title
+                  return (
+                    <div data-component="tabs-drag-preview">
+                      <span class="truncate px-2 text-13-medium">{title() ?? ""}</span>
+                    </div>
+                  )
+                }}
+              </Show>
+            </DragOverlay>
+          </DragDropProvider>
+        </div>
       </Show>
     </div>
   )
@@ -729,9 +808,11 @@ function SessionTab(props: {
   const globalSync = useGlobalSync()
   const globalSDK = useGlobalSDK()
   const layout = useLayout()
+  const sessionTabs = useSessionTabs()
   const language = useLanguage()
   const notification = useNotification()
   const permission = usePermission()
+  const dialog = useDialog()
   const [state, setState] = createStore({ generatingTitle: false })
   const [child] = globalSync.child(props.tab.directory, { bootstrap: false })
   let triggerEl: HTMLElement | undefined
@@ -750,7 +831,7 @@ function SessionTab(props: {
     const value = session()
     if (!value) return
     if (value.title === props.tab.title && value.parentID === props.tab.parentID) return
-    layout.sessionBar.setInfo(props.tab.directory, props.tab.id, {
+    sessionTabs.updateMeta(props.tab.directory, props.tab.id, {
       title: value.title,
       parentID: value.parentID ?? null,
     })
@@ -889,7 +970,7 @@ function SessionTab(props: {
             setSessionStore("session", (list) =>
               list.map((item) => (item.id === props.tab.id ? { ...item, title: data.title } : item)),
             )
-            layout.sessionBar.setInfo(props.tab.directory, props.tab.id, {
+            sessionTabs.updateMeta(props.tab.directory, props.tab.id, {
               title: data.title,
               parentID: data.parentID ?? props.tab.parentID ?? null,
             })
@@ -921,6 +1002,13 @@ function SessionTab(props: {
         setState("generatingTitle", false)
         console.debug(`[session-tab] generate title settled id=${props.tab.id}`)
       })
+  }
+
+  const editTitle = () => {
+    console.debug(`[session-tab] edit title open id=${props.tab.id} dir=${props.tab.directory}`)
+    dialog.show(() => (
+      <DialogEditSessionTitle directory={props.tab.directory} sessionID={props.tab.id} initialTitle={title()} />
+    ))
   }
 
   return (
@@ -1000,6 +1088,7 @@ function SessionTab(props: {
           </span>
         </Show>
         <span
+          data-action="session-tab-close"
           class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow]"
           classList={{
             "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
@@ -1055,6 +1144,18 @@ function SessionTab(props: {
             </ContextMenu.Icon>
             <ContextMenu.ItemLabel>{language.t("session.generateTitle")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="session-tab-edit-title"
+            data-session={base64Encode(props.tab.id)}
+            onSelect={editTitle}
+          >
+            <ContextMenu.Icon>
+              <span class="flex shrink-0 text-icon-base">
+                <Icon name="edit" size="small" />
+              </span>
+            </ContextMenu.Icon>
+            <ContextMenu.ItemLabel>{language.t("session.editTitle")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
           <ContextMenu.Separator />
           <ContextMenu.Item
             data-action="session-tab-close-descendants"
@@ -1097,6 +1198,99 @@ function SessionTab(props: {
         </ContextMenu.Content>
       </ContextMenu.Portal>
     </ContextMenu>
+  )
+}
+
+function DialogEditSessionTitle(props: { directory: string; sessionID: string; initialTitle: string }) {
+  const dialog = useDialog()
+  const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
+  const language = useLanguage()
+  const [state, setState] = createStore({ title: props.initialTitle, saving: false })
+
+  const save = () => {
+    if (state.saving) return
+    const title = state.title.trim()
+    if (!title) return
+    const domain = domainFromDirectory(props.directory)
+    setState("saving", true)
+    console.debug(`[session-tab] edit title start id=${props.sessionID} dir=${props.directory} domain=${domain}`)
+    const [, setSessionStore] = globalSync.child(props.directory, { bootstrap: false })
+    void globalSDK
+      .forDomain(domain)
+      .client.session.update(
+        {
+          sessionID: props.sessionID,
+          directory: props.directory,
+          title,
+        },
+        { throwOnError: true },
+      )
+      .then(
+        () => {
+          setSessionStore("session", (list) =>
+            list.map((item) => (item.id === props.sessionID ? { ...item, title } : item)),
+          )
+          dialog.close()
+          console.debug(`[session-tab] edit title saved id=${props.sessionID} title=${title}`)
+          showToast({
+            variant: "success",
+            icon: "circle-check",
+            title: language.t("toast.session.updateTitle.success.title"),
+            description: title,
+          })
+        },
+        (err: unknown) => {
+          const message =
+            err instanceof Error
+              ? err.message
+              : typeof err === "object" && err && "message" in err
+                ? String((err as { message: unknown }).message)
+                : String(err)
+          console.debug(`[session-tab] edit title failed id=${props.sessionID} err=${message}`)
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+            description: message,
+          })
+        },
+      )
+      .finally(() => {
+        setState("saving", false)
+        console.debug(`[session-tab] edit title settled id=${props.sessionID}`)
+      })
+  }
+
+  const handleSubmit = (event: SubmitEvent) => {
+    event.preventDefault()
+    save()
+  }
+
+  return (
+    <Dialog title={language.t("session.editTitle")} fit class="w-full max-w-[480px] mx-auto">
+      <form onSubmit={handleSubmit} class="flex flex-col gap-6 p-6 pt-0">
+        <TextField
+          autofocus
+          type="text"
+          placeholder={language.t("session.editTitle.placeholder")}
+          value={state.title}
+          onChange={(v) => setState("title", v)}
+          onKeyDown={(event: KeyboardEvent) => {
+            if (event.key !== "Enter") return
+            event.preventDefault()
+            save()
+          }}
+        />
+        <div class="flex justify-end gap-2">
+          <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button type="submit" variant="primary" size="large" disabled={state.saving || !state.title.trim()}>
+            {state.saving ? language.t("common.saving") : language.t("common.save")}
+          </Button>
+        </div>
+      </form>
+    </Dialog>
   )
 }
 
@@ -1338,6 +1532,7 @@ function DraftTab(props: { directory: string; active: boolean; onOpen: () => voi
         </span>
         <span class="min-w-0 flex-1 truncate">{language.t("command.session.new")}</span>
         <span
+          data-action="session-tab-close"
           class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow]"
           classList={{
             "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
@@ -1348,6 +1543,7 @@ function DraftTab(props: { directory: string; active: boolean; onOpen: () => voi
           aria-label={language.t("common.closeTab")}
           onClick={(event) => {
             event.stopPropagation()
+            console.debug(`[session-tabs] draft close clicked directory=${props.directory}`)
             props.onClose()
           }}
         >

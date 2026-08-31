@@ -2,9 +2,13 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { Database, eq } from "@/storage/db"
 import { ProjectTable } from "@/project/project.sql"
-import { ProjectID } from "@/project/schema"
+import { Project } from "@/project/project"
+import { LocationID, ProjectID } from "@/project/schema"
+import { ProjectLocationTable } from "@/project/location.sql"
 import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ScheduledTaskRunTable, ScheduledTaskTable } from "@/scheduled-task/scheduled-task.sql"
+import { WorkspaceTable } from "@/control-plane/workspace.sql"
+import { WorkspaceID } from "@/control-plane/schema"
 
 const now = 1_700_000_000_000
 
@@ -26,13 +30,17 @@ function project(name: string) {
   return id
 }
 
-function create(projectID: ProjectID, input?: { at?: number; enabled?: boolean }) {
+function create(
+  projectID: ProjectID,
+  input?: { at?: number; enabled?: boolean; directory?: string; locationID?: LocationID },
+) {
   return Effect.runPromise(
     ScheduledTaskRepository.create(
       {
         projectID,
+        locationID: input?.locationID,
         projectName: "Scheduled project",
-        directory: "/tmp/scheduled-project",
+        directory: input?.directory ?? "/tmp/scheduled-project",
         name: "Nightly review",
         prompt: "Review the workspace",
         schedule: { kind: "at", at: input?.at ?? now + 60_000 },
@@ -47,6 +55,22 @@ function create(projectID: ProjectID, input?: { at?: number; enabled?: boolean }
   )
 }
 
+function ensureGlobal() {
+  Database.use((db) =>
+    db
+      .insert(ProjectTable)
+      .values({
+        id: ProjectID.global,
+        worktree: "/",
+        sandboxes: [],
+        time_created: now,
+        time_updated: now,
+      })
+      .onConflictDoNothing()
+      .run(),
+  )
+}
+
 beforeEach(() => {
   Database.use((db) => {
     db.delete(ScheduledTaskRunTable).run()
@@ -55,14 +79,77 @@ beforeEach(() => {
 })
 
 describe("ScheduledTaskRepository", () => {
+  test("persists an optional location without changing the public task shape", async () => {
+    const projectID = project("location")
+    const locationID = LocationID.ascending()
+    const directory = `/tmp/location-${crypto.randomUUID()}`
+    Database.use((db) =>
+      db
+        .insert(ProjectLocationTable)
+        .values({
+          id: locationID,
+          project_id: projectID,
+          directory,
+          canonical_directory: directory,
+          kind: "directory",
+          vcs_state: "none",
+          time_created: now,
+          time_updated: now,
+          time_last_seen: now,
+        })
+        .run(),
+    )
+
+    const task = await create(projectID, { directory, locationID })
+    const row = Database.use((db) =>
+      db.select().from(ScheduledTaskTable).where(eq(ScheduledTaskTable.id, task.id)).get(),
+    )
+    expect(row?.location_id).toBe(locationID)
+    expect("locationID" in task).toBe(false)
+  })
+
   test("creates, filters, updates, and removes tasks", async () => {
     const one = project("one")
     const two = project("two")
-    const first = await create(one)
-    await create(two)
+    const firstLocation = LocationID.ascending()
+    const secondLocation = LocationID.ascending()
+    Database.use((db) =>
+      db
+        .insert(ProjectLocationTable)
+        .values([
+          {
+            id: firstLocation,
+            project_id: one,
+            directory: `/tmp/one-${firstLocation}`,
+            canonical_directory: `/tmp/one-${firstLocation}`,
+            kind: "directory",
+            vcs_state: "none",
+            time_created: now,
+            time_updated: now,
+            time_last_seen: now,
+          },
+          {
+            id: secondLocation,
+            project_id: two,
+            directory: `/tmp/two-${secondLocation}`,
+            canonical_directory: `/tmp/two-${secondLocation}`,
+            kind: "directory",
+            vcs_state: "none",
+            time_created: now,
+            time_updated: now,
+            time_last_seen: now,
+          },
+        ])
+        .run(),
+    )
+    const first = await create(one, { locationID: firstLocation })
+    await create(two, { locationID: secondLocation })
+    await create(one)
 
-    expect((await Effect.runPromise(ScheduledTaskRepository.list())).map((task) => task.id)).toHaveLength(2)
-    expect(await Effect.runPromise(ScheduledTaskRepository.list({ projectID: one }))).toEqual([first])
+    expect((await Effect.runPromise(ScheduledTaskRepository.list())).map((task) => task.id)).toHaveLength(3)
+    expect(await Effect.runPromise(ScheduledTaskRepository.list({ locationID: firstLocation }))).toEqual([first])
+    expect(await Effect.runPromise(ScheduledTaskRepository.list({ locationID: secondLocation }))).toHaveLength(1)
+    expect(await Effect.runPromise(ScheduledTaskRepository.list({ projectID: one }))).toHaveLength(2)
 
     const updated = await Effect.runPromise(
       ScheduledTaskRepository.update(first.id, { name: "Updated review", enabled: false }, now + 1),
@@ -72,6 +159,99 @@ describe("ScheduledTaskRepository", () => {
     expect(updated?.nextRunAt).toBeUndefined()
     expect(await Effect.runPromise(ScheduledTaskRepository.remove(first.id))).toBe(true)
     expect(await Effect.runPromise(ScheduledTaskRepository.get(first.id))).toBeUndefined()
+  })
+
+  test("claims only matching legacy tasks without changing schedule or run state", async () => {
+    ensureGlobal()
+    const target = project("legacy-target")
+    const directory = `/tmp/legacy-${crypto.randomUUID()}`
+    const persistedDirectory = directory.replaceAll("/", "\\")
+    const otherDirectory = `/tmp/legacy-other-${crypto.randomUUID()}`
+    const task = await create(ProjectID.global, { at: now, directory: persistedDirectory })
+    const other = await create(ProjectID.global, { at: now + 1, directory: otherDirectory })
+    const workspaceID = WorkspaceID.ascending()
+    Database.use((db) =>
+      db
+        .insert(WorkspaceTable)
+        .values({
+          id: workspaceID,
+          type: "local",
+          directory: persistedDirectory,
+          project_id: ProjectID.global,
+          time_used: now,
+        })
+        .run(),
+    )
+    const occurrence = await Effect.runPromise(
+      ScheduledTaskRepository.claim({
+        taskID: task.id,
+        scheduledAt: now,
+        ownerID: "legacy-owner",
+        leaseUntil: now + 60_000,
+        now,
+      }),
+    )
+    expect(occurrence.type).toBe("claimed")
+
+    const beforeTask = Database.use((db) =>
+      db.select().from(ScheduledTaskTable).where(eq(ScheduledTaskTable.id, task.id)).get(),
+    )
+    const beforeRuns = Database.use((db) =>
+      db.select().from(ScheduledTaskRunTable).where(eq(ScheduledTaskRunTable.task_id, task.id)).all(),
+    )
+
+    expect(Project.claimLegacyDirectory({ directory, projectID: target })).toEqual({
+      sessions: 0,
+      scheduledTasks: 1,
+      workspaces: 1,
+    })
+    expect(Project.claimLegacyDirectory({ directory, projectID: target }).scheduledTasks).toBe(0)
+
+    const afterTask = Database.use((db) =>
+      db.select().from(ScheduledTaskTable).where(eq(ScheduledTaskTable.id, task.id)).get(),
+    )
+    const afterRuns = Database.use((db) =>
+      db.select().from(ScheduledTaskRunTable).where(eq(ScheduledTaskRunTable.task_id, task.id)).all(),
+    )
+    expect(afterTask).toEqual({ ...beforeTask, project_id: target })
+    expect(afterRuns).toEqual(beforeRuns)
+    expect((await Effect.runPromise(ScheduledTaskRepository.get(other.id)))?.projectID).toBe(ProjectID.global)
+    const workspace = Database.use((db) =>
+      db.select().from(WorkspaceTable).where(eq(WorkspaceTable.id, workspaceID)).get(),
+    )
+    expect(workspace?.project_id).toBe(target)
+  })
+
+  test("backfills a missing location without changing an existing project identity", async () => {
+    const projectID = project("location-backfill")
+    const directory = `/tmp/location-backfill-${crypto.randomUUID()}`
+    const locationID = LocationID.ascending()
+    Database.use((db) =>
+      db
+        .insert(ProjectLocationTable)
+        .values({
+          id: locationID,
+          project_id: projectID,
+          directory,
+          canonical_directory: directory,
+          kind: "directory",
+          vcs_state: "none",
+          time_created: now,
+          time_updated: now,
+          time_last_seen: now,
+        })
+        .run(),
+    )
+    const task = await create(projectID, { directory })
+
+    expect(Project.claimLegacyDirectory({ directory, projectID, locationID }).scheduledTasks).toBe(1)
+    expect(Project.claimLegacyDirectory({ directory, projectID, locationID }).scheduledTasks).toBe(0)
+
+    const row = Database.use((db) =>
+      db.select().from(ScheduledTaskTable).where(eq(ScheduledTaskTable.id, task.id)).get(),
+    )
+    expect(row?.project_id).toBe(projectID)
+    expect(row?.location_id).toBe(locationID)
   })
 
   test("deduplicates occurrences and records same-task overlap as skipped", async () => {

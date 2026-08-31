@@ -7,7 +7,6 @@ import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Ripgrep } from "../../src/file/ripgrep"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Global } from "@opencode-ai/core/global"
 import { Truncate } from "@/tool/truncate"
 import { Agent } from "../../src/agent/agent"
 import { TestInstance, tmpdirScoped } from "../fixture/fixture"
@@ -19,6 +18,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Git } from "@/git"
 import { Permission } from "../../src/permission"
 import type * as Tool from "../../src/tool/tool"
+import { parseRemoteRepositoryReference, repositoryCachePath } from "../../src/util/repository"
 
 const referenceLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Reference.layer.pipe(
@@ -209,7 +209,7 @@ describe("tool.glob", () => {
       Effect.gen(function* () {
         yield* TestInstance
         const fs = yield* AppFileSystem.Service
-        const cache = path.join(Global.Path.repos, "github.com", "opencode-glob-reference", "repo")
+        const cache = repositoryCachePath(parseRemoteRepositoryReference("opencode-glob-reference/repo"))
         yield* fs.remove(cache, { recursive: true }).pipe(Effect.ignore)
         yield* Effect.addFinalizer(() => fs.remove(cache, { recursive: true }).pipe(Effect.ignore))
 

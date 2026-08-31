@@ -90,9 +90,6 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       })
   const options = mergeOptions(mergeOptions(mergeOptions(base, input.model.options), input.agent.options), variant)
   if (isOpenaiOauth) options.instructions = system.join("\n")
-  log.info(
-    `prepared provider options provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} session=${input.sessionID} promptCacheKey=${String(options.promptCacheKey ?? "")} setCacheKey=${String(input.provider.options?.setCacheKey)}`,
-  )
 
   const messages =
     isOpenaiOauth || input.isWorkflow
@@ -107,7 +104,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
           ...input.messages,
         ]
 
-  const params = yield* input.plugin.trigger(
+  const triggeredParams = yield* input.plugin.trigger(
     "chat.params",
     {
       sessionID: input.sessionID,
@@ -126,6 +123,18 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
       options,
     },
   )
+  const params = { ...triggeredParams, options: { ...triggeredParams.options } }
+  if (input.provider.options?.setCacheKey === false) {
+    delete params.options.promptCacheKey
+    delete params.options.prompt_cache_key
+  }
+  const cacheKeyField =
+    params.options.promptCacheKey !== undefined
+      ? "promptCacheKey"
+      : params.options.prompt_cache_key !== undefined
+        ? "prompt_cache_key"
+        : "none"
+  log.info(`prompt cache key prepared field=${cacheKeyField}`)
 
   const { headers } = yield* input.plugin.trigger(
     "chat.headers",

@@ -34,6 +34,7 @@ import { RepositoryCache } from "@/reference/repository-cache"
 import { ProviderID, ModelID } from "@/provider/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
+import { SessionInput } from "@/session/input"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProjectTask } from "@/project-task/service"
 
@@ -59,7 +60,12 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Agent.defaultLayer),
       Layer.provide(Session.defaultLayer),
       Layer.provide(
-        Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundShell.defaultLayer),
+        Layer.mergeAll(
+          SessionStatus.defaultLayer,
+          BackgroundJob.defaultLayer,
+          BackgroundShell.defaultLayer,
+          SessionInput.defaultLayer,
+        ),
       ),
       Layer.provide(Provider.defaultLayer),
       Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),

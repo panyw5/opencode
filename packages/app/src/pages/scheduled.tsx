@@ -21,11 +21,13 @@ import { createStore } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
 import { useModels } from "@/context/models"
 import { decode64 } from "@/utils/base64"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
 import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
+import { filterActiveProjects, filterTasksForActiveProjects } from "@/pages/scheduled-utils"
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
 
@@ -61,12 +63,14 @@ function statusTone(status?: ScheduledTask["lastStatus"] | ScheduledTaskRun["sta
 export default function Scheduled() {
   const sdk = useGlobalSDK()
   const sync = useGlobalSync()
+  const layout = useLayout()
   const models = useModels()
   const language = useLanguage()
   const navigate = useNavigate()
   const location = useLocation()
   const params = useParams()
   let routeIntentHandled = false
+  let listRequest = 0
   const [state, setState] = createStore({
     tasks: [] as ScheduledTask[],
     runs: [] as ScheduledTaskRun[],
@@ -99,11 +103,14 @@ export default function Scheduled() {
   })
 
   const projects = createMemo(() =>
-    sync.data.project
-      .filter((project) => project.worktree)
+    filterActiveProjects(
+      sync.data.project.filter((project) => project.worktree),
+      layout.projects.list(),
+    )
       .slice()
       .sort((a, b) => (a.name || a.worktree).localeCompare(b.name || b.worktree)),
   )
+  const activeProjectIDs = createMemo(() => new Set(projects().map((project) => project.id)))
   const routeDirectory = createMemo(() => decode64(params.dir) ?? "")
   const routeProject = createMemo(() => projectOwner(routeDirectory(), projects())?.project)
 
@@ -176,20 +183,26 @@ export default function Scheduled() {
     { id: "all", label: language.t("scheduled.filter.all") },
     ...projects().map((project) => ({ id: project.id, label: project.name || getFilename(project.worktree) })),
   ])
+  createEffect(() => {
+    if (state.projectID === "all" || activeProjectIDs().has(state.projectID)) return
+    setState("projectID", "all")
+  })
   const filtered = createMemo(() => {
     const directory = routeDirectory()
     const projectID = routeProject()?.id ?? state.projectID
-    if (directory && !routeProject()) {
-      return state.tasks.filter((task) => workspaceKey(task.directory) === workspaceKey(directory))
-    }
-    return projectID === "all" ? state.tasks : state.tasks.filter((task) => task.projectID === projectID)
+    if (directory) return state.tasks
+    const active = filterTasksForActiveProjects(state.tasks, projects())
+    return projectID === "all" ? active : active.filter((task) => task.projectID === projectID)
   })
   const selected = createMemo(() => state.tasks.find((task) => task.id === state.selectedID))
 
-  async function load() {
-    setState({ loading: true, error: "" })
+  async function load(options?: { silent?: boolean }) {
+    const current = ++listRequest
+    if (!options?.silent) setState({ loading: true, error: "" })
     try {
-      const result = await sdk.client.scheduledTask.list()
+      const directory = routeDirectory()
+      const result = await sdk.client.scheduledTask.list(directory ? { directory } : undefined)
+      if (current !== listRequest) return
       const tasks = result.data ?? []
       setState("tasks", tasks)
       if (state.selectedID && !tasks.some((task) => task.id === state.selectedID)) setState("selectedID", undefined)
@@ -198,11 +211,14 @@ export default function Scheduled() {
         const query = new URLSearchParams(location.search)
         const requested = tasks.find((task) => task.id === query.get("task"))
         if (requested && query.get("edit") === "true") resetForm(requested)
+        else if (requested) selectTask(requested)
         else if (query.get("create") === "true") resetForm()
       }
     } catch (error) {
+      if (current !== listRequest) return
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
+      if (current !== listRequest) return
       setState("loading", false)
     }
   }
@@ -368,6 +384,11 @@ export default function Scheduled() {
     await load()
   }
 
+  function goBack() {
+    const directory = routeDirectory()
+    navigate(directory ? `/${base64Encode(directory)}` : "/")
+  }
+
   onMount(() => void load())
   createEffect(() => {
     const task = selected()
@@ -376,7 +397,9 @@ export default function Scheduled() {
   // listenAll: name=directory, details.type=event type (e.g. scheduled-task.created)
   const stop = sdk.listenAll((event) => {
     if (!event.details.type.startsWith("scheduled-task.")) return
-    void load()
+    const directory = routeDirectory()
+    if (directory && workspaceKey(event.name) !== workspaceKey(directory)) return
+    void load({ silent: true })
     const id = state.selectedID
     if (id) void loadRuns(id)
   })
@@ -385,12 +408,13 @@ export default function Scheduled() {
   return (
     <div class="size-full overflow-hidden bg-background-base">
       <header class="flex h-14 items-center justify-between border-b border-border-weak-base px-5">
-        <div>
-          <h1 class="text-18-medium text-text-strong">{language.t("scheduled.title")}</h1>
-          <p class="text-12-regular text-text-weak">
-            <Show when={routeProject()}>{(project) => `${project().name || getFilename(project().worktree)} · `}</Show>
-            {language.t("scheduled.subtitle")}
-          </p>
+        <div class="flex min-w-0 items-center gap-3">
+          <Button icon="arrow-left" variant="ghost" class="shrink-0" onClick={goBack}>
+            {language.t("command.session.back")}
+          </Button>
+          <div class="min-w-0">
+            <h1 class="truncate text-18-medium text-text-strong">{language.t("scheduled.title")}</h1>
+          </div>
         </div>
         <Button icon="plus" variant="primary" onClick={() => resetForm()}>
           {language.t("scheduled.create")}

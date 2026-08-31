@@ -116,6 +116,7 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Que
 interface PendingEntry {
   info: Request
   deferred: Deferred.Deferred<ReadonlyArray<Answer>, RejectedError>
+  phase: "registering" | "active"
 }
 
 interface State {
@@ -640,6 +641,7 @@ export const layer = Layer.effect(
       const expiredIDs: QuestionID[] = []
       for (const [id, entry] of pending) {
         if (entry.info.sessionID !== input.sessionID) continue
+        if (entry.phase === "registering") continue
         if (!(yield* isSuperseded(entry.info))) continue
         expiredIDs.push(id)
       }
@@ -660,6 +662,7 @@ export const layer = Layer.effect(
       // Phase 2: persisted questions for this session only (new-message path).
       // Workspace recovery for bootstrap lives in list()/findPersisted via persistedAll.
       for (const item of yield* persistedInSession(input.sessionID)) {
+        if (pending.get(item.request.id)?.phase === "registering") continue
         if (!(yield* isSuperseded(item.request))) continue
 
         // Clear metadata (handles any tool part status)
@@ -702,9 +705,35 @@ export const layer = Layer.effect(
         questions: input.questions,
         tool: input.tool,
       }
-      pending.set(id, { info, deferred })
+      const entry: PendingEntry = { info, deferred, phase: "registering" }
+      pending.set(id, entry)
       const persisted = yield* persistRequest({ request: info, waitForPart: false })
+      const supersededAtRegistration = yield* isSuperseded(info)
+      log.info("question registered", {
+        id,
+        sessionID: input.sessionID,
+        messageID: input.tool?.messageID,
+        persisted,
+        supersededAtRegistration,
+      })
+      if (supersededAtRegistration) {
+        if (pending.get(id) === entry) pending.delete(id)
+        yield* clearPersistedRequest(info)
+        log.info("rejecting question superseded before registration", {
+          id,
+          sessionID: input.sessionID,
+          messageID: input.tool?.messageID,
+        })
+        return yield* new RejectedError()
+      }
       yield* bus.publish(Event.Asked, info)
+      if (pending.get(id) === entry) {
+        entry.phase = "active"
+        // Close the narrow window where a newer message is written after the
+        // registration check but before Asked is published. Active entries are
+        // rejected through the normal event path, preserving Asked -> Rejected.
+        yield* expireSuperseded({ sessionID: input.sessionID })
+      }
       if (!persisted && info.tool) yield* persistRequest({ request: info, waitForPart: true })
 
       return yield* Effect.ensuring(
@@ -786,8 +815,9 @@ export const layer = Layer.effect(
      */
     const list = Effect.fn("Question.list")(function* () {
       const pending = (yield* InstanceState.get(state)).pending
-      const result = Array.from(pending.values(), (x) => x.info)
-      const seen = new Set(result.map((item) => item.id))
+      const entries = Array.from(pending.values())
+      const result = entries.filter((item) => item.phase === "active").map((item) => item.info)
+      const seen = new Set(entries.map((item) => item.info.id))
       for (const item of yield* persistedAll()) {
         if (seen.has(item.request.id)) continue
         seen.add(item.request.id)

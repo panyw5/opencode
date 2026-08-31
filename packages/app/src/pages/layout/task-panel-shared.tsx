@@ -235,19 +235,15 @@ export function TaskCardActionButton(props: {
   return (
     <button
       type="button"
-      class={`${TASK_CARD_CHIP_CLASS} transition-colors disabled:cursor-not-allowed disabled:opacity-50`}
+      class={`${TASK_CARD_CHIP_CLASS} cursor-pointer transition-colors transition-transform disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-background-base disabled:active:scale-100 [&_[data-component=icon]]:!text-current`}
       classList={{
-        "hover:bg-surface-base-hover": !props.danger,
+        "hover:bg-surface-base-hover hover:border-border-strong-base active:bg-surface-base-active active:scale-[0.97]":
+          !props.danger,
+        // Mix critical hue into the theme's strong text so the red stays muted
+        // and tracks light/dark (and custom themes) instead of a neon fill.
+        "!text-[color-mix(in_oklch,var(--text-critical-base)_48%,var(--text-strong))] hover:!text-[color-mix(in_oklch,var(--text-critical-base)_62%,var(--text-strong))] hover:!bg-[color-mix(in_oklch,var(--surface-critical-base)_58%,var(--background-base))] hover:!border-border-weak-base active:!text-[color-mix(in_oklch,var(--text-critical-base)_70%,var(--text-strong))] active:!bg-[color-mix(in_oklch,var(--surface-critical-base)_72%,var(--background-base))] active:scale-[0.97]":
+          !!props.danger,
       }}
-      style={
-        props.danger
-          ? {
-              "background-color": "color-mix(in srgb, var(--surface-critical-base) 68%, var(--background-base))",
-              "border-color": "color-mix(in srgb, var(--surface-critical-base) 72%, var(--background-base))",
-              color: "var(--text-on-critical-base)",
-            }
-          : undefined
-      }
       disabled={props.disabled}
       onClick={(event) => {
         event.stopPropagation()

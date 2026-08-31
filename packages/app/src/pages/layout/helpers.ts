@@ -128,8 +128,9 @@ export async function waitForMatch<T>(
   const delay = opts?.delay ?? 10
   for (let count = 0; count < tries; count += 1) {
     await new Promise((resolve) => setTimeout(resolve, delay))
-    if (match(read())) return
+    if (match(read())) return true
   }
+  return false
 }
 
 function sortSessions(_now: number) {
@@ -402,6 +403,38 @@ export function workingSessionTreeIDs(input: {
 
 export const displayName = (project: { name?: string; worktree: string }) =>
   project.name || getFilename(project.worktree)
+
+export type I18nTemplatePart = { type: "text"; value: string } | { type: "token" }
+
+/** Split `Hello {{project}}` into text/token parts so the token can be styled. */
+export function splitI18nTemplate(template: string, token: string): I18nTemplatePart[] {
+  if (!template) return []
+  const needle = `{{${token}}}`
+  const chunks = template.split(needle)
+  const parts: I18nTemplatePart[] = []
+  for (let i = 0; i < chunks.length; i++) {
+    if (chunks[i]) parts.push({ type: "text", value: chunks[i] })
+    if (i < chunks.length - 1) parts.push({ type: "token" })
+  }
+  return parts
+}
+
+export function newSessionProjectLabel(
+  directory: string | undefined,
+  projects: Array<{ name?: string; worktree: string; sandboxes?: string[] }>,
+  options?: { extraName?: string; sidebarRoot?: string },
+) {
+  if (!directory) return ""
+  if (options?.extraName) return options.extraName
+  const owner = projectOwner(directory, projects)
+  if (owner) return displayName(owner.project)
+  const sidebarRoot = options?.sidebarRoot
+  if (sidebarRoot) {
+    const sidebar = projects.find((item) => workspaceKey(item.worktree) === workspaceKey(sidebarRoot))
+    if (sidebar) return displayName(sidebar)
+  }
+  return getFilename(directory) || directory
+}
 
 export type SessionGroupKey = "today" | "yesterday" | "thisWeek" | "thisMonth" | "older"
 

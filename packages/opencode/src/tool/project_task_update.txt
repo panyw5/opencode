@@ -1,29 +1,24 @@
 Update an EXISTING project-level task (title, description, status).
 
-This is the only correct way to mark a task done, change goals, or retitle.
-Never use `project_task_create` to "finish" or replace an existing task.
-
-Updating `description` overwrites `.project-tasks/<taskID>/prd.md` (see task.descriptionPath).
-You may also edit that file directly with write tools.
+## File structure
+Updating `description` overwrites `.project-tasks/<taskID>/prd.md` (You may also edit that file directly with write tools.)
+Directly `write` progress record in `.project-tasks/<taskID>/progress.md`
 
 ## When to use
-- Status changes: open → in_progress when actively working; done/archived ONLY with user direction
 - Edit description / acceptance criteria / title
-- User says the project task is finished, blocked, or needs rewording
+- Update status (open -> in_progress -> done)
 
-## When NOT to use
-- Task does not exist yet → `project_task_create`
-- Only attaching this session → `project_task_mount`
-- Per-session step checklist → `todowrite` (do not encode every micro-step as project status)
-- Marking done because code/todos "look finished" without user approval → ask first, do not update status
+## [CRITICAL] When NOT to use
+- Making new task → `project_task_create`
+- Attaching task to session → `project_task_mount`
+- Per-session step checklist → `todowrite`
 
 ## Rules
-- Always pass the real `taskID` from the latest `project_task_list` / get / create / mount tool return
-- Prefer `project_task_list` first when resolving a target by title or when the id is not from a tool result you just received — do not hand-copy IDs from chat
-- NEVER proactively set `status=done` or `archived`. Only when the user explicitly requests it, or after you ask and they clearly approve
-- Completing work (when allowed): `status=done` on the SAME taskID — NEVER create a second task with the same title
-- Archiving/retiring (when allowed): `status=archived` (or archive API via product UI) — do not invent a done duplicate
-- Prefer small, intentional field updates; omit fields you are not changing
+- Do NOT mark tasks as "done" on your own — only when the user explicitly asks or clearly approves after you ask (`project_task_update`)
+- Always pass the real exact `taskID` from the `project_task_list` / get / create / mount tool return
+- Completing work (when allowed): `status=done` on the SAME taskID
+- Archiving/retiring (when allowed): `status=archived`
+- Prefer small, targeted field updates; omit fields you are not changing
 
 ## Flow
 1. `project_task_list` — get the exact target `id` from the return value (do not retype)

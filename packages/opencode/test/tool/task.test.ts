@@ -11,6 +11,7 @@ import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
+import { SessionInput } from "@/session/input"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "@/tool/truncate"
@@ -39,6 +40,7 @@ const layer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     Session.defaultLayer,
     SessionRunState.defaultLayer,
     SessionStatus.defaultLayer,
+    SessionInput.defaultLayer,
     Truncate.defaultLayer,
     ToolRegistry.defaultLayer,
     ProjectTask.defaultLayer,
@@ -597,97 +599,93 @@ describe("tool.task", () => {
     },
   )
 
-  it.instance(
-    "new subagent session inherits parent mounted project task",
-    () =>
-      Effect.gen(function* () {
-        const sessions = yield* Session.Service
-        const projectTasks = yield* ProjectTask.Service
-        const { chat, assistant } = yield* seed()
-        const task = yield* projectTasks.create({
-          title: "Inherit mount",
-          description: "Child should see this task",
-        })
-        yield* projectTasks.mount({ sessionID: chat.id, taskID: task.id })
+  it.instance("new subagent session inherits parent mounted project task", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const projectTasks = yield* ProjectTask.Service
+      const { chat, assistant } = yield* seed()
+      const task = yield* projectTasks.create({
+        title: "Inherit mount",
+        description: "Child should see this task",
+      })
+      yield* projectTasks.mount({ sessionID: chat.id, taskID: task.id })
 
-        const parent = yield* sessions.get(chat.id)
-        expect(parent.mountedTaskID).toBe(task.id)
-        expect(parent.injectTaskContext).toBe(true)
+      const parent = yield* sessions.get(chat.id)
+      expect(parent.mountedTaskID).toBe(task.id)
+      expect(parent.injectTaskContext).toBe(true)
 
-        const tool = yield* TaskTool
-        const def = yield* tool.init()
-        const result = yield* def.execute(
-          {
-            description: "child work",
-            prompt: "do the delegated slice",
-            subagent_type: "general",
-          },
-          {
-            sessionID: chat.id,
-            messageID: assistant.id,
-            agent: "build",
-            abort: new AbortController().signal,
-            extra: { promptOps: stubOps() },
-            messages: [],
-            metadata: () => Effect.void,
-            ask: () => Effect.void,
-          },
-        )
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const result = yield* def.execute(
+        {
+          description: "child work",
+          prompt: "do the delegated slice",
+          subagent_type: "general",
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps() },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
 
-        const child = yield* sessions.get(result.metadata.sessionId)
-        expect(child.parentID).toBe(chat.id)
-        expect(child.mountedTaskID).toBe(task.id)
-        expect(child.injectTaskContext).toBe(true)
-        expect(result.metadata.mountedTaskID).toBe(task.id)
-      }),
+      const child = yield* sessions.get(result.metadata.sessionId)
+      expect(child.parentID).toBe(chat.id)
+      expect(child.mountedTaskID).toBe(task.id)
+      expect(child.injectTaskContext).toBe(true)
+      expect(result.metadata.mountedTaskID).toBe(task.id)
+    }),
   )
 
-  it.instance(
-    "resume does not overwrite an existing child mount",
-    () =>
-      Effect.gen(function* () {
-        const sessions = yield* Session.Service
-        const projectTasks = yield* ProjectTask.Service
-        const { chat, assistant } = yield* seed()
-        const parentTask = yield* projectTasks.create({ title: "Parent task" })
-        const otherTask = yield* projectTasks.create({ title: "Other task" })
-        yield* projectTasks.mount({ sessionID: chat.id, taskID: parentTask.id })
+  it.instance("resume does not overwrite an existing child mount", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const projectTasks = yield* ProjectTask.Service
+      const { chat, assistant } = yield* seed()
+      const parentTask = yield* projectTasks.create({ title: "Parent task" })
+      const otherTask = yield* projectTasks.create({ title: "Other task" })
+      yield* projectTasks.mount({ sessionID: chat.id, taskID: parentTask.id })
 
-        const child = yield* sessions.create({
-          parentID: chat.id,
-          title: "Existing child",
-          agent: "general",
-        })
-        // Child was previously pointed at a different task — resume must keep it.
-        yield* sessions.setMountedTask({ sessionID: child.id, taskID: otherTask.id })
-        yield* sessions.setInjectTaskContext({ sessionID: child.id, enabled: true })
+      const child = yield* sessions.create({
+        parentID: chat.id,
+        title: "Existing child",
+        agent: "general",
+      })
+      // Child was previously pointed at a different task — resume must keep it.
+      yield* sessions.setMountedTask({ sessionID: child.id, taskID: otherTask.id })
+      yield* sessions.setInjectTaskContext({ sessionID: child.id, enabled: true })
 
-        const tool = yield* TaskTool
-        const def = yield* tool.init()
-        const result = yield* def.execute(
-          {
-            description: "resume child",
-            prompt: "continue",
-            subagent_type: "general",
-            task_id: child.id,
-          },
-          {
-            sessionID: chat.id,
-            messageID: assistant.id,
-            agent: "build",
-            abort: new AbortController().signal,
-            extra: { promptOps: stubOps() },
-            messages: [],
-            metadata: () => Effect.void,
-            ask: () => Effect.void,
-          },
-        )
+      const tool = yield* TaskTool
+      const def = yield* tool.init()
+      const result = yield* def.execute(
+        {
+          description: "resume child",
+          prompt: "continue",
+          subagent_type: "general",
+          task_id: child.id,
+        },
+        {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          extra: { promptOps: stubOps() },
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        },
+      )
 
-        expect(result.metadata.sessionId).toBe(child.id)
-        const resumed = yield* sessions.get(child.id)
-        expect(resumed.mountedTaskID).toBe(otherTask.id)
-        expect(result.metadata.mountedTaskID).toBeUndefined()
-      }),
+      expect(result.metadata.sessionId).toBe(child.id)
+      const resumed = yield* sessions.get(child.id)
+      expect(resumed.mountedTaskID).toBe(otherTask.id)
+      expect(result.metadata.mountedTaskID).toBeUndefined()
+    }),
   )
 
   it.instance("rejects background execution when the experiment is disabled", () =>
@@ -997,9 +995,7 @@ describe("tool.task", () => {
         .flatMap((message) => message.parts)
         .find(
           (part) =>
-            part.type === "text" &&
-            part.synthetic === true &&
-            part.metadata?.kind === "background-task-injection",
+            part.type === "text" && part.synthetic === true && part.metadata?.kind === "background-task-injection",
         )
       expect(persisted?.type).toBe("text")
       if (persisted?.type !== "text") throw new Error("persisted background notification part not found")
@@ -1072,14 +1068,14 @@ describe("tool.task", () => {
     }),
   )
 
-  background.instance("background task resume waits while the parent session has an active assistant", () =>
+  background.instance("background task delegates active-assistant scheduling to the parent inbox drain", () =>
     Effect.gen(function* () {
       const jobs = yield* BackgroundJob.Service
       const sessions = yield* Session.Service
       const { chat, assistant } = yield* seed()
       const tool = yield* TaskTool
       const def = yield* tool.init()
-      const looped = defer<SessionID>()
+      const drainRequested = defer<SessionID>()
 
       const result = yield* def.execute(
         {
@@ -1117,10 +1113,9 @@ describe("tool.task", () => {
                       return { info: user, parts }
                     })
                   : Effect.succeed(reply(input, "background done")),
-              loop: (input) =>
+              requestDrain: (sessionID) =>
                 Effect.sync(() => {
-                  looped.resolve(input.sessionID)
-                  return reply({ sessionID: input.sessionID, parts: [] }, "resumed")
+                  drainRequested.resolve(sessionID)
                 }),
             } satisfies TaskPromptOps,
           },
@@ -1134,20 +1129,12 @@ describe("tool.task", () => {
       expect(waited.timedOut).toBe(false)
       expect(waited.info?.status).toBe("completed")
 
-      const beforeCompletion = yield* Effect.promise(() =>
-        Promise.race([
-          looped.promise.then(() => true),
-          new Promise<false>((done) => setTimeout(() => done(false), 400)),
-        ]),
-      )
-      expect(beforeCompletion).toBe(false)
+      expect(yield* Effect.promise(() => drainRequested.promise)).toBe(chat.id)
 
       yield* sessions.updateMessage({
         ...assistant,
         time: { ...assistant.time, completed: Date.now() },
       })
-
-      expect(yield* Effect.promise(() => looped.promise)).toBe(chat.id)
     }),
   )
 

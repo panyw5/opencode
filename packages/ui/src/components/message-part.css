@@ -1306,6 +1306,45 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   line-height: 1.55;
 }
 
+[data-component="collapsible"].codex-command-collapsible {
+  gap: 6px;
+
+  > [data-slot="collapsible-trigger"] {
+    height: auto;
+    min-height: 24px;
+    align-items: flex-start;
+    gap: 8px;
+    text-align: left;
+
+    [data-slot="collapsible-arrow"] {
+      margin-left: auto;
+      opacity: 1;
+    }
+  }
+
+  > [data-slot="collapsible-content"] {
+    padding-top: 2px;
+  }
+}
+
+[data-slot="codex-command-summary"] {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+}
+
+[data-slot="codex-command-title"] {
+  color: var(--text-base);
+  font-family: var(--font-family-mono, ui-monospace, monospace);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 [data-slot="codex-chat-waiting"] {
   display: inline-flex;
   align-items: center;

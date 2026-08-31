@@ -8,15 +8,16 @@ import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
 import type { SessionPrompt } from "../session/prompt"
-import { SessionStatus } from "@/session/status"
+import { SessionInput } from "@/session/input"
 import { Config } from "@/config/config"
-import { Effect, Exit, Option, Schema, Scope } from "effect"
+import { Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
+  requestDrain?(sessionID: SessionID): Effect.Effect<void>
   resolvePromptParts(template: string): Effect.Effect<SessionPrompt.PromptInput["parts"]>
   prompt(input: SessionPrompt.PromptInput): Effect.Effect<MessageV2.WithParts>
   loop(input: SessionPrompt.LoopInput): Effect.Effect<MessageV2.WithParts>
@@ -110,8 +111,8 @@ export const TaskTool = Tool.define(
     const background = yield* BackgroundJob.Service
     const config = yield* Config.Service
     const sessions = yield* Session.Service
+    const inbox = yield* SessionInput.Service
     const scope = yield* Scope.Scope
-    const status = yield* SessionStatus.Service
     const flags = yield* RuntimeFlags.Service
 
     const run = Effect.fn("TaskTool.execute")(function* (
@@ -138,9 +139,7 @@ export const TaskTool = Tool.define(
       const maxDepth = cfg.subagent_depth ?? 1
       if (depth >= maxDepth) {
         return yield* Effect.fail(
-          new Error(
-            `Subagent depth limit reached (${maxDepth}). Increase "subagent_depth" to allow nested subagents.`,
-          ),
+          new Error(`Subagent depth limit reached (${maxDepth}). Increase "subagent_depth" to allow nested subagents.`),
         )
       }
 
@@ -218,9 +217,7 @@ export const TaskTool = Tool.define(
             sessionId: nextSession.id,
             model,
             ...(runInBackground ? { background: true } : {}),
-            ...(created && parent.mountedTaskID
-              ? { mountedTaskID: parent.mountedTaskID }
-              : {}),
+            ...(created && parent.mountedTaskID ? { mountedTaskID: parent.mountedTaskID } : {}),
           }
 
           yield* ctx.metadata({
@@ -256,123 +253,96 @@ export const TaskTool = Tool.define(
         return result.parts.findLast((item) => item.type === "text")?.text ?? ""
       })
 
-      const resumeWhenIdle: (
-        input: { userID: MessageID; state: "completed" | "error" },
-        retries?: number,
-      ) => Effect.Effect<void> = Effect.fn("TaskTool.resumeWhenIdle")(function* (
-        input: { userID: MessageID; state: "completed" | "error" },
-        retries = 0,
-      ) {
-        const MAX_RETRIES = 200 // 200 * 300ms = 60 seconds timeout
-
-        if (retries > MAX_RETRIES) {
-          yield* elog.warn("Background task resume timeout", {
-            sessionID: ctx.sessionID,
-            userID: input.userID,
-            retries,
-            description: params.description,
-          })
-          return
-        }
-
-        // Check if there is a newer **real user input** (not synthetic) after this notification
-        const latestRealUser = yield* sessions
-          .findMessage(ctx.sessionID, (item) => {
-            if (item.info.role !== "user") return false
-            if (item.info.id <= input.userID) return false
-            // Check if it's a real user input (not synthetic)
-            return !item.parts.some((p) => p.type === "text" && p.synthetic === true)
-          })
-          .pipe(Effect.orDie)
-
-        if (Option.isSome(latestRealUser)) {
-          yield* elog.info("Background task resume cancelled by user input", {
-            sessionID: ctx.sessionID,
-            backgroundUserID: input.userID,
-            realUserID: latestRealUser.value.info.id,
-          })
-          return
-        }
-
-        const activeAssistant = yield* sessions
-          .findMessage(
-            ctx.sessionID,
-            (item) => item.info.role === "assistant" && typeof item.info.time.completed !== "number",
-          )
-          .pipe(Effect.orDie)
-
-        const currentStatus = yield* status.get(ctx.sessionID)
-
-        if (currentStatus.type !== "idle" || Option.isSome(activeAssistant)) {
-          if (retries === 0) {
-            yield* elog.debug("Background task waiting for idle", {
-              sessionID: ctx.sessionID,
-              userID: input.userID,
-              status: currentStatus.type,
-              hasActiveAssistant: Option.isSome(activeAssistant),
-            })
-          }
-          yield* Effect.sleep("300 millis")
-          return yield* resumeWhenIdle(input, retries + 1)
-        }
-
-        yield* elog.info("Background task triggering loop", {
-          sessionID: ctx.sessionID,
-          userID: input.userID,
-          description: params.description,
-          state: input.state,
-        })
-
-        yield* ops
-          .loop({ sessionID: ctx.sessionID })
-          .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
-      })
-
-      const continueIfIdle = Effect.fn("TaskTool.continueIfIdle")(function* (input: {
-        userID: MessageID
-        state: "completed" | "error"
-      }) {
-        yield* resumeWhenIdle(input).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
-      })
-
       const inject = Effect.fn("TaskTool.injectBackgroundResult")(function* (
         state: "completed" | "error",
         text: string,
+        terminalID: string,
       ) {
         const currentParent = yield* sessions.get(ctx.sessionID)
-        const message = yield* ops.prompt({
-          sessionID: ctx.sessionID,
-          noReply: true,
-          agent: currentParent.agent ?? ctx.agent,
-          parts: [
-            {
-              type: "text",
-              synthetic: true,
-              text: backgroundMessage({
-                sessionID: nextSession.id,
-                description: params.description,
-                state,
-                text,
-              }),
-              metadata: {
-                kind: "background-task-injection",
-                description: params.description,
-                childSessionID: nextSession.id,
-                state,
+        if (!ops.requestDrain) {
+          // Compatibility for embedders that still provide the pre-inbox
+          // TaskPromptOps shape.  The production SessionPrompt always
+          // supplies requestDrain, so this branch does not participate in
+          // normal scheduling.
+          const message = yield* ops.prompt({
+            sessionID: ctx.sessionID,
+            noReply: true,
+            agent: currentParent.agent ?? ctx.agent,
+            parts: [
+              {
+                type: "text",
+                synthetic: true,
+                text: backgroundMessage({
+                  sessionID: nextSession.id,
+                  description: params.description,
+                  state,
+                  text,
+                }),
+                metadata: {
+                  kind: "background-task-injection",
+                  description: params.description,
+                  childSessionID: nextSession.id,
+                  state,
+                },
               },
-            },
-          ],
-        })
-
-        yield* elog.info("Background task notification injected", {
+            ],
+          })
+          yield* elog.info("background task notification injected (legacy ops)", {
+            sessionID: ctx.sessionID,
+            inputID: message.info.id,
+            source: "background-task",
+            taskSessionID: nextSession.id,
+            state,
+          })
+          yield* ops
+            .loop({ sessionID: ctx.sessionID })
+            .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+          return
+        }
+        const parentAssistant = ctx.messages.findLast((item) => item.info.role === "assistant")
+        const messageID = MessageID.ascending(`msg_${nextSession.id}_${state}_${terminalID}`)
+        const model = currentParent.model
+          ? {
+              providerID: currentParent.model.providerID,
+              modelID: currentParent.model.id,
+              ...(currentParent.model.variant ? { variant: currentParent.model.variant } : {}),
+            }
+          : parentAssistant?.info.role === "assistant"
+            ? {
+                providerID: parentAssistant.info.providerID,
+                modelID: parentAssistant.info.modelID,
+              }
+            : undefined
+        yield* inbox.admit({
+          id: messageID,
           sessionID: ctx.sessionID,
+          source: "background-task",
+          prompt: {
+            text: backgroundMessage({
+              sessionID: nextSession.id,
+              description: params.description,
+              state,
+              text,
+            }),
+            agent: currentParent.agent ?? ctx.agent,
+            model,
+            metadata: {
+              kind: "background-task-injection",
+              description: params.description,
+              childSessionID: nextSession.id,
+              state,
+            },
+          },
+        })
+        yield* elog.info("background task notification admitted", {
+          sessionID: ctx.sessionID,
+          inputID: messageID,
+          source: "background-task",
           taskSessionID: nextSession.id,
           description: params.description,
           state,
-          messageID: message.info.id,
         })
-
-        yield* continueIfIdle({ userID: message.info.id, state })
+        if (ops.requestDrain) yield* ops.requestDrain(ctx.sessionID)
       })
 
       const existing = yield* background.get(nextSession.id)
@@ -393,8 +363,10 @@ export const TaskTool = Tool.define(
         const notify = Effect.fn("TaskTool.notifyBackgroundResult")(function* (jobID: string) {
           yield* background.wait({ id: jobID }).pipe(
             Effect.flatMap((result) => {
-              if (result.info?.status === "completed") return inject("completed", result.info.output ?? "")
-              if (result.info?.status === "error") return inject("error", result.info.error ?? "")
+              if (result.info?.status === "completed")
+                return inject("completed", result.info.output ?? "", String(result.info.completed_at ?? ""))
+              if (result.info?.status === "error")
+                return inject("error", result.info.error ?? "", String(result.info.completed_at ?? ""))
               return Effect.void
             }),
             Effect.ignore,

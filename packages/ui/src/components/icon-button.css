@@ -14,7 +14,7 @@
 
     [data-slot="icon-svg"] {
       /* color: var(--icon-weak-base); */
-      color: var(--icon-invert-base);
+      color: var(--button-primary-text);
 
       /* &:hover:not(:disabled) { */
       /*   color: var(--icon-weak-hover); */
@@ -25,19 +25,19 @@
     }
 
     &:hover:not(:disabled) {
-      background-color: var(--icon-strong-hover);
+      background-color: var(--button-primary-hover);
     }
     &:focus:not(:disabled) {
-      background-color: var(--icon-strong-focus);
+      background-color: var(--button-primary-base);
     }
     &:active:not(:disabled) {
-      background-color: var(--icon-strong-active);
+      background-color: var(--button-primary-active);
     }
     &:disabled {
       background-color: var(--icon-strong-disabled);
 
       [data-slot="icon-svg"] {
-        color: var(--icon-invert-base);
+        color: var(--button-primary-text);
       }
     }
   }
@@ -62,7 +62,7 @@
       box-shadow: none;
     }
     &:active:not(:disabled) {
-      background-color: var(--button-secondary-base);
+      background-color: var(--button-secondary-active);
     }
 
     [data-slot="icon-svg"] {
@@ -165,8 +165,16 @@
 
 [data-component="icon-button"].titlebar-icon {
   width: 32px;
-  height: 24px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
   aspect-ratio: auto;
+  box-sizing: border-box;
+}
+
+[data-component="icon-button"].titlebar-icon [data-component="icon"] {
+  width: 20px;
+  height: 20px;
 }
 
 [data-component="icon-button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] {

@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from "bun:test"
 import type { Message, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 
 let questionAnswered: typeof import("./session-question-dock-helpers").questionAnswered
+let createQuestionSubmissionGuard: typeof import("./session-question-dock-helpers").createQuestionSubmissionGuard
 let questionAttachments: typeof import("./session-question-dock-helpers").questionAttachments
 let questionInvalidation: typeof import("./session-question-dock-helpers").questionInvalidation
 let questionReply: typeof import("./session-question-dock-helpers").questionReply
@@ -10,6 +11,7 @@ let permissionRequestNotFound: typeof import("./session-question-dock-helpers").
 
 beforeAll(async () => {
   const mod = await import("./session-question-dock-helpers")
+  createQuestionSubmissionGuard = mod.createQuestionSubmissionGuard
   questionAnswered = mod.questionAnswered
   questionAttachments = mod.questionAttachments
   questionInvalidation = mod.questionInvalidation
@@ -36,6 +38,16 @@ const message = (input: { id: string; role?: "assistant" | "user"; error?: boole
   }) as Message
 
 describe("session question dock helpers", () => {
+  test("locks synchronously before mutation state updates", () => {
+    const guard = createQuestionSubmissionGuard()
+
+    expect(guard.acquire()).toBe(true)
+    expect(guard.acquire()).toBe(false)
+
+    guard.release()
+    expect(guard.acquire()).toBe(true)
+  })
+
   test("marks custom answers with images as answered even after editing closes", () => {
     expect(
       questionAnswered([], "", true, [

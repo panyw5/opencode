@@ -2,6 +2,7 @@ import { Binary } from "@opencode-ai/core/util/binary"
 import type { AssistantMessage, Message, Part, SessionStatus, UserMessage } from "@opencode-ai/sdk/v2"
 import { createEffect, createMemo, createSignal, mapArray, onCleanup, untrack, type Accessor } from "solid-js"
 import { Timeline, TimelineRow } from "./rows"
+import { messageAnchorRowIndices } from "./message-anchor"
 import {
   advanceStickyActiveMessageID,
   displayStatusForThinking,
@@ -130,14 +131,7 @@ export function createTimelineProjection(input: {
     ),
   )
   const rowByKey = createMemo(() => new Map(rows().map((row) => [TimelineRow.key(row), row] as const)))
-  const messageRowIndex = createMemo(() => {
-    const result = new Map<string, number>()
-    rows().forEach((row, index) => {
-      if (!("userMessageID" in row) || result.has(row.userMessageID)) return
-      result.set(row.userMessageID, index)
-    })
-    return result
-  })
+  const messageRowIndex = createMemo(() => messageAnchorRowIndices(rows()))
   const messageLastRowIndex = createMemo(() => {
     const result = new Map<string, number>()
     rows().forEach((row, index) => {

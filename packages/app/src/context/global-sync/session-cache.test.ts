@@ -8,7 +8,13 @@ import type {
   SessionStatus,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
-import { dropSessionCaches, pickSessionCacheEvictions } from "./session-cache"
+import {
+  SESSION_CACHE_LIMIT,
+  canCoolSessionCache,
+  coolSessionCaches,
+  dropSessionCaches,
+  pickSessionCacheEvictions,
+} from "./session-cache"
 
 const msg = (id: string, sessionID: string) =>
   ({
@@ -30,6 +36,10 @@ const part = (id: string, sessionID: string, messageID: string) =>
   }) as Part
 
 describe("app session cache", () => {
+  test("keeps at most eight hot sessions per directory", () => {
+    expect(SESSION_CACHE_LIMIT).toBe(8)
+  })
+
   test("dropSessionCaches clears orphaned parts without message rows", () => {
     const store: {
       session_status: Record<string, SessionStatus | undefined>
@@ -84,6 +94,53 @@ describe("app session cache", () => {
 
     expect(store.message.ses_1).toBeUndefined()
     expect(store.part[m.id]).toBeUndefined()
+  })
+
+  test("coolSessionCaches drops heavy history and retains lightweight live state", () => {
+    const m = msg("msg_1", "ses_1")
+    const store = {
+      session_status: { ses_1: { type: "idle" } as SessionStatus },
+      session_diff: { ses_1: [] as FileDiff[] },
+      todo: { ses_1: [] as Todo[] },
+      message: { ses_1: [m] },
+      part: { [m.id]: [part("prt_1", "ses_1", m.id)] },
+      permission: { ses_1: [] as PermissionRequest[] },
+      question: { ses_1: [] as QuestionRequest[] },
+      session_history: { ses_1: { complete: true, show: 1, at: 1 } },
+    }
+
+    expect(canCoolSessionCache(store, "ses_1")).toBe(true)
+    coolSessionCaches(store, ["ses_1"])
+
+    expect(store.message.ses_1).toBeUndefined()
+    expect(store.part[m.id]).toBeUndefined()
+    expect(store.session_diff.ses_1).toBeUndefined()
+    expect(store.todo.ses_1).toBeUndefined()
+    expect(store.session_history.ses_1).toBeUndefined()
+    expect(store.session_status.ses_1).toEqual({ type: "idle" })
+    expect(store.permission.ses_1).toEqual([])
+    expect(store.question.ses_1).toEqual([])
+  })
+
+  test("does not cool running sessions or sessions awaiting user input", () => {
+    const base = {
+      session_diff: {},
+      todo: {},
+      message: {},
+      part: {},
+      permission: {},
+      question: {},
+    }
+    expect(canCoolSessionCache({ ...base, session_status: { ses_1: { type: "busy" } } }, "ses_1")).toBe(false)
+    expect(
+      canCoolSessionCache(
+        { ...base, session_status: {}, permission: { ses_1: [{} as PermissionRequest] } },
+        "ses_1",
+      ),
+    ).toBe(false)
+    expect(
+      canCoolSessionCache({ ...base, session_status: {}, question: { ses_1: [{} as QuestionRequest] } }, "ses_1"),
+    ).toBe(false)
   })
 
   test("pickSessionCacheEvictions preserves requested sessions", () => {

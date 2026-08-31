@@ -54,6 +54,7 @@ export function buildClaudeResumeArgs(input: {
 }): string[] {
   const args = [
     "-p",
+    "--verbose",
     "--output-format",
     "stream-json",
     "--permission-mode",
@@ -67,7 +68,8 @@ export function buildClaudeResumeArgs(input: {
     input.sessionId,
   ]
   if (input.model?.trim()) args.push("--model", input.model.trim())
-  args.push(input.prompt)
+  // `--add-dir` / `--tools` are variadic; `--` keeps the prompt from being eaten.
+  args.push("--", input.prompt)
   return args
 }
 
@@ -102,8 +104,10 @@ export function buildClaudeExecArgs(input: ClaudeExecBuildInput): string[] {
     input.prompt,
   ].join("\n")
 
+  // `--verbose` is required by current Claude CLI for `-p --output-format stream-json`.
   const args = [
     "-p",
+    "--verbose",
     "--output-format",
     "stream-json",
     "--permission-mode",
@@ -117,7 +121,9 @@ export function buildClaudeExecArgs(input: ClaudeExecBuildInput): string[] {
   if (input.model?.trim()) {
     args.push("--model", input.model.trim())
   }
-  args.push(framed)
+  // `--add-dir` / `--tools` are variadic; without `--` the prompt is parsed as
+  // another directory and `claude -p` exits with "Input must be provided...".
+  args.push("--", framed)
   return args
 }
 
@@ -394,11 +400,23 @@ export const ClaudeConsultTool = Tool.define(
             cwd: workingDirectory,
             model: params.model,
             timeoutMs,
+            argCount: args.length,
+            promptLength: prompt.length,
+            hasOptionTerminator: args.includes("--"),
           })
 
           const runProcess = (runArgs: string[]) =>
             Effect.scoped(
               Effect.gen(function* () {
+                const terminatorAt = runArgs.lastIndexOf("--")
+                log.info("spawning claude", {
+                  bin,
+                  cwd: workingDirectory,
+                  argCount: runArgs.length,
+                  hasOptionTerminator: terminatorAt >= 0,
+                  flags: terminatorAt >= 0 ? runArgs.slice(0, terminatorAt) : runArgs,
+                  promptLength: terminatorAt >= 0 ? (runArgs[terminatorAt + 1]?.length ?? 0) : 0,
+                })
                 const handle = yield* spawner.spawn(
                   ChildProcess.make(bin, runArgs, {
                     cwd: workingDirectory,
@@ -463,6 +481,16 @@ export const ClaudeConsultTool = Tool.define(
                 // Flush a final unterminated JSONL event, then make it visible immediately.
                 if (lineBuffer.trim()) applyClaudeJsonlLine(live, lineBuffer)
                 yield* publishMetadata(true)
+
+                log.info("claude process finished", {
+                  kind: exit.kind,
+                  code: exit.code,
+                  stdoutLength: stdout.length,
+                  stderrLength: stderr.length,
+                  stderrPreview: stripAnsi(stderr).trim().slice(0, 500),
+                  sessionId: live.sessionId,
+                  transcriptItems: live.transcript.length,
+                })
 
                 return { exit, stdout, stderr }
               }),

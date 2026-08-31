@@ -2506,29 +2506,32 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </div>
                 </Show>
                 <GitContext />
-                <TooltipKeybind
-                  {...hover}
-                  placement="top"
-                  gutter={8}
-                  title={acceptLabel()}
-                  keybind={command.keybind("permissions.autoaccept")}
-                >
-                  <Button
-                    data-action="prompt-permissions"
-                    variant="ghost"
-                    onClick={toggleAccept}
-                    classList={{
-                      "h-7 w-7 p-0 shrink-0 flex items-center justify-center": true,
-                      "text-text-base": !accepting(),
-                      "hover:bg-surface-success-base": accepting(),
-                    }}
-                    style={control()}
-                    aria-label={acceptLabel()}
-                    aria-pressed={accepting()}
+                  <TooltipKeybind
+                    {...hover}
+                    placement="top"
+                    gutter={8}
+                    title={acceptLabel()}
+                    keybind={command.keybind("permissions.autoaccept")}
                   >
-                    <Icon name="shield" size="small" classList={{ "text-icon-success-base": accepting() }} />
-                  </Button>
-                </TooltipKeybind>
+                    <Button
+                      data-action="prompt-permissions"
+                      variant="ghost"
+                      onClick={toggleAccept}
+                      classList={{
+                        "h-7 shrink-0 flex items-center justify-center gap-1 select-none font-medium transition-colors !important": true,
+                        "w-7 p-0 text-text-base": !accepting(),
+                        "px-2.5 rounded-md border border-border-success-base bg-surface-success-base text-text-on-success-base shadow-xs-border hover:border-border-success-hover active:border-border-success-selected": accepting(),
+                      }}
+                      style={control()}
+                      aria-label={acceptLabel()}
+                      aria-pressed={accepting()}
+                    >
+                      <Icon name="shield" size="small" classList={{ "text-icon-success-base": accepting() }} />
+                      <Show when={accepting()}>
+                        <span class="text-xs whitespace-nowrap">{language.t("prompt.permissions.autoaccept.active")}</span>
+                      </Show>
+                    </Button>
+                  </TooltipKeybind>
                 <Show when={!!extraAgentIntegration()}>
                   <Tooltip {...hover} placement="top" value={language.t("prompt.action.insertSession")}>
                     <SessionPickerPopover

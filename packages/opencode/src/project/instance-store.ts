@@ -8,11 +8,13 @@ import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
 import * as Project from "./project"
+import type { ProjectLocation } from "./location"
 
 export interface LoadInput {
   directory: string
   worktree?: string
   project?: Project.Info
+  location?: ProjectLocation.Info
 }
 
 export interface Interface {
@@ -42,17 +44,19 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
     const boot = (input: LoadInput & { directory: string }) =>
       Effect.gen(function* () {
         const ctx: InstanceContext =
-          input.project && input.worktree
+          input.project && input.worktree && input.location
             ? {
                 directory: input.directory,
                 worktree: input.worktree,
                 project: input.project,
+                location: input.location,
               }
             : yield* project.fromDirectory(input.directory).pipe(
                 Effect.map((result) => ({
                   directory: input.directory,
                   worktree: result.sandbox,
                   project: result.project,
+                  location: result.location,
                 })),
               )
         yield* bootstrap.run.pipe(Effect.provideService(InstanceRef, ctx))

@@ -329,6 +329,20 @@ export const layer = Layer.effect(
         const data: State = { hooks, controls: [] }
         const bridge = yield* EffectBridge.make()
 
+        yield* Effect.addFinalizer(() =>
+          Effect.forEach(
+            hooks,
+            (entry) =>
+              Effect.tryPromise({
+                try: () => Promise.resolve(entry.hooks.dispose?.()),
+                catch: (error) => {
+                  log.error("plugin dispose hook failed", { plugin: entry.id, error })
+                },
+              }).pipe(Effect.ignore),
+            { discard: true },
+          ),
+        )
+
         function publishPluginError(message: string) {
           bridge.fork(bus.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
         }
@@ -361,13 +375,15 @@ export const layer = Layer.effect(
 
         for (const plugin of flags.disableDefaultPlugins ? [] : INTERNAL_PLUGINS) {
           log.info("loading internal plugin", { name: plugin.name })
-          const init = yield* Effect.tryPromise({
-            try: () => plugin(input),
-            catch: (err) => {
-              log.error("failed to load internal plugin", { name: plugin.name, error: err })
-            },
-          }).pipe(Effect.option)
-          if (init._tag === "Some") hooks.push({ id: `internal:${plugin.name || "anonymous"}`, hooks: init.value })
+          yield* Effect.gen(function* () {
+            const init = yield* Effect.tryPromise({
+              try: () => plugin(input),
+              catch: (err) => {
+                log.error("failed to load internal plugin", { name: plugin.name, error: err })
+              },
+            }).pipe(Effect.option)
+            if (init._tag === "Some") hooks.push({ id: `internal:${plugin.name || "anonymous"}`, hooks: init.value })
+          }).pipe(Effect.uninterruptible)
         }
 
         const plugins = flags.pure ? [] : (cfg.plugin_origins ?? [])
@@ -440,6 +456,7 @@ export const layer = Layer.effect(
               // })
               return Effect.void
             }),
+            Effect.uninterruptible,
           )
         }
 

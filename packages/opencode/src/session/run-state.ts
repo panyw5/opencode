@@ -6,6 +6,9 @@ import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID } from "./schema"
 import { SessionStatus } from "./status"
+import * as EffectLogger from "@opencode-ai/core/effect/logger"
+
+const elog = EffectLogger.create({ service: "session.run-state" })
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
@@ -58,7 +61,15 @@ export const layer = Layer.effect(
       const next = Runner.make<MessageV2.WithParts>(data.scope, {
         onIdle: Effect.gen(function* () {
           data.runners.delete(sessionID)
-          yield* status.set(sessionID, { type: "idle" })
+          yield* status.set(sessionID, { type: "idle" }).pipe(
+            Effect.catchCause((cause) =>
+              elog.error("runner idle status update failed", {
+                sessionID,
+                source: "runner",
+                reason: cause,
+              }),
+            ),
+          )
         }),
         onBusy: status.set(sessionID, { type: "busy" }),
         onInterrupt,
@@ -79,7 +90,15 @@ export const layer = Layer.effect(
       const data = yield* InstanceState.get(state)
       const existing = data.runners.get(sessionID)
       if (!existing || !existing.busy) {
-        yield* status.set(sessionID, { type: "idle" })
+        yield* status.set(sessionID, { type: "idle" }).pipe(
+          Effect.catchCause((cause) =>
+            elog.error("cancel idle status update failed", {
+              sessionID,
+              source: "runner",
+              reason: cause,
+            }),
+          ),
+        )
       } else {
         yield* existing.cancel
       }

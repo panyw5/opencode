@@ -50,6 +50,26 @@ export function mergeSessionStatusRefresh(
   return next
 }
 
+export function sessionsToReconcileOnStreamConnect(
+  statuses: Record<string, SessionStatus | undefined>,
+  messages: Record<string, readonly Message[] | undefined>,
+) {
+  return Object.entries(statuses)
+    .filter(([sessionID, status]) => status?.type === "busy" && messages[sessionID] !== undefined)
+    .map(([sessionID]) => sessionID)
+}
+
+export function sessionToReconcileOnStatusEvent(
+  event: { type: string; properties?: unknown },
+  statuses: Record<string, SessionStatus | undefined>,
+) {
+  if (event.type !== "session.status") return
+  const properties = event.properties as { sessionID?: string; status?: { type?: string } } | undefined
+  if (!properties?.sessionID || properties.status?.type !== "idle") return
+  if (statuses[properties.sessionID]?.type !== "busy") return
+  return properties.sessionID
+}
+
 /** Whether a visibility restore should pull a status snapshot after backgrounding. */
 export function shouldRefreshSessionStatusOnVisibility(
   hiddenMs: number,

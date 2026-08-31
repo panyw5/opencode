@@ -1,33 +1,29 @@
-Create a NEW durable project-level task for the current project.
+Create a NEW persisting project-level task for the current workspace.
 
-Project tasks outlive a single session and can be mounted onto one or more sessions.
-Session-local step checklists belong in `todowrite`, not in project-task titles.
+A project task can be mounted onto one or more sessions.
+A project task is different from session-local checklists `todowrite`.
 
-Description is stored as a user-visible file at `.project-tasks/<taskID>/prd.md`
-(DB keeps only the relative path). Agents may put other task-related files under
-`.project-tasks/<taskID>/`.
+## File structure
+Task description in `.project-tasks/<taskID>/prd.md`
+Maintain progress record in `.project-tasks/<taskID>/progress.md`
+Put other task-related files in `.project-tasks/<taskID>/`
 
 ## When to use
-- User wants a new project-scoped work item (goals, acceptance criteria, multi-session work)
-- You already ran `project_task_list` (or know no open/in_progress task covers this work)
-- Creating a child-like workstream that is intentionally separate from existing tasks
+- User explicitly wants a NEW project-scoped work item
+- You work on a long-horizon task and have already run `project_task_list` and find no existing related project task
+- You work on a spin-off task that should separate from the current project task
 
 ## When NOT to use
-- Session is already mounted to the correct task → use `project_task_update` / `todowrite`
-- Work is only a per-session checklist (3+ coding steps) → use `todowrite`
-- Marking progress/done, retitling, or editing description → use `project_task_update` with the existing taskID
-- An open/in_progress task with the same title or same goal already exists → `list`/`get`, then `mount` or `update` — NEVER create a duplicate
-- Finishing work → NEVER create another task with status done; update the existing task
+- Update/Edit/Record progress for/End currently mounted task for the session → use `project_task_update` / `todowrite`
+- Simple, short-horizon task, short todo checklist (3-5 coding steps) → use `todowrite`
+- NEVER create a duplicate project-task with near identical goal
+
 
 ## Rules
-- Default status is `open`. Allowed on create: `open` or `in_progress` only
-- Do NOT create with status `done` or `archived` to "finish" work
-- Do NOT later mark tasks done on your own — only when the user explicitly asks or clearly approves after you ask (`project_task_update`)
-- After create, if the user is working on it now, `project_task_mount` this session onto the new taskID
-- Prefer short, stable titles; put goals/acceptance criteria in `description`
+- Use concise titles
 
-## Flow
+## WORKFLOW
 1. `project_task_list` — avoid duplicates
 2. `project_task_create` — only if truly new
-3. `project_task_mount` — attach current session when relevant
-4. `todowrite` — session step checklist
+3. `project_task_mount` — attach task to current session when working on the task
+4. `todowrite` — per-session step checklist

@@ -23,6 +23,7 @@ describe("tool.claude_consult helpers", () => {
       buildClaudeResumeArgs({ sessionId: "sess_abc", prompt: "Follow up", workingDirectory: "/tmp/project" }),
     ).toEqual([
       "-p",
+      "--verbose",
       "--output-format",
       "stream-json",
       "--permission-mode",
@@ -34,6 +35,7 @@ describe("tool.claude_consult helpers", () => {
       "/tmp/project",
       "--resume",
       "sess_abc",
+      "--",
       "Follow up",
     ])
   })
@@ -44,6 +46,7 @@ describe("tool.claude_consult helpers", () => {
       model: "sonnet",
     })
     expect(args).toContain("-p")
+    expect(args).toContain("--verbose")
     expect(args).toContain("--output-format")
     expect(args).toContain("stream-json")
     expect(args).toContain("--permission-mode")
@@ -57,6 +60,7 @@ describe("tool.claude_consult helpers", () => {
     expect(args).toContain("--model")
     expect(args).toContain("sonnet")
     expect(args).not.toContain("--dangerously-skip-permissions")
+    expect(args.at(-2)).toBe("--")
     const promptArg = args.at(-1)!
     expect(promptArg).toContain("Review auth flow")
     expect(promptArg).toContain("external advisor")
@@ -69,6 +73,29 @@ describe("tool.claude_consult helpers", () => {
       workingDirectory: "/repo",
     })
     expect(args).not.toContain("--model")
+  })
+
+  test("buildClaudeExecArgs includes --verbose required by stream-json print mode", () => {
+    const args = buildClaudeExecArgs({
+      prompt: "hello",
+      workingDirectory: "/repo",
+    })
+    expect(args.indexOf("--verbose")).toBeGreaterThan(args.indexOf("-p"))
+    expect(args.indexOf("--verbose")).toBeLessThan(args.indexOf("--output-format"))
+  })
+
+  test("buildClaudeExecArgs puts -- before the prompt so variadic --add-dir cannot swallow it", () => {
+    const args = buildClaudeExecArgs({
+      prompt: "hello",
+      workingDirectory: "/repo",
+    })
+    const addDirAt = args.indexOf("--add-dir")
+    expect(addDirAt).toBeGreaterThanOrEqual(0)
+    expect(args[addDirAt + 1]).toBe("/repo")
+    expect(args[addDirAt + 2]).toBe("--")
+    expect(args.at(-2)).toBe("--")
+    expect(args.at(-1)).toContain("hello")
+    expect(args.indexOf("--add-dir")).toBeLessThan(args.lastIndexOf("--"))
   })
 
   test("parseClaudeJsonl extracts final result and usage", () => {

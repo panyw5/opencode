@@ -15,8 +15,15 @@ import {
 } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useLayout, type LocalProject } from "@/context/layout"
+import {
+  createSessionTabsCoordinator,
+  SessionTabsProvider,
+  type SessionTabsRoute,
+  type SessionTabsTarget,
+} from "@/context/session-tabs"
 import { collectMissingAncestorTabs } from "@/components/session/session-bar-parent"
 import { useGlobalSync } from "@/context/global-sync"
+import { onSessionLifecycle } from "@/context/global-sync/session-lifecycle"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { decode64 } from "@/utils/base64"
@@ -39,15 +46,17 @@ import { useProviders } from "@/hooks/use-providers"
 import { showToast, Toast, toaster } from "@opencode-ai/ui/toast"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { clearWorkspaceTerminals } from "@/context/terminal"
-import { dropSessionCaches, pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
+import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
 import {
   clearSessionPrefetchDirectory,
   clearSessionPrefetch,
   getSessionPrefetch,
   isSessionPrefetchCurrent,
+  isSessionCold,
   runSessionPrefetch,
   setSessionPrefetch,
   shouldSkipSessionPrefetch,
+  neighboringMessagePrefetch,
 } from "@/context/global-sync/session-prefetch"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
@@ -803,6 +812,7 @@ export default function Layout(props: ParentProps) {
         }
         if (resolveProject(directory)) return
         console.debug(`[layout] registering untracked route directory=${directory}`)
+        sessionTabs.restoreDirectory(directory)
         layout.projects.open(directory)
       },
       { defer: true },
@@ -962,15 +972,14 @@ export default function Layout(props: ParentProps) {
     running: number
   }
 
-  const prefetchChunk = 200
+  const prefetchChunk = 80
   const prefetchConcurrency = 2
-  const prefetchPendingLimit = 10
-  const span = 4
+  const prefetchPendingLimit = 2
   const prefetchToken = { value: 0 }
   const prefetchAttempts = new Set<string>()
   const prefetchQueues = new Map<string, PrefetchQueue>()
 
-  const PREFETCH_MAX_SESSIONS_PER_DIR = 10
+  const PREFETCH_MAX_SESSIONS_PER_DIR = SESSION_CACHE_LIMIT
   const prefetchedByDir = new Map<string, Set<string>>()
 
   const lruFor = (directory: string) => {
@@ -1106,6 +1115,7 @@ export default function Layout(props: ParentProps) {
     // sync.session.sync (which uses sdk.directory).
     const directory = session.directory ? workspaceKey(session.directory) : session.directory
     if (!directory) return
+    if (isSessionCold(directory, session.id)) return
 
     const [store] = globalSync.child(directory, { bootstrap: false })
     const cached = untrack(() => {
@@ -1154,13 +1164,7 @@ export default function Layout(props: ParentProps) {
   }
 
   const warm = (sessions: Session[], index: number) => {
-    for (let offset = 1; offset <= span; offset++) {
-      const next = sessions[index + offset]
-      if (next) prefetchSession(next, offset === 1 ? "high" : "low")
-
-      const prev = sessions[index - offset]
-      if (prev) prefetchSession(prev, offset === 1 ? "high" : "low")
-    }
+    for (const session of neighboringMessagePrefetch(sessions, index)) prefetchSession(session, "high")
   }
 
   createEffect(() => {
@@ -1256,14 +1260,6 @@ export default function Layout(props: ParentProps) {
 
   async function archiveSession(session: Session) {
     const [store, setStore] = globalSync.child(session.directory)
-    const sessions = store.session ?? []
-    const index = sessions.findIndex((s) => s.id === session.id)
-    const nextSession = sessions[index + 1] ?? sessions[index - 1]
-
-    console.debug(
-      `[session-bar] archive close id=${session.id} directory=${session.directory} parentID=${session.parentID ?? "none"}`,
-    )
-    layout.sessionBar.close(session.directory, session.id)
     await globalSDK.client.session.update({
       directory: session.directory,
       sessionID: session.id,
@@ -1275,13 +1271,10 @@ export default function Layout(props: ParentProps) {
         if (match.found) draft.session.splice(match.index, 1)
       }),
     )
-    if (session.id === params.id) {
-      if (nextSession) {
-        navigate(`/${params.dir}/session/${nextSession.id}`)
-      } else {
-        navigate(`/${params.dir}/session`)
-      }
-    }
+    await sessionTabs.remove(
+      { directory: session.directory, id: session.id, title: session.title, parentID: session.parentID },
+      "archived",
+    )
   }
 
   async function reloadBackendFromCommand() {
@@ -1313,6 +1306,23 @@ export default function Layout(props: ParentProps) {
   command.register("layout", () => {
     const commands: CommandOption[] = [
       {
+        id: "session.new",
+        title: language.t("command.session.new"),
+        keywords: kw("command.session.new"),
+        category: language.t("command.category.session"),
+        keybind: "mod+shift+s",
+        slash: "new",
+        onSelect: (source) => {
+          const directory = params.dir ? decode64(params.dir) : layout.sidebar.project()
+          console.debug(
+            `[session-new] source=${source ?? "unknown"} route=${location.pathname} sidebar-project=${layout.sidebar.project() || "none"} target=${directory || "none"}`,
+          )
+          if (!directory) return
+          navigateWithSidebarReset(`/${base64Encode(directory)}/session`)
+          layout.sidebar.close()
+        },
+      },
+      {
         id: "command.palette",
         title: language.t("command.palette"),
         description: language.t("palette.search.commands"),
@@ -1342,7 +1352,15 @@ export default function Layout(props: ParentProps) {
         keywords: kw("command.sidebar.toggle"),
         category: language.t("command.category.view"),
         keybind: "mod+b",
-        onSelect: () => layout.sidebar.toggle(),
+        onSelect: () => {
+          // xl breakpoint = 1280px; below that the desktop sidebar is
+          // CSS-hidden and the mobile overlay sidebar is used instead.
+          if (window.innerWidth < 1280) {
+            layout.mobileSidebar.toggle()
+          } else {
+            layout.sidebar.toggle()
+          }
+        },
       },
       {
         id: "projectTask.open",
@@ -1961,6 +1979,8 @@ export default function Layout(props: ParentProps) {
   }
 
   function rememberSessionRoute(directory: string, id: string, root = activeProjectRoot(directory)) {
+    const current = store.lastProjectSession[root]
+    if (current?.id === id && workspaceKey(current.directory) === workspaceKey(directory)) return root
     setStore("lastProjectSession", root, { directory, id, at: Date.now() })
     return root
   }
@@ -1983,7 +2003,7 @@ export default function Layout(props: ParentProps) {
     )
     const chain = collectMissingAncestorTabs(openIDs, parentID, byID)
     for (const item of chain.reverse()) {
-      layout.sessionBar.open(directory, item.id, item.title, item.parentID)
+      sessionTabs.ensureOpen({ directory, id: item.id, title: item.title, parentID: item.parentID })
     }
     if (chain.length > 0) {
       console.debug(
@@ -2005,7 +2025,7 @@ export default function Layout(props: ParentProps) {
           console.debug(`[session-bar] ensure meta miss directory=${directory} id=${sessionID}`)
           return
         }
-        layout.sessionBar.setInfo(directory, currentID, {
+        sessionTabs.updateMeta(directory, currentID, {
           title: value.title,
           parentID: value.parentID ?? null,
         })
@@ -2016,28 +2036,111 @@ export default function Layout(props: ParentProps) {
       }
     } catch (error) {
       console.debug(`[session-bar] ensure meta error directory=${directory} id=${id}`, error)
+      const value = error as { status?: unknown; cause?: { status?: unknown }; response?: { status?: unknown } }
+      const status = value?.status ?? value?.cause?.status ?? value?.response?.status
+      if (status === 404) {
+        console.debug(`[session-tabs] authoritative session miss directory=${directory} id=${id}`)
+        await sessionTabs.remove({ directory, id }, "deleted")
+      }
     }
   }
 
-  function syncSessionRoute(directory: string, id: string, root = activeProjectRoot(directory)) {
-    rememberSessionRoute(directory, id, root)
-    const quickAssistant = globalSync.data.path.config
-      ? normalizeDirectory(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
-      : ""
-    if (normalizeDirectory(directory) !== quickAssistant) {
-      const [store] = globalSync.child(directory, { bootstrap: false })
-      const session = store.session.find((session) => session.id === id)
-      layout.sessionBar.open(directory, id, session?.title, session ? (session.parentID ?? null) : undefined)
-      if (session?.parentID) {
-        openAncestorSessionTabs(directory, session.parentID, store.session)
-      } else if (!session) {
-        void ensureSessionBarMeta(directory, id)
-      }
+  const currentSessionTabsRoute = (): SessionTabsRoute => ({
+    directory: routeDir(),
+    id: params.id,
+    session: onSessionRoute(),
+  })
+
+  const prepareSessionTabsTarget = async (target: SessionTabsTarget) => {
+    if (target.type === "home") return
+    const extra = extraAgentByDirectory(target.directory)
+    if (extra) {
+      const conn = server.list.find((item) => item.integration === extra.id)
+      if (!conn) throw new Error(`Missing server connection for ${extra.id}`)
+      const key = ServerConnection.key(conn)
+      server.setActive(key)
+      const matched = await waitForMatch(
+        () => server.key,
+        (value) => value === key,
+      )
+      if (!matched) throw new Error(`Timed out selecting server ${key}`)
+      return
     }
-    notification.session.markViewed(id)
-    requestAnimationFrame(() => scrollToSession(id, `${directory}:${id}`))
-    return root
+    if (server.domain === mainDomain) return
+    const key = server.lastNonExtraAgent
+    if (!key) throw new Error("Missing main server connection")
+    server.setActive(key)
+    const matched = await waitForMatch(
+      () => server.key,
+      (value) => value === key,
+    )
+    if (!matched) throw new Error(`Timed out selecting server ${key}`)
   }
+
+  const sessionTabs = createSessionTabsCoordinator({
+    store: {
+      all: layout.sessionBar.all,
+      drafts: layout.sessionBar.drafts,
+      open: (tab) => layout.sessionBar.open(tab.directory, tab.id, tab.title, tab.parentID),
+      closeAll: layout.sessionBar.closeAll,
+      openDraft: layout.sessionBar.openDraft,
+      closeDraft: layout.sessionBar.closeDraft,
+      setInfo: layout.sessionBar.setInfo,
+    },
+    route: currentSessionTabsRoute,
+    parentID(tab) {
+      if (typeof tab.parentID === "string") return tab.parentID
+      const [child] = globalSync.child(tab.directory, { bootstrap: false })
+      return child.session.find((item) => item.id === tab.id)?.parentID
+    },
+    prepare: prepareSessionTabsTarget,
+    navigate(target) {
+      if (target.type === "home") {
+        navigate("/")
+        return
+      }
+      const base = `/${base64Encode(target.directory)}/session`
+      navigate(target.type === "session" ? `${base}/${target.id}` : base)
+    },
+    cool(tabs) {
+      const byDirectory = new Map<string, { directory: string; ids: string[] }>()
+      for (const tab of tabs) {
+        const key = workspaceKey(tab.directory)
+        const found = byDirectory.get(key)
+        if (found) found.ids.push(tab.id)
+        else byDirectory.set(key, { directory: tab.directory, ids: [tab.id] })
+      }
+      for (const value of byDirectory.values()) globalSync.session.cool(value.directory, value.ids)
+    },
+    markViewed: notification.session.markViewed,
+    remember(directory, id, root) {
+      rememberSessionRoute(directory, id, root ?? activeProjectRoot(directory))
+      requestAnimationFrame(() => scrollToSession(id, `${directory}:${id}`))
+    },
+    scheduleTimeout: (run, ms) => setTimeout(run, ms),
+    cancelTimeout: (timer) => clearTimeout(timer),
+  })
+  const stopSessionLifecycle = onSessionLifecycle((event) => {
+    const tab = {
+      directory: event.directory,
+      id: event.session.id,
+      title: event.session.title,
+      parentID: event.session.parentID,
+    }
+    if (event.type === "restored") {
+      sessionTabs.restore(tab)
+      return
+    }
+    for (const [root, recent] of Object.entries(store.lastProjectSession)) {
+      if (recent.id !== event.session.id || workspaceKey(recent.directory) !== workspaceKey(event.directory)) continue
+      clearLastProjectSession(root)
+    }
+    void sessionTabs.remove(tab, event.type)
+  })
+  onCleanup(() => {
+    stopSessionLifecycle()
+    sessionTabs.dispose()
+  })
 
   async function navigateToProject(directory: string | undefined) {
     if (!directory) return
@@ -2103,6 +2206,7 @@ export default function Layout(props: ParentProps) {
 
   function openProject(directory: string, navigate = true) {
     console.debug(`[project-open] layout directory=${directory} navigate=${navigate}`)
+    sessionTabs.restoreDirectory(directory)
     layout.projects.open(directory)
     if (navigate) return navigateToProject(directory)
   }
@@ -2257,6 +2361,7 @@ export default function Layout(props: ParentProps) {
     if (matches.length === 0) {
       // Still mark closed so a lingering route cannot resurrect a just-removed alias.
       markRecentlyClosed(directory)
+      void sessionTabs.removeDirectory(directory, { navigate: false })
       layout.projects.close(directory)
       return
     }
@@ -2271,6 +2376,8 @@ export default function Layout(props: ParentProps) {
       sameWorkspacePath(currentProject()?.root ?? "", directory)
 
     markRecentlyClosed(directory)
+    for (const item of matches) void sessionTabs.removeDirectory(item.worktree, { navigate: false })
+    void sessionTabs.removeDirectory(directory, { navigate: false })
 
     if (!active) {
       for (const item of matches) layout.projects.close(item.worktree)
@@ -2375,6 +2482,8 @@ export default function Layout(props: ParentProps) {
 
     if (!result) return
 
+    void sessionTabs.removeDirectory(directory, { navigate: false })
+
     if (workspaceKey(store.lastProjectSession[root]?.directory ?? "") === workspaceKey(directory)) {
       clearLastProjectSession(root)
     }
@@ -2390,6 +2499,7 @@ export default function Layout(props: ParentProps) {
     setStore("workspaceOrder", root, (order) => (order ?? []).filter((workspace) => workspace !== directory))
 
     layout.projects.close(directory)
+    sessionTabs.restoreDirectory(root)
     layout.projects.open(root)
 
     if (shouldLeave) return
@@ -2671,6 +2781,15 @@ export default function Layout(props: ParentProps) {
           })
           .then((x) => x.data)
         if (!restored) throw new Error(language.t("common.requestFailed"))
+        console.debug(
+          `[session-tabs] archive restore confirmed directory=${restored.directory} id=${restored.id} parentID=${restored.parentID ?? "none"}`,
+        )
+        sessionTabs.restore({
+          directory: restored.directory,
+          id: restored.id,
+          title: restored.title,
+          parentID: restored.parentID,
+        })
         const [, setChild] = globalSync.child(session.directory)
         setChild(
           produce((draft) => {
@@ -2812,12 +2931,6 @@ export default function Layout(props: ParentProps) {
     )
   }
 
-  const activeRoute = {
-    session: "",
-    sessionProject: "",
-    directory: "",
-  }
-
   createEffect(
     on(
       () => [pageReady(), routeDir(), params.id, currentProject()?.root, switching(), onSessionRoute()] as const,
@@ -2878,48 +2991,43 @@ export default function Layout(props: ParentProps) {
         return [pageReady(), layoutReady(), routeSlug(), params.id, currentProject()?.root, routeDir(), onSessionRoute()] as const
       },
       ([ready, persistedReady, slug, id, root, dir, sessionRoute]) => {
+        console.debug(
+          `[session-tabs] route observed ready=${ready} persistedReady=${persistedReady} slug=${slug ?? "none"} id=${id ?? "none"} root=${root ?? "none"} directory=${dir || "none"} sessionRoute=${sessionRoute}`,
+        )
         if (!persistedReady) {
           if (sessionRoute && id) {
-            console.debug(`[session-bar] route sync waiting layout storage directory=${dir || "none"} id=${id}`)
+            console.debug(`[session-tabs] route waiting layout storage directory=${dir || "none"} id=${id}`)
           }
           return
         }
-        if (!ready || !slug || !dir || !sessionRoute) {
-          activeRoute.session = ""
-          activeRoute.sessionProject = ""
-          activeRoute.directory = ""
-          return
-        }
+        if (!ready || !slug || !dir || !sessionRoute) return
+        if (root && server.projects.last() !== root) server.projects.touch(root)
 
+        const quickAssistant = globalSync.data.path.config
+          ? normalizeDirectory(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
+          : ""
         if (!id) {
-          activeRoute.session = ""
-          activeRoute.sessionProject = ""
-          activeRoute.directory = ""
+          sessionTabs.observeRoute(
+            { directory: dir, session: true },
+            { root, hidden: normalizeDirectory(dir) === quickAssistant },
+          )
           return
         }
 
-        const session = `${slug}/${id}`
-
-        if (!root) {
-          activeRoute.session = session
-          activeRoute.directory = dir
-          activeRoute.sessionProject = ""
-          return
-        }
-
-        if (server.projects.last() !== root) server.projects.touch(root)
-
-        const changed = session !== activeRoute.session || dir !== activeRoute.directory
-        if (changed) {
-          activeRoute.session = session
-          activeRoute.directory = dir
-          activeRoute.sessionProject = syncSessionRoute(dir, id, root)
-          return
-        }
-
-        if (root === activeRoute.sessionProject) return
-        activeRoute.directory = dir
-        activeRoute.sessionProject = rememberSessionRoute(dir, id, root)
+        const [child] = globalSync.child(dir, { bootstrap: false })
+        const session = child.session.find((item) => item.id === id)
+        sessionTabs.observeRoute(
+          { directory: dir, id, session: true },
+          {
+            title: session?.title,
+            parentID: session ? (session.parentID ?? null) : undefined,
+            root,
+            hidden: normalizeDirectory(dir) === quickAssistant,
+          },
+        )
+        if (normalizeDirectory(dir) === quickAssistant) return
+        if (session?.parentID) openAncestorSessionTabs(dir, session.parentID, child.session)
+        else if (!session) void ensureSessionBarMeta(dir, id)
       },
     ),
   )
@@ -3205,15 +3313,19 @@ export default function Layout(props: ParentProps) {
     }
 
     const hasCurrentSession = onSessionRoute() && !!params.id
+    // When viewing an IM channel, the route directory is the channel's work
+    // folder, not an OpenCode project. We must navigate away so activeImChannel()
+    // clears and the sidebar switches back to the project session list.
+    const viewingImChannel = !!activeImChannel()
     // Default false: rail click switches project context / opens sidebar without
     // forcing a new-session route when nothing is currently displayed.
     const navigateWhenNoSession = options?.navigateWhenNoSession ?? false
     console.debug(
-      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} navigated=${!hasCurrentSession && navigateWhenNoSession}`,
+      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} viewing-im=${viewingImChannel} navigated=${viewingImChannel || (!hasCurrentSession && navigateWhenNoSession)}`,
     )
     setSidebarProjectRoot(project.worktree)
     warmProjectSessions(project.worktree)
-    if (!hasCurrentSession && navigateWhenNoSession) {
+    if (viewingImChannel || (!hasCurrentSession && navigateWhenNoSession)) {
       setSwitching(undefined)
       navigateWithSidebarReset(`/${base64Encode(project.worktree)}/session`)
     }
@@ -3920,6 +4032,21 @@ export default function Layout(props: ParentProps) {
     <SidebarContent
       mobile={mobile}
       opened={() => layout.sidebar.opened()}
+      homeLabel={() => language.t("home.title")}
+      homeActive={() => location.pathname === "/"}
+      onOpenHome={() => {
+        const started = performance.now()
+        ;(window as Window & { __homeNavClickAt?: number }).__homeNavClickAt = started
+        console.debug(`[home-perf] nav-click at=${started.toFixed(1)}ms pathname=${location.pathname}`)
+        setStore("sidebarPanel", "project")
+        layout.sidebar.close()
+        layout.mobileSidebar.hide()
+        void sessionTabs.activate({ type: "home" }).then((navigated) => {
+          console.debug(
+            `[home-perf] nav-complete duration=${(performance.now() - started).toFixed(1)}ms navigated=${navigated}`,
+          )
+        })
+      }}
       projects={projects}
       renderProject={(project) => <SortableProject ctx={projectSidebarCtx} project={project} mobile={mobile} />}
       handleDragStart={handleDragStart}
@@ -3989,7 +4116,17 @@ export default function Layout(props: ParentProps) {
           />
         ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ProjectTasksPanel
+            projectID={() => sidebarProject()?.id ?? ""}
             directory={() => sidebarProject()?.root ?? routeDir()}
+            worktrees={() => {
+              const project = sidebarProject()
+              return project ? workspaceIds(project) : []
+            }}
+            worktreeName={(directory) => {
+              const project = sidebarProject()
+              const [workspace] = globalSync.child(directory, { bootstrap: false })
+              return workspaceLabel(directory, workspace.vcs?.branch, project?.id)
+            }}
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
@@ -4004,10 +4141,11 @@ export default function Layout(props: ParentProps) {
   )
 
   return (
-    <div
-      data-component="app-root"
-      class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
-    >
+    <SessionTabsProvider value={sessionTabs}>
+      <div
+        data-component="app-root"
+        class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
+      >
       <Show when={folderDragging() || fileDragging()}>
         <div class="fixed inset-0 z-[100] flex items-center justify-center bg-background-base/80 pointer-events-none">
           <div class="flex flex-col items-center gap-3 text-text-weak">
@@ -4260,8 +4398,9 @@ export default function Layout(props: ParentProps) {
         </div>
         {import.meta.env.DEV && platform.platform !== "desktop" && <DebugBar />}
       </div>
-      <QuickAssistant />
-      <Toast.Region />
-    </div>
+        <QuickAssistant />
+        <Toast.Region />
+      </div>
+    </SessionTabsProvider>
   )
 }

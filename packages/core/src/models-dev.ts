@@ -105,6 +105,7 @@ export const Provider = Schema.Struct({
 })
 
 export type Provider = Schema.Schema.Type<typeof Provider>
+const Catalog = Schema.Record(Schema.String, Provider)
 
 export const Event = {
   Refreshed: EventV2.define({
@@ -161,8 +162,27 @@ export const layer = Layer.effect(
       )
     })
 
+    const parse = Effect.fn("ModelsDev.parse")(function* (text: string) {
+      const json = yield* Effect.try({
+        try: () => JSON.parse(text) as Record<string, Provider>,
+        catch: (cause) => new AppFileSystem.FileSystemError({ method: "parseModels", cause }),
+      })
+      return yield* Schema.decodeUnknownEffect(Catalog)(json).pipe(
+        Effect.mapError((cause) => new AppFileSystem.FileSystemError({ method: "parseModels", cause })),
+      )
+    })
+
     const loadFromDisk = fs.readJson(Flag.OPENCODE_MODELS_PATH ?? filepath).pipe(
-      Effect.catch(() => Effect.succeed(undefined)),
+      Effect.catch((error) => {
+        if (
+          Flag.OPENCODE_MODELS_PATH === undefined &&
+          error._tag === "FileSystemError" &&
+          error.method === "readJson"
+        ) {
+          return fs.remove(filepath, { force: true }).pipe(Effect.ignore, Effect.as(undefined))
+        }
+        return Effect.succeed(undefined)
+      }),
       Effect.map((v) => v as Record<string, Provider> | undefined),
     )
 
@@ -172,8 +192,18 @@ export const layer = Layer.effect(
 
     const fetchAndWrite = Effect.fn("ModelsDev.fetchAndWrite")(function* () {
       const text = yield* fetchApi()
-      yield* fs.writeWithDirs(filepath, text)
-      return text
+      const catalog = yield* parse(text)
+      const tempfile = `${filepath}.${process.pid}.${Date.now()}.tmp`
+      yield* fs.writeWithDirs(tempfile, text).pipe(
+        Effect.andThen(fs.rename(tempfile, filepath)),
+        Effect.catch((error) =>
+          Effect.gen(function* () {
+            yield* fs.remove(tempfile, { force: true }).pipe(Effect.ignore)
+            return yield* Effect.fail(error)
+          }),
+        ),
+      )
+      return catalog
     })
 
     const populate = Effect.gen(function* () {
@@ -183,13 +213,12 @@ export const layer = Layer.effect(
       if (snapshot) return snapshot
       if (Flag.OPENCODE_DISABLE_MODELS_FETCH) return {}
       // Flock is cross-process: concurrent opencode CLIs can race on this cache file.
-      const text = yield* Effect.scoped(
+      return yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Flock.effect(lockKey)
           return yield* fetchAndWrite()
         }),
       )
-      return JSON.parse(text) as Record<string, Provider>
     }).pipe(Effect.withSpan("ModelsDev.populate"), Effect.orDie)
 
     const [cachedGet, invalidate] = yield* Effect.cachedInvalidateWithTTL(populate, Duration.infinity)

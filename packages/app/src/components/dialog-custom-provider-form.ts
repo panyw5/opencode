@@ -341,7 +341,7 @@ export function validateCustomProvider(input: ValidateArgs) {
         ...(env ? { env: [env] } : {}),
         options: {
           baseURL,
-          ...(Object.keys(headerConfig).length ? { headers: headerConfig } : {}),
+          headers: headerConfig,
         },
         models: modelConfig,
       },

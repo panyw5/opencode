@@ -1,16 +1,21 @@
-import { and } from "drizzle-orm"
+import { and, eq, isNull, or } from "drizzle-orm"
 import { Database } from "@/storage/db"
-import { eq } from "drizzle-orm"
 import { toLogicalPath } from "@opencode-ai/core/util/path"
 import { directorySqlEq } from "@/util/directory-sql"
 import { ProjectTable } from "./project.sql"
 import { SessionTable } from "../session/session.sql"
+import { ScheduledTaskTable } from "../scheduled-task/scheduled-task.sql"
+import { WorkspaceTable } from "../control-plane/workspace.sql"
+import { ProjectLocation } from "./location"
+import { ProjectAlias } from "./alias"
+import { GitEvidence } from "./git-evidence"
 import * as Log from "@opencode-ai/core/util/log"
+import { Hash } from "@opencode-ai/core/util/hash"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { BusEvent } from "@/bus/bus-event"
 import { GlobalBus } from "@/bus/global"
 import { which } from "../util/which"
-import { ProjectID } from "./schema"
+import { LocationID, ProjectID } from "./schema"
 import { Bus } from "@/bus"
 import { Command } from "@/command"
 import { InstanceState } from "@/effect/instance-state"
@@ -62,6 +67,83 @@ export const Event = {
 }
 
 type Row = typeof ProjectTable.$inferSelect
+
+export interface LegacyClaimCounts {
+  sessions: number
+  scheduledTasks: number
+  workspaces: number
+}
+
+export function claimLegacyDirectory(input: {
+  directory: string
+  projectID: ProjectID
+  locationID?: LocationID
+}): LegacyClaimCounts {
+  const sessionOwner = input.locationID
+    ? or(
+        eq(SessionTable.project_id, ProjectID.global),
+        and(eq(SessionTable.project_id, input.projectID), isNull(SessionTable.location_id)),
+      )!
+    : eq(SessionTable.project_id, ProjectID.global)
+  const scheduledTaskOwner = input.locationID
+    ? or(
+        eq(ScheduledTaskTable.project_id, ProjectID.global),
+        and(eq(ScheduledTaskTable.project_id, input.projectID), isNull(ScheduledTaskTable.location_id)),
+      )!
+    : eq(ScheduledTaskTable.project_id, ProjectID.global)
+  const workspaceOwner = input.locationID
+    ? or(
+        eq(WorkspaceTable.project_id, ProjectID.global),
+        and(eq(WorkspaceTable.project_id, input.projectID), isNull(WorkspaceTable.location_id)),
+      )!
+    : eq(WorkspaceTable.project_id, ProjectID.global)
+  return Database.transaction(
+    (db) => ({
+      sessions: db
+        .update(SessionTable)
+        .set({
+          project_id: input.projectID,
+          location_id: input.locationID,
+          time_updated: SessionTable.time_updated,
+        })
+        .where(
+          and(
+            directorySqlEq(SessionTable.directory, input.directory),
+            sessionOwner,
+          ),
+        )
+        .returning({ id: SessionTable.id })
+        .all().length,
+      scheduledTasks: db
+        .update(ScheduledTaskTable)
+        .set({
+          project_id: input.projectID,
+          location_id: input.locationID,
+          time_updated: ScheduledTaskTable.time_updated,
+        })
+        .where(
+          and(
+            directorySqlEq(ScheduledTaskTable.directory, input.directory),
+            scheduledTaskOwner,
+          ),
+        )
+        .returning({ id: ScheduledTaskTable.id })
+        .all().length,
+      workspaces: db
+        .update(WorkspaceTable)
+        .set({ project_id: input.projectID, location_id: input.locationID })
+        .where(
+          and(
+            directorySqlEq(WorkspaceTable.directory, input.directory),
+            workspaceOwner,
+          ),
+        )
+        .returning({ id: WorkspaceTable.id })
+        .all().length,
+    }),
+    { behavior: "immediate" },
+  )
+}
 
 export function fromRow(row: Row): Info {
   const result: Info = {
@@ -119,7 +201,10 @@ export interface Interface {
    * fires. Subscription lifetime is tied to the per-instance state scope.
    */
   readonly init: () => Effect.Effect<void>
-  readonly fromDirectory: (directory: string) => Effect.Effect<{ project: Info; sandbox: string }>
+  readonly fromDirectory: (
+    directory: string,
+  ) => Effect.Effect<{ project: Info; sandbox: string; location: ProjectLocation.Info }>
+  readonly claimLegacy: () => Effect.Effect<LegacyClaimCounts>
   readonly discover: (input: Info) => Effect.Effect<void>
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: ProjectID) => Effect.Effect<Info | undefined>
@@ -150,14 +235,24 @@ export const layer: Layer.Layer<
 
     const git = Effect.fnUntraced(
       function* (args: string[], opts?: { cwd?: string }) {
+        const started = Date.now()
+        log.info("git probe started", { args, cwd: opts?.cwd })
         const handle = yield* spawner.spawn(
           ChildProcess.make("git", args, { cwd: opts?.cwd, extendEnv: true, stdin: "ignore" }),
         )
+        log.info("git probe spawned", { args, cwd: opts?.cwd, pid: handle.pid })
         const [text, stderr] = yield* Effect.all(
           [Stream.mkString(Stream.decodeText(handle.stdout)), Stream.mkString(Stream.decodeText(handle.stderr))],
           { concurrency: 2 },
         )
+        log.info("git probe output drained", {
+          args,
+          cwd: opts?.cwd,
+          stdoutBytes: text.length,
+          stderrBytes: stderr.length,
+        })
         const code = yield* handle.exitCode
+        log.info("git probe completed", { args, cwd: opts?.cwd, code, duration: Date.now() - started })
         return { code, text, stderr } satisfies GitResult
       },
       Effect.scoped,
@@ -193,105 +288,224 @@ export const layer: Layer.Layer<
       return yield* fs.readFileString(pathSvc.join(dir, "opencode")).pipe(
         Effect.map((x) => x.trim()),
         Effect.map((x) => ProjectID.make(x)),
-        Effect.catch(() => Effect.void),
+        Effect.catch(() => Effect.succeed(undefined)),
       )
     })
 
+    const inspectDotgit = Effect.fnUntraced(function* (dotgit: string) {
+      if (yield* fs.isDir(dotgit).pipe(Effect.catch(() => Effect.succeed(false)))) {
+        return { gitDir: dotgit, cachedID: yield* readCachedProjectId(dotgit) }
+      }
+      const content = yield* fs.readFileString(dotgit).pipe(Effect.catch(() => Effect.succeed("")))
+      const match = /^gitdir:\s*(.+?)\s*$/im.exec(content)
+      if (!match) return { gitDir: dotgit, cachedID: undefined }
+      const gitDir = resolveGitPath(pathSvc.dirname(dotgit), match[1])
+      const relativeCommon = yield* fs.readFileString(pathSvc.join(gitDir, "commondir")).pipe(
+        Effect.map((value) => value.trim()),
+        Effect.catch(() => Effect.succeed("")),
+      )
+      const commonDir = relativeCommon ? resolveGitPath(gitDir, relativeCommon) : gitDir
+      const cachedID = (yield* readCachedProjectId(gitDir)) ?? (yield* readCachedProjectId(commonDir))
+      return { gitDir, commonDir, cachedID }
+    })
+
     const fromDirectory = Effect.fn("Project.fromDirectory")(function* (directory: string) {
-      log.info("fromDirectory", { directory })
+      const canonicalDirectory = toLogicalPath(AppFileSystem.resolve(directory))
+      const fallbackID = ProjectID.make(`dir:${Hash.fast(canonicalDirectory)}`)
+      log.info("project resolution started", { inputDirectory: directory, canonicalDirectory, fallbackID })
 
       // Phase 1: discover git info
-      type DiscoveryResult = { id: ProjectID; worktree: string; sandbox: string; vcs: Info["vcs"] }
+      type DiscoveryResult = {
+        id: ProjectID
+        worktree: string
+        sandbox: string
+        vcs: Info["vcs"]
+        reason: string
+        headState?: "unborn" | "ready"
+        rootCommits?: string[]
+        remoteUrl?: string
+        gitDir?: string
+        commonDir?: string
+        cachedID?: ProjectID
+      }
 
       const dataRaw: DiscoveryResult = yield* Effect.gen(function* () {
         // fork-1.13.21 behavior: non-git directories used a `dir:<hash>` project id keyed by worktree
         // path, so sessions created before the 1.15 rebase live under those ids rather than `global`.
         // Reuse the existing row so listByProject lands on the correct project_id.
+        const existingLocation = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(canonicalDirectory))
         const existingByWorktree = yield* db((d) =>
-          d.select().from(ProjectTable).where(directorySqlEq(ProjectTable.worktree, directory)).get(),
+          d.select().from(ProjectTable).where(directorySqlEq(ProjectTable.worktree, canonicalDirectory)).get(),
         )
-        if (existingByWorktree?.id.startsWith("dir:")) {
-          return {
-            id: existingByWorktree.id as ProjectID,
-            worktree: directory,
-            sandbox: directory,
-            vcs: existingByWorktree.vcs === "git" ? ("git" as const) : undefined,
-          }
-        }
+        const identityHint =
+          existingLocation?.projectID ??
+          (existingByWorktree?.id === ProjectID.global ? undefined : existingByWorktree?.id)
+        log.info("project identity hint", {
+          canonicalDirectory,
+          identityHint,
+          locationID: existingLocation?.id,
+          previousVcs: existingByWorktree?.vcs,
+        })
 
-        const dotgitMatches = yield* fs.up({ targets: [".git"], start: directory }).pipe(Effect.orDie)
+        const dotgitMatches = yield* fs.up({ targets: [".git"], start: canonicalDirectory }).pipe(Effect.orDie)
         const dotgit = dotgitMatches[0]
+        log.info("project git marker probe", { canonicalDirectory, dotgit })
 
         if (!dotgit) {
           return {
-            id: ProjectID.global,
-            worktree: "/",
-            sandbox: "/",
+            id: identityHint ?? fallbackID,
+            worktree: canonicalDirectory,
+            sandbox: canonicalDirectory,
             vcs: fakeVcs,
+            reason: identityHint ? "directory-hint-no-git" : "directory-hash-no-git",
           }
         }
 
         let sandbox = pathSvc.dirname(dotgit)
         const gitBinary = yield* Effect.sync(() => which("git"))
-        let id = yield* readCachedProjectId(dotgit)
+        const dotgitInfo = yield* inspectDotgit(dotgit)
+        const dotgitCachedID = dotgitInfo.cachedID
+        let id = dotgitCachedID ?? identityHint
+        log.info("project git capability probe", {
+          sandbox,
+          gitBinary: !!gitBinary,
+          gitDir: dotgitInfo.gitDir,
+          fallbackCommonDir: dotgitInfo.commonDir,
+          dotgitCachedID,
+          identityHint,
+        })
 
         if (!gitBinary) {
+          id ??= fallbackID
+          yield* fs
+            .writeFileString(pathSvc.join(dotgitInfo.commonDir ?? dotgitInfo.gitDir, "opencode"), id)
+            .pipe(Effect.ignore)
+          const worktree = dotgitInfo.commonDir ? pathSvc.dirname(dotgitInfo.commonDir) : sandbox
           return {
-            id: id ?? ProjectID.global,
-            worktree: sandbox,
+            id,
+            worktree,
             sandbox,
             vcs: fakeVcs,
+            reason: dotgitCachedID
+              ? "dotgit-cache-git-unavailable"
+              : identityHint
+                ? "directory-hint-git-unavailable"
+                : "directory-hash-git-unavailable",
+            gitDir: dotgitInfo.gitDir,
+            cachedID: dotgitCachedID,
           }
         }
 
         const commonDir = yield* git(["rev-parse", "--git-common-dir"], { cwd: sandbox })
         if (commonDir.code !== 0) {
+          id ??= fallbackID
+          yield* fs
+            .writeFileString(pathSvc.join(dotgitInfo.commonDir ?? dotgitInfo.gitDir, "opencode"), id)
+            .pipe(Effect.ignore)
+          const worktree = dotgitInfo.commonDir ? pathSvc.dirname(dotgitInfo.commonDir) : sandbox
           return {
-            id: id ?? ProjectID.global,
-            worktree: sandbox,
+            id,
+            worktree,
             sandbox,
             vcs: fakeVcs,
+            reason: dotgitCachedID
+              ? "dotgit-cache-common-dir-error"
+              : identityHint
+                ? "directory-hint-common-dir-error"
+                : "directory-hash-common-dir-error",
+            gitDir: dotgitInfo.gitDir,
+            cachedID: dotgitCachedID,
+            commonDir: dotgitInfo.commonDir,
           }
         }
         const common = resolveGitPath(sandbox, commonDir.text.trim())
+        log.info("project git common directory", { sandbox, commonDir: common })
         const bareCheck = yield* git(["config", "--bool", "core.bare"], { cwd: sandbox })
         const isBareRepo = bareCheck.code === 0 && bareCheck.text.trim() === "true"
         const worktree = common === sandbox ? sandbox : isBareRepo ? common : pathSvc.dirname(common)
 
+        let commonCachedID: ProjectID | undefined
         if (id == null) {
-          id = yield* readCachedProjectId(common)
+          commonCachedID = yield* readCachedProjectId(common)
+          id = commonCachedID
         }
 
-        if (!id) {
-          const revList = yield* git(["rev-list", "--max-parents=0", "HEAD"], { cwd: sandbox })
-          const roots = revList.text
-            .split("\n")
-            .filter(Boolean)
-            .map((x) => x.trim())
-            .toSorted()
+        let reason = dotgitCachedID
+          ? "dotgit-cache"
+          : identityHint
+            ? "directory-hint"
+            : commonCachedID
+              ? "common-dir-cache"
+              : "unresolved-git-identity"
 
-          id = roots[0] ? ProjectID.make(roots[0]) : undefined
-          if (id) {
-            yield* fs.writeFileString(pathSvc.join(common, "opencode"), id).pipe(Effect.ignore)
+        if (!id) {
+          const commonProjectID = yield* Effect.sync(() => ProjectLocation.uniqueProjectByGitCommonDir(common))
+          if (commonProjectID) {
+            id = commonProjectID
+            reason = "common-dir-location"
+          }
+        }
+
+        const evidence = yield* GitEvidence.collectRepository({ cwd: sandbox, run: git })
+        const remoteUrl = evidence.remoteUrl
+        if (!id && remoteUrl) {
+          const remoteProjectID = yield* Effect.sync(() => ProjectAlias.uniqueProject("remote_url", remoteUrl))
+          if (remoteProjectID) {
+            id = remoteProjectID
+            reason = "unique-remote-alias"
+          }
+        }
+
+        const roots = evidence.rootCommits
+        const headState = evidence.headState
+        if (!id && roots[0]) {
+          const legacyRootID = ProjectID.make(roots[0])
+          const legacyRootProject = yield* db((d) =>
+            d.select({ id: ProjectTable.id }).from(ProjectTable).where(eq(ProjectTable.id, legacyRootID)).get(),
+          )
+          if (legacyRootProject) {
+            id = legacyRootProject.id
+            reason = "legacy-root-project"
           }
         }
 
         if (!id) {
-          return { id: ProjectID.global, worktree: sandbox, sandbox, vcs: "git" as const }
+          id = headState === "unborn" ? fallbackID : ProjectID.ascending()
+          reason = headState === "unborn" ? "directory-hash-unborn" : "opaque-git-project"
         }
+        yield* fs.writeFileString(pathSvc.join(common, "opencode"), id).pipe(Effect.ignore)
 
         const topLevel = yield* git(["rev-parse", "--show-toplevel"], { cwd: sandbox })
         if (topLevel.code !== 0) {
           return {
             id,
-            worktree: sandbox,
+            worktree,
             sandbox,
             vcs: fakeVcs,
+            reason: `${reason}-show-toplevel-error`,
+            headState,
+            rootCommits: roots,
+            remoteUrl,
+            gitDir: dotgitInfo.gitDir,
+            commonDir: common,
+            cachedID: dotgitCachedID ?? commonCachedID,
           }
         }
         sandbox = resolveGitPath(sandbox, topLevel.text.trim())
 
-        return { id, sandbox, worktree, vcs: "git" as const }
+        return {
+          id,
+          sandbox,
+          worktree,
+          vcs: "git" as const,
+          reason,
+          headState,
+          rootCommits: roots,
+          remoteUrl,
+          gitDir: dotgitInfo.gitDir,
+          commonDir: common,
+          cachedID: dotgitCachedID ?? commonCachedID,
+        }
       })
 
       // Normalize discovered paths to the canonical logical-path form (`/`)
@@ -303,7 +517,42 @@ export const layer: Layer.Layer<
         worktree: toLogicalPath(dataRaw.worktree) || dataRaw.worktree,
         sandbox: toLogicalPath(dataRaw.sandbox) || dataRaw.sandbox,
         vcs: dataRaw.vcs,
+        reason: dataRaw.reason,
+        headState: dataRaw.headState,
+        rootCommits: dataRaw.rootCommits,
+        remoteUrl: dataRaw.remoteUrl,
+        gitDir: dataRaw.gitDir ? toLogicalPath(dataRaw.gitDir) : undefined,
+        commonDir: dataRaw.commonDir ? toLogicalPath(dataRaw.commonDir) : undefined,
+        cachedID: dataRaw.cachedID,
       }
+      const existingLocation = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(data.sandbox))
+      if (existingLocation && existingLocation.projectID !== data.id) {
+        log.warn("project identity reconciled from location", {
+          canonicalDirectory: data.sandbox,
+          discoveredProjectID: data.id,
+          locationID: existingLocation.id,
+          locationProjectID: existingLocation.projectID,
+        })
+        data.id = existingLocation.projectID
+        data.reason = `location-hint-${data.reason}`
+        if (data.commonDir) {
+          yield* fs.writeFileString(pathSvc.join(data.commonDir, "opencode"), data.id).pipe(Effect.ignore)
+        }
+      }
+      log.info("project resolution selected", {
+        inputDirectory: directory,
+        canonicalDirectory,
+        projectID: data.id,
+        worktree: data.worktree,
+        sandbox: data.sandbox,
+        vcs: data.vcs,
+        commonDir: data.commonDir,
+        gitDir: data.gitDir,
+        remoteUrl: data.remoteUrl,
+        rootCommits: data.rootCommits,
+        cachedID: data.cachedID,
+        reason: data.reason,
+      })
 
       // Phase 2: upsert
       const row = yield* db((d) => d.select().from(ProjectTable).where(eq(ProjectTable.id, data.id)).get())
@@ -321,7 +570,7 @@ export const layer: Layer.Layer<
 
       const result: Info = {
         ...existing,
-        worktree: data.worktree,
+        worktree: row && data.sandbox === data.worktree && row.worktree !== data.worktree ? row.worktree : data.worktree,
         time: { ...existing.time, updated: Date.now() },
       }
       if (data.vcs) result.vcs = data.vcs
@@ -373,18 +622,167 @@ export const layer: Layer.Layer<
           .run(),
       )
 
-      if (data.id !== ProjectID.global) {
-        yield* db((d) =>
-          d
-            .update(SessionTable)
-            .set({ project_id: data.id })
-            .where(and(eq(SessionTable.project_id, ProjectID.global), directorySqlEq(SessionTable.directory, data.worktree)))
-            .run(),
-        )
-      }
+      const locationRoot = data.sandbox
+      const vcsState = GitEvidence.vcsState(data)
+      const location = yield* Effect.sync(() =>
+        ProjectLocation.upsert({
+          projectID: result.id,
+          directory: locationRoot,
+          canonicalDirectory: locationRoot,
+          kind: GitEvidence.kind({
+            gitDir: data.gitDir,
+            locationRoot,
+            worktreeRoot: data.worktree,
+            remoteUrl: data.remoteUrl,
+          }),
+          vcsType: data.gitDir ? "git" : undefined,
+          vcsState,
+          worktreeRoot: data.worktree,
+          gitCommonDir: data.commonDir,
+          marker: data.commonDir ? toLogicalPath(pathSvc.join(data.commonDir, "opencode")) : undefined,
+        }),
+      )
+      log.info("project location resolved", {
+        projectID: result.id,
+        locationID: location.id,
+        canonicalDirectory: location.canonicalDirectory,
+        kind: location.kind,
+        vcsState: location.vcsState,
+      })
+
+      const aliases = yield* Effect.sync(() => {
+        const values: ProjectAlias.Info[] = []
+        if (data.gitDir) {
+          values.push(
+            ProjectAlias.upsert({
+              projectID: result.id,
+              kind: "git_marker",
+              value: result.id,
+              confidence: "high",
+              sourceLocationID: location.id,
+            }),
+          )
+        }
+        if (data.remoteUrl) {
+          values.push(
+            ProjectAlias.upsert({
+              projectID: result.id,
+              kind: "remote_url",
+              value: data.remoteUrl,
+              confidence: "medium",
+              sourceLocationID: location.id,
+            }),
+          )
+        }
+        for (const root of data.rootCommits ?? []) {
+          values.push(
+            ProjectAlias.upsert({
+              projectID: result.id,
+              kind: "root_commit",
+              value: root,
+              confidence: "low",
+              sourceLocationID: location.id,
+            }),
+          )
+        }
+        return values
+      })
+      log.info("project aliases recorded", {
+        projectID: result.id,
+        locationID: location.id,
+        aliases: aliases.map((alias) => alias.kind),
+      })
+
+      const claims = yield* Effect.sync(() =>
+        claimLegacyDirectory({ directory: canonicalDirectory, projectID: data.id, locationID: location.id }),
+      )
+      log.info("project legacy resources claimed", {
+        canonicalDirectory,
+        projectID: data.id,
+        locationID: location.id,
+        sessions: claims.sessions,
+        scheduledTasks: claims.scheduledTasks,
+        workspaces: claims.workspaces,
+      })
 
       yield* emitUpdated(result)
-      return { project: result, sandbox: data.sandbox }
+      return { project: result, sandbox: data.sandbox, location }
+    })
+
+    const countLegacyDirectory = (directory: string) =>
+      db((d) => ({
+        sessions: d
+          .select({ id: SessionTable.id })
+          .from(SessionTable)
+          .where(
+            and(
+              or(eq(SessionTable.project_id, ProjectID.global), isNull(SessionTable.location_id)),
+              directorySqlEq(SessionTable.directory, directory),
+            ),
+          )
+          .all().length,
+        scheduledTasks: d
+          .select({ id: ScheduledTaskTable.id })
+          .from(ScheduledTaskTable)
+          .where(
+            and(
+              or(eq(ScheduledTaskTable.project_id, ProjectID.global), isNull(ScheduledTaskTable.location_id)),
+              directorySqlEq(ScheduledTaskTable.directory, directory),
+            ),
+          )
+          .all().length,
+        workspaces: d
+          .select({ id: WorkspaceTable.id })
+          .from(WorkspaceTable)
+          .where(
+            and(
+              or(eq(WorkspaceTable.project_id, ProjectID.global), isNull(WorkspaceTable.location_id)),
+              directorySqlEq(WorkspaceTable.directory, directory),
+            ),
+          )
+          .all().length,
+      }))
+
+    const claimLegacy = Effect.fn("Project.claimLegacy")(function* () {
+      const directories = yield* db((d) => {
+        const result = new Set<string>()
+        for (const row of d
+          .select({ directory: SessionTable.directory })
+          .from(SessionTable)
+          .where(or(eq(SessionTable.project_id, ProjectID.global), isNull(SessionTable.location_id)))
+          .all())
+          result.add(row.directory)
+        for (const row of d
+          .select({ directory: ScheduledTaskTable.directory })
+          .from(ScheduledTaskTable)
+          .where(or(eq(ScheduledTaskTable.project_id, ProjectID.global), isNull(ScheduledTaskTable.location_id)))
+          .all())
+          result.add(row.directory)
+        for (const row of d
+          .select({ directory: WorkspaceTable.directory })
+          .from(WorkspaceTable)
+          .where(or(eq(WorkspaceTable.project_id, ProjectID.global), isNull(WorkspaceTable.location_id)))
+          .all())
+          if (row.directory) result.add(row.directory)
+        return [...result]
+      })
+      const totals: LegacyClaimCounts = { sessions: 0, scheduledTasks: 0, workspaces: 0 }
+      log.info("project legacy claim started", { directories: directories.length })
+      for (const directory of directories) {
+        const exists = yield* fs.isDir(directory).pipe(Effect.catch(() => Effect.succeed(false)))
+        if (!exists) {
+          log.warn("project legacy claim skipped", { directory, reason: "directory-unavailable" })
+          continue
+        }
+        const before = yield* countLegacyDirectory(directory)
+        yield* fromDirectory(directory)
+        const after = yield* countLegacyDirectory(directory)
+        totals.sessions += Math.max(0, before.sessions - after.sessions)
+        totals.scheduledTasks += Math.max(0, before.scheduledTasks - after.scheduledTasks)
+        totals.workspaces += Math.max(0, before.workspaces - after.workspaces)
+      }
+      log.info("project legacy claim completed", totals)
+      return totals
     })
 
     const discover = Effect.fn("Project.discover")(function* (input: Info) {
@@ -504,6 +902,24 @@ export const layer: Layer.Layer<
       )
       if (!result) throw new Error(`Project not found: ${id}`)
       yield* emitUpdated(fromRow(result))
+      const exists = yield* fs.isDir(directory).pipe(Effect.catch(() => Effect.succeed(false)))
+      if (!exists) {
+        log.info("project sandbox location deferred", {
+          projectID: id,
+          directory,
+          reason: "directory-unavailable",
+        })
+        return
+      }
+      const resolved = yield* fromDirectory(directory)
+      if (resolved.project.id !== id) {
+        log.warn("project sandbox location mismatch", {
+          expectedProjectID: id,
+          resolvedProjectID: resolved.project.id,
+          directory,
+          locationID: resolved.location.id,
+        })
+      }
     })
 
     const removeSandbox = Effect.fn("Project.removeSandbox")(function* (id: ProjectID, directory: string) {
@@ -519,12 +935,19 @@ export const layer: Layer.Layer<
           .get(),
       )
       if (!result) throw new Error(`Project not found: ${id}`)
+      yield* Effect.sync(() =>
+        ProjectLocation.markUnavailableByDirectory({
+          projectID: id,
+          directory: toLogicalPath(AppFileSystem.resolve(directory)),
+        }),
+      )
       yield* emitUpdated(fromRow(result))
     })
 
     return Service.of({
       init,
       fromDirectory,
+      claimLegacy,
       discover,
       list,
       get,

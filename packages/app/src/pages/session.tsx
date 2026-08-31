@@ -37,7 +37,11 @@ import { NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { markSessionProfile } from "@/utils/session-profile"
-import { shouldFinishInitialScroll, shouldRefreshStaleSession } from "@/pages/session/session-switch-performance"
+import {
+  sessionBackgroundDelay,
+  shouldFinishInitialScroll,
+  shouldRefreshStaleSession,
+} from "@/pages/session/session-switch-performance"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -111,7 +115,9 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 const emptyUserMessages: UserMessage[] = []
 const scrollBottomThreshold = 16
 const settleMs = 1_500
-const sessionBackgroundDelayMs = 250
+const sessionBackgroundDelayMs = typeof navigator === "undefined" ? 250 : sessionBackgroundDelay(navigator.userAgent)
+const sessionTodoDelayMs =
+  typeof navigator === "undefined" ? 500 : sessionBackgroundDelay(navigator.userAgent, 500)
 const initialScrollRevealMs = 300
 const emptyFollowups: (FollowupDraft & { id: string })[] = []
 const smoothBottomSnapDistance = 900
@@ -1020,6 +1026,7 @@ export default function Page() {
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
   let revealMessage = (_id: string) => {}
+  let prepareMessageNavigation = () => {}
   let scrollToEnd = () => {}
   let historyAnchor = { capture: () => {}, restore: (_done: boolean) => {} }
   let scrollMark = 0
@@ -1143,6 +1150,7 @@ export default function Page() {
       markSessionProfile(id, "route-effect", `cached=${String(cached)} stale=${String(stale)}`)
 
       const initialSync = untrack(() => sync.session.sync(id))
+      markSessionProfile(id, "todo-request-scheduled", `delayMs=${String(sessionTodoDelayMs)} force=${String(todos)}`)
 
       refreshFrame = requestAnimationFrame(() => {
         refreshFrame = undefined
@@ -1150,7 +1158,21 @@ export default function Page() {
           refreshTimer = undefined
           if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
           untrack(() => {
-            void sync.session.todo(id, todos ? { force: true } : undefined)
+            markSessionProfile(id, "todo-request-start", `force=${String(todos)}`)
+            void sync.session.todo(id, todos ? { force: true } : undefined).then(
+              () => {
+                if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
+                markSessionProfile(id, "todo-request-end")
+              },
+              (error) => {
+                if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
+                markSessionProfile(
+                  id,
+                  "todo-request-error",
+                  `error=${error instanceof Error ? error.message : String(error)}`,
+                )
+              },
+            )
           })
           const refresh = () => {
             if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
@@ -1171,7 +1193,7 @@ export default function Page() {
             })
           }
           void initialSync.then(refresh, refresh)
-        }, 500)
+        }, sessionTodoDelayMs)
       })
     }),
   )
@@ -2613,9 +2635,23 @@ export default function Page() {
   )
 
   let userMessageLoadRun = 0
+  createEffect(
+    on(
+      () => params.id,
+      () => {
+        userMessageLoadRun += 1
+        setUi("userMessagesLoading", false)
+      },
+    ),
+  )
   const loadAllUserMessages = async () => {
     const id = params.id
-    if (!id || ui.userMessagesLoading || !historyMore()) return
+    if (!id || ui.userMessagesLoading || !historyMore()) {
+      console.debug(
+        `[user-message-menu] load-skip sid=${id ?? "none"} loading=${String(ui.userMessagesLoading)} more=${String(historyMore())}`,
+      )
+      return
+    }
 
     const run = ++userMessageLoadRun
     setUi("userMessagesLoading", true)
@@ -3123,6 +3159,7 @@ export default function Page() {
     enterLive,
     enterAnchored,
     autoScroll,
+    prepareNavigation: () => prepareMessageNavigation(),
     scroller: () => scroller,
     anchor,
     revealMessage: (id) => revealMessage(id),
@@ -3256,6 +3293,9 @@ export default function Page() {
                         anchor={anchor}
                         setRevealMessage={(fn) => {
                           revealMessage = fn
+                        }}
+                        setPrepareNavigation={(fn) => {
+                          prepareMessageNavigation = fn
                         }}
                         setScrollToEnd={(fn) => {
                           scrollToEnd = fn
@@ -3400,6 +3440,8 @@ export default function Page() {
             onOpenChildAgent={openChildAgent}
             userMessages={userMessageMenu()}
             userMessagesLoading={ui.userMessagesLoading}
+            userMessagesComplete={!historyMore()}
+            userMessageCount={visibleUserMessages().length}
             onLoadAllUserMessages={() => void loadAllUserMessages()}
             onOpenUserMessage={(entry) => {
               const message = visibleUserMessages().find((item) => item.id === entry.id)

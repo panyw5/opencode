@@ -16,12 +16,12 @@ interface DialogSelectDirectoryProps {
   onSelect: (result: string | string[] | null) => void
 }
 
-type BrowseEntry = {
+export type BrowseEntry = {
   name: string
   path: string
 }
 
-type BrowseRow =
+export type BrowseRow =
   | { type: "up"; key: string; name: string; path: string | null }
   | { type: "directory"; key: string; name: string; path: string }
 
@@ -31,24 +31,24 @@ export function findDirectoryCompletionRow(rows: BrowseRow[], highlightedIndex: 
   return rows.find((row) => row.type === "directory")
 }
 
-function cleanInput(value: string) {
+export function cleanDirectoryInput(value: string) {
   const first = (value ?? "").split(/\r?\n/)[0] ?? ""
   return first.replace(/[\u0000-\u001F\u007F]/g, "").trim()
 }
 
-function normalizePath(input: string) {
+export function normalizeDirectoryPath(input: string) {
   const v = input.replaceAll("\\", "/")
   if (v.startsWith("//") && !v.startsWith("///")) return "//" + v.slice(2).replace(/\/+/g, "/")
   return v.replace(/\/+/g, "/")
 }
 
 function normalizeDriveRoot(input: string) {
-  const v = normalizePath(input)
+  const v = normalizeDirectoryPath(input)
   if (/^[A-Za-z]:$/.test(v)) return v + "/"
   return v
 }
 
-function trimTrailing(input: string) {
+export function trimDirectoryTrailing(input: string) {
   const v = normalizeDriveRoot(input)
   if (v === "/") return v
   if (v === "//") return v
@@ -69,7 +69,7 @@ function rootOf(input: string) {
 }
 
 function parentOf(input: string) {
-  const v = trimTrailing(input)
+  const v = trimDirectoryTrailing(input)
   if (v === "/") return v
   if (v === "//") return v
   if (/^[A-Za-z]:\/$/.test(v)) return v
@@ -81,7 +81,7 @@ function parentOf(input: string) {
 }
 
 function childOf(base: string, child: string) {
-  const b = trimTrailing(base)
+  const b = trimDirectoryTrailing(base)
   const c = child.replace(/^\/+|\/+$/g, "")
   if (!b) return c
   if (!c) return b
@@ -91,10 +91,10 @@ function childOf(base: string, child: string) {
 }
 
 function tildeOf(absolute: string, home: string) {
-  const full = trimTrailing(absolute)
+  const full = trimDirectoryTrailing(absolute)
   if (!home) return ""
 
-  const hn = trimTrailing(home)
+  const hn = trimDirectoryTrailing(home)
   const lc = full.toLowerCase()
   const hc = hn.toLowerCase()
   if (lc === hc) return "~"
@@ -102,13 +102,13 @@ function tildeOf(absolute: string, home: string) {
   return ""
 }
 
-function withTrailing(value: string) {
+export function withDirectoryTrailing(value: string) {
   if (!value) return value
   if (value.endsWith("/")) return value
   return value + "/"
 }
 
-function browseDirectoryPath(value: string) {
+export function directoryBrowsePath(value: string) {
   const input = normalizeDriveRoot(value)
   if (!input || hasTrailingSeparator(input)) return input
   const i = input.lastIndexOf("/")
@@ -116,7 +116,7 @@ function browseDirectoryPath(value: string) {
   return input.slice(0, i + 1)
 }
 
-function browseLeaf(value: string) {
+export function directoryBrowseLeaf(value: string) {
   const input = normalizeDriveRoot(value)
   if (!input || hasTrailingSeparator(input)) return ""
   const i = input.lastIndexOf("/")
@@ -125,17 +125,17 @@ function browseLeaf(value: string) {
 }
 
 function browseParentPath(value: string) {
-  const trimmed = trimTrailing(cleanInput(value))
+  const trimmed = trimDirectoryTrailing(cleanDirectoryInput(value))
   if (!trimmed || trimmed === "~" || trimmed === "~/" || trimmed === "/") return null
   const i = trimmed.lastIndexOf("/")
   if (i < 0) return null
   if (trimmed.startsWith("~/") && i <= 1) return "~/"
   if (i === 0) return "/"
-  return withTrailing(trimmed.slice(0, i))
+  return withDirectoryTrailing(trimmed.slice(0, i))
 }
 
 function resolveBrowsePath(base: string, relative: string) {
-  let current = trimTrailing(base)
+  let current = trimDirectoryTrailing(base)
   const parts = relative.split("/").filter((x) => x && x !== ".")
   for (const part of parts) {
     current = part === ".." ? parentOf(current) : childOf(current, part)
@@ -143,16 +143,16 @@ function resolveBrowsePath(base: string, relative: string) {
   return current
 }
 
-function displayToAbsolute(value: string, home: string, base: string) {
-  const input = cleanInput(value)
-  if (!input || input === "~") return trimTrailing(home || base)
-  if (input.startsWith("~/")) return trimTrailing(childOf(home || base, input.slice(2)))
-  if (rootOf(input)) return trimTrailing(input)
-  return trimTrailing(resolveBrowsePath(base || home, input))
+export function displayToAbsolute(value: string, home: string, base: string) {
+  const input = cleanDirectoryInput(value)
+  if (!input || input === "~") return trimDirectoryTrailing(home || base)
+  if (input.startsWith("~/")) return trimDirectoryTrailing(childOf(home || base, input.slice(2)))
+  if (rootOf(input)) return trimDirectoryTrailing(input)
+  return trimDirectoryTrailing(resolveBrowsePath(base || home, input))
 }
 
-function absoluteToDisplay(path: string, home: string) {
-  const full = trimTrailing(path)
+export function directoryAbsoluteToDisplay(path: string, home: string) {
+  const full = trimDirectoryTrailing(path)
   return tildeOf(full, home) || full
 }
 
@@ -186,11 +186,11 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     })
   })
 
-  const browseDisplayPath = createMemo(() => browseDirectoryPath(query()))
-  const browseFilter = createMemo(() => browseLeaf(query()))
+  const browseDisplayPath = createMemo(() => directoryBrowsePath(query()))
+  const browseFilter = createMemo(() => directoryBrowseLeaf(query()))
   const localPath = (value: string) => {
     const h = home()
-    const input = cleanInput(value)
+    const input = cleanDirectoryInput(value)
     if (!h && (input === "~" || input.startsWith("~/"))) return input
     return displayToAbsolute(input, h, h)
   }
@@ -206,7 +206,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
         .filter((item) => item.kind === "directory")
         .map((item) => ({
           name: getFilename(item.path),
-          path: trimTrailing(normalizeDriveRoot(item.path)),
+          path: trimDirectoryTrailing(normalizeDriveRoot(item.path)),
         }))
         .sort((a, b) => a.name.localeCompare(b.name))
       if (!resolvedHome() && browseDisplayPath().startsWith("~/") && directories[0]) {
@@ -250,12 +250,12 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   })
 
   function browseToDisplayPath(path: string) {
-    setQuery(withTrailing(path))
+    setQuery(withDirectoryTrailing(path))
     inputRef?.focus()
   }
 
   function browseToEntry(entry: BrowseEntry) {
-    setQuery(withTrailing(`${browseDisplayPath()}${entry.name}`))
+    setQuery(withDirectoryTrailing(`${browseDisplayPath()}${entry.name}`))
     inputRef?.focus()
   }
 
@@ -327,7 +327,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     }
   }
 
-  const selectedLabel = createMemo(() => absoluteToDisplay(targetPath(), home()))
+  const selectedLabel = createMemo(() => directoryAbsoluteToDisplay(targetPath(), home()))
   const submitModifier = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl"
 
   return (
@@ -347,7 +347,7 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
             }}
             autofocus
             value={query()}
-            onInput={(event) => setQuery(normalizePath(event.currentTarget.value))}
+            onInput={(event) => setQuery(normalizeDirectoryPath(event.currentTarget.value))}
             onKeyDown={handleKeyDown}
             spellcheck={false}
             autocomplete="off"

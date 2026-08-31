@@ -43,7 +43,13 @@
       "text-strong": "#5a6286",
       "text-base": "#5a6283",
       "text-weaker": "#5d6376",
-      "text-interactive-base": "#485fa8"
+      "text-interactive-base": "#485fa8",
+      "button-secondary-base": "#dfe0e3",
+      "button-secondary-hover": "#d9dbe1",
+      "button-secondary-active": "#d3d6de",
+      "button-primary-text": "#303446",
+      "surface-base-hover": "#d9dbe1",
+      "surface-base-active": "#d3d6de"
     }
   },
   "dark": {

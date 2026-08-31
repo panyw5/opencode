@@ -4,13 +4,39 @@ import {
   addSessionBarDraft,
   createSessionKeyReader,
   cycleSessionBarIndex,
+  dedupeSessionBarTabs,
   ensureSessionKey,
   isSessionFileTab,
   pruneSessionKeys,
   removeSessionBarDraft,
+  resolveRailProjects,
+  sessionBarKey,
   shouldAutoCollapseFilePreview,
   visibleSessionBarDrafts,
 } from "./layout"
+
+describe("project rail source", () => {
+  test("uses the live list for additions in the main domain", () => {
+    const cached = [{ worktree: "one" }]
+    const live = [{ worktree: "two" }, { worktree: "one" }]
+
+    expect(resolveRailProjects({ current: true, main: true, live, cached })).toBe(live)
+  })
+
+  test("uses the live list for removals in the main domain", () => {
+    const cached = [{ worktree: "two" }, { worktree: "one" }]
+    const live = [{ worktree: "one" }]
+
+    expect(resolveRailProjects({ current: true, main: true, live, cached })).toBe(live)
+  })
+
+  test("keeps the cached rail while browsing another domain", () => {
+    const cached = [{ worktree: "one" }]
+    const live = [{ worktree: "agent" }]
+
+    expect(resolveRailProjects({ current: true, main: false, live, cached })).toBe(cached)
+  })
+})
 
 describe("layout session-key helpers", () => {
   test("couples touch and scroll seed in order", () => {
@@ -104,6 +130,36 @@ describe("session bar drafts", () => {
     expect(cycleSessionBarIndex(3, 1, 1)).toBe(2)
     expect(cycleSessionBarIndex(3, -1, 1)).toBe(0)
     expect(cycleSessionBarIndex(3, -1, -1)).toBe(2)
+  })
+})
+
+describe("session bar tabs", () => {
+  test("uses one logical key for macOS private tmp aliases", () => {
+    expect(sessionBarKey({ directory: "/tmp/workspace", id: "same" })).toBe(
+      sessionBarKey({ directory: "/private/tmp/workspace", id: "same" }),
+    )
+  })
+
+  test("deduplicates persisted tabs while keeping their first position", () => {
+    const tabs = [
+      { directory: "/work/one", id: "same", title: "Old" },
+      { directory: "/work/two", id: "other", title: "Other" },
+      { directory: "/work/one", id: "same", title: "New", parentID: "parent" },
+    ]
+
+    expect(dedupeSessionBarTabs(tabs)).toEqual([
+      { directory: "/work/one", id: "same", title: "New", parentID: "parent" },
+      { directory: "/work/two", id: "other", title: "Other" },
+    ])
+  })
+
+  test("treats macOS private tmp aliases as the same session tab", () => {
+    const tabs = [
+      { directory: "/tmp/workspace", id: "same", title: "Tmp" },
+      { directory: "/private/tmp/workspace", id: "same", title: "Private tmp" },
+    ]
+
+    expect(dedupeSessionBarTabs(tabs)).toEqual([{ directory: "/tmp/workspace", id: "same", title: "Private tmp" }])
   })
 })
 

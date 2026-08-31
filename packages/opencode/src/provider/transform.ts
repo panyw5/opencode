@@ -6,6 +6,7 @@ import type * as ModelsDev from "@opencode-ai/core/models-dev"
 import { iife } from "@/util/iife"
 import { isOpenAIProviderID } from "./id"
 import * as Log from "@opencode-ai/core/util/log"
+import { createHash } from "crypto"
 
 const log = Log.create({ service: "provider.transform" })
 
@@ -23,6 +24,24 @@ export const OUTPUT_TOKEN_MAX = 32_000
 
 export function sanitizeSurrogates(content: string) {
   return content.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
+}
+
+function isKimiFamily(model: Provider.Model) {
+  const named = (id: string) => {
+    const value = id.toLowerCase()
+    return ["kimi", "moonshot", "moonshotai"].some(
+      (name) => value === name || ["/", ".", "-", "_"].some((separator) => value.startsWith(`${name}${separator}`)),
+    )
+  }
+  if ([model.providerID, model.api.id].some(named)) return true
+  const host = (() => {
+    try {
+      return new URL(model.api.url).hostname.toLowerCase()
+    } catch {
+      return ""
+    }
+  })()
+  return ["api.kimi.com", "api.moonshot.ai", "api.moonshot.cn", "api.moonshotai.cn"].includes(host)
 }
 
 // Maps npm package to the key the AI SDK expects for providerOptions
@@ -43,6 +62,28 @@ function sdkKey(npm: string): string | undefined {
       return "vertex"
     case "@ai-sdk/google":
       return "google"
+    case "@ai-sdk/alibaba":
+      return "alibaba"
+    case "@ai-sdk/cerebras":
+      return "cerebras"
+    case "@ai-sdk/cohere":
+      return "cohere"
+    case "@ai-sdk/deepinfra":
+      return "deepinfra"
+    case "@ai-sdk/groq":
+      return "groq"
+    case "@ai-sdk/mistral":
+      return "mistral"
+    case "@ai-sdk/perplexity":
+      return "perplexity"
+    case "@ai-sdk/togetherai":
+      return "togetherai"
+    case "@ai-sdk/vercel":
+      return "vercel"
+    case "@ai-sdk/xai":
+      return "xai"
+    case "venice-ai-sdk-provider":
+      return "venice"
     case "@ai-sdk/gateway":
       return "gateway"
     case "@openrouter/ai-sdk-provider":
@@ -56,6 +97,31 @@ function sdkKey(npm: string): string | undefined {
       return "openaiCompatible"
   }
   return undefined
+}
+
+export function promptCacheKey(sessionID: string) {
+  if (/^ses_[0-9a-f]{64}$/.test(sessionID)) return sessionID.slice(4)
+  if (/^ses_[0-9A-Za-z]{26}$/.test(sessionID)) return sessionID
+  return createHash("sha256")
+    .update(JSON.stringify(["opencode-prompt-cache-key-v1", sessionID]))
+    .digest("hex")
+}
+
+function promptCacheKeyField(input: {
+  model: Provider.Model
+  providerOptions?: Record<string, any>
+}): "promptCacheKey" | "prompt_cache_key" | undefined {
+  if (input.providerOptions?.setCacheKey === false) return
+  if (["@ai-sdk/deepinfra", "@ai-sdk/cerebras"].includes(input.model.api.npm)) return "prompt_cache_key"
+  if (
+    ["@ai-sdk/openai", "@ai-sdk/azure", "@ai-sdk/xai", "@ai-sdk/mistral", "venice-ai-sdk-provider"].includes(
+      input.model.api.npm,
+    ) ||
+    (input.model.providerID.startsWith("opencode") && input.model.api.id.includes("gpt-5")) ||
+    input.model.providerID === "venice" ||
+    input.providerOptions?.setCacheKey === true
+  )
+    return "promptCacheKey"
 }
 
 // TODO: fix this stupid inefficient dogshit function
@@ -80,12 +146,9 @@ function normalizeMessages(
   }
   const splitToolResultMedia = (messages: ModelMessage[]) => {
     if (
-      ![
-        "@ai-sdk/openai-compatible",
-        "@ai-sdk/openai",
-        "@ai-sdk/anthropic",
-        "@ai-sdk/google-vertex/anthropic",
-      ].includes(model.api.npm)
+      !["@ai-sdk/openai-compatible", "@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic"].includes(
+        model.api.npm,
+      )
     ) {
       return messages
     }
@@ -491,6 +554,9 @@ function unsupportedParts(msgs: ModelMessage[], model: Provider.Model): ModelMes
 export function message(msgs: ModelMessage[], model: Provider.Model, options: Record<string, unknown>) {
   msgs = unsupportedParts(msgs, model)
   msgs = normalizeMessages(msgs, model, options)
+  const usesAnthropicAutomaticCaching =
+    options.cacheControl !== undefined &&
+    (model.api.npm === "@ai-sdk/anthropic" || model.api.npm === "@ai-sdk/google-vertex/anthropic")
   if (
     (model.providerID === "anthropic" ||
       model.providerID === "google-vertex-anthropic" ||
@@ -500,7 +566,8 @@ export function message(msgs: ModelMessage[], model: Provider.Model, options: Re
       model.id.includes("claude") ||
       model.api.npm === "@ai-sdk/anthropic" ||
       model.api.npm === "@ai-sdk/alibaba") &&
-    model.api.npm !== "@ai-sdk/gateway"
+    model.api.npm !== "@ai-sdk/gateway" &&
+    !usesAnthropicAutomaticCaching
   ) {
     msgs = applyCaching(msgs, model)
   }
@@ -653,14 +720,39 @@ function openaiCompatibleReasoningEfforts(id: string) {
   return gpt5CodexReasoningEfforts(apiId) ?? versionedGpt5ReasoningEfforts(apiId) ?? OPENAI_EFFORTS
 }
 
+function anthropicUsesModernAdaptiveThinking(apiId: string) {
+  if (!apiId.toLowerCase().includes("claude-")) return false
+  // Covers family-first IDs such as claude-opus-4.7 and version-first IDs such as claude-4.7-opus.
+  // Limit minors to two digits so release dates such as 20250514 are not interpreted as model versions.
+  const version = /claude-(?:[a-z]+-)?(\d+)(?:[.-](\d{1,2}))?(?:[.@-]|$)/i.exec(apiId)
+  if (!version) return true
+  const major = Number(version[1])
+  const minor = Number(version[2] ?? 0)
+  return major > 4 || (major === 4 && minor >= 7)
+}
+
 function anthropicAdaptiveEfforts(apiId: string): string[] | null {
-  if (["opus-4-7", "opus-4.7"].some((v) => apiId.includes(v))) {
+  if (anthropicUsesModernAdaptiveThinking(apiId)) {
     return ["low", "medium", "high", "xhigh", "max"]
   }
   if (["opus-4-6", "opus-4.6", "sonnet-4-6", "sonnet-4.6"].some((v) => apiId.includes(v))) {
     return ["low", "medium", "high", "max"]
   }
   return null
+}
+
+function anthropicOpus45(apiId: string) {
+  return ["opus-4-5", "opus-4.5"].some((value) => apiId.includes(value))
+}
+
+function anthropicOpus45Thinking(model: Provider.Model, effort: string) {
+  return {
+    thinking: {
+      type: "enabled",
+      budgetTokens: Math.min(16_000, Math.floor(model.limit.output / 2 - 1)),
+    },
+    effort,
+  }
 }
 
 function googleThinkingLevelEfforts(apiId: string) {
@@ -683,6 +775,14 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
 
   const id = model.id.toLowerCase()
   const adaptiveEfforts = anthropicAdaptiveEfforts(model.api.id)
+  if (isKimiFamily(model) && ["@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic"].includes(model.api.npm)) {
+    return Object.fromEntries(
+      ["low", "medium", "high", "xhigh", "max"].map((effort) => [
+        effort,
+        { thinking: { type: "adaptive", display: "summarized" }, effort },
+      ]),
+    )
+  }
   if (
     id.includes("deepseek-chat") ||
     id.includes("deepseek-reasoner") ||
@@ -890,9 +990,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
             {
               thinking: {
                 type: "adaptive",
-                ...(model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
-                  ? { display: "summarized" }
-                  : {}),
+                ...(anthropicUsesModernAdaptiveThinking(model.api.id) ? { display: "summarized" } : {}),
               },
               effort,
             },
@@ -900,8 +998,10 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
         )
       }
 
-      if (["opus-4-5", "opus-4.5"].some((v) => model.api.id.includes(v))) {
-        return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { effort }]))
+      if (anthropicOpus45(model.api.id)) {
+        return Object.fromEntries(
+          WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, anthropicOpus45Thinking(model, effort)]),
+        )
       }
 
       return {
@@ -929,9 +1029,21 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
               reasoningConfig: {
                 type: "adaptive",
                 maxReasoningEffort: effort,
-                ...(model.api.id.includes("opus-4-7") || model.api.id.includes("opus-4.7")
-                  ? { display: "summarized" }
-                  : {}),
+                ...(anthropicUsesModernAdaptiveThinking(model.api.id) ? { display: "summarized" } : {}),
+              },
+            },
+          ]),
+        )
+      }
+      if (anthropicOpus45(model.api.id)) {
+        return Object.fromEntries(
+          WIDELY_SUPPORTED_EFFORTS.map((effort) => [
+            effort,
+            {
+              reasoningConfig: {
+                type: "enabled",
+                budgetTokens: Math.min(16_000, Math.floor(model.limit.output / 2 - 1)),
+                maxReasoningEffort: effort,
               },
             },
           ]),
@@ -1047,6 +1159,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
               {
                 thinking: {
                   type: "adaptive",
+                  ...(anthropicUsesModernAdaptiveThinking(model.api.id) ? { display: "summarized" } : {}),
                 },
                 effort,
               },
@@ -1117,7 +1230,6 @@ export function options(input: {
 
   if (input.model.api.npm === "@ai-sdk/azure") {
     result["store"] = false
-    result["promptCacheKey"] = input.sessionID
   }
 
   if (input.model.api.npm === "@openrouter/ai-sdk-provider" || input.model.api.npm === "@llmgateway/ai-sdk-provider") {
@@ -1150,16 +1262,14 @@ export function options(input: {
   // still need a stable prompt_cache_key. Codex routes cache identity from this
   // field; without it, Aether will not emit session-id/thread-id and the same
   // OpenCode session hops across upstream accounts.
-  const shouldSetPromptCacheKey =
-    isOpenAIProviderID(input.model.providerID) ||
-    input.model.api.npm === "@ai-sdk/openai" ||
-    input.providerOptions?.setCacheKey === true
-  if (shouldSetPromptCacheKey) {
-    result["promptCacheKey"] = input.sessionID
-  }
-  log.info(
-    `promptCacheKey decision provider=${input.model.providerID} npm=${input.model.api.npm} model=${input.model.api.id} setCacheKey=${String(input.providerOptions?.setCacheKey)} applied=${String(shouldSetPromptCacheKey)} session=${input.sessionID}`,
-  )
+  const cacheKeyField = promptCacheKeyField(input)
+  const cacheKey = cacheKeyField ? promptCacheKey(input.sessionID) : undefined
+  if (cacheKeyField && cacheKey) result[cacheKeyField] = cacheKey
+  const cacheKeyHashed =
+    cacheKey !== undefined &&
+    !/^ses_[0-9A-Za-z]{26}$/.test(input.sessionID) &&
+    !/^ses_[0-9a-f]{64}$/.test(input.sessionID)
+  log.info(`prompt cache key decision field=${cacheKeyField ?? "none"} hashed=${String(cacheKeyHashed)}`)
 
   if (input.model.api.npm === "@ai-sdk/google" || input.model.api.npm === "@ai-sdk/google-vertex") {
     if (input.model.capabilities.reasoning) {
@@ -1172,16 +1282,16 @@ export function options(input: {
     }
   }
 
-  // Enable thinking by default for kimi models using anthropic SDK
+  // Moonshot's Anthropic-compatible API uses adaptive effort rather than token budgets.
+  // Request summaries so thinking content survives replay on subsequent turns.
   const modelId = input.model.api.id.toLowerCase()
   if (
-    (input.model.api.npm === "@ai-sdk/anthropic" || input.model.api.npm === "@ai-sdk/google-vertex/anthropic") &&
-    (modelId.includes("k2p") || modelId.includes("kimi-k2.") || modelId.includes("kimi-k2p"))
+    ["@ai-sdk/anthropic", "@ai-sdk/google-vertex/anthropic"].includes(input.model.api.npm) &&
+    isKimiFamily(input.model) &&
+    input.model.capabilities.reasoning
   ) {
-    result["thinking"] = {
-      type: "enabled",
-      budgetTokens: Math.min(16_000, Math.floor(input.model.limit.output / 2 - 1)),
-    }
+    result["thinking"] = { type: "adaptive", display: "summarized" }
+    result["effort"] = "high"
   }
 
   // Enable thinking for reasoning models on alibaba-cn (DashScope).
@@ -1209,31 +1319,23 @@ export function options(input: {
       result["reasoningSummary"] = "auto"
     }
 
-    // Only set textVerbosity for non-chat gpt-5.x models
-    // Chat models (e.g. gpt-5.2-chat-latest) only support "medium" verbosity
+    // Generic OpenAI-compatible APIs do not necessarily support OpenAI's verbosity parameter.
+    // Only enable the default for integrations known to implement it.
     if (
       input.model.api.id.includes("gpt-5.") &&
       !input.model.api.id.includes("codex") &&
       !input.model.api.id.includes("-chat") &&
-      input.model.providerID !== "azure"
+      (input.model.api.npm === "@ai-sdk/openai" || input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle")
     ) {
       result["textVerbosity"] = "low"
     }
 
     if (input.model.providerID.startsWith("opencode")) {
-      result["promptCacheKey"] = input.sessionID
       result["include"] = ["reasoning.encrypted_content"]
       result["reasoningSummary"] = "auto"
     }
   }
 
-  if (input.model.providerID === "venice") {
-    result["promptCacheKey"] = input.sessionID
-  }
-
-  if (input.model.providerID === "openrouter") {
-    result["prompt_cache_key"] = input.sessionID
-  }
   if (input.model.api.npm === "@ai-sdk/gateway") {
     result["gateway"] = {
       caching: "auto",

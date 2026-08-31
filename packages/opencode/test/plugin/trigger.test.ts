@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Fiber, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -111,6 +111,60 @@ const triggerChatMessage = Effect.fn("PluginTriggerTest.triggerChatMessage")(fun
 })
 
 describe("plugin.trigger", () => {
+  it.live("runs dispose hooks exactly once when the instance closes", () =>
+    Effect.gen(function* () {
+      const key = "__opencode_plugin_dispose_contract__"
+      const root = globalThis as Record<string, unknown>
+      delete root[key]
+
+      yield* withProject(
+        `export default async () => ({ dispose: async () => { globalThis[${JSON.stringify(key)}] = (globalThis[${JSON.stringify(key)}] ?? 0) + 1 } })`,
+        Effect.gen(function* () {
+          yield* (yield* Plugin.Service).init()
+        }),
+      ).pipe(Effect.scoped)
+
+      expect(root[key]).toBe(1)
+      delete root[key]
+    }),
+  )
+
+  it.live("waits for in-flight plugin initialization before disposing", () =>
+    Effect.gen(function* () {
+      const prefix = `__opencode_plugin_init_${crypto.randomUUID().replaceAll("-", "_")}`
+      const gateKey = `${prefix}_gate`
+      const startedKey = `${prefix}_started`
+      const disposedKey = `${prefix}_disposed`
+      const root = globalThis as Record<string, unknown>
+      let release = () => {}
+      let signalStarted = () => {}
+      root[gateKey] = new Promise<void>((resolve) => {
+        release = resolve
+      })
+      const started = new Promise<void>((resolve) => {
+        signalStarted = resolve
+      })
+      root[startedKey] = signalStarted
+
+      const loading = yield* withProject(
+        `export default async () => { globalThis[${JSON.stringify(startedKey)}](); await globalThis[${JSON.stringify(gateKey)}]; return { dispose: async () => { globalThis[${JSON.stringify(disposedKey)}] = (globalThis[${JSON.stringify(disposedKey)}] ?? 0) + 1 } } }`,
+        Effect.gen(function* () {
+          yield* (yield* Plugin.Service).init()
+        }),
+      ).pipe(Effect.scoped, Effect.forkChild)
+
+      yield* Effect.promise(() => started)
+      const stopping = yield* Fiber.interrupt(loading).pipe(Effect.forkChild)
+      release()
+      yield* Fiber.join(stopping).pipe(Effect.timeout("1 second"))
+
+      expect(root[disposedKey]).toBe(1)
+      delete root[gateKey]
+      delete root[startedKey]
+      delete root[disposedKey]
+    }),
+  )
+
   it.live("runs synchronous hooks without crashing", () =>
     withProject(
       [

@@ -7,6 +7,7 @@ import type { FileSelection } from "@/context/file"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { useSessionTabs } from "@/context/session-tabs"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, usePrompt } from "@/context/prompt"
@@ -379,6 +380,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const permission = usePermission()
   const prompt = usePrompt()
   const layout = useLayout()
+  const sessionTabs = useSessionTabs()
   const language = useLanguage()
   const params = useParams()
 
@@ -705,7 +707,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         console.debug(
           `[session-bar] draft promote directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${session.id}`,
         )
-        layout.sessionBar.closeDraft(currentDirectory)
+        sessionTabs.promoteDraft({ directory: sessionDirectory, id: session.id }, currentDirectory)
         layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
 
         // Apply project-task selection made on the new-session screen before navigate.

@@ -43,9 +43,10 @@ function MathDetailCard(props: {
       type="button"
       data-slot={`math-detail-card-${props.kind}`}
       aria-pressed={props.selected}
-      class="relative overflow-hidden rounded-lg border border-border-weak-base bg-surface-raised-base px-3 py-2 text-left transition-colors hover:border-border-strong-base hover:bg-surface-interactive-weak focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-base"
+      class="relative overflow-hidden rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left transition-[background-color,border-color,box-shadow] duration-150 hover:border-border-strong-base hover:bg-surface-interactive-weak focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-base"
       classList={{
-        "border-border-brand-base bg-surface-interactive-selected shadow-xs-border-base": props.selected,
+        "border-[color-mix(in_srgb,var(--surface-brand-base)_58%,var(--border-base))] bg-[linear-gradient(110deg,color-mix(in_srgb,var(--surface-brand-base)_20%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_7%,var(--background-base)))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-brand-base)_22%,transparent),0_10px_24px_-16px_color-mix(in_srgb,var(--surface-brand-base)_70%,transparent)]":
+          props.selected,
       }}
       onClick={props.onSelect}
     >
@@ -65,7 +66,7 @@ function MathDetailCard(props: {
       </div>
       <div class={`mt-0.5 font-mono text-16-medium ${titleClass(props.kind)}`}>{props.count}</div>
       <Show when={props.selected}>
-        <span class="absolute inset-x-0 bottom-0 h-0.5 bg-border-brand-base" aria-hidden="true" />
+        <span class="absolute inset-y-2 left-0 w-1 rounded-r-full bg-surface-brand-base" aria-hidden="true" />
       </Show>
     </button>
   )

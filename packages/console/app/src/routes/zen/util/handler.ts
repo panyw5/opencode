@@ -42,13 +42,22 @@ import { createRateLimiter as createKeyRateLimiter } from "./keyRateLimiter"
 import { createTrialLimiter } from "./trialLimiter"
 import { createStickyTracker } from "./stickyProviderTracker"
 import { LiteData } from "@opencode-ai/console-core/lite.js"
-import { Resource } from "@opencode-ai/console-resource"
+import { Resource, waitUntil } from "@opencode-ai/console-resource"
 import { i18n, type Key } from "~/i18n"
 import { localeFromRequest } from "~/lib/language"
 import { createModelTpmLimiter } from "./modelTpmLimiter"
 import { createModelTpsLimiter } from "./modelTpsLimiter"
+import { cancelResponseBody, createUpstreamLifecycle, fetchWith429Retry, readProviderJson } from "./upstream"
+import {
+  canStreamRequestBody,
+  prepareRequestBody,
+  readRequestJson,
+  responseIsStreaming,
+  streamRequestBody,
+} from "./requestBody"
 
 type ZenData = Awaited<ReturnType<typeof ZenData.list>>
+type PreparedBody = Awaited<ReturnType<typeof prepareRequestBody>>
 type RetryOptions = {
   excludeProviders: string[]
   retryCount: number
@@ -89,13 +98,25 @@ export async function handler(
     "wrk_01K6W1A3VE0KMNVSCQT43BG2SX", // benchmark
     "wrk_01KKZDKDWCS1VTJF8QTX62DD50", // contributors
   ]
+  let upstream: ReturnType<typeof createUpstreamLifecycle> | undefined
+  let requestBody: PreparedBody | undefined
+  let rawRequestBody: ReadableStream<Uint8Array> | undefined
 
   try {
     const url = input.request.url
-    const body = await input.request.json()
-    const model = opts.parseModel(url, body)
-    const variant = opts.parseVariant(url, body)
-    const isStream = opts.parseIsStream(url, body)
+    rawRequestBody = input.request.body ?? undefined
+    if (!rawRequestBody) throw new Error("Missing request body")
+    const lifecycle = createUpstreamLifecycle(input.request.signal)
+    upstream = lifecycle
+    requestBody = opts.format === "google" ? undefined : await prepareRequestBody(rawRequestBody, lifecycle.signal)
+    const model = opts.format === "google" ? opts.parseModel(url, undefined) : (requestBody?.model ?? "")
+    const googleIsStream = opts.format === "google" ? opts.parseIsStream(url, undefined) : false
+    let bufferedBody: Promise<any> | undefined
+    const getBufferedBody = () => {
+      if (bufferedBody) return bufferedBody
+      bufferedBody = requestBody ? requestBody.json() : readRequestJson(rawRequestBody!, lifecycle.signal)
+      return bufferedBody
+    }
     const rawIp = input.request.headers.get("x-real-ip") ?? ""
     const ip = rawIp.includes(":") ? rawIp.split(":").slice(0, 4).join(":") : rawIp
     const rawZenApiKey = opts.parseApiKey(input.request.headers)
@@ -105,12 +126,10 @@ export async function handler(
     const ocClient = input.request.headers.get("x-opencode-client") ?? ""
     const userAgent = input.request.headers.get("user-agent") ?? ""
     logger.metric({
-      is_stream: isStream,
-      session: sessionId,
-      request: requestId,
-      client: ocClient,
-      user_agent: userAgent,
-      "model.variant": variant,
+      has_session: !!sessionId,
+      has_request: !!requestId,
+      has_client: !!ocClient,
+      has_user_agent: !!userAgent,
     })
     const zenData = ZenData.list(opts.modelList)
     const modelInfo = validateModel(zenData, model)
@@ -132,6 +151,7 @@ export async function handler(
     const modelTpsLimits = await modelTpsLimiter?.check()
 
     const retriableRequest = async (retry: RetryOptions = { excludeProviders: [], retryCount: 0 }) => {
+      if (retry.retryCount > MAX_FAILOVER_RETRIES) throw new ModelError(t("zen.api.error.noProviderAvailable"))
       const providerInfo = selectProvider(
         model,
         zenData,
@@ -152,35 +172,54 @@ export async function handler(
       })
 
       const startTimestamp = Date.now()
-      const reqUrl = providerInfo.modifyUrl(providerInfo.api, isStream)
-      const reqBody = JSON.stringify(
-        providerInfo.modifyBody({
-          ...createBodyConverter(opts.format, providerInfo.format)(body),
-          model: providerInfo.model,
-          ...(() => {
-            const replacer = (obj: Record<string, any>): Record<string, any> =>
-              Object.fromEntries(
-                Object.entries(obj).flatMap(([k, v]) => {
-                  if (Array.isArray(v)) return [[k, v]]
-                  if (typeof v === "object") return [[k, replacer(v)]]
-                  if (typeof v === "string") {
-                    if (v === "$workspace") return authInfo?.workspaceID ? [[k, authInfo?.workspaceID]] : []
-                    if (v === "$user") return stickyId ? [[k, stickyId]] : []
-                    if (v.startsWith("$header.")) {
-                      const headerValue = input.request.headers.get(v.slice(8))
-                      return headerValue ? [[k, headerValue]] : []
-                    }
-                  }
-                  return [[k, v]]
-                }),
-              )
-            return replacer(providerInfo.payloadModifier ?? {})
-          })(),
-        }),
-      )
-      logger.debug("REQUEST URL: " + reqUrl)
-      logger.debug("REQUEST: " + reqBody.substring(0, 300) + "...")
-      const res = await fetchWith429Retry(reqUrl, {
+      const direct = canStreamRequestBody({
+        requestFormat: opts.format,
+        providerFormat: providerInfo.format,
+        providerModel: providerInfo.model,
+        hasPayloadModifier: providerInfo.payloadModifier !== undefined,
+        alreadyBuffered: bufferedBody !== undefined,
+        contentLength: (() => {
+          const raw = input.request.headers.get("content-length")
+          if (raw === null) return undefined
+          const value = Number(raw)
+          return Number.isFinite(value) && value >= 0 ? value : 0
+        })(),
+      })
+      logger.metric({ request_body_mode: direct ? "stream" : "buffer" })
+      const body = direct ? undefined : await getBufferedBody()
+      if (!direct) logger.metric({ "model.variant": opts.parseVariant(url, body) })
+      const requestedIsStream = direct ? googleIsStream : opts.parseIsStream(url, body)
+      const reqUrl = providerInfo.modifyUrl(providerInfo.api, requestedIsStream)
+      const reqBody = direct
+        ? opts.format === "google"
+          ? streamRequestBody(rawRequestBody!, lifecycle.signal)
+          : requestBody!.stream(providerInfo.model, providerInfo.format === "oa-compat")
+        : JSON.stringify(
+            providerInfo.modifyBody({
+              ...createBodyConverter(opts.format, providerInfo.format)(body),
+              model: providerInfo.model,
+              ...(() => {
+                const replacer = (obj: Record<string, any>): Record<string, any> =>
+                  Object.fromEntries(
+                    Object.entries(obj).flatMap(([k, v]) => {
+                      if (Array.isArray(v)) return [[k, v]]
+                      if (v !== null && typeof v === "object") return [[k, replacer(v)]]
+                      if (typeof v === "string") {
+                        if (v === "$workspace") return authInfo?.workspaceID ? [[k, authInfo?.workspaceID]] : []
+                        if (v === "$user") return stickyId ? [[k, stickyId]] : []
+                        if (v.startsWith("$header.")) {
+                          const headerValue = input.request.headers.get(v.slice(8))
+                          return headerValue ? [[k, headerValue]] : []
+                        }
+                      }
+                      return [[k, v]]
+                    }),
+                  )
+                return replacer(providerInfo.payloadModifier ?? {})
+              })(),
+            }),
+          )
+      const init: RequestInit = {
         method: "POST",
         headers: (() => {
           const headers = new Headers(input.request.headers)
@@ -197,14 +236,15 @@ export async function handler(
           return headers
         })(),
         body: reqBody,
-      })
-
-      if (res.status !== 200) {
-        logger.metric({
-          "llm.error.code": res.status,
-          "llm.error.message": res.statusText,
-        })
+        signal: lifecycle.signal,
       }
+      const res = direct
+        ? await fetch(reqUrl, init)
+        : await fetchWith429Retry(reqUrl, init, { maxRetries: MAX_429_RETRIES })
+      const responseIsStream = responseIsStreaming(opts.format, googleIsStream, res.headers.get("content-type"))
+      logger.metric({ is_stream: responseIsStream })
+
+      if (res.status !== 200) logger.metric({ "llm.error.code": res.status })
 
       // Try another provider => stop retrying if using fallback provider
       if (
@@ -215,19 +255,22 @@ export async function handler(
         !(modelInfo.id.startsWith("gpt-") && res.status === 404) &&
         // ie. cannot change codex model providers mid-session
         modelInfo.stickyProvider !== "strict" &&
+        billingSource !== "byok" &&
         modelInfo.fallbackProvider &&
-        providerInfo.id !== modelInfo.fallbackProvider
+        providerInfo.id !== modelInfo.fallbackProvider &&
+        !direct
       ) {
+        await cancelResponseBody(res.body, lifecycle.signal)
         return retriableRequest({
           excludeProviders: [...retry.excludeProviders, providerInfo.id],
           retryCount: retry.retryCount + 1,
         })
       }
 
-      return { providerInfo, reqBody, res, startTimestamp }
+      return { providerInfo, res, startTimestamp, isStream: responseIsStream }
     }
 
-    const { providerInfo, reqBody, res, startTimestamp } = await retriableRequest()
+    const { providerInfo, res, startTimestamp, isStream } = await retriableRequest()
 
     // Store sticky provider
     if (res.status === 200) await stickyTracker?.set(providerInfo.id)
@@ -243,11 +286,12 @@ export async function handler(
         resHeaders.set(k, v)
       }
     }
-    logger.debug("STATUS: " + res.status + " " + res.statusText)
+    logger.debug("STATUS: " + res.status)
 
     // Handle non-streaming response
-    if (!isStream || [400, 404, 429].includes(res.status)) {
-      const json = await res.json()
+    if (!isStream || res.status !== 200) {
+      const json = await readProviderJson(res)
+      lifecycle.complete()
       await rateLimiter?.track()
       if (json.usage) {
         const usageInfo = providerInfo.normalizeUsage(json.usage)
@@ -258,9 +302,6 @@ export async function handler(
         await reload(billingSource, authInfo, costInfo)
         json.cost = calculateOccurredCost(billingSource, costInfo)
       }
-      if (res.status === 400) {
-        logger.metric({ "error.response": JSON.stringify(json) })
-      }
       if (json.error?.message) {
         json.error.message = `Error from provider${providerInfo.displayName ? ` (${providerInfo.displayName})` : ""}: ${json.error.message}`
       }
@@ -268,7 +309,6 @@ export async function handler(
       const responseConverter = createResponseConverter(providerInfo.format, opts.format)
       const body = JSON.stringify(responseConverter(json))
       logger.metric({ response_length: body.length })
-      logger.debug("RESPONSE: " + body)
       return new Response(body, {
         status: resStatus,
         statusText: res.statusText,
@@ -280,45 +320,84 @@ export async function handler(
     const streamConverter = createStreamPartConverter(providerInfo.format, opts.format)
     const usageParser = providerInfo.createUsageParser()
     const binaryDecoder = providerInfo.createBinaryStreamDecoder()
+    if (!res.body) {
+      lifecycle.complete()
+      throw new Error("Provider stream response body is missing")
+    }
+    let downstreamCancelled = false
+    let finalizeUsage: ((timestampLastByte: number) => Promise<Uint8Array | undefined>) | undefined
     const stream = new ReadableStream({
       start(c) {
-        const reader = res.body?.getReader()
+        const reader = res.body!.getReader()
+        const ready = lifecycle.attach(reader)
         const decoder = new TextDecoder()
         const encoder = new TextEncoder()
 
         let buffer = ""
         let responseLength = 0
         let timestampFirstByte = 0
+        let usageFinalization: Promise<Uint8Array | undefined> | undefined
 
-        function pump(): Promise<void> {
-          return (
-            reader?.read().then(async ({ done, value: rawValue }) => {
+        finalizeUsage = (timestampLastByte) => {
+          if (usageFinalization) return usageFinalization
+          usageFinalization = (async () => {
+            await rateLimiter?.track()
+            const usage = usageParser.retrieve()
+            if (!usage) return
+            const usageInfo = providerInfo.normalizeUsage(usage)
+            const costInfo = calculateCost(modelInfo, usageInfo)
+            await trialLimiter?.track(usageInfo)
+            await modelTpmLimiter?.track(providerInfo.id, providerInfo.model, usageInfo)
+            await modelTpsLimiter?.track(
+              providerInfo.id,
+              providerInfo.model,
+              providerInfo.tpsGoal,
+              timestampFirstByte,
+              timestampLastByte,
+              usageInfo,
+            )
+            await trackUsage(sessionId, billingSource, authInfo, modelInfo, providerInfo, usageInfo, costInfo)
+            await reload(billingSource, authInfo, costInfo)
+            return encoder.encode(buildCostChunk(opts.format, calculateOccurredCost(billingSource, costInfo)))
+          })().catch((error) => {
+            logger.metric({ "error.type": "UsageFinalizationError" })
+            throw error
+          })
+          waitUntil(usageFinalization.catch(() => undefined))
+          return usageFinalization
+        }
+
+        async function pump(): Promise<void> {
+          try {
+            if (lifecycle.cancelled) {
+              c.error(new DOMException("Request aborted", "AbortError"))
+              void ready.then(() => finalizeUsage!(Date.now())).catch(() => undefined)
+              return
+            }
+            await ready
+            if (lifecycle.cancelled) {
+              c.error(new DOMException("Request aborted", "AbortError"))
+              void finalizeUsage!(Date.now()).catch(() => undefined)
+              return
+            }
+            while (!lifecycle.cancelled && !downstreamCancelled) {
+              const { done, value: rawValue } = await reader.read()
               if (done) {
+                if (lifecycle.cancelled) {
+                  c.error(new DOMException("Request aborted", "AbortError"))
+                  void finalizeUsage!(Date.now()).catch(() => undefined)
+                  return
+                }
+                lifecycle.complete()
+                if (downstreamCancelled) return
                 const timestampLastByte = Date.now()
                 logger.metric({
                   response_length: responseLength,
                   "timestamp.last_byte": timestampLastByte,
                 })
-                await rateLimiter?.track()
-                const usage = usageParser.retrieve()
-                if (usage) {
-                  const usageInfo = providerInfo.normalizeUsage(usage)
-                  const costInfo = calculateCost(modelInfo, usageInfo)
-                  await trialLimiter?.track(usageInfo)
-                  await modelTpmLimiter?.track(providerInfo.id, providerInfo.model, usageInfo)
-                  await modelTpsLimiter?.track(
-                    providerInfo.id,
-                    providerInfo.model,
-                    providerInfo.tpsGoal,
-                    timestampFirstByte,
-                    timestampLastByte,
-                    usageInfo,
-                  )
-                  await trackUsage(sessionId, billingSource, authInfo, modelInfo, providerInfo, usageInfo, costInfo)
-                  await reload(billingSource, authInfo, costInfo)
-                  const cost = calculateOccurredCost(billingSource, costInfo)
-                  c.enqueue(encoder.encode(buildCostChunk(opts.format, cost)))
-                }
+                const costChunk = await finalizeUsage!(timestampLastByte)
+                if (downstreamCancelled) return
+                if (costChunk) c.enqueue(costChunk)
                 c.close()
                 return
               }
@@ -332,7 +411,7 @@ export async function handler(
               }
 
               const value = binaryDecoder ? binaryDecoder(rawValue) : rawValue
-              if (!value) return
+              if (!value) continue
 
               responseLength += value.length
               buffer += decoder.decode(value, { stream: true })
@@ -341,8 +420,6 @@ export async function handler(
               buffer = parts.pop() ?? ""
 
               for (let part of parts) {
-                logger.debug("PART: " + part)
-
                 part = part.trim()
                 usageParser.parse(part)
 
@@ -355,13 +432,31 @@ export async function handler(
               if (providerInfo.format === opts.format) {
                 c.enqueue(value)
               }
-
-              return pump()
-            }) || Promise.resolve()
-          )
+            }
+            if (lifecycle.cancelled && !downstreamCancelled) {
+              c.error(new DOMException("Request aborted", "AbortError"))
+              void finalizeUsage!(Date.now()).catch(() => undefined)
+            }
+          } catch (error) {
+            if (downstreamCancelled) return
+            if (lifecycle.cancelled) {
+              c.error(new DOMException("Request aborted", "AbortError"))
+              void finalizeUsage!(Date.now()).catch(() => undefined)
+              return
+            }
+            c.error(new Error("Provider stream failed"))
+            logger.metric({ "error.type": "ProviderStreamError" })
+            void lifecycle.cancel(error)
+            void finalizeUsage!(Date.now()).catch(() => undefined)
+          }
         }
 
         return pump()
+      },
+      cancel(reason) {
+        downstreamCancelled = true
+        void finalizeUsage?.(Date.now()).catch(() => undefined)
+        return lifecycle.cancel(reason)
       },
     })
     return new Response(stream, {
@@ -370,18 +465,17 @@ export async function handler(
       headers: resHeaders,
     })
   } catch (error: any) {
-    logger.metric({
-      "error.type": error.constructor.name,
-      "error.message": error.message,
-      "error.cause": error.cause?.toString(),
-    })
-    if (error.message.startsWith("Failed query")) {
-      try {
-        logger.metric({
-          "error.cause2": JSON.stringify(error.cause),
-        })
-      } catch {}
+    void requestBody?.cancel(error).catch(() => {})
+    if (!requestBody) void rawRequestBody?.cancel(error).catch(() => {})
+    const abortedByCaller = input.request.signal.aborted || upstream?.abortedByCaller
+    await upstream?.cancel(error)
+    if (abortedByCaller) {
+      return new Response(null, { status: 499 })
     }
+
+    logger.metric({
+      "error.type": error?.constructor?.name ?? "UnknownError",
+    })
 
     // Note: both top level "type" and "error.type" fields are used by the @ai-sdk/anthropic client to render the error message.
     if (
@@ -489,12 +583,12 @@ export async function handler(
       }
 
       // Always use the same provider for the same session
-      if (stickyProvider) {
+      if (stickyProvider && retry.retryCount === 0) {
         const provider = modelInfo.providers.find((provider) => provider.id === stickyProvider)
         if (provider) return provider
       }
 
-      if (trialProviders) {
+      if (trialProviders && retry.retryCount === 0) {
         const trialProvider = trialProviders[Math.floor(Math.random() * trialProviders.length)]
         const provider = modelInfo.providers.find((provider) => provider.id === trialProvider)
         if (provider) return provider
@@ -655,8 +749,7 @@ export async function handler(
       throw new AuthError(t("zen.api.error.modelNotSupported", { model: modelInfo.id }))
 
     logger.metric({
-      api_key: data.apiKey,
-      workspace: data.workspaceID,
+      authenticated: true,
       ...(() => {
         if (data.billing.subscription)
           return {
@@ -872,15 +965,6 @@ export async function handler(
   function updateProviderKey(authInfo: AuthInfo, providerInfo: ProviderInfo) {
     if (!authInfo?.provider?.credentials) return
     providerInfo.apiKey = authInfo.provider.credentials
-  }
-
-  async function fetchWith429Retry(url: string, options: RequestInit, retry = { count: 0 }) {
-    const res = await fetch(url, options)
-    if (res.status === 429 && retry.count < MAX_429_RETRIES) {
-      await new Promise((resolve) => setTimeout(resolve, Math.pow(2, retry.count) * 500))
-      return fetchWith429Retry(url, options, { count: retry.count + 1 })
-    }
-    return res
   }
 
   function calculateCost(modelInfo: ModelInfo, usageInfo: UsageInfo) {

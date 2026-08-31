@@ -37,7 +37,7 @@
         background-color: var(--surface-raised-base-active);
       }
       &[data-variant="primary"] {
-        background-color: var(--icon-strong-active);
+        background-color: var(--button-primary-active);
       }
     }
 
@@ -101,7 +101,7 @@
 }
 
 [data-component="select-content"] {
-  --select-item-hover-bg: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+  --select-item-hover-bg: var(--surface-base-hover);
   --select-frosted-bg: light-dark(
     color-mix(in srgb, var(--background-stronger) 82%, transparent),
     color-mix(in srgb, var(--background-stronger) 70%, transparent)

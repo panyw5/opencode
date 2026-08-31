@@ -877,6 +877,21 @@ const scenarios: Scenario[] = [
       )
     }),
   http.protected
+    .get("/session/{sessionID}/math-details", "session.mathDetails")
+    .seeded((ctx) => ctx.session({ title: "Math details", agent: "math-orchestrator" }))
+    .at((ctx) => ({
+      path: `${route("/session/{sessionID}/math-details", { sessionID: ctx.state.id })}?${new URLSearchParams({
+        project: "httpapi",
+        kind: "facts",
+      })}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.kind === "facts", "math details should preserve the requested category")
+      check(body.total === 0 && Array.isArray(body.items), "empty math details should return a paginated result")
+    }),
+  http.protected
     .post("/session/{sessionID}/math-workers/{workerID}/ensure", "session.mathWorkerEnsure")
     .mutating()
     .seeded((ctx) =>
@@ -916,6 +931,53 @@ const scenarios: Scenario[] = [
     .json(200, (body, ctx) => {
       object(body)
       check(body.sessionID === ctx.state.worker.id && body.state === "missing", "missing worker should stay missing")
+    }),
+  http.protected
+    .get("/session/{sessionID}/math-workers/{workerID}/task", "session.mathWorkerTaskGet")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        yield* ctx.file(`.math/problems/httpapi/TASKS/${worker.id}.md`, "Prove the seeded claim.\n")
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: `${route("/session/{sessionID}/math-workers/{workerID}/task", {
+        sessionID: ctx.state.parent.id,
+        workerID: ctx.state.worker.id,
+      })}?${new URLSearchParams({ project: "httpapi" })}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.worker.id, "math worker task should belong to the requested worker")
+      check(body.project === "httpapi" && body.task === "Prove the seeded claim.\n", "math worker task should be read")
+    }),
+  http.protected
+    .put("/session/{sessionID}/math-workers/{workerID}/task", "session.mathWorkerTaskUpdate")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        yield* ctx.file(`.math/problems/httpapi/TASKS/${worker.id}.md`, "Original task.\n")
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: `${route("/session/{sessionID}/math-workers/{workerID}/task", {
+        sessionID: ctx.state.parent.id,
+        workerID: ctx.state.worker.id,
+      })}?${new URLSearchParams({ project: "httpapi" })}`,
+      headers: ctx.headers(),
+      body: { task: "Investigate the next lemma." },
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.worker.id, "updated math worker task should belong to the requested worker")
+      check(body.project === "httpapi", "updated math worker task should preserve the project")
+      check(body.task === "Investigate the next lemma.\n", "math worker task should be replaced atomically")
     }),
   http.protected
     .get("/session/status", "session.status")

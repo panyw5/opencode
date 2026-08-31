@@ -23,6 +23,7 @@ export const useSessionHashScroll = (input: {
   enterLive: () => void
   enterAnchored: () => void
   autoScroll: { pause: () => void; forceScrollToBottom: () => void }
+  prepareNavigation?: () => void
   scroller: () => HTMLDivElement | undefined
   anchor: (id: string) => string
   revealMessage?: (id: string) => void
@@ -240,8 +241,11 @@ export const useSessionHashScroll = (input: {
     trace("message-start", message.id, `behavior=${behavior}`)
     traceLayout("message-start", message.id, { behavior })
     cancel()
+    input.prepareNavigation?.()
+    trace("message-prepared", message.id, `behavior=${behavior}`)
     input.setSeekingMessage(message.id)
     input.enterAnchored()
+    input.autoScroll.pause()
     if (input.currentMessageId() !== message.id) {
       input.setActiveMessage(message)
     }

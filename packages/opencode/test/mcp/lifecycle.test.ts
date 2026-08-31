@@ -10,6 +10,7 @@ interface MockClientState {
   tools: Array<{ name: string; description?: string; inputSchema: object; outputSchema?: object }>
   listToolsCalls: number
   requestCalls: number
+  callToolSignal?: AbortSignal
   listToolsShouldFail: boolean
   listToolsError: string
   listPromptsShouldFail: boolean
@@ -38,6 +39,7 @@ function getOrCreateClientState(name?: string): MockClientState {
       tools: [{ name: "test_tool", description: "A test tool", inputSchema: { type: "object", properties: {} } }],
       listToolsCalls: 0,
       requestCalls: 0,
+      callToolSignal: undefined,
       listToolsShouldFail: false,
       listToolsError: "listTools failed",
       listPromptsShouldFail: false,
@@ -147,6 +149,21 @@ void mock.module("@modelcontextprotocol/sdk/client/index.js", () => ({
       throw new Error(`unsupported request: ${request.method}`)
     }
 
+    async callTool(
+      _input: { name: string; arguments: Record<string, unknown> },
+      _schema: unknown,
+      options: { signal?: AbortSignal },
+    ) {
+      this._state.callToolSignal = options.signal
+      return new Promise((_resolve, reject) => {
+        if (options.signal?.aborted) {
+          reject(options.signal.reason)
+          return
+        }
+        options.signal?.addEventListener("abort", () => reject(options.signal?.reason), { once: true })
+      })
+    }
+
     async listPrompts() {
       if (this._state?.listPromptsShouldFail) {
         throw new Error("listPrompts failed")
@@ -217,6 +234,40 @@ it.instance(
         expect(Object.keys(toolsA).length).toBeGreaterThan(0)
         expect(Object.keys(toolsB).length).toBeGreaterThan(0)
         expect(serverState.listToolsCalls).toBe(1)
+      }),
+    ),
+  { config: { mcp: {} } },
+)
+
+it.instance(
+  "passes the AI SDK abort signal to MCP tool calls",
+  () =>
+    MCP.Service.use((mcp: MCPNS.Interface) =>
+      Effect.gen(function* () {
+        lastCreatedClientName = "abort-server"
+        const serverState = getOrCreateClientState("abort-server")
+        serverState.tools = [
+          { name: "wait", description: "waits", inputSchema: { type: "object", properties: {} } },
+        ]
+
+        yield* mcp.add("abort-server", {
+          type: "local",
+          command: ["echo", "test"],
+        })
+
+        const tools = yield* mcp.tools()
+        const tool = Object.values(tools)[0]
+        expect(tool?.execute).toBeDefined()
+        if (!tool?.execute) return yield* Effect.die(new Error("missing MCP tool execute handler"))
+        const controller = new AbortController()
+        const execution = tool.execute({}, { toolCallId: "call-1", messages: [], abortSignal: controller.signal })
+        controller.abort(new Error("cancelled by test"))
+        const aborted = yield* Effect.promise(() => Promise.resolve(execution).then(() => false, () => true)).pipe(
+          Effect.timeout("1 second"),
+        )
+
+        expect(serverState.callToolSignal).toBe(controller.signal)
+        expect(aborted).toBe(true)
       }),
     ),
   { config: { mcp: {} } },

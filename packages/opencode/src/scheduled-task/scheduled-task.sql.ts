@@ -1,5 +1,6 @@
 import { ProjectTable } from "@/project/project.sql"
-import type { ProjectID } from "@/project/schema"
+import { ProjectLocationTable } from "@/project/location.sql"
+import type { LocationID, ProjectID } from "@/project/schema"
 import { SessionTable } from "@/session/session.sql"
 import type { SessionID } from "@/session/schema"
 import { Timestamps } from "@/storage/schema.sql"
@@ -14,6 +15,9 @@ export const ScheduledTaskTable = sqliteTable(
       .$type<ProjectID>()
       .notNull()
       .references(() => ProjectTable.id, { onDelete: "cascade" }),
+    location_id: text()
+      .$type<LocationID>()
+      .references(() => ProjectLocationTable.id, { onDelete: "set null" }),
     project_name: text(),
     directory: text().notNull(),
     name: text().notNull(),
@@ -37,6 +41,7 @@ export const ScheduledTaskTable = sqliteTable(
   },
   (table) => [
     index("scheduled_task_project_idx").on(table.project_id),
+    index("scheduled_task_location_idx").on(table.location_id),
     index("scheduled_task_next_run_idx").on(table.enabled, table.next_run_at),
   ],
 )

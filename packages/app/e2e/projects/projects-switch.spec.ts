@@ -7,7 +7,13 @@ import {
   slugFromUrl,
   waitSession,
 } from "../actions"
-import { promptSelector, projectSwitchSelector, sessionItemSelector } from "../selectors"
+import {
+  promptSelector,
+  projectSwitchSelector,
+  sessionItemSelector,
+  sessionNewProjectItemSelector,
+  sessionNewProjectMenuSelector,
+} from "../selectors"
 import { createSdk, dirSlug, modKey, sessionPath } from "../utils"
 
 async function openProjectPicker(page: import("@playwright/test").Page) {
@@ -228,6 +234,31 @@ test("project picker opens a new session when no session is active", async ({ pa
 
         const dialog = await openProjectPicker(page)
         const target = dialog.locator('[data-slot="list-item"]').filter({ hasText: other }).first()
+        await expect(target).toBeVisible()
+        await target.click()
+
+        await expect(page).toHaveURL(new RegExp(`/${otherSlug}/session(?:[?#]|$)`))
+        await expect(page.locator(promptSelector)).toBeVisible()
+      },
+      { extra: [other] },
+    )
+  } finally {
+    await cleanupTestProject(other)
+  }
+})
+
+test("new session project menu opens a draft in the selected project", async ({ page, withProject }) => {
+  await page.setViewportSize({ width: 1400, height: 800 })
+
+  const other = await createTestProject()
+  const otherSlug = dirSlug(other)
+  try {
+    await withProject(
+      async ({ gotoSession }) => {
+        await gotoSession()
+
+        await page.locator(sessionNewProjectMenuSelector).click()
+        const target = page.locator(sessionNewProjectItemSelector(otherSlug))
         await expect(target).toBeVisible()
         await target.click()
 

@@ -31,6 +31,7 @@ import { TestLLMServer } from "../lib/llm-server"
 import { NodeFileSystem } from "@effect/platform-node"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
+import { BackgroundShell } from "@/background/shell"
 import { Git } from "../../src/git"
 import { Bus } from "../../src/bus"
 import { Command } from "../../src/command"
@@ -51,6 +52,7 @@ import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
 import { SessionRunState } from "../../src/session/run-state"
 import { SessionStatus } from "../../src/session/status"
+import { SessionInput } from "../../src/session/input"
 import { Snapshot } from "../../src/snapshot"
 import { ToolRegistry } from "@/tool/registry"
 import { Truncate } from "@/tool/truncate"
@@ -63,6 +65,7 @@ import { RepositoryCache } from "../../src/reference/repository-cache"
 import { SyncEvent } from "@/sync"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
+import { ProjectTask } from "@/project-task/service"
 
 void Log.init({ print: false })
 
@@ -129,6 +132,9 @@ function makeHttp() {
     mcp,
     AppFileSystem.defaultLayer,
     BackgroundJob.defaultLayer,
+    BackgroundShell.defaultLayer,
+    SessionInput.defaultLayer,
+    ProjectTask.defaultLayer,
     status,
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,

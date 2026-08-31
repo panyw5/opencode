@@ -6,7 +6,7 @@ import { ProjectID } from "@/project/schema"
 import { MessageID, SessionID } from "@/session/schema"
 import { PermissionTable } from "@/session/session.sql"
 import { Database } from "@/storage/db"
-import { eq } from "drizzle-orm"
+import { eq, inArray } from "drizzle-orm"
 import * as Log from "@opencode-ai/core/util/log"
 import { Wildcard } from "@opencode-ai/core/util/wildcard"
 import { Deferred, Effect, Layer, Schema, Context } from "effect"
@@ -14,6 +14,7 @@ import os from "os"
 import { PermissionV2 } from "@opencode-ai/core/permission"
 import { PermissionID } from "./schema"
 import { ScheduledTaskUnattended } from "@/scheduled-task/unattended"
+import { PermissionScopeTable } from "./scope.sql"
 
 const log = Log.create({ service: "permission" })
 
@@ -29,6 +30,46 @@ export type Rule = Schema.Schema.Type<typeof Rule>
 
 export const Ruleset = Schema.Array(Rule).annotate({ identifier: "PermissionRuleset" })
 export type Ruleset = Schema.Schema.Type<typeof Ruleset>
+
+export const Scope = Schema.Literals(["global", "project", "location"]).annotate({
+  identifier: "PermissionScope",
+})
+export type Scope = Schema.Schema.Type<typeof Scope>
+
+export type ScopeRef =
+  | { scope: "global" }
+  | { scope: "project"; projectID: ProjectID }
+  | { scope: "location"; locationID: import("@/project/schema").LocationID }
+
+export function scopeID(ref: ScopeRef) {
+  if (ref.scope === "global") return "global"
+  if (ref.scope === "project") return `project:${ref.projectID}`
+  return `location:${ref.locationID}`
+}
+
+export function setScopedRules(ref: ScopeRef, data: Ruleset) {
+  const now = Date.now()
+  return Effect.sync(() =>
+    Database.use((db) =>
+      db
+        .insert(PermissionScopeTable)
+        .values({
+          id: scopeID(ref),
+          scope: ref.scope,
+          project_id: ref.scope === "project" ? ref.projectID : undefined,
+          location_id: ref.scope === "location" ? ref.locationID : undefined,
+          data,
+          time_created: now,
+          time_updated: now,
+        })
+        .onConflictDoUpdate({
+          target: PermissionScopeTable.id,
+          set: { data, time_updated: now },
+        })
+        .run(),
+    ),
+  )
+}
 
 // Pure data; nothing checks class identity. As `Schema.Struct` + type alias,
 // `Permission.ask` can trust its already-typed input and skip the inner
@@ -148,12 +189,27 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
     const state = yield* InstanceState.make<State>(
       Effect.fn("Permission.state")(function* (ctx) {
-        const row = Database.use((db) =>
-          db.select().from(PermissionTable).where(eq(PermissionTable.project_id, ctx.project.id)).get(),
+        const ids = [
+          scopeID({ scope: "global" }),
+          scopeID({ scope: "project", projectID: ctx.project.id }),
+          scopeID({ scope: "location", locationID: ctx.location.id }),
+        ]
+        const rows = Database.use((db) =>
+          db.select().from(PermissionScopeTable).where(inArray(PermissionScopeTable.id, ids)).all(),
         )
+        const scoped = new Map(rows.map((row) => [row.id, row.data]))
+        const legacy = Database.use((db) =>
+          db.select({ projectID: PermissionTable.project_id }).from(PermissionTable).where(eq(PermissionTable.project_id, ctx.project.id)).get(),
+        )
+        log.info("permission scopes loaded", {
+          projectID: ctx.project.id,
+          locationID: ctx.location.id,
+          scopes: ids.filter((id) => scoped.has(id)),
+          legacyIgnored: Boolean(legacy),
+        })
         const state = {
           pending: new Map<PermissionID, PendingEntry>(),
-          approved: [...(row?.data ?? [])],
+          approved: ids.flatMap((id) => scoped.get(id) ?? []),
         }
 
         yield* Effect.addFinalizer(() =>

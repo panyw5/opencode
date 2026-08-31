@@ -1,7 +1,7 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -23,7 +23,7 @@ import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Question } from "../../src/question"
 import { Todo } from "../../src/session/todo"
 import { Session } from "@/session/session"
-import { SessionMessageTable } from "../../src/session/session.sql"
+import { SessionMessageTable, SessionTable } from "../../src/session/session.sql"
 import { LLM } from "../../src/session/llm"
 import { MessageV2 } from "../../src/session/message-v2"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -36,6 +36,7 @@ import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
+import { SessionInput } from "../../src/session/input"
 import { SessionV2 } from "../../src/v2/session"
 import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
@@ -58,6 +59,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ProjectTask } from "@/project-task/service"
+import { InstanceState } from "@/effect/instance-state"
 
 void Log.init({ print: false })
 
@@ -184,6 +186,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     AppFileSystem.defaultLayer,
     BackgroundJob.defaultLayer,
     BackgroundShell.defaultLayer,
+    SessionInput.defaultLayer,
     status,
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,
@@ -447,6 +450,18 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
 
 // Loop semantics
 
+noLLMServer.instance("session creation persists the active location internally", () =>
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const ctx = yield* InstanceState.context
+    const chat = yield* sessions.create({ title: "Location dual-write" })
+    const row = Database.use((db) => db.select().from(SessionTable).where(Database.eq(SessionTable.id, chat.id)).get())
+
+    expect(row?.location_id).toBe(ctx.location.id)
+    expect("locationID" in chat).toBe(false)
+  }),
+)
+
 noLLMServer.instance(
   "loop exits immediately when last assistant has stop finish",
   () =>
@@ -461,6 +476,281 @@ noLLMServer.instance(
       if (result.info.role === "assistant") expect(result.info.finish).toBe("stop")
     }),
   { config: cfg },
+)
+
+it.instance(
+  "durable notification survives a busy provider error and starts exactly one follow-up loop",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({
+        title: "Durable notification after provider error",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "initial request")
+
+      const gate = yield* Deferred.make<void>()
+      yield* llm.push(
+        reply().wait(deferredAsPromise(gate)).streamError("provider stream failed"),
+        reply().text("recovered notification").stop(),
+      )
+
+      const firstRun = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      const inputID = "evt_busy_provider_error"
+      yield* inbox.admit({
+        id: inputID,
+        sessionID: chat.id,
+        source: "background-task",
+        prompt: {
+          text: "Background task failed: provider stream failed",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-task-injection", state: "error" },
+        },
+      })
+      expect((yield* inbox.pending(chat.id)).map((item) => item.id)).toEqual([inputID])
+
+      yield* Deferred.succeed(gate, void 0)
+      yield* awaitWithTimeout(Fiber.await(firstRun), "provider-error run did not terminate", "3 seconds")
+      yield* awaitWithTimeout(llm.wait(2), "pending notification was not drained after provider error", "3 seconds")
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const synthetic = messages
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === "text" && part.synthetic && part.metadata?.kind === "background-task-injection")
+      expect(synthetic).toHaveLength(1)
+      const syntheticMessageID = synthetic[0]?.messageID
+      expect(
+        messages.filter((message) => message.info.role === "assistant" && message.info.parentID === syntheticMessageID),
+      ).toHaveLength(1)
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+    }),
+  5_000,
+)
+
+it.instance(
+  "real user prompt merges two pending notifications before the user and starts one loop",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({
+        title: "User priority notification merge",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "previous request")
+
+      const admit = (id: string, text: string) =>
+        inbox.admit({
+          id,
+          sessionID: chat.id,
+          source: "background-shell",
+          prompt: {
+            text,
+            agent: "build",
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+            metadata: { kind: "background-shell-injection", state: "completed" },
+          },
+        })
+      yield* admit("evt_merge_notification_1", "notification one")
+      yield* admit("evt_merge_notification_2", "notification two")
+      yield* llm.text("one merged response")
+
+      const result = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "real user request" }],
+      })
+
+      expect(result.info.role).toBe("assistant")
+      expect(yield* llm.calls).toBe(1)
+      const inputs = yield* llm.inputs
+      expect(inputs).toHaveLength(1)
+      const modelMessages = inputs[0]?.messages
+      if (!Array.isArray(modelMessages)) throw new Error("expected model messages")
+      const serialized = JSON.stringify(modelMessages)
+      expect(serialized.indexOf("notification one")).toBeGreaterThan(-1)
+      expect(serialized.indexOf("notification two")).toBeGreaterThan(serialized.indexOf("notification one"))
+      expect(modelMessages.at(-1)).toEqual({ role: "user", content: "real user request" })
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const userMessages = messages.filter((message) => message.info.role === "user")
+      expect(userMessages.at(-1)?.parts.some((part) => part.type === "text" && part.text === "real user request")).toBe(
+        true,
+      )
+      expect(
+        messages
+          .flatMap((message) => message.parts)
+          .filter(
+            (part) => part.type === "text" && part.synthetic && part.metadata?.kind === "background-shell-injection",
+          ),
+      ).toHaveLength(2)
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+    }),
+  5_000,
+)
+
+noLLMServer.instance(
+  "promoted-unacked notification is replayed into one valid message and is idempotent across drains",
+  () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({ title: "Promoted notification recovery" })
+      yield* user(chat.id, "before restart")
+
+      const inputID = "evt_promoted_unacked_recovery"
+      yield* inbox.admit({
+        id: inputID,
+        sessionID: chat.id,
+        source: "background-shell",
+        prompt: {
+          text: "replayed notification",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-shell-injection", state: "completed" },
+        },
+      })
+      yield* inbox.promote(chat.id)
+      expect((yield* inbox.promotedUnacked(chat.id)).map((item) => item.id)).toEqual([inputID])
+
+      // Build a second SessionPrompt service only after the row is promoted. Its
+      // initialization is the restart boundary: recovery must discover the
+      // promoted-unacked row without relying on the original service's state.
+      const recoveredContext = yield* Layer.build(makePrompt())
+      const recoveredPrompt = Context.get(recoveredContext, SessionPrompt.Service)
+      yield* recoveredPrompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const matching = messages.filter((message) =>
+        message.parts.some((part) => part.type === "text" && part.text === "replayed notification"),
+      )
+      expect(matching).toHaveLength(1)
+      expect(matching[0]?.info.id.startsWith("msg_")).toBe(true)
+      const part = matching[0]?.parts.find((item) => item.type === "text" && item.text === "replayed notification")
+      expect(part?.synthetic).toBe(true)
+      expect(part?.metadata).toMatchObject({ kind: "background-shell-injection", state: "completed" })
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+
+      // Re-running the drain path after recovery must not create a second
+      // history message.
+      yield* recoveredPrompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        noReply: true,
+        parts: [{ type: "text", text: "second recovery pass" }],
+      })
+      const after = yield* sessions.messages({ sessionID: chat.id })
+      expect(
+        after.filter((message) =>
+          message.parts.some((item) => item.type === "text" && item.text === "replayed notification"),
+        ),
+      ).toHaveLength(1)
+    }),
+  5_000,
+)
+
+it.instance(
+  "duplicate terminal notification admission creates one synthetic message and one loop",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({
+        title: "Duplicate terminal notification",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "initial request")
+
+      const input = {
+        id: "evt_duplicate_terminal",
+        sessionID: chat.id,
+        source: "background-task",
+        prompt: {
+          text: "duplicate terminal result",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-task-injection", state: "completed" },
+        },
+      } as const
+      yield* inbox.admit(input)
+      yield* inbox.admit({ ...input, prompt: { ...input.prompt, text: "replayed duplicate" } })
+      yield* llm.text("single response")
+
+      yield* prompt.loop({ sessionID: chat.id })
+      expect(yield* llm.calls).toBe(1)
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const synthetic = messages
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === "text" && part.synthetic && part.metadata?.kind === "background-task-injection")
+      expect(synthetic).toHaveLength(1)
+      expect(synthetic[0]?.type === "text" ? synthetic[0].text : "").toBe("duplicate terminal result")
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+    }),
+  5_000,
+)
+
+it.instance(
+  "cancel cleanup reaches idle and drains a pending notification",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({
+        title: "Cancel drains notification",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "long request")
+      yield* llm.hang
+      const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      yield* inbox.admit({
+        id: "evt_cancel_drain",
+        sessionID: chat.id,
+        source: "background-shell",
+        prompt: {
+          text: "notification after cancel",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-shell-injection", state: "completed" },
+        },
+      })
+      yield* llm.text("drained after cancel")
+
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(running)
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+      yield* awaitWithTimeout(llm.wait(2), "cancel did not trigger a follow-up drain", "3 seconds")
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      expect(
+        messages
+          .flatMap((message) => message.parts)
+          .filter((part) => part.type === "text" && part.text === "notification after cancel"),
+      ).toHaveLength(1)
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+    }),
+  5_000,
 )
 
 it.instance("loop calls LLM and returns assistant message", () =>
@@ -705,9 +995,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
     yield* llm.text("parent received child report")
 
     const result = yield* prompt.loop({ sessionID: parent.id })
-    expect(result.parts.some((part) => part.type === "text" && part.text === "parent received child report")).toBe(
-      true,
-    )
+    expect(result.parts.some((part) => part.type === "text" && part.text === "parent received child report")).toBe(true)
 
     const inputs = yield* llm.inputs
     expect(inputs).toHaveLength(3)
@@ -728,9 +1016,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       .flatMap((message) => message.parts)
       .find(
         (part): part is MessageV2.TextPart =>
-          part.type === "text" &&
-          part.synthetic === true &&
-          part.metadata?.kind === "project-task-injection",
+          part.type === "text" && part.synthetic === true && part.metadata?.kind === "project-task-injection",
       )
     expect(parentInjected?.metadata?.audience).toBe("parent")
     expect(parentInjected?.text).toContain(marker)
@@ -757,9 +1043,7 @@ it.instance("mounted project task context flows into task subagent prompt", () =
       .flatMap((message) => message.parts)
       .find(
         (part): part is MessageV2.TextPart =>
-          part.type === "text" &&
-          part.synthetic === true &&
-          part.metadata?.kind === "project-task-injection",
+          part.type === "text" && part.synthetic === true && part.metadata?.kind === "project-task-injection",
       )
     expect(injected?.metadata?.audience).toBe("subagent")
     expect(injected?.metadata?.taskID).toBe(task.id)
@@ -912,6 +1196,125 @@ it.instance("loop continues when finish is stop but assistant has tool parts", (
       expect(result.parts.some((part) => part.type === "text" && part.text === "second")).toBe(true)
       expect(result.info.finish).toBe("stop")
     }
+  }),
+)
+
+it.instance("injects the max-steps guard on the first request when steps is one", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { model: "test/test-model", steps: 1 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ title: "Pinned" })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+    })
+    yield* llm.text("done")
+
+    yield* prompt.loop({ sessionID: session.id })
+
+    const inputs = yield* llm.inputs
+    expect(inputs).toHaveLength(1)
+    expect(JSON.stringify(inputs[0]?.messages)).toContain("CRITICAL - MAXIMUM STEPS REACHED")
+    expect(inputs[0]?.tools).toBeUndefined()
+  }),
+)
+
+it.instance("injects the max-steps guard only on the final configured step", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { model: "test/test-model", steps: 2 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+    })
+    yield* llm.push(reply().tool("first", { value: "first" }).stop())
+    yield* llm.text("done")
+
+    yield* prompt.loop({ sessionID: session.id })
+
+    const inputs = yield* llm.inputs
+    expect(inputs).toHaveLength(2)
+    expect(JSON.stringify(inputs[0]?.messages)).not.toContain("CRITICAL - MAXIMUM STEPS REACHED")
+    expect(JSON.stringify(inputs[1]?.messages)).toContain("CRITICAL - MAXIMUM STEPS REACHED")
+    expect(inputs[0]?.tools).toBeDefined()
+    expect(inputs[1]?.tools).toBeUndefined()
+  }),
+)
+
+it.instance("does not start another turn when the final step returns a tool call", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { model: "test/test-model", steps: 1 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({
+      title: "Pinned",
+      permission: [{ permission: "*", pattern: "*", action: "allow" }],
+    })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      parts: [{ type: "text", text: "hello" }],
+    })
+    yield* llm.push(reply().tool("bash", { command: "echo should-not-run" }).stop())
+
+    yield* prompt.loop({ sessionID: session.id })
+
+    expect(yield* llm.calls).toBe(1)
+    const inputs = yield* llm.inputs
+    expect(inputs).toHaveLength(1)
+    expect(inputs[0]?.tools).toBeUndefined()
+  }),
+)
+
+it.instance("ends strict json schema mode without materializing its tool after the step limit", () =>
+  Effect.gen(function* () {
+    const { llm } = yield* useServerConfig((url) => ({
+      ...providerCfg(url),
+      agent: { build: { model: "test/test-model", steps: 1 } },
+    }))
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const session = yield* sessions.create({ title: "Pinned" })
+    yield* prompt.prompt({
+      sessionID: session.id,
+      agent: "build",
+      noReply: true,
+      format: {
+        type: "json_schema",
+        schema: { type: "object", properties: { answer: { type: "string" } }, required: ["answer"] },
+        retryCount: 0,
+      },
+      parts: [{ type: "text", text: "hello" }],
+    })
+    yield* llm.text('{"answer":"done"}')
+
+    const result = yield* prompt.loop({ sessionID: session.id })
+
+    expect(yield* llm.calls).toBe(1)
+    expect(result.info.role).toBe("assistant")
+    if (result.info.role === "assistant") expect(result.info.error?.name).toBe("StructuredOutputError")
+    const inputs = yield* llm.inputs
+    expect(inputs[0]?.tools).toBeUndefined()
   }),
 )
 
@@ -1443,7 +1846,14 @@ it.instance(
 
       const inputs = yield* llm.inputs
       expect(inputs).toHaveLength(2)
-      expect(JSON.stringify(inputs.at(-1)?.messages)).toContain("second")
+      const messages = inputs.at(-1)?.messages
+      if (!Array.isArray(messages)) throw new Error("expected LLM messages")
+      expect(messages.at(-1)).toEqual({ role: "user", content: "second" })
+      expect(messages.filter((message) => message.role === "user").map((message) => message.content)).toEqual([
+        "first",
+        "second",
+      ])
+      expect(JSON.stringify(messages)).not.toContain("<system-reminder>")
     }),
   3_000,
 )
@@ -1881,53 +2291,49 @@ const researchSkillWithLatexExamples = [
   "- **数值计算** 使用 $2\\times 10\\times 8 = 160$",
 ].join("\n")
 
-it.instance("command replaces arguments before resolving markdown references", () =>
-  Effect.gen(function* () {
-    const { dir, llm } = yield* useServerConfig(providerCfg)
-    yield* writeText(
-      path.join(dir, ".opencode", "skills", "research", "SKILL.md"),
-      researchSkillWithLatexExamples,
-    )
-    yield* writeText(
-      path.join(dir, ".opencode", "commands", "research.md"),
-      [
-        "---",
-        "description: Test research command",
-        "---",
-        "",
-        "Use @.opencode/skills/research/SKILL.md for instructions.",
-        "",
-        "Question: $ARGUMENTS",
-      ].join("\n"),
-    )
+it.instance(
+  "command replaces arguments before resolving markdown references",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      yield* writeText(path.join(dir, ".opencode", "skills", "research", "SKILL.md"), researchSkillWithLatexExamples)
+      yield* writeText(
+        path.join(dir, ".opencode", "commands", "research.md"),
+        [
+          "---",
+          "description: Test research command",
+          "---",
+          "",
+          "Use @.opencode/skills/research/SKILL.md for instructions.",
+          "",
+          "Question: $ARGUMENTS",
+        ].join("\n"),
+      )
 
-    const { prompt, chat } = yield* boot()
-    yield* llm.text("done")
+      const { prompt, chat } = yield* boot()
+      yield* llm.text("done")
 
-    const result = yield* prompt.command({
-      sessionID: chat.id,
-      command: "research",
-      arguments: "帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。",
-    })
+      const result = yield* prompt.command({
+        sessionID: chat.id,
+        command: "research",
+        arguments: "帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。",
+      })
 
-    expect(result.info.role).toBe("assistant")
-    const inputs = yield* llm.inputs
-    const messages = JSON.stringify(inputs.at(-1)?.messages)
-    expect(messages).toContain("$1\\\\times 1\\\\times H$")
-    expect(messages).toContain("$2\\\\times 10\\\\times 8 = 160$")
-    expect(messages).toContain("帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。")
-    expect(messages).not.toContain("使用 帮我查一下什么文献介绍了 Zhu")
-  }),
+      expect(result.info.role).toBe("assistant")
+      const inputs = yield* llm.inputs
+      const messages = JSON.stringify(inputs.at(-1)?.messages)
+      expect(messages).toContain("$1\\\\times 1\\\\times H$")
+      expect(messages).toContain("$2\\\\times 10\\\\times 8 = 160$")
+      expect(messages).toContain("帮我查一下什么文献介绍了 Zhu's algebra $A(V)$。")
+      expect(messages).not.toContain("使用 帮我查一下什么文献介绍了 Zhu")
+    }),
   { git: true },
 )
 
 it.instance("skill-backed slash command appends arguments without replacing LaTeX dollar examples", () =>
   Effect.gen(function* () {
     const { dir, llm } = yield* useServerConfig(providerCfg)
-    yield* writeText(
-      path.join(dir, ".opencode", "skills", "research", "SKILL.md"),
-      researchSkillWithLatexExamples,
-    )
+    yield* writeText(path.join(dir, ".opencode", "skills", "research", "SKILL.md"), researchSkillWithLatexExamples)
 
     const { prompt, chat } = yield* boot()
     yield* llm.text("done")
@@ -2781,6 +3187,94 @@ noLLMServer.instance(
 )
 
 it.instance(
+  "prompt submitted before question registration skips the stale question and processes the prompt",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const question = yield* Question.Service
+
+      const session = yield* sessions.create({
+        title: "Late question registration",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* prompt.prompt({
+        sessionID: session.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "finish the task, then ask a question" }],
+      })
+
+      const gate = Promise.withResolvers<void>()
+      yield* llm.push(
+        reply()
+          .text("task finished")
+          .tool("question", {
+            questions: [
+              {
+                question: "What next?",
+                header: "Next",
+                options: [{ label: "Done", description: "finish" }],
+              },
+            ],
+          })
+          .wait(gate.promise),
+      )
+      yield* llm.text("processed queued prompt")
+
+      const firstRun = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      const queuedRun = yield* prompt
+        .prompt({
+          sessionID: session.id,
+          agent: "build",
+          parts: [{ type: "text", text: "submit" }],
+        })
+        .pipe(Effect.forkChild)
+
+      const queuedMessageID = yield* pollWithTimeout(
+        Effect.gen(function* () {
+          const messages = yield* sessions.messages({ sessionID: session.id })
+          const found = messages.find(
+            (message) =>
+              message.info.role === "user" &&
+              message.parts.some((part) => part.type === "text" && part.text === "submit"),
+          )
+          return found?.info.id
+        }),
+        "queued prompt was not persisted before the question arrived",
+      )
+
+      gate.resolve()
+
+      const result = yield* awaitWithTimeout(
+        Fiber.join(queuedRun),
+        "queued prompt stayed blocked after its superseded question arrived",
+        "3 seconds",
+      )
+      yield* awaitWithTimeout(Fiber.join(firstRun), "original run did not unwind", "3 seconds")
+
+      expect(yield* llm.calls).toBe(2)
+      expect(result.info.role).toBe("assistant")
+      expect(result.info.role === "assistant" ? result.info.parentID : undefined).toBe(queuedMessageID)
+      expect(result.parts.some((part) => part.type === "text" && part.text === "processed queued prompt")).toBe(true)
+      expect((yield* question.list()).filter((item) => item.sessionID === session.id)).toHaveLength(0)
+
+      const messages = yield* sessions.messages({ sessionID: session.id })
+      const questionPart = messages
+        .flatMap((item) => item.parts)
+        .find((part): part is MessageV2.ToolPart => part.type === "tool" && part.tool === "question")
+      expect(questionPart?.state.status).toBe("error")
+      expect(
+        questionPart?.state.status === "error" ? questionPart.state.metadata?.questionRequest : undefined,
+      ).toBeUndefined()
+    }),
+  30_000,
+)
+
+it.instance(
   "background inject expires superseded pending question and continues the session",
   () =>
     Effect.gen(function* () {
@@ -2865,8 +3359,9 @@ it.instance(
       const result = yield* prompt.loop({ sessionID: session.id })
       expect(yield* llm.calls).toBe(2)
       expect(result.info.role).toBe("assistant")
-      expect(result.parts.some((part) => part.type === "text" && part.text === "resumed after background task result"))
-        .toBe(true)
+      expect(
+        result.parts.some((part) => part.type === "text" && part.text === "resumed after background task result"),
+      ).toBe(true)
 
       const inputs = yield* llm.inputs
       expect(inputs).toHaveLength(2)

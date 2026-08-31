@@ -7,7 +7,6 @@ import { GrepTool } from "../../src/tool/grep"
 import { provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
-import { Global } from "@opencode-ai/core/global"
 import { Truncate } from "@/tool/truncate"
 import { Agent } from "../../src/agent/agent"
 import { Ripgrep } from "../../src/file/ripgrep"
@@ -21,6 +20,7 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Git } from "@/git"
 import { Filesystem } from "@/util/filesystem"
+import { parseRemoteRepositoryReference, repositoryCachePath } from "@/util/repository"
 
 const referenceLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Reference.layer.pipe(
@@ -219,7 +219,7 @@ describe("tool.grep", () => {
       Effect.gen(function* () {
         yield* TestInstance
         const appfs = yield* AppFileSystem.Service
-        const cache = path.join(Global.Path.repos, "github.com", "opencode-grep-reference", "repo")
+        const cache = repositoryCachePath(parseRemoteRepositoryReference("opencode-grep-reference/repo"))
         yield* appfs.remove(cache, { recursive: true }).pipe(Effect.ignore)
         yield* Effect.addFinalizer(() => appfs.remove(cache, { recursive: true }).pipe(Effect.ignore))
 

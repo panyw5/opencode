@@ -12,6 +12,42 @@ export const PROJECT_TASKS_ROOT = ".project-tasks"
 /** Canonical brief filename inside each task folder. */
 export const DESCRIPTION_FILENAME = "prd.md"
 
+/** Progress record filename inside each task folder. */
+export const PROGRESS_FILENAME = "progress.md"
+
+/** Initial progress record content for newly created project tasks. */
+export const INITIAL_PROGRESS_CONTENT = `<!--
+PROGRESS LOG FORMAT GUIDE
+
+This file is append-only. Never rewrite or delete previous entries.
+Append the newest entry at the end of the file.
+
+For each meaningful work update:
+
+1. Use the current UTC timestamp in ISO-8601 format.
+2. Use the real current session ID. Never invent or reuse another session ID.
+3. Under "Progress", briefly record completed work, current state, next step, or blockers.
+4. Under "Relevant files", list only files related to this update.
+5. Use project-root-relative paths in Markdown links.
+6. Do not claim tests or work that were not actually performed.
+
+Entry format:
+
+# [YYYY-MM-DDTHH:mm:ssZ]
+Session: \`ses_...\`
+
+## Progress
+- Done: ...
+- Current: ...
+- Next: ...
+- Blocked: None
+
+## Relevant files
+1. [short description](path/to/file)
+2. [short description](another/file)
+-->
+`
+
 /** Pre-rename workspace root / brief filename; migrated into PROJECT_TASKS_ROOT on hydrate. */
 export const LEGACY_PROJECT_TASKS_ROOT = ".opentasks"
 export const LEGACY_DESCRIPTION_FILENAME = "description.md"
@@ -19,6 +55,11 @@ export const LEGACY_DESCRIPTION_FILENAME = "description.md"
 /** Relative path: `.project-tasks/<taskID>/prd.md` */
 export function descriptionRelativePath(taskID: ProjectTaskID | string): string {
   return path.posix.join(PROJECT_TASKS_ROOT, String(taskID), DESCRIPTION_FILENAME)
+}
+
+/** Relative path: `.project-tasks/<taskID>/progress.md` */
+export function progressRelativePath(taskID: ProjectTaskID | string): string {
+  return path.posix.join(PROJECT_TASKS_ROOT, String(taskID), PROGRESS_FILENAME)
 }
 
 /** Legacy relative path: `.opentasks/<taskID>/description.md` (migrated on hydrate). */
