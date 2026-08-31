@@ -128,7 +128,8 @@ export function SessionTabsBar() {
     const id = params.id
     const directory = routeDir()
     if (!id || !directory) return undefined
-    return tabs().find((tab) => tab.id === id && workspaceKey(tab.directory) === workspaceKey(directory))
+    const key = sessionBarKey({ directory, id })
+    return tabs().find((tab) => sessionBarKey(tab) === key)
   })
   const activeSession = createMemo(() => {
     const tab = activeTab()
@@ -158,7 +159,7 @@ export function SessionTabsBar() {
   })
 
   const isActive = (tab: SessionBarTab) =>
-    !!params.id && tab.id === params.id && workspaceKey(tab.directory) === workspaceKey(routeDir())
+    !!params.id && sessionBarKey(tab) === sessionBarKey({ directory: routeDir(), id: params.id })
 
   // Only the directory behind the active route warms its full session list on
   // cold start. Background-tab directories stay cold: their titles come from

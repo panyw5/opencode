@@ -10,6 +10,7 @@ import {
   pruneSessionKeys,
   removeSessionBarDraft,
   resolveRailProjects,
+  sessionBarKey,
   shouldAutoCollapseFilePreview,
   visibleSessionBarDrafts,
 } from "./layout"
@@ -133,6 +134,12 @@ describe("session bar drafts", () => {
 })
 
 describe("session bar tabs", () => {
+  test("uses one logical key for macOS private tmp aliases", () => {
+    expect(sessionBarKey({ directory: "/tmp/workspace", id: "same" })).toBe(
+      sessionBarKey({ directory: "/private/tmp/workspace", id: "same" }),
+    )
+  })
+
   test("deduplicates persisted tabs while keeping their first position", () => {
     const tabs = [
       { directory: "/work/one", id: "same", title: "Old" },
