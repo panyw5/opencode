@@ -5,7 +5,7 @@ A project task is different from session-local checklists `todowrite`.
 
 ## File structure
 Task description in `.project-tasks/<taskID>/prd.md`
-Maintain progress record in `.project-tasks/<taskID>/progress.md` (empty when created)
+Maintain progress record in `.project-tasks/<taskID>/progress.md`
 Put other task-related files in `.project-tasks/<taskID>/`
 
 ## When to use

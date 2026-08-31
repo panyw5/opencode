@@ -8,6 +8,7 @@ import * as ProjectTaskRepository from "./repository"
 import {
   descriptionRelativePath,
   ensureDescriptionFile,
+  INITIAL_PROGRESS_CONTENT,
   readDescriptionFile,
   progressRelativePath,
   taskFilesAnchor,
@@ -170,7 +171,7 @@ export const layer = Layer.effect(
         description: body,
       })
       yield* Effect.promise(() => writeDescriptionFile(anchor, task.descriptionPath, body))
-      yield* Effect.promise(() => writeDescriptionFile(anchor, progressRelativePath(task.id), ""))
+      yield* Effect.promise(() => writeDescriptionFile(anchor, progressRelativePath(task.id), INITIAL_PROGRESS_CONTENT))
       // Return with body already known (file write succeeded).
       const created: Info = { ...task, description: body }
       yield* emit(dir, { type: Event.Created.type, properties: created })

@@ -7,7 +7,11 @@ import { InstanceState } from "@/effect/instance-state"
 import { ProjectTask } from "@/project-task/service"
 import * as ProjectTaskRepository from "@/project-task/repository"
 import { ProjectTaskTable } from "@/project-task/project-task.sql"
-import { descriptionRelativePath, progressRelativePath } from "@/project-task/description-file"
+import {
+  descriptionRelativePath,
+  INITIAL_PROGRESS_CONTENT,
+  progressRelativePath,
+} from "@/project-task/description-file"
 import { ProjectTaskID } from "@/project-task/schema"
 import { Database } from "@/storage/db"
 import { testEffect } from "../lib/effect"
@@ -15,7 +19,7 @@ import { testEffect } from "../lib/effect"
 const it = testEffect(ProjectTask.defaultLayer)
 
 describe("ProjectTask service reads", () => {
-  it.instance("creates an empty progress record for a new task", () =>
+  it.instance("creates a progress record with an entry format for a new task", () =>
     Effect.gen(function* () {
       const ctx = yield* InstanceState.context
       const service = yield* ProjectTask.Service
@@ -25,7 +29,13 @@ describe("ProjectTask service reads", () => {
 
       expect(existsSync(description)).toBe(true)
       expect(existsSync(progress)).toBe(true)
-      expect(readFileSync(progress, "utf8")).toBe("")
+      const progressContent = readFileSync(progress, "utf8")
+      expect(progressContent).toBe(INITIAL_PROGRESS_CONTENT)
+      expect(progressContent).toMatch(/^<!--/)
+      expect(progressContent).toContain("This file is append-only")
+      expect(progressContent).toContain("current session ID")
+      expect(progressContent).toContain("## Progress")
+      expect(progressContent).toContain("## Relevant files")
     }),
   )
 
