@@ -308,7 +308,11 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
         const valid = sessionBar.all.filter(
           (tab): tab is SessionBarTab =>
-            isRecord(tab) && typeof tab.directory === "string" && !!tab.directory && typeof tab.id === "string" && !!tab.id,
+            isRecord(tab) &&
+            typeof tab.directory === "string" &&
+            !!tab.directory &&
+            typeof tab.id === "string" &&
+            !!tab.id,
         )
         const all = dedupeSessionBarTabs(valid)
         if (valid.length === sessionBar.all.length && same(valid, all)) return sessionBar
@@ -797,10 +801,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             const key = sessionBarKey({ directory, id })
             const existing = current.find((tab) => sessionBarKey(tab) === key)
             if (existing) {
-              if (
-                title && existing.title !== title ||
-                parentID !== undefined && existing.parentID !== parentID
-              ) {
+              if ((title && existing.title !== title) || (parentID !== undefined && existing.parentID !== parentID)) {
                 return current.map((tab) =>
                   sessionBarKey(tab) === key
                     ? {

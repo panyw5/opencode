@@ -4,6 +4,7 @@ import {
   addSessionBarDraft,
   createSessionKeyReader,
   cycleSessionBarIndex,
+  dedupeSessionBarTabs,
   ensureSessionKey,
   isSessionFileTab,
   pruneSessionKeys,
@@ -128,6 +129,30 @@ describe("session bar drafts", () => {
     expect(cycleSessionBarIndex(3, 1, 1)).toBe(2)
     expect(cycleSessionBarIndex(3, -1, 1)).toBe(0)
     expect(cycleSessionBarIndex(3, -1, -1)).toBe(2)
+  })
+})
+
+describe("session bar tabs", () => {
+  test("deduplicates persisted tabs while keeping their first position", () => {
+    const tabs = [
+      { directory: "/work/one", id: "same", title: "Old" },
+      { directory: "/work/two", id: "other", title: "Other" },
+      { directory: "/work/one", id: "same", title: "New", parentID: "parent" },
+    ]
+
+    expect(dedupeSessionBarTabs(tabs)).toEqual([
+      { directory: "/work/one", id: "same", title: "New", parentID: "parent" },
+      { directory: "/work/two", id: "other", title: "Other" },
+    ])
+  })
+
+  test("treats macOS private tmp aliases as the same session tab", () => {
+    const tabs = [
+      { directory: "/tmp/workspace", id: "same", title: "Tmp" },
+      { directory: "/private/tmp/workspace", id: "same", title: "Private tmp" },
+    ]
+
+    expect(dedupeSessionBarTabs(tabs)).toEqual([{ directory: "/tmp/workspace", id: "same", title: "Private tmp" }])
   })
 })
 
