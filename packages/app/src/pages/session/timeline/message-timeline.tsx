@@ -255,6 +255,7 @@ export function MessageTimeline(props: {
   userMessages: UserMessage[]
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string) => void) => void
+  setPrepareNavigation?: (fn: () => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => void }) => void
   onRenderOverlayStatusChange?: (status: "showing" | "hiding" | "hidden") => void
@@ -451,6 +452,7 @@ export function MessageTimeline(props: {
   // landing, deferred hydration, content-visibility un-skip.
   let viewportAnchor: ViewportAnchor | undefined
   let readingAnchor: ViewportAnchor | undefined
+  let navigationResetAt = 0
   let measurementBatchPending = false
   let measurementPassQueued = false
   const queueMeasurementPass = () => {
@@ -515,6 +517,11 @@ export function MessageTimeline(props: {
         )
       }
       if (delta !== 0) markProgrammaticScroll(delta)
+      if (navigationResetAt && performance.now() - navigationResetAt < 2_000 && Math.abs(delta) > 0.5) {
+        console.debug(
+          `[timeline] navigation-anchor-restore sid=${sessionID() ?? "none"} source=viewport key=${viewportAnchor.key} delta=${Math.round(delta)} top=${Math.round(root.scrollTop)}`,
+        )
+      }
       if (lagging() && Math.abs(delta) > 0.5) {
         timelineLag(
           "anchor-restore",
@@ -543,6 +550,11 @@ export function MessageTimeline(props: {
           )
         }
         if (readingDelta !== 0) markProgrammaticScroll(readingDelta)
+        if (navigationResetAt && performance.now() - navigationResetAt < 2_000 && Math.abs(readingDelta) > 0.5) {
+          console.debug(
+            `[timeline] navigation-anchor-restore sid=${sessionID() ?? "none"} source=reading key=${readingAnchor.key} delta=${Math.round(readingDelta)} top=${Math.round(root.scrollTop)}`,
+          )
+        }
         if (lagging() && Math.abs(readingDelta) > 0.5) {
           timelineLag(
             "reading-restore",
@@ -1009,20 +1021,26 @@ export function MessageTimeline(props: {
     readingAnchor = captureVirtualViewportAnchor(geometry, items, programmaticScrollDelta, READING_LINE_RATIO)
   }
 
-  // --- Session find ---
-  const prepareFindNavigation = () => {
+  const clearNavigationAnchors = (source: "message" | "find") => {
+    navigationResetAt = performance.now()
     console.debug(
-      `[timeline] find-navigate sid=${sessionID() ?? "none"} top=${String(Math.round(listRoot()?.scrollTop ?? 0))} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"} prepend=${String(prependLoading)} bottom=${String(props.shouldAnchorBottom())}`,
+      `[timeline] navigation-reset sid=${sessionID() ?? "none"} source=${source} top=${String(Math.round(listRoot()?.scrollTop ?? 0))} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"} prepend=${String(prependLoading)} bottom=${String(props.shouldAnchorBottom())}`,
     )
-    // Find navigation supersedes any viewport/bottom anchor. Keeping an anchor
-    // captured at the old window would restore that window when the target row
-    // is measured, immediately undoing scrollToIndex.
+    // Message/find navigation supersedes any viewport/bottom anchor. Keeping an
+    // anchor captured at the old window would restore that window when the
+    // target row is measured, immediately undoing scrollToIndex.
     viewportAnchor = undefined
     readingAnchor = undefined
     programmaticScrollDelta = 0
     clearPrependAnchor()
+  }
+
+  // --- Session find ---
+  const prepareFindNavigation = () => {
+    clearNavigationAnchors("find")
     props.onFindNavigate()
   }
+  const prepareMessageNavigation = () => clearNavigationAnchors("message")
   const sessionFind = createSessionFind({
     virtualizer,
     listRoot,
@@ -1070,11 +1088,13 @@ export function MessageTimeline(props: {
   createEffect(() => {
     props.setRevealMessage?.((id) => {
       const index = messageRowIndex().get(id)
+      const row = index === undefined ? undefined : timelineRows()[index]
       console.debug(
-        `[timeline] reveal-message sid=${sessionID() ?? "none"} id=${id} index=${index === undefined ? "none" : String(index)} rows=${String(timelineRows().length)} mounted=${String(virtualizer.getVirtualItems().length)} total=${String(Math.round(virtualizer.getTotalSize()))}`,
+        `[timeline] reveal-message sid=${sessionID() ?? "none"} id=${id} index=${index === undefined ? "none" : String(index)} row=${row?._tag ?? "none"} anchor=${row?._tag === "UserMessage" ? String(row.anchor) : row?._tag === "CommentStrip" ? "true" : "none"} rows=${String(timelineRows().length)} mounted=${String(virtualizer.getVirtualItems().length)} total=${String(Math.round(virtualizer.getTotalSize()))}`,
       )
       if (index !== undefined) virtualizer.scrollToIndex(index, { align: "center" })
     })
+    props.setPrepareNavigation?.(prepareMessageNavigation)
     props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
     props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
   })
@@ -1125,6 +1145,7 @@ export function MessageTimeline(props: {
     if (debugWindow?.__opencodeTimelineStates) delete debugWindow.__opencodeTimelineStates[ownerSessionKey]
     restoreScrollTopDebug?.()
     props.setRevealMessage?.(() => {})
+    props.setPrepareNavigation?.(() => {})
     props.setScrollToEnd?.(() => {})
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
     if (renderOverlayFrame !== undefined) cancelAnimationFrame(renderOverlayFrame)

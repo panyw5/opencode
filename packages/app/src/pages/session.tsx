@@ -834,6 +834,7 @@ export default function Page() {
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
   let revealMessage = (_id: string) => {}
+  let prepareMessageNavigation = () => {}
   let scrollToEnd = () => {}
   let historyAnchor = { capture: () => {}, restore: (_done: boolean) => {} }
   let scrollMark = 0
@@ -2790,6 +2791,7 @@ export default function Page() {
     enterLive,
     enterAnchored,
     autoScroll,
+    prepareNavigation: () => prepareMessageNavigation(),
     scroller: () => scroller,
     anchor,
     revealMessage: (id) => revealMessage(id),
@@ -2923,6 +2925,9 @@ export default function Page() {
                         anchor={anchor}
                         setRevealMessage={(fn) => {
                           revealMessage = fn
+                        }}
+                        setPrepareNavigation={(fn) => {
+                          prepareMessageNavigation = fn
                         }}
                         setScrollToEnd={(fn) => {
                           scrollToEnd = fn
