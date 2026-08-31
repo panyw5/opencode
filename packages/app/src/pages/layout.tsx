@@ -1306,6 +1306,23 @@ export default function Layout(props: ParentProps) {
   command.register("layout", () => {
     const commands: CommandOption[] = [
       {
+        id: "session.new",
+        title: language.t("command.session.new"),
+        keywords: kw("command.session.new"),
+        category: language.t("command.category.session"),
+        keybind: "mod+shift+s",
+        slash: "new",
+        onSelect: (source) => {
+          const directory = params.dir ? decode64(params.dir) : layout.sidebar.project()
+          console.debug(
+            `[session-new] source=${source ?? "unknown"} route=${location.pathname} sidebar-project=${layout.sidebar.project() || "none"} target=${directory || "none"}`,
+          )
+          if (!directory) return
+          navigateWithSidebarReset(`/${base64Encode(directory)}/session`)
+          layout.sidebar.close()
+        },
+      },
+      {
         id: "command.palette",
         title: language.t("command.palette"),
         description: language.t("palette.search.commands"),
