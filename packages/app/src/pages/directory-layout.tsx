@@ -7,7 +7,6 @@ import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
@@ -20,7 +19,6 @@ import { extraAgentByDirectory } from "@/pages/layout/extra-agents"
 import { newSessionProjectLabel, splitI18nTemplate } from "@/pages/layout/helpers"
 import { RailTooltip } from "@/pages/layout/rail-tooltip"
 import { decode64 } from "@/utils/base64"
-import { StatusPopover } from "@/components/status-popover"
 
 function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
   const location = useLocation()
@@ -116,15 +114,15 @@ function ProjectStatusPortal() {
     <Show when={mount()}>
       {(node) => (
         <Portal mount={node()}>
-          <div class="mr-2 flex items-center gap-1">
-            <div class="flex items-center">
+          <div class="mr-2 flex items-center">
+            <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-panel overflow-hidden">
               <RailTooltip title={tooltipTitle()} placement="bottom">
                 <IconButton
                   data-action="session-new-button"
                   icon="new-session"
                   size="normal"
                   variant="ghost"
-                  class="titlebar-icon w-8 h-8 p-0 box-border"
+                  class="rounded-none h-full w-6 p-0 border-none shadow-none"
                   aria-label={tooltip()}
                   onClick={() => {
                     if (!params.dir) return
@@ -143,7 +141,7 @@ function ProjectStatusPortal() {
                     icon="chevron-down"
                     size="normal"
                     variant="ghost"
-                    class="titlebar-icon w-6 h-8 p-0 box-border data-[expanded]:bg-surface-base-active"
+                    class="rounded-none h-full w-[20px] p-0 border-none shadow-none data-[expanded]:bg-surface-raised-base-active"
                     aria-label={language.t("command.session.new.selectProject")}
                   />
                 </Tooltip>
@@ -183,9 +181,6 @@ function ProjectStatusPortal() {
                                   {project.worktree}
                                 </DropdownMenu.ItemDescription>
                               </div>
-                              <Show when={current()}>
-                                <Icon name="check-small" size="small" class="shrink-0 text-icon-weak" />
-                              </Show>
                             </DropdownMenu.Item>
                           )
                         }}
@@ -195,9 +190,6 @@ function ProjectStatusPortal() {
                 </DropdownMenu.Portal>
               </DropdownMenu>
             </div>
-            <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-              <StatusPopover />
-            </Tooltip>
           </div>
         </Portal>
       )}

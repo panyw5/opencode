@@ -22,6 +22,7 @@ import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
 import { dict as enDict } from "@/i18n/en"
+import { StatusPopover } from "@/components/status-popover"
 import { OPEN_APPS, apps, getOpenPlan, type OpenApp, type OS } from "./open-app"
 
 
@@ -331,6 +332,9 @@ export function SessionHeader() {
                   </Show>
                 </div>
               </Show>
+              <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
+                <StatusPopover />
+              </Tooltip>
               <div class="flex items-center gap-1">
                 <TooltipKeybind
                   title={language.t("command.terminal.toggle")}
