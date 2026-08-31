@@ -8,7 +8,7 @@ import { Logo } from "@opencode-ai/ui/logo"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useNavigate } from "@solidjs/router"
 import { DateTime } from "luxon"
-import { createEffect, createMemo, createRenderEffect, createResource, For, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createRenderEffect, createResource, For, onCleanup, Show, untrack } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import {
@@ -89,13 +89,90 @@ export default function Home() {
     },
   )
 
-  const dashboardSource = createMemo(() => (sync.ready ? `${server.domain}:${sdk.version}` : undefined))
   const loadRecentSessions = async () => {
     const result = await sdk.client.experimental.session.list({ roots: true, limit: RECENT_SESSION_LIMIT })
     return mergeRecentSessions([result.data ?? []])
   }
-  const [sessions, { refetch: refetchSessions }] = createResource(dashboardSource, loadRecentSessions)
-  const homeSessions = createMemo(() => (sessions() ?? []).slice(0, HOME_SESSION_LIMIT))
+  const [dashboard, setDashboard] = createStore({
+    sessions: [] as GlobalSession[],
+    sessionsLoaded: false,
+    sessionsLoading: true,
+    sessionsError: false,
+    tasks: [] as ScheduledTask[],
+    tasksLoaded: false,
+    tasksLoading: true,
+    tasksError: false,
+  })
+  const homeSessions = createMemo(() => dashboard.sessions.slice(0, HOME_SESSION_LIMIT))
+
+  let sessionsGeneration = 0
+  async function refreshSessions(reset = false) {
+    const generation = ++sessionsGeneration
+    if (reset) {
+      setDashboard("sessions", [])
+      setDashboard("sessionsLoaded", false)
+    }
+    setDashboard("sessionsLoading", !dashboard.sessionsLoaded)
+    setDashboard("sessionsError", false)
+    console.debug(`[home-refresh] sessions-start generation=${String(generation)} reset=${String(reset)}`)
+    try {
+      const result = await loadRecentSessions()
+      if (generation !== sessionsGeneration) return
+      setDashboard("sessions", reconcile(result, { key: "id" }))
+      setDashboard("sessionsLoaded", true)
+      console.debug(`[home-refresh] sessions-end generation=${String(generation)} count=${String(result.length)}`)
+    } catch (error) {
+      if (generation !== sessionsGeneration) return
+      setDashboard("sessionsError", true)
+      console.error(`[home-refresh] sessions-failed generation=${String(generation)}`, error)
+    } finally {
+      if (generation === sessionsGeneration) setDashboard("sessionsLoading", false)
+    }
+  }
+
+  let tasksGeneration = 0
+  async function refreshTasks(reset = false) {
+    const generation = ++tasksGeneration
+    if (reset) {
+      setDashboard("tasks", [])
+      setDashboard("tasksLoaded", false)
+    }
+    setDashboard("tasksLoading", !dashboard.tasksLoaded)
+    setDashboard("tasksError", false)
+    console.debug(`[home-refresh] tasks-start generation=${String(generation)} reset=${String(reset)}`)
+    try {
+      const result = await sdk.client.scheduledTask.list()
+      const items = (result.data ?? [])
+        .filter((task) => task.enabled && task.nextRunAt)
+        .sort((a, b) => (a.nextRunAt ?? Number.MAX_SAFE_INTEGER) - (b.nextRunAt ?? Number.MAX_SAFE_INTEGER))
+        .slice(0, HOME_TASK_LIMIT)
+      if (generation !== tasksGeneration) return
+      setDashboard("tasks", reconcile(items, { key: "id" }))
+      setDashboard("tasksLoaded", true)
+      console.debug(`[home-refresh] tasks-end generation=${String(generation)} count=${String(items.length)}`)
+    } catch (error) {
+      if (generation !== tasksGeneration) return
+      setDashboard("tasksError", true)
+      console.error(`[home-refresh] tasks-failed generation=${String(generation)}`, error)
+    } finally {
+      if (generation === tasksGeneration) setDashboard("tasksLoading", false)
+    }
+  }
+
+  let dashboardDomain: string | undefined
+  createEffect(() => {
+    if (!sync.ready) return
+    const domain = server.domain
+    sdk.version
+    const reset = dashboardDomain !== undefined && dashboardDomain !== domain
+    dashboardDomain = domain
+    console.debug(`[home-refresh] source domain=${domain} sdkVersion=${String(sdk.version)} reset=${String(reset)}`)
+    untrack(() => {
+      void refreshSessions(reset)
+      void refreshTasks(reset)
+    })
+  })
+
   const [latestUserMessages, setLatestUserMessages] = createStore<Record<string, string | undefined>>({})
   let previewGeneration = 0
   createEffect(() => {
@@ -136,19 +213,21 @@ export default function Home() {
     })
   })
   onCleanup(() => previewGeneration++)
-  const [tasks, { refetch: refetchTasks }] = createResource(dashboardSource, async () => {
-    const result = await sdk.client.scheduledTask.list()
-    return (result.data ?? [])
-      .filter((task) => task.enabled && task.nextRunAt)
-      .sort((a, b) => (a.nextRunAt ?? Number.MAX_SAFE_INTEGER) - (b.nextRunAt ?? Number.MAX_SAFE_INTEGER))
-      .slice(0, HOME_TASK_LIMIT)
-  })
-
   const stop = sdk.listenAll((event) => {
-    if (event.details.type.startsWith("scheduled-task.")) void refetchTasks()
-    if (event.details.type.startsWith("session.")) void refetchSessions()
+    if (event.details.type.startsWith("scheduled-task.")) {
+      console.debug(`[home-refresh] event=${event.details.type} action=refresh-tasks`)
+      void refreshTasks()
+    }
+    if (["session.created", "session.updated", "session.deleted"].includes(event.details.type)) {
+      console.debug(`[home-refresh] event=${event.details.type} action=refresh-sessions`)
+      void refreshSessions()
+    }
   })
-  onCleanup(stop)
+  onCleanup(() => {
+    sessionsGeneration++
+    tasksGeneration++
+    stop()
+  })
 
   let sent = false
   createRenderEffect(() => {
@@ -254,7 +333,6 @@ export default function Home() {
           <div class="min-w-0">
             <Logo class="home-logo h-auto w-36 opacity-70" />
             <h1 class="sr-only">{language.t("home.title")}</h1>
-            <p class="mt-3 max-w-xl text-13-regular text-text-weak">{language.t("home.subtitle")}</p>
           </div>
           <Button
             size="normal"
@@ -283,7 +361,7 @@ export default function Home() {
               onAction={showRecentSessions}
             />
             <Show
-              when={!sessions.loading}
+              when={!dashboard.sessionsLoading}
               fallback={
                 <div class="flex min-h-36 items-center justify-center">
                   <Spinner />
@@ -291,19 +369,19 @@ export default function Home() {
               }
             >
               <Show
-                when={!sessions.error}
+                when={!dashboard.sessionsError}
                 fallback={
                   <button
                     type="button"
                     class="mt-3 w-full rounded-lg px-3 py-8 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
-                    onClick={() => void refetchSessions()}
+                    onClick={() => void refreshSessions()}
                   >
                     {language.t("home.section.loadError")}
                   </button>
                 }
               >
                 <Show
-                  when={(sessions() ?? []).length > 0}
+                  when={dashboard.sessions.length > 0}
                   fallback={<div class="px-3 py-10 text-center text-12-regular text-text-weak">{language.t("home.recentSessions.empty")}</div>}
                 >
                   <ul class="home-work-list divide-y divide-border-weak-base">
@@ -351,7 +429,7 @@ export default function Home() {
               onAction={() => navigate("/scheduled")}
             />
             <Show
-              when={!tasks.loading}
+              when={!dashboard.tasksLoading}
               fallback={
                 <div class="flex min-h-28 items-center justify-center">
                   <Spinner />
@@ -359,23 +437,23 @@ export default function Home() {
               }
             >
               <Show
-                when={!tasks.error}
+                when={!dashboard.tasksError}
                 fallback={
                   <button
                     type="button"
                     class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
-                    onClick={() => void refetchTasks()}
+                    onClick={() => void refreshTasks()}
                   >
                     {language.t("home.section.loadError")}
                   </button>
                 }
               >
                 <Show
-                  when={(tasks() ?? []).length > 0}
+                  when={dashboard.tasks.length > 0}
                   fallback={<div class="px-3 py-8 text-center text-12-regular text-text-weak">{language.t("home.upcomingTasks.empty")}</div>}
                 >
                   <ul class="home-work-list divide-y divide-border-weak-base">
-                    <For each={tasks() ?? []}>
+                    <For each={dashboard.tasks}>
                       {(task) => (
                         <li>
                           <button

@@ -773,7 +773,6 @@ export const dict = {
   "home.empty.title": "No recent projects",
   "home.empty.description": "Get started by opening a local project",
   "home.title": "Home",
-  "home.subtitle": "Continue recent work, open a project, or see what is scheduled next.",
   "home.section.loadError": "Could not load this section. Select to try again.",
   "home.quickAdd.title": "Open a project path",
   "home.quickAdd.label": "Project path",

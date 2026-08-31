@@ -729,7 +729,6 @@ export const dict = {
   "home.empty.title": "没有最近项目",
   "home.empty.description": "通过打开本地项目开始使用",
   "home.title": "主页",
-  "home.subtitle": "继续最近的工作、打开项目，或查看接下来即将运行的任务。",
   "home.section.loadError": "无法加载此区域。点击重试。",
   "home.quickAdd.title": "打开项目路径",
   "home.quickAdd.label": "项目路径",
