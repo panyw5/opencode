@@ -89,17 +89,19 @@ export const layer = Layer.effect(
     })
 
     const set = Effect.fn("SessionStatus.set")(function* (sessionID: SessionID, status: Info) {
-      yield* bus.publish(Event.Status, { sessionID, status })
       if (status.type === "idle") {
         const { directory, data } = yield* readState()
+        if (data) {
+          data.delete(sessionID)
+          if (data.size === 0) globalState.delete(directory)
+        }
+        yield* bus.publish(Event.Status, { sessionID, status })
         yield* bus.publish(Event.Idle, { sessionID })
-        if (!data) return
-        data.delete(sessionID)
-        if (data.size === 0) globalState.delete(directory)
         return
       }
       const { data } = yield* ensureState()
       data.set(sessionID, status)
+      yield* bus.publish(Event.Status, { sessionID, status })
     })
 
     return Service.of({ get, list, set })

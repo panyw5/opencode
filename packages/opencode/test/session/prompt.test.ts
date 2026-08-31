@@ -1,7 +1,7 @@
 import { NodeFileSystem } from "@effect/platform-node"
 import { FetchHttpClient } from "effect/unstable/http"
 import { expect } from "bun:test"
-import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Context, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
@@ -36,6 +36,7 @@ import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { SessionStatus } from "../../src/session/status"
+import { SessionInput } from "../../src/session/input"
 import { SessionV2 } from "../../src/v2/session"
 import { Skill } from "../../src/skill"
 import { SystemPrompt } from "../../src/session/system"
@@ -185,6 +186,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     AppFileSystem.defaultLayer,
     BackgroundJob.defaultLayer,
     BackgroundShell.defaultLayer,
+    SessionInput.defaultLayer,
     status,
     SyncEvent.defaultLayer,
     EventV2Bridge.defaultLayer,
@@ -474,6 +476,281 @@ noLLMServer.instance(
       if (result.info.role === "assistant") expect(result.info.finish).toBe("stop")
     }),
   { config: cfg },
+)
+
+it.instance(
+  "durable notification survives a busy provider error and starts exactly one follow-up loop",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({
+        title: "Durable notification after provider error",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "initial request")
+
+      const gate = yield* Deferred.make<void>()
+      yield* llm.push(
+        reply().wait(deferredAsPromise(gate)).streamError("provider stream failed"),
+        reply().text("recovered notification").stop(),
+      )
+
+      const firstRun = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      const inputID = "evt_busy_provider_error"
+      yield* inbox.admit({
+        id: inputID,
+        sessionID: chat.id,
+        source: "background-task",
+        prompt: {
+          text: "Background task failed: provider stream failed",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-task-injection", state: "error" },
+        },
+      })
+      expect((yield* inbox.pending(chat.id)).map((item) => item.id)).toEqual([inputID])
+
+      yield* Deferred.succeed(gate, void 0)
+      yield* awaitWithTimeout(Fiber.await(firstRun), "provider-error run did not terminate", "3 seconds")
+      yield* awaitWithTimeout(llm.wait(2), "pending notification was not drained after provider error", "3 seconds")
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const synthetic = messages
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === "text" && part.synthetic && part.metadata?.kind === "background-task-injection")
+      expect(synthetic).toHaveLength(1)
+      const syntheticMessageID = synthetic[0]?.messageID
+      expect(
+        messages.filter((message) => message.info.role === "assistant" && message.info.parentID === syntheticMessageID),
+      ).toHaveLength(1)
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+    }),
+  5_000,
+)
+
+it.instance(
+  "real user prompt merges two pending notifications before the user and starts one loop",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({
+        title: "User priority notification merge",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "previous request")
+
+      const admit = (id: string, text: string) =>
+        inbox.admit({
+          id,
+          sessionID: chat.id,
+          source: "background-shell",
+          prompt: {
+            text,
+            agent: "build",
+            model: { providerID: ref.providerID, modelID: ref.modelID },
+            metadata: { kind: "background-shell-injection", state: "completed" },
+          },
+        })
+      yield* admit("evt_merge_notification_1", "notification one")
+      yield* admit("evt_merge_notification_2", "notification two")
+      yield* llm.text("one merged response")
+
+      const result = yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        parts: [{ type: "text", text: "real user request" }],
+      })
+
+      expect(result.info.role).toBe("assistant")
+      expect(yield* llm.calls).toBe(1)
+      const inputs = yield* llm.inputs
+      expect(inputs).toHaveLength(1)
+      const modelMessages = inputs[0]?.messages
+      if (!Array.isArray(modelMessages)) throw new Error("expected model messages")
+      const serialized = JSON.stringify(modelMessages)
+      expect(serialized.indexOf("notification one")).toBeGreaterThan(-1)
+      expect(serialized.indexOf("notification two")).toBeGreaterThan(serialized.indexOf("notification one"))
+      expect(modelMessages.at(-1)).toEqual({ role: "user", content: "real user request" })
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const userMessages = messages.filter((message) => message.info.role === "user")
+      expect(userMessages.at(-1)?.parts.some((part) => part.type === "text" && part.text === "real user request")).toBe(
+        true,
+      )
+      expect(
+        messages
+          .flatMap((message) => message.parts)
+          .filter(
+            (part) => part.type === "text" && part.synthetic && part.metadata?.kind === "background-shell-injection",
+          ),
+      ).toHaveLength(2)
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+    }),
+  5_000,
+)
+
+noLLMServer.instance(
+  "promoted-unacked notification is replayed into one valid message and is idempotent across drains",
+  () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({ title: "Promoted notification recovery" })
+      yield* user(chat.id, "before restart")
+
+      const inputID = "evt_promoted_unacked_recovery"
+      yield* inbox.admit({
+        id: inputID,
+        sessionID: chat.id,
+        source: "background-shell",
+        prompt: {
+          text: "replayed notification",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-shell-injection", state: "completed" },
+        },
+      })
+      yield* inbox.promote(chat.id)
+      expect((yield* inbox.promotedUnacked(chat.id)).map((item) => item.id)).toEqual([inputID])
+
+      // Build a second SessionPrompt service only after the row is promoted. Its
+      // initialization is the restart boundary: recovery must discover the
+      // promoted-unacked row without relying on the original service's state.
+      const recoveredContext = yield* Layer.build(makePrompt())
+      const recoveredPrompt = Context.get(recoveredContext, SessionPrompt.Service)
+      yield* recoveredPrompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const matching = messages.filter((message) =>
+        message.parts.some((part) => part.type === "text" && part.text === "replayed notification"),
+      )
+      expect(matching).toHaveLength(1)
+      expect(matching[0]?.info.id.startsWith("msg_")).toBe(true)
+      const part = matching[0]?.parts.find((item) => item.type === "text" && item.text === "replayed notification")
+      expect(part?.synthetic).toBe(true)
+      expect(part?.metadata).toMatchObject({ kind: "background-shell-injection", state: "completed" })
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+
+      // Re-running the drain path after recovery must not create a second
+      // history message.
+      yield* recoveredPrompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        noReply: true,
+        parts: [{ type: "text", text: "second recovery pass" }],
+      })
+      const after = yield* sessions.messages({ sessionID: chat.id })
+      expect(
+        after.filter((message) =>
+          message.parts.some((item) => item.type === "text" && item.text === "replayed notification"),
+        ),
+      ).toHaveLength(1)
+    }),
+  5_000,
+)
+
+it.instance(
+  "duplicate terminal notification admission creates one synthetic message and one loop",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({
+        title: "Duplicate terminal notification",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "initial request")
+
+      const input = {
+        id: "evt_duplicate_terminal",
+        sessionID: chat.id,
+        source: "background-task",
+        prompt: {
+          text: "duplicate terminal result",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-task-injection", state: "completed" },
+        },
+      } as const
+      yield* inbox.admit(input)
+      yield* inbox.admit({ ...input, prompt: { ...input.prompt, text: "replayed duplicate" } })
+      yield* llm.text("single response")
+
+      yield* prompt.loop({ sessionID: chat.id })
+      expect(yield* llm.calls).toBe(1)
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const synthetic = messages
+        .flatMap((message) => message.parts)
+        .filter((part) => part.type === "text" && part.synthetic && part.metadata?.kind === "background-task-injection")
+      expect(synthetic).toHaveLength(1)
+      expect(synthetic[0]?.type === "text" ? synthetic[0].text : "").toBe("duplicate terminal result")
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+    }),
+  5_000,
+)
+
+it.instance(
+  "cancel cleanup reaches idle and drains a pending notification",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({
+        title: "Cancel drains notification",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "long request")
+      yield* llm.hang
+      const running = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      yield* inbox.admit({
+        id: "evt_cancel_drain",
+        sessionID: chat.id,
+        source: "background-shell",
+        prompt: {
+          text: "notification after cancel",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-shell-injection", state: "completed" },
+        },
+      })
+      yield* llm.text("drained after cancel")
+
+      yield* prompt.cancel(chat.id)
+      yield* Fiber.await(running)
+      expect((yield* status.get(chat.id)).type).toBe("idle")
+      yield* awaitWithTimeout(llm.wait(2), "cancel did not trigger a follow-up drain", "3 seconds")
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      expect(
+        messages
+          .flatMap((message) => message.parts)
+          .filter((part) => part.type === "text" && part.text === "notification after cancel"),
+      ).toHaveLength(1)
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+    }),
+  5_000,
 )
 
 it.instance("loop calls LLM and returns assistant message", () =>

@@ -72,6 +72,7 @@ import * as DateTime from "effect/DateTime"
 import { eq } from "@/storage/db"
 import * as Database from "@/storage/db"
 import { SessionTable } from "./session.sql"
+import { SessionInput } from "./input"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
@@ -152,9 +153,17 @@ export const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service
     const question = yield* Question.Service
     const projectTasks = yield* ProjectTask.Service
+    const inbox = yield* SessionInput.Service
+    type InboxRecoveryState = { initialized: boolean; draining: Set<SessionID> }
+    const inboxRecovery = yield* InstanceState.make<InboxRecoveryState>(() =>
+      Effect.succeed({ initialized: false, draining: new Set<SessionID>() }),
+    )
+    let promoteInbox: (sessionID: SessionID) => Effect.Effect<number> = () => Effect.succeed(0)
+    let requestDrain: (sessionID: SessionID) => Effect.Effect<void> = () => Effect.void
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
+        requestDrain: (sessionID: SessionID) => requestDrain(sessionID),
         resolvePromptParts: (template: string) => resolvePromptParts(template),
         prompt: (input: PromptInput) => prompt(input).pipe(Effect.catch(Effect.die)),
         loop: (input: LoopInput) => loop(input),
@@ -167,6 +176,7 @@ export const layer = Layer.effect(
       yield* elog.info("cancel runner+jobs done", { sessionID })
       yield* sessions.finalizeOrphanedAssistant(sessionID, { abortSource: "user-cancel" })
       yield* elog.info("cancel finalize done", { sessionID })
+      yield* requestDrain(sessionID)
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
@@ -342,9 +352,9 @@ export const layer = Layer.effect(
         candidates.push(model)
       }
       const optionalModel = (providerID: ProviderID, modelID: ModelID) =>
-        provider.getModel(providerID, modelID).pipe(
-          Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)),
-        )
+        provider
+          .getModel(providerID, modelID)
+          .pipe(Effect.catchIf(Provider.ModelNotFoundError.isInstance, () => Effect.succeed(undefined)))
 
       if (ag.model) add(yield* optionalModel(ag.model.providerID, ag.model.modelID))
       add(yield* provider.getSmallModel(input.providerID))
@@ -405,11 +415,7 @@ export const layer = Layer.effect(
               model: mdl,
               sessionID: input.session.id,
               retries: 1,
-              messages: [
-                { role: "user", content: "Generate a title for this conversation:\n" },
-                ...msgs,
-                ...taskMsgs,
-              ],
+              messages: [{ role: "user", content: "Generate a title for this conversation:\n" }, ...msgs, ...taskMsgs],
             })
             .pipe(
               Stream.filter(LLMEvent.is.textDelta),
@@ -443,9 +449,7 @@ export const layer = Layer.effect(
           ),
         )
         if (attempt) {
-          const next = isScheduledSessionTitle(input.session.title)
-            ? markScheduledSessionTitle(attempt)
-            : attempt
+          const next = isScheduledSessionTitle(input.session.title) ? markScheduledSessionTitle(attempt) : attempt
           yield* sessions.setTitle({ sessionID: input.session.id, title: next })
           return next
         }
@@ -1724,10 +1728,194 @@ export const layer = Layer.effect(
       }
     })
 
+    const materializeInbox = Effect.fn("SessionPrompt.materializeInbox")(function* (input: SessionInput.Info) {
+      const parent = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      // Inbox IDs are source-event keys. They can be `evt_` IDs, whereas
+      // persisted history messages must satisfy the `msg_` schema.
+      const messageID = MessageID.ascending(`msg_inbox_${input.id}`)
+      const existing = yield* MessageV2.get({ sessionID: input.sessionID, messageID }).pipe(Effect.option)
+      const partID = PartID.ascending(`prt_inbox_${input.id}`)
+
+      if (Option.isNone(existing)) {
+        const latestUser = yield* sessions
+          .findMessage(input.sessionID, (item) => item.info.role === "user")
+          .pipe(Effect.orDie)
+        const defaultAgent = yield* agents.defaultInfo()
+        const agent =
+          input.prompt.agent ?? parent.agent ?? (Option.isSome(latestUser) ? latestUser.value.info.agent : undefined)
+        const storedModel = input.prompt.model
+        const model = storedModel
+          ? {
+              providerID: ProviderID.make(storedModel.providerID),
+              modelID: ModelID.make(storedModel.modelID),
+              ...(storedModel.variant ? { variant: storedModel.variant } : {}),
+            }
+          : parent.model
+            ? {
+                providerID: parent.model.providerID,
+                modelID: parent.model.id,
+                ...(parent.model.variant ? { variant: parent.model.variant } : {}),
+              }
+            : Option.isSome(latestUser) && latestUser.value.info.role === "user"
+              ? latestUser.value.info.model
+              : yield* currentModel(input.sessionID)
+        if (!agent && !defaultAgent) {
+          yield* elog.error("inbox materialization deferred — no parent agent", {
+            sessionID: input.sessionID,
+            inputID: input.id,
+            source: "session-input",
+          })
+          return false
+        }
+        const info: MessageV2.User = {
+          id: messageID,
+          role: "user",
+          sessionID: input.sessionID,
+          time: { created: input.timeCreated },
+          agent: agent ?? defaultAgent!.name,
+          model,
+        }
+        yield* elog.info("inbox message create start", {
+          sessionID: input.sessionID,
+          inputID: input.id,
+          source: "session-input",
+          promotedSeq: input.promotedSeq,
+        })
+        yield* sessions.updateMessage(info)
+      }
+
+      const after = yield* MessageV2.get({ sessionID: input.sessionID, messageID }).pipe(Effect.option)
+      if (Option.isNone(after)) return false
+      if (!after.value.parts.some((part) => part.id === partID)) {
+        yield* sessions.updatePart({
+          id: partID,
+          messageID,
+          sessionID: input.sessionID,
+          type: "text",
+          text: input.prompt.text,
+          synthetic: true,
+          metadata: input.prompt.metadata,
+        })
+      }
+      yield* inbox.ack([input.id])
+      yield* elog.info("inbox message committed and acknowledged", {
+        sessionID: input.sessionID,
+        inputID: input.id,
+        source: "session-input",
+        promotedSeq: input.promotedSeq,
+      })
+      return true
+    })
+
+    promoteInbox = Effect.fn("SessionPrompt.promoteInbox")(function* (sessionID: SessionID) {
+      const replay = yield* inbox.promotedUnacked(sessionID)
+      const claimed: SessionInput.Info[] = []
+      while (true) {
+        const batch = yield* inbox.promote(sessionID)
+        if (batch.length === 0) break
+        claimed.push(...batch)
+      }
+      const rows = [...replay, ...claimed].sort((a, b) => {
+        const aSeq = a.promotedSeq ?? Number.MAX_SAFE_INTEGER
+        const bSeq = b.promotedSeq ?? Number.MAX_SAFE_INTEGER
+        return aSeq - bSeq || a.admittedSeq - b.admittedSeq
+      })
+      if (rows.length === 0) return 0
+      let materialized = 0
+      for (const row of rows) {
+        if (yield* materializeInbox(row)) materialized++
+      }
+      yield* elog.info("inbox promotion committed", {
+        sessionID,
+        source: "session-input",
+        count: rows.length,
+        materialized,
+      })
+      return materialized
+    })
+
+    requestDrain = Effect.fn("SessionPrompt.requestDrain")(function* (sessionID: SessionID) {
+      const data = yield* InstanceState.get(inboxRecovery)
+      if (data.draining.has(sessionID)) {
+        yield* elog.debug("inbox drain coalesced", { sessionID, source: "session-input", reason: "already-draining" })
+        return
+      }
+      data.draining.add(sessionID)
+      yield* Effect.gen(function* () {
+        while (true) {
+          const currentStatus = yield* status.get(sessionID)
+          const activeAssistant = yield* sessions
+            .findMessage(
+              sessionID,
+              (item) => item.info.role === "assistant" && typeof item.info.time.completed !== "number",
+            )
+            .pipe(Effect.orDie)
+          if (currentStatus.type !== "idle" || Option.isSome(activeAssistant)) {
+            yield* elog.info("inbox drain deferred", {
+              sessionID,
+              source: "session-input",
+              reason: currentStatus.type !== "idle" ? "busy" : "active-assistant",
+            })
+            return
+          }
+
+          const materialized = yield* promoteInbox(sessionID)
+          if (materialized === 0) return
+          yield* elog.info("inbox loop started", {
+            sessionID,
+            source: "session-input",
+            reason: "idle-drain",
+          })
+          const exit = yield* state
+            .ensureRunning(sessionID, lastAssistant(sessionID), runLoop(sessionID))
+            .pipe(Effect.exit)
+          if (Exit.isFailure(exit)) {
+            yield* elog.warn("inbox loop failed; pending notifications retained", {
+              sessionID,
+              source: "session-input",
+              reason: Cause.pretty(exit.cause),
+            })
+          }
+        }
+      }).pipe(Effect.ensuring(Effect.sync(() => data.draining.delete(sessionID))))
+    })
+
+    const ensureInboxRecovery = Effect.fn("SessionPrompt.ensureInboxRecovery")(function* (exclude?: SessionID) {
+      const data = yield* InstanceState.get(inboxRecovery)
+      if (data.initialized) return
+      data.initialized = true
+      const sessionsWithPending = yield* inbox.pendingSessions()
+      yield* elog.info("inbox recovery pending sessions", {
+        source: "session-input",
+        count: sessionsWithPending.length,
+      })
+      for (const sessionID of sessionsWithPending) {
+        if (sessionID === exclude) continue
+        yield* sessions.finalizeOrphanedAssistant(sessionID, {}).pipe(Effect.ignore)
+        yield* requestDrain(sessionID).pipe(
+          Effect.catchCause((cause) =>
+            elog.error("inbox recovery failed", {
+              sessionID,
+              source: "session-input",
+              reason: Cause.pretty(cause),
+            }),
+          ),
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+      }
+    })
+
+    yield* Effect.gen(function* () {
+      const ctx = yield* InstanceState.context
+      yield* Effect.logInfo("initializing session input recovery").pipe(Effect.annotateLogs("directory", ctx.directory))
+      yield* ensureInboxRecovery()
+    }).pipe(Effect.forkIn(scope, { startImmediately: true }))
+
     const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
       yield* ensureBackgroundShellSubscription()
+      yield* ensureInboxRecovery(input.sessionID)
       const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       if (session.time.archived) {
         yield* elog.warn("prompt called on archived session — returning last assistant", {
@@ -1756,6 +1944,10 @@ export const layer = Layer.effect(
         }
       }
       yield* revert.cleanup(session)
+      // Materialize notifications before the real user message so the user
+      // remains the trigger/latest input for this turn.  The inbox rows are
+      // acknowledged only after their message and part are durable.
+      yield* promoteInbox(input.sessionID)
       const message = yield* createUserMessage(input)
       yield* sessions.touch(input.sessionID)
       yield* elog.info("prompt message written", {
@@ -2232,7 +2424,10 @@ export const layer = Layer.effect(
       input: LoopInput,
     ) {
       yield* ensureBackgroundShellSubscription()
-      return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+      yield* ensureInboxRecovery()
+      return yield* state
+        .ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+        .pipe(Effect.ensuring(requestDrain(input.sessionID)))
     })
 
     const backgroundShellMessage = (info: BackgroundShell.Info) => {
@@ -2257,28 +2452,6 @@ export const layer = Layer.effect(
       ].join("\n")
     }
 
-    const resumeWhenIdle: (input: {
-      sessionID: SessionID
-      userID: MessageID
-      state: "completed" | "error"
-      description: string
-    }) => Effect.Effect<void> = Effect.fn("SessionPrompt.resumeBackgroundShellWhenIdle")(function* (input) {
-      const latest = yield* sessions.findMessage(input.sessionID, (item) => item.info.role === "user").pipe(Effect.orDie)
-      if (Option.isNone(latest)) return
-      if (latest.value.info.id !== input.userID) return
-      const activeAssistant = yield* sessions
-        .findMessage(
-          input.sessionID,
-          (item) => item.info.role === "assistant" && typeof item.info.time.completed !== "number",
-        )
-        .pipe(Effect.orDie)
-      if ((yield* status.get(input.sessionID)).type !== "idle" || Option.isSome(activeAssistant)) {
-        yield* Effect.sleep("300 millis")
-        return yield* resumeWhenIdle(input)
-      }
-      yield* loop({ sessionID: input.sessionID }).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
-    })
-
     const injectBackgroundShellExit = Effect.fn("SessionPrompt.injectBackgroundShellExit")(function* (
       info: BackgroundShell.Info,
     ) {
@@ -2286,44 +2459,55 @@ export const layer = Layer.effect(
       if (info.status === "stopped") return
       const parent = yield* sessions.get(info.sessionID).pipe(Effect.option)
       if (Option.isNone(parent)) return
-      const message = yield* prompt({
-        sessionID: info.sessionID,
-        noReply: true,
-        agent: parent.value.agent,
-        parts: [
-          {
-            type: "text",
-            synthetic: true,
-            text: backgroundShellMessage(info),
-            metadata: {
-              kind: "background-shell-injection",
-              description: info.description ?? info.command,
-              state: info.status === "completed" ? "completed" : "error",
-            },
-          },
-        ],
-      })
       const state = info.status === "completed" ? "completed" : "error"
-      yield* resumeWhenIdle({
+      const messageID = MessageID.ascending(`msg_${info.id}_${state}_${info.endedAt ?? ""}`)
+      const model = parent.value.model
+        ? {
+            providerID: parent.value.model.providerID,
+            modelID: parent.value.model.id,
+            ...(parent.value.model.variant ? { variant: parent.value.model.variant } : {}),
+          }
+        : yield* currentModel(info.sessionID)
+      yield* inbox.admit({
+        id: messageID,
         sessionID: info.sessionID,
-        userID: message.info.id,
+        source: "background-shell",
+        prompt: {
+          text: backgroundShellMessage(info),
+          agent: parent.value.agent,
+          model,
+          metadata: {
+            kind: "background-shell-injection",
+            description: info.description ?? info.command,
+            state,
+          },
+        },
+      })
+      yield* elog.info("background shell notification admitted", {
+        sessionID: info.sessionID,
+        inputID: messageID,
+        source: "background-shell",
         state,
-        description: info.description ?? info.command,
-      }).pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }))
+      })
+      yield* requestDrain(info.sessionID)
     })
 
     const backgroundShellSubscriptions = new Set<string>()
-    const ensureBackgroundShellSubscription = Effect.fn("SessionPrompt.ensureBackgroundShellSubscription")(function* () {
-      const ctx = yield* InstanceState.context
-      if (backgroundShellSubscriptions.has(ctx.directory)) return
-      backgroundShellSubscriptions.add(ctx.directory)
-      const backgroundShellEvents = yield* Scope.provide(scope)(bus.subscribe(BackgroundShell.Event.Exited))
-      yield* Stream.runForEach(backgroundShellEvents, (event) => injectBackgroundShellExit(event.properties.info)).pipe(
-        Effect.ignore,
-        Effect.ensuring(Effect.sync(() => backgroundShellSubscriptions.delete(ctx.directory))),
-        Effect.forkIn(scope),
-      )
-    })
+    const ensureBackgroundShellSubscription = Effect.fn("SessionPrompt.ensureBackgroundShellSubscription")(
+      function* () {
+        const ctx = yield* InstanceState.context
+        if (backgroundShellSubscriptions.has(ctx.directory)) return
+        backgroundShellSubscriptions.add(ctx.directory)
+        const backgroundShellEvents = yield* Scope.provide(scope)(bus.subscribe(BackgroundShell.Event.Exited))
+        yield* Stream.runForEach(backgroundShellEvents, (event) =>
+          injectBackgroundShellExit(event.properties.info),
+        ).pipe(
+          Effect.ignore,
+          Effect.ensuring(Effect.sync(() => backgroundShellSubscriptions.delete(ctx.directory))),
+          Effect.forkIn(scope),
+        )
+      },
+    )
 
     const shell: (input: ShellInput) => Effect.Effect<MessageV2.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
@@ -2521,6 +2705,7 @@ export const defaultLayer = Layer.suspend(() =>
         Reference.defaultLayer,
         Question.defaultLayer,
         ProjectTask.defaultLayer,
+        SessionInput.defaultLayer,
         BackgroundShell.defaultLayer,
         Bus.layer,
         CrossSpawnSpawner.defaultLayer,

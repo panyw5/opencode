@@ -68,6 +68,7 @@ import { Reference } from "@/reference/reference"
 import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { SessionStatus } from "@/session/status"
+import { SessionInput } from "@/session/input"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import {
   ScheduledTaskCreateTool,
@@ -132,6 +133,7 @@ export const layer: Layer.Layer<
   | Format.Service
   | Truncate.Service
   | RuntimeFlags.Service
+  | SessionInput.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -308,42 +310,42 @@ export const layer: Layer.Layer<
         })
 
         const builtin = [
-            tool.invalid,
-            ...(questionEnabled ? [tool.question] : []),
-            tool.shell,
-            tool.read,
-            tool.glob,
-            tool.grep,
-            tool.edit,
-            tool.write,
-            tool.task,
-            tool.task_list,
-            tool.task_transcript,
-            tool.fetch,
-            tool.todo,
-            tool.project_task_create,
-            tool.project_task_list,
-            tool.project_task_get,
-            tool.project_task_mount,
-            tool.project_task_update,
-            tool.scheduled_task_create,
-            tool.scheduled_task_list,
-            tool.scheduled_task_get,
-            tool.scheduled_task_update,
-            tool.scheduled_task_delete,
-            tool.scheduled_task_run_now,
-            tool.scheduled_task_runs,
-            tool.search,
-            ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
-            tool.codex_consult,
-            tool.claude_consult,
-            tool.grok_consult,
-            tool.dsh_consult,
-            tool.skill,
-            tool.patch,
-            ...(flags.experimentalLspTool ? [tool.lsp] : []),
-            ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
-          ]
+          tool.invalid,
+          ...(questionEnabled ? [tool.question] : []),
+          tool.shell,
+          tool.read,
+          tool.glob,
+          tool.grep,
+          tool.edit,
+          tool.write,
+          tool.task,
+          tool.task_list,
+          tool.task_transcript,
+          tool.fetch,
+          tool.todo,
+          tool.project_task_create,
+          tool.project_task_list,
+          tool.project_task_get,
+          tool.project_task_mount,
+          tool.project_task_update,
+          tool.scheduled_task_create,
+          tool.scheduled_task_list,
+          tool.scheduled_task_get,
+          tool.scheduled_task_update,
+          tool.scheduled_task_delete,
+          tool.scheduled_task_run_now,
+          tool.scheduled_task_runs,
+          tool.search,
+          ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
+          tool.codex_consult,
+          tool.claude_consult,
+          tool.grok_consult,
+          tool.dsh_consult,
+          tool.skill,
+          tool.patch,
+          ...(flags.experimentalLspTool ? [tool.lsp] : []),
+          ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+        ]
         log.info("builtin tools initialized", { ids: builtin.map((item) => item.id) })
 
         return {
@@ -465,7 +467,14 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(Skill.defaultLayer),
       Layer.provide(Agent.defaultLayer),
       Layer.provide(Session.defaultLayer),
-      Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundShell.defaultLayer)),
+      Layer.provide(
+        Layer.mergeAll(
+          SessionStatus.defaultLayer,
+          BackgroundJob.defaultLayer,
+          BackgroundShell.defaultLayer,
+          SessionInput.defaultLayer,
+        ),
+      ),
       Layer.provide(Provider.defaultLayer),
       Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
       Layer.provide(Reference.defaultLayer),
