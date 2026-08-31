@@ -11,6 +11,19 @@ export function groupSessionTabs<T>(
   keyOf: (tab: T) => string,
   parentKeyOf: (tab: T) => string | undefined,
 ): SessionTabGroup<T>[] {
+  const seenKeys = new Set<string>()
+  const duplicateKeys = new Set<string>()
+  for (const tab of tabs) {
+    const key = keyOf(tab)
+    if (seenKeys.has(key)) duplicateKeys.add(key)
+    seenKeys.add(key)
+  }
+  if (duplicateKeys.size > 0) {
+    console.debug(
+      `[session-tab-groups] duplicate keys detected count=${duplicateKeys.size} keys=${[...duplicateKeys].join(",")}`,
+    )
+  }
+
   const byKey = new Map(tabs.map((tab) => [keyOf(tab), tab] as const))
 
   const resolved = tabs.map((tab) => {

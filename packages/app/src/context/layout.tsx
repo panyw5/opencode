@@ -47,7 +47,41 @@ export type SessionBarTab = {
   parentID?: string | null
 }
 
-export const sessionBarKey = (tab: Pick<SessionBarTab, "directory" | "id">) => `${workspaceKey(tab.directory)}:${tab.id}`
+const sessionBarDirectoryKey = (directory: string) =>
+  workspaceKey(directory).replace(/^\/private(?=\/(?:tmp|var)(?:\/|$))/, "")
+
+export const sessionBarKey = (tab: Pick<SessionBarTab, "directory" | "id">) =>
+  `${sessionBarDirectoryKey(tab.directory)}:${tab.id}`
+
+/** Keep one renderable/persisted entry for each logical session. */
+export function dedupeSessionBarTabs(tabs: readonly SessionBarTab[]) {
+  const result: SessionBarTab[] = []
+  const indexes = new Map<string, number>()
+  let changed = false
+
+  for (const tab of tabs) {
+    const key = sessionBarKey(tab)
+    const index = indexes.get(key)
+    if (index === undefined) {
+      indexes.set(key, result.length)
+      result.push(tab)
+      continue
+    }
+
+    changed = true
+    const previous = result[index]
+    result[index] = {
+      ...previous,
+      title: tab.title ?? previous.title,
+      parentID: tab.parentID === undefined ? previous.parentID : tab.parentID,
+    }
+  }
+
+  if (changed) {
+    console.debug(`[session-bar] dedupe tabs before=${tabs.length} after=${result.length}`)
+  }
+  return changed ? result : [...tabs]
+}
 
 export function addSessionBarDraft(drafts: readonly string[], directory: string) {
   if (!directory || drafts.some((item) => workspaceKey(item) === workspaceKey(directory))) return [...drafts]
@@ -268,11 +302,29 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         return next
       })()
 
+      const sessionBar = value.sessionBar
+      const migratedSessionBar = (() => {
+        if (!isRecord(sessionBar) || !Array.isArray(sessionBar.all)) return sessionBar
+
+        const valid = sessionBar.all.filter(
+          (tab): tab is SessionBarTab =>
+            isRecord(tab) && typeof tab.directory === "string" && !!tab.directory && typeof tab.id === "string" && !!tab.id,
+        )
+        const all = dedupeSessionBarTabs(valid)
+        if (valid.length === sessionBar.all.length && same(valid, all)) return sessionBar
+
+        console.debug(
+          `[session-bar] migrate persisted tabs before=${sessionBar.all.length} after=${all.length} invalid=${sessionBar.all.length - valid.length}`,
+        )
+        return { ...sessionBar, all }
+      })()
+
       if (
         migratedSidebar === sidebar &&
         migratedReview === review &&
         migratedFileTree === fileTree &&
-        migratedSessionTabs === sessionTabs
+        migratedSessionTabs === sessionTabs &&
+        migratedSessionBar === sessionBar
       ) {
         return value
       }
@@ -283,6 +335,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         review: migratedReview,
         fileTree: migratedFileTree,
         sessionTabs: migratedSessionTabs,
+        sessionBar: migratedSessionBar,
       }
     }
 
@@ -419,6 +472,16 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     })
 
     const ensureKey = (key: string) => ensureSessionKey(key, touch, (sessionKey) => scroll.seed(sessionKey))
+
+    createEffect(() => {
+      if (!ready()) return
+      const current = store.sessionBar?.all
+      if (!current) return
+      const normalized = dedupeSessionBarTabs(current)
+      if (same(current, normalized)) return
+      console.debug(`[session-bar] runtime repair duplicate tabs before=${current.length} after=${normalized.length}`)
+      setStore("sessionBar", "all", normalized)
+    })
 
     createEffect(() => {
       if (!ready()) return
@@ -724,32 +787,34 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       },
       sessionBar: {
-        all: createMemo(() => store.sessionBar?.all ?? []),
+        all: createMemo(() => dedupeSessionBarTabs(store.sessionBar?.all ?? [])),
         drafts: createMemo(() => store.sessionBar?.drafts ?? []),
         /** Open (or focus) a session tab. Dedupes by directory+id, appends to the end. */
         open(directory: string, id: string, title?: string, parentID?: string | null) {
-          const key = workspaceKey(directory)
-          const existing = (store.sessionBar?.all ?? []).find(
-            (tab) => tab.id === id && workspaceKey(tab.directory) === key,
-          )
-          if (existing) {
-            if ((title && existing.title !== title) || (parentID !== undefined && existing.parentID !== parentID)) {
-              setStore("sessionBar", "all", (prev) =>
-                (prev ?? []).map((tab) =>
-                  sessionBarKey(tab) === sessionBarKey(existing)
+          setStore("sessionBar", "all", (prev) => {
+            const before = prev ?? []
+            const current = dedupeSessionBarTabs(before)
+            const key = sessionBarKey({ directory, id })
+            const existing = current.find((tab) => sessionBarKey(tab) === key)
+            if (existing) {
+              if (
+                title && existing.title !== title ||
+                parentID !== undefined && existing.parentID !== parentID
+              ) {
+                return current.map((tab) =>
+                  sessionBarKey(tab) === key
                     ? {
                         ...tab,
                         title: title ?? tab.title,
                         parentID: parentID === undefined ? tab.parentID : parentID,
                       }
                     : tab,
-                ),
-              )
+                )
+              }
+              return current
             }
-            return
-          }
-          setStore("sessionBar", "all", (prev) => {
-            const next = [...(prev ?? []), { directory, id, title, parentID }]
+
+            const next = [...current, { directory, id, title, parentID }]
             if (next.length <= MAX_SESSION_BAR_TABS) return next
             // Bound the strip: drop the oldest (leftmost) tabs.
             return next.slice(next.length - MAX_SESSION_BAR_TABS)

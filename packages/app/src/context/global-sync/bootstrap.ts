@@ -145,6 +145,33 @@ function groupBySession<T extends { id: string; sessionID: string }>(input: T[])
   }, {})
 }
 
+function flattenRequests<T extends { id: string }>(input: Record<string, T[]>) {
+  return Object.values(input).flatMap((items) => items ?? [])
+}
+
+export function mergePermissionRefresh(
+  base: Record<string, PermissionRequest[]>,
+  current: Record<string, PermissionRequest[]>,
+  remote: PermissionRequest[],
+) {
+  const baseIDs = new Set(flattenRequests(base).map((item) => item.id))
+  const currentByID = new Map(flattenRequests(current).map((item) => [item.id, item]))
+  const remoteByID = new Map(remote.map((item) => [item.id, item]))
+
+  // The list response is a snapshot taken after the request started. Preserve
+  // additions and removals delivered by the event stream while it was in flight.
+  for (const [id, item] of currentByID) {
+    if (baseIDs.has(id)) continue
+    remoteByID.set(id, item)
+  }
+  for (const id of baseIDs) {
+    if (currentByID.has(id)) continue
+    remoteByID.delete(id)
+  }
+
+  return groupBySession([...remoteByID.values()])
+}
+
 function projectID(directory: string, projects: Project[]) {
   return projectOwner(directory, projects)?.project.id
 }
@@ -222,29 +249,39 @@ export async function bootstrapDirectory(input: {
     () => retry(() => input.sdk.app.agents().then((x) => input.setStore("agent", x.data ?? []))),
     () => retry(() => input.sdk.command.list().then((x) => input.setStore("command", x.data ?? []))),
     () =>
-      retry(() =>
-        input.sdk.permission.list().then((x) => {
-          const grouped = groupBySession(
-            (x.data ?? []).filter((perm): perm is PermissionRequest => !!perm?.id && !!perm.sessionID),
-          )
-          batch(() => {
-            for (const sessionID of Object.keys(input.store.permission)) {
-              if (grouped[sessionID]) continue
-              input.setStore("permission", sessionID, [])
-            }
-            for (const [sessionID, permissions] of Object.entries(grouped)) {
-              input.setStore(
-                "permission",
-                sessionID,
-                reconcile(
-                  permissions.filter((p) => !!p?.id).sort((a, b) => cmp(a.id, b.id)),
-                  { key: "id" },
-                ),
-              )
-            }
-          })
-        }),
-      ),
+      retry(async () => {
+        const base = Object.fromEntries(
+          Object.entries(input.store.permission).map(([sessionID, items]) => [sessionID, [...(items ?? [])]]),
+        )
+        const baseCount = flattenRequests(base).length
+        console.debug(`[permission-sync] refresh start directory=${input.directory} base=${baseCount}`)
+        const x = await input.sdk.permission.list()
+        const remote = (x.data ?? []).filter(
+          (perm): perm is PermissionRequest => !!perm?.id && !!perm.sessionID,
+        )
+        const currentCount = flattenRequests(input.store.permission).length
+        const grouped = mergePermissionRefresh(base, input.store.permission, remote)
+        const mergedCount = flattenRequests(grouped).length
+        console.debug(
+          `[permission-sync] refresh merge directory=${input.directory} base=${baseCount} remote=${remote.length} current=${currentCount} merged=${mergedCount}`,
+        )
+        batch(() => {
+          for (const sessionID of Object.keys(input.store.permission)) {
+            if (grouped[sessionID]) continue
+            input.setStore("permission", sessionID, [])
+          }
+          for (const [sessionID, permissions] of Object.entries(grouped)) {
+            input.setStore(
+              "permission",
+              sessionID,
+              reconcile(
+                permissions.filter((p) => !!p?.id).sort((a, b) => cmp(a.id, b.id)),
+                { key: "id" },
+              ),
+            )
+          }
+        })
+      }),
     () =>
       retry(() =>
         input.sdk.question.list().then((x) => {

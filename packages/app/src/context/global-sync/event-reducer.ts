@@ -375,13 +375,20 @@ export function applyDirectoryEvent(input: {
     case "permission.asked": {
       const permission = event.properties as PermissionRequest
       const permissions = input.store.permission[permission.sessionID]
+      console.debug(
+        `[permission-sync] event asked session=${permission.sessionID} request=${permission.id} existing=${permissions?.length ?? 0}`,
+      )
       if (!permissions) {
         input.setStore("permission", permission.sessionID, [permission])
+        console.debug(`[permission-sync] event asked inserted session=${permission.sessionID} request=${permission.id} index=0`)
         break
       }
       const result = Binary.search(permissions, permission.id, (p) => p.id)
       if (result.found) {
         input.setStore("permission", permission.sessionID, result.index, reconcile(permission))
+        console.debug(
+          `[permission-sync] event asked updated session=${permission.sessionID} request=${permission.id} index=${result.index}`,
+        )
         break
       }
       input.setStore(
@@ -391,14 +398,26 @@ export function applyDirectoryEvent(input: {
           draft.splice(result.index, 0, permission)
         }),
       )
+      console.debug(
+        `[permission-sync] event asked inserted session=${permission.sessionID} request=${permission.id} index=${result.index}`,
+      )
       break
     }
     case "permission.replied": {
       const props = event.properties as { sessionID: string; requestID: string }
       const permissions = input.store.permission[props.sessionID]
-      if (!permissions) break
+      console.debug(
+        `[permission-sync] event replied session=${props.sessionID} request=${props.requestID} existing=${permissions?.length ?? 0}`,
+      )
+      if (!permissions) {
+        console.debug(`[permission-sync] event replied skipped session=${props.sessionID} request=${props.requestID}`)
+        break
+      }
       const result = Binary.search(permissions, props.requestID, (p) => p.id)
-      if (!result.found) break
+      if (!result.found) {
+        console.debug(`[permission-sync] event replied missing session=${props.sessionID} request=${props.requestID}`)
+        break
+      }
       if (permissions.length === 1) {
         input.setStore(
           "permission",
@@ -406,6 +425,7 @@ export function applyDirectoryEvent(input: {
             delete draft[props.sessionID]
           }),
         )
+        console.debug(`[permission-sync] event replied removed session=${props.sessionID} request=${props.requestID} remaining=0`)
         break
       }
       input.setStore(
@@ -414,6 +434,9 @@ export function applyDirectoryEvent(input: {
         produce((draft) => {
           draft.splice(result.index, 1)
         }),
+      )
+      console.debug(
+        `[permission-sync] event replied removed session=${props.sessionID} request=${props.requestID} remaining=${permissions.length}`,
       )
       break
     }
