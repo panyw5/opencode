@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router"
-import { useCommand, type CommandOption } from "@/context/command"
+import { useCommand, type CommandOption, type CommandSource } from "@/context/command"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { useFile, selectionFromLines, type FileSelection, type SelectedLineRange } from "@/context/file"
@@ -28,7 +28,7 @@ import { compareMessages, resolveMessage } from "@/utils/message-order"
 import { dict as enDict } from "@/i18n/en"
 import { working as sessionWorking } from "./session-working"
 import { SESSION_HOOK_CONTROL_COMMANDS, sessionHookControlInput } from "./session-hook-controls"
-import { resolveNewSessionDirectory } from "@/pages/layout/helpers"
+import { resolveNewSessionDirectory, shouldPreferSidebarForNewSession } from "@/pages/layout/helpers"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -85,11 +85,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const closableTab = tabState.closableTab
 
   const projectDirectory = () => decode64(params.dir) ?? ""
-  const newSessionDirectory = () =>
+  const newSessionDirectory = (source?: CommandSource) =>
     resolveNewSessionDirectory({
       sessionDirectory: info()?.directory,
       routeDirectory: sdk.directory || projectDirectory(),
       sidebarDirectory: layout.sidebar.project(),
+      preferSidebar: shouldPreferSidebarForNewSession(source, layout.sidebar.opened()),
     })
 
   const idle = { type: "idle" as const }
@@ -268,10 +269,11 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         keywords: kw("command.session.new"),
         keybind: "mod+shift+s",
         slash: "new",
-        onSelect: () => {
-          const directory = newSessionDirectory()
+        onSelect: (source) => {
+          const sidebarOpened = layout.sidebar.opened()
+          const directory = newSessionDirectory(source)
           console.debug(
-            `[session-new] source=session-command session=${params.id || "none"} session-directory=${info()?.directory || "none"} sdk-directory=${sdk.directory || "none"} route-directory=${projectDirectory() || "none"} sidebar-project=${layout.sidebar.project() || "none"} target=${directory || "none"}`,
+            `[session-new] source=${source ?? "session-command"} session=${params.id || "none"} session-directory=${info()?.directory || "none"} sdk-directory=${sdk.directory || "none"} route-directory=${projectDirectory() || "none"} sidebar-project=${layout.sidebar.project() || "none"} sidebar-opened=${sidebarOpened} prefer-sidebar=${shouldPreferSidebarForNewSession(source, sidebarOpened)} target=${directory || "none"}`,
           )
           if (!directory) return
           navigate(`/${base64Encode(directory)}/session`)

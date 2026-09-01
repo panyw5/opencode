@@ -43,6 +43,7 @@ import {
   workspaceKey,
   workspacePathAliases,
   sameWorkspacePath,
+  shouldPreferSidebarForNewSession,
 } from "./helpers"
 import { projectSelected } from "./sidebar-project-helpers"
 import type { Project } from "@opencode-ai/sdk/v2"
@@ -59,12 +60,41 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
   }) as Session
 
 describe("new session directory", () => {
+  test("prefers the sidebar for renderer and native-menu shortcuts only while it is open", () => {
+    expect(shouldPreferSidebarForNewSession("keybind", true)).toBe(true)
+    expect(shouldPreferSidebarForNewSession("menu", true)).toBe(true)
+    expect(shouldPreferSidebarForNewSession("slash", true)).toBe(false)
+    expect(shouldPreferSidebarForNewSession("palette", true)).toBe(false)
+    expect(shouldPreferSidebarForNewSession("menu", false)).toBe(false)
+  })
+
+  test("uses the open sidebar project for the new session shortcut", () => {
+    expect(
+      resolveNewSessionDirectory({
+        sessionDirectory: "/projects/current/worktree",
+        routeDirectory: "/projects/current",
+        sidebarDirectory: "/projects/selected",
+        preferSidebar: true,
+      }),
+    ).toBe("/projects/selected")
+  })
+
   test("keeps /new in the current session location instead of the selected sidebar project", () => {
     expect(
       resolveNewSessionDirectory({
         sessionDirectory: "/projects/current/worktree",
         routeDirectory: "/projects/current",
         sidebarDirectory: "/projects/other",
+      }),
+    ).toBe("/projects/current/worktree")
+  })
+
+  test("falls back to the current session when sidebar preference has no selected project", () => {
+    expect(
+      resolveNewSessionDirectory({
+        sessionDirectory: "/projects/current/worktree",
+        routeDirectory: "/projects/current",
+        preferSidebar: true,
       }),
     ).toBe("/projects/current/worktree")
   })

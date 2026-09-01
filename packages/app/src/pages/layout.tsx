@@ -106,6 +106,7 @@ import {
   resolveNewSessionDirectory,
   resolveChannelDirectory,
   sessionByOneBasedIndex,
+  shouldPreferSidebarForNewSession,
   sortedProjectSessions,
   sameWorkspacePath,
   sortedRootSessions,
@@ -1322,9 +1323,16 @@ export default function Layout(props: ParentProps) {
                   .session.find((session) => session.id === params.id)?.directory
               : undefined
           const sidebarDirectory = layout.sidebar.project()
-          const directory = resolveNewSessionDirectory({ sessionDirectory, routeDirectory, sidebarDirectory })
+          const sidebarOpened = layout.sidebar.opened()
+          const preferSidebar = shouldPreferSidebarForNewSession(source, sidebarOpened)
+          const directory = resolveNewSessionDirectory({
+            sessionDirectory,
+            routeDirectory,
+            sidebarDirectory,
+            preferSidebar,
+          })
           console.debug(
-            `[session-new] source=${source ?? "unknown"} route=${location.pathname} session=${params.id || "none"} session-directory=${sessionDirectory || "none"} route-directory=${routeDirectory || "none"} sidebar-project=${sidebarDirectory || "none"} target=${directory || "none"}`,
+            `[session-new] source=${source ?? "unknown"} route=${location.pathname} session=${params.id || "none"} session-directory=${sessionDirectory || "none"} route-directory=${routeDirectory || "none"} sidebar-project=${sidebarDirectory || "none"} sidebar-opened=${sidebarOpened} prefer-sidebar=${preferSidebar} target=${directory || "none"}`,
           )
           if (!directory) return
           navigateWithSidebarReset(`/${base64Encode(directory)}/session`)

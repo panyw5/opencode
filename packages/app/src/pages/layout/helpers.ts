@@ -1,5 +1,6 @@
 import { getFilename } from "@opencode-ai/core/util/path"
 import { type Message, type PermissionRequest, type Session, type SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { CommandSource } from "@/context/command"
 import { working } from "../session/session-working"
 
 type SessionStore = {
@@ -85,8 +86,14 @@ export function resolveNewSessionDirectory(input: {
   sessionDirectory?: string
   routeDirectory?: string
   sidebarDirectory?: string
+  preferSidebar?: boolean
 }) {
+  if (input.preferSidebar && input.sidebarDirectory) return input.sidebarDirectory
   return input.sessionDirectory || input.routeDirectory || input.sidebarDirectory
+}
+
+export function shouldPreferSidebarForNewSession(source: CommandSource | undefined, sidebarOpened: boolean) {
+  return sidebarOpened && (source === "keybind" || source === "menu")
 }
 
 export function projectOwner<T extends ProjectOwnerInput>(directory: string | undefined, projects: T[]) {

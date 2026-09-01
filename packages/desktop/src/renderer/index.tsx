@@ -594,7 +594,7 @@ render(() => {
 
   function Inner() {
     const cmd = useCommand()
-    menuTrigger = (id) => cmd.trigger(id)
+    menuTrigger = (id) => cmd.trigger(id, "menu")
 
     const theme = useTheme()
 

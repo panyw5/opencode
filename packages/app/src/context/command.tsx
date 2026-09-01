@@ -102,6 +102,8 @@ export interface Keybind {
   alt: boolean
 }
 
+export type CommandSource = "palette" | "keybind" | "slash" | "menu"
+
 export interface CommandOption {
   id: string
   title: string
@@ -112,11 +114,9 @@ export interface CommandOption {
   slash?: string
   suggested?: boolean
   disabled?: boolean
-  onSelect?: (source?: "palette" | "keybind" | "slash") => void
+  onSelect?: (source?: CommandSource) => void
   onHighlight?: () => (() => void) | void
 }
-
-type CommandSource = "palette" | "keybind" | "slash"
 
 export type CommandCatalogItem = {
   title: string
