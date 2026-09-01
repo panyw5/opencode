@@ -123,7 +123,12 @@ export function SessionMathInitializeDialog(props: {
       >
         <div class="grid gap-4 md:grid-cols-2">
           <div class="flex min-w-0 flex-col gap-2">
-            <label class="text-12-medium text-text-weak">{language.t("session.mathInitialize.model")}</label>
+            <div class="flex items-center gap-1.5">
+              <label class="text-12-medium text-text-weak">{language.t("session.mathInitialize.model")}</label>
+              <Tooltip placement="top" value={language.t("session.mathInitialize.model.description")}>
+                <Icon name="circle-exclamation" size="small" class="text-icon-info-base" aria-hidden="true" />
+              </Tooltip>
+            </div>
             <ModelSelectorPopover
               model={workerModel}
               triggerAs={Button}
@@ -146,10 +151,16 @@ export function SessionMathInitializeDialog(props: {
               </div>
               <Icon name="chevron-down" size="small" class="shrink-0 text-text-weak" />
             </ModelSelectorPopover>
-            <p class="text-11-regular text-text-weak">{language.t("session.mathInitialize.model.description")}</p>
           </div>
           <div class="flex min-w-0 flex-col gap-2">
-            <label class="text-12-medium text-text-weak">{language.t("session.mathInitialize.verifierModel")}</label>
+            <div class="flex items-center gap-1.5">
+              <label class="text-12-medium text-text-weak">
+                {language.t("session.mathInitialize.verifierModel")}
+              </label>
+              <Tooltip placement="top" value={language.t("session.mathInitialize.verifierModel.description")}>
+                <Icon name="circle-exclamation" size="small" class="text-icon-info-base" aria-hidden="true" />
+              </Tooltip>
+            </div>
             <ModelSelectorPopover
               model={verifierModel}
               triggerAs={Button}
@@ -172,9 +183,6 @@ export function SessionMathInitializeDialog(props: {
               </div>
               <Icon name="chevron-down" size="small" class="shrink-0 text-text-weak" />
             </ModelSelectorPopover>
-            <p class="text-11-regular text-text-weak">
-              {language.t("session.mathInitialize.verifierModel.description")}
-            </p>
           </div>
           <div class="md:col-span-2">
             <div class="flex flex-col gap-2">

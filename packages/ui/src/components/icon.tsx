@@ -28,6 +28,7 @@ const icons = {
   "chevron-grabber-vertical": `<path d="M6.66675 12.4998L10.0001 15.8332L13.3334 12.4998M6.66675 7.49984L10.0001 4.1665L13.3334 7.49984" stroke="currentColor" stroke-linecap="square"/>`,
   "chevron-double-right": `<path d="M11.6654 13.3346L14.9987 10.0013L11.6654 6.66797M5.83203 13.3346L9.16536 10.0013L5.83203 6.66797" stroke="currentColor" stroke-linecap="square"/>`,
   "circle-x": `<path fill-rule="evenodd" clip-rule="evenodd" d="M1.6665 10.0003C1.6665 5.39795 5.39746 1.66699 9.99984 1.66699C14.6022 1.66699 18.3332 5.39795 18.3332 10.0003C18.3332 14.6027 14.6022 18.3337 9.99984 18.3337C5.39746 18.3337 1.6665 14.6027 1.6665 10.0003ZM7.49984 6.91107L6.91058 7.50033L9.41058 10.0003L6.91058 12.5003L7.49984 13.0896L9.99984 10.5896L12.4998 13.0896L13.0891 12.5003L10.5891 10.0003L13.0891 7.50033L12.4998 6.91107L9.99984 9.41107L7.49984 6.91107Z" fill="currentColor"/>`,
+  "circle-exclamation": `<circle cx="10" cy="10" r="8" stroke="currentColor" stroke-width="1.25"/><path d="M10 6.25V11.25" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/><circle cx="10" cy="14" r="0.75" fill="currentColor"/>`,
   close: `<path d="M3.75 3.75L16.25 16.25M16.25 3.75L3.75 16.25" stroke="currentColor" stroke-linecap="square"/>`,
   "close-small": `<path d="M6 6L14 14M14 6L6 14" stroke="currentColor" stroke-linecap="square"/>`,
   checklist: `<path d="M9.58342 13.7498H17.0834M9.58342 6.24984H17.0834M2.91675 6.6665L4.58341 7.9165L7.08341 4.1665M2.91675 14.1665L4.58341 15.4165L7.08341 11.6665" stroke="currentColor" stroke-linecap="square"/>`,
