@@ -682,6 +682,20 @@ describe("orphaned assistant recovery", () => {
 })
 
 describe("session archive state", () => {
+  it.instance("can create an archived session atomically", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const info = yield* session.create({ title: "internal", archived: true })
+
+      expect(info.time.archived).toBe(info.time.created)
+      expect((yield* session.get(info.id)).time.archived).toBe(info.time.created)
+      expect((yield* session.list({ roots: true })).map((item) => item.id)).not.toContain(info.id)
+      expect((yield* session.list({ roots: true, archived: true })).map((item) => item.id)).toContain(info.id)
+
+      yield* session.remove(info.id)
+    }),
+  )
+
   it.instance("can clear archived time with null", () =>
     Effect.gen(function* () {
       const session = yield* SessionNs.Service

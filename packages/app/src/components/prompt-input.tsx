@@ -92,8 +92,9 @@ interface PromptInputProps {
   onEditLoaded?: () => void
   shouldQueue?: () => boolean
   onQueue?: (draft: FollowupDraft) => void
-  onAbort?: () => void
-  onSubmit?: () => void
+  onAbort?: () => void | Promise<void>
+  onSubmit?: (sessionID: string) => void
+  onSubmitFailed?: (sessionID: string) => void
   onSubmitted?: () => void
   onScrollToBottom?: () => void
   scrollState?: { overflow: boolean; bottom: boolean }
@@ -1041,7 +1042,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         display: item.display,
       })),
   )
-  const agentNames = createMemo(() => local.agent.list().map((agent) => agent.name))
+  const lockedAgent = createMemo(() => local.agent.locked()?.name)
+  const agentNames = createMemo(() => {
+    const locked = lockedAgent()
+    if (locked) return [locked]
+    return local.agent.list().map((agent) => agent.name)
+  })
   const genericAgentAtDirectory = createMemo(() => {
     if (extraAgentIntegration() !== "genericagent") return
     const sessionCwd = (info() as { cwd?: string } | undefined)?.cwd?.trim()
@@ -1783,10 +1789,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     shouldQueue: props.shouldQueue,
     onQueue: props.onQueue,
     onAbort: props.onAbort,
-    onSubmit: () => {
+    onSubmit: (sessionID) => {
       console.debug("[prompt-submit]", { stage: "submitting-set" })
       setStore("submitting", true)
-      props.onSubmit?.()
+      props.onSubmit?.(sessionID)
+    },
+    onSubmitFailed: (sessionID) => {
+      props.onSubmitFailed?.(sessionID)
     },
     onSubmitted: () => {
       setSubmit(true)
@@ -2242,7 +2251,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                 }
                               : undefined
                           }
-                          title={language.t("command.agent.cycle")}
+                          title={
+                            lockedAgent()
+                              ? language.t("session.mathMode.agentLocked")
+                              : language.t("command.agent.cycle")
+                          }
                           keybind={command.keybind("agent.cycle")}
                         >
                           <Select
@@ -2255,8 +2268,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             valueClass="truncate"
                             triggerStyle={control()}
                             variant="ghost"
-                            triggerProps={
-                              trace
+                            triggerProps={{
+                              disabled: !!lockedAgent(),
+                              "aria-label": lockedAgent()
+                                ? language.t("session.mathMode.agentLocked")
+                                : language.t("command.agent.cycle"),
+                              ...(trace
                                 ? {
                                     onPointerEnter: (e: PointerEvent) =>
                                       logPromptHover("agent-selector", "pointer-enter", e),
@@ -2266,8 +2283,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                     onBlur: () => logPromptHover("agent-selector", "blur"),
                                     onPointerDown: (e: PointerEvent) => uiPerfTriggerDown("agent-selector", e),
                                   }
-                                : undefined
-                            }
+                                : {}),
+                            }}
                             onOpenChange={
                               trace
                                 ? (open) => {

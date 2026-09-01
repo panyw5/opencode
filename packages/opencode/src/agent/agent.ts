@@ -13,6 +13,7 @@ import PROMPT_EXPLORE from "./prompt/explore.txt"
 import PROMPT_SCOUT from "./prompt/scout.txt"
 import PROMPT_SUMMARY from "./prompt/summary.txt"
 import PROMPT_TITLE from "./prompt/title.txt"
+import PROMPT_MATH_ORCHESTRATOR from "./prompt/math-orchestrator.txt"
 import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@opencode-ai/core/global"
@@ -25,6 +26,18 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { type DeepMutable } from "@opencode-ai/core/schema"
+
+const MATH_WORKER_SKILLS = [
+  "query-memory",
+  "obtain-immediate-conclusions",
+  "construct-toy-examples",
+  "construct-counterexamples",
+  "propose-subgoal-decomposition-plans",
+  "direct-proving",
+  "identify-key-failures",
+  "search-math-results",
+  "verify-proof",
+] as const
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -115,6 +128,14 @@ export const layer = Layer.effect(
           plan_exit: "deny",
           repo_clone: "deny",
           repo_overview: "deny",
+          math_worker_start: "deny",
+          math_worker_ensure: "deny",
+          math_worker_status: "deny",
+          math_worker_stop: "deny",
+          skill: {
+            "*": "allow",
+            ...Object.fromEntries(MATH_WORKER_SKILLS.map((name) => [name, "deny" as const])),
+          },
           // mirrors github.com/github/gitignore Node.gitignore pattern for .env files
           read: {
             "*": "allow",
@@ -282,6 +303,76 @@ export const layer = Layer.effect(
               user,
             ),
             prompt: PROMPT_SUMMARY,
+          },
+          "math-orchestrator": {
+            name: "math-orchestrator",
+            description:
+              "Math-mode orchestrator. Schedules detached math-workers and writes global memory. Cannot submit facts. Speculative work uses task; evidence work uses math_worker_start.",
+            options: {},
+            native: true,
+            mode: "primary",
+            hidden: true,
+            prompt: PROMPT_MATH_ORCHESTRATOR,
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                bash: "deny",
+                math_worker_start: "allow",
+                math_worker_ensure: "allow",
+                math_worker_status: "allow",
+                math_worker_stop: "allow",
+              }),
+              user,
+            ),
+          },
+          "math-worker": {
+            name: "math-worker",
+            description:
+              "Detached evidence-lane worker. Submits facts through the verifier gate. Cannot spawn nested tasks or run code.",
+            options: {},
+            native: true,
+            hidden: true,
+            mode: "subagent",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+                grep: "allow",
+                glob: "allow",
+                list: "allow",
+                read: "allow",
+                skill: "allow",
+                webfetch: "allow",
+                websearch: "allow",
+                "math-truth_gm_add": "allow",
+                "math-truth_gm_search": "allow",
+                "math-truth_fact_search": "allow",
+                "math-truth_fact_get": "allow",
+                "math-truth_fact_submit": "allow",
+                task: "deny",
+                bash: "deny",
+                math_worker_start: "deny",
+                math_worker_ensure: "deny",
+                math_worker_status: "deny",
+                math_worker_stop: "deny",
+              }),
+              user,
+            ),
+          },
+          "math-verifier": {
+            name: "math-verifier",
+            description: "Cold-start mathematical proof judge. Read-only and unable to submit facts or write memory.",
+            options: {},
+            native: true,
+            hidden: true,
+            mode: "subagent",
+            permission: Permission.merge(
+              defaults,
+              Permission.fromConfig({
+                "*": "deny",
+              }),
+              user,
+            ),
           },
         }
 

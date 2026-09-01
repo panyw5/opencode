@@ -355,8 +355,9 @@ type PromptSubmitInput = {
   onNewSessionWorktreeReset?: () => void
   shouldQueue?: Accessor<boolean>
   onQueue?: (draft: FollowupDraft) => void
-  onAbort?: () => void
-  onSubmit?: () => void
+  onAbort?: () => void | Promise<void>
+  onSubmit?: (sessionID: string) => void
+  onSubmitFailed?: (sessionID: string) => void
   onSubmitted?: () => void
 }
 
@@ -415,7 +416,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
     console.debug(`[abort] optimistic local state sessionID=${sessionID} msgCompleted=${optimisticTarget ?? "none"} dt=${performance.now() - t0}`)
 
-    input.onAbort?.()
+    try {
+      await input.onAbort?.()
+      console.debug(`[abort] pre-abort hook done sessionID=${sessionID} dt=${performance.now() - t0}`)
+    } catch (error) {
+      console.error(
+        `[abort] pre-abort hook failed sessionID=${sessionID} err=${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
 
     const queued = pending.get(sessionID)
     if (queued) {
@@ -804,7 +812,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    input.onSubmit?.()
+    input.onSubmit?.(session.id)
 
     if (mode === "shell") {
       clearInput()
@@ -816,6 +824,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           command: text,
         })
         .catch((err) => {
+          input.onSubmitFailed?.(session.id)
           showToast({
             title: language.t("prompt.toast.shellSendFailed.title"),
             description: errorMessage(err),
@@ -869,6 +878,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
               completeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
               return
             }
+            input.onSubmitFailed?.(session.id)
             removeOptimisticCommandMessage({ sync, directory: sessionDirectory, sessionID: session.id, messageID })
             showToast({
               title: language.t("prompt.toast.commandSendFailed.title"),
@@ -979,20 +989,26 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       messageID,
       optimisticBusy: sessionDirectory === currentDirectory,
       before: waitForWorktree,
-    }).catch((err) => {
-      if (aborted(err)) return
-      pending.delete(session.id)
-      if (sessionDirectory === currentDirectory) {
-        globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
-      }
-      showToast({
-        title: language.t("prompt.toast.promptSendFailed.title"),
-        description: errorMessage(err),
-      })
-      removeOptimisticMessage()
-      restoreCommentItems(commentItems)
-      restoreInput()
     })
+      .then((sent) => {
+        if (sent) return
+        input.onSubmitFailed?.(session.id)
+      })
+      .catch((err) => {
+        input.onSubmitFailed?.(session.id)
+        if (aborted(err)) return
+        pending.delete(session.id)
+        if (sessionDirectory === currentDirectory) {
+          globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
+        }
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+        })
+        removeOptimisticMessage()
+        restoreCommentItems(commentItems)
+        restoreInput()
+      })
   }
 
   return {

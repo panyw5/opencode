@@ -1,0 +1,1 @@
+Stop a detached math-worker and preserve a deliberate stop marker. By default, send SIGTERM to the detached process group; force=true sends SIGKILL.

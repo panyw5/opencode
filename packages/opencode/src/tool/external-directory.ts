@@ -5,6 +5,10 @@ import { InstanceState } from "@/effect/instance-state"
 import type * as Tool from "./tool"
 import { containsPath } from "../project/instance-context"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { realpathSync } from "node:fs"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "tool.external-directory" })
 
 type Kind = "file" | "directory"
 
@@ -19,6 +23,25 @@ export const assertExternalDirectoryEffect = Effect.fn("Tool.assertExternalDirec
   options?: Options,
 ) {
   if (!target) return
+
+  const mathRoot = ctx.agent === "math-worker" ? process.env.OPENCODE_MATH_PROJECT_DIR : undefined
+  if (mathRoot) {
+    const canonical = (value: string) => {
+      try {
+        return realpathSync.native(value)
+      } catch {
+        return path.resolve(value)
+      }
+    }
+    const root = canonical(mathRoot)
+    const full = canonical(target)
+    const relative = path.relative(root, full)
+    if (relative === "" || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) {
+      return
+    }
+    log.warn("math worker blocked outside problem workspace", { root, target: full })
+    return yield* Effect.die(new Error(`math-worker may only read its problem workspace: ${root}`))
+  }
 
   if (options?.bypass) return
 

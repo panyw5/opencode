@@ -22,7 +22,9 @@ function debug() {
   }
 }
 
-function log(_kind: string, _fields: Record<string, string | number | boolean | undefined>) {
+function log(kind: string, fields: Record<string, string | number | boolean | undefined>) {
+  if (!debug()) return
+  console.debug(`[popover] ${kind}`, fields)
 }
 
 export interface PopoverProps<T extends ValidComponent = "div">
@@ -110,8 +112,9 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
               '[data-component="dropdown-menu-sub-content"]',
               '[data-component="context-menu-content"]',
               '[data-component="context-menu-sub-content"]',
-              '[data-component="select-content"]',
-              '[data-component="combobox-content"]',
+               '[data-component="select-content"]',
+               '[data-component="combobox-content"]',
+               '[data-model-selector-popover-content]',
             ].join(","),
           )
         ) {

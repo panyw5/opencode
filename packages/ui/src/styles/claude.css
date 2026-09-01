@@ -72,6 +72,27 @@ html[data-theme="claude"][data-color-scheme="light"]
   background-color: var(--surface-raised-base-active);
 }
 
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="session-math-float-panel"]
+  [data-component="button"][aria-haspopup="dialog"][data-variant="secondary"] {
+  background-color: var(--surface-raised-base);
+}
+
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="session-math-float-panel"]
+  [data-component="button"][aria-haspopup="dialog"][data-variant="secondary"]:hover:not(:disabled) {
+  background-color: var(--surface-raised-base-hover);
+}
+
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="session-math-float-panel"]
+  [data-component="button"][aria-haspopup="dialog"][data-variant="secondary"]:active:not(:disabled),
+html[data-theme="claude"][data-color-scheme="light"]
+  [data-slot="session-math-float-panel"]
+  [data-component="button"][aria-haspopup="dialog"][data-variant="secondary"][data-expanded] {
+  background-color: var(--surface-raised-base-active);
+}
+
 html[data-theme="claude"] [data-component="icon-button"] {
   border-radius: var(--claude-session-radius-sm);
 }

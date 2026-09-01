@@ -404,9 +404,7 @@ function SessionBackgroundShellDialog(props: {
       title="背景 shell 输出"
       size="large"
       class="max-h-[min(720px,calc(100dvh-64px))]"
-      action={
-        <IconButton icon="close" size="large" variant="ghost" aria-label="关闭" onClick={() => dialog.close()} />
-      }
+      action={<IconButton icon="close" size="large" variant="ghost" aria-label="关闭" onClick={() => dialog.close()} />}
     >
       <div class="flex min-h-0 flex-col gap-3 px-4 pb-4">
         <div class="rounded-lg border border-border-weak-base bg-surface-raised-base px-3 py-2">
@@ -654,8 +652,10 @@ export function SessionComposerRegion(props: {
   inputRef: (el: HTMLDivElement) => void
   newSessionWorktree: string
   onNewSessionWorktreeReset: () => void
-  onSubmit: () => void
+  onSubmit: (sessionID: string) => void
+  onSubmitFailed?: (sessionID: string) => void
   onSubmitted?: () => void
+  onAbort?: () => void | Promise<void>
   onResponseSubmit: () => void
   onScrollToBottom: () => void
   scrollState?: { overflow: boolean; bottom: boolean }
@@ -747,9 +747,7 @@ export function SessionComposerRegion(props: {
     if (next) setHeldPermission(() => next)
   })
 
-  const promptCovered = createMemo(
-    () => props.state.blocked() || exitVisible.question || exitVisible.permission,
-  )
+  const promptCovered = createMemo(() => props.state.blocked() || exitVisible.question || exitVisible.permission)
   // Only animate prompt enter/exit after it has been covered once (avoid first-paint flash)
   const [promptWasCovered, setPromptWasCovered] = createSignal(false)
   createEffect(() => {
@@ -789,7 +787,9 @@ export function SessionComposerRegion(props: {
 
   // Desktop uses the floating todo widget instead of the bottom dock,
   // so the dock animation/margins should not run on desktop.
-  const open = createMemo(() => store.ready && props.state.dock() && !props.state.closing() && platform.platform !== "desktop")
+  const open = createMemo(
+    () => store.ready && props.state.dock() && !props.state.closing() && platform.platform !== "desktop",
+  )
   const progress = useSpring(() => (open() ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
   const value = createMemo(() => Math.max(0, Math.min(1, progress())))
   const dock = createMemo(() => (store.ready && props.state.dock()) || value() > 0.001)
@@ -1022,7 +1022,10 @@ export function SessionComposerRegion(props: {
                 }}
               >
                 <Show when={jumpToLatestVisible()}>
-                  <div data-component="composer-scroll-to-latest" class="absolute left-1/2 bottom-full mb-3 -translate-x-1/2 z-20">
+                  <div
+                    data-component="composer-scroll-to-latest"
+                    class="absolute left-1/2 bottom-full mb-3 -translate-x-1/2 z-20"
+                  >
                     <Tooltip placement="top" value={language.t("session.messages.jumpToLatest")}>
                       <IconButton
                         type="button"
@@ -1221,8 +1224,12 @@ export function SessionComposerRegion(props: {
                 onEditLoaded={props.followup?.onEditLoaded}
                 shouldQueue={props.followup?.queue}
                 onQueue={props.followup?.onQueue}
-                onAbort={props.followup?.onAbort}
+                onAbort={async () => {
+                  props.followup?.onAbort()
+                  await props.onAbort?.()
+                }}
                 onSubmit={props.onSubmit}
+                onSubmitFailed={props.onSubmitFailed}
                 onSubmitted={props.onSubmitted}
                 onScrollToBottom={props.onScrollToBottom}
                 scrollState={props.scrollState}

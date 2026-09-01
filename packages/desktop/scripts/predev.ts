@@ -53,7 +53,9 @@ if (!shouldBuildBaseline) {
   if (result.exitCode !== 0) process.exit(result.exitCode)
 }
 
-await $`bun script/build-node.ts`.cwd("../opencode")
+await $`bun script/build-node.ts`
+  .cwd("../opencode")
+  .env({ ...Bun.env, OPENCODE_CHANNEL: "local" })
 
 const binaryPath = windowsify(`../opencode/dist/${binary}/bin/opencode`)
 

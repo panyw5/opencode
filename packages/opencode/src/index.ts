@@ -34,6 +34,7 @@ import { DesktopCommand } from "./cli/cmd/desktop"
 import { DbCommand } from "./cli/cmd/db"
 import { OpenClawServeCommand } from "./cli/cmd/openclaw-serve"
 import { ExtraAgentServeCommand } from "./cli/cmd/extra-agent-serve"
+import { MathCommand } from "./cli/cmd/math"
 import path from "path"
 import { Global } from "@opencode-ai/core/global"
 import { JsonMigration } from "./storage/json-migration"
@@ -175,6 +176,7 @@ let cli = yargs(args)
   .completion("completion", "generate shell completion script")
   .command(AcpCommand)
   .command(McpCommand)
+  .command(MathCommand)
   .command(RunCommand)
   .command(GenerateCommand)
   .command(DebugCommand)

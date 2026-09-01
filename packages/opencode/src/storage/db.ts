@@ -15,6 +15,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { init } from "#db"
 import { Effect, Schema } from "effect"
 import * as UpstreamMigration from "./upstream-migration"
+import { withSQLiteLockRetry } from "./sqlite-lock"
 
 declare const OPENCODE_MIGRATIONS: { sql: string; timestamp: number; name: string }[] | undefined
 
@@ -396,17 +397,30 @@ export function transaction<T>(
   callback: (tx: TxOrDb) => NotPromise<T>,
   options?: {
     behavior?: "deferred" | "immediate" | "exclusive"
+    operation?: string
   },
 ): NotPromise<T> {
   try {
     return callback(ctx.use().tx)
   } catch (err) {
     if (err instanceof LocalContext.NotFound) {
-      const effects: (() => void | Promise<void>)[] = []
-      const txCallback = EffectBridge.bind((tx: TxOrDb) => ctx.provide({ tx, effects }, () => callback(tx)))
-      const result = Client().transaction(txCallback, { behavior: options?.behavior })
-      for (const effect of effects) effect()
-      return result as NotPromise<T>
+      const execute = () => {
+        const effects: (() => void | Promise<void>)[] = []
+        const txCallback = EffectBridge.bind((tx: TxOrDb) => ctx.provide({ tx, effects }, () => callback(tx)))
+        return {
+          result: Client().transaction(txCallback, { behavior: options?.behavior }),
+          effects,
+        }
+      }
+      const outcome =
+        options?.behavior === "immediate"
+          ? withSQLiteLockRetry(execute, {
+              operation: options.operation ?? "database transaction",
+              databasePath: getPath(),
+            })
+          : execute()
+      for (const effect of outcome.effects) effect()
+      return outcome.result as NotPromise<T>
     }
     throw err
   }

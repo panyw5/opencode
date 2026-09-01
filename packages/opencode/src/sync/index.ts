@@ -170,6 +170,7 @@ export const layer = Layer.effect(Service)(
         },
         {
           behavior: "immediate",
+          operation: `sync event ${def.type}`,
         },
       )
       if (pending?.length) {

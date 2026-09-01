@@ -34,6 +34,7 @@ import { RepositoryCache } from "@/reference/repository-cache"
 import { ProviderID, ModelID } from "@/provider/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { MessageID, SessionID } from "@/session/schema"
+import { SessionInput } from "@/session/input"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProjectTask } from "@/project-task/service"
 
@@ -58,7 +59,14 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(Skill.defaultLayer),
       Layer.provide(Agent.defaultLayer),
       Layer.provide(Session.defaultLayer),
-      Layer.provide(Layer.mergeAll(SessionStatus.defaultLayer, BackgroundJob.defaultLayer, BackgroundShell.defaultLayer)),
+      Layer.provide(
+        Layer.mergeAll(
+          SessionStatus.defaultLayer,
+          BackgroundJob.defaultLayer,
+          BackgroundShell.defaultLayer,
+          SessionInput.defaultLayer,
+        ),
+      ),
       Layer.provide(Provider.defaultLayer),
       Layer.provide(Layer.mergeAll(Git.defaultLayer, RepositoryCache.defaultLayer)),
       Layer.provide(Reference.defaultLayer),
@@ -128,6 +136,7 @@ describe("tool.registry", () => {
       expect(ids).toContain("scheduled_task_delete")
       expect(ids).toContain("scheduled_task_run_now")
       expect(ids).toContain("scheduled_task_runs")
+      expect(ids).toContain("math_worker_ensure")
     }),
   )
 

@@ -1,0 +1,1 @@
+List detached math-workers for this swarm: alive?, pid, round, last heartbeat, last fact_id. Filter by session_id or list all children of the current parent session.

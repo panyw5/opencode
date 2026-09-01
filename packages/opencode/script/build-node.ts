@@ -53,6 +53,7 @@ await Bun.build({
   define: {
     OPENCODE_MIGRATIONS: JSON.stringify(migrations),
     OPENCODE_MODELS_DEV: generated.modelsData,
+    OPENCODE_VERSION: `'${Script.version}'`,
     OPENCODE_CHANNEL: `'${Script.channel}'`,
   },
   files: {

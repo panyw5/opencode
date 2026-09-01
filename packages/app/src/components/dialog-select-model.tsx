@@ -29,10 +29,14 @@ function dbg() {
   }
 }
 
-function logModelOpen(_kind: string, _fields: Record<string, string | number | boolean | undefined>) {
+function logModelOpen(kind: string, fields: Record<string, string | number | boolean | undefined>) {
+  if (!dbg()) return
+  console.debug(`[model-selector] ${kind} ${JSON.stringify(fields)}`)
 }
 
-function logStage(_stage: string, _fields: Record<string, string | number | boolean | undefined>) {
+function logStage(stage: string, fields: Record<string, string | number | boolean | undefined>) {
+  if (!dbg()) return
+  console.debug(`[model-selector-stage] ${stage} ${JSON.stringify(fields)}`)
 }
 
 function since(at: number) {
@@ -261,6 +265,7 @@ export function ModelSelectorPopover(props: {
   const dialog = useDialog()
   const platform = usePlatform()
   let content: HTMLDivElement | undefined
+  let trigger: HTMLElement | undefined
   let seq = 0
   let measureAt = 0
   let measureCount = 0
@@ -372,6 +377,12 @@ export function ModelSelectorPopover(props: {
               height: box?.height ?? "none",
               top: box?.top ?? "none",
               left: box?.left ?? "none",
+              bottom: box ? box.top + box.height : "none",
+              viewportH: window.innerHeight,
+              connected: el?.isConnected ?? false,
+              z: el ? window.getComputedStyle(el).zIndex : "none",
+              display: el ? window.getComputedStyle(el).display : "none",
+              triggerTop: rect(trigger)?.top ?? "none",
             })
             logStage("frame-1", {
               seq: id,
@@ -400,6 +411,12 @@ export function ModelSelectorPopover(props: {
                 height: nextBox?.height ?? "none",
                 top: nextBox?.top ?? "none",
                 left: nextBox?.left ?? "none",
+                bottom: nextBox ? nextBox.top + nextBox.height : "none",
+                viewportH: window.innerHeight,
+                connected: nextEl?.isConnected ?? false,
+                z: nextEl ? window.getComputedStyle(nextEl).zIndex : "none",
+                display: nextEl ? window.getComputedStyle(nextEl).display : "none",
+                triggerTop: rect(trigger)?.top ?? "none",
               })
               logStage("frame-2", {
                 seq: id,
@@ -460,7 +477,13 @@ export function ModelSelectorPopover(props: {
       placement="top-start"
       gutter={4}
     >
-      <Kobalte.Trigger as={props.triggerAs ?? "div"} {...props.triggerProps}>
+      <Kobalte.Trigger
+        ref={(el: HTMLElement) => {
+          trigger = el
+        }}
+        as={props.triggerAs ?? "div"}
+        {...props.triggerProps}
+      >
         {props.children}
       </Kobalte.Trigger>
       <Kobalte.Portal>
@@ -516,8 +539,12 @@ export function ModelSelectorPopover(props: {
             resizeObserver.observe(el)
           }}
           data-component="popover-content"
+          data-model-selector-popover-content
           class="w-[338px] h-[39rem] max-h-[calc(100vh-96px)] flex flex-col p-2 overflow-hidden"
-          style={props.style}
+          style={{
+            ...props.style,
+            "z-index": 100,
+          }}
           onEscapeKeyDown={(event) => {
             logModelOpen("close", {
               seq,
@@ -536,13 +563,16 @@ export function ModelSelectorPopover(props: {
             setStore("dismiss", "outside")
             setStore("open", false)
           }}
-          onFocusOutside={() => {
-            logModelOpen("close", {
+          onFocusOutside={(event) => {
+            logModelOpen("ignore-close", {
               seq,
               reason: "outside-focus",
             })
-            setStore("dismiss", "outside")
-            setStore("open", false)
+            // Switching directly between adjacent model selectors briefly moves focus
+            // through the previous trigger while its popover unmounts. Pointer-down and
+            // Escape already provide deterministic dismissal; ignore this transient
+            // focus-only event so the newly opened menu is not immediately torn down.
+            event.preventDefault()
           }}
           onCloseAutoFocus={(event) => {
             logModelOpen("close-autofocus", {

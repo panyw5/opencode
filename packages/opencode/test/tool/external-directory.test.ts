@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect } from "effect"
+import { Effect, Exit } from "effect"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import type { Tool } from "@/tool/tool"
 import { assertExternalDirectoryEffect } from "../../src/tool/external-directory"
@@ -104,6 +104,28 @@ describe("tool.assertExternalDirectory", () => {
         expect(requests.length).toBe(0)
       }),
     ),
+  )
+
+  it.live("hard-blocks math workers from reading another problem workspace", () =>
+    Effect.gen(function* () {
+      const root = yield* tmpdirScoped()
+      const own = path.join(root, "problem-a")
+      const other = path.join(root, "problem-b")
+      yield* Effect.promise(() => Promise.all([Bun.write(path.join(own, "fact.md"), "a"), Bun.write(path.join(other, "fact.md"), "b")]))
+      const previous = process.env.OPENCODE_MATH_PROJECT_DIR
+      process.env.OPENCODE_MATH_PROJECT_DIR = own
+      try {
+        const { requests, ctx } = makeCtx()
+        ctx.agent = "math-worker"
+        yield* assertExternalDirectoryEffect(ctx, path.join(own, "fact.md"))
+        const exit = yield* Effect.exit(assertExternalDirectoryEffect(ctx, path.join(other, "fact.md")))
+        expect(Exit.isFailure(exit)).toBe(true)
+        expect(requests).toHaveLength(0)
+      } finally {
+        if (previous === undefined) delete process.env.OPENCODE_MATH_PROJECT_DIR
+        else process.env.OPENCODE_MATH_PROJECT_DIR = previous
+      }
+    }),
   )
 
   if (process.platform === "win32") {

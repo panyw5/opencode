@@ -46,6 +46,7 @@ import { migrate } from "./migrate"
 import { getStore } from "./store"
 import { checkUpdate, checkForUpdates, installUpdate, setupAutoUpdater, getUpdaterController } from "./updater"
 import { Deferred, Effect, Fiber } from "effect"
+import { bundledCliPath } from "./native"
 
 const APP_NAMES: Record<string, string> = {
   dev: "OpenCode Dev",
@@ -195,7 +196,9 @@ const main = Effect.gen(function* () {
   }
 
   configureExtraAgentStartupPaths(startupPaths)
-  preferAppEnv(startupPaths)
+  const cliPath = yield* Effect.promise(() => bundledCliPath())
+  logger.log("bundled CLI resolved", { path: cliPath })
+  preferAppEnv(startupPaths, cliPath)
 
   app.on("second-instance", (_event: Event, argv: string[]) => {
     const urls = argv.filter((arg: string) => arg.startsWith("opencode://"))

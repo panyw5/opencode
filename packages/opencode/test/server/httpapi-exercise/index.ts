@@ -857,6 +857,129 @@ const scenarios: Scenario[] = [
       )
     }),
   http.protected
+    .get("/session/{sessionID}/math-workers", "session.mathWorkers")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/math-workers", { sessionID: ctx.state.parent.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      array(body)
+      check(
+        body.some((item) => isRecord(item) && item.sessionID === ctx.state.worker.id && item.state === "missing"),
+        "math workers should include the durable child placeholder",
+      )
+    }),
+  http.protected
+    .get("/session/{sessionID}/math-details", "session.mathDetails")
+    .seeded((ctx) => ctx.session({ title: "Math details", agent: "math-orchestrator" }))
+    .at((ctx) => ({
+      path: `${route("/session/{sessionID}/math-details", { sessionID: ctx.state.id })}?${new URLSearchParams({
+        project: "httpapi",
+        kind: "facts",
+      })}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.kind === "facts", "math details should preserve the requested category")
+      check(body.total === 0 && Array.isArray(body.items), "empty math details should return a paginated result")
+    }),
+  http.protected
+    .post("/session/{sessionID}/math-workers/{workerID}/ensure", "session.mathWorkerEnsure")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/math-workers/{workerID}/ensure", {
+        sessionID: ctx.state.parent.id,
+        workerID: ctx.state.worker.id,
+      }),
+      headers: ctx.headers(),
+      body: {},
+    }))
+    .status(400),
+  http.protected
+    .post("/session/{sessionID}/math-workers/{workerID}/stop", "session.mathWorkerStop")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/math-workers/{workerID}/stop", {
+        sessionID: ctx.state.parent.id,
+        workerID: ctx.state.worker.id,
+      }),
+      headers: ctx.headers(),
+      body: { force: false },
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.worker.id && body.state === "missing", "missing worker should stay missing")
+    }),
+  http.protected
+    .get("/session/{sessionID}/math-workers/{workerID}/task", "session.mathWorkerTaskGet")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        yield* ctx.file(`.math/problems/httpapi/TASKS/${worker.id}.md`, "Prove the seeded claim.\n")
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: `${route("/session/{sessionID}/math-workers/{workerID}/task", {
+        sessionID: ctx.state.parent.id,
+        workerID: ctx.state.worker.id,
+      })}?${new URLSearchParams({ project: "httpapi" })}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.worker.id, "math worker task should belong to the requested worker")
+      check(body.project === "httpapi" && body.task === "Prove the seeded claim.\n", "math worker task should be read")
+    }),
+  http.protected
+    .put("/session/{sessionID}/math-workers/{workerID}/task", "session.mathWorkerTaskUpdate")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const parent = yield* ctx.session({ title: "Math parent", agent: "math-orchestrator" })
+        const worker = yield* ctx.session({ title: "Math worker", agent: "math-worker", parentID: parent.id })
+        yield* ctx.file(`.math/problems/httpapi/TASKS/${worker.id}.md`, "Original task.\n")
+        return { parent, worker }
+      }),
+    )
+    .at((ctx) => ({
+      path: `${route("/session/{sessionID}/math-workers/{workerID}/task", {
+        sessionID: ctx.state.parent.id,
+        workerID: ctx.state.worker.id,
+      })}?${new URLSearchParams({ project: "httpapi" })}`,
+      headers: ctx.headers(),
+      body: { task: "Investigate the next lemma." },
+    }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionID === ctx.state.worker.id, "updated math worker task should belong to the requested worker")
+      check(body.project === "httpapi", "updated math worker task should preserve the project")
+      check(body.task === "Investigate the next lemma.\n", "math worker task should be replaced atomically")
+    }),
+  http.protected
     .get("/session/status", "session.status")
     .seeded((ctx) => ctx.session({ title: "Status session" }))
     .json(200, object),
@@ -1385,6 +1508,154 @@ const scenarios: Scenario[] = [
       },
       "status",
     ),
+  http.protected
+    .get("/project-task", "projectTask.list")
+    .at((ctx) => ({ path: "/project-task", headers: ctx.headers() }))
+    .json(200, array),
+  http.protected
+    .post("/project-task", "projectTask.create")
+    .at((ctx) => ({ path: "/project-task", headers: ctx.headers(), body: { title: "" } }))
+    .status(400),
+  http.protected
+    .get("/project-task/{taskID}", "projectTask.get")
+    .at((ctx) => ({
+      path: route("/project-task/{taskID}", { taskID: "ptask_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .get("/project-task/{taskID}/detail", "projectTask.detail")
+    .at((ctx) => ({
+      path: route("/project-task/{taskID}/detail", { taskID: "ptask_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .patch("/project-task/{taskID}", "projectTask.update")
+    .mutating()
+    .at((ctx) => ({
+      path: route("/project-task/{taskID}", { taskID: "ptask_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { title: "Updated coverage task" },
+    }))
+    .status(404),
+  http.protected
+    .delete("/project-task/{taskID}", "projectTask.archive")
+    .mutating()
+    .at((ctx) => ({
+      path: route("/project-task/{taskID}", { taskID: "ptask_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .put("/session/{sessionID}/project-task", "projectTask.mount")
+    .mutating()
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/project-task", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { taskID: "ptask_httpapi_missing" },
+    }))
+    .status(404),
+  http.protected
+    .delete("/session/{sessionID}/project-task", "projectTask.unmount")
+    .mutating()
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/project-task", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
+  http.protected
+    .get("/experimental/session/search", "experimental.session.contentSearch")
+    .at((ctx) => ({
+      path: `/experimental/session/search?${new URLSearchParams({ q: "coverage" })}`,
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(
+        Array.isArray(body.results) && isRecord(body.index),
+        "session content search should return results and index status",
+      )
+    }),
+  http.protected
+    .get("/experimental/session/search/status", "experimental.session.contentSearchStatus")
+    .at((ctx) => ({ path: "/experimental/session/search/status", headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(
+        typeof body.enabled === "boolean" && typeof body.complete === "boolean",
+        "search status should expose index state",
+      )
+    }),
+  http.protected
+    .post("/experimental/session/search/status", "experimental.session.contentSearchAction")
+    .mutating()
+    .at((ctx) => ({ path: "/experimental/session/search/status", headers: ctx.headers(), body: { action: "clear" } }))
+    .json(200, (body) => {
+      object(body)
+      check(body.enabled === false && body.state === "disabled", "clear should disable the content search index")
+    }),
+  http.protected
+    .post("/experimental/session/{sessionID}/background", "experimental.session.background")
+    .seeded((ctx) => ctx.session({ title: "Background session" }))
+    .at((ctx) => ({
+      path: route("/experimental/session/{sessionID}/background", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      check(body === false, "background promotion should be a no-op when the feature is disabled")
+    }),
+  http.protected
+    .get("/session/{sessionID}/hooks", "session.hooks")
+    .seeded((ctx) => ctx.session({ title: "Hooks session" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/hooks", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, array),
+  http.protected
+    .post("/session/{sessionID}/hooks", "session.hookControl")
+    .seeded((ctx) => ctx.session({ title: "Hook control session" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/hooks", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { hook: "event", enabled: false },
+    }))
+    .json(200, (body) => {
+      array(body)
+      check(body.length === 1 && isRecord(body[0]) && body[0].enabled === false, "hook control should be stored")
+    }),
+  http.protected
+    .post("/session/{sessionID}/advisor-intervention/start", "session.advisor_intervention_start")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/advisor-intervention/start", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { callID: "call_httpapi_missing" },
+    }))
+    .status(404),
+  http.protected
+    .post("/session/{sessionID}/advisor-intervention/message", "session.advisor_intervention_message")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/advisor-intervention/message", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { callID: "call_httpapi_missing", message: "Check the result" },
+    }))
+    .status(404),
+  http.protected
+    .post("/session/{sessionID}/advisor-intervention/finish", "session.advisor_intervention_finish")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/advisor-intervention/finish", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+      body: { callID: "call_httpapi_missing" },
+    }))
+    .status(404),
+  http.protected
+    .post("/session/{sessionID}/generate_title", "session.generate_title")
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/generate_title", { sessionID: "ses_httpapi_missing" }),
+      headers: ctx.headers(),
+    }))
+    .status(404),
   http.protected
     .post("/global/upgrade", "global.upgrade")
     .global()
