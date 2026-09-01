@@ -201,6 +201,11 @@ export const MathWorkerCommand = effectCmd({
         describe: "worker model as provider/model (or OPENCODE_MATH_WORKER_MODEL)",
       })
       .option("variant", { type: "string", describe: "worker model effort/variant" })
+      .option("generation", {
+        type: "number",
+        hidden: true,
+        describe: "detached worker incarnation used to fence stale processes",
+      })
       .option("parent", {
         type: "string",
         describe: "parent session id when --create is set",
@@ -236,6 +241,7 @@ export const MathWorkerCommand = effectCmd({
       heartbeatOnly: args["probe-heartbeat-only"] === true,
       model: typeof args.model === "string" ? args.model : process.env.OPENCODE_MATH_WORKER_MODEL,
       variant: typeof args.variant === "string" ? args.variant : undefined,
+      generation: typeof args.generation === "number" ? args.generation : undefined,
     }).pipe(Effect.catchCause((cause) => fail(`math worker loop failed: ${String(cause)}`)))
   }),
 })

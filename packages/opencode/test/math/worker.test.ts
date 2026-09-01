@@ -5,10 +5,12 @@ import { Session } from "@/session/session"
 import { Permission } from "@/permission"
 import {
   buildWorkerKickoff,
+  classifyMathWorkerDispatch,
   advanceMathWorkerProgress,
   completedWorkerFactId,
   discoverMathWorkers,
   ensureMathWorker,
+  isInfraBlockedReason,
   latestAcceptedFactId,
   mathWorkerTaskFingerprint,
   MAX_MATH_WORKER_NO_PROGRESS_ROUNDS,
@@ -22,7 +24,7 @@ import {
   workerRoundSignals,
   writeHeartbeat,
 } from "@/math/worker"
-import { readSwarm, writeSwarm } from "@/math/swarm"
+import { patchWorker, readSwarm, writeSwarm } from "@/math/swarm"
 import { mathRoot } from "@/math/layout"
 import { testEffect } from "../lib/effect"
 import { TestInstance } from "../fixture/fixture"
@@ -144,8 +146,10 @@ describe("math.worker", () => {
 
   it.instance("worker kickoff carries task and truth contract", () =>
     Effect.gen(function* () {
-      const prompt = buildWorkerKickoff({ task: "Prove lemma L", round: 3 })
+      const prompt = buildWorkerKickoff({ task: "Prove lemma L", round: 3, generation: 2, taskFingerprint: "abc" })
       expect(prompt).toContain("round 3")
+      expect(prompt).toContain("generation: 2")
+      expect(prompt).toContain("TASK fingerprint: abc")
       expect(prompt).toContain("Prove lemma L")
       expect(prompt).toContain("fact_submit")
       expect(prompt).toContain("MATH_WORKER_TASK_COMPLETE")
@@ -221,6 +225,11 @@ describe("math.worker", () => {
         verificationErrors: 1,
         acceptedFactId: "fact-1",
       })
+      expect(workerRoundSignals([message])).toEqual({
+        submissions: 2,
+        verificationErrors: 1,
+        acceptedFactId: "fact-1",
+      })
       expect(mathWorkerTaskFingerprint(" prove L \n")).toBe(mathWorkerTaskFingerprint("prove L"))
     }),
   )
@@ -264,6 +273,48 @@ describe("math.worker", () => {
     }),
   )
 
+  it.instance("ends one unchanged dispatch for parent takeover instead of repeating the TASK", () =>
+    Effect.gen(function* () {
+      expect(
+        classifyMathWorkerDispatch({
+          superseded: false,
+          submissions: 0,
+          verificationErrors: 0,
+        }),
+      ).toEqual({ kind: "blocked", reason: "round-ended-without-current-fact" })
+      expect(
+        classifyMathWorkerDispatch({
+          superseded: false,
+          submissions: 2,
+          verificationErrors: 2,
+        }),
+      ).toEqual({ kind: "blocked", reason: "verifier-errors:2" })
+      expect(
+        classifyMathWorkerDispatch({
+          superseded: false,
+          submissions: 2,
+          verificationErrors: 0,
+          acceptedFactId: "fact-accepted-this-round",
+        }),
+      ).toEqual({ kind: "blocked", reason: "accepted-fact-not-task-complete" })
+      expect(
+        classifyMathWorkerDispatch({
+          completedFactId: "fact-current-round",
+          superseded: false,
+          submissions: 1,
+          verificationErrors: 0,
+        }),
+      ).toEqual({ kind: "completed" })
+      expect(
+        classifyMathWorkerDispatch({
+          superseded: true,
+          submissions: 1,
+          verificationErrors: 0,
+        }),
+      ).toEqual({ kind: "superseded" })
+    }),
+  )
+
   it.instance("ensure restarts the same durable session without creating a child", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
@@ -293,6 +344,7 @@ describe("math.worker", () => {
       expect(ensured.previousPid).toBe(424242)
       expect(ensured.pid).toBe(525252)
       expect(restartArgv.join(" ")).toContain("--model test/original --variant high")
+      expect(restartArgv.join(" ")).toContain("--generation 2")
       expect(after.map((child) => child.id)).toEqual(before.map((child) => child.id))
       expect(readSwarm(started.projectDir).workers[started.sessionID]?.pid).toBe(525252)
       expect(readSwarm(started.projectDir).workers[started.sessionID]?.model).toBe("test/original")
@@ -437,6 +489,103 @@ describe("math.worker", () => {
         taskPreview: "# New direction Prove lemma B.",
       })
       expect(() => updateMathWorkerTask(started.projectDir, started.sessionID, "   ")).toThrow("TASK cannot be empty")
+    }),
+  )
+
+  it.instance("requires a substantive TASK revision before retrying a blocked lane", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      const started = yield* startMathWorker({
+        parentSessionID: parent.id,
+        title: "blocked",
+        task: "# Original blocked direction",
+        spawn: () => ({ pid: 987_654_321 }),
+      })
+      const fingerprint = mathWorkerTaskFingerprint("# Original blocked direction")
+      patchWorker(started.projectDir, started.sessionID, {
+        state: "blocked",
+        blockedTaskFingerprint: fingerprint,
+        blockedReason: "round-ended-without-current-fact",
+      })
+
+      expect(statusMathWorker({ projectDir: started.projectDir })[0]?.restartable).toBe(false)
+      const unchanged = yield* Effect.exit(
+        ensureMathWorker({
+          sessionID: SessionID.make(started.sessionID),
+          projectDir: started.projectDir,
+          spawn: () => ({ pid: 595959 }),
+        }),
+      )
+      expect(Exit.isFailure(unchanged)).toBe(true)
+
+      updateMathWorkerTask(started.projectDir, started.sessionID, "# Revised direction\nUse a new dependency.")
+      expect(statusMathWorker({ projectDir: started.projectDir })[0]?.restartable).toBe(true)
+      const restarted = yield* ensureMathWorker({
+        sessionID: SessionID.make(started.sessionID),
+        projectDir: started.projectDir,
+        spawn: () => ({ pid: 595959 }),
+      })
+      expect(restarted.restarted).toBe(true)
+      expect(readSwarm(started.projectDir).workers[started.sessionID]?.generation).toBe(2)
+    }),
+  )
+
+  it.instance("allows bounded unchanged retries for infrastructure blocks only", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      const started = yield* startMathWorker({
+        parentSessionID: parent.id,
+        title: "infra",
+        task: "# Stable TASK",
+        spawn: () => ({ pid: 987_654_321 }),
+      })
+      const fingerprint = mathWorkerTaskFingerprint("# Stable TASK")
+      expect(isInfraBlockedReason("verifier-errors:2")).toBe(true)
+      expect(isInfraBlockedReason("worker-round-failed")).toBe(true)
+      expect(isInfraBlockedReason("submission-not-accepted")).toBe(false)
+      expect(isInfraBlockedReason("round-ended-without-current-fact")).toBe(false)
+
+      const patchBlocked = (reason: string, streak: number) =>
+        patchWorker(started.projectDir, started.sessionID, {
+          state: "blocked",
+          blockedTaskFingerprint: fingerprint,
+          blockedReason: reason,
+          verificationErrorStreak: streak,
+        })
+
+      patchBlocked("verifier-errors:1", 1)
+      expect(statusMathWorker({ projectDir: started.projectDir })[0]?.restartable).toBe(true)
+      const retried = yield* ensureMathWorker({
+        sessionID: SessionID.make(started.sessionID),
+        projectDir: started.projectDir,
+        spawn: () => ({ pid: 595959 }),
+      })
+      expect(retried.restarted).toBe(true)
+      expect(readSwarm(started.projectDir).workers[started.sessionID]?.verificationErrorStreak).toBe(2)
+
+      patchBlocked("verifier-errors:1", MAX_MATH_WORKER_VERIFIER_ERROR_STREAK)
+      expect(statusMathWorker({ projectDir: started.projectDir })[0]?.restartable).toBe(false)
+      const exhausted = yield* Effect.exit(
+        ensureMathWorker({
+          sessionID: SessionID.make(started.sessionID),
+          projectDir: started.projectDir,
+          spawn: () => ({ pid: 595959 }),
+        }),
+      )
+      expect(Exit.isFailure(exhausted)).toBe(true)
+
+      patchBlocked("submission-not-accepted", 0)
+      expect(statusMathWorker({ projectDir: started.projectDir })[0]?.restartable).toBe(false)
+      const contentBlocked = yield* Effect.exit(
+        ensureMathWorker({
+          sessionID: SessionID.make(started.sessionID),
+          projectDir: started.projectDir,
+          spawn: () => ({ pid: 595959 }),
+        }),
+      )
+      expect(Exit.isFailure(contentBlocked)).toBe(true)
     }),
   )
 })

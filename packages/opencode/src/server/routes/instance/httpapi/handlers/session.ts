@@ -455,8 +455,26 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof MathWorkerEventPayload.Type
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
-      yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
-      const inputID = `evt_math_worker_${ctx.params.workerID}_${ctx.payload.eventID}`
+      const worker = yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
+      const record = readSwarm(worker.directory).workers[worker.id]
+      if (
+        !record ||
+        record.parentSessionID !== parent.id ||
+        record.generation !== ctx.payload.generation ||
+        record.taskFingerprint !== ctx.payload.taskFingerprint
+      ) {
+        log.warn("math worker event ignored as stale", {
+          parentSessionID: parent.id,
+          workerSessionID: worker.id,
+          eventID: ctx.payload.eventID,
+          eventGeneration: ctx.payload.generation,
+          currentGeneration: record?.generation,
+          eventTaskFingerprint: ctx.payload.taskFingerprint,
+          currentTaskFingerprint: record?.taskFingerprint,
+        })
+        return HttpApiSchema.NoContent.make()
+      }
+      const inputID = `evt_math_worker_${ctx.params.workerID}_${ctx.payload.generation}_${ctx.payload.taskFingerprint}_${ctx.payload.eventID}`
       const fact = ctx.payload.factID ? `\nVerified fact: ${ctx.payload.factID}` : ""
       const reason = ctx.payload.reason ? `\nReason: ${ctx.payload.reason}` : ""
       yield* inboxSvc.admit({
@@ -489,6 +507,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
             round: ctx.payload.round,
             factID: ctx.payload.factID,
             reason: ctx.payload.reason,
+            generation: ctx.payload.generation,
+            taskFingerprint: ctx.payload.taskFingerprint,
           },
         },
       })

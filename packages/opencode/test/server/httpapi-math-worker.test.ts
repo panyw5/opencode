@@ -68,6 +68,22 @@ describe("Math worker HttpApi", () => {
         const inbox = yield* SessionInput.Service
         const parent = yield* sessions.create({ title: "math", agent: "math-orchestrator", archived: true })
         const worker = yield* sessions.create({ title: "lemma", agent: "math-worker", parentID: parent.id })
+        writeSwarm(test.directory, {
+          projectDir: test.directory,
+          parentSessionID: parent.id,
+          workers: {
+            [worker.id]: {
+              sessionID: worker.id,
+              parentSessionID: parent.id,
+              pid: 987_654_321,
+              state: "blocked",
+              startedAt: Date.now(),
+              logFile: path.join(test.directory, "worker.log"),
+              generation: 2,
+              taskFingerprint: "task-v2",
+            },
+          },
+        })
         const url = endpoint(SessionPaths.mathWorkerEvent, { sessionID: parent.id, workerID: worker.id })
         const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
         const payload = JSON.stringify({
@@ -76,6 +92,8 @@ describe("Math worker HttpApi", () => {
           round: 3,
           reason: "verifier-error-streak:3",
           summary: "Verifier failed three times.",
+          generation: 2,
+          taskFingerprint: "task-v2",
         })
 
         const first = yield* Effect.promise(() =>
@@ -87,6 +105,24 @@ describe("Math worker HttpApi", () => {
         expect(first.status).toBe(204)
         expect(second.status).toBe(204)
         yield* Effect.sleep("50 millis")
+        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(1)
+
+        const stale = yield* Effect.promise(() =>
+          Server.Default().app.request(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              eventID: "completed_old",
+              kind: "completed",
+              round: 1,
+              factID: "old-fact",
+              summary: "Late result from an old worker process.",
+              generation: 1,
+              taskFingerprint: "task-v1",
+            }),
+          }),
+        )
+        expect(stale.status).toBe(204)
         expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(1)
       }),
     30_000,

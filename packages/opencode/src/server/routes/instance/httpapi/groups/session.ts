@@ -132,6 +132,10 @@ export const MathWorkerStatus = Schema.Struct({
   verificationErrorStreak: Schema.optional(Schema.Number),
   blockedReason: Schema.optional(Schema.String),
   blockedAt: Schema.optional(Schema.Number),
+  generation: Schema.optional(Schema.Number),
+  blockedTaskFingerprint: Schema.optional(Schema.String),
+  lastOutcome: Schema.optional(Schema.Literals(["completed", "blocked", "failed", "superseded"])),
+  lastSummary: Schema.optional(Schema.String),
 })
 export const MathWorkerEnsurePayload = Schema.Struct({
   model: Schema.optional(Schema.String),
@@ -147,6 +151,8 @@ export const MathWorkerEventPayload = Schema.Struct({
   factID: Schema.optional(Schema.String),
   reason: Schema.optional(Schema.String),
   summary: Schema.String,
+  generation: Schema.Number,
+  taskFingerprint: Schema.String,
 })
 export const MathWorkerTaskInfo = Schema.Struct({
   sessionID: Schema.String,

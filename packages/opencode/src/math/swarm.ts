@@ -23,6 +23,10 @@ export type SwarmWorker = {
   verificationErrorStreak?: number
   blockedReason?: string
   blockedAt?: number
+  generation?: number
+  blockedTaskFingerprint?: string
+  lastOutcome?: "completed" | "blocked" | "failed" | "superseded"
+  lastSummary?: string
 }
 
 export type SwarmFile = {

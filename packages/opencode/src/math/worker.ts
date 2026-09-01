@@ -11,7 +11,7 @@ import {
 } from "fs"
 import path from "path"
 import { createHash } from "node:crypto"
-import { Duration, Effect, Option } from "effect"
+import { Cause, Duration, Effect, Exit, Option } from "effect"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
 import { MessageV2 } from "@/session/message-v2"
@@ -53,6 +53,8 @@ const notifyParent = Effect.fn("MathWorker.notifyParent")(function* (input: {
   factID?: string
   reason?: string
   summary: string
+  generation: number
+  taskFingerprint: string
 }) {
   if (!input.serverUrl || !input.parentSessionID) return false
   const url = new URL(
@@ -83,6 +85,8 @@ const notifyParent = Effect.fn("MathWorker.notifyParent")(function* (input: {
             factID: input.factID,
             reason: input.reason,
             summary: input.summary,
+            generation: input.generation,
+            taskFingerprint: input.taskFingerprint,
           }),
         })
         if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -156,6 +160,10 @@ export type StatusResult = {
   verificationErrorStreak?: number
   blockedReason?: string
   blockedAt?: number
+  generation?: number
+  blockedTaskFingerprint?: string
+  lastOutcome?: SwarmWorker["lastOutcome"]
+  lastSummary?: string
 }
 
 export type MathWorkerTaskInfo = {
@@ -310,6 +318,8 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
 
   const taskFile = taskPath(projectDir, session.id)
   writeFileSync(taskFile, input.task.trim() + "\n", "utf8")
+  const taskFingerprint = mathWorkerTaskFingerprint(input.task)
+  const generation = 1
   const logFile = path.join(layout(projectDir).logs, `worker-${session.id}.log`)
 
   const argv = selfArgv([
@@ -321,6 +331,8 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     projectDir,
     "--dir",
     projectDir,
+    "--generation",
+    String(generation),
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
     ...((input.model ?? process.env.OPENCODE_MATH_WORKER_MODEL)
       ? ["--model", (input.model ?? process.env.OPENCODE_MATH_WORKER_MODEL)!]
@@ -359,6 +371,8 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     round: 0,
     model: input.model ?? process.env.OPENCODE_MATH_WORKER_MODEL,
     variant: input.variant,
+    generation,
+    taskFingerprint,
   })
 
   return {
@@ -395,6 +409,20 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   const logFile = existing?.logFile ?? path.join(layout(input.projectDir).logs, `worker-${input.sessionID}.log`)
   const stop = stopPath(input.projectDir, input.sessionID)
   if (!existsSync(taskFile)) throw new Error(`math worker TASK is missing: ${taskFile}`)
+  const currentTaskFingerprint = mathWorkerTaskFingerprint(readFileSync(taskFile, "utf8"))
+  const blockedSameTask = existing?.state === "blocked" && existing.blockedTaskFingerprint === currentTaskFingerprint
+  const infraRetry = blockedSameTask && isInfraBlockedReason(existing?.blockedReason)
+  if (blockedSameTask && !infraRetry) {
+    throw new Error(`math worker TASK must change before retrying a blocked lane: ${input.sessionID}`)
+  }
+  // Infra failures (verifier/model/process) may retry the unchanged TASK, but only a bounded
+  // number of times before the orchestrator must change the TASK or the environment.
+  const infraRetryStreak = infraRetry ? (existing?.verificationErrorStreak ?? 0) + 1 : 0
+  if (infraRetry && infraRetryStreak > MAX_MATH_WORKER_VERIFIER_ERROR_STREAK) {
+    throw new Error(
+      `math worker infra failures persisted across ${infraRetryStreak} retries; revise the TASK or environment: ${input.sessionID}`,
+    )
+  }
   if (existsSync(stop)) {
     if (!input.reEnable) throw new Error(`math worker has a stop request; refusing restart: ${input.sessionID}`)
     if (existing && pidAlive(existing.pid)) {
@@ -417,6 +445,7 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   }
 
   mkdirSync(layout(input.projectDir).logs, { recursive: true })
+  const generation = (existing?.generation ?? 0) + 1
   const argv = selfArgv([
     "math",
     "worker",
@@ -426,6 +455,8 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     input.projectDir,
     "--dir",
     input.projectDir,
+    "--generation",
+    String(generation),
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
     ...((input.model ?? existing?.model) ? ["--model", (input.model ?? existing?.model)!] : []),
     ...((input.variant ?? existing?.variant) ? ["--variant", (input.variant ?? existing?.variant)!] : []),
@@ -469,9 +500,15 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     lastHeartbeatAt: existing?.lastHeartbeatAt,
     model: input.model ?? existing?.model,
     variant: input.variant ?? existing?.variant,
-    taskFingerprint: existing?.taskFingerprint,
     noProgressRounds: 0,
-    verificationErrorStreak: 0,
+    verificationErrorStreak: infraRetryStreak,
+    generation,
+    taskFingerprint: currentTaskFingerprint,
+    blockedTaskFingerprint: undefined,
+    blockedReason: undefined,
+    blockedAt: undefined,
+    lastOutcome: undefined,
+    lastSummary: undefined,
   })
   log.info("math worker ensured", { sessionID: input.sessionID, previousPid: existing?.pid, pid, round })
   return {
@@ -549,9 +586,22 @@ export function statusMathWorker(input: {
       verificationErrorStreak: w.verificationErrorStreak,
       blockedReason: w.blockedReason,
       blockedAt: w.blockedAt,
+      generation: w.generation,
+      blockedTaskFingerprint: w.blockedTaskFingerprint,
+      lastOutcome: w.lastOutcome,
+      lastSummary: w.lastSummary,
       stopRequested: existsSync(stopPath(input.projectDir, w.sessionID)),
-      restartable:
-        !alive && !existsSync(stopPath(input.projectDir, w.sessionID)) && Boolean(w.taskFile && existsSync(w.taskFile)),
+      restartable: (() => {
+        if (alive || existsSync(stopPath(input.projectDir, w.sessionID))) return false
+        if (!(w.taskFile && existsSync(w.taskFile))) return false
+        const blockedSameTask =
+          w.state === "blocked" &&
+          w.blockedTaskFingerprint !== undefined &&
+          mathWorkerTaskFingerprint(readFileSync(w.taskFile, "utf8")) === w.blockedTaskFingerprint
+        if (!blockedSameTask) return true
+        if (!isInfraBlockedReason(w.blockedReason)) return false
+        return (w.verificationErrorStreak ?? 0) < MAX_MATH_WORKER_VERIFIER_ERROR_STREAK
+      })(),
     }
   })
 }
@@ -622,6 +672,10 @@ export const discoverMathWorkers = Effect.fn("MathWorker.discover")(function* (i
       verificationErrorStreak: existing?.verificationErrorStreak,
       blockedReason: existing?.blockedReason,
       blockedAt: existing?.blockedAt,
+      generation: existing?.generation,
+      blockedTaskFingerprint: existing?.blockedTaskFingerprint,
+      lastOutcome: existing?.lastOutcome,
+      lastSummary: existing?.lastSummary,
       ...summary,
     })
   }
@@ -689,7 +743,24 @@ export function updateMathWorkerTask(projectDir: string, sessionID: string, task
   const tmp = `${file}.tmp`
   writeFileSync(tmp, `${next}\n`, "utf8")
   renameSync(tmp, file)
-  log.info("math worker task updated", { sessionID, projectDir, length: next.length })
+  const taskFingerprint = mathWorkerTaskFingerprint(next)
+  const worker = readSwarm(projectDir).workers[sessionID]
+  if (worker) {
+    patchWorker(projectDir, sessionID, {
+      taskFingerprint,
+      ...(worker.state === "blocked"
+        ? {
+            state: "dead" as const,
+            blockedTaskFingerprint: undefined,
+            blockedReason: undefined,
+            blockedAt: undefined,
+            noProgressRounds: 0,
+            verificationErrorStreak: 0,
+          }
+        : {}),
+    })
+  }
+  log.info("math worker task updated", { sessionID, projectDir, length: next.length, taskFingerprint })
   return readMathWorkerTask(projectDir, sessionID)
 }
 
@@ -768,9 +839,20 @@ export const writeHeartbeat = Effect.fn("MathWorker.heartbeat")(function* (input
   sessionID: SessionID
   round: number
   projectDir: string
+  generation?: number
 }) {
   const sessions = yield* Session.Service
   yield* sessions.get(input.sessionID)
+  const worker = readSwarm(input.projectDir).workers[input.sessionID]
+  if (input.generation !== undefined && worker?.generation !== input.generation) {
+    log.warn("math worker stale heartbeat ignored", {
+      sessionID: input.sessionID,
+      round: input.round,
+      eventGeneration: input.generation,
+      currentGeneration: worker?.generation,
+    })
+    return
+  }
   const messageID = MessageID.ascending()
   const now = Date.now()
   yield* sessions.updateMessage({
@@ -799,9 +881,11 @@ export const writeHeartbeat = Effect.fn("MathWorker.heartbeat")(function* (input
   log.info("math worker heartbeat", { sessionID: input.sessionID, round: input.round, stopRequested })
 })
 
-export function buildWorkerKickoff(input: { task: string; round: number }): string {
+export function buildWorkerKickoff(input: { task: string; round: number; generation?: number; taskFingerprint?: string }): string {
   return [
     `You are math-worker round ${input.round}.`,
+    ...(input.generation === undefined ? [] : [`Worker generation: ${input.generation}.`]),
+    ...(input.taskFingerprint ? [`TASK fingerprint: ${input.taskFingerprint}.`] : []),
     "Read and execute the assigned TASK below. Continue from shared math-truth memory rather than restarting from scratch.",
     "Search verified facts before relying on prior work. Global memory and prior reports are hypotheses, never proof bricks.",
     "Record useful plans, obstacles, dead ends, and partial findings with math-truth memory tools while working.",
@@ -848,7 +932,7 @@ export function latestAcceptedFactId(messages: MessageV2.WithParts[]): string | 
   }
 }
 
-export function workerRoundSignals(message: MessageV2.WithParts): {
+export function workerRoundSignals(messages: MessageV2.WithParts | MessageV2.WithParts[]): {
   submissions: number
   verificationErrors: number
   acceptedFactId?: string
@@ -856,7 +940,8 @@ export function workerRoundSignals(message: MessageV2.WithParts): {
   let submissions = 0
   let verificationErrors = 0
   let acceptedFactId: string | undefined
-  for (const part of message.parts) {
+  const list = Array.isArray(messages) ? messages : [messages]
+  for (const part of list.flatMap((message) => message.parts)) {
     if (part.type !== "tool" || part.tool !== "math-truth_fact_submit" || part.state.status !== "completed") continue
     submissions += 1
     try {
@@ -903,12 +988,33 @@ export function advanceMathWorkerProgress(input: {
   return { taskChanged, factAdvanced, noProgressRounds, verificationErrorStreak, blockedReason }
 }
 
+export function classifyMathWorkerDispatch(input: {
+  completedFactId?: string
+  superseded: boolean
+  submissions: number
+  verificationErrors: number
+  acceptedFactId?: string
+}): { kind: "completed" | "superseded" | "blocked"; reason?: string } {
+  if (input.superseded) return { kind: "superseded" }
+  if (input.completedFactId) return { kind: "completed" }
+  if (input.verificationErrors > 0) return { kind: "blocked", reason: `verifier-errors:${input.verificationErrors}` }
+  if (input.acceptedFactId) return { kind: "blocked", reason: "accepted-fact-not-task-complete" }
+  if (input.submissions > 0) return { kind: "blocked", reason: "submission-not-accepted" }
+  return { kind: "blocked", reason: "round-ended-without-current-fact" }
+}
+
+/** Blocked reasons caused by infrastructure (verifier/model/process), not by the TASK content. */
+export function isInfraBlockedReason(reason: string | undefined): boolean {
+  return reason === "worker-round-failed" || (reason ?? "").startsWith("verifier-errors:")
+}
+
 export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
   sessionID: SessionID
   projectDir: string
   round: number
   model?: string
   variant?: string
+  generation?: number
 }) {
   const taskFile = taskPath(input.projectDir, input.sessionID)
   const task = readFileSync(taskFile, "utf8")
@@ -917,6 +1023,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
   const mcp = yield* MCP.Service
   const mcpStatus = yield* mcp.status()
   const mcpTools = yield* mcp.tools()
+  const before = new Set((yield* sessions.messages({ sessionID: input.sessionID })).map((message) => message.info.id))
   log.info("math worker prompt start", {
     sessionID: input.sessionID,
     round: input.round,
@@ -931,20 +1038,39 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     agent: "math-worker",
     model: input.model ? Provider.parseModel(input.model) : undefined,
     variant: input.variant,
-    parts: [{ type: "text", text: buildWorkerKickoff({ task, round: input.round }) }],
+    parts: [
+      {
+        type: "text",
+        text: buildWorkerKickoff({
+          task,
+          round: input.round,
+          generation: input.generation,
+          taskFingerprint: mathWorkerTaskFingerprint(task),
+        }),
+      },
+    ],
   })
-  const lastFactId = latestAcceptedFactId(yield* sessions.messages({ sessionID: input.sessionID }))
+  const messages = yield* sessions.messages({ sessionID: input.sessionID })
+  const roundMessages = messages.filter((message) => !before.has(message.info.id))
+  const lastFactId = latestAcceptedFactId(messages)
   const completionMarkerPresent = hasWorkerCompletionMarker(result)
-  const completedFactId = completedWorkerFactId(result, lastFactId)
-  const signals = workerRoundSignals(result)
+  const signals = workerRoundSignals(roundMessages)
+  const completedFactId = completedWorkerFactId(result, signals.acceptedFactId)
+  const currentTaskFingerprint = mathWorkerTaskFingerprint(readFileSync(taskFile, "utf8"))
+  const taskFingerprint = mathWorkerTaskFingerprint(task)
+  const currentWorker = readSwarm(input.projectDir).workers[input.sessionID]
+  const staleGeneration = input.generation !== undefined && currentWorker?.generation !== input.generation
+  const superseded = currentTaskFingerprint !== taskFingerprint || staleGeneration
   const stopRequested = existsSync(stopPath(input.projectDir, input.sessionID))
-  patchWorker(input.projectDir, input.sessionID, {
-    lastHeartbeatAt: Date.now(),
-    round: input.round,
-    state: stopRequested ? "stopping" : "running",
-    lastRc: result.info.role === "assistant" && !result.info.error ? 0 : 1,
-    lastFactId,
-  })
+  if (!superseded) {
+    patchWorker(input.projectDir, input.sessionID, {
+      lastHeartbeatAt: Date.now(),
+      round: input.round,
+      state: stopRequested ? "stopping" : "running",
+      lastRc: result.info.role === "assistant" && !result.info.error ? 0 : 1,
+      lastFactId,
+    })
+  }
   log.info("math worker prompt finish", {
     sessionID: input.sessionID,
     round: input.round,
@@ -953,9 +1079,13 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     lastFactId,
     completionMarkerPresent,
     completionAccepted: completedFactId !== undefined,
+    acceptedFactInRound: signals.acceptedFactId,
+    roundMessageCount: roundMessages.length,
+    superseded,
+    staleGeneration,
     stopRequested,
   })
-  return { result, completedFactId, lastFactId, signals, taskFingerprint: mathWorkerTaskFingerprint(task) }
+  return { result, completedFactId, lastFactId, signals, taskFingerprint, superseded }
 })
 
 export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
@@ -965,6 +1095,7 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
   heartbeatOnly?: boolean
   model?: string
   variant?: string
+  generation?: number
 }) {
   const sessionID = SessionID.make(input.sessionID)
   const sessions = yield* Session.Service
@@ -985,6 +1116,15 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
   mkdirSync(path.dirname(stopPath(input.projectDir, sessionID)), { recursive: true })
   mkdirSync(layout(input.projectDir).logs, { recursive: true })
   const existing = readSwarm(input.projectDir).workers[sessionID]
+  const generation = input.generation ?? existing?.generation ?? 0
+  if (existing?.generation !== undefined && generation !== existing.generation) {
+    log.warn("math worker stale generation refused", {
+      sessionID,
+      expectedGeneration: existing.generation,
+      receivedGeneration: generation,
+    })
+    return existing.round ?? 0
+  }
   const parent = existing?.parentSessionID
     ? yield* sessions.get(SessionID.make(existing.parentSessionID)).pipe(Effect.option)
     : Option.none()
@@ -1009,12 +1149,12 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
     verificationErrorStreak: existing?.verificationErrorStreak,
     blockedReason: existing?.blockedReason,
     blockedAt: existing?.blockedAt,
+    generation,
+    blockedTaskFingerprint: existing?.blockedTaskFingerprint,
+    lastOutcome: existing?.lastOutcome,
+    lastSummary: existing?.lastSummary,
   })
   let round = existing?.round ?? 0
-  let lastFactId = existing?.lastFactId
-  let taskFingerprint = existing?.taskFingerprint
-  let noProgressRounds = existing?.noProgressRounds ?? 0
-  let verificationErrorStreak = existing?.verificationErrorStreak ?? 0
   const marker = stopPath(input.projectDir, sessionID)
   let completedFactId: string | undefined
   let blockedReason: string | undefined
@@ -1023,37 +1163,85 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
     round += 1
     const startedAt = Date.now()
     log.info("math worker round start", { sessionID, round, pid: process.pid, markerPresent: false })
-    if (input.heartbeatOnly) yield* writeHeartbeat({ sessionID, round, projectDir: input.projectDir })
+    if (input.heartbeatOnly)
+      yield* writeHeartbeat({ sessionID, round, projectDir: input.projectDir, generation })
     else {
-      const outcome = yield* runWorkerRound({
+      const exit = yield* runWorkerRound({
         sessionID,
         round,
         projectDir: input.projectDir,
         model: input.model ?? existing?.model,
         variant: input.variant ?? existing?.variant,
-      })
-      completedFactId = outcome.completedFactId
-      const progress = advanceMathWorkerProgress({
-        previousTaskFingerprint: taskFingerprint,
-        taskFingerprint: outcome.taskFingerprint,
-        previousFactId: lastFactId,
-        factId: outcome.lastFactId,
-        noProgressRounds,
-        verificationErrorStreak,
+        generation,
+      }).pipe(Effect.exit)
+      if (Exit.isFailure(exit)) {
+        const summary = Cause.pretty(exit.cause).slice(0, 1_000)
+        const current = readSwarm(input.projectDir).workers[sessionID]
+        if (current?.generation === generation) {
+          patchWorker(input.projectDir, sessionID, {
+            state: "dead",
+            round,
+            lastRc: 1,
+            lastOutcome: "failed",
+            lastSummary: summary,
+            verificationErrorStreak: (current.verificationErrorStreak ?? 0) + 1,
+          })
+          yield* notifyParent({
+            serverUrl: parentServerUrl,
+            parentSessionID: existing?.parentSessionID,
+            workerSessionID: sessionID,
+            directory: parentDirectory,
+            eventID: `failed_${generation}_${round}`,
+            kind: "failed",
+            round,
+            reason: "worker-round-failed",
+            summary: `Math worker round failed before producing a decision. ${summary}`,
+            generation,
+            taskFingerprint: current.taskFingerprint ?? "",
+          })
+        }
+        blockedReason = "worker-round-failed"
+        break
+      }
+      const outcome = exit.value
+      const decision = classifyMathWorkerDispatch({
+        completedFactId: outcome.completedFactId,
+        superseded: outcome.superseded,
+        submissions: outcome.signals.submissions,
         verificationErrors: outcome.signals.verificationErrors,
+        acceptedFactId: outcome.signals.acceptedFactId,
       })
-      const factAdvanced = progress.factAdvanced
-      noProgressRounds = progress.noProgressRounds
-      verificationErrorStreak = progress.verificationErrorStreak
-      taskFingerprint = outcome.taskFingerprint
-      lastFactId = outcome.lastFactId
-      blockedReason = progress.blockedReason
-      patchWorker(input.projectDir, sessionID, {
-        taskFingerprint,
-        noProgressRounds,
-        verificationErrorStreak,
-        ...(blockedReason ? { state: "blocked", blockedReason, blockedAt: Date.now(), lastRc: 1 } : {}),
-      })
+      if (decision.kind === "superseded") {
+        const current = readSwarm(input.projectDir).workers[sessionID]
+        if (current?.generation !== generation) break
+        patchWorker(input.projectDir, sessionID, {
+          round,
+          taskFingerprint: mathWorkerTaskFingerprint(readFileSync(taskPath(input.projectDir, sessionID), "utf8")),
+          lastOutcome: "superseded",
+          lastSummary: "TASK changed while the previous worker round was running; stale output was discarded.",
+        })
+        log.info("math worker stale round discarded after TASK revision", { sessionID, round, generation })
+        continue
+      }
+      completedFactId = decision.kind === "completed" ? outcome.completedFactId : undefined
+      const finalSummary = outcome.result.parts
+        .filter((part) => part.type === "text")
+        .map((part) => part.text.trim())
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 1_000)
+      const current = readSwarm(input.projectDir).workers[sessionID]
+      if (current?.generation !== generation || current.taskFingerprint !== outcome.taskFingerprint) {
+        log.warn("math worker terminal result fenced", {
+          sessionID,
+          round,
+          generation,
+          currentGeneration: current?.generation,
+          taskFingerprint: outcome.taskFingerprint,
+          currentTaskFingerprint: current?.taskFingerprint,
+        })
+        break
+      }
       log.info("math worker completion decision", {
         sessionID,
         round,
@@ -1062,7 +1250,12 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
       })
       if (completedFactId) {
         writeFileSync(marker, `completed fact_id=${completedFactId} round=${round} ts=${Date.now()}\n`, "utf8")
-        patchWorker(input.projectDir, sessionID, { state: "stopping", lastFactId: completedFactId })
+        patchWorker(input.projectDir, sessionID, {
+          state: "stopping",
+          lastFactId: completedFactId,
+          lastOutcome: "completed",
+          lastSummary: finalSummary,
+        })
         log.info("math worker completion marker written", { sessionID, round, completedFactId, marker })
         yield* notifyParent({
           serverUrl: parentServerUrl,
@@ -1073,41 +1266,44 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
           kind: "completed",
           round,
           factID: completedFactId,
-          summary: `Math worker completed its assigned lane with accepted fact ${completedFactId}.`,
+          summary: `Math worker completed its assigned lane with accepted fact ${completedFactId}.\nWorker report: ${finalSummary || "(no final text)"}`,
+          generation,
+          taskFingerprint: outcome.taskFingerprint,
         })
-      } else if (blockedReason) {
+      } else {
+        blockedReason = decision.reason ?? "round-ended-without-current-fact"
+        patchWorker(input.projectDir, sessionID, {
+          state: "blocked",
+          round,
+          taskFingerprint: outcome.taskFingerprint,
+          blockedTaskFingerprint: outcome.taskFingerprint,
+          blockedReason,
+          blockedAt: Date.now(),
+          noProgressRounds: 1,
+          verificationErrorStreak: outcome.signals.verificationErrors > 0 ? 1 : 0,
+          lastRc: 1,
+          lastOutcome: "blocked",
+          lastSummary: finalSummary,
+        })
         log.warn("math worker blocked", {
           sessionID,
           round,
           blockedReason,
-          noProgressRounds,
-          verificationErrorStreak,
+          submissions: outcome.signals.submissions,
+          verificationErrors: outcome.signals.verificationErrors,
         })
         yield* notifyParent({
           serverUrl: parentServerUrl,
           parentSessionID: existing?.parentSessionID,
           workerSessionID: sessionID,
           directory: parentDirectory,
-          eventID: `blocked_${round}_${blockedReason}`,
+          eventID: `blocked_${generation}_${round}_${blockedReason}`,
           kind: "blocked",
           round,
           reason: blockedReason,
-          summary:
-            verificationErrorStreak >= MAX_MATH_WORKER_VERIFIER_ERROR_STREAK
-              ? "Math worker stopped after repeated verifier infrastructure errors. The verifier or model path needs intervention before retrying."
-              : "Math worker stopped after repeated rounds without an accepted fact or TASK revision. The parent must revise dependencies or strategy before retrying.",
-        })
-      } else if (factAdvanced && outcome.lastFactId) {
-        yield* notifyParent({
-          serverUrl: parentServerUrl,
-          parentSessionID: existing?.parentSessionID,
-          workerSessionID: sessionID,
-          directory: parentDirectory,
-          eventID: `progress_${outcome.lastFactId}`,
-          kind: "progress",
-          round,
-          factID: outcome.lastFactId,
-          summary: `Math worker produced a new accepted fact ${outcome.lastFactId}.`,
+          summary: `Math worker stopped after one complete dispatch without a current-round accepted completion fact. The parent must inspect shared memory and revise the TASK or dependencies before retrying.\nWorker report: ${finalSummary || "(no final text)"}`,
+          generation,
+          taskFingerprint: outcome.taskFingerprint,
         })
       }
     }
@@ -1118,10 +1314,11 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
       durationMs: Date.now() - startedAt,
       markerPresent: existsSync(marker),
     })
-    if (blockedReason) break
-    if (!completedFactId) yield* Effect.sleep(Duration.millis(input.intervalMs))
+    if (blockedReason || completedFactId) break
+    yield* Effect.sleep(Duration.millis(input.intervalMs))
   }
-  if (!blockedReason) patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })
+  const final = readSwarm(input.projectDir).workers[sessionID]
+  if (!blockedReason && final?.generation === generation) patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })
   log.info("math worker loop stop", {
     sessionID,
     round,

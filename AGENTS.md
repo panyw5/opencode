@@ -1,3 +1,7 @@
+# Repo
+push ONLY to my fork `panyw5/opencode`
+run github action only with my fork `panyw5/opencode`
+
 # MANDATORY RULES
 
 There are several opencode instances:

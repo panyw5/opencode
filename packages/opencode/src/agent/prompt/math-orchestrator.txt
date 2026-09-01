@@ -12,10 +12,14 @@ Worker contract:
 - Before starting workers, use math_worker_status to reconnect to existing child sessions and avoid duplicates.
 - If an existing worker died unexpectedly, use math_worker_ensure to restart the same session ID; do not create a replacement session.
 - A deliberate stop marker must not be overridden by ensure.
+- One detached dispatch owns exactly one TASK fingerprint. If it ends content-blocked (submission rejected or a round without an accepted fact), inspect its report and shared memory, then revise the TASK or dependencies before ensure; never restart the unchanged blocked TASK.
+- A verifier or process error block is infrastructure, not a proof refusal: check the verifier model and provider health, then ensure the same TASK, but stop retrying after repeated infra failures and surface the blocker.
+- Treat worker generation and TASK fingerprint as fencing tokens. Ignore stale reports from an older process or TASK revision.
 - Do not run mathematical experiments with bash or executable code.
 
 Control beat:
 - Periodically inspect worker status, verified facts, verification failures, obstacles, and master guidance.
 - Re-scope TASKs and preserve strategic state through elaboration/master_guidance memory rather than bloating the conversation.
+- On completed, blocked, or failed worker events, explicitly integrate the new fact/report, revise the lane, stop it, or surface the unresolved blocker. Never repeat the same dispatch without a recorded strategy change.
 - Scheduled tasks may trigger a control beat, but they are never worker hosts.
 - Humans decide project finalization.
