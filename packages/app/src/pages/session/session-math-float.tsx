@@ -11,6 +11,7 @@ import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-se
 import { useLanguage } from "@/context/language"
 import type { MathDetailKind, MathDetailPage, MathWorkerStatus } from "@/pages/session/math-worker-api"
 import { SessionMathDetails } from "@/pages/session/session-math-details"
+import { leaveMathDetailsForWorker } from "@/pages/session/session-math-navigation"
 import { reconcileVerifierModelDraft } from "@/pages/session/math-verifier-model"
 
 export type SessionMathWorkerEntry = MathWorkerStatus & { title: string }
@@ -85,6 +86,14 @@ function SessionMathDialog(props: SessionMathFloatProps) {
   const running = createMemo(() => props.workers.filter((worker) => worker.alive && worker.state === "running").length)
   const busy = (entry: SessionMathWorkerEntry) => props.busy.includes(entry.sessionID)
   const projectSummary = createMemo(() => props.workers[0])
+  const openWorker = (entry: SessionMathWorkerEntry) => {
+    console.debug(`[math-swarm] dialog leave worker=${entry.sessionID} source=worker-card`)
+    leaveMathDetailsForWorker({ close: () => dialog.close(), open: () => props.onOpen(entry) })
+  }
+  const openWorkerSession = (sessionID: string) => {
+    console.debug(`[math-swarm] dialog leave worker=${sessionID} source=evidence`)
+    leaveMathDetailsForWorker({ close: () => dialog.close(), open: () => props.onOpenWorkerSession(sessionID) })
+  }
   const [details, setDetails] = createStore({
     project: undefined as string | undefined,
     selected: undefined as MathDetailKind | undefined,
@@ -387,7 +396,7 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                     {(entry) => (
                       <div class="rounded-xl border border-border-weak-base bg-surface-raised-base p-3 shadow-xs-border-base">
                         <div class="flex min-w-0 items-start justify-between gap-3">
-                          <button class="min-w-0 flex-1 text-left" onClick={() => props.onOpen(entry)}>
+                          <button class="min-w-0 flex-1 text-left" onClick={() => openWorker(entry)}>
                             <div class="flex min-w-0 items-center gap-2 text-13-medium text-text-strong">
                               <span class={`shrink-0 text-10-medium ${stateClass(entry)}`} aria-hidden="true">
                                 ●
@@ -488,7 +497,7 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                     if (!kind) return
                     void loadDetails(kind, offset)
                   }}
-                  onOpenWorker={props.onOpenWorkerSession}
+                  onOpenWorker={openWorkerSession}
                 />
               )}
             </Show>
