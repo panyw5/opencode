@@ -11,7 +11,7 @@ import { EventV2 } from "@opencode-ai/core/event"
 
 const it = testEffect(SessionInput.defaultLayer)
 
-const seedSession = Effect.fn("SessionInputTest.seedSession")(function* () {
+const seedSession = Effect.fn("SessionInputTest.seedSession")(function* (directory = "/tmp") {
   const projectID = ProjectID.ascending()
   const sessionID = SessionID.descending()
   const now = Date.now()
@@ -30,7 +30,7 @@ const seedSession = Effect.fn("SessionInputTest.seedSession")(function* () {
         id: sessionID,
         project_id: projectID,
         slug: "input-test",
-        directory: "/tmp",
+        directory,
         title: "Input test",
         version: "test",
         time_created: now,
@@ -65,7 +65,21 @@ describe("SessionInput", () => {
       expect(duplicate.prompt.text).toBe("first")
       expect(b.admittedSeq).toBe(1)
       expect((yield* service.pending(sessionID)).map((item) => item.prompt.text)).toEqual(["first", "second"])
-      expect(yield* service.pendingSessions()).toContain(sessionID)
+      expect(yield* service.pendingSessions("/tmp")).toContain(sessionID)
+    }),
+  )
+
+  it.instance("scopes recovery scans to the owning session directory", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionInput.Service
+      const sessionA = yield* seedSession("/tmp/project-a")
+      const sessionB = yield* seedSession("/tmp/project-b")
+      yield* service.admit(admit(sessionA, "for a"))
+      yield* service.admit(admit(sessionB, "for b"))
+
+      expect(yield* service.pendingSessions("/tmp/project-a")).toEqual([sessionA])
+      expect(yield* service.pendingSessions("/tmp/project-b")).toEqual([sessionB])
+      expect(yield* service.pendingSessions("/tmp/project-c")).toEqual([])
     }),
   )
 
@@ -98,13 +112,127 @@ describe("SessionInput", () => {
 
       expect(claimed).toBeDefined()
       expect((yield* service.promotedUnacked(sessionID)).map((item) => item.id)).toEqual([input.id])
-      expect(yield* service.pendingSessions()).toContain(sessionID)
+      expect(yield* service.pendingSessions("/tmp")).toContain(sessionID)
 
       yield* service.ack([input.id])
       yield* service.ack([input.id])
 
       expect(yield* service.promotedUnacked(sessionID)).toEqual([])
-      expect(yield* service.pendingSessions()).not.toContain(sessionID)
+      expect(yield* service.pendingSessions("/tmp")).not.toContain(sessionID)
+    }),
+  )
+
+  it.instance("keeps admission sequences monotonic after acknowledged rows are deleted", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionInput.Service
+      const sessionID = yield* seedSession()
+      const first = yield* service.admit(admit(sessionID, "first"))
+      yield* service.ack([first.id])
+      const second = yield* service.admit(admit(sessionID, "second"))
+      const cursor = yield* service.cursor(sessionID)
+
+      expect(second.admittedSeq).toBe(1)
+      expect(cursor.nextAdmittedSeq).toBe(2)
+      expect(cursor.consumedSeq).toBe(-1)
+    }),
+  )
+
+  it.instance("reconciles the allocator after an older client writes without the cursor", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionInput.Service
+      const sessionID = yield* seedSession()
+      yield* service.admit(admit(sessionID, "new-client-first"))
+      Database.use((db) =>
+        db
+          .insert(SessionInputTable)
+          .values({
+            id: "evt_legacy_writer",
+            session_id: sessionID,
+            prompt: { text: "legacy writer" },
+            delivery: "deferred",
+            admitted_seq: 1,
+            promoted_seq: null,
+            time_created: Date.now(),
+          })
+          .run(),
+      )
+
+      const next = yield* service.admit(admit(sessionID, "new-client-after-legacy"))
+      expect(next.admittedSeq).toBe(2)
+      expect((yield* service.cursor(sessionID)).nextAdmittedSeq).toBe(3)
+    }),
+  )
+
+  it.instance("renumbers an older client row written below the consumed boundary", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionInput.Service
+      const sessionID = yield* seedSession()
+      const first = yield* service.admit(admit(sessionID, "first"))
+      yield* service.promote(sessionID)
+      yield* service.claim(sessionID, [first.id])
+      Database.use((db) =>
+        db
+          .insert(SessionInputTable)
+          .values({
+            id: "evt_legacy_reused_sequence",
+            session_id: sessionID,
+            prompt: { text: "legacy reused sequence" },
+            delivery: "deferred",
+            admitted_seq: 0,
+            promoted_seq: null,
+            time_created: Date.now(),
+          })
+          .run(),
+      )
+
+      const [promoted] = yield* service.promote(sessionID)
+      expect(promoted?.admittedSeq).toBe(1)
+      const claimed = yield* service.claim(sessionID, ["evt_legacy_reused_sequence"])
+      expect(claimed.rows.map((row) => row.admittedSeq)).toEqual([1])
+      expect(claimed.consumedSeq).toBe(1)
+      expect(yield* service.promotedUnacked(sessionID)).toEqual([])
+    }),
+  )
+
+  it.instance("allocates unique ordered sequences for concurrent admissions", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionInput.Service
+      const sessionID = yield* seedSession()
+      const inputs = Array.from({ length: 20 }, (_, index) => admit(sessionID, `input-${index}`))
+      const rows = yield* Effect.all(
+        inputs.map((input) => service.admit(input)),
+        { concurrency: "unbounded" },
+      )
+      const sequences = rows.map((row) => row.admittedSeq).sort((a, b) => a - b)
+
+      expect(sequences).toEqual(Array.from({ length: 20 }, (_, index) => index))
+      expect(new Set(sequences).size).toBe(20)
+      expect((yield* service.cursor(sessionID)).nextAdmittedSeq).toBe(20)
+    }),
+  )
+
+  it.instance("advances the consumed boundary only across a claimed contiguous prefix", () =>
+    Effect.gen(function* () {
+      const service = yield* SessionInput.Service
+      const sessionID = yield* seedSession()
+      const first = yield* service.admit(admit(sessionID, "first"))
+      const second = yield* service.admit(admit(sessionID, "second"))
+      const third = yield* service.admit(admit(sessionID, "third"))
+      yield* service.promote(sessionID)
+
+      const skipped = yield* service.claim(sessionID, [second.id])
+      expect(skipped.rows).toEqual([])
+      expect(skipped.consumedSeq).toBe(-1)
+
+      const prefix = yield* service.claim(sessionID, [first.id, second.id])
+      expect(prefix.rows.map((row) => row.id)).toEqual([first.id, second.id])
+      expect(prefix.consumedSeq).toBe(1)
+      expect((yield* service.promotedUnacked(sessionID)).map((row) => row.id)).toEqual([third.id])
+
+      const rest = yield* service.claim(sessionID, [third.id])
+      expect(rest.rows.map((row) => row.id)).toEqual([third.id])
+      expect(rest.consumedSeq).toBe(2)
+      expect((yield* service.cursor(sessionID)).consumedSeq).toBe(2)
     }),
   )
 })

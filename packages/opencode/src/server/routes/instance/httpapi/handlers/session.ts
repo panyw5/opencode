@@ -9,6 +9,7 @@ import { Session } from "@/session/session"
 import { SessionCompaction } from "@/session/compaction"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
+import { SessionInput } from "@/session/input"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
@@ -34,7 +35,7 @@ import {
 } from "@/tool/advisor-intervention"
 import { NamedError } from "@opencode-ai/core/util/error"
 import * as Log from "@opencode-ai/core/util/log"
-import { Cause, Effect, Option, Schema, Scope } from "effect"
+import { Cause, Effect, Layer, Option, Schema, Scope } from "effect"
 import { existsSync, readdirSync } from "node:fs"
 import path from "node:path"
 import * as Stream from "effect/Stream"
@@ -51,6 +52,7 @@ import {
   InitPayload,
   ListQuery,
   MathWorkerEnsurePayload,
+  MathWorkerEventPayload,
   MathDetailsQuery,
   MathWorkerQuery,
   MathWorkerStopPayload,
@@ -117,6 +119,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const session = yield* Session.Service
     const shareSvc = yield* SessionShare.Service
     const promptSvc = yield* SessionPrompt.Service
+    const inboxSvc = yield* SessionInput.Service
     const revertSvc = yield* SessionRevert.Service
     const compactSvc = yield* SessionCompaction.Service
     const runState = yield* SessionRunState.Service
@@ -317,7 +320,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         session.get(SessionID.make(sessionID)).pipe(Effect.orElseSucceed(() => undefined)),
       )
       const workerIDs = candidates.flatMap((worker) =>
-        worker?.agent === "math-worker" && worker.directory === parent.directory ? [worker.id] : [],
+        worker?.agent === "math-worker" && worker.directory === projectDir ? [worker.id] : [],
       )
       const validWorkers = new Set<string>(workerIDs)
       const sanitized = {
@@ -445,6 +448,67 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         state: result.state,
       })
       return result
+    })
+
+    const mathWorkerEvent = Effect.fn("SessionHttpApi.mathWorkerEvent")(function* (ctx: {
+      params: { sessionID: SessionID; workerID: SessionID }
+      payload: typeof MathWorkerEventPayload.Type
+    }) {
+      const parent = yield* requireSession(ctx.params.sessionID)
+      yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
+      const inputID = `evt_math_worker_${ctx.params.workerID}_${ctx.payload.eventID}`
+      const fact = ctx.payload.factID ? `\nVerified fact: ${ctx.payload.factID}` : ""
+      const reason = ctx.payload.reason ? `\nReason: ${ctx.payload.reason}` : ""
+      yield* inboxSvc.admit({
+        id: inputID,
+        sessionID: parent.id,
+        source: "math-worker",
+        prompt: {
+          text: [
+            `<math_worker_event kind="${ctx.payload.kind}" worker="${ctx.params.workerID}" round="${ctx.payload.round}">`,
+            ctx.payload.summary,
+            fact,
+            reason,
+            "Inspect the worker status and shared Math Mode memory, then decide whether to integrate the result, revise the TASK, retry with a changed dependency, or stop the lane. Do not blindly repeat the same dispatch.",
+            "</math_worker_event>",
+          ]
+            .filter(Boolean)
+            .join("\n"),
+          agent: parent.agent,
+          model: parent.model
+            ? {
+                providerID: parent.model.providerID,
+                modelID: parent.model.id,
+                ...(parent.model.variant ? { variant: parent.model.variant } : {}),
+              }
+            : undefined,
+          metadata: {
+            kind: "math-worker-event",
+            workerSessionID: ctx.params.workerID,
+            eventKind: ctx.payload.kind,
+            round: ctx.payload.round,
+            factID: ctx.payload.factID,
+            reason: ctx.payload.reason,
+          },
+        },
+      })
+      const pending = yield* inboxSvc.pending(parent.id)
+      if (pending.some((item) => item.id === inputID)) {
+        yield* promptSvc.loop({ sessionID: parent.id }).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError("math worker parent wake failed").pipe(
+              Effect.annotateLogs({
+                parentSessionID: parent.id,
+                workerSessionID: ctx.params.workerID,
+                eventID: ctx.payload.eventID,
+                cause,
+              }),
+            ),
+          ),
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+      }
+      return HttpApiSchema.NoContent.make()
     })
 
     const mathWorkerTaskGet = Effect.fn("SessionHttpApi.mathWorkerTaskGet")(function* (ctx: {
@@ -870,6 +934,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("mathDetails", mathDetails)
       .handle("mathWorkerEnsure", mathWorkerEnsure)
       .handle("mathWorkerStop", mathWorkerStop)
+      .handle("mathWorkerEvent", mathWorkerEvent)
       .handle("mathWorkerTaskGet", mathWorkerTaskGet)
       .handle("mathWorkerTaskUpdate", mathWorkerTaskUpdate)
       .handle("todo", todo)
@@ -902,4 +967,4 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("deletePart", deletePart)
       .handle("updatePart", updatePart)
   }),
-)
+).pipe(Layer.provide(SessionInput.defaultLayer))

@@ -2,12 +2,15 @@ import { Database, and, asc, eq, isNull, isNotNull, sql, type TxOrDb } from "@/s
 import { Effect, Context, Layer } from "effect"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import {
+  SessionInputCursorTable,
   SessionInputTable,
   type SessionInputDelivery,
   type SessionInputID,
   type SessionInputPrompt,
 } from "./session.sql"
 import { SessionID } from "./schema"
+import { SessionTable } from "./session.sql"
+import { directorySqlEq } from "@/util/directory-sql"
 
 const log = EffectLogger.create({ service: "session.input" })
 
@@ -29,12 +32,26 @@ export type AdmitInput = {
   readonly delivery?: SessionInputDelivery
 }
 
+export type Cursor = {
+  readonly sessionID: SessionID
+  readonly nextAdmittedSeq: number
+  readonly nextPromotedSeq: number
+  readonly consumedSeq: number
+}
+
+export type Claim = {
+  readonly rows: Info[]
+  readonly consumedSeq: number
+}
+
 export interface Interface {
   readonly admit: (input: AdmitInput) => Effect.Effect<Info>
   readonly pending: (sessionID: SessionID) => Effect.Effect<Info[]>
   readonly promotedUnacked: (sessionID: SessionID) => Effect.Effect<Info[]>
-  readonly pendingSessions: () => Effect.Effect<SessionID[]>
+  readonly pendingSessions: (directory: string) => Effect.Effect<SessionID[]>
   readonly promote: (sessionID: SessionID, limit?: number) => Effect.Effect<Info[]>
+  readonly claim: (sessionID: SessionID, inputIDs: readonly SessionInputID[]) => Effect.Effect<Claim>
+  readonly cursor: (sessionID: SessionID) => Effect.Effect<Cursor>
   readonly ack: (inputIDs: readonly SessionInputID[]) => Effect.Effect<void>
 }
 
@@ -54,15 +71,84 @@ function fromRow(row: InputRow): Info {
   }
 }
 
-function nextSequence(db: TxOrDb, sessionID: SessionID, column: "admitted_seq" | "promoted_seq") {
-  const result = db
+function ensureCursor(db: TxOrDb, sessionID: SessionID) {
+  const existing = db
+    .select()
+    .from(SessionInputCursorTable)
+    .where(eq(SessionInputCursorTable.session_id, sessionID))
+    .get()
+  const maxima = db
     .select({
-      value: sql<number>`coalesce(max(${column === "admitted_seq" ? SessionInputTable.admitted_seq : SessionInputTable.promoted_seq}), -1)`,
+      admitted: sql<number>`coalesce(max(${SessionInputTable.admitted_seq}), -1)`,
+      promoted: sql<number>`coalesce(max(${SessionInputTable.promoted_seq}), -1)`,
     })
     .from(SessionInputTable)
     .where(eq(SessionInputTable.session_id, sessionID))
     .get()
-  return (result?.value ?? -1) + 1
+  if (existing) {
+    const nextAdmittedSeq = Math.max(existing.next_admitted_seq, (maxima?.admitted ?? -1) + 1)
+    const nextPromotedSeq = Math.max(existing.next_promoted_seq, (maxima?.promoted ?? -1) + 1)
+    const stale = db
+      .select()
+      .from(SessionInputTable)
+      .where(
+        and(
+          eq(SessionInputTable.session_id, sessionID),
+          sql`${SessionInputTable.admitted_seq} <= ${existing.consumed_seq}`,
+        ),
+      )
+      .orderBy(asc(SessionInputTable.admitted_seq))
+      .all()
+    let allocatedAdmittedSeq = nextAdmittedSeq
+    for (const row of stale) {
+      db.update(SessionInputTable)
+        .set({ admitted_seq: allocatedAdmittedSeq })
+        .where(eq(SessionInputTable.id, row.id))
+        .run()
+      allocatedAdmittedSeq++
+    }
+    if (
+      allocatedAdmittedSeq === existing.next_admitted_seq &&
+      nextPromotedSeq === existing.next_promoted_seq
+    )
+      return existing
+    const updated = {
+      ...existing,
+      next_admitted_seq: allocatedAdmittedSeq,
+      next_promoted_seq: nextPromotedSeq,
+      time_updated: Date.now(),
+    }
+    db.update(SessionInputCursorTable)
+      .set({
+        next_admitted_seq: updated.next_admitted_seq,
+        next_promoted_seq: updated.next_promoted_seq,
+        time_updated: updated.time_updated,
+      })
+      .where(eq(SessionInputCursorTable.session_id, sessionID))
+      .run()
+    return updated
+  }
+
+  const now = Date.now()
+  const row: typeof SessionInputCursorTable.$inferInsert = {
+    session_id: sessionID,
+    next_admitted_seq: (maxima?.admitted ?? -1) + 1,
+    next_promoted_seq: (maxima?.promoted ?? -1) + 1,
+    consumed_seq: -1,
+    time_created: now,
+    time_updated: now,
+  }
+  db.insert(SessionInputCursorTable).values(row).run()
+  return row as typeof SessionInputCursorTable.$inferSelect
+}
+
+function fromCursor(row: typeof SessionInputCursorTable.$inferSelect): Cursor {
+  return {
+    sessionID: row.session_id,
+    nextAdmittedSeq: row.next_admitted_seq,
+    nextPromotedSeq: row.next_promoted_seq,
+    consumedSeq: row.consumed_seq,
+  }
 }
 
 export const layer = Layer.effect(
@@ -77,15 +163,20 @@ export const layer = Layer.effect(
           const existing = db.select().from(SessionInputTable).where(eq(SessionInputTable.id, input.id)).get()
           if (existing) return { row: existing, inserted: false }
 
+          const cursor = ensureCursor(db, input.sessionID)
           const row: typeof SessionInputTable.$inferInsert = {
             id: input.id,
             session_id: input.sessionID,
             prompt: input.prompt,
             delivery,
-            admitted_seq: nextSequence(db, input.sessionID, "admitted_seq"),
+            admitted_seq: cursor.next_admitted_seq,
             promoted_seq: null,
             time_created: Date.now(),
           }
+          db.update(SessionInputCursorTable)
+            .set({ next_admitted_seq: cursor.next_admitted_seq + 1, time_updated: Date.now() })
+            .where(eq(SessionInputCursorTable.session_id, input.sessionID))
+            .run()
           db.insert(SessionInputTable).values(row).run()
           return { row: row as InputRow, inserted: true }
         },
@@ -157,12 +248,13 @@ export const layer = Layer.effect(
       return result
     })
 
-    const pendingSessions = Effect.fn("SessionInput.pendingSessions")(function* () {
+    const pendingSessions = Effect.fn("SessionInput.pendingSessions")(function* (directory: string) {
       const rows = Database.use((db) =>
         db
           .select({ sessionID: SessionInputTable.session_id })
           .from(SessionInputTable)
-          .where(eq(SessionInputTable.delivery, "deferred"))
+          .innerJoin(SessionTable, eq(SessionTable.id, SessionInputTable.session_id))
+          .where(and(eq(SessionInputTable.delivery, "deferred"), directorySqlEq(SessionTable.directory, directory)))
           .orderBy(asc(SessionInputTable.session_id), asc(SessionInputTable.admitted_seq))
           .all(),
       )
@@ -175,6 +267,7 @@ export const layer = Layer.effect(
       }
       yield* log.info("inbox recovery scan", {
         source: "session-input",
+        directory,
         sessionCount: sessions.length,
       })
       return sessions
@@ -185,6 +278,7 @@ export const layer = Layer.effect(
         yield* Effect.die(new Error("SessionInput.promote limit must be positive"))
       const claimed = Database.transaction(
         (db) => {
+          const cursor = ensureCursor(db, sessionID)
           const rows = db
             .select()
             .from(SessionInputTable)
@@ -200,7 +294,7 @@ export const layer = Layer.effect(
             .slice(0, limit)
           if (rows.length === 0) return []
 
-          let promotedSeq = nextSequence(db, sessionID, "promoted_seq")
+          let promotedSeq = cursor.next_promoted_seq
           const result: InputRow[] = []
           for (const row of rows) {
             db.update(SessionInputTable)
@@ -210,6 +304,10 @@ export const layer = Layer.effect(
             result.push({ ...row, promoted_seq: promotedSeq })
             promotedSeq++
           }
+          db.update(SessionInputCursorTable)
+            .set({ next_promoted_seq: promotedSeq, time_updated: Date.now() })
+            .where(eq(SessionInputCursorTable.session_id, sessionID))
+            .run()
           return result
         },
         { behavior: "immediate" },
@@ -225,6 +323,58 @@ export const layer = Layer.effect(
         })
       }
       return claimed.map(fromRow)
+    })
+
+    const cursor = Effect.fn("SessionInput.cursor")(function* (sessionID: SessionID) {
+      const row = Database.transaction((db) => ensureCursor(db, sessionID), { behavior: "immediate" })
+      return fromCursor(row)
+    })
+
+    const claim = Effect.fn("SessionInput.claim")(function* (
+      sessionID: SessionID,
+      inputIDs: readonly SessionInputID[],
+    ) {
+      const ids = new Set(inputIDs)
+      const result = Database.transaction(
+        (db) => {
+          const cursor = ensureCursor(db, sessionID)
+          if (ids.size === 0) return { rows: [] as InputRow[], consumedSeq: cursor.consumed_seq }
+          const rows = db
+            .select()
+            .from(SessionInputTable)
+            .where(
+              and(
+                eq(SessionInputTable.session_id, sessionID),
+                isNotNull(SessionInputTable.promoted_seq),
+                eq(SessionInputTable.delivery, "deferred"),
+                sql`${SessionInputTable.admitted_seq} > ${cursor.consumed_seq}`,
+              ),
+            )
+            .orderBy(asc(SessionInputTable.admitted_seq))
+            .all()
+          const prefix: InputRow[] = []
+          for (const row of rows) {
+            if (!ids.has(row.id)) break
+            prefix.push(row)
+          }
+          if (prefix.length === 0) return { rows: prefix, consumedSeq: cursor.consumed_seq }
+          const consumedSeq = prefix[prefix.length - 1]!.admitted_seq
+          db.update(SessionInputCursorTable)
+            .set({ consumed_seq: consumedSeq, time_updated: Date.now() })
+            .where(eq(SessionInputCursorTable.session_id, sessionID))
+            .run()
+          for (const row of prefix) db.delete(SessionInputTable).where(eq(SessionInputTable.id, row.id)).run()
+          return { rows: prefix, consumedSeq }
+        },
+        { behavior: "immediate" },
+      )
+      yield* log.info("inbox model input claimed", {
+        sessionID,
+        source: "session-input",
+        count: result.rows.length,
+        consumedSeq: result.consumedSeq,
+      })
+      return { rows: result.rows.map(fromRow), consumedSeq: result.consumedSeq }
     })
 
     const ack = Effect.fn("SessionInput.ack")(function* (inputIDs: readonly SessionInputID[]) {
@@ -255,7 +405,7 @@ export const layer = Layer.effect(
       })
     })
 
-    return Service.of({ admit, pending, promotedUnacked, pendingSessions, promote, ack })
+    return Service.of({ admit, pending, promotedUnacked, pendingSessions, promote, claim, cursor, ack })
   }),
 )
 

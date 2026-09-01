@@ -10,6 +10,7 @@ import {
   writeFileSync,
 } from "fs"
 import path from "path"
+import { createHash } from "node:crypto"
 import { Duration, Effect, Option } from "effect"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
@@ -23,10 +24,83 @@ import { killProcessGroup, pidAlive, selfArgv, spawnDetached } from "./spawn"
 import { clearStop, patchWorker, readSwarm, setVerifierModel, stopPath, upsertWorker, type SwarmWorker } from "./swarm"
 import { FactGraph } from "./fact-graph"
 import { GlobalMemory } from "./global-memory"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { InstanceState } from "@/effect/instance-state"
+import { InstanceRef } from "@/effect/instance-ref"
 import * as Log from "@opencode-ai/core/util/log"
 import { parse as parseJsonc } from "jsonc-parser"
 
 const log = Log.create({ service: "math.worker" })
+export const MAX_MATH_WORKER_NO_PROGRESS_ROUNDS = 8
+export const MAX_MATH_WORKER_VERIFIER_ERROR_STREAK = 3
+
+const activeServerUrl = Effect.fnUntraced(function* () {
+  if (process.env.OPENCODE_MATH_PARENT_SERVER_URL) return process.env.OPENCODE_MATH_PARENT_SERVER_URL
+  return yield* Effect.tryPromise({
+    try: async () => (await import("@/server/server")).url?.origin,
+    catch: () => undefined,
+  }).pipe(Effect.orElseSucceed(() => undefined))
+})
+
+const notifyParent = Effect.fn("MathWorker.notifyParent")(function* (input: {
+  serverUrl?: string
+  parentSessionID?: string
+  workerSessionID: string
+  directory: string
+  eventID: string
+  kind: "progress" | "completed" | "blocked" | "failed"
+  round: number
+  factID?: string
+  reason?: string
+  summary: string
+}) {
+  if (!input.serverUrl || !input.parentSessionID) return false
+  const url = new URL(
+    `/session/${encodeURIComponent(input.parentSessionID)}/math-workers/${encodeURIComponent(input.workerSessionID)}/event`,
+    input.serverUrl,
+  )
+  url.searchParams.set("directory", input.directory)
+  const password = process.env.OPENCODE_SERVER_PASSWORD
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-opencode-directory": input.directory,
+  }
+  if (password) {
+    const username = process.env.OPENCODE_SERVER_USERNAME ?? "opencode"
+    headers.authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`
+  }
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const delivered = yield* Effect.tryPromise({
+      try: async () => {
+        const response = await fetch(url, {
+          method: "POST",
+          headers,
+          signal: AbortSignal.timeout(5_000),
+          body: JSON.stringify({
+            eventID: input.eventID,
+            kind: input.kind,
+            round: input.round,
+            factID: input.factID,
+            reason: input.reason,
+            summary: input.summary,
+          }),
+        })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return true
+      },
+      catch: (error) => error,
+    }).pipe(Effect.orElseSucceed(() => false))
+    if (delivered) return true
+    if (attempt < 3) yield* Effect.sleep(Duration.millis(250 * attempt))
+  }
+  log.warn("math worker parent notification failed", {
+    parentSessionID: input.parentSessionID,
+    workerSessionID: input.workerSessionID,
+    eventID: input.eventID,
+    kind: input.kind,
+  })
+  return false
+})
 
 export type StartInput = {
   parentSessionID: SessionID
@@ -78,6 +152,10 @@ export type StatusResult = {
   verificationError?: number
   latestVerification?: string
   verifierModel?: string
+  noProgressRounds?: number
+  verificationErrorStreak?: number
+  blockedReason?: string
+  blockedAt?: number
 }
 
 export type MathWorkerTaskInfo = {
@@ -208,14 +286,18 @@ export function workerMcpConfig(input: {
 
 export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: StartInput) {
   const sessions = yield* Session.Service
-  const session = yield* sessions.create({
-    parentID: input.parentSessionID,
-    title: input.title,
-    agent: "math-worker",
-  })
-  const directory = session.directory
-  const projectDir = resolveProjectDir(directory, input.project, input.parentSessionID)
+  const parentContext = yield* InstanceState.context
+  const parent = yield* sessions.get(input.parentSessionID).pipe(Effect.orDie)
+  const projectDir = resolveProjectDir(parent.directory, input.project, input.parentSessionID)
+  const session = yield* sessions
+    .create({
+      parentID: input.parentSessionID,
+      title: input.title,
+      agent: "math-worker",
+    })
+    .pipe(Effect.provideService(InstanceRef, { ...parentContext, directory: projectDir }))
   const verifierModel = input.verifierModel ?? readSwarm(projectDir).verifierModel
+  const parentServerUrl = yield* activeServerUrl()
   if (input.verifierModel) setVerifierModel(projectDir, input.verifierModel)
   mkdirSync(layout(projectDir).tasks, { recursive: true })
   mkdirSync(layout(projectDir).logs, { recursive: true })
@@ -261,6 +343,7 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
       OPENCODE_MATH_WORKSPACE: projectDir,
       OPENCODE_MATH_PROJECT_DIR: projectDir,
       OPENCODE_MATH_ROLE: "worker",
+      ...(parentServerUrl ? { OPENCODE_MATH_PARENT_SERVER_URL: parentServerUrl } : {}),
     },
   })
   log.info("math worker spawned", { sessionID: session.id, pid, cwd: projectDir, argv: argv.join(" ") })
@@ -307,6 +390,7 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     setVerifierModel(input.projectDir, input.verifierModel)
   }
   const verifierModel = input.verifierModel ?? readSwarm(input.projectDir).verifierModel
+  const parentServerUrl = yield* activeServerUrl()
   const taskFile = existing?.taskFile ?? taskPath(input.projectDir, input.sessionID)
   const logFile = existing?.logFile ?? path.join(layout(input.projectDir).logs, `worker-${input.sessionID}.log`)
   const stop = stopPath(input.projectDir, input.sessionID)
@@ -367,6 +451,7 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
       OPENCODE_MATH_WORKSPACE: input.projectDir,
       OPENCODE_MATH_PROJECT_DIR: input.projectDir,
       OPENCODE_MATH_ROLE: "worker",
+      ...(parentServerUrl ? { OPENCODE_MATH_PARENT_SERVER_URL: parentServerUrl } : {}),
     },
   })
   const round = existing?.round ?? 0
@@ -384,6 +469,9 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     lastHeartbeatAt: existing?.lastHeartbeatAt,
     model: input.model ?? existing?.model,
     variant: input.variant ?? existing?.variant,
+    taskFingerprint: existing?.taskFingerprint,
+    noProgressRounds: 0,
+    verificationErrorStreak: 0,
   })
   log.info("math worker ensured", { sessionID: input.sessionID, previousPid: existing?.pid, pid, round })
   return {
@@ -444,7 +532,7 @@ export function statusMathWorker(input: {
       project: path.basename(input.projectDir),
       parentSessionID: w.parentSessionID,
       alive,
-      state: alive ? w.state : "dead",
+      state: alive ? w.state : w.state === "blocked" ? "blocked" : "dead",
       pid: w.pid,
       round: w.round,
       last_fact_id: w.lastFactId,
@@ -457,6 +545,10 @@ export function statusMathWorker(input: {
       taskUpdatedAt,
       taskPreview,
       verifierModel: swarm.verifierModel,
+      noProgressRounds: w.noProgressRounds,
+      verificationErrorStreak: w.verificationErrorStreak,
+      blockedReason: w.blockedReason,
+      blockedAt: w.blockedAt,
       stopRequested: existsSync(stopPath(input.projectDir, w.sessionID)),
       restartable:
         !alive && !existsSync(stopPath(input.projectDir, w.sessionID)) && Boolean(w.taskFile && existsSync(w.taskFile)),
@@ -526,6 +618,10 @@ export const discoverMathWorkers = Effect.fn("MathWorker.discover")(function* (i
       taskUpdatedAt: existing?.taskUpdatedAt,
       taskPreview: existing?.taskPreview,
       verifierModel: existing?.verifierModel ?? readSwarm(input.projectDir).verifierModel,
+      noProgressRounds: existing?.noProgressRounds,
+      verificationErrorStreak: existing?.verificationErrorStreak,
+      blockedReason: existing?.blockedReason,
+      blockedAt: existing?.blockedAt,
       ...summary,
     })
   }
@@ -724,12 +820,14 @@ export function hasWorkerCompletionMarker(message: MessageV2.WithParts): boolean
   if (message.info.role !== "assistant") return false
   return message.parts.some(
     (part) =>
-      part.type === "text" &&
-      part.text.split(/\r?\n/).some((line) => line.trim() === WORKER_TASK_COMPLETE_MARKER),
+      part.type === "text" && part.text.split(/\r?\n/).some((line) => line.trim() === WORKER_TASK_COMPLETE_MARKER),
   )
 }
 
-export function completedWorkerFactId(message: MessageV2.WithParts, lastFactId: string | undefined): string | undefined {
+export function completedWorkerFactId(
+  message: MessageV2.WithParts,
+  lastFactId: string | undefined,
+): string | undefined {
   if (!lastFactId || !hasWorkerCompletionMarker(message)) return
   return lastFactId
 }
@@ -748,6 +846,61 @@ export function latestAcceptedFactId(messages: MessageV2.WithParts[]): string | 
       }
     }
   }
+}
+
+export function workerRoundSignals(message: MessageV2.WithParts): {
+  submissions: number
+  verificationErrors: number
+  acceptedFactId?: string
+} {
+  let submissions = 0
+  let verificationErrors = 0
+  let acceptedFactId: string | undefined
+  for (const part of message.parts) {
+    if (part.type !== "tool" || part.tool !== "math-truth_fact_submit" || part.state.status !== "completed") continue
+    submissions += 1
+    try {
+      const output: unknown = JSON.parse(part.state.output)
+      if (!output || typeof output !== "object" || Array.isArray(output)) continue
+      const record = output as Record<string, unknown>
+      if (record.accepted === true && typeof record.fact_id === "string") acceptedFactId = record.fact_id
+      if (record.verdict === "error" || typeof record.error === "string") verificationErrors += 1
+    } catch {
+      verificationErrors += 1
+    }
+  }
+  return { submissions, verificationErrors, acceptedFactId }
+}
+
+export function mathWorkerTaskFingerprint(task: string): string {
+  return createHash("sha256").update(task.trim()).digest("hex")
+}
+
+export function advanceMathWorkerProgress(input: {
+  previousTaskFingerprint?: string
+  taskFingerprint: string
+  previousFactId?: string
+  factId?: string
+  noProgressRounds: number
+  verificationErrorStreak: number
+  verificationErrors: number
+}) {
+  const taskChanged =
+    input.previousTaskFingerprint !== undefined && input.previousTaskFingerprint !== input.taskFingerprint
+  const factAdvanced = input.factId !== undefined && input.factId !== input.previousFactId
+  const noProgressRounds = taskChanged || factAdvanced ? 0 : input.noProgressRounds + 1
+  const verificationErrorStreak = factAdvanced
+    ? 0
+    : input.verificationErrors > 0
+      ? input.verificationErrorStreak + 1
+      : 0
+  const blockedReason =
+    verificationErrorStreak >= MAX_MATH_WORKER_VERIFIER_ERROR_STREAK
+      ? `verifier-error-streak:${verificationErrorStreak}`
+      : noProgressRounds >= MAX_MATH_WORKER_NO_PROGRESS_ROUNDS
+        ? `no-progress-rounds:${noProgressRounds}`
+        : undefined
+  return { taskChanged, factAdvanced, noProgressRounds, verificationErrorStreak, blockedReason }
 }
 
 export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
@@ -783,6 +936,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
   const lastFactId = latestAcceptedFactId(yield* sessions.messages({ sessionID: input.sessionID }))
   const completionMarkerPresent = hasWorkerCompletionMarker(result)
   const completedFactId = completedWorkerFactId(result, lastFactId)
+  const signals = workerRoundSignals(result)
   const stopRequested = existsSync(stopPath(input.projectDir, input.sessionID))
   patchWorker(input.projectDir, input.sessionID, {
     lastHeartbeatAt: Date.now(),
@@ -801,7 +955,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     completionAccepted: completedFactId !== undefined,
     stopRequested,
   })
-  return { result, completedFactId }
+  return { result, completedFactId, lastFactId, signals, taskFingerprint: mathWorkerTaskFingerprint(task) }
 })
 
 export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
@@ -813,9 +967,29 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
   variant?: string
 }) {
   const sessionID = SessionID.make(input.sessionID)
+  const sessions = yield* Session.Service
+  const persisted = yield* sessions.get(sessionID)
+  if (AppFileSystem.resolve(persisted.directory) !== AppFileSystem.resolve(input.projectDir)) {
+    log.warn("math worker session owner migration required", {
+      sessionID,
+      fromDirectory: persisted.directory,
+      toDirectory: input.projectDir,
+    })
+    const relocated = yield* sessions.relocate(sessionID, { preserveProject: true })
+    if (AppFileSystem.resolve(relocated.directory) !== AppFileSystem.resolve(input.projectDir)) {
+      return yield* Effect.die(
+        new Error(`math worker ${sessionID} could not relocate to ${input.projectDir}: ${relocated.directory}`),
+      )
+    }
+  }
   mkdirSync(path.dirname(stopPath(input.projectDir, sessionID)), { recursive: true })
   mkdirSync(layout(input.projectDir).logs, { recursive: true })
   const existing = readSwarm(input.projectDir).workers[sessionID]
+  const parent = existing?.parentSessionID
+    ? yield* sessions.get(SessionID.make(existing.parentSessionID)).pipe(Effect.option)
+    : Option.none()
+  const parentDirectory = Option.isSome(parent) ? parent.value.directory : input.projectDir
+  const parentServerUrl = process.env.OPENCODE_MATH_PARENT_SERVER_URL
   upsertWorker(input.projectDir, {
     sessionID,
     parentSessionID: existing?.parentSessionID,
@@ -830,10 +1004,20 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
     lastHeartbeatAt: existing?.lastHeartbeatAt,
     model: input.model ?? existing?.model,
     variant: input.variant ?? existing?.variant,
+    taskFingerprint: existing?.taskFingerprint,
+    noProgressRounds: existing?.noProgressRounds,
+    verificationErrorStreak: existing?.verificationErrorStreak,
+    blockedReason: existing?.blockedReason,
+    blockedAt: existing?.blockedAt,
   })
   let round = existing?.round ?? 0
+  let lastFactId = existing?.lastFactId
+  let taskFingerprint = existing?.taskFingerprint
+  let noProgressRounds = existing?.noProgressRounds ?? 0
+  let verificationErrorStreak = existing?.verificationErrorStreak ?? 0
   const marker = stopPath(input.projectDir, sessionID)
   let completedFactId: string | undefined
+  let blockedReason: string | undefined
   log.info("math worker loop start", { sessionID, intervalMs: input.intervalMs, pid: process.pid, marker })
   while (!existsSync(marker)) {
     round += 1
@@ -849,6 +1033,27 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
         variant: input.variant ?? existing?.variant,
       })
       completedFactId = outcome.completedFactId
+      const progress = advanceMathWorkerProgress({
+        previousTaskFingerprint: taskFingerprint,
+        taskFingerprint: outcome.taskFingerprint,
+        previousFactId: lastFactId,
+        factId: outcome.lastFactId,
+        noProgressRounds,
+        verificationErrorStreak,
+        verificationErrors: outcome.signals.verificationErrors,
+      })
+      const factAdvanced = progress.factAdvanced
+      noProgressRounds = progress.noProgressRounds
+      verificationErrorStreak = progress.verificationErrorStreak
+      taskFingerprint = outcome.taskFingerprint
+      lastFactId = outcome.lastFactId
+      blockedReason = progress.blockedReason
+      patchWorker(input.projectDir, sessionID, {
+        taskFingerprint,
+        noProgressRounds,
+        verificationErrorStreak,
+        ...(blockedReason ? { state: "blocked", blockedReason, blockedAt: Date.now(), lastRc: 1 } : {}),
+      })
       log.info("math worker completion decision", {
         sessionID,
         round,
@@ -859,6 +1064,51 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
         writeFileSync(marker, `completed fact_id=${completedFactId} round=${round} ts=${Date.now()}\n`, "utf8")
         patchWorker(input.projectDir, sessionID, { state: "stopping", lastFactId: completedFactId })
         log.info("math worker completion marker written", { sessionID, round, completedFactId, marker })
+        yield* notifyParent({
+          serverUrl: parentServerUrl,
+          parentSessionID: existing?.parentSessionID,
+          workerSessionID: sessionID,
+          directory: parentDirectory,
+          eventID: `completed_${round}_${completedFactId}`,
+          kind: "completed",
+          round,
+          factID: completedFactId,
+          summary: `Math worker completed its assigned lane with accepted fact ${completedFactId}.`,
+        })
+      } else if (blockedReason) {
+        log.warn("math worker blocked", {
+          sessionID,
+          round,
+          blockedReason,
+          noProgressRounds,
+          verificationErrorStreak,
+        })
+        yield* notifyParent({
+          serverUrl: parentServerUrl,
+          parentSessionID: existing?.parentSessionID,
+          workerSessionID: sessionID,
+          directory: parentDirectory,
+          eventID: `blocked_${round}_${blockedReason}`,
+          kind: "blocked",
+          round,
+          reason: blockedReason,
+          summary:
+            verificationErrorStreak >= MAX_MATH_WORKER_VERIFIER_ERROR_STREAK
+              ? "Math worker stopped after repeated verifier infrastructure errors. The verifier or model path needs intervention before retrying."
+              : "Math worker stopped after repeated rounds without an accepted fact or TASK revision. The parent must revise dependencies or strategy before retrying.",
+        })
+      } else if (factAdvanced && outcome.lastFactId) {
+        yield* notifyParent({
+          serverUrl: parentServerUrl,
+          parentSessionID: existing?.parentSessionID,
+          workerSessionID: sessionID,
+          directory: parentDirectory,
+          eventID: `progress_${outcome.lastFactId}`,
+          kind: "progress",
+          round,
+          factID: outcome.lastFactId,
+          summary: `Math worker produced a new accepted fact ${outcome.lastFactId}.`,
+        })
       }
     }
     log.info("math worker round finish", {
@@ -868,17 +1118,19 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
       durationMs: Date.now() - startedAt,
       markerPresent: existsSync(marker),
     })
+    if (blockedReason) break
     if (!completedFactId) yield* Effect.sleep(Duration.millis(input.intervalMs))
   }
-  patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })
+  if (!blockedReason) patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })
   log.info("math worker loop stop", {
     sessionID,
     round,
     pid: process.pid,
     marker,
-    markerPresent: true,
-    reason: completedFactId ? "task-complete" : "stop-requested",
+    markerPresent: existsSync(marker),
+    reason: completedFactId ? "task-complete" : blockedReason ? "blocked" : "stop-requested",
     completedFactId,
+    blockedReason,
   })
   return round
 })

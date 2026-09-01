@@ -10,6 +10,7 @@ import { Project } from "@/project/project"
 import { Server } from "@/server/server"
 import { SessionPaths } from "@/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
+import { SessionInput } from "@/session/input"
 import { MessageV2 } from "@/session/message-v2"
 import { MessageID, PartID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
@@ -28,7 +29,13 @@ const instanceStoreLayer = InstanceStore.defaultLayer.pipe(
   ),
 )
 const it = testEffect(
-  Layer.mergeAll(instanceStoreLayer, Project.defaultLayer, Session.defaultLayer, InstanceBootstrap.defaultLayer),
+  Layer.mergeAll(
+    instanceStoreLayer,
+    Project.defaultLayer,
+    Session.defaultLayer,
+    SessionInput.defaultLayer,
+    InstanceBootstrap.defaultLayer,
+  ),
 )
 
 function endpoint(template: string, params: Record<string, string>) {
@@ -53,20 +60,60 @@ afterEach(async () => {
 
 describe("Math worker HttpApi", () => {
   it.instance(
+    "idempotently admits a detached worker event for the parent",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessions = yield* Session.Service
+        const inbox = yield* SessionInput.Service
+        const parent = yield* sessions.create({ title: "math", agent: "math-orchestrator", archived: true })
+        const worker = yield* sessions.create({ title: "lemma", agent: "math-worker", parentID: parent.id })
+        const url = endpoint(SessionPaths.mathWorkerEvent, { sessionID: parent.id, workerID: worker.id })
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const payload = JSON.stringify({
+          eventID: "blocked_3_verifier",
+          kind: "blocked",
+          round: 3,
+          reason: "verifier-error-streak:3",
+          summary: "Verifier failed three times.",
+        })
+
+        const first = yield* Effect.promise(() =>
+          Server.Default().app.request(url, { method: "POST", headers, body: payload }),
+        )
+        const second = yield* Effect.promise(() =>
+          Server.Default().app.request(url, { method: "POST", headers, body: payload }),
+        )
+        expect(first.status).toBe(204)
+        expect(second.status).toBe(204)
+        yield* Effect.sleep("50 millis")
+        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(1)
+      }),
+    30_000,
+  )
+
+  it.instance(
     "lists Math Mode fact and verification details",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
         const sessions = yield* Session.Service
+        const store = yield* InstanceStore.Service
         const parent = yield* sessions.create({ title: "math", agent: "math-orchestrator" })
-        const worker = yield* sessions.create({ title: "lemma", agent: "math-worker", parentID: parent.id })
         const historicalParent = yield* sessions.create({ title: "older math", agent: "math-orchestrator" })
-        const historicalWorker = yield* sessions.create({
-          title: "older lemma",
-          agent: "math-worker",
-          parentID: historicalParent.id,
-        })
         const projectDir = mathRoot(test.directory, "detail-swarm")
+        const worker = yield* store.provide(
+          { directory: projectDir },
+          sessions.create({ title: "lemma", agent: "math-worker", parentID: parent.id }),
+        )
+        const historicalWorker = yield* store.provide(
+          { directory: projectDir },
+          sessions.create({
+            title: "older lemma",
+            agent: "math-worker",
+            parentID: historicalParent.id,
+          }),
+        )
         const facts = new FactGraph(projectDir)
         const factId = yield* Effect.promise(() =>
           facts.add({
@@ -91,7 +138,7 @@ describe("Math worker HttpApi", () => {
           role: "assistant",
           mode: "math-worker",
           agent: "math-worker",
-          path: { cwd: test.directory, root: test.directory },
+          path: { cwd: projectDir, root: projectDir },
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           modelID: ModelID.make("test-model"),

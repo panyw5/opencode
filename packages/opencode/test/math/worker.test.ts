@@ -5,16 +5,21 @@ import { Session } from "@/session/session"
 import { Permission } from "@/permission"
 import {
   buildWorkerKickoff,
+  advanceMathWorkerProgress,
   completedWorkerFactId,
   discoverMathWorkers,
   ensureMathWorker,
   latestAcceptedFactId,
+  mathWorkerTaskFingerprint,
+  MAX_MATH_WORKER_NO_PROGRESS_ROUNDS,
+  MAX_MATH_WORKER_VERIFIER_ERROR_STREAK,
   readMathWorkerTask,
   startMathWorker,
   statusMathWorker,
   stopMathWorker,
   updateMathWorkerTask,
   workerMcpConfig,
+  workerRoundSignals,
   writeHeartbeat,
 } from "@/math/worker"
 import { readSwarm, writeSwarm } from "@/math/swarm"
@@ -25,6 +30,8 @@ import path from "path"
 import { MessageV2 } from "@/session/message-v2"
 import { MessageID, SessionID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
+import { InstanceState } from "@/effect/instance-state"
+import { InstanceRef } from "@/effect/instance-ref"
 
 const it = testEffect(Layer.mergeAll(Agent.defaultLayer, Session.defaultLayer))
 
@@ -63,6 +70,10 @@ describe("math.worker", () => {
 
       const projectDir = mathRoot(test.directory, parent.id)
       expect(projectDir).toContain(path.join(".math", "problems"))
+      const workerSession = yield* sessions.get(SessionID.make(result.sessionID))
+      expect(workerSession.directory).toBe(projectDir)
+      expect(workerSession.projectID).toBe(parent.projectID)
+      expect(workerSession.path).toBe(path.relative(test.directory, projectDir).replaceAll("\\", "/"))
       expect(spawnedCwd).toEqual([projectDir])
       expect(spawnedEnv[0]?.OPENCODE_MATH_WORKSPACE).toBe(projectDir)
       const swarm = readSwarm(projectDir)
@@ -91,6 +102,25 @@ describe("math.worker", () => {
       expect(msgs.length).toBeGreaterThan(0)
       const text = msgs.flatMap((m) => m.parts).find((p) => p.type === "text" && "text" in p)
       expect(text && text.type === "text" ? text.text : "").toContain("heartbeat round=1")
+    }),
+  )
+
+  it.instance("migrates a legacy worker session cwd without changing its parent project", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const ctx = yield* InstanceState.context
+      const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      const worker = yield* sessions.create({ title: "legacy worker", agent: "math-worker", parentID: parent.id })
+      const projectDir = mathRoot(ctx.directory, parent.id)
+
+      const relocated = yield* sessions
+        .relocate(worker.id, { preserveProject: true })
+        .pipe(Effect.provideService(InstanceRef, { ...ctx, directory: projectDir }))
+
+      expect(relocated.directory).toBe(projectDir)
+      expect(relocated.projectID).toBe(parent.projectID)
+      expect(relocated.parentID).toBe(parent.id)
+      expect(relocated.path).toBe(worker.path)
     }),
   )
 
@@ -166,6 +196,71 @@ describe("math.worker", () => {
         parts: [{ type: "text", text: "MATH_WORKER_TASK_COMPLETE is not justified yet." }],
       } as unknown as MessageV2.WithParts
       expect(completedWorkerFactId(partial, "fact123")).toBeUndefined()
+    }),
+  )
+
+  it.instance("classifies verifier errors and accepted facts from a worker round", () =>
+    Effect.gen(function* () {
+      const message = {
+        info: { role: "assistant" },
+        parts: [
+          {
+            type: "tool",
+            tool: "math-truth_fact_submit",
+            state: { status: "completed", output: '{"accepted":false,"verdict":"error","error":"offline"}' },
+          },
+          {
+            type: "tool",
+            tool: "math-truth_fact_submit",
+            state: { status: "completed", output: '{"accepted":true,"fact_id":"fact-1","verdict":"correct"}' },
+          },
+        ],
+      } as unknown as MessageV2.WithParts
+      expect(workerRoundSignals(message)).toEqual({
+        submissions: 2,
+        verificationErrors: 1,
+        acceptedFactId: "fact-1",
+      })
+      expect(mathWorkerTaskFingerprint(" prove L \n")).toBe(mathWorkerTaskFingerprint("prove L"))
+    }),
+  )
+
+  it.instance("blocks repeated verifier errors and resets no-progress on meaningful change", () =>
+    Effect.gen(function* () {
+      const error = advanceMathWorkerProgress({
+        previousTaskFingerprint: "task",
+        taskFingerprint: "task",
+        previousFactId: undefined,
+        factId: undefined,
+        noProgressRounds: MAX_MATH_WORKER_VERIFIER_ERROR_STREAK - 1,
+        verificationErrorStreak: MAX_MATH_WORKER_VERIFIER_ERROR_STREAK - 1,
+        verificationErrors: 1,
+      })
+      expect(error.blockedReason).toBe(`verifier-error-streak:${MAX_MATH_WORKER_VERIFIER_ERROR_STREAK}`)
+
+      const stalled = advanceMathWorkerProgress({
+        previousTaskFingerprint: "task",
+        taskFingerprint: "task",
+        previousFactId: "fact-1",
+        factId: "fact-1",
+        noProgressRounds: MAX_MATH_WORKER_NO_PROGRESS_ROUNDS - 1,
+        verificationErrorStreak: 0,
+        verificationErrors: 1,
+      })
+      expect(stalled.blockedReason).toBe(`no-progress-rounds:${MAX_MATH_WORKER_NO_PROGRESS_ROUNDS}`)
+
+      const advanced = advanceMathWorkerProgress({
+        previousTaskFingerprint: "task",
+        taskFingerprint: "revised-task",
+        previousFactId: "fact-1",
+        factId: "fact-2",
+        noProgressRounds: 7,
+        verificationErrorStreak: 2,
+        verificationErrors: 1,
+      })
+      expect(advanced.noProgressRounds).toBe(0)
+      expect(advanced.verificationErrorStreak).toBe(0)
+      expect(advanced.blockedReason).toBeUndefined()
     }),
   )
 
@@ -341,9 +436,7 @@ describe("math.worker", () => {
       expect(statusMathWorker({ projectDir: started.projectDir })[0]).toMatchObject({
         taskPreview: "# New direction Prove lemma B.",
       })
-      expect(() => updateMathWorkerTask(started.projectDir, started.sessionID, "   ")).toThrow(
-        "TASK cannot be empty",
-      )
+      expect(() => updateMathWorkerTask(started.projectDir, started.sessionID, "   ")).toThrow("TASK cannot be empty")
     }),
   )
 })

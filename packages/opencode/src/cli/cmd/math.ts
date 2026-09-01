@@ -87,9 +87,12 @@ export const MathVerifyCommand = effectCmd({
     }).pipe(Effect.orDie)
     const sessions = yield* Session.Service
     const prompts = yield* SessionPrompt.Service
-    log.info("creating archived verifier session", { inputFile })
-    const session = yield* sessions.create({ title: "math-verifier", agent: "math-verifier", archived: true })
-    log.info("archived verifier session created", { sessionID: session.id, archived: session.time.archived })
+    // The prompt loop deliberately refuses to run archived sessions. Keep the
+    // verifier live until its one prompt settles, then archive it in the
+    // ensuring finalizer below so verifier sessions remain hidden afterwards.
+    log.info("creating verifier session", { inputFile })
+    const session = yield* sessions.create({ title: "math-verifier", agent: "math-verifier" })
+    log.info("verifier session created", { sessionID: session.id, archived: session.time.archived })
     const modelName = typeof args.model === "string" ? args.model : process.env.OPENCODE_MATH_VERIFY_MODEL
     const model = modelName ? Provider.parseModel(modelName) : undefined
     log.info("starting verifier prompt", { sessionID: session.id, model: modelName })
@@ -154,8 +157,7 @@ export const MathMcpCommand = cmd({
         describe: "problem_id stamped on written facts",
       }),
   async handler(args) {
-    const projectDir =
-      args.projectDir || process.env.OPENCODE_MATH_PROJECT_DIR || mathRoot(process.cwd(), "default")
+    const projectDir = args.projectDir || process.env.OPENCODE_MATH_PROJECT_DIR || mathRoot(process.cwd(), "default")
     await serveMathMcp({
       projectDir,
       role: args.role || process.env.OPENCODE_MATH_ROLE || "verifier",

@@ -160,6 +160,32 @@ export const layer = Layer.effect(
     )
     let promoteInbox: (sessionID: SessionID) => Effect.Effect<number> = () => Effect.succeed(0)
     let requestDrain: (sessionID: SessionID) => Effect.Effect<void> = () => Effect.void
+
+    const requireSessionOwner = Effect.fn("SessionPrompt.requireSessionOwner")(function* (
+      sessionID: SessionID,
+      source: string,
+    ) {
+      const [ctx, session] = yield* Effect.all([
+        InstanceState.context,
+        sessions.get(sessionID).pipe(Effect.orDie),
+      ])
+      const ambientDirectory = AppFileSystem.resolve(ctx.directory)
+      const ownerDirectory = AppFileSystem.resolve(session.directory)
+      if (ambientDirectory === ownerDirectory) return { ctx, session }
+      yield* elog.error("session instance ownership mismatch", {
+        sessionID,
+        source,
+        ambientDirectory,
+        ownerDirectory,
+        ambientProjectID: ctx.project.id,
+        sessionProjectID: session.projectID,
+      })
+      return yield* Effect.die(
+        new Error(
+          `Session ${sessionID} belongs to ${ownerDirectory}, but ${source} ran in ${ambientDirectory}`,
+        ),
+      )
+    })
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
         cancel: (sessionID: SessionID) => cancel(sessionID),
@@ -1728,6 +1754,15 @@ export const layer = Layer.effect(
       }
     })
 
+    const sessionInputIDs = (messages: MessageV2.WithParts[]) =>
+      messages.flatMap((item) =>
+        item.parts.flatMap((part) => {
+          if (!("metadata" in part)) return []
+          const id = part.metadata?.sessionInputID
+          return typeof id === "string" ? [id] : []
+        }),
+      )
+
     const materializeInbox = Effect.fn("SessionPrompt.materializeInbox")(function* (input: SessionInput.Info) {
       const parent = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
       // Inbox IDs are source-event keys. They can be `evt_` IDs, whereas
@@ -1771,7 +1806,11 @@ export const layer = Layer.effect(
           id: messageID,
           role: "user",
           sessionID: input.sessionID,
-          time: { created: input.timeCreated },
+          // The source event time is diagnostic data, not conversation order.
+          // A deferred input becomes actionable when it is materialized.
+          // Keep a subsequently submitted real user prompt strictly newer even
+          // when both writes land in the same millisecond.
+          time: { created: Math.max(0, Date.now() - 1) },
           agent: agent ?? defaultAgent!.name,
           model,
         }
@@ -1794,11 +1833,15 @@ export const layer = Layer.effect(
           type: "text",
           text: input.prompt.text,
           synthetic: true,
-          metadata: input.prompt.metadata,
+          metadata: {
+            ...input.prompt.metadata,
+            sessionInputID: input.id,
+            sessionInputSeq: input.admittedSeq,
+            sessionInputCreatedAt: input.timeCreated,
+          },
         })
       }
-      yield* inbox.ack([input.id])
-      yield* elog.info("inbox message committed and acknowledged", {
+      yield* elog.info("inbox message committed", {
         sessionID: input.sessionID,
         inputID: input.id,
         source: "session-input",
@@ -1835,6 +1878,13 @@ export const layer = Layer.effect(
     })
 
     requestDrain = Effect.fn("SessionPrompt.requestDrain")(function* (sessionID: SessionID) {
+      const { ctx } = yield* requireSessionOwner(sessionID, "inbox-drain")
+      yield* elog.info("inbox drain owner verified", {
+        sessionID,
+        source: "session-input",
+        directory: ctx.directory,
+        projectID: ctx.project.id,
+      })
       const data = yield* InstanceState.get(inboxRecovery)
       if (data.draining.has(sessionID)) {
         yield* elog.debug("inbox drain coalesced", { sessionID, source: "session-input", reason: "already-draining" })
@@ -1851,6 +1901,20 @@ export const layer = Layer.effect(
             )
             .pipe(Effect.orDie)
           if (currentStatus.type !== "idle" || Option.isSome(activeAssistant)) {
+            const pendingQuestion = (yield* question.list()).some((item) => item.sessionID === sessionID)
+            if (pendingQuestion) {
+              const materialized = yield* promoteInbox(sessionID)
+              if (materialized > 0) {
+                const expired = yield* question.expireSuperseded({ sessionID })
+                yield* elog.info("inbox materialized to unblock pending question", {
+                  sessionID,
+                  source: "session-input",
+                  materialized,
+                  expired,
+                })
+                return
+              }
+            }
             yield* elog.info("inbox drain deferred", {
               sessionID,
               source: "session-input",
@@ -1875,6 +1939,14 @@ export const layer = Layer.effect(
               source: "session-input",
               reason: Cause.pretty(exit.cause),
             })
+            return
+          }
+          if ((yield* inbox.promotedUnacked(sessionID)).length > 0) {
+            yield* elog.warn("inbox loop ended with unclaimed notifications", {
+              sessionID,
+              source: "session-input",
+            })
+            return
           }
         }
       }).pipe(Effect.ensuring(Effect.sync(() => data.draining.delete(sessionID))))
@@ -1884,9 +1956,12 @@ export const layer = Layer.effect(
       const data = yield* InstanceState.get(inboxRecovery)
       if (data.initialized) return
       data.initialized = true
-      const sessionsWithPending = yield* inbox.pendingSessions()
+      const ctx = yield* InstanceState.context
+      const sessionsWithPending = yield* inbox.pendingSessions(ctx.directory)
       yield* elog.info("inbox recovery pending sessions", {
         source: "session-input",
+        directory: ctx.directory,
+        projectID: ctx.project.id,
         count: sessionsWithPending.length,
       })
       for (const sessionID of sessionsWithPending) {
@@ -1916,7 +1991,7 @@ export const layer = Layer.effect(
     )(function* (input: PromptInput) {
       yield* ensureBackgroundShellSubscription()
       yield* ensureInboxRecovery(input.sessionID)
-      const session = yield* sessions.get(input.sessionID).pipe(Effect.orDie)
+      const { session } = yield* requireSessionOwner(input.sessionID, "prompt")
       if (session.time.archived) {
         yield* elog.warn("prompt called on archived session — returning last assistant", {
           sessionID: input.sessionID,
@@ -1946,7 +2021,7 @@ export const layer = Layer.effect(
       yield* revert.cleanup(session)
       // Materialize notifications before the real user message so the user
       // remains the trigger/latest input for this turn.  The inbox rows are
-      // acknowledged only after their message and part are durable.
+      // claimed only after the resulting messages enter a model-input snapshot.
       yield* promoteInbox(input.sessionID)
       const message = yield* createUserMessage(input)
       yield* sessions.touch(input.sessionID)
@@ -2031,12 +2106,12 @@ export const layer = Layer.effect(
 
     const runLoop: (sessionID: SessionID) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.run")(
       function* (sessionID: SessionID) {
-        const ctx = yield* InstanceState.context
+        const { ctx, session: ownedSession } = yield* requireSessionOwner(sessionID, "run-loop")
         const slog = elog.with({ sessionID })
         let structured: unknown
         let step = 0
         let compactRetries = 0
-        let session = yield* sessions.get(sessionID).pipe(Effect.orDie)
+        let session = ownedSession
 
         while (true) {
           // Re-fetch session to check latest archived status
@@ -2050,6 +2125,7 @@ export const layer = Layer.effect(
           yield* slog.info("loop", { step })
 
           let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
+          const pendingSessionInputIDs = sessionInputIDs(msgs)
 
           const { user: lastUser, assistant: lastAssistant, finished: lastFinished, tasks } = MessageV2.latest(msgs)
 
@@ -2070,6 +2146,7 @@ export const layer = Layer.effect(
           )
           if (
             lastAssistant &&
+            pendingSessionInputIDs.length === 0 &&
             lastAssistant.parentID === lastUser.id &&
             typeof lastAssistant.time.completed !== "number"
           ) {
@@ -2090,6 +2167,7 @@ export const layer = Layer.effect(
             lastAssistant?.finish &&
             !["tool-calls"].includes(lastAssistant.finish) &&
             !hasToolCalls &&
+            pendingSessionInputIDs.length === 0 &&
             MessageV2.compareMessageInfo(lastUser, lastAssistant) < 0
           ) {
             yield* slog.info("exiting loop", {
@@ -2335,6 +2413,10 @@ export const layer = Layer.effect(
               instruction.system().pipe(Effect.orDie),
               MessageV2.toModelMessagesEffect(msgs, model),
             ])
+            // Consumption means these durable notification messages have been
+            // assigned to this exact model-input snapshot. Provider failure or
+            // cancellation after this point must not make them look unconsumed.
+            if (pendingSessionInputIDs.length > 0) yield* inbox.claim(sessionID, pendingSessionInputIDs)
             const system = [...env, ...instructions, ...(skills ? [skills] : [])]
             // Project-task context is attached as a durable user-message synthetic part
             // earlier in the loop (see project-task inject above), so it is already in
@@ -2425,6 +2507,14 @@ export const layer = Layer.effect(
     ) {
       yield* ensureBackgroundShellSubscription()
       yield* ensureInboxRecovery()
+      const currentStatus = yield* status.get(input.sessionID)
+      const activeAssistant = yield* sessions
+        .findMessage(
+          input.sessionID,
+          (item) => item.info.role === "assistant" && typeof item.info.time.completed !== "number",
+        )
+        .pipe(Effect.orDie)
+      if (currentStatus.type === "idle" && Option.isNone(activeAssistant)) yield* promoteInbox(input.sessionID)
       return yield* state
         .ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
         .pipe(Effect.ensuring(requestDrain(input.sessionID)))

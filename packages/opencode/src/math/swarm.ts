@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "
 import path from "path"
 import { layout } from "./layout"
 
-export type WorkerState = "running" | "stopping" | "dead"
+export type WorkerState = "running" | "stopping" | "blocked" | "dead"
 
 export type SwarmWorker = {
   sessionID: string
@@ -18,6 +18,11 @@ export type SwarmWorker = {
   round?: number
   model?: string
   variant?: string
+  taskFingerprint?: string
+  noProgressRounds?: number
+  verificationErrorStreak?: number
+  blockedReason?: string
+  blockedAt?: number
 }
 
 export type SwarmFile = {

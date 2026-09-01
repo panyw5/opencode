@@ -26,6 +26,10 @@ export function getWorkspaceRouteSessionID(url: URL) {
   return SessionID.make(id)
 }
 
+export function sessionRouteDirectory(requestDirectory: string, sessionDirectory?: string) {
+  return sessionDirectory ?? requestDirectory
+}
+
 export function workspaceProxyURL(target: string | URL, requestURL: URL) {
   const proxyURL = new URL(target)
   proxyURL.pathname = `${proxyURL.pathname.replace(/\/$/, "")}${requestURL.pathname}`

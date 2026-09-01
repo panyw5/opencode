@@ -11,7 +11,7 @@ export type MathWorkerStatus = {
   project?: string
   parentSessionID?: string
   alive: boolean
-  state: "running" | "stopping" | "dead" | "missing"
+  state: "running" | "stopping" | "blocked" | "dead" | "missing"
   pid?: number
   round?: number
   last_fact_id?: string
@@ -34,6 +34,10 @@ export type MathWorkerStatus = {
   verificationError?: number
   latestVerification?: string
   verifierModel?: string
+  noProgressRounds?: number
+  verificationErrorStreak?: number
+  blockedReason?: string
+  blockedAt?: number
 }
 
 export type MathDetailKind = "facts" | "correct" | "wrong" | "error"

@@ -56,9 +56,7 @@ export const MathDetailsQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   project: Schema.String,
   kind: MathDetailKind,
-  offset: Schema.optional(
-    Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)),
-  ),
+  offset: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   limit: Schema.optional(
     Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(100)),
   ),
@@ -106,7 +104,7 @@ export const MathWorkerStatus = Schema.Struct({
   project: Schema.optional(Schema.String),
   parentSessionID: Schema.optional(Schema.String),
   alive: Schema.Boolean,
-  state: Schema.Literals(["running", "stopping", "dead", "missing"]),
+  state: Schema.Literals(["running", "stopping", "blocked", "dead", "missing"]),
   pid: Schema.optional(Schema.Number),
   round: Schema.optional(Schema.Number),
   last_fact_id: Schema.optional(Schema.String),
@@ -130,6 +128,10 @@ export const MathWorkerStatus = Schema.Struct({
   verificationError: Schema.optional(Schema.Number),
   latestVerification: Schema.optional(Schema.String),
   verifierModel: Schema.optional(Schema.String),
+  noProgressRounds: Schema.optional(Schema.Number),
+  verificationErrorStreak: Schema.optional(Schema.Number),
+  blockedReason: Schema.optional(Schema.String),
+  blockedAt: Schema.optional(Schema.Number),
 })
 export const MathWorkerEnsurePayload = Schema.Struct({
   model: Schema.optional(Schema.String),
@@ -138,6 +140,14 @@ export const MathWorkerEnsurePayload = Schema.Struct({
   reEnable: Schema.optional(Schema.Boolean),
 })
 export const MathWorkerStopPayload = Schema.Struct({ force: Schema.optional(Schema.Boolean) })
+export const MathWorkerEventPayload = Schema.Struct({
+  eventID: Schema.String,
+  kind: Schema.Literals(["progress", "completed", "blocked", "failed"]),
+  round: Schema.Number,
+  factID: Schema.optional(Schema.String),
+  reason: Schema.optional(Schema.String),
+  summary: Schema.String,
+})
 export const MathWorkerTaskInfo = Schema.Struct({
   sessionID: Schema.String,
   project: Schema.String,
@@ -191,6 +201,7 @@ export const SessionPaths = {
   mathDetails: `${root}/:sessionID/math-details`,
   mathWorkerEnsure: `${root}/:sessionID/math-workers/:workerID/ensure`,
   mathWorkerStop: `${root}/:sessionID/math-workers/:workerID/stop`,
+  mathWorkerEvent: `${root}/:sessionID/math-workers/:workerID/event`,
   mathWorkerTask: `${root}/:sessionID/math-workers/:workerID/task`,
   todo: `${root}/:sessionID/todo`,
   diff: `${root}/:sessionID/diff`,
@@ -319,6 +330,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.mathWorkerStop",
             summary: "Stop Math Mode worker",
             description: "Request a round-boundary stop or force-kill the detached worker process group.",
+          }),
+        ),
+        HttpApiEndpoint.post("mathWorkerEvent", SessionPaths.mathWorkerEvent, {
+          params: { sessionID: SessionID, workerID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: MathWorkerEventPayload,
+          success: described(HttpApiSchema.NoContent, "Math worker event accepted"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.math_worker_event",
+            summary: "Report Math Mode worker event",
+            description: "Idempotently enqueue a detached Math Mode worker event for its parent session.",
           }),
         ),
         HttpApiEndpoint.get("mathWorkerTaskGet", SessionPaths.mathWorkerTask, {

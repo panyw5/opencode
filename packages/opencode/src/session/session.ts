@@ -548,6 +548,11 @@ export interface Interface {
     archived?: boolean
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
+  /** Rebind an existing session to the currently provided Instance context. */
+  readonly relocate: (
+    sessionID: SessionID,
+    options?: { preserveProject?: boolean },
+  ) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
@@ -887,6 +892,47 @@ export const layer: Layer.Layer<
     const patch = (sessionID: SessionID, info: Patch, options?: { awaitPublish?: boolean }) =>
       sync.run(Event.Updated, { sessionID, info }, options)
 
+    const relocate = Effect.fn("Session.relocate")(function* (
+      sessionID: SessionID,
+      options?: { preserveProject?: boolean },
+    ) {
+      const ctx = yield* InstanceState.context
+      const workspace = yield* InstanceState.workspaceID
+      const before = yield* get(sessionID)
+      const preserveProject = options?.preserveProject === true
+      log.info("session relocate start", {
+        sessionID,
+        fromDirectory: before.directory,
+        toDirectory: ctx.directory,
+        fromProjectID: before.projectID,
+        toProjectID: preserveProject ? before.projectID : ctx.project.id,
+        toLocationID: preserveProject ? "preserved" : ctx.location.id,
+        preserveProject,
+      })
+      yield* patch(sessionID, {
+        ...(preserveProject ? {} : { projectID: ctx.project.id }),
+        directory: ctx.directory,
+        ...(preserveProject ? {} : { path: sessionPath(ctx.worktree, ctx.directory), workspaceID: workspace ?? null }),
+      })
+      if (!preserveProject) {
+        yield* db((database) =>
+          database
+            .update(SessionTable)
+            .set({ location_id: ctx.location.id, time_updated: SessionTable.time_updated })
+            .where(eq(SessionTable.id, sessionID))
+            .run(),
+        )
+      }
+      log.info("session relocate complete", {
+        sessionID,
+        directory: ctx.directory,
+        projectID: preserveProject ? before.projectID : ctx.project.id,
+        locationID: preserveProject ? "preserved" : ctx.location.id,
+        preserveProject,
+      })
+      return yield* get(sessionID)
+    })
+
     const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
       yield* patch(sessionID, { time: { updated: Date.now() } })
     })
@@ -1142,6 +1188,7 @@ export const layer: Layer.Layer<
       list,
       create,
       fork,
+      relocate,
       touch,
       get,
       setTitle,

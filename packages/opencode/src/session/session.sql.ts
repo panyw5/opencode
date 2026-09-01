@@ -218,6 +218,29 @@ export const SessionInputTable = sqliteTable(
   ],
 )
 
+/**
+ * Durable per-session allocator and consumption watermark for deferred inputs.
+ *
+ * This is intentionally separate from `session_input`: older clients can
+ * ignore it, while deleting acknowledged inbox rows cannot make sequence
+ * numbers move backwards or erase the model-input consumption boundary.
+ */
+export const SessionInputCursorTable = sqliteTable("session_input_cursor", {
+  session_id: text()
+    .$type<SessionID>()
+    .primaryKey()
+    .references(() => SessionTable.id, { onDelete: "cascade" }),
+  next_admitted_seq: integer().notNull(),
+  next_promoted_seq: integer().notNull(),
+  consumed_seq: integer().notNull().default(-1),
+  time_created: integer()
+    .notNull()
+    .$default(() => Date.now()),
+  time_updated: integer()
+    .notNull()
+    .$default(() => Date.now()),
+})
+
 export const SessionContextEpochTable = sqliteTable("session_context_epoch", {
   session_id: text()
     .$type<SessionID>()

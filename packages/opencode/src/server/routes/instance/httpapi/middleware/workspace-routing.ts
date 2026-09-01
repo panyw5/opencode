@@ -5,7 +5,12 @@ import { WorkspaceAdapterRuntime } from "@/control-plane/workspace-adapter-runti
 import { Session } from "@/session/session"
 import { HttpApiProxy } from "./proxy"
 import * as Fence from "@/server/shared/fence"
-import { getWorkspaceRouteSessionID, isLocalWorkspaceRoute, workspaceProxyURL } from "@/server/shared/workspace-routing"
+import {
+  getWorkspaceRouteSessionID,
+  isLocalWorkspaceRoute,
+  sessionRouteDirectory,
+  workspaceProxyURL,
+} from "@/server/shared/workspace-routing"
 import { NotFoundError } from "@/storage/storage"
 import { Flag } from "@opencode-ai/core/flag/flag"
 import { Context, Data, Effect, Layer, Option, Schema } from "effect"
@@ -173,6 +178,7 @@ function planWorkspaceRequest(
 function planRequest(
   request: HttpServerRequest.HttpServerRequest,
   sessionWorkspaceID?: WorkspaceID,
+  sessionDirectory?: string,
 ): Effect.Effect<RequestPlan, never, Workspace.Service> {
   return Effect.gen(function* () {
     const url = requestURL(request)
@@ -191,7 +197,15 @@ function planRequest(
       return yield* planWorkspaceRequest(request, url, workspace)
     }
 
-    return RequestPlan.Local({ directory: defaultDirectory(request, url), workspaceID: envWorkspaceID ?? workspaceID })
+    const requestDirectory = defaultDirectory(request, url)
+    const directory = sessionRouteDirectory(requestDirectory, sessionDirectory)
+    if (sessionDirectory && sessionDirectory !== requestDirectory) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[workspace-routing] session directory overrides request context sessionDirectory=${sessionDirectory} requestDirectory=${requestDirectory} pathname=${url.pathname}`,
+      )
+    }
+    return RequestPlan.Local({ directory, workspaceID: envWorkspaceID ?? workspaceID })
   })
 }
 
@@ -236,7 +250,7 @@ function routeHttpApiWorkspace<E>(
           Effect.catchDefect(() => Effect.succeed(undefined)),
         )
       : undefined
-    const plan = yield* planRequest(request, session?.workspaceID)
+    const plan = yield* planRequest(request, session?.workspaceID, session?.directory)
     return yield* routeWorkspace(client, effect, plan)
   })
 }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   isLocalWorkspaceRoute,
   getWorkspaceRouteSessionID,
+  sessionRouteDirectory,
   workspaceProxyURL,
 } from "../../src/server/shared/workspace-routing"
 import { SessionID } from "../../src/session/schema"
@@ -54,6 +55,18 @@ describe("getWorkspaceRouteSessionID", () => {
   test("returns null for bare /session path", () => {
     const url = new URL("http://localhost/session")
     expect(getWorkspaceRouteSessionID(url)).toBeNull()
+  })
+})
+
+describe("sessionRouteDirectory", () => {
+  test("uses the persisted session directory over an unrelated request context", () => {
+    expect(sessionRouteDirectory("/projects/current-ui", "/projects/session-owner")).toBe(
+      "/projects/session-owner",
+    )
+  })
+
+  test("keeps request routing for endpoints without a persisted session", () => {
+    expect(sessionRouteDirectory("/projects/current-ui")).toBe("/projects/current-ui")
   })
 })
 

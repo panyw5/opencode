@@ -462,6 +462,31 @@ noLLMServer.instance("session creation persists the active location internally",
   }),
 )
 
+noLLMServer.instance("refuses to run a session from a different instance directory", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Cross-instance ownership guard" })
+    yield* user(chat.id, "must stay in the owner instance")
+    Database.use((db) =>
+      db
+        .update(SessionTable)
+        .set({ directory: "/tmp/different-instance" })
+        .where(Database.eq(SessionTable.id, chat.id))
+        .run(),
+    )
+
+    const exit = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
+    expect(Exit.isFailure(exit)).toBe(true)
+    if (Exit.isFailure(exit)) {
+      expect(Cause.pretty(exit.cause)).toContain("belongs to /tmp/different-instance")
+      expect(Cause.pretty(exit.cause)).toContain("ran in")
+    }
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    expect(messages.filter((message) => message.info.role === "assistant")).toHaveLength(0)
+  }),
+)
+
 noLLMServer.instance(
   "loop exits immediately when last assistant has stop finish",
   () =>
@@ -537,6 +562,57 @@ it.instance(
 )
 
 it.instance(
+  "notification completed during a successful assistant run starts exactly one follow-up loop",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({
+        title: "Deferred notification after successful run",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "long-running request")
+
+      const gate = yield* Deferred.make<void>()
+      yield* llm.push(
+        reply().wait(deferredAsPromise(gate)).text("first response").stop(),
+        reply().text("follow-up response").stop(),
+      )
+
+      const firstRun = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      yield* inbox.admit({
+        id: "evt_busy_provider_success",
+        sessionID: chat.id,
+        source: "background-task",
+        prompt: {
+          text: "Background task completed: result produced during the first response",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-task-injection", state: "completed" },
+        },
+      })
+
+      yield* Deferred.succeed(gate, void 0)
+      yield* awaitWithTimeout(
+        Fiber.await(firstRun),
+        "successful run did not drain its pending notification",
+        "3 seconds",
+      )
+      yield* awaitWithTimeout(llm.wait(2), "successful run did not start a follow-up request", "3 seconds")
+
+      expect(yield* llm.calls).toBe(2)
+      const inputs = yield* llm.inputs
+      expect(JSON.stringify(inputs[1]?.messages)).toContain("result produced during the first response")
+      expect((yield* inbox.cursor(chat.id)).consumedSeq).toBe(0)
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+    }),
+  5_000,
+)
+
+it.instance(
   "real user prompt merges two pending notifications before the user and starts one loop",
   () =>
     Effect.gen(function* () {
@@ -602,10 +678,11 @@ it.instance(
   5_000,
 )
 
-noLLMServer.instance(
+it.instance(
   "promoted-unacked notification is replayed into one valid message and is idempotent across drains",
   () =>
     Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
       const sessions = yield* Session.Service
       const inbox = yield* SessionInput.Service
       const chat = yield* sessions.create({ title: "Promoted notification recovery" })
@@ -631,7 +708,8 @@ noLLMServer.instance(
       // promoted-unacked row without relying on the original service's state.
       const recoveredContext = yield* Layer.build(makePrompt())
       const recoveredPrompt = Context.get(recoveredContext, SessionPrompt.Service)
-      yield* recoveredPrompt.loop({ sessionID: chat.id }).pipe(Effect.exit)
+      yield* llm.text("recovered response")
+      yield* recoveredPrompt.loop({ sessionID: chat.id })
 
       const messages = yield* sessions.messages({ sessionID: chat.id })
       const matching = messages.filter((message) =>
@@ -659,6 +737,92 @@ noLLMServer.instance(
           message.parts.some((item) => item.type === "text" && item.text === "replayed notification"),
         ),
       ).toHaveLength(1)
+    }),
+  5_000,
+)
+
+it.instance(
+  "materialized notification remains actionable when a newer assistant exists before claim",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({
+        title: "Recover materialized notification before claim",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "before notification")
+      const inputID = "evt_materialized_before_claim"
+      const admitted = yield* inbox.admit({
+        id: inputID,
+        sessionID: chat.id,
+        source: "background-task",
+        prompt: {
+          text: "materialized but not claimed",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-task-injection", state: "completed" },
+        },
+      })
+      yield* inbox.promote(chat.id)
+      const messageID = MessageID.ascending(`msg_inbox_${inputID}`)
+      const synthetic = yield* sessions.updateMessage({
+        id: messageID,
+        role: "user",
+        sessionID: chat.id,
+        agent: "build",
+        model: ref,
+        time: { created: Date.now() },
+      })
+      yield* sessions.updatePart({
+        id: PartID.ascending(`prt_inbox_${inputID}`),
+        messageID,
+        sessionID: chat.id,
+        type: "text",
+        text: "materialized but not claimed",
+        synthetic: true,
+        metadata: {
+          kind: "background-task-injection",
+          state: "completed",
+          sessionInputID: inputID,
+          sessionInputSeq: admitted.admittedSeq,
+        },
+      })
+      const later = Date.now() + 1
+      const interrupted: MessageV2.Assistant = {
+        id: MessageID.ascending(),
+        parentID: synthetic.id,
+        role: "assistant",
+        mode: "build",
+        agent: "build",
+        path: { cwd: "/tmp", root: "/tmp" },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        modelID: ref.modelID,
+        providerID: ref.providerID,
+        time: { created: later, completed: later + 1 },
+        sessionID: chat.id,
+        finish: "stop",
+      }
+      yield* sessions.updateMessage(interrupted)
+      yield* sessions.updatePart({
+        id: PartID.ascending(),
+        messageID: interrupted.id,
+        sessionID: chat.id,
+        type: "text",
+        text: "interrupted before claim",
+      })
+      yield* llm.text("recovered materialized notification")
+
+      const result = yield* prompt.loop({ sessionID: chat.id })
+      expect(yield* llm.calls).toBe(1)
+      expect(result.parts.some((part) => part.type === "text" && part.text === "recovered materialized notification")).toBe(
+        true,
+      )
+      expect((yield* inbox.cursor(chat.id)).consumedSeq).toBe(0)
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
     }),
   5_000,
 )
@@ -3373,5 +3537,69 @@ it.instance(
         .find((part): part is MessageV2.ToolPart => part.type === "tool" && part.tool === "question")
       expect(questionPart?.state.status).toBe("error")
     }),
+  30_000,
+)
+
+it.instance(
+  "durable inbox completion unblocks a pending question and advances automatically",
+  () =>
+    withSh(() =>
+      Effect.gen(function* () {
+        const { llm } = yield* useServerConfig(providerCfg)
+        const prompt = yield* SessionPrompt.Service
+        const sessions = yield* Session.Service
+        const question = yield* Question.Service
+        const backgroundShell = yield* BackgroundShell.Service
+        const inbox = yield* SessionInput.Service
+        const session = yield* sessions.create({
+          title: "Durable inbox unblocks question",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        })
+        yield* user(session.id, "ask a question while background work finishes")
+        yield* llm.push(
+          reply().tool("question", {
+            questions: [
+              {
+                question: "Keep waiting?",
+                header: "Next",
+                options: [{ label: "Yes", description: "continue" }],
+              },
+            ],
+          }),
+          reply().text("automatically resumed from durable inbox").stop(),
+        )
+
+        const runFiber = yield* prompt.loop({ sessionID: session.id }).pipe(Effect.forkChild)
+        yield* pollWithTimeout(
+          question
+            .list()
+            .pipe(
+              Effect.map((items) =>
+                items.some((item) => item.sessionID === session.id) ? (true as const) : undefined,
+              ),
+            ),
+          "question never became pending",
+        )
+        yield* backgroundShell.create({
+          sessionID: session.id,
+          command: "sleep 0.2; printf durable-question-result",
+          description: "durable question result",
+          background: true,
+        })
+
+        yield* awaitWithTimeout(llm.wait(2), "durable inbox did not start the automatic follow-up", "5 seconds")
+        yield* awaitWithTimeout(
+          Fiber.await(runFiber),
+          "question run did not settle after inbox completion",
+          "5 seconds",
+        )
+        expect(yield* llm.calls).toBe(2)
+        expect((yield* question.list()).filter((item) => item.sessionID === session.id)).toEqual([])
+        expect((yield* inbox.cursor(session.id)).consumedSeq).toBe(0)
+        expect(yield* inbox.promotedUnacked(session.id)).toEqual([])
+        const inputs = yield* llm.inputs
+        expect(JSON.stringify(inputs[1]?.messages)).toContain("durable-question-result")
+      }),
+    ),
   30_000,
 )
