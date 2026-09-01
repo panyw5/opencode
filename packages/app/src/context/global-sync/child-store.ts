@@ -133,7 +133,13 @@ export function createChildStoreManager(input: {
       disposers.delete(directory)
     }
     delete children[directory]
-    input.onDispose(directory)
+    try {
+      input.onDispose(directory)
+    } catch (error) {
+      console.warn(
+        `[global-sync] directory dispose callback failed directory=${directory} err=${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
     return true
   }
 

@@ -70,4 +70,41 @@ describe("createChildStoreManager", () => {
 
     expect(manager.children[directory]).toBeDefined()
   })
+
+  test("does not leak a dispose callback failure into the active directory", () => {
+    const owner = createRoot((dispose) => {
+      const current = getOwner()
+      dispose()
+      return current
+    })
+    if (!owner) throw new Error("owner required")
+
+    let disposed = 0
+    const manager = createChildStoreManager({
+      owner,
+      isBooting: () => false,
+      isLoadingSessions: () => false,
+      onBootstrap() {},
+      onDispose() {
+        disposed++
+        throw new Error("server unavailable")
+      },
+      translate: (key) => key,
+    })
+
+    Array.from({ length: 30 }, (_, index) => `/idle-${index}`).forEach((directory) => {
+      manager.children[directory] = child()
+    })
+    manager.children["/active"] = child()
+
+    const warn = console.warn
+    console.warn = mock(() => {})
+    try {
+      expect(() => manager.mark("/active")).not.toThrow()
+      expect(disposed).toBe(30)
+      expect(manager.children["/active"]).toBeDefined()
+    } finally {
+      console.warn = warn
+    }
+  })
 })

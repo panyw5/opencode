@@ -307,8 +307,24 @@ function createGlobalSync() {
         )
         revs.delete(directory)
         console.debug(`[global-sync] instance dispose requested directory=${directory} domain=${domain}`)
-        void runtime(domain)
-          .client.instance.dispose({ directory })
+        const conn = server.currentFor(domain)
+        if (!conn) {
+          console.debug(
+            `[global-sync] instance dispose skipped directory=${directory} domain=${domain} reason=server-unavailable`,
+          )
+          return
+        }
+        let client: ReturnType<typeof runtime>["client"]
+        try {
+          client = runtime(domain).client
+        } catch (err) {
+          console.warn(
+            `[global-sync] instance dispose setup failed directory=${directory} domain=${domain} err=${err instanceof Error ? err.message : String(err)}`,
+          )
+          return
+        }
+        void client.instance
+          .dispose({ directory })
           .then(() => {
             console.debug(`[global-sync] instance dispose succeeded directory=${directory} domain=${domain}`)
           })
