@@ -9,6 +9,7 @@ import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { ProjectLocation } from "./location"
 import { ProjectAlias } from "./alias"
 import { GitEvidence } from "./git-evidence"
+import { ProjectOwnershipMigration } from "./ownership-migration"
 import * as Log from "@opencode-ai/core/util/log"
 import { Hash } from "@opencode-ai/core/util/hash"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -782,6 +783,8 @@ export const layer: Layer.Layer<
         totals.workspaces += Math.max(0, before.workspaces - after.workspaces)
       }
       log.info("project legacy claim completed", totals)
+      const ownership = yield* Effect.sync(() => ProjectOwnershipMigration.runDuplicateWorktreeOwnershipMigration())
+      log.info("project ownership startup migration completed", ownership)
       return totals
     })
 
