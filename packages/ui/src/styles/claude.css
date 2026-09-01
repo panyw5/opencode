@@ -190,7 +190,7 @@ html[data-theme="claude"] [data-component="session-prompt-dock"] [data-slot="pro
 
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-component="prompt-input"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-slot="prompt-placeholder"] {
-  font-family: var(--claude-font-family) !important;
+  font-family: var(--font-family-mono) !important;
   font-size: var(--claude-message-font-size);
   line-height: 1.55;
 }
