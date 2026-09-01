@@ -2253,6 +2253,8 @@ export default function Page() {
     },
   )
 
+  let lastPinSkip = ""
+  let lastPinSkipAt = 0
   const updateScrollState = (
     el: HTMLDivElement,
     geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
@@ -2262,11 +2264,20 @@ export default function Page() {
     if (!el.isConnected || clientHeight <= 0 || scrollHeight <= 0) return
     debug("state:before", el)
     if (shouldPinBottom()) {
+      lastPinSkip = ""
       lockBottom(el, "state:live-lock")
     } else if (followBottom || running()) {
-      console.debug(
-        `[session] pin-skip sid=${params.id ?? "none"} running=${String(running())} follow=${String(followBottom)} live=${String(live())} userScrolled=${String(autoScroll.userScrolled())} gesture=${String(hasScrollGesture())} target=${String(hasScrollTarget())} gap=${String(Math.round(el.scrollHeight - el.clientHeight - el.scrollTop))}`,
-      )
+      const next = `running=${String(running())} follow=${String(followBottom)} live=${String(live())} userScrolled=${String(autoScroll.userScrolled())} gesture=${String(hasScrollGesture())} target=${String(hasScrollTarget())}`
+      const now = performance.now()
+      if (next !== lastPinSkip || now - lastPinSkipAt >= 5_000) {
+        lastPinSkip = next
+        lastPinSkipAt = now
+        console.debug(
+          `[session] pin-skip sid=${params.id ?? "none"} ${next} gap=${String(Math.round(el.scrollHeight - el.clientHeight - el.scrollTop))}`,
+        )
+      }
+    } else {
+      lastPinSkip = ""
     }
     const max = scrollHeight - clientHeight
     const top = geometry ? Math.max(0, Math.min(geometry.scrollTop, max)) : clamp(el)

@@ -2034,21 +2034,36 @@ export default function Layout(props: ParentProps) {
     try {
       const seen = new Set<string>()
       let currentID: string | undefined = id
+      let lookupDirectory = directory
       while (currentID && !seen.has(currentID)) {
         const sessionID: string = currentID
         seen.add(sessionID)
-        const value = await globalSync.session.info.ensure(directory, sessionID)
+        console.debug(`[session-bar] ensure meta lookup directory=${lookupDirectory} id=${sessionID}`)
+        const value = await globalSync.session.info.ensure(lookupDirectory, sessionID)
         if (!value) {
-          console.debug(`[session-bar] ensure meta miss directory=${directory} id=${sessionID}`)
+          console.debug(`[session-bar] ensure meta miss directory=${lookupDirectory} id=${sessionID}`)
           return
         }
-        sessionTabs.updateMeta(directory, currentID, {
+        const canonicalDirectory = value.directory || lookupDirectory
+        sessionTabs.updateMeta(lookupDirectory, currentID, {
+          directory: canonicalDirectory,
           title: value.title,
           parentID: value.parentID ?? null,
         })
         console.debug(
-          `[session-bar] ensure meta ok id=${currentID} parentID=${value.parentID ?? "null"} title=${value.title?.slice(0, 40) ?? ""}`,
+          `[session-bar] ensure meta ok id=${currentID} lookup-directory=${lookupDirectory} canonical-directory=${canonicalDirectory} parentID=${value.parentID ?? "null"} title=${value.title?.slice(0, 40) ?? ""}`,
         )
+        if (currentID === id && !sameWorkspacePath(canonicalDirectory, directory)) {
+          const activeWrongRoute = params.id === id && sameWorkspacePath(routeDir(), directory)
+          console.warn(
+            `[session-bar] canonical directory mismatch id=${id} route-directory=${directory} session-directory=${canonicalDirectory} active=${activeWrongRoute}`,
+          )
+          if (activeWrongRoute) {
+            console.debug(`[session-bar] redirect canonical session id=${id} directory=${canonicalDirectory}`)
+            navigateWithSidebarReset(`/${base64Encode(canonicalDirectory)}/session/${id}`)
+          }
+        }
+        lookupDirectory = canonicalDirectory
         currentID = value.parentID
       }
     } catch (error) {

@@ -47,14 +47,12 @@ export type SessionBarTab = {
   parentID?: string | null
 }
 
-const sessionBarDirectoryKey = (directory: string) =>
-  workspaceKey(directory).replace(/^\/private(?=\/(?:tmp|var)(?:\/|$))/, "")
+// Session IDs are database primary keys and are globally unique. Including the
+// route directory here lets a stale/wrong route render the same session twice.
+export const sessionBarKey = (tab: Pick<SessionBarTab, "directory" | "id">) => tab.id
 
-export const sessionBarKey = (tab: Pick<SessionBarTab, "directory" | "id">) =>
-  `${sessionBarDirectoryKey(tab.directory)}:${tab.id}`
-
-/** Keep one renderable/persisted entry for each logical session. */
-export function dedupeSessionBarTabs(tabs: readonly SessionBarTab[]) {
+/** Normalize untrusted persisted tabs before they enter the unique runtime collection. */
+export function dedupePersistedSessionBarTabs(tabs: SessionBarTab[]): SessionBarTab[] {
   const result: SessionBarTab[] = []
   const indexes = new Map<string, number>()
   let changed = false
@@ -80,7 +78,54 @@ export function dedupeSessionBarTabs(tabs: readonly SessionBarTab[]) {
   if (changed) {
     console.debug(`[session-bar] dedupe tabs before=${tabs.length} after=${result.length}`)
   }
-  return changed ? result : [...tabs]
+  // Migration is allowed to write a repaired value, but a clean persisted value
+  // must retain identity so hydration does not trigger an unnecessary rewrite.
+  return changed ? result : tabs
+}
+
+export function updateSessionBarTabInfo(
+  tabs: SessionBarTab[],
+  id: string,
+  info: { directory?: string; title?: string; parentID?: string | null },
+): SessionBarTab[] {
+  const index = tabs.findIndex((tab) => tab.id === id)
+  if (index === -1) return tabs
+
+  const tab = tabs[index]
+  const next = {
+    ...tab,
+    directory: info.directory || tab.directory,
+    title: info.title ?? tab.title,
+    parentID: info.parentID === undefined ? tab.parentID : info.parentID,
+  }
+  if (
+    next.directory === tab.directory &&
+    next.title === tab.title &&
+    next.parentID === tab.parentID
+  ) {
+    return tabs
+  }
+
+  const result = tabs.slice()
+  result[index] = next
+  return result
+}
+
+export function openSessionBarTab(tabs: SessionBarTab[], tab: SessionBarTab, limit = MAX_SESSION_BAR_TABS) {
+  const key = sessionBarKey(tab)
+  const index = tabs.findIndex((item) => sessionBarKey(item) === key)
+  if (index !== -1) {
+    const current = tabs[index]
+    const title = tab.title ?? current.title
+    const parentID = tab.parentID === undefined ? current.parentID : tab.parentID
+    if (title === current.title && parentID === current.parentID) return tabs
+    const next = tabs.slice()
+    next[index] = { ...current, title, parentID }
+    return next
+  }
+
+  const next = [...tabs, tab]
+  return next.length <= limit ? next : next.slice(next.length - limit)
 }
 
 export function addSessionBarDraft(drafts: readonly string[], directory: string) {
@@ -314,7 +359,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             typeof tab.id === "string" &&
             !!tab.id,
         )
-        const all = dedupeSessionBarTabs(valid)
+        const all = dedupePersistedSessionBarTabs(valid)
         if (valid.length === sessionBar.all.length && same(valid, all)) return sessionBar
 
         console.debug(
@@ -476,16 +521,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     })
 
     const ensureKey = (key: string) => ensureSessionKey(key, touch, (sessionKey) => scroll.seed(sessionKey))
-
-    createEffect(() => {
-      if (!ready()) return
-      const current = store.sessionBar?.all
-      if (!current) return
-      const normalized = dedupeSessionBarTabs(current)
-      if (same(current, normalized)) return
-      console.debug(`[session-bar] runtime repair duplicate tabs before=${current.length} after=${normalized.length}`)
-      setStore("sessionBar", "all", normalized)
-    })
 
     createEffect(() => {
       if (!ready()) return
@@ -791,34 +826,22 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
       },
       sessionBar: {
-        all: createMemo(() => dedupeSessionBarTabs(store.sessionBar?.all ?? [])),
+        all: createMemo(() => store.sessionBar?.all ?? []),
         drafts: createMemo(() => store.sessionBar?.drafts ?? []),
-        /** Open (or focus) a session tab. Dedupes by directory+id, appends to the end. */
+        /** Open (or focus) a session tab. Session IDs are globally unique. */
         open(directory: string, id: string, title?: string, parentID?: string | null) {
           setStore("sessionBar", "all", (prev) => {
-            const before = prev ?? []
-            const current = dedupeSessionBarTabs(before)
+            const current = prev ?? []
             const key = sessionBarKey({ directory, id })
             const existing = current.find((tab) => sessionBarKey(tab) === key)
             if (existing) {
-              if ((title && existing.title !== title) || (parentID !== undefined && existing.parentID !== parentID)) {
-                return current.map((tab) =>
-                  sessionBarKey(tab) === key
-                    ? {
-                        ...tab,
-                        title: title ?? tab.title,
-                        parentID: parentID === undefined ? tab.parentID : parentID,
-                      }
-                    : tab,
+              if (workspaceKey(existing.directory) !== workspaceKey(directory)) {
+                console.warn(
+                  `[session-bar] prevented duplicate session id=${id} existing-directory=${existing.directory} requested-directory=${directory}`,
                 )
               }
-              return current
             }
-
-            const next = [...current, { directory, id, title, parentID }]
-            if (next.length <= MAX_SESSION_BAR_TABS) return next
-            // Bound the strip: drop the oldest (leftmost) tabs.
-            return next.slice(next.length - MAX_SESSION_BAR_TABS)
+            return openSessionBarTab(current, { directory, id, title, parentID })
           })
         },
         openDraft(directory: string) {
@@ -878,15 +901,32 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             return [...ordered, ...byKey.values()]
           })
         },
-        setInfo(directory: string, id: string, info: { title?: string; parentID: string | null }) {
-          const all = store.sessionBar?.all ?? []
-          const index = all.findIndex((tab) => tab.id === id && workspaceKey(tab.directory) === workspaceKey(directory))
-          if (index === -1) return
-          const current = all[index]
-          const title = info.title ?? current?.title
-          if (current?.title !== title || current?.parentID !== info.parentID) {
-            setStore("sessionBar", "all", index, { ...current, title, parentID: info.parentID })
-          }
+        setInfo(
+          directory: string,
+          id: string,
+          info: { directory?: string; title?: string; parentID: string | null },
+        ) {
+          let targetDirectory: string | undefined
+          setStore("sessionBar", "all", (prev) => {
+            const current = prev ?? []
+            const existing = current.find((tab) => tab.id === id)
+            if (!existing) return current
+            if (!info.directory && !sameWorkspacePath(existing.directory, directory)) {
+              console.warn(
+                `[session-bar] ignored stale metadata id=${id} current-directory=${existing.directory} source-directory=${directory}`,
+              )
+              return current
+            }
+            const next = updateSessionBarTabInfo(current, id, info)
+            targetDirectory = next.find((tab) => tab.id === id)?.directory
+            if (existing && info.directory && workspaceKey(existing.directory) !== workspaceKey(info.directory)) {
+              console.warn(
+                `[session-bar] repaired session directory id=${id} from=${existing.directory} to=${info.directory} source=${directory}`,
+              )
+            }
+            return next
+          })
+          return targetDirectory
         },
       },
       projects: {

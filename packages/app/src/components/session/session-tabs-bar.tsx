@@ -271,6 +271,7 @@ export function SessionTabsBar() {
       .then((value) => {
         if (!value) return
         sessionTabs.updateMeta(tab.directory, tab.id, {
+          directory: value.directory,
           title: value.title,
           parentID: value.parentID ?? null,
         })
@@ -291,6 +292,7 @@ export function SessionTabsBar() {
       }
       if (session) {
         sessionTabs.updateMeta(tab.directory, tab.id, {
+          directory: session.directory,
           title: session.title,
           parentID: session.parentID ?? null,
         })
@@ -1313,6 +1315,7 @@ function SessionTabPermissionCapsule(props: {
   })
   let capsuleEl: HTMLDivElement | undefined
   let animationFrame: number | undefined
+  let lastPosition = ""
 
   createEffect(() => {
     const state = props.closing ? "closing" : "open"
@@ -1338,9 +1341,12 @@ function SessionTabPermissionCapsule(props: {
     )
     const stackIndex = Math.max(0, permissionTabs.indexOf(anchor))
     const top = rect.bottom + 6 + stackIndex * (capsuleEl.offsetHeight + 4)
+    const nextPosition = `${left}:${top}`
+    if (nextPosition === lastPosition) return
+    lastPosition = nextPosition
     setState({ left, top, positioned: true })
     console.debug(
-      `[session-tab-permission] positioned request=${props.request.id} session=${props.request.sessionID} elapsed=${Math.round(performance.now() - mountedAt)}ms stack=${stackIndex} left=${Math.round(left)} top=${Math.round(top)} width=${width}`,
+      `[session-tab-permission] position changed request=${props.request.id} session=${props.request.sessionID} elapsed=${Math.round(performance.now() - mountedAt)}ms stack=${stackIndex} left=${Math.round(left)} top=${Math.round(top)} width=${width}`,
     )
   }
 

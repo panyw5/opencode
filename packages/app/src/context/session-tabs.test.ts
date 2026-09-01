@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionBarTab } from "./layout"
+import { sessionBarKey, updateSessionBarTabInfo, type SessionBarTab } from "./layout"
 import {
   createSessionTabsCoordinator,
   planSessionTabClose,
@@ -27,13 +27,21 @@ function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: Se
       all: () => tabs,
       drafts: () => drafts,
       open(value) {
-        const index = tabs.findIndex((item) => item.directory === value.directory && item.id === value.id)
-        if (index >= 0) tabs[index] = { ...tabs[index], ...value }
-        else tabs.push(value)
+        const key = sessionBarKey(value)
+        const index = tabs.findIndex((item) => sessionBarKey(item) === key)
+        if (index < 0) {
+          tabs.push(value)
+          return
+        }
+        tabs[index] = {
+          ...tabs[index],
+          title: value.title ?? tabs[index].title,
+          parentID: value.parentID === undefined ? tabs[index].parentID : value.parentID,
+        }
       },
       closeAll(values) {
-        const closing = new Set(values.map((item) => `${item.directory}:${item.id}`))
-        tabs = tabs.filter((item) => !closing.has(`${item.directory}:${item.id}`))
+        const closing = new Set(values.map(sessionBarKey))
+        tabs = tabs.filter((item) => !closing.has(sessionBarKey(item)))
       },
       openDraft(directory) {
         if (!drafts.includes(directory)) drafts.push(directory)
@@ -42,7 +50,11 @@ function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: Se
         drafts = drafts.filter((item) => item !== directory)
       },
       setInfo(directory, id, info) {
-        tabs = tabs.map((item) => (item.directory === directory && item.id === id ? { ...item, ...info } : item))
+        const current = tabs.find((item) => item.id === id)
+        if (!current) return
+        if (!info.directory && current.directory !== directory) return
+        tabs = updateSessionBarTabInfo(tabs, id, info)
+        return tabs.find((item) => item.id === id)?.directory
       },
     },
     route: () => route,
@@ -114,6 +126,56 @@ describe("session tabs coordinator", () => {
     h.dispose()
   })
 
+  test("the same session observed through a stale directory keeps one tab", () => {
+    const h = harness()
+    h.coordinator.observeRoute({ directory: "/repo/canonical", id: "one-directory", session: true })
+    h.coordinator.observeRoute({ directory: "/repo/stale", id: "one-directory", session: true })
+
+    expect(h.tabs()).toEqual([{ directory: "/repo/canonical", id: "one-directory", parentID: undefined }])
+    h.dispose()
+  })
+
+  test("canonical metadata relocates a tab opened from a stale route", () => {
+    const h = harness({ tabs: [tab("relocate", "/repo/stale")] })
+    h.coordinator.updateMeta("/repo/stale", "relocate", {
+      directory: "/repo/canonical",
+      title: "Canonical",
+      parentID: null,
+    })
+
+    expect(h.tabs()).toEqual([
+      { directory: "/repo/canonical", id: "relocate", title: "Canonical", parentID: null },
+    ])
+    h.dispose()
+  })
+
+  test("stale non-authoritative metadata cannot overwrite a relocated tab", () => {
+    const h = harness({ tabs: [tab("relocated", "/repo/canonical")] })
+
+    h.coordinator.updateMeta("/repo/stale", "relocated", {
+      title: "Stale",
+      parentID: "wrong-parent",
+    })
+
+    expect(h.tabs()).toEqual([{ directory: "/repo/canonical", id: "relocated", parentID: undefined }])
+    h.dispose()
+  })
+
+  test("authoritative metadata may update a relocated tab from a stale request", () => {
+    const h = harness({ tabs: [tab("relocated-authoritative", "/repo/canonical")] })
+
+    h.coordinator.updateMeta("/repo/stale", "relocated-authoritative", {
+      directory: "/repo/canonical",
+      title: "Canonical",
+      parentID: null,
+    })
+
+    expect(h.tabs()).toEqual([
+      { directory: "/repo/canonical", id: "relocated-authoritative", title: "Canonical", parentID: null },
+    ])
+    h.dispose()
+  })
+
   test("opening a child creates its available parent through the coordinator", () => {
     const h = harness({ route: { directory: "/parent-open", session: true } })
 
@@ -123,6 +185,18 @@ describe("session tabs coordinator", () => {
       { directory: "/parent-open", id: "parent" },
       { directory: "/parent-open", id: "child", parentID: "parent" },
     ])
+    h.dispose()
+  })
+
+  test("a tombstoned parent blocks a late child open", async () => {
+    const directory = "/blocked-parent"
+    const h = harness({ route: { directory, session: true } })
+
+    await h.coordinator.remove(tab("parent", directory), "archived")
+    const opened = h.coordinator.ensureOpen(tab("child", directory, "parent"))
+
+    expect(opened).toBe(false)
+    expect(h.tabs()).toEqual([])
     h.dispose()
   })
 
@@ -271,7 +345,7 @@ describe("session tabs coordinator", () => {
 
   test("a late present reconciliation cannot clear a newer archive tombstone", async () => {
     const directory = "/reconcile-late-present"
-    const victim = tab("victim", directory)
+    const victim = tab("stale-epoch-victim", directory)
     const h = harness({
       tabs: [victim],
       route: { directory, session: true },
@@ -427,6 +501,18 @@ describe("session tabs coordinator", () => {
     h.coordinator.observeRoute({ directory: "/repo", id: "one", session: true })
     expect(h.tabs().map((item) => item.id)).toEqual(["one"])
     expect(h.cooled).toEqual([["two"]])
+    h.dispose()
+  })
+
+  test("a stale route directory still treats the same session id as active", async () => {
+    const h = harness({
+      tabs: [tab("one"), tab("two", "/repo/canonical")],
+      route: { directory: "/repo/stale", id: "two", session: true },
+    })
+
+    expect(await h.coordinator.requestClose(tab("two", "/repo/canonical"))).toBe(true)
+    expect(h.tabs().map((item) => item.id)).toEqual(["one", "two"])
+    expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "one" }])
     h.dispose()
   })
 

@@ -37,7 +37,11 @@ export type SessionTabsStoreAdapter = {
   closeAll(tabs: SessionBarTab[]): void
   openDraft(directory: string): void
   closeDraft(directory: string): void
-  setInfo(directory: string, id: string, info: { title?: string; parentID?: string | null }): void
+  setInfo(
+    directory: string,
+    id: string,
+    info: { directory?: string; title?: string; parentID?: string | null },
+  ): string | undefined
 }
 
 export type SessionTabsPorts = {
@@ -59,9 +63,13 @@ export type SessionTabsCoordinator = {
     route: SessionTabsRoute,
     meta?: { title?: string; parentID?: string | null; root?: string; hidden?: boolean },
   ): void
-  ensureOpen(tab: SessionBarTab): void
+  ensureOpen(tab: SessionBarTab): boolean
   activate(target: SessionTabsTarget): Promise<boolean>
-  updateMeta(directory: string, id: string, info: { title?: string; parentID?: string | null }): void
+  updateMeta(
+    directory: string,
+    id: string,
+    info: { directory?: string; title?: string; parentID?: string | null },
+  ): void
   requestClose(tab: SessionBarTab): Promise<boolean>
   requestCloseDescendants(tab: SessionBarTab): Promise<boolean>
   requestCloseDraft(directory: string): Promise<boolean>
@@ -78,7 +86,7 @@ export type SessionTabsCoordinator = {
 const canonical = (value: string) => value.replace(/^\/private(?=\/(?:tmp|var)(?:\/|$))/, "")
 const directoryEqual = (a: string, b: string) => canonical(a) === canonical(b)
 const routeMatches = (route: SessionTabsRoute, tab: SessionBarTab) =>
-  route.session && route.id === tab.id && directoryEqual(route.directory, tab.directory)
+  route.session && route.id === tab.id
 
 type CloseHandoff =
   | {
@@ -132,13 +140,13 @@ let navigationSequence = 0
 const routeKey = (route: SessionTabsRoute) => {
   if (!route.session) return "home"
   if (!route.id) return `draft:${canonical(route.directory)}`
-  return `session:${sessionBarKey({ directory: route.directory, id: route.id })}`
+  return `session:${canonical(route.directory)}:${sessionBarKey({ directory: route.directory, id: route.id })}`
 }
 
 const targetKey = (target: SessionTabsTarget) => {
   if (target.type === "home") return "home"
   if (target.type === "draft") return `draft:${canonical(target.directory)}`
-  return `session:${sessionBarKey(target)}`
+  return `session:${canonical(target.directory)}:${sessionBarKey(target)}`
 }
 
 const targetMatchesRoute = (target: SessionTabsTarget, route: SessionTabsRoute) => targetKey(target) === routeKey(route)
@@ -343,8 +351,13 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
     }
   }
 
-  const ensureOpen = (tab: SessionBarTab) => {
+  const ensureOpen = (tab: SessionBarTab, visiting = new Set<string>()): boolean => {
     const key = sessionBarKey(tab)
+    if (visiting.has(key)) {
+      console.warn(`[session-tabs] ensure open blocked parent cycle key=${key}`)
+      return false
+    }
+    visiting.add(key)
     const tombstone = lifecycleTombstones.get(key)
     if (tombstone) {
       const workspaceEpoch = workspaceEpochs.get(workspaceKey(canonical(tab.directory))) ?? 0
@@ -357,13 +370,14 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         console.debug(
           `[session-tabs] ensure open blocked key=${key} ownerToken=${tombstone.token} reason=${tombstone.reason}`,
         )
-        return
+        return false
       }
     }
     if (typeof tab.parentID === "string" && tab.parentID !== tab.id) {
-      ensureOpen({ directory: tab.directory, id: tab.parentID })
+      if (!ensureOpen({ directory: tab.directory, id: tab.parentID }, visiting)) return false
     }
     ports.store.open(tab)
+    return true
   }
 
   const coordinator: SessionTabsCoordinator = {
@@ -409,9 +423,10 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         console.debug(`[session-tabs] metadata update skipped missing key=${key}`)
         return
       }
-      ports.store.setInfo(directory, id, info)
+      const targetDirectory = ports.store.setInfo(directory, id, info)
+      if (!targetDirectory) return
       if (typeof info.parentID !== "string" || info.parentID === id) return
-      ensureOpen({ directory, id: info.parentID })
+      ensureOpen({ directory: targetDirectory, id: info.parentID })
     },
     async requestClose(tab) {
       const plan = planSessionTabClose({

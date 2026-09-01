@@ -4,14 +4,16 @@ import {
   addSessionBarDraft,
   createSessionKeyReader,
   cycleSessionBarIndex,
-  dedupeSessionBarTabs,
+  dedupePersistedSessionBarTabs,
   ensureSessionKey,
   isSessionFileTab,
+  openSessionBarTab,
   pruneSessionKeys,
   removeSessionBarDraft,
   resolveRailProjects,
   sessionBarKey,
   shouldAutoCollapseFilePreview,
+  updateSessionBarTabInfo,
   visibleSessionBarDrafts,
 } from "./layout"
 
@@ -134,9 +136,9 @@ describe("session bar drafts", () => {
 })
 
 describe("session bar tabs", () => {
-  test("uses one logical key for macOS private tmp aliases", () => {
-    expect(sessionBarKey({ directory: "/tmp/workspace", id: "same" })).toBe(
-      sessionBarKey({ directory: "/private/tmp/workspace", id: "same" }),
+  test("uses the globally unique session id as the logical key", () => {
+    expect(sessionBarKey({ directory: "/work/one", id: "same" })).toBe(
+      sessionBarKey({ directory: "/work/two", id: "same" }),
     )
   })
 
@@ -147,10 +149,56 @@ describe("session bar tabs", () => {
       { directory: "/work/one", id: "same", title: "New", parentID: "parent" },
     ]
 
-    expect(dedupeSessionBarTabs(tabs)).toEqual([
+    expect(dedupePersistedSessionBarTabs(tabs)).toEqual([
       { directory: "/work/one", id: "same", title: "New", parentID: "parent" },
       { directory: "/work/two", id: "other", title: "Other" },
     ])
+  })
+
+  test("preserves tab array identity when deduplication and metadata updates are no-ops", () => {
+    const tabs = [{ directory: "/work/one", id: "same", title: "Current", parentID: null }]
+
+    expect(dedupePersistedSessionBarTabs(tabs)).toBe(tabs)
+    expect(
+      updateSessionBarTabInfo(tabs, "same", {
+        directory: "/work/one",
+        title: "Current",
+        parentID: null,
+      }),
+    ).toBe(tabs)
+  })
+
+  test("keeps runtime opens unique without repair passes", () => {
+    const first = openSessionBarTab([], { directory: "/work/stale", id: "same", title: "Initial" })
+    const repeated = openSessionBarTab(first, { directory: "/work/canonical", id: "same" })
+    const updated = openSessionBarTab(repeated, {
+      directory: "/work/canonical",
+      id: "same",
+      title: "Current",
+      parentID: "parent",
+    })
+
+    expect(repeated).toBe(first)
+    expect(updated).toEqual([
+      { directory: "/work/stale", id: "same", title: "Current", parentID: "parent" },
+    ])
+    expect(new Set(updated.map((tab) => sessionBarKey(tab))).size).toBe(updated.length)
+  })
+
+  test("metadata updates preserve uniqueness and cannot create unknown tabs", () => {
+    const tabs = [{ directory: "/work/one", id: "one", title: "One" }]
+    const missing = updateSessionBarTabInfo(tabs, "missing", { title: "Missing", parentID: null })
+    const updated = updateSessionBarTabInfo(tabs, "one", {
+      directory: "/work/canonical",
+      title: "Current",
+      parentID: null,
+    })
+
+    expect(missing).toBe(tabs)
+    expect(updated).toEqual([
+      { directory: "/work/canonical", id: "one", title: "Current", parentID: null },
+    ])
+    expect(new Set(updated.map((tab) => sessionBarKey(tab))).size).toBe(updated.length)
   })
 
   test("treats macOS private tmp aliases as the same session tab", () => {
@@ -159,7 +207,28 @@ describe("session bar tabs", () => {
       { directory: "/private/tmp/workspace", id: "same", title: "Private tmp" },
     ]
 
-    expect(dedupeSessionBarTabs(tabs)).toEqual([{ directory: "/tmp/workspace", id: "same", title: "Private tmp" }])
+    expect(dedupePersistedSessionBarTabs(tabs)).toEqual([{ directory: "/tmp/workspace", id: "same", title: "Private tmp" }])
+  })
+
+  test("deduplicates a session restored under two different directories", () => {
+    const tabs = [
+      { directory: "/work/canonical", id: "same", title: "Original" },
+      { directory: "/work/stale-route", id: "same", title: "Updated" },
+    ]
+
+    expect(dedupePersistedSessionBarTabs(tabs)).toEqual([
+      { directory: "/work/canonical", id: "same", title: "Updated" },
+    ])
+  })
+
+  test("repairs a stale tab directory from canonical session metadata", () => {
+    expect(
+      updateSessionBarTabInfo([{ directory: "/work/stale-route", id: "same", title: "Old" }], "same", {
+        directory: "/work/canonical",
+        title: "Current",
+        parentID: null,
+      }),
+    ).toEqual([{ directory: "/work/canonical", id: "same", title: "Current", parentID: null }])
   })
 })
 
