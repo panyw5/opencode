@@ -138,9 +138,17 @@ export const layer = Layer.effect(
         })
 
       const settleToolCall = Effect.fn("SessionProcessor.settleToolCall")(function* (toolCallID: string) {
-        const done = ctx.toolcalls[toolCallID]?.done
-        delete ctx.toolcalls[toolCallID]
-        if (done) yield* Deferred.succeed(done, undefined).pipe(Effect.ignore)
+        const call = ctx.toolcalls[toolCallID]
+        if (!call) {
+          slog.info("tool call settle ignored — call not tracked", { toolCallID })
+          return
+        }
+        // Keep the call identity until processor cleanup. AI SDK streams may
+        // replay a tool-call after the local execute callback has already
+        // completed. Dropping the identity here lets that replay materialize a
+        // second part for the same messageID + callID.
+        yield* Deferred.succeed(call.done, undefined).pipe(Effect.ignore)
+        slog.info("tool call settled", { toolCallID, partID: call.partID })
       })
 
       const readToolCall = Effect.fn("SessionProcessor.readToolCall")(function* (toolCallID: string) {
@@ -163,14 +171,33 @@ export const layer = Layer.effect(
         update: (part: MessageV2.ToolPart) => MessageV2.ToolPart,
       ) {
         const match = yield* readToolCall(toolCallID)
-        if (!match) return undefined
-        const part = yield* session.updatePart(update(match.part))
+        if (!match) {
+          slog.info("tool call update ignored — call not tracked", { toolCallID })
+          return undefined
+        }
+        const next = update(match.part)
+        const terminal = match.part.state.status === "completed" || match.part.state.status === "error"
+        const part = yield* session.updatePart(
+          terminal
+            ? {
+                ...next,
+                // Late/replayed tool-call events may enrich provider metadata,
+                // but must never move a terminal call back to running.
+                state: match.part.state,
+              }
+            : next,
+        )
         ctx.toolcalls[toolCallID] = {
           ...match.call,
           partID: part.id,
           messageID: part.messageID,
           sessionID: part.sessionID,
         }
+        slog.info(terminal ? "terminal tool call metadata updated" : "tool call updated", {
+          toolCallID,
+          partID: part.id,
+          status: part.state.status,
+        })
         return part
       })
 
@@ -184,7 +211,19 @@ export const layer = Layer.effect(
         },
       ) {
         const match = yield* readToolCall(toolCallID)
-        if (!match || match.part.state.status !== "running") return
+        if (!match) {
+          slog.info("tool call completion ignored — call not tracked", { toolCallID })
+          return
+        }
+        if (match.part.state.status !== "running") {
+          slog.info("tool call completion replay ignored", {
+            toolCallID,
+            partID: match.part.id,
+            status: match.part.state.status,
+          })
+          yield* settleToolCall(toolCallID)
+          return
+        }
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -197,12 +236,25 @@ export const layer = Layer.effect(
             attachments: output.attachments,
           },
         })
+        slog.info("tool call completed", { toolCallID, partID: match.part.id })
         yield* settleToolCall(toolCallID)
       })
 
       const failToolCall = Effect.fn("SessionProcessor.failToolCall")(function* (toolCallID: string, error: unknown) {
         const match = yield* readToolCall(toolCallID)
-        if (!match || match.part.state.status !== "running") return false
+        if (!match) {
+          slog.info("tool call failure ignored — call not tracked", { toolCallID })
+          return false
+        }
+        if (match.part.state.status !== "running") {
+          slog.info("tool call failure replay ignored", {
+            toolCallID,
+            partID: match.part.id,
+            status: match.part.state.status,
+          })
+          yield* settleToolCall(toolCallID)
+          return false
+        }
         yield* session.updatePart({
           ...match.part,
           state: {
@@ -212,6 +264,7 @@ export const layer = Layer.effect(
             time: { start: match.part.state.time.start, end: Date.now() },
           },
         })
+        slog.info("tool call failed", { toolCallID, partID: match.part.id })
         if (error instanceof Permission.RejectedError || error instanceof Question.RejectedError) {
           ctx.blocked = ctx.shouldBreak
         }
@@ -244,6 +297,11 @@ export const layer = Layer.effect(
       }) {
         const existing = yield* readToolCall(input.id)
         if (existing) {
+          slog.info("tool call reused", {
+            toolCallID: input.id,
+            partID: existing.part.id,
+            status: existing.part.state.status,
+          })
           if (!input.providerExecuted || existing.part.metadata?.providerExecuted) return existing
           const part = yield* session.updatePart({
             ...existing.part,
@@ -283,6 +341,7 @@ export const layer = Layer.effect(
           sessionID: part.sessionID,
           inputEnded: false,
         }
+        slog.info("tool call created", { toolCallID: input.id, partID: part.id, tool: input.name })
         return { call: ctx.toolcalls[input.id], part }
       })
 
@@ -292,6 +351,14 @@ export const layer = Layer.effect(
         input: Record<string, unknown>,
       ) {
         const match = yield* ensureToolCall({ id: toolCallID, name })
+        if (match.part.state.status === "completed" || match.part.state.status === "error") {
+          slog.info("tool call start replay ignored", {
+            toolCallID,
+            partID: match.part.id,
+            status: match.part.state.status,
+          })
+          return match.part
+        }
         const part = yield* session.updatePart({
           ...match.part,
           tool: name,
@@ -310,6 +377,7 @@ export const layer = Layer.effect(
           messageID: part.messageID,
           sessionID: part.sessionID,
         }
+        slog.info("tool call started", { toolCallID, partID: part.id })
         return part
       })
 
@@ -814,6 +882,7 @@ export const layer = Layer.effect(
             ownerMessageID: ctx.assistantMessage.id,
           })
         }
+        slog.info("tool call state cleared", { count: Object.keys(ctx.toolcalls).length })
         ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)

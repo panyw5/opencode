@@ -49,13 +49,14 @@ const task = (input: {
   started: number
   background?: boolean
   taskID?: string
+  callID?: string
 }) =>
   ({
     id: input.id,
     sessionID: input.sessionID,
     messageID: input.messageID,
     type: "tool",
-    callID: input.id,
+    callID: input.callID ?? input.id,
     tool: "task",
     state: {
       status: "completed",
@@ -172,6 +173,43 @@ describe("collectSessionChildAgentEntries", () => {
     expect(entries[0]?.usage).toBeUndefined()
     expect(entries[0]?.title).toBe("Inspect bug")
     expect(entries[0]?.index).toBe(1)
+    expect(entries[0]?.resume).toBe(false)
+  })
+
+  test("deduplicates replayed task parts with the same callID", () => {
+    const message = assistant({ id: "msg_1", sessionID: "ses_parent", created: 10 })
+    const entries = collectSessionChildAgentEntries({
+      sessionID: "ses_parent",
+      messages: [message],
+      parts: {
+        msg_1: [
+          task({
+            id: "prt_original",
+            callID: "call_task",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "inspect bug",
+            agent: "general",
+            started: 25,
+          }),
+          task({
+            id: "prt_replay",
+            callID: "call_task",
+            sessionID: "ses_parent",
+            messageID: "msg_1",
+            childID: "ses_child",
+            description: "inspect bug",
+            agent: "general",
+            started: 26,
+          }),
+        ],
+      },
+      sessions: [session({ id: "ses_child", parentID: "ses_parent", title: "Inspect bug", created: 25 })],
+    })
+
+    expect(entries).toHaveLength(1)
+    expect(entries[0]?.id).toBe("tool:msg_1:prt_original:ses_child")
     expect(entries[0]?.resume).toBe(false)
   })
 

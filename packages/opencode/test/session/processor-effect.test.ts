@@ -709,10 +709,12 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         })
 
         const parts = MessageV2.parts(msg.id)
-        const call = parts.find((part): part is MessageV2.ToolPart => part.type === "tool")
+        const toolParts = parts.filter((part): part is MessageV2.ToolPart => part.type === "tool")
+        const call = toolParts[0]
 
         expect(value).toBe("continue")
         expect(yield* llm.calls).toBe(1)
+        expect(toolParts).toHaveLength(1)
         expect(call?.callID).toBe("call_1")
         expect(call?.tool).toBe("lookup")
         expect(call?.state.status).toBe("completed")
@@ -723,6 +725,61 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         expect(call.state.metadata).toEqual({ source: "test" })
         expect(call.state.time.start).toBeDefined()
         expect(call.state.time.end).toBeDefined()
+      }),
+    { config: (url) => providerCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests keep settled call identity for replay and allow new callIDs", () =>
+  provideTmpdirServer(
+    ({ dir }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "tool identity")
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir))
+        const mdl = yield* provider.getModel(ref.providerID, ref.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const original = yield* handle.startToolCall("call_same", "lookup", { query: "first" })
+        yield* handle.completeToolCall("call_same", {
+          title: "First lookup",
+          output: "first result",
+          metadata: { source: "test" },
+        })
+
+        const replay = yield* handle.startToolCall("call_same", "lookup", { query: "replayed" })
+        yield* handle.completeToolCall("call_same", {
+          title: "Replayed lookup",
+          output: "replayed result",
+          metadata: { source: "replay" },
+        })
+
+        const next = yield* handle.startToolCall("call_new", "lookup", { query: "second" })
+        const failed = yield* handle.failToolCall("call_new", new Error("second failed"))
+        const toolParts = MessageV2.parts(msg.id).filter((part): part is MessageV2.ToolPart => part.type === "tool")
+        const first = toolParts.find((part) => part.callID === "call_same")
+        const second = toolParts.find((part) => part.callID === "call_new")
+
+        expect(original?.id).toBeDefined()
+        expect(replay?.id).toBe(original?.id)
+        expect(next?.id).not.toBe(original?.id)
+        expect(toolParts).toHaveLength(2)
+        expect(first?.state.status).toBe("completed")
+        if (first?.state.status === "completed") {
+          expect(first.state.input).toEqual({ query: "first" })
+          expect(first.state.output).toBe("first result")
+          expect(first.state.title).toBe("First lookup")
+        }
+        expect(failed).toBe(true)
+        expect(second?.state.status).toBe("error")
+        if (second?.state.status === "error") {
+          expect(second.state.error).toBe("second failed")
+        }
       }),
     { config: (url) => providerCfg(url) },
   ),
@@ -777,9 +834,11 @@ it.live("session.processor effect tests wait for late local tool completion afte
         })
 
         const parts = MessageV2.parts(msg.id)
-        const call = parts.find((part): part is MessageV2.ToolPart => part.type === "tool")
+        const toolParts = parts.filter((part): part is MessageV2.ToolPart => part.type === "tool")
+        const call = toolParts[0]
 
         expect(value).toBe("continue")
+        expect(toolParts).toHaveLength(1)
         expect(call?.callID).toBe("call_1")
         expect(call?.tool).toBe("lookup")
         expect(call?.state.status).toBe("completed")
