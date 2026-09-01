@@ -1,17 +1,5 @@
 export const MATH_ORCHESTRATOR_AGENT = "math-orchestrator"
 
-export function mathModeIsAvailable(input: {
-  sessionID?: string
-  sessionLoaded: boolean
-  parentSessionID?: string
-  agentAvailable: boolean
-}): boolean {
-  if (!input.agentAvailable) return false
-  if (!input.sessionID) return true
-  if (!input.sessionLoaded) return false
-  return !input.parentSessionID
-}
-
 export function mathModeIsInitializing(input: {
   sessionID?: string
   requestedSessionID?: string
