@@ -81,6 +81,14 @@ export const canonicalWorkspaceDir = (route: string, canonical?: string) => {
   return canonical
 }
 
+export function resolveNewSessionDirectory(input: {
+  sessionDirectory?: string
+  routeDirectory?: string
+  sidebarDirectory?: string
+}) {
+  return input.sessionDirectory || input.routeDirectory || input.sidebarDirectory
+}
+
 export function projectOwner<T extends ProjectOwnerInput>(directory: string | undefined, projects: T[]) {
   if (!directory) return
   const key = workspaceKey(directory)

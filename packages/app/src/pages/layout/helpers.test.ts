@@ -28,6 +28,7 @@ import {
   latestRootSession,
   permissionAlertUsesToast,
   projectOwner,
+  resolveNewSessionDirectory,
   resolveChannelDirectory,
   sessionByOneBasedIndex,
   sortedProjectSessions,
@@ -56,6 +57,31 @@ const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
     time: { created: 0, updated: 0, archived: undefined },
     ...input,
   }) as Session
+
+describe("new session directory", () => {
+  test("keeps /new in the current session location instead of the selected sidebar project", () => {
+    expect(
+      resolveNewSessionDirectory({
+        sessionDirectory: "/projects/current/worktree",
+        routeDirectory: "/projects/current",
+        sidebarDirectory: "/projects/other",
+      }),
+    ).toBe("/projects/current/worktree")
+  })
+
+  test("uses the route before sidebar state when session metadata is unavailable", () => {
+    expect(
+      resolveNewSessionDirectory({
+        routeDirectory: "/projects/current",
+        sidebarDirectory: "/projects/other",
+      }),
+    ).toBe("/projects/current")
+  })
+
+  test("falls back to the selected project outside a project route", () => {
+    expect(resolveNewSessionDirectory({ sidebarDirectory: "/projects/selected" })).toBe("/projects/selected")
+  })
+})
 
 test("permission alerts use the direct session tab instead of an in-app toast", () => {
   expect(

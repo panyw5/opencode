@@ -103,6 +103,7 @@ import {
   latestRootSession,
   permissionAlertUsesToast,
   projectOwner,
+  resolveNewSessionDirectory,
   resolveChannelDirectory,
   sessionByOneBasedIndex,
   sortedProjectSessions,
@@ -1313,9 +1314,17 @@ export default function Layout(props: ParentProps) {
         keybind: "mod+shift+s",
         slash: "new",
         onSelect: (source) => {
-          const directory = params.dir ? decode64(params.dir) : layout.sidebar.project()
+          const routeDirectory = routeDir()
+          const sessionDirectory =
+            params.id && routeDirectory
+              ? globalSync
+                  .child(routeDirectory, { bootstrap: false })[0]
+                  .session.find((session) => session.id === params.id)?.directory
+              : undefined
+          const sidebarDirectory = layout.sidebar.project()
+          const directory = resolveNewSessionDirectory({ sessionDirectory, routeDirectory, sidebarDirectory })
           console.debug(
-            `[session-new] source=${source ?? "unknown"} route=${location.pathname} sidebar-project=${layout.sidebar.project() || "none"} target=${directory || "none"}`,
+            `[session-new] source=${source ?? "unknown"} route=${location.pathname} session=${params.id || "none"} session-directory=${sessionDirectory || "none"} route-directory=${routeDirectory || "none"} sidebar-project=${sidebarDirectory || "none"} target=${directory || "none"}`,
           )
           if (!directory) return
           navigateWithSidebarReset(`/${base64Encode(directory)}/session`)

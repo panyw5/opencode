@@ -28,6 +28,7 @@ import { compareMessages, resolveMessage } from "@/utils/message-order"
 import { dict as enDict } from "@/i18n/en"
 import { working as sessionWorking } from "./session-working"
 import { SESSION_HOOK_CONTROL_COMMANDS, sessionHookControlInput } from "./session-hook-controls"
+import { resolveNewSessionDirectory } from "@/pages/layout/helpers"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
@@ -84,7 +85,12 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const closableTab = tabState.closableTab
 
   const projectDirectory = () => decode64(params.dir) ?? ""
-  const newSessionDirectory = () => layout.sidebar.project() ?? projectDirectory()
+  const newSessionDirectory = () =>
+    resolveNewSessionDirectory({
+      sessionDirectory: info()?.directory,
+      routeDirectory: sdk.directory || projectDirectory(),
+      sidebarDirectory: layout.sidebar.project(),
+    })
 
   const idle = { type: "idle" as const }
   const status = () => sync.session.status.get(params.id ?? "") ?? idle
@@ -264,8 +270,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         slash: "new",
         onSelect: () => {
           const directory = newSessionDirectory()
+          console.debug(
+            `[session-new] source=session-command session=${params.id || "none"} session-directory=${info()?.directory || "none"} sdk-directory=${sdk.directory || "none"} route-directory=${projectDirectory() || "none"} sidebar-project=${layout.sidebar.project() || "none"} target=${directory || "none"}`,
+          )
           if (!directory) return
-          console.debug(`[session-new] source=command directory=${directory} route-directory=${projectDirectory() || "none"}`)
           navigate(`/${base64Encode(directory)}/session`)
           layout.sidebar.close()
         },
