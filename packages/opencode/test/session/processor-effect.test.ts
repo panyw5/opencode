@@ -46,6 +46,11 @@ const ref = {
   modelID: ModelID.make("test-model"),
 }
 
+const responsesRef = {
+  providerID: ProviderID.make("openai"),
+  modelID: ModelID.make("test-model"),
+}
+
 const cfg = {
   provider: {
     test: {
@@ -91,6 +96,22 @@ function providerCfg(url: string) {
   }
 }
 
+function responsesProviderCfg(url: string) {
+  return {
+    provider: {
+      openai: {
+        ...cfg.provider.test,
+        id: "openai",
+        npm: "@ai-sdk/openai",
+        options: {
+          ...cfg.provider.test.options,
+          baseURL: url,
+        },
+      },
+    },
+  }
+}
+
 function agent(): Agent.Info {
   return {
     name: "build",
@@ -119,14 +140,14 @@ const waitFor = <A>(check: Effect.Effect<A | undefined>, message: string) =>
     return yield* Effect.fail(new Error(message))
   })
 
-const user = Effect.fn("TestSession.user")(function* (sessionID: SessionID, text: string) {
+const user = Effect.fn("TestSession.user")(function* (sessionID: SessionID, text: string, model: typeof ref = ref) {
   const session = yield* Session.Service
   const msg = yield* session.updateMessage({
     id: MessageID.ascending(),
     role: "user",
     sessionID,
     agent: "build",
-    model: ref,
+    model,
     time: { created: Date.now() },
   })
   yield* session.updatePart({
@@ -143,6 +164,7 @@ const assistant = Effect.fn("TestSession.assistant")(function* (
   sessionID: SessionID,
   parentID: MessageID,
   root: string,
+  model: typeof ref = ref,
 ) {
   const session = yield* Session.Service
   const msg: MessageV2.Assistant = {
@@ -160,8 +182,8 @@ const assistant = Effect.fn("TestSession.assistant")(function* (
       reasoning: 0,
       cache: { read: 0, write: 0 },
     },
-    modelID: ref.modelID,
-    providerID: ref.providerID,
+    modelID: model.modelID,
+    providerID: model.providerID,
     parentID,
     time: { created: Date.now() },
     finish: "end_turn",
@@ -725,12 +747,86 @@ it.live("session.processor effect tests complete AI SDK tool calls when native f
         expect(call.state.metadata).toEqual({ source: "test" })
         expect(call.state.time.start).toBeDefined()
         expect(call.state.time.end).toBeDefined()
+
+        yield* handle.completeToolCall("call_1", {
+          title: "Late replay",
+          output: "late replay",
+          metadata: { source: "late" },
+        })
+        yield* handle.completeToolCall("call_unknown", {
+          title: "Unknown",
+          output: "unknown",
+          metadata: {},
+        })
+        const afterCleanup = MessageV2.parts(msg.id).filter((part): part is MessageV2.ToolPart => part.type === "tool")
+        expect(afterCleanup).toHaveLength(1)
+        expect(afterCleanup[0]?.state.status).toBe("completed")
+        if (afterCleanup[0]?.state.status === "completed") {
+          expect(afterCleanup[0].state.output).toBe("result:weather")
+          expect(afterCleanup[0].state.metadata?.interrupted).toBeUndefined()
+        }
       }),
     { config: (url) => providerCfg(url) },
   ),
 )
 
-it.live("session.processor effect tests keep settled call identity for replay and allow new callIDs", () =>
+it.live("session.processor effect tests complete one Responses tool part with provider metadata", () =>
+  provideTmpdirServer(
+    ({ dir, llm }) =>
+      Effect.gen(function* () {
+        const { processors, session, provider } = yield* boot()
+        yield* llm.tool("lookup", { query: "fast" })
+
+        const chat = yield* session.create({})
+        const parent = yield* user(chat.id, "responses tool", responsesRef)
+        const msg = yield* assistant(chat.id, parent.id, path.resolve(dir), responsesRef)
+        const mdl = yield* provider.getModel(responsesRef.providerID, responsesRef.modelID)
+        const handle = yield* processors.create({
+          assistantMessage: msg,
+          sessionID: chat.id,
+          model: mdl,
+        })
+
+        const value = yield* handle.process({
+          user: {
+            id: parent.id,
+            sessionID: chat.id,
+            role: "user",
+            time: parent.time,
+            agent: parent.agent,
+            model: responsesRef,
+          } satisfies MessageV2.User,
+          sessionID: chat.id,
+          model: mdl,
+          agent: agent(),
+          system: [],
+          messages: [{ role: "user", content: "responses tool" }],
+          tools: {
+            lookup: tool({
+              description: "Fast lookup",
+              inputSchema: z.object({ query: z.string() }),
+              execute: async (input) => ({
+                title: "Fast lookup",
+                output: `result:${input.query}`,
+                metadata: { source: "responses" },
+              }),
+            }),
+          },
+        })
+
+        const toolParts = MessageV2.parts(msg.id).filter(
+          (part): part is MessageV2.ToolPart => part.type === "tool" && part.callID === "call_1",
+        )
+        expect(value).toBe("continue")
+        expect(toolParts).toHaveLength(1)
+        expect(toolParts[0]?.state.status).toBe("completed")
+        expect(toolParts[0]?.metadata?.openai).toEqual({ itemId: "fc_1" })
+      }),
+    { config: (url) => responsesProviderCfg(url) },
+  ),
+)
+
+it.live("session.processor effect tests keep settled call identity for a late tool-call and allow new callIDs", () =>
   provideTmpdirServer(
     ({ dir }) =>
       Effect.gen(function* () {
@@ -752,6 +848,23 @@ it.live("session.processor effect tests keep settled call identity for replay an
           metadata: { source: "test" },
         })
 
+        const completed = MessageV2.parts(msg.id).find(
+          (part): part is MessageV2.ToolPart => part.type === "tool" && part.callID === "call_same",
+        )
+        expect(completed?.state.status).toBe("completed")
+        if (completed?.state.status !== "completed") return
+        const completedEnd = completed.state.time.end
+
+        const late = yield* handle.updateToolCall("call_same", (part) => ({
+          ...part,
+          metadata: { openai: { itemId: "fc_same" } },
+          state: {
+            status: "running",
+            input: { query: "late" },
+            time: { start: Date.now() },
+          },
+        }))
+
         const replay = yield* handle.startToolCall("call_same", "lookup", { query: "replayed" })
         yield* handle.completeToolCall("call_same", {
           title: "Replayed lookup",
@@ -766,6 +879,7 @@ it.live("session.processor effect tests keep settled call identity for replay an
         const second = toolParts.find((part) => part.callID === "call_new")
 
         expect(original?.id).toBeDefined()
+        expect(late?.id).toBe(original?.id)
         expect(replay?.id).toBe(original?.id)
         expect(next?.id).not.toBe(original?.id)
         expect(toolParts).toHaveLength(2)
@@ -774,7 +888,9 @@ it.live("session.processor effect tests keep settled call identity for replay an
           expect(first.state.input).toEqual({ query: "first" })
           expect(first.state.output).toBe("first result")
           expect(first.state.title).toBe("First lookup")
+          expect(first.state.time.end).toBe(completedEnd)
         }
+        expect(first?.metadata?.openai).toEqual({ itemId: "fc_same" })
         expect(failed).toBe(true)
         expect(second?.state.status).toBe("error")
         if (second?.state.status === "error") {

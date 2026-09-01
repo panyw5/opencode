@@ -2,6 +2,43 @@ import type { AssistantMessage, Message, Part, UserMessage } from "@opencode-ai/
 import type { Accessor } from "solid-js"
 import { compareMessages, resolveMessage, sortMessages } from "@/utils/message-order"
 
+const toolRank = (part: Extract<Part, { type: "tool" }>) => {
+  if (part.state.status === "completed") return 4
+  if (part.state.status === "error") return 3
+  if (part.state.status === "running") return 2
+  return 1
+}
+
+/** Collapse historical duplicate tool parts for one message's timeline display. */
+export function displayParts(parts: Part[]): Part[] {
+  const best = new Map<string, Extract<Part, { type: "tool" }>>()
+  let duplicate = false
+  for (const part of parts) {
+    if (part.type !== "tool") continue
+    const current = best.get(part.callID)
+    if (!current) {
+      best.set(part.callID, part)
+      continue
+    }
+    duplicate = true
+    if (toolRank(part) > toolRank(current)) best.set(part.callID, part)
+  }
+  if (!duplicate) return parts
+
+  const emitted = new Set<string>()
+  const result: Part[] = []
+  for (const part of parts) {
+    if (part.type !== "tool") {
+      result.push(part)
+      continue
+    }
+    if (emitted.has(part.callID)) continue
+    emitted.add(part.callID)
+    result.push(best.get(part.callID) ?? part)
+  }
+  return result
+}
+
 export function assistantCopySummary(messages: AssistantMessage[], parts: (messageID: string) => Part[]) {
   let partID: string | undefined
   const text: string[] = []

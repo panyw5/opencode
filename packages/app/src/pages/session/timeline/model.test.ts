@@ -1,11 +1,37 @@
 import { describe, expect, test } from "bun:test"
 import type { AssistantMessage, Message, Part, UserMessage } from "@opencode-ai/sdk/v2"
-import { assistantCopySummary, loadOlderTimeline, selectUserMessages, selectVisibleUserMessages } from "./model"
+import {
+  assistantCopySummary,
+  displayParts,
+  loadOlderTimeline,
+  selectUserMessages,
+  selectVisibleUserMessages,
+} from "./model"
 
 const user = (id: string) => ({ id, role: "user" }) as UserMessage
 const assistant = (id: string) => ({ id, role: "assistant" }) as AssistantMessage
 const text = (id: string, messageID: string, value: string) => ({ id, messageID, type: "text", text: value }) as Part
 const tool = (id: string, messageID: string) => ({ id, messageID, type: "tool" }) as Part
+const toolPart = (input: { id: string; messageID: string; callID: string; status: "pending" | "completed" }) =>
+  ({
+    id: input.id,
+    messageID: input.messageID,
+    sessionID: "ses_parent",
+    type: "tool",
+    tool: "task",
+    callID: input.callID,
+    state:
+      input.status === "completed"
+        ? {
+            status: "completed",
+            input: {},
+            output: input.id,
+            title: input.id,
+            metadata: {},
+            time: { start: 1, end: 2 },
+          }
+        : { status: "pending", input: {}, raw: "" },
+  }) as Part
 
 describe("timeline model", () => {
   test("copies all assistant text across tool calls from the tail copy button", () => {
@@ -29,6 +55,26 @@ describe("timeline model", () => {
     expect(users.map((message) => message.id)).toEqual(["msg_1", "msg_3", "msg_5"])
     expect(selectVisibleUserMessages(users, "msg_5").map((message) => message.id)).toEqual(["msg_1", "msg_3"])
     expect(selectVisibleUserMessages(users)).toBe(users)
+  })
+
+  test("collapses duplicate tool call parts while preserving surrounding parts", () => {
+    const before = text("text_before", "msg_1", "before")
+    const original = toolPart({ id: "prt_original", messageID: "msg_1", callID: "call_1", status: "completed" })
+    const replay = toolPart({ id: "prt_replay", messageID: "msg_1", callID: "call_1", status: "completed" })
+    const other = toolPart({ id: "prt_other", messageID: "msg_1", callID: "call_2", status: "completed" })
+
+    expect(displayParts([before, original, replay, other]).map((part) => part.id)).toEqual([
+      "text_before",
+      "prt_original",
+      "prt_other",
+    ])
+  })
+
+  test("uses a terminal replay instead of an earlier pending duplicate", () => {
+    const pending = toolPart({ id: "prt_pending", messageID: "msg_1", callID: "call_1", status: "pending" })
+    const completed = toolPart({ id: "prt_completed", messageID: "msg_1", callID: "call_1", status: "completed" })
+
+    expect(displayParts([pending, completed])).toEqual([completed])
   })
 
   test("orders user turns by created time when ids wrap", () => {

@@ -143,10 +143,11 @@ export const layer = Layer.effect(
           slog.info("tool call settle ignored — call not tracked", { toolCallID })
           return
         }
-        // Keep the call identity until processor cleanup. AI SDK streams may
-        // replay a tool-call after the local execute callback has already
-        // completed. Dropping the identity here lets that replay materialize a
-        // second part for the same messageID + callID.
+        // Keep the call identity until processor cleanup. AI SDK enqueues the
+        // fullStream tool-call and starts the local execute callback from the same
+        // producer transform. The execute fiber can finish before our consumer
+        // handles that queued tool-call. Dropping the identity here would let the
+        // late consumer event materialize a second part for the same logical call.
         yield* Deferred.succeed(call.done, undefined).pipe(Effect.ignore)
         slog.info("tool call settled", { toolCallID, partID: call.partID })
       })

@@ -82,7 +82,7 @@ import {
   timelineTextMetrics,
   trimRangeToBudget,
 } from "./estimate"
-import { assistantCopySummary } from "./model"
+import { assistantCopySummary, displayParts } from "./model"
 import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
@@ -336,7 +336,7 @@ export function MessageTimeline(props: {
     }
     return ordered
   })
-  const getMessageParts = (messageID: string) => sync.data.part[messageID] ?? emptyParts
+  const getMessageParts = (messageID: string) => displayParts(sync.data.part[messageID] ?? emptyParts)
   const getMessagePart = (messageID: string, partID: string) =>
     getMessageParts(messageID).find((part) => part.id === partID)
   const userMessageText = (messageID: string) => {

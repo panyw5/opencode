@@ -134,16 +134,11 @@ export function collectSessionChildAgentEntries(input: CollectChildAgentEntriesI
   const entries: Array<SessionChildAgentEntry & { order: number }> = []
   let order = 0
   const seenSessionIDs = new Set<string>()
-  const seenCallIDs = new Set<string>()
 
   for (const message of input.messages) {
     const parts = input.parts[message.id] ?? []
     for (const part of parts) {
       if (!taskTool(part)) continue
-      // Older sessions may contain two persisted parts for one replayed tool
-      // call. They represent one invocation, not a resume of the child.
-      if (seenCallIDs.has(part.callID)) continue
-      seenCallIDs.add(part.callID)
       const entry = entryFromTaskPart({
         part,
         message,
