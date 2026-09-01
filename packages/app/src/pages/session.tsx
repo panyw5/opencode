@@ -64,7 +64,12 @@ import {
 import { SessionMathFloat, type SessionMathWorkerEntry } from "@/pages/session/session-math-float"
 import { SessionMathInitializeDialog } from "@/pages/session/composer/session-math-initialize-dialog"
 import { buildMathInitializationPrompt } from "@/pages/session/math-initialize"
-import { MATH_ORCHESTRATOR_AGENT, mathModeIsInitializing, mathModeLocksAgent } from "@/pages/session/math-mode-agent"
+import {
+  MATH_ORCHESTRATOR_AGENT,
+  mathModeIsAvailable,
+  mathModeIsInitializing,
+  mathModeLocksAgent,
+} from "@/pages/session/math-mode-agent"
 import {
   clipMessages,
   createOpenReviewFile,
@@ -469,9 +474,24 @@ export default function Page() {
       .trim()
     return cleaned || raw
   })
-  const mathModeAvailable = createMemo(
-    () => !subagentPromptTitle() && local.agent.available(MATH_ORCHESTRATOR_AGENT),
+  const isSubagentSession = createMemo(() => !!info()?.parentID)
+  const mathModeAvailable = createMemo(() =>
+    mathModeIsAvailable({
+      sessionID: params.id,
+      sessionLoaded: !!info(),
+      parentSessionID: info()?.parentID,
+      agentAvailable: local.agent.available(MATH_ORCHESTRATOR_AGENT),
+    }),
   )
+  let lastMathModeAvailability = ""
+  createEffect(() => {
+    const state = `${params.id ?? "draft"}:${info()?.parentID ?? "root"}:${String(!!info())}:${String(mathModeAvailable())}`
+    if (state === lastMathModeAvailability) return
+    lastMathModeAvailability = state
+    console.debug(
+      `[math-mode] availability session=${params.id ?? "draft"} parent=${info()?.parentID ?? "none"} loaded=${String(!!info())} available=${String(mathModeAvailable())}`,
+    )
+  })
   const childAgentSessions = createMemo(() => {
     const id = params.id
     if (!id) return []
@@ -517,7 +537,7 @@ export default function Page() {
       prepared: mathMode.prepared,
       sessionAgent: info()?.agent,
       childAgents: childAgentSessions().map((session) => session.agent),
-      subagent: !!subagentPromptTitle(),
+      subagent: isSubagentSession(),
     }),
   )
   createEffect(() => {

@@ -1,5 +1,36 @@
 import { describe, expect, test } from "bun:test"
-import { mathModeIsInitializing, mathModeLocksAgent } from "./math-mode-agent"
+import { mathModeIsAvailable, mathModeIsInitializing, mathModeLocksAgent } from "./math-mode-agent"
+
+describe("mathModeIsAvailable", () => {
+  test("is available for drafts and loaded root sessions", () => {
+    expect(
+      mathModeIsAvailable({ sessionID: undefined, sessionLoaded: false, parentSessionID: undefined, agentAvailable: true }),
+    ).toBe(true)
+    expect(
+      mathModeIsAvailable({ sessionID: "parent", sessionLoaded: true, parentSessionID: undefined, agentAvailable: true }),
+    ).toBe(true)
+  })
+
+  test("is unavailable for every subagent regardless of its title", () => {
+    expect(
+      mathModeIsAvailable({
+        sessionID: "worker",
+        sessionLoaded: true,
+        parentSessionID: "parent",
+        agentAvailable: true,
+      }),
+    ).toBe(false)
+  })
+
+  test("stays hidden while a session loads and when the agent is unavailable", () => {
+    expect(
+      mathModeIsAvailable({ sessionID: "worker", sessionLoaded: false, parentSessionID: undefined, agentAvailable: true }),
+    ).toBe(false)
+    expect(
+      mathModeIsAvailable({ sessionID: "parent", sessionLoaded: true, parentSessionID: undefined, agentAvailable: false }),
+    ).toBe(false)
+  })
+})
 
 describe("mathModeIsInitializing", () => {
   test("stays pending for the submitted session until a worker is listed", () => {
