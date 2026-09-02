@@ -504,6 +504,21 @@ describe("session tabs coordinator", () => {
     h.dispose()
   })
 
+  test("closing the last active tab navigates home instead of a draft", async () => {
+    const h = harness({
+      tabs: [tab("one")],
+      route: { directory: "/repo", id: "one", session: true },
+    })
+    expect(await h.coordinator.requestClose(tab("one"))).toBe(true)
+    expect(h.targets).toEqual([{ type: "home" }])
+
+    h.setRoute({ directory: "/", session: false })
+    h.coordinator.observeRoute({ directory: "/", session: false })
+    expect(h.tabs()).toEqual([])
+    expect(h.drafts()).toEqual([])
+    h.dispose()
+  })
+
   test("a stale route directory still treats the same session id as active", async () => {
     const h = harness({
       tabs: [tab("one"), tab("two", "/repo/canonical")],
@@ -723,5 +738,15 @@ describe("planSessionTabClose", () => {
     })
     expect(plan?.closing.map((item) => item.id)).toEqual(["parent", "child"])
     expect(plan?.target).toEqual({ type: "session", directory: "/repo", id: "other" })
+  })
+
+  test("closing the only tab plans home instead of a project draft", () => {
+    const plan = planSessionTabClose({
+      tabs: [tab("one")],
+      tab: tab("one"),
+      route: { directory: "/repo", id: "one", session: true },
+      parentID: (value) => value.parentID ?? undefined,
+    })
+    expect(plan?.target).toEqual({ type: "home" })
   })
 })

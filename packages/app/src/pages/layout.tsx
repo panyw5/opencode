@@ -3032,7 +3032,13 @@ export default function Layout(props: ParentProps) {
           }
           return
         }
-        if (!ready || !slug || !dir || !sessionRoute) return
+        if (!ready) return
+        if (!sessionRoute || !slug || !dir) {
+          // Non-session routes (home, config, …) still commit pending close
+          // transactions so closed tabs leave the bar instead of timing out.
+          sessionTabs.observeRoute({ directory: dir ?? "", session: false })
+          return
+        }
         if (root && server.projects.last() !== root) server.projects.touch(root)
 
         const quickAssistant = globalSync.data.path.config

@@ -192,11 +192,11 @@ export function planSessionTabClose(input: {
   return {
     closing,
     active,
+    // No neighbor means every tab is gone: show home instead of opening a
+    // fresh draft for the project the user just closed out of.
     target: neighbor
       ? { type: "session", directory: neighbor.directory, id: neighbor.id }
-      : input.route.directory
-        ? { type: "draft", directory: input.route.directory }
-        : { type: "home" },
+      : { type: "home" },
   }
 }
 
@@ -628,7 +628,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         const fallback = ports.store.all().at(-1)
         const target: SessionTabsTarget = fallback
           ? { type: "session", directory: fallback.directory, id: fallback.id }
-          : { type: "draft", directory: route.directory }
+          : { type: "home" }
         const intent = beginNavigation(target, "lifecycle")
         try {
           await ports.prepare(target)
