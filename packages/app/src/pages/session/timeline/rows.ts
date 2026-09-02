@@ -1,5 +1,6 @@
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
+import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
 import { groupParts, PartGroup, renderable } from "@opencode-ai/ui/message-part"
 import { Data, Equal } from "effect"
 
@@ -124,6 +125,28 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
+
+    // Mirror UserMessageDisplay's render surface: a user message only occupies a
+    // timeline row when something would actually be drawn for it. Synthetic
+    // context parts that are neither an injection panel nor a skill template
+    // render nothing, and giving them a row produces blank timeline space.
+    const firstUserText = userParts.find((p): p is Extract<Part, { type: "text" }> => p.type === "text" && !p.synthetic)
+    const syntheticRenderable = (p: Part): boolean => {
+      if (p.type !== "text" || !p.synthetic) return false
+      const kind = p.metadata?.kind
+      return isInjectionTextPart(p) || kind === "skill-template"
+    }
+    const userMessageRenderable =
+      (firstUserText !== undefined && firstUserText.text.length > 0) ||
+      userParts.some(syntheticRenderable) ||
+      userParts.some((p) => p.type === "tool" && renderable(p, true, showCustomHookParts)) ||
+      userParts.some(
+        (p) =>
+          p.type !== "text" &&
+          p.type !== "tool" &&
+          p.type !== "compaction" &&
+          renderable(p, showReasoning, showCustomHookParts),
+      )
     const interruptedMessageIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
     const interrupted = interruptedMessageIndex !== -1
     const error = assistantMessages.find((m) => m.error && m.error.name !== "MessageAbortedError")?.error
@@ -154,8 +177,6 @@ export namespace Timeline {
     const assistantPartByRef = new Map(
       assistantPartRefs.map((ref) => [`${ref.messageID}\n${ref.part.id}`, ref.part] as const),
     )
-    if (previousUserMessage) rows.push(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
-
     if (comments.length > 0)
       rows.push(
         new TimelineRow.CommentStrip({
@@ -163,12 +184,13 @@ export namespace Timeline {
         }),
       )
 
-    rows.push(
-      new TimelineRow.UserMessage({
-        userMessageID: userMessage.id,
-        anchor: comments.length === 0,
-      }),
-    )
+    if (userMessageRenderable)
+      rows.push(
+        new TimelineRow.UserMessage({
+          userMessageID: userMessage.id,
+          anchor: comments.length === 0,
+        }),
+      )
 
     if (compaction) {
       rows.push(
@@ -257,6 +279,13 @@ export namespace Timeline {
           ),
         }),
       )
+    }
+
+    // The turn gap is turn spacing, so it only exists when the turn rendered at
+    // least one row. Empty turns (fully synthetic user message with no visible
+    // assistant output) must not leave a blank gap row behind.
+    if (previousUserMessage && rows.length > 0) {
+      rows.unshift(new TimelineRow.TurnGap({ userMessageID: userMessage.id }))
     }
 
     return rows
