@@ -115,13 +115,13 @@ export function SessionMathInitializeDialog(props: {
       }}
     >
       <form
-        class="h-full min-h-0 overflow-y-auto flex flex-col gap-4 p-7 pt-1"
+        class="flex h-full min-h-0 flex-col gap-4 overflow-y-auto p-7 pt-1"
         onSubmit={(event) => {
           event.preventDefault()
           submit()
         }}
       >
-        <div class="grid gap-4 md:grid-cols-2">
+        <div class="grid shrink-0 gap-4 md:grid-cols-2">
           <div class="flex min-w-0 flex-col gap-2">
             <div class="flex items-center gap-1.5">
               <label class="text-12-medium text-text-weak">{language.t("session.mathInitialize.model")}</label>
@@ -184,115 +184,113 @@ export function SessionMathInitializeDialog(props: {
               <Icon name="chevron-down" size="small" class="shrink-0 text-text-weak" />
             </ModelSelectorPopover>
           </div>
-          <div class="md:col-span-2">
-            <div class="flex flex-col gap-2">
-              <label class="relative z-10 w-fit translate-y-8 text-12-medium text-text-weak">
-                {language.t("session.mathInitialize.problem")}
-              </label>
-              <div class={store.maximized ? "h-[min(50vh,560px)]" : "h-56"}>
-                <MarkdownEditorField
-                  text={store.problem}
-                  autofocus
-                  mentions
-                  preview
-                  toolbarAbove
-                  searchFilesAndDirectories={file.searchFilesAndDirectories}
-                  placeholder={language.t("session.mathInitialize.problem.description")}
-                  onInput={(value) => setStore("problem", value)}
+        </div>
+        <div class="flex min-h-0 flex-1 flex-col gap-2">
+          <label class="relative z-10 w-fit shrink-0 translate-y-8 text-12-medium text-text-weak">
+            {language.t("session.mathInitialize.problem")}
+          </label>
+          <div class="min-h-56 flex-1 overflow-hidden">
+            <MarkdownEditorField
+              text={store.problem}
+              autofocus
+              mentions
+              preview
+              toolbarAbove
+              searchFilesAndDirectories={file.searchFilesAndDirectories}
+              placeholder={language.t("session.mathInitialize.problem.description")}
+              onInput={(value) => setStore("problem", value)}
+            />
+          </div>
+          <p class="shrink-0 text-11-regular text-text-weak">{language.t("session.mathInitialize.problem.description")}</p>
+        </div>
+        <div class="flex shrink-0 flex-wrap items-start gap-x-6 gap-y-3">
+          <div class="flex flex-col gap-2">
+            <label class="text-12-medium text-text-weak" for="math-high-workers">
+              {language.t("session.mathInitialize.highWorkers")}
+            </label>
+            <div class="flex items-center gap-2">
+              <IconButton
+                type="button"
+                icon="minus"
+                size="large"
+                class="!size-10"
+                aria-label={`${language.t("session.mathInitialize.workers.decrease")} ${language.t("session.mathInitialize.highWorkers")}`}
+                disabled={workerCount(store.highWorkers) === 0}
+                onClick={() => changeWorkerCount("highWorkers", -1)}
+              />
+              <div class="w-14">
+                <TextField
+                  id="math-high-workers"
+                  type="number"
+                  min="0"
+                  max="16"
+                  value={store.highWorkers}
+                  aria-label={language.t("session.mathInitialize.highWorkers")}
+                  class="!h-10 !px-1 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  onChange={(value) => setStore("highWorkers", value)}
+                  onFocusOut={() => setStore("highWorkers", String(workerCount(store.highWorkers)))}
                 />
               </div>
-              <p class="text-11-regular text-text-weak">{language.t("session.mathInitialize.problem.description")}</p>
+              <IconButton
+                type="button"
+                icon="plus"
+                size="large"
+                class="!size-10"
+                aria-label={`${language.t("session.mathInitialize.workers.increase")} ${language.t("session.mathInitialize.highWorkers")}`}
+                disabled={workerCount(store.highWorkers) === 16}
+                onClick={() => changeWorkerCount("highWorkers", 1)}
+              />
             </div>
           </div>
-          <div class="md:col-span-2 flex flex-wrap items-start gap-x-6 gap-y-3">
-            <div class="flex flex-col gap-2">
-              <label class="text-12-medium text-text-weak" for="math-high-workers">
-                {language.t("session.mathInitialize.highWorkers")}
-              </label>
-              <div class="flex items-center gap-2">
-                <IconButton
-                  type="button"
-                  icon="minus"
-                  size="large"
-                  class="!size-10"
-                  aria-label={`${language.t("session.mathInitialize.workers.decrease")} ${language.t("session.mathInitialize.highWorkers")}`}
-                  disabled={workerCount(store.highWorkers) === 0}
-                  onClick={() => changeWorkerCount("highWorkers", -1)}
-                />
-                <div class="w-14">
-                  <TextField
-                    id="math-high-workers"
-                    type="number"
-                    min="0"
-                    max="16"
-                    value={store.highWorkers}
-                    aria-label={language.t("session.mathInitialize.highWorkers")}
-                    class="!h-10 !px-1 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    onChange={(value) => setStore("highWorkers", value)}
-                    onFocusOut={() => setStore("highWorkers", String(workerCount(store.highWorkers)))}
-                  />
-                </div>
-                <IconButton
-                  type="button"
-                  icon="plus"
-                  size="large"
-                  class="!size-10"
-                  aria-label={`${language.t("session.mathInitialize.workers.increase")} ${language.t("session.mathInitialize.highWorkers")}`}
-                  disabled={workerCount(store.highWorkers) === 16}
-                  onClick={() => changeWorkerCount("highWorkers", 1)}
+          <div class="flex flex-col gap-2">
+            <label class="text-12-medium text-text-weak" for="math-xhigh-workers">
+              {language.t("session.mathInitialize.xhighWorkers")}
+            </label>
+            <div class="flex items-center gap-2">
+              <IconButton
+                type="button"
+                icon="minus"
+                size="large"
+                class="!size-10"
+                aria-label={`${language.t("session.mathInitialize.workers.decrease")} ${language.t("session.mathInitialize.xhighWorkers")}`}
+                disabled={workerCount(store.xhighWorkers) === 0}
+                onClick={() => changeWorkerCount("xhighWorkers", -1)}
+              />
+              <div class="w-14">
+                <TextField
+                  id="math-xhigh-workers"
+                  type="number"
+                  min="0"
+                  max="16"
+                  value={store.xhighWorkers}
+                  aria-label={language.t("session.mathInitialize.xhighWorkers")}
+                  class="!h-10 !px-1 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                  onChange={(value) => setStore("xhighWorkers", value)}
+                  onFocusOut={() => setStore("xhighWorkers", String(workerCount(store.xhighWorkers)))}
                 />
               </div>
+              <IconButton
+                type="button"
+                icon="plus"
+                size="large"
+                class="!size-10"
+                aria-label={`${language.t("session.mathInitialize.workers.increase")} ${language.t("session.mathInitialize.xhighWorkers")}`}
+                disabled={workerCount(store.xhighWorkers) === 16}
+                onClick={() => changeWorkerCount("xhighWorkers", 1)}
+              />
             </div>
-            <div class="flex flex-col gap-2">
-              <label class="text-12-medium text-text-weak" for="math-xhigh-workers">
-                {language.t("session.mathInitialize.xhighWorkers")}
-              </label>
-              <div class="flex items-center gap-2">
-                <IconButton
-                  type="button"
-                  icon="minus"
-                  size="large"
-                  class="!size-10"
-                  aria-label={`${language.t("session.mathInitialize.workers.decrease")} ${language.t("session.mathInitialize.xhighWorkers")}`}
-                  disabled={workerCount(store.xhighWorkers) === 0}
-                  onClick={() => changeWorkerCount("xhighWorkers", -1)}
-                />
-                <div class="w-14">
-                  <TextField
-                    id="math-xhigh-workers"
-                    type="number"
-                    min="0"
-                    max="16"
-                    value={store.xhighWorkers}
-                    aria-label={language.t("session.mathInitialize.xhighWorkers")}
-                    class="!h-10 !px-1 text-center tabular-nums [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-                    onChange={(value) => setStore("xhighWorkers", value)}
-                    onFocusOut={() => setStore("xhighWorkers", String(workerCount(store.xhighWorkers)))}
-                  />
-                </div>
-                <IconButton
-                  type="button"
-                  icon="plus"
-                  size="large"
-                  class="!size-10"
-                  aria-label={`${language.t("session.mathInitialize.workers.increase")} ${language.t("session.mathInitialize.xhighWorkers")}`}
-                  disabled={workerCount(store.xhighWorkers) === 16}
-                  onClick={() => changeWorkerCount("xhighWorkers", 1)}
-                />
-              </div>
-            </div>
-            <div class="min-w-64 flex-1 self-end pb-0.5 md:ml-2">
-              <Checkbox
-                checked={store.controlBeat}
-                onChange={(value) => setStore("controlBeat", value)}
-                description={language.t("session.mathInitialize.controlBeat.description")}
-              >
-                {language.t("session.mathInitialize.controlBeat")}
-              </Checkbox>
-            </div>
+          </div>
+          <div class="min-w-64 flex-1 self-end pb-0.5 md:ml-2">
+            <Checkbox
+              checked={store.controlBeat}
+              onChange={(value) => setStore("controlBeat", value)}
+              description={language.t("session.mathInitialize.controlBeat.description")}
+            >
+              {language.t("session.mathInitialize.controlBeat")}
+            </Checkbox>
           </div>
         </div>
-        <div class="mt-auto flex flex-wrap justify-end gap-2 pt-1">
+        <div class="flex shrink-0 flex-wrap justify-end gap-2 pt-1">
           <Button type="button" variant="ghost" size="large" onClick={() => dialog.close()}>
             {language.t("common.cancel")}
           </Button>
