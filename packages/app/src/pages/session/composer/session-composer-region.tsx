@@ -247,22 +247,17 @@ function SessionUserMessageMenu(props: {
   loading: boolean
   complete: boolean
   count: number
-  onLoadAll: () => void
   onOpen: (entry: SessionUserMessageEntry) => void
 }) {
   const language = useLanguage()
   const [open, setOpen] = createSignal(false)
-  const showItems = createMemo(() =>
-    canShowUserMessageMenuItems({ loading: props.loading, complete: props.complete }),
-  )
+  const showItems = createMemo(() => canShowUserMessageMenuItems({ loading: props.loading, complete: props.complete }))
 
   createEffect(() => {
     if (!open()) return
     console.debug(
       `[user-message-menu] open count=${String(props.count)} entries=${String(props.entries.length)} loading=${String(props.loading)} complete=${String(props.complete)} showItems=${String(showItems())}`,
     )
-    if (props.complete || props.loading) return
-    props.onLoadAll()
   })
 
   return (
@@ -682,7 +677,6 @@ export function SessionComposerRegion(props: {
   userMessagesLoading?: boolean
   userMessagesComplete?: boolean
   userMessageCount?: number
-  onLoadAllUserMessages?: () => void
   onOpenUserMessage?: (entry: SessionUserMessageEntry) => void
   subagentNavigation?: {
     parentID: string
@@ -805,16 +799,14 @@ export function SessionComposerRegion(props: {
   const userMessageMenu = createMemo(() => {
     if (platform.platform !== "desktop") return undefined
     const onOpen = props.onOpenUserMessage
-    const onLoadAll = props.onLoadAllUserMessages
     const entries = props.userMessages ?? []
     const count = props.userMessageCount ?? entries.length
-    if (!onOpen || !onLoadAll || count === 0) return undefined
+    if (!onOpen || count === 0) return undefined
     return {
       entries,
       count,
       loading: !!props.userMessagesLoading,
       complete: props.userMessagesComplete ?? true,
-      onLoadAll,
       onOpen,
     }
   })
@@ -1137,7 +1129,6 @@ export function SessionComposerRegion(props: {
                           count={menu().count}
                           loading={menu().loading}
                           complete={menu().complete}
-                          onLoadAll={menu().onLoadAll}
                           onOpen={menu().onOpen}
                         />
                       )}

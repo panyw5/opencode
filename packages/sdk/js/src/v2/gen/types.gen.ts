@@ -800,6 +800,15 @@ export type Part =
   | RetryPart
   | CompactionPart
 
+export type UserMessageIndexItem = {
+  id: string
+  sessionID: string
+  time: {
+    created: number
+  }
+  preview: string
+}
+
 export type PermissionAction = "allow" | "deny" | "ask"
 
 export type PermissionRule = {
@@ -7091,6 +7100,17 @@ export type SessionMessagesResponses = {
 }
 
 export type SessionMessagesResponse = SessionMessagesResponses[keyof SessionMessagesResponses]
+
+export type SessionUserMessageIndexErrors = {
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  404: NotFoundError
+}
+
+export type SessionUserMessageIndexResponses = {
+  200: Array<UserMessageIndexItem>
+}
+
+export type SessionUserMessageIndexResponse = SessionUserMessageIndexResponses[keyof SessionUserMessageIndexResponses]
 
 export type SessionPromptData = {
   body?: {

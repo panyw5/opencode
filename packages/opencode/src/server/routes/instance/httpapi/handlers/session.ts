@@ -721,6 +721,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       })
     })
 
+    const userMessageIndex = Effect.fn("SessionHttpApi.userMessageIndex")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* SessionError.mapStorageNotFound(MessageV2.userIndex(ctx.params.sessionID))
+    })
+
     const message = Effect.fn("SessionHttpApi.message")(function* (ctx: {
       params: { sessionID: SessionID; messageID: MessageID }
     }) {
@@ -1063,6 +1070,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("todo", todo)
       .handle("diff", diff)
       .handle("messages", messages)
+      .handle("userMessageIndex", userMessageIndex)
       .handle("message", message)
       .handleRaw("create", createRaw)
       .handle("remove", remove)

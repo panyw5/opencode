@@ -212,6 +212,7 @@ export const SessionPaths = {
   todo: `${root}/:sessionID/todo`,
   diff: `${root}/:sessionID/diff`,
   messages: `${root}/:sessionID/message`,
+  userMessageIndex: `${root}/:sessionID/user-message-index`,
   message: `${root}/:sessionID/message/:messageID`,
   create: root,
   remove: `${root}/:sessionID`,
@@ -409,6 +410,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.messages",
             summary: "Get session messages",
             description: "Retrieve all messages in a session, including user prompts and AI responses.",
+          }),
+        ),
+        HttpApiEndpoint.get("userMessageIndex", SessionPaths.userMessageIndex, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(MessageV2.UserIndexItem), "User message navigation index"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.userMessageIndex",
+            summary: "Get user message index",
+            description: "Retrieve bounded user message previews for navigation without loading assistant history.",
           }),
         ),
         HttpApiEndpoint.get("message", SessionPaths.message, {

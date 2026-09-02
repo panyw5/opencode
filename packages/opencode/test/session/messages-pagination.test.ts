@@ -125,6 +125,105 @@ const addCompactionPart = Effect.fn("Test.addCompactionPart")(function* (
   } as any)
 })
 
+describe("MessageV2.userIndex", () => {
+  it.instance("returns only chronological user turns and their parts", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const first = yield* addUser(sessionID, "first")
+        const assistant = yield* addAssistant(sessionID, first)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: assistant,
+          type: "text",
+          text: "assistant-only",
+        })
+        const second = yield* addUser(sessionID, "second")
+
+        const result = yield* MessageV2.userIndex(sessionID)
+
+        expect(result.map((item) => item.id)).toEqual([first, second])
+        expect(result.map((item) => item.preview)).toEqual(["first", "second"])
+      }),
+    ),
+  )
+
+  it.instance("returns an empty index for a session without messages", () =>
+    withSession(({ sessionID }) =>
+      Effect.gen(function* () {
+        expect(yield* MessageV2.userIndex(sessionID)).toEqual([])
+      }),
+    ),
+  )
+
+  it.instance("returns bounded previews without assistant or attachment payloads", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const user = yield* addUser(sessionID, "x".repeat(800))
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: user,
+          type: "file",
+          mime: "image/png",
+          url: `data:image/png;base64,${"a".repeat(10_000)}`,
+        })
+
+        const [item] = yield* MessageV2.userIndex(sessionID)
+        expect(item.preview).toHaveLength(500)
+        expect(JSON.stringify(item)).not.toContain("data:image")
+      }),
+    ),
+  )
+
+  it.instance("prefers command and synthetic previews", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const command = yield* addUser(sessionID)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: command,
+          type: "text",
+          text: "/review packages/app",
+          metadata: { kind: "command-invocation" },
+        })
+        const subtask = yield* addUser(sessionID)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: subtask,
+          type: "subtask",
+          prompt: "ignored",
+          description: "ignored",
+          agent: "test",
+          command: "research",
+        })
+        const synthetic = yield* addUser(sessionID)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: synthetic,
+          type: "text",
+          text: "scheduled injection",
+          synthetic: true,
+        })
+
+        const result = yield* MessageV2.userIndex(sessionID)
+        expect(result.map((item) => item.preview)).toEqual(["/review packages/app", "/research", "scheduled injection"])
+      }),
+    ),
+  )
+
+  it.instance("fails for a missing session", () =>
+    Effect.gen(function* () {
+      const fake = "missing-user-index-session" as SessionID
+      const error = yield* Effect.flip(MessageV2.userIndex(fake))
+      expect(error).toBeInstanceOf(NotFoundError)
+    }),
+  )
+})
+
 describe("MessageV2.page", () => {
   it.instance("returns page result", () =>
     withSession(({ sessionID }) =>

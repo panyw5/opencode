@@ -8,11 +8,12 @@ import { SyncEvent } from "../sync"
 import { Database } from "@/storage/db"
 import { NotFoundError } from "@/storage/storage"
 import { and } from "drizzle-orm"
-import { desc } from "drizzle-orm"
+import { asc, desc } from "drizzle-orm"
 import { eq } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
+import { sql } from "drizzle-orm"
 import { MessageTable, PartTable, SessionTable } from "./session.sql"
 import * as ProviderError from "@/provider/error"
 import { errorMessage } from "@/util/error"
@@ -564,6 +565,18 @@ export type WithParts = {
   parts: Part[]
 }
 
+export const UserIndexItem = Schema.Struct({
+  ...messageBase,
+  time: Schema.Struct({ created: NonNegativeInt }),
+  preview: Schema.String,
+}).annotate({ identifier: "UserMessageIndexItem" })
+export type UserIndexItem = {
+  id: MessageID
+  sessionID: SessionID
+  time: { created: number }
+  preview: string
+}
+
 const Cursor = Schema.Struct({
   id: MessageID,
   time: Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0)),
@@ -599,8 +612,7 @@ const part = (row: typeof PartTable.$inferSelect) =>
 const older = (row: Cursor) =>
   or(lt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), lt(MessageTable.id, row.id)))
 
-function hydrate(rows: (typeof MessageTable.$inferSelect)[]) {
-  const ids = rows.map((row) => row.id)
+function hydrateParts(ids: MessageID[]) {
   const partByMessage = new Map<string, Part[]>()
   if (ids.length > 0) {
     const partRows = Database.use((db) =>
@@ -619,6 +631,11 @@ function hydrate(rows: (typeof MessageTable.$inferSelect)[]) {
     }
   }
 
+  return partByMessage
+}
+
+function hydrate(rows: (typeof MessageTable.$inferSelect)[]) {
+  const partByMessage = hydrateParts(rows.map((row) => row.id))
   return rows.map((row) => ({
     info: info(row),
     parts: partByMessage.get(row.id) ?? [],
@@ -1064,6 +1081,75 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
   }
 })
 
+/**
+ * Lightweight navigation index for a session's user turns. This deliberately
+ * bypasses the mixed-message history cursor: callers can populate navigation
+ * without hydrating assistant turns or mutating timeline pagination state.
+ */
+export const userIndex = Effect.fn("MessageV2.userIndex")(function* (sessionID: SessionID) {
+  const rows = Database.use((db) =>
+    db
+      .select({ id: MessageTable.id, sessionID: MessageTable.session_id, created: MessageTable.time_created })
+      .from(MessageTable)
+      .where(and(eq(MessageTable.session_id, sessionID), sql`json_extract(${MessageTable.data}, '$.role') = 'user'`))
+      .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
+      .all(),
+  )
+  if (rows.length === 0) {
+    const row = Database.use((db) =>
+      db.select({ id: SessionTable.id }).from(SessionTable).where(eq(SessionTable.id, sessionID)).get(),
+    )
+    if (!row) return yield* new NotFoundError({ message: `Session not found: ${sessionID}` })
+    return [] as UserIndexItem[]
+  }
+
+  const ids = rows.map((row) => row.id)
+  const previewRows = Array.from({ length: Math.ceil(ids.length / 500) }, (_, page) =>
+    Database.use((db) =>
+      db
+        .select({
+          messageID: PartTable.message_id,
+          type: sql<string>`json_extract(${PartTable.data}, '$.type')`,
+          text: sql<string | null>`json_extract(${PartTable.data}, '$.text')`,
+          synthetic: sql<number | null>`json_extract(${PartTable.data}, '$.synthetic')`,
+          ignored: sql<number | null>`json_extract(${PartTable.data}, '$.ignored')`,
+          command: sql<string | null>`json_extract(${PartTable.data}, '$.command')`,
+          kind: sql<string | null>`json_extract(${PartTable.data}, '$.metadata.kind')`,
+        })
+        .from(PartTable)
+        .where(inArray(PartTable.message_id, ids.slice(page * 500, (page + 1) * 500)))
+        .orderBy(PartTable.message_id, PartTable.time_created, PartTable.id)
+        .all(),
+    ),
+  ).flat()
+  const previewByMessage = new Map<string, string>()
+  const rowsByMessage = new Map<string, typeof previewRows>()
+  for (const row of previewRows) {
+    const parts = rowsByMessage.get(row.messageID)
+    if (parts) parts.push(row)
+    else rowsByMessage.set(row.messageID, [row])
+  }
+  for (const id of ids) {
+    const parts = rowsByMessage.get(id) ?? []
+    const command = parts.find((row) => row.kind === "command-invocation" && row.text?.trim())?.text?.trim()
+    const subtask = parts.find((row) => row.type === "subtask" && row.command?.trim())?.command?.trim()
+    const normal = parts
+      .filter((row) => row.type === "text" && !row.synthetic && !row.ignored && row.text?.trim())
+      .sort((a, b) => (b.text?.length ?? 0) - (a.text?.length ?? 0))[0]?.text
+    const synthetic = parts.find((row) => row.type === "text" && row.text?.trim())?.text
+    const value = command ?? (subtask ? `/${subtask}` : undefined) ?? normal ?? synthetic ?? "[attachment]"
+    previewByMessage.set(id, value.replace(/\s+/g, " ").trim().slice(0, 500))
+  }
+  const items = rows.map((row) => ({
+    id: row.id,
+    sessionID: row.sessionID,
+    time: { created: row.created },
+    preview: previewByMessage.get(row.id) ?? "[attachment]",
+  }))
+  yield* log.info("loaded user message index", { sessionID, count: items.length })
+  return items
+})
+
 export function* stream(sessionID: SessionID) {
   const size = 50
   let before: string | undefined
@@ -1212,7 +1298,8 @@ export function latest(msgs: WithParts[]) {
     const info = msg.info
     if (info.role === "user" && (!user || compareMessageInfo(info, user) > 0)) user = info
     if (info.role === "assistant" && (!assistant || compareMessageInfo(info, assistant) > 0)) assistant = info
-    if (info.role === "assistant" && info.finish && (!finished || compareMessageInfo(info, finished) > 0)) finished = info
+    if (info.role === "assistant" && info.finish && (!finished || compareMessageInfo(info, finished) > 0))
+      finished = info
   }
   const tasks = msgs.flatMap((m): PendingTask[] => {
     if (finished && compareMessageInfo(m.info, finished) <= 0) return []

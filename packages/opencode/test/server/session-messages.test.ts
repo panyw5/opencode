@@ -125,6 +125,48 @@ describe("session messages endpoint", () => {
   )
 
   it.instance(
+    "returns a user-only navigation index without assistant parts",
+    withoutWatcher(
+      Effect.gen(function* () {
+        const svc = yield* SessionNs.Service
+        const session = yield* sessionScoped
+        const [userID] = yield* fill(session.id, 1)
+        const assistantID = MessageID.ascending()
+        yield* svc.updateMessage({
+          id: assistantID,
+          sessionID: session.id,
+          role: "assistant",
+          time: { created: Date.now() + 1 },
+          parentID: userID,
+          modelID: model.modelID,
+          providerID: model.providerID,
+          mode: "",
+          agent: "test",
+          path: { cwd: "/", root: "/" },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        } satisfies MessageV2.Assistant)
+        yield* svc.updatePart({
+          id: PartID.ascending(),
+          sessionID: session.id,
+          messageID: assistantID,
+          type: "text",
+          text: "assistant-only",
+        } satisfies MessageV2.TextPart)
+
+        const res = yield* request(`/session/${session.id}/user-message-index`)
+        expect(res.status).toBe(200)
+        const body = yield* json<MessageV2.UserIndexItem[]>(res)
+        expect(body.map((item) => item.id)).toEqual([userID])
+        expect("info" in body[0]).toBe(false)
+        expect("parts" in body[0]).toBe(false)
+        expect(body[0].preview).toBe("m0")
+      }),
+    ),
+    { git: true },
+  )
+
+  it.instance(
     "rejects invalid cursors and missing sessions",
     withoutWatcher(
       Effect.gen(function* () {

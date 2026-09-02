@@ -1,4 +1,4 @@
-import { batch, createEffect, createMemo } from "solid-js"
+import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { createSimpleContext } from "@opencode-ai/ui/context"
@@ -11,7 +11,7 @@ import {
 import { markSessionProfile } from "@/utils/session-profile"
 import { useGlobalSync } from "./global-sync"
 import { useSDK } from "./sdk"
-import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
+import type { Message, Part, Session, UserMessageIndexItem } from "@opencode-ai/sdk/v2/client"
 import type { SessionHistoryMeta } from "./global-sync/types"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "./global-sync/session-cache"
 
@@ -60,7 +60,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
     globalSync.project.warm(sdk.directory)
     const absolute = (path: string) => (current()[0].path.directory + "/" + path).replace("//", "/")
-const initialMessagePageSize = 80
+    const initialMessagePageSize = 80
     // Keep history pages modest: large steps + a failed top pin used to dump the whole session at once.
     const historyMessagePageSize = 40
     const inflight = new Map<string, Promise<void>>()
@@ -71,6 +71,11 @@ const initialMessagePageSize = 80
       cursor: {} as Record<string, string | undefined>,
       complete: {} as Record<string, boolean>,
     })
+    const [userMessageIndex, setUserMessageIndex] = createStore({
+      items: {} as Record<string, UserMessageIndexItem[] | undefined>,
+      loading: {} as Record<string, boolean>,
+      failed: {} as Record<string, boolean>,
+    })
     let syncVersion = globalSync.version
     createEffect(() => {
       const next = globalSync.version
@@ -79,7 +84,18 @@ const initialMessagePageSize = 80
       inflight.clear()
       seen.clear()
       setMeta({ show: {}, cursor: {}, complete: {} })
+      setUserMessageIndex({ items: {}, loading: {}, failed: {} })
     })
+    const unsubscribeMessageRemoved = sdk.event.on("message.removed", (event) => {
+      const props = event.properties
+      const key = keyFor(sdk.directory, props.sessionID)
+      if (!userMessageIndex.items[key]) return
+      setUserMessageIndex("items", key, (items) => items?.filter((item) => item.id !== props.messageID))
+      console.debug(
+        `[sync] user-message-index remove directory=${sdk.directory} sid=${props.sessionID} message=${props.messageID}`,
+      )
+    })
+    onCleanup(unsubscribeMessageRemoved)
 
     const getSession = (sessionID: string) => {
       return globalSync.session.info.get(sdk.directory, sessionID)
@@ -132,6 +148,16 @@ const initialMessagePageSize = 80
             delete draft.show[key]
             delete draft.cursor[key]
             delete draft.complete[key]
+          }
+        }),
+      )
+      setUserMessageIndex(
+        produce((draft) => {
+          for (const sessionID of sessionIDs) {
+            const key = keyFor(directory, sessionID)
+            delete draft.items[key]
+            delete draft.loading[key]
+            delete draft.failed[key]
           }
         }),
       )
@@ -465,7 +491,9 @@ const initialMessagePageSize = 80
               mode: "prepend",
             })
             if (!committed) {
-              console.debug(`[sync] history page-discarded directory=${directory} sid=${sessionID} reason=stale-generation`)
+              console.debug(
+                `[sync] history page-discarded directory=${directory} sid=${sessionID} reason=stale-generation`,
+              )
               return
             }
             const nextShow = reveal({
@@ -479,6 +507,46 @@ const initialMessagePageSize = 80
             console.debug(
               `[sync] history load-end directory=${directory} sid=${sessionID} cached=${String(current()[0].message[sessionID]?.length ?? 0)} show=${String(view(directory, sessionID))} complete=${String(meta.complete[key] ?? false)} cursor=${String(!!meta.cursor[key])}`,
             )
+          },
+        },
+        userMessageIndex: {
+          get(sessionID: string) {
+            return userMessageIndex.items[keyFor(sdk.directory, sessionID)]
+          },
+          loading(sessionID: string) {
+            return userMessageIndex.loading[keyFor(sdk.directory, sessionID)] ?? false
+          },
+          failed(sessionID: string) {
+            return userMessageIndex.failed[keyFor(sdk.directory, sessionID)] ?? false
+          },
+          async ensure(sessionID: string, opts?: { force?: boolean }) {
+            const directory = sdk.directory
+            const key = keyFor(directory, sessionID)
+            if (!opts?.force && userMessageIndex.items[key] !== undefined) return
+            return runInflight(inflight, `user-message-index\n${key}`, async () => {
+              setUserMessageIndex("loading", key, true)
+              setUserMessageIndex("failed", key, false)
+              console.debug(
+                `[sync] user-message-index load-start directory=${directory} sid=${sessionID} force=${String(!!opts?.force)}`,
+              )
+              try {
+                const response = await sdk.client.session.userMessageIndex({ sessionID, directory })
+                if (sdk.directory !== directory) return
+                const items = response.data ?? []
+                setUserMessageIndex("items", key, items)
+                console.debug(
+                  `[sync] user-message-index load-end directory=${directory} sid=${sessionID} count=${String(items.length)}`,
+                )
+              } catch (error) {
+                setUserMessageIndex("failed", key, true)
+                console.debug(
+                  `[sync] user-message-index load-error directory=${directory} sid=${sessionID} error=${error instanceof Error ? error.message : String(error)}`,
+                )
+                throw error
+              } finally {
+                setUserMessageIndex("loading", key, false)
+              }
+            })
           },
         },
         evict(sessionID: string, directory = sdk.directory) {

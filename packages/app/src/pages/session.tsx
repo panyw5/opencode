@@ -1,4 +1,4 @@
-import type { SnapshotFileDiff as FileDiff, Project, UserMessage } from "@opencode-ai/sdk/v2"
+import type { Part, SnapshotFileDiff as FileDiff, Project, UserMessage } from "@opencode-ai/sdk/v2"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useMutation } from "@tanstack/solid-query"
 import {
@@ -84,6 +84,7 @@ import { working } from "@/pages/session/session-working"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
+import { historyPageResult } from "@/pages/session/session-history-pagination"
 import { useServer } from "@/context/server"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
 import { setBackgroundShell } from "@/pages/session/background-shell-api"
@@ -116,8 +117,7 @@ const emptyUserMessages: UserMessage[] = []
 const scrollBottomThreshold = 16
 const settleMs = 1_500
 const sessionBackgroundDelayMs = typeof navigator === "undefined" ? 250 : sessionBackgroundDelay(navigator.userAgent)
-const sessionTodoDelayMs =
-  typeof navigator === "undefined" ? 500 : sessionBackgroundDelay(navigator.userAgent, 500)
+const sessionTodoDelayMs = typeof navigator === "undefined" ? 500 : sessionBackgroundDelay(navigator.userAgent, 500)
 const initialScrollRevealMs = 300
 const emptyFollowups: (FollowupDraft & { id: string })[] = []
 const smoothBottomSnapDistance = 900
@@ -215,7 +215,6 @@ export default function Page() {
     mode: "live" as ScrollMode,
     // Keep the first paint covered while timeline scroll settles.
     renderOverlayStatus: (params.id ? "showing" : "hidden") as SessionRenderOverlayStatus,
-    userMessagesLoading: false,
     scroll: {
       overflow: false,
       bottom: true,
@@ -469,9 +468,7 @@ export default function Page() {
       .trim()
     return cleaned || raw
   })
-  const mathModeAvailable = createMemo(
-    () => !subagentPromptTitle() && local.agent.available(MATH_ORCHESTRATOR_AGENT),
-  )
+  const mathModeAvailable = createMemo(() => !subagentPromptTitle() && local.agent.available(MATH_ORCHESTRATOR_AGENT))
   const childAgentSessions = createMemo(() => {
     const id = params.id
     if (!id) return []
@@ -509,9 +506,7 @@ export default function Page() {
       { defer: true },
     ),
   )
-  const mathModeInitializationRequested = createMemo(
-    () => !!params.id && mathMode.initializingSessionID === params.id,
-  )
+  const mathModeInitializationRequested = createMemo(() => !!params.id && mathMode.initializingSessionID === params.id)
   const mathModeAgentLocked = createMemo(() =>
     mathModeLocksAgent({
       prepared: mathMode.prepared,
@@ -1150,6 +1145,14 @@ export default function Page() {
       markSessionProfile(id, "route-effect", `cached=${String(cached)} stale=${String(stale)}`)
 
       const initialSync = untrack(() => sync.session.sync(id))
+      untrack(() => {
+        void sync.session.userMessageIndex.ensure(id).catch((error) => {
+          if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
+          console.debug(
+            `[user-message-menu] index-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
+          )
+        })
+      })
       markSessionProfile(id, "todo-request-scheduled", `delayMs=${String(sessionTodoDelayMs)} force=${String(todos)}`)
 
       refreshFrame = requestAnimationFrame(() => {
@@ -1650,7 +1653,9 @@ export default function Page() {
       console.debug(`[math-swarm] stop refresh complete parent=${parentSessionID} worker=${entry.sessionID}`)
       showToast({ variant: "success", title: language.t("session.mathSwarm.stopped"), description: entry.title })
     } catch (error) {
-      console.error(`[math-swarm] stop failed worker=${entry.sessionID} error=${error instanceof Error ? error.message : String(error)}`)
+      console.error(
+        `[math-swarm] stop failed worker=${entry.sessionID} error=${error instanceof Error ? error.message : String(error)}`,
+      )
       fail(error)
     } finally {
       setMathSwarm("busy", entry.sessionID, false)
@@ -2557,6 +2562,7 @@ export default function Page() {
     console.debug(
       `[session] history-start sid=${id} loaded=${String(messages().length)} visible=${String(visibleUserMessages().length)} more=${String(historyMore())}`,
     )
+    const visibleBefore = visibleUserMessages().length
     historyAnchor.capture()
     try {
       while (true) {
@@ -2564,11 +2570,18 @@ export default function Page() {
         await sync.session.history.loadMore(id)
         if (params.id !== id) return
         const nextLoaded = messages().length
-        const done = visibleUserMessages().length > 0 && nextLoaded > loaded
+        const visibleAfter = visibleUserMessages().length
+        const result = historyPageResult({
+          loaded,
+          nextLoaded,
+          visibleBefore,
+          visibleAfter,
+          more: historyMore(),
+        })
         console.debug(
-          `[session] history-page sid=${id} loaded=${String(loaded)} nextLoaded=${String(nextLoaded)} visible=${String(visibleUserMessages().length)} more=${String(historyMore())} done=${String(done)}`,
+          `[session] history-page sid=${id} loaded=${String(loaded)} nextLoaded=${String(nextLoaded)} visible=${String(visibleBefore)}->${String(visibleAfter)} more=${String(historyMore())} result=${result}`,
         )
-        const finished = done || nextLoaded <= loaded || !historyMore()
+        const finished = result !== "continue"
         historyAnchor.restore(finished)
         if (finished) {
           console.debug(`[session] history-end sid=${id} finished=true loaded=${String(nextLoaded)}`)
@@ -2605,14 +2618,15 @@ export default function Page() {
     ),
   )
 
-  const draft = (id: string) =>
-    extractPromptFromParts(sync.data.part[id] ?? [], {
+  const draftParts = (parts: Part[]) =>
+    extractPromptFromParts(parts, {
       directory: sdk.directory,
       attachmentName: language.t("common.attachment"),
     })
+  const draft = (id: string) => draftParts(sync.data.part[id] ?? [])
 
-  const line = (id: string) => {
-    const parts = sync.data.part[id] ?? []
+  const line = (id: string, input?: Part[]) => {
+    const parts = input ?? sync.data.part[id] ?? []
     const command = commandInvocationFromParts(parts)
     if (command) {
       console.debug("[session] user message menu command", {
@@ -2623,7 +2637,7 @@ export default function Page() {
       return command
     }
 
-    const text = draft(id)
+    const text = draftParts(parts)
       .map((part) => (part.type === "image" ? `[image:${part.filename}]` : part.content))
       .join("")
       .replace(/\s+/g, " ")
@@ -2637,82 +2651,39 @@ export default function Page() {
 
     return `[${language.t("common.attachment")}]`
   }
-  const userMessageMenu = createMemo(() =>
-    visibleUserMessages().map((message) => ({
+  const indexedUserMessages = createMemo(() => {
+    const id = params.id
+    if (!id) return undefined
+    return sync.session.userMessageIndex.get(id)
+  })
+  const userMessageMenu = createMemo(() => {
+    const indexed = indexedUserMessages()
+    if (indexed) {
+      const revert = revertMessageID()
+      const indexedMessages = indexed.map((entry) => ({ id: entry.id, time: entry.time }))
+      const boundary = revert
+        ? (resolveMessage(messages(), revert) ?? resolveMessage(indexedMessages, revert))
+        : undefined
+      const entries = indexed
+        .filter((entry) => !revert || (boundary ? compareMessages(entry, boundary) < 0 : entry.id < revert))
+        .map((entry) => ({
+          id: entry.id,
+          text: entry.preview,
+          created: entry.time.created,
+        }))
+      const known = new Set(entries.map((entry) => entry.id))
+      for (const message of visibleUserMessages()) {
+        if (known.has(message.id)) continue
+        entries.push({ id: message.id, text: line(message.id), created: message.time.created })
+      }
+      return entries.sort((a, b) => a.created - b.created || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    }
+    return visibleUserMessages().map((message) => ({
       id: message.id,
       text: line(message.id),
       created: message.time.created,
-    })),
-  )
-
-  let userMessageLoadRun = 0
-  createEffect(
-    on(
-      () => params.id,
-      () => {
-        userMessageLoadRun += 1
-        setUi("userMessagesLoading", false)
-      },
-    ),
-  )
-  const loadAllUserMessages = async () => {
-    const id = params.id
-    if (!id || ui.userMessagesLoading || !historyMore()) {
-      console.debug(
-        `[user-message-menu] load-skip sid=${id ?? "none"} loading=${String(ui.userMessagesLoading)} more=${String(historyMore())}`,
-      )
-      return
-    }
-
-    const run = ++userMessageLoadRun
-    setUi("userMessagesLoading", true)
-    console.debug(
-      `[user-message-menu] load-start sid=${id} shown=${String(messages().length)} users=${String(visibleUserMessages().length)} cached=${String(sync.data.message[id]?.length ?? 0)} more=${String(historyMore())}`,
-    )
-
-    try {
-      let pages = 0
-      let idle = 0
-      while (params.id === id && historyMore()) {
-        if (historyLoading()) {
-          idle += 1
-          if (idle === 1 || idle % 20 === 0) {
-            console.debug(`[user-message-menu] load-wait sid=${id} idle=${String(idle)}`)
-          }
-          await new Promise((resolve) => window.setTimeout(resolve, 50))
-          continue
-        }
-
-        idle = 0
-        const before = messages().length
-        const beforeCached = sync.data.message[id]?.length ?? 0
-        await sync.session.history.loadMore(id, 200)
-        if (params.id !== id || run !== userMessageLoadRun) return
-
-        pages += 1
-        const after = messages().length
-        const afterCached = sync.data.message[id]?.length ?? 0
-        console.debug(
-          `[user-message-menu] load-page sid=${id} page=${String(pages)} shown=${String(before)}->${String(after)} cached=${String(beforeCached)}->${String(afterCached)} users=${String(visibleUserMessages().length)} more=${String(historyMore())}`,
-        )
-        if (after > before || afterCached > beforeCached || !historyMore()) continue
-
-        console.debug(`[user-message-menu] load-stop sid=${id} reason=no-progress pages=${String(pages)}`)
-        break
-      }
-
-      console.debug(
-        `[user-message-menu] load-end sid=${id} pages=${String(pages)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)} cached=${String(sync.data.message[id]?.length ?? 0)} more=${String(historyMore())}`,
-      )
-    } catch (error) {
-      console.debug(
-        `[user-message-menu] load-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
-      )
-      fail(error)
-    } finally {
-      if (run === userMessageLoadRun) setUi("userMessagesLoading", false)
-    }
-  }
+    }))
+  })
 
   const fail = (err: unknown) => {
     showToast({
@@ -3161,7 +3132,7 @@ export default function Page() {
     visibleUserMessages,
     historyMore,
     historyLoading,
-    loadMore: (sessionID) => sync.session.history.loadMore(sessionID),
+    loadMore: () => loadEarlier(),
     currentMessageId: () => store.messageId,
     pendingMessage: () => ui.pendingMessage,
     setPendingMessage: (value) => setUi("pendingMessage", value),
@@ -3450,16 +3421,24 @@ export default function Page() {
             childAgents={childAgentEntries()}
             onOpenChildAgent={openChildAgent}
             userMessages={userMessageMenu()}
-            userMessagesLoading={ui.userMessagesLoading}
-            userMessagesComplete={!historyMore()}
-            userMessageCount={visibleUserMessages().length}
-            onLoadAllUserMessages={() => void loadAllUserMessages()}
+            userMessagesLoading={params.id ? sync.session.userMessageIndex.loading(params.id) : false}
+            userMessagesComplete={
+              indexedUserMessages() !== undefined || !!(params.id && sync.session.userMessageIndex.failed(params.id))
+            }
+            userMessageCount={userMessageMenu().length}
             onOpenUserMessage={(entry) => {
-              const message = visibleUserMessages().find((item) => item.id === entry.id)
+              const loaded = visibleUserMessages().find((item) => item.id === entry.id)
+              const indexed = indexedUserMessages()?.find((item) => item.id === entry.id)
               console.debug(
-                `[user-message-menu] select sid=${params.id ?? "none"} id=${entry.id} found=${String(!!message)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)}`,
+                `[user-message-menu] select sid=${params.id ?? "none"} id=${entry.id} found=${String(!!loaded || !!indexed)} loaded=${String(!!loaded)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)}`,
               )
-              if (message) scrollToMessage(message, "auto")
+              if (loaded) {
+                scrollToMessage(loaded, "auto")
+                return
+              }
+              if (!indexed) return
+              setUi("pendingMessage", indexed.id)
+              prepareFindNavigation()
             }}
             subagentNavigation={subagentNavigation()}
             subagentTitle={subagentPromptTitle()}
