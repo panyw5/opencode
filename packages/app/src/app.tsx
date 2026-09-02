@@ -9,7 +9,7 @@ import { Icon, IconPackProvider, type IconName } from "@opencode-ai/ui/icon"
 import { Splash } from "@opencode-ai/ui/logo"
 import { ThemeProvider } from "@opencode-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
-import { type BaseRouterProps, Navigate, Route, Router } from "@solidjs/router"
+import { type BaseRouterProps, Route, Router, useParams } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { type Duration, Effect } from "effect"
 import {
@@ -56,6 +56,8 @@ import DirectoryLayout from "@/pages/directory-layout"
 import Layout from "@/pages/layout"
 import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
+import { decode64 } from "@/utils/base64"
+import { workspaceKey } from "@/pages/layout/helpers"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -238,13 +240,24 @@ function ConfigLoadingShell() {
   )
 }
 
-const SessionRoute = () => (
-  <SessionProviders>
-    <Session />
-  </SessionProviders>
-)
+const SessionRoute = () => {
+  const params = useParams()
+  const layout = useLayout()
+  const allowed = () => {
+    if (params.id) return true
+    const directory = decode64(params.dir ?? "") ?? ""
+    return layout.sessionBar.drafts().some((draft) => workspaceKey(draft) === workspaceKey(directory))
+  }
+  return (
+    <SessionProviders>
+      <Show when={allowed()}>
+        <Session />
+      </Show>
+    </SessionProviders>
+  )
+}
 
-const SessionIndexRoute = () => <Navigate href="session" />
+const ProjectIndexRoute = () => null
 
 const ConfigRoute = () => (
   <ConfigRouteFrame>
@@ -579,7 +592,7 @@ function ServerScopedApp(
               <Route path="/scheduled" component={Scheduled} />
               <Route path="/config" component={GlobalConfigRoute} />
               <Route path="/:dir" component={DirectoryLayout}>
-                <Route path="/" component={SessionIndexRoute} />
+                <Route path="/" component={ProjectIndexRoute} />
                 <Route path="/session/:id?" component={SessionRoute} />
                 <Route path="/scheduled" component={Scheduled} />
                 <Route path="/config" component={ConfigRoute} />

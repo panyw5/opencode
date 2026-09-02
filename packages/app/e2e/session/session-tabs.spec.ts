@@ -1,7 +1,7 @@
 import { test, expect } from "../fixtures"
 import { cleanupSession, sessionIDFromUrl, withSession } from "../actions"
 import { projectSwitchSelector, promptSelector, sessionItemSelector, sessionNewButtonSelector } from "../selectors"
-import { sessionPath } from "../utils"
+import { dirSlug, sessionPath } from "../utils"
 
 type TabPermissionRequest = {
   id: string
@@ -81,7 +81,13 @@ test("new session draft tab stays visible when switching sessions", async ({ pag
       await expect(draft).toBeVisible()
       await expect(draft).toHaveAttribute("data-active", "true")
 
-      await gotoSession(target.id)
+      await page.evaluate((href) => {
+        const anchor = document.createElement("a")
+        anchor.href = href
+        document.body.append(anchor)
+        anchor.click()
+        anchor.remove()
+      }, sessionPath(target.directory, target.id))
       await expect(page).toHaveURL(new RegExp(`/session/${target.id}(?:[?#]|$)`))
       await expect(draft).toBeVisible()
       await expect(draft).not.toHaveAttribute("data-active", "true")
@@ -91,6 +97,16 @@ test("new session draft tab stays visible when switching sessions", async ({ pag
       await expect(page.locator(promptSelector)).toContainText("draft should remain visible")
     })
   })
+})
+
+test("an id-less session URL does not create a draft", async ({ page, directory, gotoSession }) => {
+  await page.setViewportSize({ width: 1400, height: 800 })
+  void gotoSession
+
+  await page.goto(sessionPath(directory))
+
+  await expect(page).toHaveURL(new RegExp(`/${dirSlug(directory)}(?:[?#]|$)`))
+  await expect(page.locator('[data-component="session-tab"][data-draft="true"]')).toHaveCount(0)
 })
 
 test("new session draft tab closes after the first message creates a session", async ({ page, sdk, gotoSession }) => {

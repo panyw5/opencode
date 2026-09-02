@@ -15,7 +15,6 @@ import {
   shouldAutoCollapseFilePreview,
   updateSessionBarTabInfo,
   visibleSessionBarDrafts,
-  promotedSessionBarDraft,
 } from "./layout"
 
 describe("project rail source", () => {
@@ -121,45 +120,16 @@ describe("session bar drafts", () => {
     expect(visibleSessionBarDrafts(["/work/project"], "")).toEqual(["/work/project"])
   })
 
-  test("includes the current draft before it is stored", () => {
-    expect(visibleSessionBarDrafts([], "/work/project")).toEqual(["/work/project"])
+  test("does not derive a draft from an id-less session route", () => {
+    expect(visibleSessionBarDrafts([], "/work/project")).toEqual([])
   })
 
   test("hides a draft that is being closed on the current route", () => {
     expect(visibleSessionBarDrafts([], "/work/project", "/work/project/")).toEqual([])
   })
 
-  test("hides the source draft while its promoted session route is pending", () => {
-    const current = "/work/project"
-    const promoted = promotedSessionBarDraft({
-      current,
-      routeSlug: "project-route",
-      tabs: [{ directory: "/work/worktree", id: "session-1" }],
-      handoff: { id: "session-1", sourceDir: "project-route", at: 1_000 },
-      now: 2_000,
-    })
-
-    expect(promoted).toBe(current)
-    expect(visibleSessionBarDrafts([], current, promoted)).toEqual([])
-  })
-
-  test("keeps a draft when the promotion handoff is stale or belongs to another route", () => {
-    const input = {
-      current: "/work/project",
-      routeSlug: "project-route",
-      tabs: [{ directory: "/work/project", id: "session-1" }],
-      handoff: { id: "session-1", sourceDir: "other-route", at: 1_000 },
-      now: 2_000,
-    }
-
-    expect(promotedSessionBarDraft(input)).toBe("")
-    expect(
-      promotedSessionBarDraft({
-        ...input,
-        handoff: { ...input.handoff, sourceDir: "project-route" },
-        now: 61_001,
-      }),
-    ).toBe("")
+  test("shows only drafts created in explicit state", () => {
+    expect(visibleSessionBarDrafts(["/work/project"], "/work/project")).toEqual(["/work/project"])
   })
 
   test("cycles past the last session tab onto a draft", () => {

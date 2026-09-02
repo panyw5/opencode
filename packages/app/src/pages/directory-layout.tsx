@@ -14,6 +14,7 @@ import { getAvatarColors, useLayout } from "@/context/layout"
 import { LocalProvider } from "@/context/local"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { SkillsProvider } from "@/context/skills"
+import { useSessionTabs } from "@/context/session-tabs"
 import { SyncProvider, useSync } from "@/context/sync"
 import { extraAgentByDirectory } from "@/pages/layout/extra-agents"
 import { newSessionProjectLabel, splitI18nTemplate } from "@/pages/layout/helpers"
@@ -76,6 +77,7 @@ function ProjectStatusPortal() {
   const params = useParams()
   const navigate = useNavigate()
   const layout = useLayout()
+  const sessionTabs = useSessionTabs()
   const mount = createMemo(() => document.getElementById("opencode-titlebar-center-project"))
   const directory = createMemo(() => (params.dir ? (decode64(params.dir) ?? "") : ""))
   const projectLabel = createMemo(() => {
@@ -107,6 +109,7 @@ function ProjectStatusPortal() {
     console.debug(
       `[directory-layout] new-session-project current=${directory() || "none"} target=${projectDirectory}`,
     )
+    sessionTabs.createDraft(projectDirectory, "button")
     navigate(`/${base64Encode(projectDirectory)}/session`)
   }
 
@@ -129,6 +132,7 @@ function ProjectStatusPortal() {
                     console.debug(
                       `[directory-layout] new-session dir=${directory() || "none"} project=${projectLabel() || "none"}`,
                     )
+                    sessionTabs.createDraft(directory(), "button")
                     navigate(`/${params.dir}/session`)
                   }}
                 />

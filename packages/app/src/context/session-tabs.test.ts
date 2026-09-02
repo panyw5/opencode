@@ -115,6 +115,25 @@ function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: Se
 }
 
 describe("session tabs coordinator", () => {
+  test("id-less route observation never creates a draft", () => {
+    const h = harness()
+
+    h.coordinator.observeRoute({ directory: "/repo", session: true })
+
+    expect(h.drafts()).toEqual([])
+    h.dispose()
+  })
+
+  test("only an explicit creation command creates a draft", () => {
+    const h = harness()
+
+    h.coordinator.createDraft("/repo", "button")
+    h.coordinator.createDraft("/repo", "keybind")
+
+    expect(h.drafts()).toEqual(["/repo"])
+    h.dispose()
+  })
+
   test("route observation ensures one tab without requiring a project root", () => {
     const h = harness()
     const route = { directory: "/repo", id: "one", session: true }

@@ -27,7 +27,6 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 
 import {
   cycleSessionBarIndex,
-  promotedSessionBarDraft,
   sessionBarKey,
   useLayout,
   visibleSessionBarDrafts,
@@ -146,29 +145,14 @@ export function SessionTabsBar() {
     const owner = projectOwner(directory, layout.projects.list())
     return owner?.project.name || getFilename(owner?.project.worktree ?? directory) || directory
   }
-  // An id-less `/:dir/session` route is a not-yet-created session. Keep one
-  // persisted draft tab per workspace until the first message promotes it.
+  // An id-less route is a draft only after an explicit creation command stored it.
   const draftDirectory = createMemo(() => {
     if (!onSessionRoute()) return ""
     if (params.id) return ""
-    return routeDir()
+    const directory = routeDir()
+    return drafts().some((draft) => workspaceKey(draft) === workspaceKey(directory)) ? directory : ""
   })
-  const promotedDraft = createMemo(() =>
-    promotedSessionBarDraft({
-      current: draftDirectory(),
-      routeSlug: params.dir,
-      tabs: tabs(),
-      handoff: layout.handoff.tabs(),
-    }),
-  )
-  createEffect(
-    on(promotedDraft, (directory, previous) => {
-      if (!directory || directory === previous) return
-      const pending = layout.handoff.tabs()
-      console.debug(`[session-bar] suppress promoted draft directory=${directory} sessionID=${pending?.id ?? "unknown"}`)
-    }),
-  )
-  const visibleDrafts = createMemo(() => visibleSessionBarDrafts(drafts(), draftDirectory(), promotedDraft()))
+  const visibleDrafts = createMemo(() => visibleSessionBarDrafts(drafts(), draftDirectory()))
   const shown = createMemo(() => {
     if (!settings.general.sessionTabsBar()) return false
     return tabs().length > 0 || visibleDrafts().length > 0

@@ -139,9 +139,9 @@ test("project rail keeps the current view when no session is active", async ({ p
   try {
     await withProject(
       async ({ directory }) => {
-        await page.goto(sessionPath(directory))
-        await waitSession(page, { directory })
-        await expect(page).toHaveURL(new RegExp(`/${dirSlug(directory)}/session(?:[?#]|$)`))
+        await page.goto(`/${dirSlug(directory)}`)
+        await expect(page.locator(sessionNewProjectMenuSelector)).toBeVisible()
+        await expect(page).toHaveURL(new RegExp(`/${dirSlug(directory)}(?:[?#]|$)`))
         const originalURL = page.url()
 
         const currentButton = page.locator(projectSwitchSelector(dirSlug(directory))).first()
@@ -221,7 +221,7 @@ test("project picker only navigates to an already open target session", async ({
   }
 })
 
-test("project picker opens a new session when no session is active", async ({ page, withProject }) => {
+test("project selection opens the project root when no session is active", async ({ page, withProject }) => {
   await page.setViewportSize({ width: 1400, height: 800 })
 
   const other = await createTestProject()
@@ -229,16 +229,14 @@ test("project picker opens a new session when no session is active", async ({ pa
   try {
     await withProject(
       async ({ directory }) => {
-        await page.goto(sessionPath(directory))
-        await waitSession(page, { directory })
-
-        const dialog = await openProjectPicker(page)
-        const target = dialog.locator('[data-slot="list-item"]').filter({ hasText: other }).first()
+        await page.goto(`/${dirSlug(directory)}`)
+        const target = page.locator(projectSwitchSelector(otherSlug)).first()
         await expect(target).toBeVisible()
         await target.click()
 
-        await expect(page).toHaveURL(new RegExp(`/${otherSlug}/session(?:[?#]|$)`))
-        await expect(page.locator(promptSelector)).toBeVisible()
+        await expect.poll(() => slugFromUrl(page.url())).not.toBe(dirSlug(directory))
+        await expect(page).not.toHaveURL(/\/session(?:[/?#]|$)/)
+        await expect(page.locator('[data-component="session-tab"][data-draft="true"]')).toHaveCount(0)
       },
       { extra: [other] },
     )

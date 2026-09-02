@@ -4657,7 +4657,7 @@ export default function ConfigPage() {
       navigate("/", { replace: true })
       return
     }
-    const target = `/${params.dir}/session`
+    const target = `/${params.dir}`
     console.debug(`[config-back] action=navigate target=${target} replace=true`)
     navigate(target, { replace: true })
   }

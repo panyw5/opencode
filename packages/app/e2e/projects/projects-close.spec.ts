@@ -18,7 +18,7 @@ test("closing active project navigates to another open project", async ({ page, 
         await expect(otherButton).toBeVisible()
         await otherButton.click()
 
-        await expect(page).toHaveURL(new RegExp(`/${otherSlug}/session`))
+        await expect(page).toHaveURL(new RegExp(`/${otherSlug}(?:[?#]|$)`))
 
         const menu = await openProjectMenu(page, otherSlug)
 
@@ -28,7 +28,7 @@ test("closing active project navigates to another open project", async ({ page, 
           .poll(
             () => {
               const pathname = new URL(page.url()).pathname
-              if (new RegExp(`^/${slug}/session(?:/[^/]+)?/?$`).test(pathname)) return "project"
+              if (new RegExp(`^/${slug}(?:/session/[^/]+)?/?$`).test(pathname)) return "project"
               if (pathname === "/") return "home"
               return ""
             },
@@ -36,7 +36,7 @@ test("closing active project navigates to another open project", async ({ page, 
           )
           .toMatch(/^(project|home)$/)
 
-        await expect(page).not.toHaveURL(new RegExp(`/${otherSlug}/session(?:[/?#]|$)`))
+        await expect(page).not.toHaveURL(new RegExp(`/${otherSlug}(?:[/?#]|$)`))
         await expect
           .poll(
             async () => {

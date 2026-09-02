@@ -10,6 +10,7 @@ import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useSessionTabs } from "@/context/session-tabs"
 import { useTerminal } from "@/context/terminal"
 import { DialogSelectFile } from "@/components/dialog-select-file"
 import { DialogSelectModel } from "@/components/dialog-select-model"
@@ -85,6 +86,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const closableTab = tabState.closableTab
 
   const projectDirectory = () => decode64(params.dir) ?? ""
+  const sessionTabs = useSessionTabs()
   const newSessionDirectory = (source?: CommandSource) =>
     resolveNewSessionDirectory({
       sessionDirectory: info()?.directory,
@@ -276,6 +278,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             `[session-new] source=${source ?? "session-command"} session=${params.id || "none"} session-directory=${info()?.directory || "none"} sdk-directory=${sdk.directory || "none"} route-directory=${projectDirectory() || "none"} sidebar-project=${layout.sidebar.project() || "none"} sidebar-opened=${sidebarOpened} prefer-sidebar=${shouldPreferSidebarForNewSession(source, sidebarOpened)} target=${directory || "none"}`,
           )
           if (!directory) return
+          sessionTabs.createDraft(directory, source ?? "menu")
           navigate(`/${base64Encode(directory)}/session`)
           layout.sidebar.close()
         },

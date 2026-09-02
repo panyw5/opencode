@@ -1,10 +1,9 @@
 import { test, expect } from "../fixtures"
-import { promptSelector } from "../selectors"
 import { dirPath } from "../utils"
 
-test("project route redirects to /session", async ({ page, directory, slug }) => {
+test("project route stays neutral until the user creates a session", async ({ page, directory, slug }) => {
   await page.goto(dirPath(directory))
 
-  await expect(page).toHaveURL(new RegExp(`/${slug}/session`))
-  await expect(page.locator(promptSelector)).toBeVisible()
+  await expect(page).toHaveURL(new RegExp(`/${slug}(?:[?#]|$)`))
+  await expect(page.locator('[data-component="session-tab"][data-draft="true"]')).toHaveCount(0)
 })

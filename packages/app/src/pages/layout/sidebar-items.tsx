@@ -19,7 +19,9 @@ import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
+import { useSessionTabs } from "@/context/session-tabs"
 import { messageAgentColor } from "@/utils/agent"
+import { decode64 } from "@/utils/base64"
 import { ensureSessionProfile, startSessionProfile } from "@/utils/session-profile"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { working } from "../session/session-working"
@@ -936,6 +938,7 @@ export const NewSessionItem = (props: {
   sidebarExpanded: Accessor<boolean>
 }): JSX.Element => {
   const layout = useLayout()
+  const sessionTabs = useSessionTabs()
   const language = useLanguage()
   const label = language.t("command.session.new")
   const tooltip = () => props.mobile || !props.sidebarExpanded()
@@ -945,6 +948,8 @@ export const NewSessionItem = (props: {
       end
       class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
       onClick={() => {
+        const directory = decode64(props.slug)
+        if (directory) sessionTabs.createDraft(directory, "button")
         layout.sidebar.close()
       }}
     >

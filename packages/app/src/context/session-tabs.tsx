@@ -64,6 +64,7 @@ export type SessionTabsCoordinator = {
     meta?: { title?: string; parentID?: string | null; root?: string; hidden?: boolean },
   ): void
   ensureOpen(tab: SessionBarTab): boolean
+  createDraft(directory: string, source: "button" | "keybind" | "menu" | "slash" | "palette" | "deep-link"): void
   activate(target: SessionTabsTarget): Promise<boolean>
   updateMeta(
     directory: string,
@@ -385,10 +386,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       commitPending(route)
       observeNavigation(route)
       if (!route.session || !route.directory) return
-      if (!route.id) {
-        if (!meta?.hidden) ports.store.openDraft(route.directory)
-        return
-      }
+      if (!route.id) return
       if (!meta?.hidden) {
         ensureOpen({ directory: route.directory, id: route.id, title: meta?.title, parentID: meta?.parentID })
       }
@@ -396,6 +394,11 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       ports.remember(route.directory, route.id, meta?.root)
     },
     ensureOpen,
+    createDraft(directory, source) {
+      if (!directory) return
+      console.debug(`[session-tabs] explicit draft created directory=${directory} source=${source}`)
+      ports.store.openDraft(directory)
+    },
     async activate(target) {
       const intent = beginNavigation(target, "activate")
       try {

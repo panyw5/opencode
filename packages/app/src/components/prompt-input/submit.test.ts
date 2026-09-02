@@ -134,8 +134,8 @@ beforeAll(async () => {
   mock.module("@/context/layout", () => ({
     useLayout: () => ({
       handoff: {
-        setTabs: (directory: string, sessionID: string, sourceDir?: string) => {
-          sessionTabEvents.push(`handoff:${directory}:${sessionID}:${sourceDir ?? ""}`)
+        setTabs: (directory: string, sessionID: string) => {
+          sessionTabEvents.push(`handoff:${directory}:${sessionID}`)
         },
       },
     }),
@@ -306,7 +306,7 @@ describe("prompt submit worktree selection", () => {
     expect(sentShell).toEqual(["/repo/main"])
     expect(promoted).toEqual([{ directory: "/repo/main", sessionID: "session-1" }])
     expect(sessionTabEvents).toEqual([
-      "handoff:/repo/main:session-1:/repo/worktree-a",
+      "handoff:/repo/main:session-1",
       "promote:/repo/main:session-1:/repo/worktree-a",
     ])
   })

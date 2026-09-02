@@ -709,7 +709,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           `[session-bar] draft promotion start directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
         )
         batch(() => {
-          layout.handoff.setTabs(base64Encode(sessionDirectory), sessionID, base64Encode(currentDirectory))
+          layout.handoff.setTabs(base64Encode(sessionDirectory), sessionID)
           sessionTabs.promoteDraft({ directory: sessionDirectory, id: sessionID }, currentDirectory)
         })
         console.debug(

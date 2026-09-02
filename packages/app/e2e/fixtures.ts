@@ -12,6 +12,7 @@ import {
   waitSession,
 } from "./actions"
 import { createSdk, dirSlug, getWorktree, sessionPath } from "./utils"
+import { sessionNewButtonSelector } from "./selectors"
 
 export const settingsKey = "settings.v3"
 
@@ -79,7 +80,12 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
     await seedStorage(page, { directory })
 
     const gotoSession = async (sessionID?: string) => {
-      await page.goto(sessionPath(directory, sessionID))
+      if (!sessionID) {
+        await page.goto(`/${dirSlug(directory)}`)
+        await page.locator(sessionNewButtonSelector).click()
+      } else {
+        await page.goto(sessionPath(directory, sessionID))
+      }
       await waitSession(page, { directory, sessionID })
     }
     await use(gotoSession)
@@ -92,7 +98,12 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       await seedStorage(page, { directory: root, extra: options?.extra })
 
       const gotoSession = async (sessionID?: string) => {
-        await page.goto(sessionPath(root, sessionID))
+        if (!sessionID) {
+          await page.goto(`/${dirSlug(root)}`)
+          await page.locator(sessionNewButtonSelector).click()
+        } else {
+          await page.goto(sessionPath(root, sessionID))
+        }
         await waitSession(page, { directory: root, sessionID })
         const current = sessionIDFromUrl(page.url())
         if (current) trackSession(current)

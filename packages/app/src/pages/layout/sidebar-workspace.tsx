@@ -18,6 +18,7 @@ import { type LocalProject, useLayout } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useSessionTabs } from "@/context/session-tabs"
 import { extraAgentByDirectory, extraAgentDomain } from "./extra-agents"
 import { NewSessionItem, SessionItem, SessionGroupHeader, SessionSearchBar } from "./sidebar-items"
 import {
@@ -397,6 +398,7 @@ export const SortableWorkspace = (props: {
   const navigate = useNavigate()
   const params = useParams()
   const layout = useLayout()
+  const sessionTabs = useSessionTabs()
   const globalSync = useGlobalSync()
   const language = useLanguage()
   const sortable = createSortable(props.directory)
@@ -531,6 +533,7 @@ export const SortableWorkspace = (props: {
                 showDeleteWorkspaceDialog={props.ctx.showDeleteWorkspaceDialog}
                 root={props.project.worktree}
                 navigateToNewSession={() => {
+                  sessionTabs.createDraft(props.directory, "button")
                   navigate(`/${slug()}/session`)
                   layout.sidebar.close()
                 }}

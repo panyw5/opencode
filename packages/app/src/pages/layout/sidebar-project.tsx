@@ -10,6 +10,7 @@ import { useLayout, type LocalProject } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { usePlatform } from "@/context/platform"
+import { useSessionTabs } from "@/context/session-tabs"
 import { ProjectIcon } from "./sidebar-items"
 import { displayName } from "./helpers"
 import { projectSelected } from "./sidebar-project-helpers"
@@ -72,6 +73,7 @@ const ProjectTile = (props: {
   const notification = useNotification()
   const layout = useLayout()
   const platform = usePlatform()
+  const sessionTabs = useSessionTabs()
   const navigate = useNavigate()
   const [copyState, setCopyState] = createStore({ copied: false })
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
@@ -149,6 +151,7 @@ const ProjectTile = (props: {
     const directory = props.project.worktree
     if (!directory) return
     console.debug(`[sidebar-project] new session dir=${directory}`)
+    sessionTabs.createDraft(directory, "button")
     navigate(`/${base64Encode(directory)}/session`)
     layout.sidebar.close()
   }

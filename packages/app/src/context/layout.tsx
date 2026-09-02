@@ -141,22 +141,7 @@ export function visibleSessionBarDrafts(stored: readonly string[], current: stri
   const closedKey = closed ? workspaceKey(closed) : ""
   const drafts = closedKey ? stored.filter((directory) => workspaceKey(directory) !== closedKey) : [...stored]
   if (!current || (closedKey && workspaceKey(current) === closedKey)) return drafts
-  if (drafts.some((directory) => workspaceKey(directory) === workspaceKey(current))) return drafts
-  return [...drafts, current]
-}
-
-export function promotedSessionBarDraft(input: {
-  current: string
-  routeSlug?: string
-  tabs: readonly SessionBarTab[]
-  handoff?: { id: string; sourceDir?: string; at: number }
-  now?: number
-}) {
-  const handoff = input.handoff
-  if (!input.current || !handoff?.sourceDir || handoff.sourceDir !== input.routeSlug) return ""
-  if ((input.now ?? Date.now()) - handoff.at > 60_000) return ""
-  if (!input.tabs.some((tab) => tab.id === handoff.id)) return ""
-  return input.current
+  return drafts
 }
 
 export function cycleSessionBarIndex(length: number, activeIndex: number, delta: number) {
@@ -178,7 +163,6 @@ type TabHandoff = {
   dir: string
   id: string
   at: number
-  sourceDir?: string
 }
 
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
@@ -364,9 +348,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
       const sessionBar = value.sessionBar
       const migratedSessionBar = (() => {
-        if (!isRecord(sessionBar) || !Array.isArray(sessionBar.all)) return sessionBar
+        if (!isRecord(sessionBar)) return sessionBar
 
-        const valid = sessionBar.all.filter(
+        const storedTabs = Array.isArray(sessionBar.all) ? sessionBar.all : []
+        const valid = storedTabs.filter(
           (tab): tab is SessionBarTab =>
             isRecord(tab) &&
             typeof tab.directory === "string" &&
@@ -375,12 +360,13 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             !!tab.id,
         )
         const all = dedupePersistedSessionBarTabs(valid)
-        if (valid.length === sessionBar.all.length && same(valid, all)) return sessionBar
+        const drafts = Array.isArray(sessionBar.drafts) ? sessionBar.drafts.length : 0
+        if (valid.length === storedTabs.length && same(valid, all) && drafts === 0) return sessionBar
 
         console.debug(
-          `[session-bar] migrate persisted tabs before=${sessionBar.all.length} after=${all.length} invalid=${sessionBar.all.length - valid.length}`,
+          `[session-bar] migrate persisted state tabs-before=${storedTabs.length} tabs-after=${all.length} invalid=${storedTabs.length - valid.length} drafts-cleared=${drafts}`,
         )
-        return { ...sessionBar, all }
+        return { ...sessionBar, all, drafts: [] }
       })()
 
       if (
@@ -832,8 +818,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       ready,
       handoff: {
         tabs: createMemo(() => store.handoff?.tabs),
-        setTabs(dir: string, id: string, sourceDir?: string) {
-          setStore("handoff", "tabs", { dir, id, sourceDir, at: Date.now() })
+        setTabs(dir: string, id: string) {
+          setStore("handoff", "tabs", { dir, id, at: Date.now() })
         },
         clearTabs() {
           if (!store.handoff?.tabs) return
