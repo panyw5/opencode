@@ -45,6 +45,7 @@ export {
   runWorkerRound,
   writeHeartbeat,
   buildWorkerKickoff,
+  readProblemStatement,
   workerMcpConfig,
   latestAcceptedFactId,
   type EnsureResult,

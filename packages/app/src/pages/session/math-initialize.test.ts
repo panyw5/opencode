@@ -26,10 +26,13 @@ describe("math initialization", () => {
     expect(prompt).toContain("Use the math-initialize skill")
     expect(prompt).toContain("Math problem ID: brocard-conjecture")
     expect(prompt).toContain("Use brocard-conjecture as the project argument for every math worker tool call")
+    expect(prompt).toContain("persist the complete problem statement above verbatim")
+    expect(prompt).toContain("Workers never see this message or this session")
     expect(prompt).toContain("bounded roster of 3 workers")
     expect(prompt).toContain("1 worker with variant high and 2 workers with variant xhigh")
     expect(prompt).toContain("Use worker model test/prover")
     expect(prompt).toContain("verifier_model=test/verifier")
+    expect(prompt).toContain("self-contained evidence workstreams")
     expect(prompt).toContain("Do not create a scheduled control beat")
   })
 

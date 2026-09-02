@@ -1,5 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Layer } from "effect"
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
 import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
 import { Permission } from "@/permission"
@@ -15,7 +17,9 @@ import {
   mathWorkerTaskFingerprint,
   MAX_MATH_WORKER_NO_PROGRESS_ROUNDS,
   MAX_MATH_WORKER_VERIFIER_ERROR_STREAK,
+  MAX_WORKER_PROBLEM_STATEMENT_CHARS,
   readMathWorkerTask,
+  readProblemStatement,
   startMathWorker,
   statusMathWorker,
   stopMathWorker,
@@ -153,6 +157,18 @@ describe("math.worker", () => {
       expect(prompt).toContain("Prove lemma L")
       expect(prompt).toContain("fact_submit")
       expect(prompt).toContain("MATH_WORKER_TASK_COMPLETE")
+      expect(prompt).not.toContain("# Problem statement")
+
+      const withProblem = buildWorkerKickoff({
+        task: "Prove lemma L from the theta route",
+        round: 3,
+        problemStatement: "E_k[bmatrix](tau) := -B_k(lambda)/k! + ...",
+      })
+      expect(withProblem).toContain("# Problem statement")
+      expect(withProblem).toContain("E_k[bmatrix](tau) := -B_k(lambda)/k! + ...")
+      expect(withProblem.indexOf("# Problem statement")).toBeLessThan(withProblem.indexOf("# Assigned TASK"))
+      expect(withProblem).toContain("# Assigned TASK\nProve lemma L from the theta route")
+
       const config = JSON.parse(
         workerMcpConfig({
           projectDir: "/tmp/math",
@@ -165,6 +181,26 @@ describe("math.worker", () => {
       expect(config.mcp["math-truth"].environment.OPENCODE_MATH_WORKSPACE).toBe("/tmp/work")
       expect(config.mcp["math-truth"].environment.OPENCODE_MATH_VERIFY_MODEL).toBe("test/verifier")
       expect(config.agent["math-worker"].permission.external_directory).toBe("deny")
+    }),
+  )
+
+  it.instance("reads the problem statement from PROBLEM.md for worker kickoffs", () =>
+    Effect.gen(function* () {
+      const dir = mkdtempSync(path.join(tmpdir(), "math-problem-"))
+      try {
+        expect(readProblemStatement(dir)).toBeUndefined()
+
+        writeFileSync(path.join(dir, "PROBLEM.md"), "\n  The twisted Eisenstein series E_k is defined by ...\n\n")
+        expect(readProblemStatement(dir)).toBe("The twisted Eisenstein series E_k is defined by ...")
+
+        writeFileSync(path.join(dir, "PROBLEM.md"), "x".repeat(MAX_WORKER_PROBLEM_STATEMENT_CHARS + 10))
+        const truncated = readProblemStatement(dir)
+        expect(truncated).toBeDefined()
+        expect(truncated!.length).toBeGreaterThan(MAX_WORKER_PROBLEM_STATEMENT_CHARS)
+        expect(truncated).toContain(`truncated at ${MAX_WORKER_PROBLEM_STATEMENT_CHARS} characters`)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
     }),
   )
 

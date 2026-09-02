@@ -315,6 +315,13 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     problemID: path.basename(projectDir),
     projectDir,
   })
+  if (!existsSync(layout(projectDir).problem)) {
+    log.warn("math worker PROBLEM.md is missing; worker rounds will start without the problem statement", {
+      sessionID: session.id,
+      problemID: path.basename(projectDir),
+      problemFile: layout(projectDir).problem,
+    })
+  }
 
   const taskFile = taskPath(projectDir, session.id)
   writeFileSync(taskFile, input.task.trim() + "\n", "utf8")
@@ -881,7 +888,37 @@ export const writeHeartbeat = Effect.fn("MathWorker.heartbeat")(function* (input
   log.info("math worker heartbeat", { sessionID: input.sessionID, round: input.round, stopRequested })
 })
 
-export function buildWorkerKickoff(input: { task: string; round: number; generation?: number; taskFingerprint?: string }): string {
+export const MAX_WORKER_PROBLEM_STATEMENT_CHARS = 20_000
+
+/**
+ * Workers are confined to the problem workspace and never see the parent
+ * session, so PROBLEM.md is their only copy of the operator's definitions.
+ */
+export function readProblemStatement(projectDir: string): string | undefined {
+  const file = layout(projectDir).problem
+  if (!existsSync(file)) return undefined
+  let text: string
+  try {
+    text = readFileSync(file, "utf8")
+  } catch {
+    return undefined
+  }
+  const trimmed = text.trim()
+  if (!trimmed) return undefined
+  if (trimmed.length <= MAX_WORKER_PROBLEM_STATEMENT_CHARS) return trimmed
+  return (
+    trimmed.slice(0, MAX_WORKER_PROBLEM_STATEMENT_CHARS) +
+    `\n\n[PROBLEM.md truncated at ${MAX_WORKER_PROBLEM_STATEMENT_CHARS} characters]`
+  )
+}
+
+export function buildWorkerKickoff(input: {
+  task: string
+  round: number
+  generation?: number
+  taskFingerprint?: string
+  problemStatement?: string
+}): string {
   return [
     `You are math-worker round ${input.round}.`,
     ...(input.generation === undefined ? [] : [`Worker generation: ${input.generation}.`]),
@@ -892,6 +929,14 @@ export function buildWorkerKickoff(input: { task: string; round: number; generat
     "Submit a self-contained statement and proof through math-truth fact_submit only when every step is justified. Cite only verified fact_id values as predecessors.",
     "When the entire assigned TASK is discharged by an accepted fact chain, put the exact standalone line MATH_WORKER_TASK_COMPLETE in your final response. Never emit it for partial progress, a rejected submission, or an open gap.",
     "Do not run code or spawn subagents. If the problem remains open, preserve progress in shared memory and finish the round normally.",
+    ...(input.problemStatement === undefined
+      ? []
+      : [
+          "",
+          "# Problem statement",
+          "The operator's complete problem statement — the authoritative source for every definition, notation, and constant convention. The TASK may abbreviate it; when they appear to disagree, work from this statement.",
+          input.problemStatement,
+        ]),
     "",
     "# Assigned TASK",
     input.task.trim(),
@@ -1018,6 +1063,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
 }) {
   const taskFile = taskPath(input.projectDir, input.sessionID)
   const task = readFileSync(taskFile, "utf8")
+  const problemStatement = readProblemStatement(input.projectDir)
   const prompts = yield* SessionPrompt.Service
   const sessions = yield* Session.Service
   const mcp = yield* MCP.Service
@@ -1032,6 +1078,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
     configHasMathTruth: process.env.OPENCODE_CONFIG_CONTENT?.includes('"math-truth"') === true,
     mcpStatus,
     mcpTools: Object.keys(mcpTools),
+    problemStatementChars: problemStatement?.length ?? 0,
   })
   const result = yield* prompts.prompt({
     sessionID: input.sessionID,
@@ -1046,6 +1093,7 @@ export const runWorkerRound = Effect.fn("MathWorker.round")(function* (input: {
           round: input.round,
           generation: input.generation,
           taskFingerprint: mathWorkerTaskFingerprint(task),
+          problemStatement,
         }),
       },
     ],

@@ -13,7 +13,10 @@ import DESCRIPTION_ENSURE from "./math_worker_ensure.txt"
 
 const StartParameters = Schema.Struct({
   title: Schema.String.annotate({ description: "Short title for the worker session" }),
-  task: Schema.String.annotate({ description: "TASK.md body: which slice of the proof this worker owns" }),
+  task: Schema.String.annotate({
+    description:
+      "TASK.md body: which slice of the proof this worker owns. Must be self-contained — workers cannot read the parent session or anything outside the problem workspace; definitions live in PROBLEM.md or in the task body itself.",
+  }),
   project: Schema.optional(Schema.String).annotate({
     description: "Math problem ID under .math/problems/. Defaults to the parent Math Mode session ID.",
   }),
