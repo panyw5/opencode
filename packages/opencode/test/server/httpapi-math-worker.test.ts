@@ -88,7 +88,7 @@ describe("Math worker HttpApi", () => {
         })
         const url = endpoint(SessionPaths.mathWorkerEvent, { sessionID: parent.id, workerID: worker.id })
         const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
-        const payload = JSON.stringify({
+        const payloadBody = {
           eventID: "blocked_3_verifier",
           kind: "blocked",
           round: 3,
@@ -96,7 +96,8 @@ describe("Math worker HttpApi", () => {
           summary: "Verifier failed three times.",
           generation: 2,
           taskFingerprint: "task-v2",
-        })
+        } as const
+        const payload = JSON.stringify(payloadBody)
 
         const first = yield* Effect.promise(() =>
           Server.Default().app.request(url, { method: "POST", headers, body: payload }),
@@ -106,8 +107,146 @@ describe("Math worker HttpApi", () => {
         )
         expect(first.status).toBe(204)
         expect(second.status).toBe(204)
+        const semanticDuplicate = yield* Effect.promise(() =>
+          Server.Default().app.request(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ...payloadBody,
+              eventID: "blocked_3_verifier_alias",
+              summary: "Same terminal block reported through another delivery path.",
+            }),
+          }),
+        )
+        expect(semanticDuplicate.status).toBe(204)
         yield* Effect.sleep("50 millis")
         expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(1)
+
+        const changedBlock = yield* Effect.promise(() =>
+          Server.Default().app.request(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ...payloadBody,
+              eventID: "blocked_3_dependency",
+              reason: "missing-dependency",
+              summary: "The lane now reports a different blocker.",
+            }),
+          }),
+        )
+        expect(changedBlock.status).toBe(204)
+        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(2)
+
+        const progressResponses = yield* Effect.all(
+          ["progress_detail_1", "progress_detail_2"].map((eventID, index) =>
+            Effect.promise(() =>
+              Server.Default().app.request(url, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  eventID,
+                  kind: "progress",
+                  round: 3,
+                  factID: "fact-partial",
+                  summary: `Distinct progress detail ${index + 1}.`,
+                  generation: 2,
+                  taskFingerprint: "task-v2",
+                }),
+              }),
+            ),
+          ),
+          { concurrency: "unbounded" },
+        )
+        expect(progressResponses.map((response) => response.status)).toEqual([204, 204])
+        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(4)
+
+        const failedResponses = yield* Effect.all(
+          ["failed_detail_1", "failed_detail_2"].map((eventID, index) =>
+            Effect.promise(() =>
+              Server.Default().app.request(url, {
+                method: "POST",
+                headers,
+                body: JSON.stringify({
+                  eventID,
+                  kind: "failed",
+                  round: 3,
+                  reason: "worker-round-failed",
+                  summary: `Distinct failure diagnostic ${index + 1}.`,
+                  generation: 2,
+                  taskFingerprint: "task-v2",
+                }),
+              }),
+            ),
+          ),
+          { concurrency: "unbounded" },
+        )
+        expect(failedResponses.map((response) => response.status)).toEqual([204, 204])
+        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(6)
+
+        const completedSwarm = readSwarm(test.directory)
+        const completedRecord = completedSwarm.workers[worker.id]
+        if (!completedRecord) throw new Error("expected persisted worker record")
+        completedSwarm.workers[worker.id] = {
+          ...completedRecord,
+          lastOutcome: "completed",
+          lastFactId: "fact-current",
+        }
+        writeSwarm(test.directory, completedSwarm)
+        const completedPayload = {
+          eventID: "completed_current",
+          kind: "completed",
+          round: 3,
+          factID: "fact-current",
+          summary: "The lane completed.",
+          generation: 2,
+          taskFingerprint: "task-v2",
+        } as const
+        const completed = yield* Effect.promise(() =>
+          Server.Default().app.request(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(completedPayload),
+          }),
+        )
+        const duplicateCompleted = yield* Effect.promise(() =>
+          Server.Default().app.request(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ...completedPayload,
+              eventID: "completed_current_alias",
+              summary: "The same fact arrived through another delivery path.",
+            }),
+          }),
+        )
+        const differentCompletedFact = yield* Effect.promise(() =>
+          Server.Default().app.request(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ...completedPayload,
+              eventID: "completed_different_fact",
+              factID: "fact-additional",
+              summary: "A distinct accepted fact must remain visible for audit.",
+            }),
+          }),
+        )
+        const blockedAfterCompletion = yield* Effect.promise(() =>
+          Server.Default().app.request(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ...payloadBody,
+              eventID: "blocked_after_completion",
+              summary: "A late blocked event must not reopen the completed lane.",
+            }),
+          }),
+        )
+        expect(completed.status).toBe(204)
+        expect(duplicateCompleted.status).toBe(204)
+        expect(differentCompletedFact.status).toBe(204)
+        expect(blockedAfterCompletion.status).toBe(204)
+        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(8)
 
         const stale = yield* Effect.promise(() =>
           Server.Default().app.request(url, {
@@ -125,7 +264,31 @@ describe("Math worker HttpApi", () => {
           }),
         )
         expect(stale.status).toBe(204)
-        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(1)
+        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(8)
+
+        const legacyEventID = "completed_legacy_retry"
+        const legacyInputID = `evt_math_worker_${worker.id}_2_task-v2_${legacyEventID}`
+        yield* inbox.admit({
+          id: legacyInputID,
+          sessionID: parent.id,
+          source: "math-worker",
+          prompt: {
+            text: "Legacy queued worker event.",
+            metadata: { kind: "math-worker-event" },
+          },
+        })
+        const legacyRetry = yield* Effect.promise(() =>
+          Server.Default().app.request(url, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              ...completedPayload,
+              eventID: legacyEventID,
+            }),
+          }),
+        )
+        expect(legacyRetry.status).toBe(204)
+        expect((yield* inbox.cursor(parent.id)).nextAdmittedSeq).toBe(9)
       }),
     30_000,
   )

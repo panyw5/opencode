@@ -409,7 +409,7 @@ const seed = Effect.fn("test.seed")(function* (sessionID: SessionID, opts?: { fi
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     modelID: ref.modelID,
     providerID: ref.providerID,
-    time: { created: Date.now() },
+    time: { created: Date.now(), ...(opts?.finish ? { completed: Date.now() + 1 } : {}) },
     ...(opts?.finish ? { finish: opts.finish } : {}),
   }
   yield* session.updateMessage(assistant)
@@ -530,6 +530,38 @@ noLLMServer.instance(
 )
 
 it.instance(
+  "coalesced loop wakes do not rerun a terminal response for the same user",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Terminal wake coalescing" })
+      yield* user(chat.id, "respond once")
+      const gate = yield* Deferred.make<void>()
+      yield* llm.push(reply().wait(deferredAsPromise(gate)).text("terminal response").stop())
+
+      const first = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+      const second = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      const third = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* Deferred.succeed(gate, void 0)
+      const exits = yield* Effect.all([Fiber.await(first), Fiber.await(second), Fiber.await(third)], {
+        concurrency: "unbounded",
+      })
+
+      expect(exits.every(Exit.isSuccess)).toBe(true)
+      expect(yield* llm.calls).toBe(1)
+      const assistants = (yield* sessions.messages({ sessionID: chat.id })).filter(
+        (message) => message.info.role === "assistant",
+      )
+      expect(assistants).toHaveLength(1)
+      expect(assistants[0]?.info.role === "assistant" ? assistants[0].info.finish : undefined).toBe("stop")
+    }),
+  5_000,
+)
+
+it.instance(
   "durable notification survives a busy provider error and starts exactly one follow-up loop",
   () =>
     Effect.gen(function* () {
@@ -634,6 +666,19 @@ it.instance(
       expect(JSON.stringify(inputs[1]?.messages)).toContain("result produced during the first response")
       expect((yield* inbox.cursor(chat.id)).consumedSeq).toBe(0)
       expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const synthetic = messages
+        .flatMap((message) => message.parts)
+        .find((part) => part.type === "text" && part.metadata?.sessionInputID === "evt_busy_provider_success")
+      expect(synthetic?.metadata?.sessionInputID).toBe("evt_busy_provider_success")
+      expect(
+        messages.filter(
+          (message) => message.info.role === "assistant" && message.info.parentID === synthetic?.messageID,
+        ),
+      ).toHaveLength(1)
+
+      yield* prompt.loop({ sessionID: chat.id })
+      expect(yield* llm.calls).toBe(2)
     }),
   5_000,
 )
@@ -892,6 +937,53 @@ it.instance(
       expect(synthetic[0]?.type === "text" ? synthetic[0].text : "").toBe("duplicate terminal result")
       expect(yield* inbox.pending(chat.id)).toEqual([])
       expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+    }),
+  5_000,
+)
+
+it.instance(
+  "concurrent inbox drain requests coalesce into one notification response",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const chat = yield* sessions.create({
+        title: "Concurrent inbox drain",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+      yield* user(chat.id, "initial request")
+      yield* inbox.admit({
+        id: "evt_concurrent_drain",
+        sessionID: chat.id,
+        source: "background-task",
+        prompt: {
+          text: "one notification for concurrent drain callers",
+          agent: "build",
+          model: { providerID: ref.providerID, modelID: ref.modelID },
+          metadata: { kind: "background-task-injection", state: "completed" },
+        },
+      })
+      yield* llm.text("one drained response")
+
+      yield* Effect.all([prompt.drain(chat.id), prompt.drain(chat.id), prompt.drain(chat.id)], {
+        concurrency: "unbounded",
+      })
+
+      expect(yield* llm.calls).toBe(1)
+      expect(yield* inbox.pending(chat.id)).toEqual([])
+      expect(yield* inbox.promotedUnacked(chat.id)).toEqual([])
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const syntheticMessage = messages.find((message) =>
+        message.parts.some((part) => part.type === "text" && part.metadata?.sessionInputID === "evt_concurrent_drain"),
+      )
+      expect(syntheticMessage?.info.role).toBe("user")
+      expect(
+        messages.filter(
+          (message) => message.info.role === "assistant" && message.info.parentID === syntheticMessage?.info.id,
+        ),
+      ).toHaveLength(1)
     }),
   5_000,
 )

@@ -8,6 +8,7 @@ export const INJECTION_KINDS = [
   "project-task-injection",
   "background-task-injection",
   "background-shell-injection",
+  "math-worker-event",
 ] as const
 
 export type InjectionKind = (typeof INJECTION_KINDS)[number]
@@ -179,6 +180,14 @@ export function injectionTitleFromParts(parts: TextPart[], t: InjectionTitleTran
     }
   }
 
+  if (kinds.size === 1 && kinds.has("math-worker-event")) {
+    const events = uniqueMetadataStrings(parts, "math-worker-event", "eventKind")
+    const event = events.length === 1 ? events[0] : undefined
+    if (event === "completed") return t("ui.message.injection.mathWorkerCompleted")
+    if (event === "blocked") return t("ui.message.injection.mathWorkerBlocked")
+    return t("ui.message.injection.mathWorkerEvent")
+  }
+
   return t("ui.message.injection.prompt")
 }
 
@@ -187,11 +196,7 @@ export function injectionSummaryFromText(text: string, t: InjectionTitleTranslat
 }
 
 /** Build a text part payload for a scheduled-task run (backend / tests). */
-export function scheduledInjectionPart(input: {
-  text: string
-  taskID: string
-  taskName: string
-}): {
+export function scheduledInjectionPart(input: { text: string; taskID: string; taskName: string }): {
   type: "text"
   text: string
   synthetic: true

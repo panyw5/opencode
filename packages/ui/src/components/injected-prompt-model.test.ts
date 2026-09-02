@@ -26,7 +26,13 @@ function text(part: Partial<TextPart> & Pick<TextPart, "text">): TextPart {
 
 const t = (key: string, params?: Record<string, string | number | boolean>) => {
   if (!params) return key
-  return key + ":" + Object.entries(params).map(([k, v]) => `${k}=${v}`).join(",")
+  return (
+    key +
+    ":" +
+    Object.entries(params)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(",")
+  )
 }
 
 describe("injected-prompt-model", () => {
@@ -57,6 +63,7 @@ describe("injected-prompt-model", () => {
     expect(isInjectionKind("project-task-injection")).toBe(true)
     expect(isInjectionKind("background-task-injection")).toBe(true)
     expect(isInjectionKind("background-shell-injection")).toBe(true)
+    expect(isInjectionKind("math-worker-event")).toBe(true)
     expect(isInjectionKind("command-invocation")).toBe(false)
   })
 
@@ -121,6 +128,22 @@ describe("injected-prompt-model", () => {
         synthetic: true,
       }),
     ])
+    expect(injectionTitleFromParts(parts, t)).toBe(title)
+  })
+
+  test.each([
+    ["completed", "ui.message.injection.mathWorkerCompleted"],
+    ["blocked", "ui.message.injection.mathWorkerBlocked"],
+    ["unknown", "ui.message.injection.mathWorkerEvent"],
+  ])("titles math worker events by status: %s", (eventKind, title) => {
+    const parts = selectInjectionParts([
+      text({
+        text: `<math_worker_event kind="${eventKind}">report</math_worker_event>`,
+        synthetic: true,
+        metadata: { kind: "math-worker-event", eventKind },
+      }),
+    ])
+    expect(parts).toHaveLength(1)
     expect(injectionTitleFromParts(parts, t)).toBe(title)
   })
 
@@ -227,9 +250,7 @@ describe("injected-prompt-model", () => {
         metadata: { kind: "scheduled-injection", taskName: "新闻搜刮" },
       }),
     ])
-    expect(injectionTitleFromParts(parts, t)).toBe(
-      "ui.message.injection.scheduledPrompt:name=新闻搜刮",
-    )
+    expect(injectionTitleFromParts(parts, t)).toBe("ui.message.injection.scheduledPrompt:name=新闻搜刮")
   })
 
   test("falls back title when scheduled task name is missing", () => {
@@ -246,14 +267,12 @@ describe("injected-prompt-model", () => {
   test("titles project-task injections with task name", () => {
     const parts = selectInjectionParts([
       text({
-        text: "<project-task-context mode=\"full\">...",
+        text: '<project-task-context mode="full">...',
         synthetic: true,
         metadata: { kind: "project-task-injection", taskName: "0805", taskID: "ptask_1" },
       }),
     ])
-    expect(injectionTitleFromParts(parts, t)).toBe(
-      "ui.message.injection.projectTaskPrompt:name=0805",
-    )
+    expect(injectionTitleFromParts(parts, t)).toBe("ui.message.injection.projectTaskPrompt:name=0805")
   })
 
   test("join and preview helpers", () => {

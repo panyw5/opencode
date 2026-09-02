@@ -37,6 +37,7 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect, Layer, Option, Schema, Scope } from "effect"
 import { existsSync, readdirSync } from "node:fs"
+import { createHash } from "node:crypto"
 import path from "node:path"
 import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -98,6 +99,37 @@ function errorDetails(error: unknown): Record<string, unknown> {
     name: typeof error,
     message: String(error),
   }
+}
+
+function mathWorkerEventInputID(input: {
+  workerID: SessionID
+  eventID: string
+  kind: "progress" | "completed" | "blocked" | "failed"
+  round: number
+  factID?: string
+  reason?: string
+  generation: number
+  taskFingerprint: string
+}) {
+  const semanticTerminal =
+    (input.kind === "completed" && input.factID !== undefined) ||
+    (input.kind === "blocked" && input.reason !== undefined)
+  const identity = semanticTerminal
+    ? [input.kind, input.round, input.factID ?? "", input.reason ?? ""]
+    : ["event", input.eventID]
+  const digest = createHash("sha256")
+    .update(JSON.stringify([input.workerID, input.generation, input.taskFingerprint, ...identity]))
+    .digest("hex")
+  return `evt_math_worker_${digest}`
+}
+
+function legacyMathWorkerEventInputID(input: {
+  workerID: SessionID
+  eventID: string
+  generation: number
+  taskFingerprint: string
+}) {
+  return `evt_math_worker_${input.workerID}_${input.generation}_${input.taskFingerprint}_${input.eventID}`
 }
 
 function sessionSummary(item: Session.Info | undefined) {
@@ -492,7 +524,63 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         })
         return HttpApiSchema.NoContent.make()
       }
-      const inputID = `evt_math_worker_${ctx.params.workerID}_${ctx.payload.generation}_${ctx.payload.taskFingerprint}_${ctx.payload.eventID}`
+      if (record.lastOutcome === "completed" && ctx.payload.kind !== "completed") {
+        log.info("math worker event ignored after lane completion", {
+          parentSessionID: parent.id,
+          workerSessionID: worker.id,
+          eventID: ctx.payload.eventID,
+          eventKind: ctx.payload.kind,
+          eventRound: ctx.payload.round,
+          generation: ctx.payload.generation,
+        })
+        return HttpApiSchema.NoContent.make()
+      }
+      const inputID = mathWorkerEventInputID({ workerID: ctx.params.workerID, ...ctx.payload })
+      const legacyInputID = legacyMathWorkerEventInputID({ workerID: ctx.params.workerID, ...ctx.payload })
+      const [materialized, legacyMaterialized, pending, promoted] = yield* Effect.all([
+        MessageV2.get({ sessionID: parent.id, messageID: MessageID.ascending(`msg_inbox_${inputID}`) }).pipe(
+          Effect.option,
+        ),
+        MessageV2.get({ sessionID: parent.id, messageID: MessageID.ascending(`msg_inbox_${legacyInputID}`) }).pipe(
+          Effect.option,
+        ),
+        inboxSvc.pending(parent.id),
+        inboxSvc.promotedUnacked(parent.id),
+      ])
+      if (Option.isSome(materialized) || Option.isSome(legacyMaterialized)) {
+        log.info("math worker event ignored after durable materialization", {
+          parentSessionID: parent.id,
+          workerSessionID: worker.id,
+          eventID: ctx.payload.eventID,
+          eventKind: ctx.payload.kind,
+          eventRound: ctx.payload.round,
+          semanticInputID: inputID,
+        })
+        return HttpApiSchema.NoContent.make()
+      }
+      if ([...pending, ...promoted].some((item) => item.id === legacyInputID)) {
+        log.info("math worker legacy event reused for drain", {
+          parentSessionID: parent.id,
+          workerSessionID: worker.id,
+          eventID: ctx.payload.eventID,
+          eventKind: ctx.payload.kind,
+          eventRound: ctx.payload.round,
+        })
+        yield* promptSvc.drain(parent.id).pipe(
+          Effect.catchCause((cause) =>
+            Effect.logError("math worker legacy parent drain failed").pipe(
+              Effect.annotateLogs({
+                parentSessionID: parent.id,
+                workerSessionID: ctx.params.workerID,
+                eventID: ctx.payload.eventID,
+                cause,
+              }),
+            ),
+          ),
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+        return HttpApiSchema.NoContent.make()
+      }
       const fact = ctx.payload.factID ? `\nVerified fact: ${ctx.payload.factID}` : ""
       const reason = ctx.payload.reason ? `\nReason: ${ctx.payload.reason}` : ""
       yield* inboxSvc.admit({
@@ -530,22 +618,19 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           },
         },
       })
-      const pending = yield* inboxSvc.pending(parent.id)
-      if (pending.some((item) => item.id === inputID)) {
-        yield* promptSvc.loop({ sessionID: parent.id }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.logError("math worker parent wake failed").pipe(
-              Effect.annotateLogs({
-                parentSessionID: parent.id,
-                workerSessionID: ctx.params.workerID,
-                eventID: ctx.payload.eventID,
-                cause,
-              }),
-            ),
+      yield* promptSvc.drain(parent.id).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logError("math worker parent drain failed").pipe(
+            Effect.annotateLogs({
+              parentSessionID: parent.id,
+              workerSessionID: ctx.params.workerID,
+              eventID: ctx.payload.eventID,
+              cause,
+            }),
           ),
-          Effect.forkIn(scope, { startImmediately: true }),
-        )
-      }
+        ),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
       return HttpApiSchema.NoContent.make()
     })
 
