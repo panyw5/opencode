@@ -613,7 +613,7 @@ function ScheduledTaskFormDialog(props: {
                     options={agentOptions()}
                     current={state.agent}
                     onSelect={(item) => item && setState("agent", item)}
-                    class="w-full"
+                    class="max-w-full"
                   />
                 </FieldLabel>
                 <FieldLabel label={language.t("scheduled.model")}>
@@ -632,7 +632,7 @@ function ScheduledTaskFormDialog(props: {
                         variant: state.variant && variants.includes(state.variant) ? state.variant : "",
                       })
                     }}
-                    class="w-full"
+                    class="max-w-full"
                   />
                 </FieldLabel>
                 <Show when={variantOptions().length > 1}>
@@ -642,7 +642,7 @@ function ScheduledTaskFormDialog(props: {
                       current={state.variant || "default"}
                       label={(item) => (item === "default" ? language.t("common.default") : item)}
                       onSelect={(item) => item && setState("variant", item === "default" ? "" : item)}
-                      class="w-full"
+                      class="max-w-full"
                     />
                   </FieldLabel>
                 </Show>
@@ -663,7 +663,7 @@ function ScheduledTaskFormDialog(props: {
                       language.t(item === "new_session" ? "scheduled.execution.new" : "scheduled.execution.existing")
                     }
                     onSelect={(item) => item && setState("executionMode", item)}
-                    class="w-full"
+                    class="max-w-full"
                   />
                 </FieldLabel>
                 <FieldLabel label={language.t("scheduled.schedule")}>
@@ -672,7 +672,7 @@ function ScheduledTaskFormDialog(props: {
                     current={state.scheduleKind}
                     label={(item) => language.t(`scheduled.schedule.${item}`)}
                     onSelect={(item) => item && setState("scheduleKind", item)}
-                    class="w-full"
+                    class="max-w-full"
                   />
                 </FieldLabel>
                 <Show when={state.scheduleKind === "at"}>
@@ -742,9 +742,9 @@ function ScheduledTaskFormDialog(props: {
 
 function FieldLabel(props: { label: string; children: JSX.Element }): JSX.Element {
   return (
-    <label>
-      <span class="mb-1 block text-12-medium text-text-weak">{props.label}</span>
-      {props.children}
+    <label class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      <span class="shrink-0 text-12-medium text-text-weak">{props.label}</span>
+      <div class="ml-auto max-w-full">{props.children}</div>
     </label>
   )
 }

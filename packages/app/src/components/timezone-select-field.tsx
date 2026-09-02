@@ -14,15 +14,17 @@ export function TimezoneSelectField(props: {
   })
 
   return (
-    <label class="block min-w-0">
-      <span class="mb-1 block text-12-medium text-text-weak">{props.label}</span>
-      <Select
-        options={options()}
-        current={current()}
-        groupBy={timeZoneGroup}
-        onSelect={(item) => item && props.onChange(item)}
-        class="w-full"
-      />
+    <label class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      <span class="shrink-0 text-12-medium text-text-weak">{props.label}</span>
+      <div class="ml-auto max-w-full">
+        <Select
+          options={options()}
+          current={current()}
+          groupBy={timeZoneGroup}
+          onSelect={(item) => item && props.onChange(item)}
+          class="max-w-full"
+        />
+      </div>
     </label>
   )
 }
