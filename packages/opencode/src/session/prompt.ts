@@ -161,28 +161,39 @@ export const layer = Layer.effect(
     let promoteInbox: (sessionID: SessionID) => Effect.Effect<number> = () => Effect.succeed(0)
     let requestDrain: (sessionID: SessionID) => Effect.Effect<void> = () => Effect.void
 
-    const requireSessionOwner = Effect.fn("SessionPrompt.requireSessionOwner")(function* (
-      sessionID: SessionID,
-      source: string,
-    ) {
+    const sessionOwnerMatch = Effect.fn("SessionPrompt.sessionOwnerMatch")(function* (sessionID: SessionID) {
       const [ctx, session] = yield* Effect.all([
         InstanceState.context,
         sessions.get(sessionID).pipe(Effect.orDie),
       ])
       const ambientDirectory = AppFileSystem.resolve(ctx.directory)
       const ownerDirectory = AppFileSystem.resolve(session.directory)
-      if (ambientDirectory === ownerDirectory) return { ctx, session }
+      return {
+        ctx,
+        session,
+        ambientDirectory,
+        ownerDirectory,
+        owned: ambientDirectory === ownerDirectory,
+      }
+    })
+
+    const requireSessionOwner = Effect.fn("SessionPrompt.requireSessionOwner")(function* (
+      sessionID: SessionID,
+      source: string,
+    ) {
+      const match = yield* sessionOwnerMatch(sessionID)
+      if (match.owned) return { ctx: match.ctx, session: match.session }
       yield* elog.error("session instance ownership mismatch", {
         sessionID,
         source,
-        ambientDirectory,
-        ownerDirectory,
-        ambientProjectID: ctx.project.id,
-        sessionProjectID: session.projectID,
+        ambientDirectory: match.ambientDirectory,
+        ownerDirectory: match.ownerDirectory,
+        ambientProjectID: match.ctx.project.id,
+        sessionProjectID: match.session.projectID,
       })
       return yield* Effect.die(
         new Error(
-          `Session ${sessionID} belongs to ${ownerDirectory}, but ${source} ran in ${ambientDirectory}`,
+          `Session ${sessionID} belongs to ${match.ownerDirectory}, but ${source} ran in ${match.ambientDirectory}`,
         ),
       )
     })
@@ -202,7 +213,27 @@ export const layer = Layer.effect(
       yield* elog.info("cancel runner+jobs done", { sessionID })
       yield* sessions.finalizeOrphanedAssistant(sessionID, { abortSource: "user-cancel" })
       yield* elog.info("cancel finalize done", { sessionID })
+      const match = yield* sessionOwnerMatch(sessionID)
+      yield* elog.info("cancel ownership check", {
+        sessionID,
+        owned: match.owned,
+        ambientDirectory: match.ambientDirectory,
+        ownerDirectory: match.ownerDirectory,
+      })
+      if (!match.owned) {
+        // Math-worker sessions live in problem workspaces while the parent HTTP
+        // API runs in the project root. Abort/finalize is shared-DB work; inbox
+        // drain must stay in the owner instance or it dies as a 500 after stop.
+        yield* elog.info("cancel skip inbox drain for non-owner instance", {
+          sessionID,
+          ambientDirectory: match.ambientDirectory,
+          ownerDirectory: match.ownerDirectory,
+        })
+        return
+      }
+      yield* elog.info("cancel inbox drain start", { sessionID })
       yield* requestDrain(sessionID)
+      yield* elog.info("cancel inbox drain finish", { sessionID })
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {

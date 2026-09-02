@@ -119,9 +119,19 @@ async function request<T>(input: {
     )
   }
   const run = input.platform.fetch ?? fetch
-  const response = await run(endpoint(input.sdk, input.path), { ...input.init, headers })
+  const url = endpoint(input.sdk, input.path)
+  const method = input.init?.method ?? "GET"
+  console.debug(`[math-worker-api] request start method=${method} path=${input.path}`)
+  const response = await run(url, { ...input.init, headers })
   const raw = await response.text()
-  if (!response.ok) throw new Error(`Math worker request failed (${response.status})`)
+  if (!response.ok) {
+    const snippet = raw.replace(/\s+/g, " ").slice(0, 300)
+    console.error(
+      `[math-worker-api] request failed method=${method} path=${input.path} status=${response.status} body=${snippet}`,
+    )
+    throw new Error(`Math worker request failed (${response.status})`)
+  }
+  console.debug(`[math-worker-api] request finish method=${method} path=${input.path} status=${response.status}`)
   if ((response.headers.get("content-type") ?? "").includes("text/html") || /^\s*</.test(raw)) {
     throw new Error("Math worker API is unavailable on this server")
   }

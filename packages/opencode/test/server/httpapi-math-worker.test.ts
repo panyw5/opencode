@@ -5,6 +5,8 @@ import path from "node:path"
 import { Effect, Layer } from "effect"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { InstanceBootstrap as InstanceBootstrapService } from "@/project/bootstrap-service"
+import { InstanceRef } from "@/effect/instance-ref"
+import { InstanceState } from "@/effect/instance-state"
 import { InstanceStore } from "@/project/instance-store"
 import { Project } from "@/project/project"
 import { Server } from "@/server/server"
@@ -558,6 +560,104 @@ describe("Math worker HttpApi", () => {
           ),
         )
         expect(earlyReEnable.status).toBe(400)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "stops a worker whose session directory is the problem workspace",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessions = yield* Session.Service
+        const ctx = yield* InstanceState.context
+        const parent = yield* sessions.create({ title: "math", agent: "math-orchestrator" })
+        const projectDir = mathRoot(test.directory, "problem-workspace")
+        yield* Effect.promise(() => mkdir(layout(projectDir).tasks, { recursive: true }))
+        const worker = yield* sessions
+          .create({ title: "lemma", agent: "math-worker", parentID: parent.id })
+          .pipe(Effect.provideService(InstanceRef, { ...ctx, directory: projectDir }))
+        expect(worker.directory).toBe(projectDir)
+        yield* Effect.promise(() => writeFile(taskPath(projectDir, worker.id), "# lemma\n", "utf8"))
+        const process = spawnDetached({
+          argv: ["/bin/sleep", "30"],
+          cwd: test.directory,
+          logFile: path.join(layout(projectDir).logs, "http-stop-ownership.log"),
+        })
+        yield* Effect.addFinalizer(() =>
+          Effect.sync(() => {
+            if (!pidAlive(process.pid)) return
+            try {
+              killProcessGroup(process.pid, "SIGKILL")
+            } catch {
+              // The stop endpoint may have reaped the process between the liveness check and cleanup.
+            }
+          }),
+        )
+        writeSwarm(projectDir, {
+          projectDir,
+          parentSessionID: parent.id,
+          workers: {
+            [worker.id]: {
+              sessionID: worker.id,
+              parentSessionID: parent.id,
+              pid: process.pid,
+              state: "running",
+              startedAt: Date.now(),
+              logFile: path.join(layout(projectDir).logs, `worker-${worker.id}.log`),
+              taskFile: taskPath(projectDir, worker.id),
+              round: 1,
+            },
+          },
+        })
+
+        const user = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: worker.id,
+          role: "user",
+          time: { created: Date.now() },
+          agent: "math-worker",
+          model: { providerID: ProviderID.make("test"), modelID: ModelID.make("test-model") },
+        })
+        yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          sessionID: worker.id,
+          parentID: user.id,
+          role: "assistant",
+          mode: "math-worker",
+          agent: "math-worker",
+          path: { cwd: projectDir, root: projectDir },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: ModelID.make("test-model"),
+          providerID: ProviderID.make("test"),
+          time: { created: Date.now() },
+        } satisfies MessageV2.Assistant)
+
+        const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
+        const stopResponse = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathWorkerStop, { sessionID: parent.id, workerID: worker.id })}?project=problem-workspace`,
+            { headers, method: "POST", body: JSON.stringify({ force: false }) },
+          ),
+        )
+        expect(stopResponse.status).toBe(200)
+        expect(yield* Effect.promise(() => body(stopResponse))).toMatchObject({
+          sessionID: worker.id,
+          state: "stopping",
+        })
+        const stoppedMessages = yield* sessions.messages({ sessionID: worker.id })
+        const stoppedAssistant = stoppedMessages.findLast((message) => message.info.role === "assistant")
+        expect(stoppedAssistant?.info.role).toBe("assistant")
+        if (stoppedAssistant?.info.role === "assistant") {
+          expect(stoppedAssistant.info.time.completed).toBeNumber()
+          expect(stoppedAssistant.info.error?.name).toBe("MessageAbortedError")
+        }
+        yield* pollWithTimeout(
+          Effect.sync(() => (processStopped(process.pid) ? true : undefined)),
+          "stop endpoint did not terminate the detached worker process group",
+          "3 seconds",
+        )
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

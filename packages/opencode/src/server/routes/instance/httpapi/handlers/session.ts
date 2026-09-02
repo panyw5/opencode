@@ -425,11 +425,29 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       log.info("math worker stop transcript cancel start", {
         parentSessionID: parent.id,
         workerSessionID: result.sessionID,
+        projectDir,
+        alive: result.alive,
+        state: result.state,
       })
-      yield* promptSvc.cancel(ctx.params.workerID)
+      yield* promptSvc.cancel(ctx.params.workerID).pipe(
+        Effect.catchCause((cause) =>
+          Effect.sync(() => {
+            log.warn("math worker stop transcript cancel failed", {
+              parentSessionID: parent.id,
+              workerSessionID: result.sessionID,
+              projectDir,
+              alive: result.alive,
+              state: result.state,
+              cause: Cause.pretty(cause),
+            })
+          }),
+        ),
+      )
       log.info("math worker stop transcript cancel finish", {
         parentSessionID: parent.id,
         workerSessionID: result.sessionID,
+        alive: result.alive,
+        state: result.state,
       })
       yield* bus.publish(MathWorkerEvent.Status, {
         sessionID: result.sessionID,

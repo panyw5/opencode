@@ -487,6 +487,32 @@ noLLMServer.instance("refuses to run a session from a different instance directo
   }),
 )
 
+noLLMServer.instance("cancel succeeds for a session owned by another instance directory", () =>
+  Effect.gen(function* () {
+    const prompt = yield* SessionPrompt.Service
+    const sessions = yield* Session.Service
+    const chat = yield* sessions.create({ title: "Cross-instance cancel" })
+    const seeded = yield* seed(chat.id)
+    Database.use((db) =>
+      db
+        .update(SessionTable)
+        .set({ directory: "/tmp/different-instance" })
+        .where(Database.eq(SessionTable.id, chat.id))
+        .run(),
+    )
+
+    yield* prompt.cancel(chat.id)
+
+    const messages = yield* sessions.messages({ sessionID: chat.id })
+    const assistant = messages.find((message) => message.info.id === seeded.assistant.id)
+    expect(assistant?.info.role).toBe("assistant")
+    if (assistant?.info.role === "assistant") {
+      expect(assistant.info.time.completed).toBeNumber()
+      expect(assistant.info.error?.name).toBe("MessageAbortedError")
+    }
+  }),
+)
+
 noLLMServer.instance(
   "loop exits immediately when last assistant has stop finish",
   () =>
