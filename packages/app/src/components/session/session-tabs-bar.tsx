@@ -27,6 +27,7 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 
 import {
   cycleSessionBarIndex,
+  promotedSessionBarDraft,
   sessionBarKey,
   useLayout,
   visibleSessionBarDrafts,
@@ -152,7 +153,22 @@ export function SessionTabsBar() {
     if (params.id) return ""
     return routeDir()
   })
-  const visibleDrafts = createMemo(() => visibleSessionBarDrafts(drafts(), draftDirectory()))
+  const promotedDraft = createMemo(() =>
+    promotedSessionBarDraft({
+      current: draftDirectory(),
+      routeSlug: params.dir,
+      tabs: tabs(),
+      handoff: layout.handoff.tabs(),
+    }),
+  )
+  createEffect(
+    on(promotedDraft, (directory, previous) => {
+      if (!directory || directory === previous) return
+      const pending = layout.handoff.tabs()
+      console.debug(`[session-bar] suppress promoted draft directory=${directory} sessionID=${pending?.id ?? "unknown"}`)
+    }),
+  )
+  const visibleDrafts = createMemo(() => visibleSessionBarDrafts(drafts(), draftDirectory(), promotedDraft()))
   const shown = createMemo(() => {
     if (!settings.general.sessionTabsBar()) return false
     return tabs().length > 0 || visibleDrafts().length > 0

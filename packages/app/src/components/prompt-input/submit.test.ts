@@ -27,6 +27,7 @@ const abortedSessions: Array<{ directory: string; sessionID: string }> = []
 const syncedDirectories: string[] = []
 const messagePages: Record<string, Array<{ info: { id: string } }>> = {}
 const syncEvents: string[] = []
+const sessionTabEvents: string[] = []
 
 let params: { id?: string } = {}
 let current = "/repo/worktree-a"
@@ -133,7 +134,17 @@ beforeAll(async () => {
   mock.module("@/context/layout", () => ({
     useLayout: () => ({
       handoff: {
-        setTabs: () => undefined,
+        setTabs: (directory: string, sessionID: string, sourceDir?: string) => {
+          sessionTabEvents.push(`handoff:${directory}:${sessionID}:${sourceDir ?? ""}`)
+        },
+      },
+    }),
+  }))
+
+  mock.module("@/context/session-tabs", () => ({
+    useSessionTabs: () => ({
+      promoteDraft: (tab: { directory: string; id: string }, draftDirectory: string) => {
+        sessionTabEvents.push(`promote:${tab.directory}:${tab.id}:${draftDirectory}`)
       },
     }),
   }))
@@ -251,6 +262,7 @@ beforeEach(() => {
   abortedSessions.length = 0
   syncedDirectories.length = 0
   syncEvents.length = 0
+  sessionTabEvents.length = 0
   toasts.length = 0
   current = "/repo/worktree-a"
   root = "/repo/main"
@@ -293,6 +305,10 @@ describe("prompt submit worktree selection", () => {
     expect(createdSessions).toEqual(["/repo/main"])
     expect(sentShell).toEqual(["/repo/main"])
     expect(promoted).toEqual([{ directory: "/repo/main", sessionID: "session-1" }])
+    expect(sessionTabEvents).toEqual([
+      "handoff:/repo/main:session-1:/repo/worktree-a",
+      "promote:/repo/main:session-1:/repo/worktree-a",
+    ])
   })
 
   test("keeps GenericAgent sessions on the extra-agent directory and sends selected cwd", async () => {

@@ -145,6 +145,20 @@ export function visibleSessionBarDrafts(stored: readonly string[], current: stri
   return [...drafts, current]
 }
 
+export function promotedSessionBarDraft(input: {
+  current: string
+  routeSlug?: string
+  tabs: readonly SessionBarTab[]
+  handoff?: { id: string; sourceDir?: string; at: number }
+  now?: number
+}) {
+  const handoff = input.handoff
+  if (!input.current || !handoff?.sourceDir || handoff.sourceDir !== input.routeSlug) return ""
+  if ((input.now ?? Date.now()) - handoff.at > 60_000) return ""
+  if (!input.tabs.some((tab) => tab.id === handoff.id)) return ""
+  return input.current
+}
+
 export function cycleSessionBarIndex(length: number, activeIndex: number, delta: number) {
   if (length <= 0) return -1
   if (activeIndex < 0) return delta > 0 ? 0 : length - 1
@@ -164,6 +178,7 @@ type TabHandoff = {
   dir: string
   id: string
   at: number
+  sourceDir?: string
 }
 
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
@@ -817,8 +832,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       ready,
       handoff: {
         tabs: createMemo(() => store.handoff?.tabs),
-        setTabs(dir: string, id: string) {
-          setStore("handoff", "tabs", { dir, id, at: Date.now() })
+        setTabs(dir: string, id: string, sourceDir?: string) {
+          setStore("handoff", "tabs", { dir, id, sourceDir, at: Date.now() })
         },
         clearTabs() {
           if (!store.handoff?.tabs) return

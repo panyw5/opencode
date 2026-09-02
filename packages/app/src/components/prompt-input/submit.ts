@@ -704,11 +704,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         session = created
         if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
         local.session.promote(sessionDirectory, session.id)
+        const sessionID = session.id
         console.debug(
-          `[session-bar] draft promote directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${session.id}`,
+          `[session-bar] draft promotion start directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
         )
-        sessionTabs.promoteDraft({ directory: sessionDirectory, id: session.id }, currentDirectory)
-        layout.handoff.setTabs(base64Encode(sessionDirectory), session.id)
+        batch(() => {
+          layout.handoff.setTabs(base64Encode(sessionDirectory), sessionID, base64Encode(currentDirectory))
+          sessionTabs.promoteDraft({ directory: sessionDirectory, id: sessionID }, currentDirectory)
+        })
+        console.debug(
+          `[session-bar] draft promotion committed directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
+        )
 
         // Apply project-task selection made on the new-session screen before navigate.
         // Pending is keyed by the UI directory (sdk.directory), which may differ from
