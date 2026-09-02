@@ -40,15 +40,32 @@ jobs:
             VERSION="${BASE}-${TAG:-dev}.${GITHUB_RUN_NUMBER}"
           fi
           bun ./script/sync-version.ts "$VERSION"
+          echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Build Desktop App
         run: |
           cd packages/desktop
           bun run package:mac
-          VERSION="${APP_VERSION#v}"
           DMG="$(find dist -maxdepth 1 -name '*.dmg' -type f | head -n 1)"
           test -n "$DMG"
-          mv "$DMG" "dist/OpenCode_${VERSION}_x64.dmg"
+          mv "$DMG" "dist/OpenCode_${OPENCODE_VERSION}_x64.dmg"
+      - name: Verify packaged versions
+        run: |
+          cd packages/desktop
+          APP_PATH=""
+          for CANDIDATE in dist/mac*/OpenCode.app; do
+            if [ -d "$CANDIDATE" ]; then
+              APP_PATH="$CANDIDATE"
+              break
+            fi
+          done
+          test -n "$APP_PATH"
+          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          SIDECAR_VERSION="$("$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}" --version)"
+          printf 'expected=%s app=%s sidecar=%s\n' "$OPENCODE_VERSION" "$APP_VERSION" "$SIDECAR_VERSION"
+          test "$APP_VERSION" = "$OPENCODE_VERSION"
+          test "$SIDECAR_VERSION" = "$OPENCODE_VERSION"
+
       - name: Upload macOS x64 DMG
         uses: actions/upload-artifact@v4
         with:
@@ -94,15 +111,32 @@ jobs:
             VERSION="${BASE}-${TAG:-dev}.${GITHUB_RUN_NUMBER}"
           fi
           bun ./script/sync-version.ts "$VERSION"
+          echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Build Desktop App
         run: |
           cd packages/desktop
           bun run package:mac
-          VERSION="${APP_VERSION#v}"
           DMG="$(find dist -maxdepth 1 -name '*.dmg' -type f | head -n 1)"
           test -n "$DMG"
-          mv "$DMG" "dist/OpenCode_${VERSION}_aarch64.dmg"
+          mv "$DMG" "dist/OpenCode_${OPENCODE_VERSION}_aarch64.dmg"
+
+      - name: Verify packaged versions
+        run: |
+          cd packages/desktop
+          APP_PATH=""
+          for CANDIDATE in dist/mac*/OpenCode.app; do
+            if [ -d "$CANDIDATE" ]; then
+              APP_PATH="$CANDIDATE"
+              break
+            fi
+          done
+          test -n "$APP_PATH"
+          APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          SIDECAR_VERSION="$("$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}" --version)"
+          printf 'expected=%s app=%s sidecar=%s\n' "$OPENCODE_VERSION" "$APP_VERSION" "$SIDECAR_VERSION"
+          test "$APP_VERSION" = "$OPENCODE_VERSION"
+          test "$SIDECAR_VERSION" = "$OPENCODE_VERSION"
 
       - name: Upload macOS arm64 DMG
         uses: actions/upload-artifact@v4
