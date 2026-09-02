@@ -66,6 +66,7 @@ import { patchFiles } from "./apply-patch-file"
 import { text as diffText } from "./session-diff"
 import { skillText } from "./message-skill"
 import { hasVisibleText } from "./message-part-text"
+import { isDismissedQuestion } from "./message-question"
 import { InjectedPromptFromParts } from "./injected-prompt"
 import { hookName, isCustomHookTool, normalizeTool } from "./tool-meta"
 export { normalizeTool } from "./tool-meta"
@@ -1685,7 +1686,6 @@ function ToolFileAccordion(props: { path: string; actions?: JSX.Element; childre
 
 PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const data = useData()
-  const i18n = useI18n()
   const loc = useLocation()
   const part = () => props.part as ToolPart
   const tool = toolName(part())
@@ -1703,6 +1703,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
     handoffVersion()
     return tool === "question" ? questionHandoffForPart(part()) : undefined
   })
+  const dismissedQuestion = createMemo(() => isDismissedQuestion(part()))
 
   const emptyMetadata: Record<string, any> = {}
 
@@ -1745,20 +1746,10 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
         data-question-handoff={questionHandoff() ? "answer" : undefined}
       >
         <Switch>
-          <Match when={part().state.status === "error"}>
+          <Match when={part().state.status === "error" && !dismissedQuestion()}>
             {(() => {
               const state = part().state
               if (state.status !== "error") return null
-              const cleaned = state.error.replace("Error: ", "")
-              if (tool === "question" && cleaned.includes("dismissed this question")) {
-                return (
-                  <div style="width: 100%; display: flex; justify-content: flex-end;">
-                    <span class="text-13-regular text-text-weak cursor-default">
-                      {i18n.t("ui.messagePart.questions.dismissed")}
-                    </span>
-                  </div>
-                )
-              }
               return (
                 <ToolErrorCard
                   tool={part().tool}
@@ -3323,10 +3314,12 @@ ToolRegistry.register({
     const optimistic = createMemo(() => metadataAnswers().length === 0 && handoffAnswers().length > 0)
     const answers = createMemo(() => (metadataAnswers().length > 0 ? metadataAnswers() : handoffAnswers()))
     const completed = createMemo(() => answers().length > 0)
+    const dismissed = createMemo(() => !!props.part && isDismissedQuestion(props.part))
 
     const subtitle = createMemo(() => {
       const count = questions().length
       if (count === 0) return ""
+      if (dismissed()) return i18n.t("ui.messagePart.questions.dismissed")
       if (completed()) return i18n.t("ui.question.subtitle.answered", { count })
       return `${count} ${i18n.t(count > 1 ? "ui.common.question.other" : "ui.common.question.one")}`
     })
@@ -3334,7 +3327,8 @@ ToolRegistry.register({
     return (
       <BasicTool
         {...props}
-        hasDetails={completed()}
+        hasDetails={completed() || dismissed()}
+        defaultOpen={dismissed() ? false : props.defaultOpen}
         showPendingDetails={optimistic()}
         showPendingMeta={optimistic()}
         icon="bubble-5"
@@ -3344,7 +3338,7 @@ ToolRegistry.register({
           subtitle: subtitle(),
         }}
       >
-        <Show when={completed()}>
+        <Show when={completed() || dismissed()}>
           <div data-component="question-answers">
             <For each={questions()}>
               {(q, i) => {

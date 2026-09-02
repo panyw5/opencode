@@ -13,6 +13,7 @@ import {
 } from "./message-task-session"
 import { skillText } from "./message-skill"
 import { activeStreamingAssistantMessageID, hold, streamsplit } from "./message-part-stream"
+import { isDismissedQuestion } from "./message-question"
 
 function text(part: Partial<TextPart> = {}): TextPart {
   return {
@@ -142,6 +143,32 @@ describe("message-part reasoningPartStreaming", () => {
 
   test("treats incomplete reasoning as stopped once the assistant completes", () => {
     expect(reasoningPartStreaming(reasoning(), assistant(3))).toBe(false)
+  })
+})
+
+describe("message-part isDismissedQuestion", () => {
+  test("recognizes dismissed question tool errors", () => {
+    expect(
+      isDismissedQuestion({
+        tool: "question",
+        state: { status: "error", error: "Error: The user dismissed this question" },
+      }),
+    ).toBe(true)
+  })
+
+  test("does not treat other tool errors as dismissed questions", () => {
+    expect(
+      isDismissedQuestion({
+        tool: "bash",
+        state: { status: "error", error: "The user dismissed this question" },
+      }),
+    ).toBe(false)
+    expect(
+      isDismissedQuestion({
+        tool: "question",
+        state: { status: "error", error: "Network unavailable" },
+      }),
+    ).toBe(false)
   })
 })
 
