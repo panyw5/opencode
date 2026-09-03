@@ -13,12 +13,14 @@ import { Deferred, Effect, Layer, Scope } from "effect"
 import * as Stream from "effect/Stream"
 import { HttpClient, HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { mkdir } from "node:fs/promises"
 import { registerAdapter } from "../../src/control-plane/adapters"
 import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { InstanceRef, WorkspaceRef } from "../../src/effect/instance-ref"
 import { InstanceLayer } from "../../src/project/instance-layer"
+import { LocationLifecycle } from "../../src/project/location-lifecycle"
 import { Project } from "../../src/project/project"
 import { instanceRouterMiddleware } from "../../src/server/routes/instance/httpapi/middleware/instance-context"
 import { workspaceRouterMiddleware } from "../../src/server/routes/instance/httpapi/middleware/workspace-routing"
@@ -47,6 +49,9 @@ const it = testEffect(
     NodeHttpServer.layerTest,
     NodeServices.layer,
     InstanceLayer.layer,
+    // Same InstanceLayer reference so the lifecycle gate shares this build's
+    // InstanceStore through the memo map.
+    LocationLifecycle.layer.pipe(Layer.provide(InstanceLayer.layer), Layer.provide(AppFileSystem.defaultLayer)),
     Project.defaultLayer,
     workspaceLayer,
   ),

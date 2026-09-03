@@ -3,7 +3,8 @@ import { describe, expect } from "bun:test"
 import { Effect, Fiber, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
-import { mkdir } from "node:fs/promises"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
+import { mkdir, rm } from "node:fs/promises"
 import path from "node:path"
 import { registerAdapter } from "../../src/control-plane/adapters"
 import { WorkspaceID } from "../../src/control-plane/schema"
@@ -11,6 +12,7 @@ import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { InstanceRef, WorkspaceRef } from "../../src/effect/instance-ref"
 import { InstanceLayer } from "../../src/project/instance-layer"
+import { LocationLifecycle } from "../../src/project/location-lifecycle"
 import { Project } from "../../src/project/project"
 import { disposeMiddleware, markInstanceForDisposal } from "../../src/server/routes/instance/httpapi/lifecycle"
 import { instanceRouterMiddleware } from "../../src/server/routes/instance/httpapi/middleware/instance-context"
@@ -42,6 +44,9 @@ const it = testEffect(
     NodeHttpServer.layerTest,
     NodeServices.layer,
     InstanceLayer.layer,
+    // Same InstanceLayer reference so the lifecycle gate shares this build's
+    // InstanceStore through the memo map.
+    LocationLifecycle.layer.pipe(Layer.provide(InstanceLayer.layer), Layer.provide(AppFileSystem.defaultLayer)),
     Project.defaultLayer,
     workspaceLayer,
   ),
@@ -133,15 +138,36 @@ describe("HttpApi instance context middleware", () => {
     }),
   )
 
+  it.live("rejects a routed directory that does not exist with 404", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const missing = path.join(dir, "missing")
+      yield* serveProbe()
+
+      const response = yield* HttpClient.get(`/probe?directory=${encodeURIComponent(missing)}`)
+
+      expect(response.status).toBe(404)
+      expect(yield* response.json).toMatchObject({ name: "DirectoryNotFound" })
+    }),
+  )
+
   it.live("falls back to the raw directory when URI decoding fails", () =>
     Effect.gen(function* () {
+      // The lifecycle gate now rejects directories that do not exist on disk,
+      // so the undecodable raw path must actually exist to observe the decode
+      // fallback instead of a 404.
+      const raw = path.join(process.cwd(), "%E0%A4%A")
+      yield* Effect.acquireRelease(
+        Effect.promise(() => mkdir(raw, { recursive: true })),
+        () => Effect.promise(() => rm(raw, { recursive: true, force: true })),
+      )
       yield* serveProbe()
 
       const response = yield* HttpClient.get("/probe?directory=%25E0%25A4%25A")
 
       expect(response.status).toBe(200)
       expect(yield* response.json).toMatchObject({
-        directory: path.join(process.cwd(), "%E0%A4%A"),
+        directory: raw,
       })
     }),
   )

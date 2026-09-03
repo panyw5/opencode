@@ -29,6 +29,7 @@ import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
 import { Installation } from "@/installation"
 import { InstanceLayer } from "@/project/instance-layer"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { Plugin } from "@/plugin"
 import { Project } from "@/project/project"
 import { ProviderAuth } from "@/provider/auth"
@@ -248,6 +249,9 @@ export function createRoutes(
       Worktree.appLayer,
       Bus.layer,
       AppFileSystem.defaultLayer,
+      // InstanceStore is supplied by InstanceLayer below; AppFileSystem is
+      // provided here so the lifecycle gate shares this build's instance.
+      LocationLifecycle.layer.pipe(Layer.provide(AppFileSystem.defaultLayer)),
       FetchHttpClient.layer,
       HttpServer.layerServices,
     ]),
