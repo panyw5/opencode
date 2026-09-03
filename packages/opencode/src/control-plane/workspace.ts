@@ -29,6 +29,7 @@ import { errorData } from "@/util/error"
 import { waitEvent } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
 import { Vcs } from "@/project/vcs"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { WorkspaceAdapterRuntime } from "./workspace-adapter-runtime"
@@ -583,7 +584,8 @@ export const layer = Layer.effect(
       if (target.type === "local") {
         const available = yield* fs.isDir(target.directory).pipe(Effect.catch(() => Effect.succeed(false)))
         const instance = available
-          ? yield* instances.load({ directory: target.directory }).pipe(
+          ? yield* LocationLifecycle.load({ directory: target.directory, purpose: "http-request" }).pipe(
+              Effect.provideService(InstanceStore.Service, instances),
               Effect.catchCause((cause) =>
                 Effect.sync(() => {
                   log.warn("workspace location resolution failed", {

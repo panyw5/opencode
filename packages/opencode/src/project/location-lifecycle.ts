@@ -5,6 +5,7 @@ import { Identifier } from "@/id/id"
 import { errorMessage } from "@/util/error"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Context, Duration, Effect, Exit, Fiber, Layer, Schema, Scope, SynchronizedRef } from "effect"
+import { type InstanceContext } from "./instance-context"
 import { InstanceStore } from "./instance-store"
 import * as ProjectLocation from "./location"
 import type { LocationID } from "./schema"
@@ -132,6 +133,30 @@ export const lease = <A, E, R>(
             // catchIf with a refinement keeps the generic handler error E
             // intact, which catchTags cannot express here.
             .pipe(Effect.catchIf(isAdmissionError, (error) => Effect.die(error))),
+    ),
+  )
+
+/**
+ * Load an instance through the lifecycle admission gate, returning the
+ * `InstanceContext`. When the lifecycle service is absent (bare tests, CLI),
+ * falls back to a direct `InstanceStore.load`.
+ *
+ * The lease is released after the context is returned, so this is suited for
+ * one-shot resolution (workspace metadata, CLI bootstrap), not long-running
+ * operations — use `lease` for those.
+ */
+export const load = (
+  input: { directory: string; purpose: AdmissionPurpose },
+): Effect.Effect<InstanceContext, AdmissionError, InstanceStore.Service> =>
+  Effect.serviceOption(Service).pipe(
+    Effect.flatMap((service) =>
+      service._tag === "None"
+        ? InstanceStore.Service.pipe(Effect.flatMap((store) => store.load({ directory: input.directory })))
+        : service.value.provide(input, Effect.gen(function* () {
+            const ctx = yield* InstanceRef
+            if (!ctx) return yield* Effect.die(new Error("InstanceRef not provided by lifecycle provide"))
+            return ctx
+          })),
     ),
   )
 

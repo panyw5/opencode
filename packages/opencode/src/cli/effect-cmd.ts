@@ -1,8 +1,7 @@
 import type { Argv } from "yargs"
 import { Effect, Schema } from "effect"
 import { AppRuntime, NoInstanceRuntime, type AppServices, type NoInstanceServices } from "@/effect/app-runtime"
-import { InstanceStore } from "@/project/instance-store"
-import { InstanceRef } from "@/effect/instance-ref"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { cmd, type WithDoubleDash } from "./cmd/cmd"
 
 /**
@@ -58,10 +57,8 @@ type EffectCmdOpts<Args, A, R> = EffectCmdBase<Args> & {
  * Effect-native CLI command builder. Wraps yargs `cmd()` so the handler body is
  * an `Effect` with `InstanceRef` provided and any `AppServices` yieldable.
  *
- * The handler is wrapped in `Effect.ensuring(store.dispose(ctx))` so the loaded
- * InstanceContext is disposed (runDisposers + IPC `server.instance.disposed`)
- * on every Exit — success, typed failure, defect, or interruption. Matches the
- * legacy `bootstrap()` finally-disposal semantics without per-handler boilerplate.
+ * The handler is wrapped in `LocationLifecycle.provide` which handles
+ * admission, instance loading, lease lifecycle, and idle disposal.
  *
  * Errors propagate to the existing top-level handler in `src/index.ts`; use
  * `fail("...")` for user-visible domain failures (clean exit, formatted message).
@@ -82,11 +79,11 @@ export function effectCmd<Args, A>(
     instance?: true | ((args: Args) => boolean)
     handler: (
       args: WithDoubleDash<Args>,
-    ) => Effect.Effect<A, CliError, AppServices | NoInstanceServices | InstanceStore.Service>
+    ) => Effect.Effect<A, CliError, AppServices | NoInstanceServices>
   },
 ): ReturnType<typeof cmd<{}, Args>>
 export function effectCmd<Args, A>(
-  opts: EffectCmdOpts<Args, A, AppServices | NoInstanceServices | InstanceStore.Service>,
+  opts: EffectCmdOpts<Args, A, AppServices | NoInstanceServices>,
 ) {
   return (
   cmd<{}, Args>({
@@ -103,14 +100,14 @@ export function effectCmd<Args, A>(
         return
       }
       const directory = opts.directory?.(args) ?? process.cwd()
-      const { store, ctx } = await AppRuntime.runPromise(
-        InstanceStore.Service.use((store) => store.load({ directory }).pipe(Effect.map((ctx) => ({ store, ctx })))),
+      await AppRuntime.runPromise(
+        LocationLifecycle.Service.use((lifecycle) =>
+          lifecycle.provide(
+            { directory, purpose: "http-request" },
+            opts.handler(args),
+          ),
+        ),
       )
-      try {
-        await AppRuntime.runPromise(opts.handler(args).pipe(Effect.provideService(InstanceRef, ctx)))
-      } finally {
-        await AppRuntime.runPromise(store.dispose(ctx))
-      }
     },
   })
   )
