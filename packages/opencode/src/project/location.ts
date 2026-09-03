@@ -165,7 +165,12 @@ export function markAvailable(input: { directory: string }): Info | undefined {
         delete_operation_id: null,
         time_updated: now,
       })
-      .where(directorySqlEq(ProjectLocationTable.canonical_directory, input.directory))
+      .where(
+        and(
+          directorySqlEq(ProjectLocationTable.canonical_directory, input.directory),
+          eq(ProjectLocationTable.lifecycle_state, "unavailable"),
+        ),
+      )
       .returning()
       .get(),
   )

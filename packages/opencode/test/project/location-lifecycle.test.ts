@@ -2,10 +2,14 @@ import { describe, expect } from "bun:test"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { InstanceRef } from "../../src/effect/instance-ref"
+import { registerDisposer } from "../../src/effect/instance-registry"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import * as ProjectLocation from "../../src/project/location"
 import { LocationLifecycle } from "../../src/project/location-lifecycle"
+import { ProjectLocationTable } from "../../src/project/location.sql"
 import type { LocationID } from "../../src/project/schema"
+import { Database } from "../../src/storage/db"
+import { eq } from "drizzle-orm"
 import { tmpdirScoped } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
@@ -438,6 +442,90 @@ describe("LocationLifecycle", () => {
       } finally {
         LocationLifecycle.config.idleDisposalMs = original
       }
+    }),
+  )
+
+  it.live("delete disposes runtime before calling filesystem adapter", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const lifecycle = yield* LocationLifecycle.Service
+
+      yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void)
+
+      const order: string[] = []
+      const unregister = registerDisposer(async (d: string) => {
+        if (d === dir) order.push("dispose")
+      })
+
+      try {
+        yield* lifecycle.delete({
+          directory: dir,
+          removeFileSystem: Effect.sync(() => {
+            order.push("fs")
+          }),
+        })
+        // dispose must happen before fs adapter
+        expect(order).toEqual(["dispose", "fs"])
+      } finally {
+        unregister()
+      }
+    }),
+  )
+
+  it.live("unavailable location can recover to available", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const lifecycle = yield* LocationLifecycle.Service
+
+      // Load the instance to create the location row
+      yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void)
+
+      // Directly set lifecycle_state=unavailable in DB
+      yield* Effect.sync(() =>
+        Database.use((db) =>
+          db
+            .update(ProjectLocationTable)
+            .set({ lifecycle_state: "unavailable" })
+            .where(eq(ProjectLocationTable.canonical_directory, dir))
+            .run(),
+        ),
+      )
+
+      // Admission should be rejected with LocationUnavailable
+      const error = yield* lifecycle
+        .provide({ directory: dir, purpose: "http-request" }, Effect.void)
+        .pipe(Effect.flip)
+      expect(error).toBeInstanceOf(LocationLifecycle.LocationUnavailable)
+
+      // Recover: mark available
+      yield* Effect.sync(() => ProjectLocation.markAvailable({ directory: dir }))
+
+      // Admission should now succeed
+      yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void)
+    }),
+  )
+
+  it.live("deleted location cannot implicitly recover", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const lifecycle = yield* LocationLifecycle.Service
+
+      yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void)
+      yield* lifecycle.delete({ directory: dir })
+
+      // markAvailable should NOT recover a deleted location (only unavailable)
+      const recovered = yield* Effect.sync(() => ProjectLocation.markAvailable({ directory: dir }))
+      expect(recovered).toBeUndefined()
+
+      // DB state should still be deleted
+      const row = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(dir))
+      expect(row?.lifecycle.state).toBe("deleted")
+
+      // Admission should still be blocked
+      const error = yield* lifecycle
+        .provide({ directory: dir, purpose: "http-request" }, Effect.void)
+        .pipe(Effect.flip)
+      expect(error).toBeInstanceOf(LocationLifecycle.LocationDeleted)
     }),
   )
 })

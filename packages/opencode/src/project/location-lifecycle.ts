@@ -234,18 +234,30 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
           const entry = yield* entryFor(directory)
 
           // Sync lifecycle state with DB: the DB might have been modified
-          // externally (e.g. a crashed delete, or direct markDeleting).
+          // externally (e.g. a crashed delete, markDeleting, or markAvailable
+          // recovery). Always check and update if they differ.
           const dbRow = ProjectLocation.getByCanonicalDirectory(directory)
-          if (dbRow && dbRow.lifecycle.state !== "available") {
-            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
-              undefined,
-              {
-                ...state,
-                lifecycle: dbRow.lifecycle.state,
-                generation: dbRow.lifecycle.generation,
-                locationID: dbRow.id,
+          if (dbRow) {
+            yield* SynchronizedRef.modify(
+              entry.ref,
+              (state): readonly [void, EntryState] => {
+                if (
+                  state.lifecycle === dbRow.lifecycle.state &&
+                  state.generation === dbRow.lifecycle.generation
+                ) {
+                  return [undefined, state]
+                }
+                return [
+                  undefined,
+                  {
+                    ...state,
+                    lifecycle: dbRow.lifecycle.state,
+                    generation: dbRow.lifecycle.generation,
+                    locationID: dbRow.id,
+                  },
+                ]
               },
-            ])
+            )
           }
 
           const current = yield* SynchronizedRef.get(entry.ref)
