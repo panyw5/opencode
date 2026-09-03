@@ -5,6 +5,7 @@ import { APICallError, convertToModelMessages, LoadAPIKeyError, type ModelMessag
 import { LSP } from "@/lsp/lsp"
 import { Snapshot } from "@/snapshot"
 import { SyncEvent } from "../sync"
+import { isInjectionKind, isLegacyBackgroundShellInjection } from "@opencode-ai/core/session-injection"
 import { Database } from "@/storage/db"
 import { NotFoundError } from "@/storage/storage"
 import { and } from "drizzle-orm"
@@ -1115,6 +1116,11 @@ export const userIndex = Effect.fn("MessageV2.userIndex")(function* (sessionID: 
           ignored: sql<number | null>`json_extract(${PartTable.data}, '$.ignored')`,
           command: sql<string | null>`json_extract(${PartTable.data}, '$.command')`,
           kind: sql<string | null>`json_extract(${PartTable.data}, '$.metadata.kind')`,
+          url: sql<string | null>`json_extract(${PartTable.data}, '$.url')`,
+          tool: sql<string | null>`json_extract(${PartTable.data}, '$.tool')`,
+          status: sql<string | null>`json_extract(${PartTable.data}, '$.state.status')`,
+          commentPath: sql<string | null>`json_extract(${PartTable.data}, '$.metadata.opencodeComment.path')`,
+          commentText: sql<string | null>`json_extract(${PartTable.data}, '$.metadata.opencodeComment.comment')`,
         })
         .from(PartTable)
         .where(inArray(PartTable.message_id, ids.slice(page * 500, (page + 1) * 500)))
@@ -1123,6 +1129,7 @@ export const userIndex = Effect.fn("MessageV2.userIndex")(function* (sessionID: 
     ),
   ).flat()
   const previewByMessage = new Map<string, string>()
+  const visibleMessageIDs = new Set<string>()
   const rowsByMessage = new Map<string, typeof previewRows>()
   for (const row of previewRows) {
     const parts = rowsByMessage.get(row.messageID)
@@ -1131,22 +1138,54 @@ export const userIndex = Effect.fn("MessageV2.userIndex")(function* (sessionID: 
   }
   for (const id of ids) {
     const parts = rowsByMessage.get(id) ?? []
+    const visibleSynthetic = parts.find((row) => {
+      if (row.type !== "text" || !row.synthetic) return false
+      if (row.kind === "skill-template") return true
+      return isInjectionKind(row.kind) || isLegacyBackgroundShellInjection(row.text ?? "")
+    })
+    const visibleComment = parts.find(
+      (row) =>
+        row.type === "text" &&
+        !!row.synthetic &&
+        ((typeof row.commentPath === "string" && typeof row.commentText === "string") ||
+          /^The user made the following comment regarding (?:this file|line \d+|lines \d+ through \d+) of .+?: [\s\S]+$/.test(
+            row.text ?? "",
+          )),
+    )
+    const normalText = parts.find((row) => row.type === "text" && !row.synthetic && (row.text?.length ?? 0) > 0)
+    const attachment = parts.find((row) => row.type === "file" && row.url?.startsWith("data:"))
+    const tool = parts.find((row) => {
+      if (row.type !== "tool") return false
+      const name = row.tool?.trim().toLowerCase()
+      if (name === "todowrite" || name === "todoread") return false
+      return name !== "question" || row.status !== "pending"
+    })
+    if (!visibleSynthetic && !visibleComment && !normalText && !attachment && !tool) continue
+
+    visibleMessageIDs.add(id)
     const command = parts.find((row) => row.kind === "command-invocation" && row.text?.trim())?.text?.trim()
     const subtask = parts.find((row) => row.type === "subtask" && row.command?.trim())?.command?.trim()
     const normal = parts
       .filter((row) => row.type === "text" && !row.synthetic && !row.ignored && row.text?.trim())
       .sort((a, b) => (b.text?.length ?? 0) - (a.text?.length ?? 0))[0]?.text
-    const synthetic = parts.find((row) => row.type === "text" && row.text?.trim())?.text
-    const value = command ?? (subtask ? `/${subtask}` : undefined) ?? normal ?? synthetic ?? "[attachment]"
+    const value =
+      command ??
+      (subtask ? `/${subtask}` : undefined) ??
+      normal ??
+      visibleSynthetic?.text ??
+      visibleComment?.text ??
+      "[attachment]"
     previewByMessage.set(id, value.replace(/\s+/g, " ").trim().slice(0, 500))
   }
-  const items = rows.map((row) => ({
-    id: row.id,
-    sessionID: row.sessionID,
-    time: { created: row.created },
-    preview: previewByMessage.get(row.id) ?? "[attachment]",
-  }))
-  yield* log.info("loaded user message index", { sessionID, count: items.length })
+  const items = rows
+    .filter((row) => visibleMessageIDs.has(row.id))
+    .map((row) => ({
+      id: row.id,
+      sessionID: row.sessionID,
+      time: { created: row.created },
+      preview: previewByMessage.get(row.id) ?? "[attachment]",
+    }))
+  yield* log.info("loaded user message index", { sessionID, candidates: rows.length, count: items.length })
   return items
 })
 

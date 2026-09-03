@@ -10,6 +10,7 @@
     "./message-task-session": "./src/components/message-task-session.ts",
     "./injected-prompt": "./src/components/injected-prompt.tsx",
     "./injected-prompt-model": "./src/components/injected-prompt-model.ts",
+    "./message-file": "./src/components/message-file.ts",
     "./i18n/*": "./src/i18n/*.ts",
     "./pierre": "./src/pierre/index.ts",
     "./pierre/*": "./src/pierre/*.ts",

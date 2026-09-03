@@ -1,23 +1,13 @@
 import type { Part, TextPart } from "@opencode-ai/sdk/v2"
+import {
+  INJECTION_KINDS,
+  isInjectionKind,
+  isLegacyBackgroundShellInjection,
+  type InjectionKind,
+} from "@opencode-ai/core/session-injection"
 
 /** Synthetic text parts that render as a collapsible injected-prompt panel. */
-export const INJECTION_KINDS = [
-  "hook-injection",
-  "command-injection",
-  "scheduled-injection",
-  "project-task-injection",
-  "background-task-injection",
-  "background-shell-injection",
-  "math-worker-event",
-] as const
-
-export type InjectionKind = (typeof INJECTION_KINDS)[number]
-
-const KIND_SET: ReadonlySet<string> = new Set(INJECTION_KINDS)
-
-export function isInjectionKind(kind: unknown): kind is InjectionKind {
-  return typeof kind === "string" && KIND_SET.has(kind)
-}
+export { INJECTION_KINDS, isInjectionKind, type InjectionKind }
 
 export function isInjectionTextPart(part: Part): part is TextPart {
   if (part.type !== "text" || !part.synthetic) return false
@@ -27,7 +17,7 @@ export function isInjectionTextPart(part: Part): part is TextPart {
 /** Includes legacy background-shell notifications written before metadata was added. */
 export function injectionKindFromPart(part: TextPart): InjectionKind | undefined {
   if (isInjectionKind(part.metadata?.kind)) return part.metadata.kind
-  if (/^Background shell (?:completed|failed)(?::|$)/i.test(part.text)) return "background-shell-injection"
+  if (isLegacyBackgroundShellInjection(part.text)) return "background-shell-injection"
 }
 
 /** Filter message parts that belong in the injected-prompt UI. */

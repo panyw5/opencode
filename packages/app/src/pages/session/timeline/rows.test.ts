@@ -162,6 +162,51 @@ describe("constructMessageRows", () => {
     expect(rows.map((row) => row._tag)).toEqual(["TurnGap", "UserMessage"])
   })
 
+  test("keeps an anchor row for an attachment-only user message", () => {
+    const message = userMessage("attachment-1")
+    const part: Part = {
+      id: "prt_attachment-1",
+      sessionID: "ses_test",
+      messageID: "attachment-1",
+      type: "file",
+      mime: "image/png",
+      url: "data:image/png;base64,YQ==",
+    }
+    const rows = construct(message, partsByID([part]), [], 1, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["TurnGap", "UserMessage"])
+  })
+
+  test("uses a comment strip as the anchor for a comment-only user message", () => {
+    const message = userMessage("comment-1")
+    const part: Part = {
+      id: "prt_comment-1",
+      sessionID: "ses_test",
+      messageID: "comment-1",
+      type: "text",
+      text: "comment context",
+      synthetic: true,
+      metadata: { opencodeComment: { path: "src/app.ts", comment: "Check this" } },
+    } as unknown as Part
+    const rows = construct(message, partsByID([part]), [], 1, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["TurnGap", "CommentStrip"])
+  })
+
+  test("does not create a user anchor for subtask-only content", () => {
+    const message = userMessage("subtask-1")
+    const part: Part = {
+      id: "prt_subtask-1",
+      sessionID: "ses_test",
+      messageID: "subtask-1",
+      type: "subtask",
+      prompt: "internal",
+      description: "internal",
+      agent: "test",
+      command: "research",
+    }
+    const rows = construct(message, partsByID([part]), [], 1, true, true, "idle", false)
+    expect(rows).toEqual([])
+  })
+
   test("keeps the turn gap when the hidden message still produced assistant output", () => {
     const message = userMessage("evt-3")
     const event: Part = {

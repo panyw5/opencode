@@ -176,7 +176,7 @@ describe("MessageV2.userIndex", () => {
     ),
   )
 
-  it.instance("prefers command and synthetic previews", () =>
+  it.instance("prefers command and visible synthetic previews", () =>
     withSession(({ session, sessionID }) =>
       Effect.gen(function* () {
         const command = yield* addUser(sessionID)
@@ -207,10 +207,79 @@ describe("MessageV2.userIndex", () => {
           type: "text",
           text: "scheduled injection",
           synthetic: true,
+          metadata: { kind: "scheduled-injection" },
         })
 
         const result = yield* MessageV2.userIndex(sessionID)
-        expect(result.map((item) => item.preview)).toEqual(["/review packages/app", "/research", "scheduled injection"])
+        expect(result.map((item) => item.preview)).toEqual(["/review packages/app", "scheduled injection"])
+      }),
+    ),
+  )
+
+  it.instance("excludes synthetic-only turns that have no visible timeline row", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const visible = yield* addUser(sessionID, "visible")
+        const hidden = yield* addUser(sessionID)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: hidden,
+          type: "text",
+          text: "internal event",
+          synthetic: true,
+          metadata: { kind: "internal-event" },
+        })
+        yield* addUser(sessionID)
+        const subtask = yield* addUser(sessionID)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: subtask,
+          type: "subtask",
+          prompt: "internal",
+          description: "internal",
+          agent: "test",
+          command: "research",
+        })
+        const compaction = yield* addUser(sessionID)
+        yield* addCompactionPart(sessionID, compaction)
+
+        const result = yield* MessageV2.userIndex(sessionID)
+
+        expect(result.map((item) => item.id)).toEqual([visible])
+        expect(result.map((item) => item.preview)).toEqual(["visible"])
+      }),
+    ),
+  )
+
+  it.instance("keeps comment and attachment-only turns that have timeline anchors", () =>
+    withSession(({ session, sessionID }) =>
+      Effect.gen(function* () {
+        const comment = yield* addUser(sessionID)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: comment,
+          type: "text",
+          text: "comment context",
+          synthetic: true,
+          metadata: { opencodeComment: { path: "src/app.ts", comment: "Check this" } },
+        })
+        const attachment = yield* addUser(sessionID)
+        yield* session.updatePart({
+          id: PartID.ascending(),
+          sessionID,
+          messageID: attachment,
+          type: "file",
+          mime: "image/png",
+          url: "data:image/png;base64,YQ==",
+        })
+
+        const result = yield* MessageV2.userIndex(sessionID)
+
+        expect(result.map((item) => item.id)).toEqual([comment, attachment])
+        expect(result.map((item) => item.preview)).toEqual(["comment context", "[attachment]"])
       }),
     ),
   )

@@ -1,6 +1,7 @@
 import { parseCommentNote, readCommentMetadata } from "@/utils/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
+import { attached } from "@opencode-ai/ui/message-file"
 import { groupParts, PartGroup, renderable } from "@opencode-ai/ui/message-part"
 import { Data, Equal } from "effect"
 
@@ -139,14 +140,8 @@ export namespace Timeline {
     const userMessageRenderable =
       (firstUserText !== undefined && firstUserText.text.length > 0) ||
       userParts.some(syntheticRenderable) ||
-      userParts.some((p) => p.type === "tool" && renderable(p, true, showCustomHookParts)) ||
-      userParts.some(
-        (p) =>
-          p.type !== "text" &&
-          p.type !== "tool" &&
-          p.type !== "compaction" &&
-          renderable(p, showReasoning, showCustomHookParts),
-      )
+      userParts.some((p) => p.type === "file" && attached(p)) ||
+      userParts.some((p) => p.type === "tool" && renderable(p, true, showCustomHookParts))
     const interruptedMessageIndex = assistantMessages.findIndex((m) => m.error?.name === "MessageAbortedError")
     const interrupted = interruptedMessageIndex !== -1
     const error = assistantMessages.find((m) => m.error && m.error.name !== "MessageAbortedError")?.error
