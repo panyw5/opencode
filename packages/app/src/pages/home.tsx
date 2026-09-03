@@ -1,4 +1,4 @@
-import type { GlobalSession, ScheduledTask } from "@opencode-ai/sdk/v2/client"
+import type { GlobalSession, ScheduledTask, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { Button } from "@opencode-ai/ui/button"
@@ -8,7 +8,7 @@ import { Logo } from "@opencode-ai/ui/logo"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useNavigate } from "@solidjs/router"
 import { DateTime } from "luxon"
-import { createEffect, createMemo, createRenderEffect, createResource, For, onCleanup, Show, untrack } from "solid-js"
+import { batch, createEffect, createMemo, createRenderEffect, createResource, For, onCleanup, Show, untrack } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import {
@@ -22,6 +22,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { useNotification } from "@/context/notification"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useSessionTabs } from "@/context/session-tabs"
@@ -61,6 +62,7 @@ export default function Home() {
   const server = useServer()
   const language = useLanguage()
   const sessionTabs = useSessionTabs()
+  const notification = useNotification()
   const homedir = createMemo(() => sync.data.path.home)
   const latestProject = createMemo(() =>
     sync.data.project
@@ -213,6 +215,78 @@ export default function Home() {
     })
   })
   onCleanup(() => previewGeneration++)
+
+  const [sessionState, setSessionState] = createStore<{
+    status: Record<string, SessionStatus | undefined>
+    permission: Record<string, number>
+    question: Record<string, number>
+  }>({ status: {}, permission: {}, question: {} })
+
+  let statusGeneration = 0
+  async function refreshStatuses(dirs?: string[]) {
+    const sessions = homeSessions()
+    const targets = [...new Set(dirs ?? sessions.map((session) => session.directory))]
+    if (targets.length === 0) return
+    const generation = ++statusGeneration
+    console.debug(`[home-status] refresh-start generation=${String(generation)} dirs=${String(targets.length)}`)
+    const results = await Promise.all(
+      targets.map(async (directory) => {
+        const [permissions, questions, statuses] = await Promise.all([
+          sdk.client.permission
+            .list({ directory })
+            .then((x) => x.data ?? [])
+            .catch(() => []),
+          sdk.client.question
+            .list({ directory })
+            .then((x) => x.data ?? [])
+            .catch(() => []),
+          sdk.client.session
+            .status({ directory })
+            .then((x) => x.data ?? {})
+            .catch(() => ({} as Record<string, SessionStatus | undefined>)),
+        ])
+        return { directory, permissions, questions, statuses }
+      }),
+    )
+    if (generation !== statusGeneration) return
+    batch(() => {
+      for (const result of results) {
+        const permissionBySession: Record<string, number> = {}
+        for (const item of result.permissions) {
+          if (!item?.sessionID) continue
+          permissionBySession[item.sessionID] = (permissionBySession[item.sessionID] ?? 0) + 1
+        }
+        const questionBySession: Record<string, number> = {}
+        for (const item of result.questions) {
+          if (!item?.sessionID) continue
+          questionBySession[item.sessionID] = (questionBySession[item.sessionID] ?? 0) + 1
+        }
+        for (const session of sessions) {
+          if (session.directory !== result.directory) continue
+          setSessionState("permission", session.id, permissionBySession[session.id] ?? 0)
+          setSessionState("question", session.id, questionBySession[session.id] ?? 0)
+          setSessionState("status", session.id, result.statuses[session.id])
+        }
+      }
+    })
+    console.debug(`[home-status] refresh-end generation=${String(generation)} dirs=${String(results.length)}`)
+  }
+
+  let statusTimer: ReturnType<typeof setTimeout> | undefined
+  function queueStatusRefresh() {
+    if (statusTimer) clearTimeout(statusTimer)
+    statusTimer = setTimeout(() => {
+      statusTimer = undefined
+      void refreshStatuses()
+    }, 200)
+  }
+
+  createEffect(() => {
+    const items = homeSessions()
+    if (items.length === 0) return
+    queueStatusRefresh()
+  })
+
   const stop = sdk.listenAll((event) => {
     if (event.details.type.startsWith("scheduled-task.")) {
       console.debug(`[home-refresh] event=${event.details.type} action=refresh-tasks`)
@@ -222,10 +296,24 @@ export default function Home() {
       console.debug(`[home-refresh] event=${event.details.type} action=refresh-sessions`)
       void refreshSessions()
     }
+    if (
+      [
+        "permission.asked",
+        "permission.replied",
+        "question.asked",
+        "question.replied",
+        "question.rejected",
+        "session.status",
+      ].includes(event.details.type)
+    ) {
+      console.debug(`[home-status] event=${event.details.type} action=refresh-status`)
+      queueStatusRefresh()
+    }
   })
   onCleanup(() => {
     sessionsGeneration++
     tasksGeneration++
+    if (statusTimer) clearTimeout(statusTimer)
     stop()
   })
 
@@ -319,6 +407,29 @@ export default function Home() {
     return language.t("home.upcomingTasks.status.scheduled")
   }
 
+  function sessionBadge(session: GlobalSession) {
+    if ((sessionState.permission[session.id] ?? 0) > 0)
+      return {
+        tone: "bg-icon-critical-base",
+        textTone: "text-icon-critical-base",
+        label: language.t("home.recentSessions.status.permission"),
+      }
+    if ((sessionState.question[session.id] ?? 0) > 0)
+      return {
+        tone: "bg-icon-warning-base",
+        textTone: "text-icon-warning-base",
+        label: language.t("home.recentSessions.status.question"),
+      }
+    if (sessionState.status[session.id]?.type === "busy") return undefined
+    if (notification.session.unseenCount(session.id) > 0 && !notification.session.unseenHasError(session.id))
+      return {
+        tone: "bg-icon-info-base",
+        textTone: "text-icon-info-base",
+        label: language.t("home.recentSessions.status.unread"),
+      }
+    return undefined
+  }
+
   return (
     <div
       ref={() => {
@@ -407,8 +518,18 @@ export default function Home() {
                                 {session.project?.name || getFilename(session.project?.worktree ?? session.directory) || displayPath(session.directory)}
                               </span>
                             </span>
-                            <span class="shrink-0 text-11-regular text-text-weaker">
-                              {relativeTime(session.time.updated ?? session.time.created)}
+                            <span class="flex shrink-0 flex-col items-end gap-0.5">
+                              <Show when={sessionBadge(session)}>
+                                {(badge) => (
+                                  <span class={`flex items-center gap-1.5 text-11-regular ${badge().textTone}`}>
+                                    <span class={`size-2 shrink-0 rounded-full ${badge().tone}`} aria-hidden="true" />
+                                    {badge().label}
+                                  </span>
+                                )}
+                              </Show>
+                              <span class="text-11-regular text-text-weaker">
+                                {relativeTime(session.time.updated ?? session.time.created)}
+                              </span>
                             </span>
                             <Icon name="arrow-right" size="small" class="shrink-0 text-icon-weak group-hover:text-icon-base" />
                           </button>
