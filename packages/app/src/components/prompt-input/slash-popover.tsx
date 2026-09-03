@@ -115,7 +115,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                         node={{ path: item.path, type: isDirectory ? "directory" : "file" }}
                         class="shrink-0 size-4"
                       />
-                      <div class="flex items-center text-14-regular min-w-0">
+                      <div class="flex items-center gap-1.5 text-14-regular min-w-0">
                         <Show when={!isDirectory}>
                           <span class="text-text-strong whitespace-nowrap">{filename}</span>
                         </Show>

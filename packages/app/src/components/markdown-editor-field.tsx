@@ -313,7 +313,7 @@ export function MarkdownEditorField(props: {
                         node={{ path: item.path, type: item.path.endsWith("/") ? "directory" : "file" }}
                         class="size-4 shrink-0"
                       />
-                      <div class="min-w-0 flex items-center text-14-regular">
+                      <div class="min-w-0 flex items-center gap-1.5 text-14-regular">
                         <span class="whitespace-nowrap text-text-strong">{file}</span>
                         <span class="min-w-0 truncate whitespace-nowrap text-text-weak">{dir}</span>
                       </div>
