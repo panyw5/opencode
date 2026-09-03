@@ -4,13 +4,13 @@
 import { Bus as ProjectBus } from "@/bus"
 import { GlobalBus } from "@/bus/global"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
-import { InstanceStore } from "@/project/instance-store"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { SyncEvent } from "@/sync"
 import { EventV2 } from "@opencode-ai/core/event"
 import "@opencode-ai/core/account"
 import "@opencode-ai/core/catalog"
 import "@opencode-ai/core/session-event"
-import { Context, Effect, Layer, Option } from "effect"
+import { Context, Effect, Layer } from "effect"
 
 export function toSyncDefinition<D extends EventV2.Definition>(definition: D) {
   const result = {
@@ -48,14 +48,13 @@ export const layer = Layer.effect(
       return Effect.gen(function* () {
         const ctx = yield* InstanceRef
         if (ctx) return yield* effect
-        const store = Option.getOrUndefined(yield* Effect.serviceOption(InstanceStore.Service))
-        if (!event.location?.directory || !store) return yield* publishGlobal(event)
-        return yield* store.load({ directory: event.location.directory }).pipe(
-          Effect.flatMap((ctx) => {
-            const withInstance = effect.pipe(Effect.provideService(InstanceRef, ctx))
-            if (!event.location?.workspaceID) return withInstance
-            return withInstance.pipe(Effect.provideService(WorkspaceRef, event.location.workspaceID))
-          }),
+        if (!event.location?.directory) return yield* publishGlobal(event)
+        const withWorkspace = event.location?.workspaceID
+          ? effect.pipe(Effect.provideService(WorkspaceRef, event.location.workspaceID))
+          : effect
+        return yield* LocationLifecycle.lease(
+          { directory: event.location.directory, purpose: "http-request" },
+          withWorkspace,
         )
       })
     }

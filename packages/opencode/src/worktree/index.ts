@@ -1,6 +1,7 @@
 import { Global } from "@opencode-ai/core/global"
 import { InstanceLayer } from "@/project/instance-layer"
 import { InstanceStore } from "@/project/instance-store"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { Project } from "@/project/project"
 import { Database } from "@/storage/db"
 import { eq } from "drizzle-orm"
@@ -257,7 +258,10 @@ export const layer: Layer.Layer<
         return
       }
 
-      const booted = yield* store.load({ directory: info.directory }).pipe(
+      const booted = yield* LocationLifecycle.lease(
+        { directory: info.directory, purpose: "scheduled-task" },
+        Effect.void,
+      ).pipe(
         Effect.as(true),
         Effect.catch((error) =>
           Effect.sync(() => {
