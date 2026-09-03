@@ -314,7 +314,7 @@ export function MarkdownEditorField(props: {
                         class="size-4 shrink-0"
                       />
                       <div class="min-w-0 flex items-center gap-1.5 text-14-regular">
-                        <span class="whitespace-nowrap text-text-strong">{file}</span>
+                        <span class="text-14-medium whitespace-nowrap text-text-strong">{file}</span>
                         <span class="min-w-0 truncate whitespace-nowrap text-text-weak">{dir}</span>
                       </div>
                     </button>

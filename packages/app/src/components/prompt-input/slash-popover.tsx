@@ -117,7 +117,7 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
                       />
                       <div class="flex items-center gap-1.5 text-14-regular min-w-0">
                         <Show when={!isDirectory}>
-                          <span class="text-text-strong whitespace-nowrap">{filename}</span>
+                          <span class="text-14-medium text-text-strong whitespace-nowrap">{filename}</span>
                         </Show>
                         <span class="text-text-weak whitespace-nowrap truncate min-w-0">{directory}</span>
                       </div>
