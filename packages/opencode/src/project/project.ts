@@ -812,8 +812,51 @@ export const layer: Layer.Layer<
       )
     })
 
+    // Projects whose worktree no longer exists on disk must not appear in the project
+    // list: clients bootstrap/dispose per listed directory, and a deleted worktree
+    // (e.g. a merged branch cleaned up) would keep getting instance requests. Checks
+    // are cached with a short TTL and purely in memory — the DB row is kept so session
+    // history survives and the project re-registers itself if the directory returns.
+    // Network/cloud mounts are exempt: an offline mount must never prune its projects.
+    const missingWorktree = new Map<string, { at: number; missing: boolean }>()
+    const MISSING_WORKTREE_TTL_MS = 30_000
+    const NETWORK_MOUNT_MARKERS = [
+      "/Volumes/",
+      "/mnt/",
+      "/media/",
+      "CloudStorage",
+      "Dropbox",
+      "Nutstore Files",
+      "OneDrive",
+      "Google Drive",
+    ]
+    const isNetworkMount = (directory: string) =>
+      NETWORK_MOUNT_MARKERS.some((marker) => directory.includes(marker))
+
+    const worktreeMissing = Effect.fn("Project.worktreeMissing")(function* (directory: string) {
+      const cached = missingWorktree.get(directory)
+      if (cached && Date.now() - cached.at < MISSING_WORKTREE_TTL_MS) return cached.missing
+      const missing = !(yield* fs.existsSafe(directory))
+      missingWorktree.set(directory, { at: Date.now(), missing })
+      return missing
+    })
+
     const list = Effect.fn("Project.list")(function* () {
-      return yield* db((d) => d.select().from(ProjectTable).all().map(fromRow))
+      const rows = yield* db((d) => d.select().from(ProjectTable).all().map(fromRow))
+      const checked = yield* Effect.forEach(
+        rows,
+        (info) =>
+          Effect.gen(function* () {
+            if (isNetworkMount(info.worktree)) return info
+            if (yield* worktreeMissing(info.worktree)) {
+              log.debug("hiding project with missing worktree", { projectID: info.id, worktree: info.worktree })
+              return undefined
+            }
+            return info
+          }).pipe(Effect.catch(() => Effect.succeed(info))),
+        { concurrency: "unbounded" },
+      )
+      return checked.filter((info) => info !== undefined)
     })
 
     const get = Effect.fn("Project.get")(function* (id: ProjectID) {

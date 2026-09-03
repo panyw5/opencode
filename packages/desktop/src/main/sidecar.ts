@@ -38,8 +38,10 @@ const parentPort = getParentPort()
 let listener: Listener | undefined
 let fatalReported = false
 
+// A stray unhandled rejection (e.g. ENOENT from a deleted project directory) must not
+// take down the whole sidecar; log it and keep serving. Only uncaughtException is fatal.
 process.on("unhandledRejection", (error) => {
-  reportFatal("unhandledRejection", error)
+  reportNonFatal("unhandledRejection", error)
 })
 
 process.on("uncaughtException", (error) => {
@@ -207,4 +209,9 @@ function reportFatal(type: "uncaughtException" | "unhandledRejection", error: un
   }
   console.error(message)
   setImmediate(() => process.exit(1))
+}
+
+function reportNonFatal(type: "unhandledRejection", error: unknown) {
+  const serialized = serializeError(error)
+  console.error(`sidecar ${type} (non-fatal, logged): ${serialized.stack ?? serialized.message}`)
 }

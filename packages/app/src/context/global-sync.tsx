@@ -91,6 +91,10 @@ function createGlobalSync() {
   const queues = new Map<DomainId, ReturnType<typeof createRefreshQueue>>()
   const bootedAt = new Map<DomainId, number>()
   const bootingRoot = new Map<DomainId, boolean>()
+  // Directories that no longer exist on disk (deleted worktrees, removed projects).
+  // In-memory only: the server answers these with 404 DirectoryNotFound, and a
+  // remounted cloud drive should work again on the next app launch.
+  const unavailableDirectories = new Set<string>()
 
   const currentDomain = () => server.domain
   let clearSessionControllers = (_directory: string) => {}
@@ -145,6 +149,11 @@ function createGlobalSync() {
   // domain has no registered server to talk to. Visible-domain no longer gates hidden
   // domains; each domain runs in parallel so long as it has an active server.
   const isolated = (directory: string) => !server.currentFor(domainFromDirectory(directory))
+
+  const isMissingDirectoryError = (err: unknown) => {
+    const message = err instanceof Error ? err.message : String(err)
+    return message.includes("DirectoryNotFound") || message.includes("ENOENT") || message.includes("no such file or directory")
+  }
 
   onCleanup(() => {
     active = false
@@ -286,7 +295,16 @@ function createGlobalSync() {
       isBooting: (directory) => booting.has(directory),
       isLoadingSessions: (directory) => sessionLoads.has(directory),
       onBootstrap: (directory) => {
+        if (unavailableDirectories.has(directory)) {
+          console.debug(`[global-sync] bootstrap skipped directory=${directory} reason=directory-unavailable`)
+          return
+        }
         void bootstrapInstance(directory).catch((err) => {
+          if (isMissingDirectoryError(err)) {
+            console.warn(`[global-sync] directory unavailable, marking unavailable directory=${directory}`)
+            unavailableDirectories.add(directory)
+            return
+          }
           console.error(
             `[global-sync] bootstrap trigger failed directory=${directory} err=${err instanceof Error ? err.message : String(err)}`,
           )
@@ -307,6 +325,10 @@ function createGlobalSync() {
         )
         revs.delete(directory)
         console.debug(`[global-sync] instance dispose requested directory=${directory} domain=${domain}`)
+        if (unavailableDirectories.has(directory)) {
+          console.debug(`[global-sync] instance dispose skipped directory=${directory} reason=directory-unavailable`)
+          return
+        }
         const conn = server.currentFor(domain)
         if (!conn) {
           console.debug(
@@ -329,6 +351,11 @@ function createGlobalSync() {
             console.debug(`[global-sync] instance dispose succeeded directory=${directory} domain=${domain}`)
           })
           .catch((err) => {
+            if (isMissingDirectoryError(err)) {
+              console.warn(`[global-sync] directory unavailable, marking unavailable directory=${directory}`)
+              unavailableDirectories.add(directory)
+              return
+            }
             console.warn(
               `[global-sync] instance dispose failed directory=${directory} domain=${domain} err=${err instanceof Error ? err.message : String(err)}`,
             )
@@ -694,6 +721,9 @@ function createGlobalSync() {
   async function bootstrapInstance(directory: string) {
     directory = storeKey(directory)
     if (!directory) return
+    if (unavailableDirectories.has(directory)) {
+      throw new Error(`DirectoryNotFound: ${directory} is marked unavailable`)
+    }
     if (isolated(directory)) {
       return
     }
@@ -978,7 +1008,9 @@ function createGlobalSync() {
   const projectApi = {
     loadSessions,
     warm(directory: string) {
-      void bootstrapInstance(directory)
+      void bootstrapInstance(directory).catch((err) => {
+        console.warn(`[global-sync] warm failed directory=${directory} err=${err instanceof Error ? err.message : String(err)}`)
+      })
     },
     meta(directory: string, patch: ProjectMeta) {
       children.projectMeta(directory, patch)

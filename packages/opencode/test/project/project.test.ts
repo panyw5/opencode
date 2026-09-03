@@ -832,7 +832,7 @@ describe("Project.update", () => {
   )
 })
 
-describe("Project.list and Project.get", () => {
+describe("Project.list and Project.list with reconciliation", () => {
   it.live("list returns all projects", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
@@ -841,6 +841,46 @@ describe("Project.list and Project.get", () => {
       const all = Project.list()
       expect(all.length).toBeGreaterThan(0)
       expect(all.find((p) => p.id === project.id)).toBeDefined()
+    }),
+  )
+
+  it.live("list hides projects whose worktree was deleted from disk", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ git: true })
+      const live = yield* run((svc) => svc.fromDirectory(tmp))
+      const gone = tmp + "-deleted-worktree"
+      const now = Date.now()
+      Database.use((db) =>
+        db
+          .insert(ProjectTable)
+          .values({ id: ProjectID.make("dir:deleted"), worktree: gone, sandboxes: [], time_created: now, time_updated: now })
+          .run(),
+      )
+
+      const listed = yield* run((svc) => svc.list())
+      expect(listed.find((p) => p.id === live.project.id)).toBeDefined()
+      expect(listed.find((p) => p.worktree === gone)).toBeUndefined()
+    }),
+  )
+
+  it.live("list keeps network-mount projects whose worktree is currently missing", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped({ git: true })
+      const live = yield* run((svc) => svc.fromDirectory(tmp))
+      // A missing Dropbox/Nutstore-style path is treated as a temporarily offline
+      // mount, not a deleted project.
+      const offline = `/Users/someone/Dropbox/Papers/offline-mount-${Date.now()}`
+      const now = Date.now()
+      Database.use((db) =>
+        db
+          .insert(ProjectTable)
+          .values({ id: ProjectID.make("dir:offline"), worktree: offline, sandboxes: [], time_created: now, time_updated: now })
+          .run(),
+      )
+
+      const listed = yield* run((svc) => svc.list())
+      expect(listed.find((p) => p.worktree === offline)).toBeDefined()
+      expect(listed.find((p) => p.id === live.project.id)).toBeDefined()
     }),
   )
 
