@@ -2152,6 +2152,7 @@ export default function Layout(props: ParentProps) {
     scheduleTimeout: (run, ms) => setTimeout(run, ms),
     cancelTimeout: (timer) => clearTimeout(timer),
   })
+  let startupHomeRedirected = false
   const stopSessionLifecycle = onSessionLifecycle((event) => {
     const tab = {
       directory: event.directory,
@@ -3039,6 +3040,18 @@ export default function Layout(props: ParentProps) {
           // Non-session routes (home, config, …) still commit pending close
           // transactions so closed tabs leave the bar instead of timing out.
           sessionTabs.observeRoute({ directory: dir ?? "", session: false })
+          if (
+            !startupHomeRedirected &&
+            slug &&
+            !onConfigRoute() &&
+            !scheduledPanelActive() &&
+            layout.sessionBar.all().length === 0 &&
+            layout.sessionBar.drafts().length === 0
+          ) {
+            startupHomeRedirected = true
+            console.debug(`[session-tabs] startup has no tabs; navigating home pathname=${location.pathname}`)
+            navigate("/")
+          }
           return
         }
         if (root && server.projects.last() !== root) server.projects.touch(root)
