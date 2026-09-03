@@ -71,6 +71,62 @@ describe("createChildStoreManager", () => {
     expect(manager.children[directory]).toBeDefined()
   })
 
+  // Characterization tests for the directory lifecycle coupling described in
+  // specs/v2/location-lifecycle.md: renderer eviction drives backend teardown
+  // and a disposed directory silently revives on next access. Update these
+  // when the frontend decoupling PR lands.
+  test("disposeDirectory drives the backend teardown callback", () => {
+    createRoot((dispose) => {
+      const owner = getOwner()
+      if (!owner) throw new Error("owner required")
+
+      const disposed: string[] = []
+      const manager = createChildStoreManager({
+        owner,
+        isBooting: () => false,
+        isLoadingSessions: () => false,
+        onBootstrap() {},
+        onDispose(directory) {
+          disposed.push(directory)
+        },
+        translate: (key) => key,
+      })
+
+      manager.child("/gone", { bootstrap: false })
+      expect(manager.disposeDirectory("/gone")).toBe(true)
+      expect(disposed).toEqual(["/gone"])
+      expect(manager.children["/gone"]).toBeUndefined()
+      dispose()
+    })
+  })
+
+  test("child() re-bootstraps a directory after dispose", () => {
+    createRoot((dispose) => {
+      const owner = getOwner()
+      if (!owner) throw new Error("owner required")
+
+      const bootstrapped: string[] = []
+      const manager = createChildStoreManager({
+        owner,
+        isBooting: () => false,
+        isLoadingSessions: () => false,
+        onBootstrap(directory) {
+          bootstrapped.push(directory)
+        },
+        onDispose() {},
+        translate: (key) => key,
+      })
+
+      manager.child("/revive")
+      expect(manager.disposeDirectory("/revive")).toBe(true)
+      manager.child("/revive")
+
+      expect(bootstrapped).toEqual(["/revive", "/revive"])
+      expect(manager.children["/revive"]).toBeDefined()
+      dispose()
+    })
+  })
+
   test("does not leak a dispose callback failure into the active directory", () => {
     const owner = createRoot((dispose) => {
       const current = getOwner()
