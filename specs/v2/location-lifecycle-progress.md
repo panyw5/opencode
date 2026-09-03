@@ -1,7 +1,7 @@
 # Location Lifecycle 实施进度（交接笔记）
 
 > 任务：按 `specs/v2/location-lifecycle.md` 逐步实施 4 个 PR。本文件记录进度，供新会话接续。
-> 更新时刻：PR1.3 代码已改完、**尚未跑测试、尚未提交**。
+> 更新时刻：**PR1 全部完成并已提交**。下一阶段是 PR2（后端工作租约）。
 
 ## 全局约束
 
@@ -41,43 +41,38 @@
   （注意要双 Deferred 屏障防快照竞态）、成功/typed fail/defect/中断都释放租约、boot 失败回 stopped 可重试、
   缺失目录→LocationUnavailable 且不 bootstrap。
 
-## 进行中：PR1.3 HTTP 实例路由接入 lifecycle（未提交）
+## 已完成：PR1.3 HTTP 实例路由接入 lifecycle（两个提交）
 
-已改完、**未验证**的文件：
+### `2bc1ff268b` fix(server): tolerate bun placeholder response on async upgrade rejection
 
-1. `packages/opencode/src/server/routes/instance/httpapi/middleware/instance-context.ts`
-   - `provideInstanceContext` 改走 `lifecycle.provide({directory, purpose:"http-request"}, effect.pipe(provideService(WorkspaceRef,...)))`；
-     catchTags 把三个 AdmissionError 映射回原 404 DirectoryNotFound die（兼容映射）。
-   - 轻量路径 `provideLightweightInstanceContext` 未动（仍 existsSafe + Project.fromDirectory）。
-   - `instanceContextLayer`、`instanceRouterMiddleware` 改用 `LocationLifecycle.Service`；删了 InstanceStore import。
-2. `packages/opencode/src/server/routes/instance/httpapi/server.ts`
-   - import LocationLifecycle；大 provide 列表在 `AppFileSystem.defaultLayer` 后加了
-     `LocationLifecycle.layer.pipe(Layer.provide(AppFileSystem.defaultLayer))`（InstanceStore 需求冒泡到 line ~258 `InstanceLayer.layer`）。
-3. `packages/opencode/test/server/httpapi-instance-context.test.ts`
-   - import 加了 AppFileSystem、LocationLifecycle；testEffect 层列表加了
-     `LocationLifecycle.layer.pipe(Layer.provide(InstanceLayer.layer), Layer.provide(AppFileSystem.defaultLayer))`
-     （同一 InstanceLayer.layer 引用 → memoize 同一 InstanceStore）。
+- 接入 lifecycle 后中间件多了 `existsSafe`（异步 fs），暴露一个 **Bun node:http 兼容层既有坑**：
+  upgrade 请求若未在同一事件循环 tick 内被消费，Bun 的 `onNodeHTTPRequest` 会给 socket 分配占位
+  `ServerResponse`；platform-node `makeUpgradeHandler` 的惰性 `nodeResponse()` 再 `assignSocket` 就抛
+  `ERR_HTTP_SOCKET_ASSIGNED`，fiber 死亡、响应被吞，WS 客户端无限挂起（最小复现：handler 里一个
+  `Effect.yieldNow` 就触发；Node 无此问题）。
+- 修复：`patches/@effect%2Fplatform-node@4.0.0-beta.66.patch`（bun patch，已登记进 package.json
+  `patchedDependencies` + bun.lock）——惰性创建前先查 `socket._httpMessage`，有则复用占位响应。
+  升级成功路径不受影响（不触发惰性创建）。
+- 教训：**upgrade 路由的任何拒绝响应都不能跨越异步边界**，除非有此补丁。
 
-**接续要做的**：
+### `95682de616` refactor(server): admit instance routes through lifecycle
 
-1. 在 `httpapi-instance-context.test.ts` 的 describe 里补 404 测试：
-   ```ts
-   it.live("rejects a routed directory that does not exist with 404", () =>
-     Effect.gen(function* () {
-       const dir = yield* tmpdirScoped()
-       const missing = path.join(dir, "missing")
-       yield* serveProbe()
-       const response = yield* HttpClient.get(`/probe?directory=${encodeURIComponent(missing)}`)
-       expect(response.status).toBe(404)
-       expect(yield* response.json).toMatchObject({ name: "DirectoryNotFound" })
-     }),
-   )
-   ```
-   （missing 路径用绝对路径，resolve 后等于自身；错误里带的是 resolve 后的目录。）
-2. 跑 `cd packages/opencode && bun test test/server/httpapi-instance-context.test.ts` +
-   `bun test test/project/` + `bun run typecheck`，全绿后提交：
-   `refactor(server): admit instance routes through lifecycle`（只 stage 上述 3 个文件）。
-3. 注意回归面：`instanceContextLayer`（HttpApi 中间件）也被别的路由用；若全量 `bun test test/server/` 有别的失败要查。
+- `instance-context.ts`：`provideInstanceContext` 改走 `lifecycle.provide({directory, purpose:"http-request"}, ...)`。
+  **catchTags 换成 `Effect.catchIf(isAdmissionError, ...)`**——泛型 E 下 catchTags 的 handler 参数会被推成
+  `LocationUnavailable | Extract<E, ...>` 联合，访问 `.directory` 直接 TS 报错；catchIf + 类型谓词没这问题。
+  轻量路径加了 existsSafe→404（`missingDirectoryResponse` 共用，die 一个 HttpServerResponse 穿透 error boundary）。
+- `server.ts`：大 provide 列表在 `AppFileSystem.defaultLayer` 后加
+  `LocationLifecycle.layer.pipe(Layer.provide(AppFileSystem.defaultLayer))`。
+- 测试：`httpapi-instance-context.test.ts` 补 404 测试；**decode-fallback 测试改为先 mkdir 那个乱码目录**
+  （门禁会拒缺失目录，原测试断言的"乱码路径也能 load"正是被消除的行为）；`httpapi-promptasync-context.test.ts`
+  层列表同样补 `LocationLifecycle.layer`（缺了会 "Service not found"）。
+
+### PR1 收尾验证结果
+
+- `bun test test/project/`：113 pass 0 fail。`bun run typecheck`：干净。
+- `bun test test/server/`：仅剩 3 个**既有失败**（stash 基线同样挂）：`httpapi-compression` 阈值测试、
+  `project-init-git`、`httpapi-session` not-found 测试；`httpapi-math-worker` 偶发 flaky（基线也会）。
+- **不要并行跑两个 bun test**（数据库/端口争用会假超时）。
 
 ## 待办（PR2–PR4）
 
