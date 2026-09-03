@@ -844,13 +844,14 @@ export default function Layout(props: ParentProps) {
     const last = server.projects.last()
 
     if (list.length === 0) {
-      if (!last) return
-      await openProject(last, true)
-    } else {
-      const next = list.find((project) => project.worktree === last) ?? list[0]
-      if (!next) return
-      await openProject(next.worktree, true)
+      // Ownership cutover: do not auto-resurrect a closed project via
+      // lastProject. The user must explicitly open a project.
+      return
     }
+
+    const next = list.find((project) => project.worktree === last) ?? list[0]
+    if (!next) return
+    await openProject(next.worktree, true)
   })
 
   const workspaceName = (directory: string, projectId?: string, branch?: string) => {

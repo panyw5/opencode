@@ -1,8 +1,12 @@
+import { disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { InstanceRef } from "@/effect/instance-ref"
 import { serviceUse } from "@/effect/service-use"
+import { Identifier } from "@/id/id"
+import { errorMessage } from "@/util/error"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { Context, Effect, Layer, Schema, SynchronizedRef } from "effect"
+import { Context, Duration, Effect, Exit, Fiber, Layer, Schema, Scope, SynchronizedRef } from "effect"
 import { InstanceStore } from "./instance-store"
+import * as ProjectLocation from "./location"
 import type { LocationID } from "./schema"
 
 export class LocationNotFound extends Schema.TaggedErrorClass<LocationNotFound>()(
@@ -41,6 +45,8 @@ export class LocationDeleteFailed extends Schema.TaggedErrorClass<LocationDelete
 
 export type AdmissionError = LocationUnavailable | LocationDeleting | LocationDeleted
 
+export type DeleteLocationError = LocationBusy | LocationDeleteFailed
+
 export type AdmissionPurpose = "http-request" | "session-run" | "scheduled-task" | "pty" | "background-job"
 
 export type LifecycleState = "available" | "unavailable" | "deleting" | "deleted"
@@ -59,6 +65,18 @@ export interface LocationSnapshot {
   readonly runtime: RuntimeState
 }
 
+export interface DeleteLocationInput {
+  readonly directory: string
+  readonly operationID?: string
+  readonly removeFileSystem?: Effect.Effect<void, Error>
+}
+
+export interface DeleteLocationResult {
+  readonly locationID?: LocationID
+  readonly operationID: string
+  readonly generation: number
+}
+
 export interface Interface {
   readonly provide: <A, E, R>(
     input: {
@@ -67,6 +85,10 @@ export interface Interface {
     },
     effect: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | AdmissionError, R>
+
+  readonly delete: (input: DeleteLocationInput) => Effect.Effect<DeleteLocationResult, DeleteLocationError>
+
+  readonly recoverDeleting: () => Effect.Effect<void>
 
   readonly snapshot: (locationID: LocationID) => Effect.Effect<LocationSnapshot, LocationNotFound>
 }
@@ -127,23 +149,33 @@ interface Entry {
 
 const stopped: RuntimeState = { tag: "stopped" }
 
+export const config = {
+  idleDisposalMs: 120_000,
+}
+
 export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileSystem.Service> = Layer.effect(
   Service,
   Effect.gen(function* () {
     const store = yield* InstanceStore.Service
     const fs = yield* AppFileSystem.Service
+    const scope = yield* Scope.Scope
     const entries = new Map<string, Entry>()
+    const idleTimers = new Map<string, Fiber.Fiber<void, unknown>>()
 
     const entryFor = (directory: string) =>
       Effect.sync(() => {
         const existing = entries.get(directory)
         if (existing) return existing
+        // Sync with DB: a deleting/deleted row from a previous process must
+        // block new admissions immediately.
+        const row = ProjectLocation.getByCanonicalDirectory(directory)
         const created: Entry = {
           directory,
           ref: SynchronizedRef.makeUnsafe<EntryState>({
-            lifecycle: "available",
-            generation: 0,
+            lifecycle: row?.lifecycle.state ?? "available",
+            generation: row?.lifecycle.generation ?? 0,
             runtime: stopped,
+            locationID: row?.id,
           }),
         }
         entries.set(directory, created)
@@ -151,6 +183,46 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
       })
 
     const log = (line: string) => Effect.logInfo(line).pipe(Effect.annotateLogs("module", "location-lifecycle"))
+
+    const cancelIdleTimer = (directory: string) =>
+      Effect.gen(function* () {
+        const existing = idleTimers.get(directory)
+        if (!existing) return
+        idleTimers.delete(directory)
+        yield* Fiber.interrupt(existing).pipe(Effect.ignore)
+        yield* log(`[location-lifecycle] idle-cancelled location=${directory} reason=new-lease`)
+      })
+
+    const scheduleIdleDisposal = (entry: Entry, generation: number) =>
+      Effect.gen(function* () {
+        yield* cancelIdleTimer(entry.directory)
+        const timer = Effect.gen(function* () {
+          yield* Effect.sleep(Duration.millis(config.idleDisposalMs))
+          const state = yield* SynchronizedRef.get(entry.ref)
+          if (state.generation !== generation) return
+          if (state.lifecycle !== "available") return
+          if (state.runtime.tag !== "running") return
+          if (state.runtime.leases !== 0) return
+          yield* SynchronizedRef.modify(entry.ref, (s): readonly [void, EntryState] => [
+            undefined,
+            { ...s, runtime: { tag: "stopping" } },
+          ])
+          yield* Effect.promise(() => runDisposers(entry.directory)).pipe(Effect.ignore)
+          yield* SynchronizedRef.modify(entry.ref, (s): readonly [void, EntryState] => [
+            undefined,
+            { ...s, runtime: stopped },
+          ])
+          idleTimers.delete(entry.directory)
+          yield* log(
+            `[location-lifecycle] runtime-disposed location=${entry.directory} generation=${generation} reason=idle`,
+          )
+        })
+        const fiber = yield* timer.pipe(Effect.forkIn(scope))
+        idleTimers.set(entry.directory, fiber)
+        yield* log(
+          `[location-lifecycle] idle-scheduled location=${entry.directory} generation=${generation} delayMs=${config.idleDisposalMs}`,
+        )
+      })
 
     const provide = <A, E, R>(
       input: { directory: string; purpose: AdmissionPurpose },
@@ -160,6 +232,21 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const entry = yield* entryFor(directory)
+
+          // Sync lifecycle state with DB: the DB might have been modified
+          // externally (e.g. a crashed delete, or direct markDeleting).
+          const dbRow = ProjectLocation.getByCanonicalDirectory(directory)
+          if (dbRow && dbRow.lifecycle.state !== "available") {
+            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
+              undefined,
+              {
+                ...state,
+                lifecycle: dbRow.lifecycle.state,
+                generation: dbRow.lifecycle.generation,
+                locationID: dbRow.id,
+              },
+            ])
+          }
 
           const current = yield* SynchronizedRef.get(entry.ref)
           yield* log(
@@ -197,20 +284,28 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
           if (!admission.ok) return yield* admission.error
           const { generation } = admission
 
+          // Cancel any pending idle disposal timer — a new lease makes it a no-op
+          yield* cancelIdleTimer(directory)
+
           yield* log(
             `[location-lifecycle] lease-acquired location=${directory} generation=${generation} purpose=${input.purpose} leases=${admission.leases}`,
           )
 
-          const release = SynchronizedRef.modify(entry.ref, (state): readonly [number, EntryState] => {
-            const runtime = state.runtime
-            if (runtime.tag === "stopped" || runtime.tag === "stopping") return [0, state]
-            const leases = Math.max(0, runtime.leases - 1)
-            // A failed start with no remaining leases resets to stopped so a
-            // later admission may retry. A running runtime stays up when it
-            // goes idle; idle disposal arrives with the ownership cutover.
-            const next: RuntimeState = leases === 0 && runtime.tag === "starting" ? stopped : { ...runtime, leases }
-            return [leases, { ...state, runtime: next }]
-          })
+          const release = SynchronizedRef.modify(
+            entry.ref,
+            (state): readonly [{ leases: number; runtimeTag: string }, EntryState] => {
+              const runtime = state.runtime
+              if (runtime.tag === "stopped" || runtime.tag === "stopping")
+                return [{ leases: 0, runtimeTag: runtime.tag }, state]
+              const leases = Math.max(0, runtime.leases - 1)
+              // A failed start with no remaining leases resets to stopped so a
+              // later admission may retry. A running runtime stays up when it
+              // goes idle; idle disposal is scheduled below.
+              const next: RuntimeState =
+                leases === 0 && runtime.tag === "starting" ? stopped : { ...runtime, leases }
+              return [{ leases, runtimeTag: next.tag }, { ...state, runtime: next }]
+            },
+          )
 
           const run = Effect.gen(function* () {
             if (!(yield* fs.existsSafe(directory))) {
@@ -222,8 +317,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
             const started = yield* SynchronizedRef.modify(entry.ref, (state): readonly [Mark, EntryState] => {
               if (state.generation !== generation) {
                 // A stale generation must not publish a started runtime. The
-                // generation only moves once deletion/reload land; until then
-                // this branch is unreachable.
+                // generation only moves when deletion increments it.
                 return [{ tag: "stale", actual: state.generation }, state]
               }
               if (state.runtime.tag !== "starting") return ["already", { ...state, locationID: ctx.location.id }]
@@ -251,10 +345,15 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
           return yield* restore(run).pipe(
             Effect.ensuring(
               release.pipe(
-                Effect.flatMap((leases) =>
-                  log(
-                    `[location-lifecycle] lease-released location=${directory} generation=${generation} purpose=${input.purpose} leases=${leases}`,
-                  ),
+                Effect.flatMap(({ leases, runtimeTag }) =>
+                  Effect.gen(function* () {
+                    yield* log(
+                      `[location-lifecycle] lease-released location=${directory} generation=${generation} purpose=${input.purpose} leases=${leases}`,
+                    )
+                    if (leases === 0 && runtimeTag === "running") {
+                      yield* scheduleIdleDisposal(entry, generation)
+                    }
+                  }),
                 ),
               ),
             ),
@@ -262,6 +361,157 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
         }),
       ).pipe(Effect.withSpan("LocationLifecycle.provide"))
     }
+
+    const deleteLocation = (input: DeleteLocationInput): Effect.Effect<DeleteLocationResult, DeleteLocationError> => {
+      const directory = AppFileSystem.resolve(input.directory)
+      const operationID = input.operationID ?? Identifier.create("delop", "ascending")
+      return Effect.uninterruptibleMask((restore) =>
+        Effect.gen(function* () {
+          const entry = yield* entryFor(directory)
+          const current = yield* SynchronizedRef.get(entry.ref)
+
+          yield* log(
+            `[location-lifecycle] delete-request location=${directory} generation=${current.generation} operation=${operationID}`,
+          )
+
+          // Sync in-memory state with DB (the DB might have been modified
+          // externally, e.g. a crashed delete from a previous process).
+          const row = ProjectLocation.getByCanonicalDirectory(directory)
+          if (row && row.lifecycle.state !== current.lifecycle) {
+            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
+              undefined,
+              { ...state, lifecycle: row.lifecycle.state, generation: row.lifecycle.generation, locationID: row.id },
+            ])
+          }
+          const synced = yield* SynchronizedRef.get(entry.ref)
+
+          // Idempotent: already deleted → success
+          if (synced.lifecycle === "deleted") {
+            yield* log(
+              `[location-lifecycle] delete-idempotent location=${directory} generation=${synced.generation} operation=${operationID} result=already-deleted`,
+            )
+            return {
+              locationID: synced.locationID,
+              operationID,
+              generation: synced.generation,
+            }
+          }
+
+          // Already deleting: same operationID = retry, different = conflict
+          if (synced.lifecycle === "deleting") {
+            const existing = row?.lifecycle.deleteOperationID
+            if (existing && existing !== operationID) {
+              return yield* new LocationDeleteFailed({
+                directory,
+                operation: "delete",
+                message: `Location is already being deleted by operation ${existing}`,
+              })
+            }
+            // Same operation ID → fall through to retry the deletion work
+          }
+
+          // Fail-if-busy: active leases block deletion
+          if (synced.runtime.tag === "running" && synced.runtime.leases > 0) {
+            return yield* new LocationBusy({ directory, leases: synced.runtime.leases })
+          }
+          if (synced.runtime.tag === "starting" && synced.runtime.leases > 0) {
+            return yield* new LocationBusy({ directory, leases: synced.runtime.leases })
+          }
+
+          // Cancel any pending idle disposal timer
+          yield* cancelIdleTimer(directory)
+
+          // Persist lifecycle_state=deleting + increment generation
+          let locationID = synced.locationID
+          let generation = synced.generation
+          if (row) {
+            const updated = ProjectLocation.markDeleting({ directory, operationID })
+            if (updated) {
+              locationID = updated.id
+              generation = updated.lifecycle.generation
+            }
+          }
+
+          // Update in-memory state to deleting (blocks new admissions)
+          yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
+            undefined,
+            { ...state, lifecycle: "deleting", generation, locationID },
+          ])
+
+          yield* log(
+            `[location-lifecycle] delete-fenced location=${directory} generation=${generation} operation=${operationID}`,
+          )
+
+          // Dispose runtime if running or starting
+          if (synced.runtime.tag === "running" || synced.runtime.tag === "starting") {
+            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
+              undefined,
+              { ...state, runtime: { tag: "stopping" } },
+            ])
+            yield* Effect.promise(() => runDisposers(directory)).pipe(Effect.ignore)
+            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
+              undefined,
+              { ...state, runtime: stopped },
+            ])
+            yield* log(
+              `[location-lifecycle] runtime-disposed location=${directory} generation=${generation} reason=delete`,
+            )
+          }
+
+          // Run filesystem adapter (git worktree removal, directory cleanup)
+          if (input.removeFileSystem) {
+            yield* input.removeFileSystem.pipe(
+              Effect.mapError(
+                (error) =>
+                  new LocationDeleteFailed({
+                    directory,
+                    operation: "remove-file-system",
+                    message: errorMessage(error) || "Filesystem removal failed",
+                  }),
+              ),
+            )
+          }
+
+          // Persist lifecycle_state=deleted
+          if (row) {
+            ProjectLocation.markDeleted({ directory })
+          }
+
+          // Update in-memory state to deleted
+          yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
+            undefined,
+            { ...state, lifecycle: "deleted" as const, runtime: stopped, locationID, generation },
+          ])
+
+          yield* log(
+            `[location-lifecycle] delete-completed location=${directory} generation=${generation} operation=${operationID}`,
+          )
+
+          return { locationID, operationID, generation }
+        }),
+      ).pipe(Effect.withSpan("LocationLifecycle.delete"))
+    }
+
+    const recoverDeleting = (): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const rows = ProjectLocation.listByLifecycleState("deleting")
+        for (const row of rows) {
+          const exists = yield* fs.existsSafe(row.canonicalDirectory)
+          if (!exists) {
+            // Directory is absent → finish the tombstone
+            ProjectLocation.markDeleted({ directory: row.canonicalDirectory })
+            yield* log(
+              `[location-lifecycle] delete-recovered location=${row.canonicalDirectory} generation=${row.lifecycle.generation} result=deleted`,
+            )
+          } else {
+            // Directory remains → keep the fence; entryFor will pick up
+            // lifecycle=deleting from the DB when the location is next touched.
+            yield* log(
+              `[location-lifecycle] delete-pending location=${row.canonicalDirectory} generation=${row.lifecycle.generation} result=fenced`,
+            )
+          }
+        }
+      })
 
     const snapshot = (locationID: LocationID): Effect.Effect<LocationSnapshot, LocationNotFound> =>
       Effect.gen(function* () {
@@ -279,8 +529,27 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
         return yield* new LocationNotFound({ locationID })
       })
 
+    // Startup recovery: finish tombstones for deleting rows whose directories
+    // are gone, and keep the fence for those that still exist.
+    const recoveryExit = yield* Effect.exit(recoverDeleting())
+    if (Exit.isFailure(recoveryExit)) {
+      yield* log(`[location-lifecycle] recovery-error`)
+    }
+
+    // Shutdown: cancel all idle timers
+    yield* Effect.addFinalizer(() =>
+      Effect.gen(function* () {
+        for (const [, fiber] of idleTimers) {
+          yield* Fiber.interrupt(fiber).pipe(Effect.ignore)
+        }
+        idleTimers.clear()
+      }),
+    )
+
     return Service.of({
       provide,
+      delete: deleteLocation,
+      recoverDeleting,
       snapshot,
     })
   }),

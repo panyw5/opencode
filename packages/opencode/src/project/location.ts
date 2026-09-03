@@ -2,7 +2,12 @@ import { Database } from "@/storage/db"
 import { directorySqlEq } from "@/util/directory-sql"
 import { and, eq } from "drizzle-orm"
 import { ProjectLocationTable } from "./location.sql"
-import type { ProjectLocationKind, ProjectLocationVcsState, ProjectLocationVcsType } from "./location.sql"
+import type {
+  ProjectLocationKind,
+  ProjectLocationLifecycleState,
+  ProjectLocationVcsState,
+  ProjectLocationVcsType,
+} from "./location.sql"
 import { LocationID, type ProjectID } from "./schema"
 
 type Row = typeof ProjectLocationTable.$inferSelect
@@ -18,6 +23,13 @@ export interface Info {
   worktreeRoot?: string
   gitCommonDir?: string
   marker?: string
+  lifecycle: {
+    state: ProjectLocationLifecycleState
+    generation: number
+    deleteOperationID?: string
+    timeUnavailable?: number
+    timeDeleted?: number
+  }
   time: {
     created: number
     updated: number
@@ -49,6 +61,13 @@ export function fromRow(row: Row): Info {
     worktreeRoot: row.worktree_root ?? undefined,
     gitCommonDir: row.git_common_dir ?? undefined,
     marker: row.marker ?? undefined,
+    lifecycle: {
+      state: row.lifecycle_state,
+      generation: row.lifecycle_generation,
+      deleteOperationID: row.delete_operation_id ?? undefined,
+      timeUnavailable: row.time_unavailable ?? undefined,
+      timeDeleted: row.time_deleted ?? undefined,
+    },
     time: {
       created: row.time_created,
       updated: row.time_updated,
@@ -63,6 +82,91 @@ export function getByCanonicalDirectory(directory: string): Info | undefined {
       .select()
       .from(ProjectLocationTable)
       .where(directorySqlEq(ProjectLocationTable.canonical_directory, directory))
+      .get(),
+  )
+  return row ? fromRow(row) : undefined
+}
+
+export function getByID(locationID: LocationID): Info | undefined {
+  const row = Database.use((db) =>
+    db
+      .select()
+      .from(ProjectLocationTable)
+      .where(eq(ProjectLocationTable.id, locationID))
+      .get(),
+  )
+  return row ? fromRow(row) : undefined
+}
+
+export function listByLifecycleState(state: ProjectLocationLifecycleState): Info[] {
+  return Database.use((db) =>
+    db
+      .select()
+      .from(ProjectLocationTable)
+      .where(eq(ProjectLocationTable.lifecycle_state, state))
+      .all(),
+  ).map(fromRow)
+}
+
+export function markDeleting(input: {
+  directory: string
+  operationID: string
+}): Info | undefined {
+  const now = Date.now()
+  return Database.transaction(
+    (db) => {
+      const existing = db
+        .select()
+        .from(ProjectLocationTable)
+        .where(directorySqlEq(ProjectLocationTable.canonical_directory, input.directory))
+        .get()
+      if (!existing) return undefined
+      const row = db
+        .update(ProjectLocationTable)
+        .set({
+          lifecycle_state: "deleting",
+          lifecycle_generation: existing.lifecycle_generation + 1,
+          delete_operation_id: input.operationID,
+          time_updated: now,
+        })
+        .where(eq(ProjectLocationTable.id, existing.id))
+        .returning()
+        .get()
+      return fromRow(row)
+    },
+    { behavior: "immediate" },
+  )
+}
+
+export function markDeleted(input: { directory: string }): Info | undefined {
+  const now = Date.now()
+  const row = Database.use((db) =>
+    db
+      .update(ProjectLocationTable)
+      .set({
+        lifecycle_state: "deleted",
+        time_deleted: now,
+        time_updated: now,
+      })
+      .where(directorySqlEq(ProjectLocationTable.canonical_directory, input.directory))
+      .returning()
+      .get(),
+  )
+  return row ? fromRow(row) : undefined
+}
+
+export function markAvailable(input: { directory: string }): Info | undefined {
+  const now = Date.now()
+  const row = Database.use((db) =>
+    db
+      .update(ProjectLocationTable)
+      .set({
+        lifecycle_state: "available",
+        delete_operation_id: null,
+        time_updated: now,
+      })
+      .where(directorySqlEq(ProjectLocationTable.canonical_directory, input.directory))
+      .returning()
       .get(),
   )
   return row ? fromRow(row) : undefined

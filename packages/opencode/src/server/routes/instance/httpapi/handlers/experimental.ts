@@ -3,6 +3,7 @@ import { Agent } from "@/agent/agent"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
@@ -35,6 +36,20 @@ function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   )
 }
 
+function mapDeleteError<A>(self: Effect.Effect<A, LocationLifecycle.DeleteLocationError>) {
+  return self.pipe(
+    Effect.mapError((error) => {
+      const message = "leases" in error
+        ? `Location is busy with ${error.leases} active lease(s)`
+        : error.message
+      return new WorktreeApiError({
+        name: "WorktreeRemoveFailedError",
+        data: { message },
+      })
+    }),
+  )
+}
+
 export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "experimental", (handlers) =>
   Effect.gen(function* () {
     const account = yield* Account.Service
@@ -46,6 +61,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const worktreeSvc = yield* Worktree.Service
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
+    const lifecycle = yield* LocationLifecycle.Service
     log.info("session-content-search:background-job-service-ready")
 
     const startContentBackfill = () =>
@@ -139,7 +155,12 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       payload: Worktree.RemoveInput
     }) {
       const ctx = yield* InstanceState.context
-      yield* mapWorktreeError(worktreeSvc.remove(input.payload))
+      yield* mapDeleteError(
+        lifecycle.delete({
+          directory: input.payload.directory,
+          removeFileSystem: worktreeSvc.remove(input.payload).pipe(Effect.asVoid),
+        }),
+      )
       yield* project.removeSandbox(ctx.project.id, input.payload.directory)
       return true
     })

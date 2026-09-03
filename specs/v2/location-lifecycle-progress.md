@@ -1,7 +1,7 @@
 # Location Lifecycle 实施进度（交接笔记）
 
 > 任务：按 `specs/v2/location-lifecycle.md` 逐步实施 4 个 PR。本文件记录进度，供新会话接续。
-> 更新时刻：**PR2 完成**。下一阶段是 PR3（持久化删除围栏）。
+> 更新时刻：**PR4 完成**。全部 4 个 PR 已落地。
 
 ## 全局约束
 
@@ -15,12 +15,79 @@
   错误用 `Schema.TaggedErrorClass`，`yield* new XError(...)` 即 fail；`catchTags` 的 key 是完整 `_tag` 字符串（如 `"LocationLifecycle.LocationUnavailable"`）。
   **泛型 E 下 catchTags 会炸类型推导**：handler 参数被推成 `LocationUnavailable | Extract<E, ...>` 联合；用 `Effect.catchIf(isAdmissionError, ...)` + 类型谓词（instance-context.ts / location-lifecycle.ts `lease` 都是这么写的）。
   另外：**不要给 Effect.gen 的 generator 标返回类型**（如 `function* (): Effect<Outcome, unknown>`），它会约束每个 yield* 的类型；要统一返回类型就用显式标注的绑定 `const outcome: Outcome = yield* ...`。
+  `Effect.catchAllCause` 不存在；用 `Effect.exit` + `Exit.isFailure` 检查。`SynchronizedRef.set` 也不存在；用 `SynchronizedRef.modify(ref, () => [undefined, newState])` 设值。
 - 测试规范：`testEffect(layer)`、`it.live` 真实时钟、`it.instance`（withTmpdirInstance，供 InstanceRef + TestInstance）、`tmpdirScoped({git:true})`、
   并发同步用 Deferred 不用 sleep；异步租约计数断言用 `pollWithTimeout`。
 - 层拓扑：大 `Layer.provide([...])` 列表内兄弟层互不注入，需求向外冒泡；同名 layer const（如 `AppFileSystem.defaultLayer`、`InstanceLayer.layer`）
   按引用 memoize 共享实例。`InstanceLayer.layer = InstanceStore.defaultLayer + 真 InstanceBootstrap`。
   **chained `.pipe(Layer.provide(A))` 的外层 provide 会喂饱内层 A 冒泡的需求**（server.ts 里 `ScheduledTask.layer` 的 LocationLifecycle 需求由后面的大列表满足）。
 - 禁用 Agent 子代理。
+
+## PR3 设计要点（已落地）
+
+### Schema + Migration
+
+- `location.sql.ts`：`ProjectLocationTable` 新增 `lifecycle_state`（text, notNull, default "available"）、
+  `lifecycle_generation`（integer, notNull, default 0）、`delete_operation_id`（text, nullable）、
+  `time_unavailable`（integer, nullable）、`time_deleted`（integer, nullable）。
+  新增 `project_location_lifecycle_state_idx` 索引。新增类型 `ProjectLocationLifecycleState`。
+- 迁移 `migration/20260903163142_location_lifecycle/migration.sql`：5 个 ALTER TABLE ADD COLUMN + 1 个 CREATE INDEX。
+  **所有现有行默认 `lifecycle_state='available'`**，不会因路径缺失就标删除（spec 要求）。
+
+### location.ts
+
+- `Info` 接口新增 `lifecycle: { state, generation, deleteOperationID?, timeUnavailable?, timeDeleted? }`。
+- `fromRow` 映射 lifecycle 字段。
+- `upsert` **不触碰 lifecycle 字段**（insert 用 DB 默认值，update 保留原值）。
+- 新增方法：`getByID(locationID)`、`listByLifecycleState(state)`、`markDeleting({directory, operationID})`（递增 generation）、
+  `markDeleted({directory})`（设 time_deleted）、`markAvailable({directory})`（重置 delete_operation_id）。
+
+### location-lifecycle.ts
+
+- **`Interface` 新增** `delete(input)` 和 `recoverDeleting()`。
+- **`DeleteLocationInput`**：`{ directory, operationID?, removeFileSystem? }`。`removeFileSystem` 是可选的
+  `Effect.Effect<void, Error>`——调用方（HTTP handler）传入 worktree 删除逻辑作为文件系统适配器。
+  避免了 LocationLifecycle → Worktree 的循环依赖。
+- **`delete` 流程**（`Effect.uninterruptibleMask`）：① canonicalize 目录 → ② `entryFor` 取/建内存条目
+  → ③ **DB 同步**：`ProjectLocation.getByCanonicalDirectory` 查 DB，若 DB 状态 ≠ 内存状态则更新内存
+  → ④ 已 deleted → 幂等返回成功 → ⑤ 已 deleting：同 operationID = 重试，异 = `LocationDeleteFailed`
+  → ⑥ fail-if-busy：`running/starting` 且 leases>0 → `LocationBusy`
+  → ⑦ `ProjectLocation.markDeleting`（DB: deleting + generation++ + operationID）
+  → ⑧ 内存 → deleting（阻止新准入）
+  → ⑨ 若 runtime running/starting → stopping → `disposeInstance(directory)` → stopped
+  → ⑩ 跑 `removeFileSystem`（uninterruptible，错误转 `LocationDeleteFailed`，location 保持 deleting 可重试）
+  → ⑪ `ProjectLocation.markDeleted`（DB: deleted + time_deleted）
+  → ⑫ 内存 → deleted。
+- **`recoverDeleting`**：扫 `listByLifecycleState("deleting")`，目录不存在→`markDeleted`（补完墓碑），
+  目录仍在→保持围栏（日志 delete-pending）。在 layer 构造时自动执行一次（`Effect.exit` + `Exit.isFailure` 容错）。
+- **`provide` 新增 DB 同步**：每次准入前查 DB `lifecycle_state`，若非 `available` 则更新内存状态再准入。
+  这处理了 DB 被外部修改（如 `markDeleting` 直调、crashed delete 恢复后内存未同步）的情况。
+- **`entryFor` 同步**：新建条目时从 DB 加载 `lifecycle.state/generation` + `locationID`。
+- **operation ID 生成**：`Identifier.create("delop", "ascending")`（前缀 `delop_`，时间戳+随机）。
+
+### worktree HTTP handler
+
+- `experimental.ts`：`worktreeRemove` 改为调 `lifecycle.delete({directory, removeFileSystem: worktreeSvc.remove(input).pipe(Effect.asVoid)})`，
+  错误经 `mapDeleteError` 映射为 `WorktreeApiError`（`LocationBusy` → "busy with N leases"；`LocationDeleteFailed` → 原始 message）。
+  `project.removeSandbox` 仍在 delete 之后调用（worktree.remove 内部也调，冗余但幂等）。
+
+### 待迁移的直接 `InstanceStore.load` 调用（延后到后续 PR）
+
+以下 4 处仍直接调 `InstanceStore.load`，未走 lifecycle 门禁。PR3 暂不处理（它们不在删除路径上）：
+- `worktree/index.ts:260`（`boot` 函数，创建新 worktree 后 bootstrap 实例）
+- `control-plane/workspace.ts:586`（workspace adapter 解析本地目录）
+- `event-v2-bridge.ts:53`（事件无 InstanceRef 时按目录加载实例）
+- `cli/effect-cmd.ts:107`（CLI 命令启动时加载目录实例）
+
+## PR3 验证结果
+
+- `bun run typecheck`：干净。
+- `bun test test/project/`：120 pass, 1 skip, 0 fail（新增 7 个 delete 围栏测试）。
+- `bun test test/scheduled-task/`：19 pass, 0 fail。
+- `bun test test/server/`：277 pass, 2 skip, 3 fail = PR1 基线（`httpapi-session` not-found、`project-init-git`、`httpapi-compression` 阈值）。
+- 新增测试：delete 标记 deleted 并阻止后续准入、delete 活跃租约返回 LocationBusy、delete 幂等（同 operationID）、
+  delete 调用 filesystem adapter、不同 operationID 冲突返回 LocationDeleteFailed、
+  recoverDeleting 目录不存在→补完墓碑、recoverDeleting 目录仍在→保持围栏并阻止准入。
 
 ## PR2 设计要点（已落地）
 
@@ -44,11 +111,8 @@
 ## PR2 提交
 
 - `3f821d59c0` feat(instance): hold location leases across runs, jobs, and terminals（用户提交：全部 src 改动 + scheduled-task 测试）。
-- 待提交：三个租约集成测试（run-state.test.ts、background/job.test.ts、pty/pty-lease.test.ts 新增）——验证成功/取消/退出路径租约 0→1→0。
-- 验证：typecheck 干净；`test/project` 113 pass；`test/scheduled-task` 19 pass（含新增 missing-dir→skipped）；
-  `test/session` 7 fail 全部既有/ flaky（基线 worktree 1b9e765518 对照确认：message-v2 jpeg、llm-native.request、schema-decoding、
-  llm-native-recorded ×2、prompt cancel truncation、content-search flaky）；`test/server` 3 fail = PR1 笔记基线；
-  `test/tool` 1 fail（shell abort 超时，基线同挂）；`test/control-plane` 3 fail + 2 error（基线同挂，adaptors 模块缺失）。
+- `3a2b3dbc86` test(instance): verify lease release for session runs, jobs, and ptys
+- 验证：typecheck 干净；`test/project` 120 pass（PR3 新增 7 个）；`test/scheduled-task` 19 pass（含新增 missing-dir→skipped）。
 
 ## 已完成（PR1）
 
@@ -64,8 +128,8 @@
 - `packages/opencode/src/project/location-lifecycle.ts`（新）：
   - 错误：LocationNotFound/Unavailable/Deleting/Deleted/Busy/GenerationMismatch/DeleteFailed（tag 前缀 `LocationLifecycle.`）。
   - `Service` + `Interface`：`provide({directory, purpose}, effect)`（准入→existsSafe→store.load→markRunning→effect(provide InstanceRef)→ensuring release）
-    和 `snapshot(locationID)`（扫内存 Map，**未加 location.ts getByID**，PR3 再说）。
-  - 内存态：`Map<canonicalDir, Entry>`，Entry.ref = SynchronizedRef<EntryState>；generation 恒 0；无空闲回收（shadow 模式）。
+    和 `snapshot(locationID)`（扫内存 Map，**PR3 已加 location.ts getByID**）。
+  - 内存态：`Map<canonicalDir, Entry>`，Entry.ref = SynchronizedRef<EntryState>；generation 恒 0（PR3 已持久化）；无空闲回收（shadow 模式）。
   - `layer` 需 `InstanceStore.Service | AppFileSystem.Service`；`defaultLayer` 自含二者（仍需外部给 InstanceBootstrap）。
   - 日志：`[location-lifecycle] admission-request/lease-acquired/lease-released/runtime-started ...`。
 - `packages/opencode/test/project/location-lifecycle.test.ts`（新）：4 个测试全过——并发准入共享一次 boot 且 leases=2
@@ -96,29 +160,66 @@
   （门禁会拒缺失目录，原测试断言的"乱码路径也能 load"正是被消除的行为）；`httpapi-promptasync-context.test.ts`
   层列表同样补 `LocationLifecycle.layer`（缺了会 "Service not found"）。
 
-### PR1 收尾验证结果
+## PR4 设计要点（已落地）
 
-- `bun test test/project/`：113 pass 0 fail。`bun run typecheck`：干净。
-- `bun test test/server/`：仅剩 3 个**既有失败**（stash 基线同样挂）：`httpapi-compression` 阈值测试、
-  `project-init-git`、`httpapi-session` not-found 测试；`httpapi-math-worker` 偶发 flaky（基线也会）。
-- **不要并行跑两个 bun test**（数据库/端口争用会假超时）。
+### 后端空闲回收 (`location-lifecycle.ts`)
 
-## 待办（PR3–PR4）
+- **可配置空闲时长**：`export const config = { idleDisposalMs: 120_000 }`（2 分钟）。测试可设 `LocationLifecycle.config.idleDisposalMs = 50` 配合 `it.live` + `pollWithTimeout`。
+- **`idleTimers` Map**：`Map<string, Fiber.Fiber<void, unknown>>`，按目录索引。
+- **`scheduleIdleDisposal(entry, generation)`**：先 `cancelIdleTimer`，再 fork 一个 `Effect.sleep(config.idleDisposalMs)` 进 layer scope。
+  到期后检查：generation 未变、lifecycle=available、runtime=running、leases=0 → 设 stopping → `runDisposers` → stopped → 日志 `idle-disposed`。
+- **`cancelIdleTimer(directory)`**：从 map 取 fiber，`Fiber.interrupt`，从 map 删除，日志 `idle-cancelled`。
+- **`provide` 准入时**：获取租约后立即 `cancelIdleTimer(directory)`——新租约让旧定时器失效。
+- **`provide` 释放时**：`release` 返回 `{leases, runtimeTag}`；若 `leases===0 && runtimeTag==="running"`，调 `scheduleIdleDisposal`。
+  `release` 的返回类型从 `[number, EntryState]` 改为 `[{leases, runtimeTag}, EntryState]`。
+- **`delete` 时**：在 fail-if-busy 检查后、persist deleting 前，调 `cancelIdleTimer`。
+- **Layer finalizer**：`Effect.addFinalizer` 关闭所有 idle timer fibers + `idleTimers.clear()`。
+- **Effect 4 坑**：`Effect.yieldNow` 不存在（beta.66），用 `Effect.sleep("N millis")` 或 `pollWithTimeout` 替代。
+  `Fiber.RuntimeFiber` 也不存在，用 `Fiber.Fiber<A, E>`。
+  TestClock 的 `adjust` 可用但配合 fork fiber 难以同步（fork 后 fiber 未开始跑，adjust 无法唤醒），
+  最终改用 `it.live` + 可配置短空闲时长 + `pollWithTimeout`。
 
-- **PR3** `feat(project)` / `fix(worktree)`：`location.sql.ts` 加列 `lifecycle_state/lifecycle_generation/delete_operation_id/time_unavailable/time_deleted`
-  + 迁移（不得因本地路径缺失就标 deleted）；`location.ts` 加 `getByID`；`LocationLifecycle.delete`（fail-if-busy、deleting 围栏、幂等 operationID）；
-  `worktree/index.ts` remove 改为 `LocationLifecycle.delete` 内的文件系统适配器；启动恢复 deleting 行（目录不在→补完墓碑；仍在→保持围栏）。
-  注意：`worktree/index.ts:260` 和 `control-plane/workspace.ts:586`、`event-v2-bridge.ts:53`、`cli/effect-cmd.ts:107` 仍有直接 `InstanceStore.load` 调用，迁移时逐个处理。
-- **PR4** `feat(instance)` / `fix(app)`×2（两半必须同发）：启用 2 分钟空闲回收（TestClock 测）；前端 `global-sync.tsx` onDispose 移除
-  `client.instance.dispose()`；project close 改纯 detach，移除 `layout.tsx` ~line 776-820 的 lastProject/路由注册复活路径。
+### 前端 child-store 解耦 (`global-sync.tsx`)
+
+- `onDispose` 回调移除了 `client.instance.dispose({ directory })` 调用（原 327-362 行）。
+  现在只做前端缓存清理：`queueFor(domain).clear`、`sessionLoaded.delete`、`clearSessionControllers`、
+  `sdkCache.delete`、`clearSessionPrefetchDirectory`、`setLoaded` produce 删除、`revs.delete`。
+- 日志改为 `[global-sync] child store evicted`。
+- `isMissingDirectoryError` 仍在 `onBootstrap` 中使用，未删除。
+- `child-store.test.ts` 注释更新：说明 PR4 已解耦，`onDispose` 只释放渲染器内存。
+
+### 前端 project detach (`layout.tsx`)
+
+- `autoselecting` 资源：`if (list.length === 0)` 分支从 `await openProject(last, true)` 改为直接 `return`。
+  不再从 `server.projects.last()` 复活上次关闭的项目。用户必须显式打开项目。
+- `else` 分支保留：从已有列表中选 `last` 匹配的项目或第一项（这只是 focus 选择，不是复活）。
+- 路由注册 (`createEffect` on routeDir)：暂时保留（已有 `wasRecentlyClosed` 5 秒墓碑防护）。
+
+### PR4 验证结果
+
+- `bun run typecheck`：干净。
+- `bun test test/project/`：122 pass, 1 skip, 0 fail（新增 2 个空闲回收测试，共 13 个 lifecycle 测试）。
+- `bun test test/scheduled-task/`：19 pass, 0 fail。
+- `bun test --preload ./happydom.ts ./src/context/global-sync/child-store.test.ts`（前端）：5 pass, 0 fail。
+- 新增测试：空闲回收到期后 runtime stopped、新租约取消旧定时器后 runtime 仍 running。
+
+## 后续收尾
+
 - spec 的 Test Invariants（15 条）和 Release Validation（8 条）在收尾时对照。
+- 待迁移的直接 `InstanceStore.load` 调用（见 PR3 设计要点列表）。
+- 路由注册隐式 project open 暂时保留（有 5 秒墓碑防护），后续可改为需要显式 open intent。
+- `server.projects.last()` / `touch()` API 保留（用于已有列表内 focus 选择），仅移除了 list 为空时的自动复活。
 
 ## 验证过的关键事实
 
 - `store.load({directory: 不存在})` 成功（fs.up 上探不到 .git → fallback dir:hash）——已用测试证实。
-- `bun run typecheck` 在 PR1.2 后干净。
+- `bun run typecheck` 在 PR4 后干净。
 - 并发准入测试需要双屏障：bothInside（等两个都进来）+ bothObserved（等两个都快照完），否则租约释放与快照竞态。
 - 基线对照方法：`git worktree add /tmp/opencode-baseline-pr2 <baseline-sha>` + `bun install`（symlink node_modules 会导致 workspace 包解析失败），
   跑完 `git worktree remove --force`。
 - 用户会随时把未提交工作提交成自己的 commit（本次 PR2 src 被提交为 3f821d59c0）； stash push/pop 跨这种提交不会冲突，
   pop 会把已被提交吸收的改动静默丢弃——以为是丢了，先 `git log -- <file>` 确认。
+- `Effect.catchAllCause` 在 beta.66 不存在；`SynchronizedRef.set` 也不存在；`Effect.yieldNow` 也不存在；`Fiber.RuntimeFiber` 也不存在。
+  用 `Effect.exit` + `Exit.isFailure` 替代 catchAllCause；`SynchronizedRef.modify(ref, () => [undefined, newState])` 替代 set；
+  `Effect.sleep("N millis")` 或 `pollWithTimeout` 替代 yieldNow；`Fiber.Fiber<A, E>` 替代 RuntimeFiber。
+  TestClock.adjust 可用但 fork 后 fiber 未开始跑时 adjust 无法唤醒，改用 `it.live` + 可配置短空闲时长。

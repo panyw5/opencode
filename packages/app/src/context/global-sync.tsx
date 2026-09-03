@@ -324,42 +324,7 @@ function createGlobalSync() {
           }),
         )
         revs.delete(directory)
-        console.debug(`[global-sync] instance dispose requested directory=${directory} domain=${domain}`)
-        if (unavailableDirectories.has(directory)) {
-          console.debug(`[global-sync] instance dispose skipped directory=${directory} reason=directory-unavailable`)
-          return
-        }
-        const conn = server.currentFor(domain)
-        if (!conn) {
-          console.debug(
-            `[global-sync] instance dispose skipped directory=${directory} domain=${domain} reason=server-unavailable`,
-          )
-          return
-        }
-        let client: ReturnType<typeof runtime>["client"]
-        try {
-          client = runtime(domain).client
-        } catch (err) {
-          console.warn(
-            `[global-sync] instance dispose setup failed directory=${directory} domain=${domain} err=${err instanceof Error ? err.message : String(err)}`,
-          )
-          return
-        }
-        void client.instance
-          .dispose({ directory })
-          .then(() => {
-            console.debug(`[global-sync] instance dispose succeeded directory=${directory} domain=${domain}`)
-          })
-          .catch((err) => {
-            if (isMissingDirectoryError(err)) {
-              console.warn(`[global-sync] directory unavailable, marking unavailable directory=${directory}`)
-              unavailableDirectories.add(directory)
-              return
-            }
-            console.warn(
-              `[global-sync] instance dispose failed directory=${directory} domain=${domain} err=${err instanceof Error ? err.message : String(err)}`,
-            )
-          })
+        console.debug(`[global-sync] child store evicted directory=${directory} domain=${domain}`)
       },
       translate: language.t,
     })

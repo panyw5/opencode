@@ -71,11 +71,11 @@ describe("createChildStoreManager", () => {
     expect(manager.children[directory]).toBeDefined()
   })
 
-  // Characterization tests for the directory lifecycle coupling described in
-  // specs/v2/location-lifecycle.md: renderer eviction drives backend teardown
-  // and a disposed directory silently revives on next access. Update these
-  // when the frontend decoupling PR lands.
-  test("disposeDirectory drives the backend teardown callback", () => {
+  // PR4 ownership cutover: child-store eviction no longer calls
+  // client.instance.dispose(). The onDispose callback only releases
+  // renderer memory and SDK caches. Backend idle disposal handles
+  // runtime teardown.
+  test("disposeDirectory drives the eviction callback", () => {
     createRoot((dispose) => {
       const owner = getOwner()
       if (!owner) throw new Error("owner required")

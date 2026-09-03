@@ -6,6 +6,7 @@ import type { LocationID, ProjectAliasID, ProjectID } from "./schema"
 export type ProjectLocationKind = "directory" | "git_main" | "git_worktree" | "git_clone"
 export type ProjectLocationVcsType = "git"
 export type ProjectLocationVcsState = "none" | "unborn" | "ready" | "unavailable" | "error"
+export type ProjectLocationLifecycleState = "available" | "unavailable" | "deleting" | "deleted"
 export type ProjectAliasKind = "git_marker" | "provider_repo" | "remote_url" | "root_commit"
 export type ProjectAliasConfidence = "high" | "medium" | "low"
 
@@ -25,6 +26,11 @@ export const ProjectLocationTable = sqliteTable(
     worktree_root: text(),
     git_common_dir: text(),
     marker: text(),
+    lifecycle_state: text().$type<ProjectLocationLifecycleState>().notNull().default("available"),
+    lifecycle_generation: integer().notNull().default(0),
+    delete_operation_id: text(),
+    time_unavailable: integer(),
+    time_deleted: integer(),
     ...Timestamps,
     time_last_seen: integer()
       .notNull()
@@ -34,6 +40,7 @@ export const ProjectLocationTable = sqliteTable(
     uniqueIndex("project_location_canonical_directory_idx").on(table.canonical_directory),
     index("project_location_project_idx").on(table.project_id),
     index("project_location_git_common_dir_idx").on(table.git_common_dir),
+    index("project_location_lifecycle_state_idx").on(table.lifecycle_state),
   ],
 )
 
