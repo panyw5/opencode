@@ -1,0 +1,24 @@
+diff --git a/dist/NodeHttpServer.js b/dist/NodeHttpServer.js
+index b8235519fb315c7655c8c234e187a4944a54fab6..63689d11d7639116ad8edbfd0ff11f00748ccd6b 100644
+--- a/dist/NodeHttpServer.js
++++ b/dist/NodeHttpServer.js
+@@ -134,8 +134,17 @@ export const makeUpgradeHandler = (lazyWss, httpEffect, options) => {
+       let nodeResponse_ = undefined;
+       const nodeResponse = () => {
+         if (nodeResponse_ === undefined) {
+-          nodeResponse_ = new Http.ServerResponse(nodeRequest);
+-          nodeResponse_.assignSocket(socket);
++          // Bun's node:http compat assigns a placeholder ServerResponse when an
++          // upgrade request is not claimed synchronously (any async yield before
++          // the response). Reuse it instead of failing assignSocket with
++          // ERR_HTTP_SOCKET_ASSIGNED, which would swallow the response entirely.
++          const existing = socket._httpMessage;
++          if (existing) {
++            nodeResponse_ = existing;
++          } else {
++            nodeResponse_ = new Http.ServerResponse(nodeRequest);
++            nodeResponse_.assignSocket(socket);
++          }
+           nodeResponse_.on("finish", () => {
+             socket.end();
+           });
