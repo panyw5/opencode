@@ -3,21 +3,29 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Popover } from "@opencode-ai/ui/popover"
 import { showToast } from "@opencode-ai/ui/toast"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
 import type { Part } from "@opencode-ai/sdk/v2/client"
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js"
 import { SessionContextUsage } from "@/components/session-context-usage"
+import { useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useGlobalSync } from "@/context/global-sync"
 import { useSDK } from "@/context/sdk"
+import { useSync } from "@/context/sync"
+import { createOpenSessionFileTab } from "./helpers"
+import { useSessionLayout } from "./session-layout"
 import {
   collectSessionFileChanges,
   collectSessionReportedFileChanges,
   type SessionFileChange,
+  type SessionFileChanges,
 } from "./session-file-changes"
 import { sessionStatusHistoryKey } from "./session-status-history"
 
 const historyPageSize = 100
+
+const baseName = (file: string) => file.slice(file.lastIndexOf("/") + 1) || file
 
 export function SessionStatusFloat(props: {
   sessionID?: string
@@ -27,7 +35,10 @@ export function SessionStatusFloat(props: {
 }) {
   const language = useLanguage()
   const globalSync = useGlobalSync()
+  const sync = useSync()
   const sdk = useSDK()
+  const file = useFile()
+  const { tabs, view } = useSessionLayout()
   const [shown, setShown] = createSignal(false)
   const [copied, setCopied] = createSignal(false)
   const [childDiffs, setChildDiffs] = createSignal<SnapshotFileDiff[]>([])
@@ -36,10 +47,30 @@ export function SessionStatusFloat(props: {
     string,
     Promise<{ sessionID: string; diffs: SnapshotFileDiff[]; reported: SessionFileChange[] }>
   >()
+  // Git projects trust the snapshot diff (authoritative git state) and only
+  // fall back to tool-reported changes for snapshot blind spots (e.g. files
+  // exceeding the snapshot limit). Non-git projects have no snapshot, so tool
+  // metadata (real executed writes) is the only trustworthy source.
+  const isGit = createMemo(() => sync.project?.vcs === "git")
   const fileChanges = createMemo(() =>
-    collectSessionFileChanges([...props.diffs, ...childDiffs()], reportedFileChanges(), sdk.directory),
+    collectSessionFileChanges(isGit() ? [...props.diffs, ...childDiffs()] : [], reportedFileChanges(), sdk.directory),
   )
   const hasFileChanges = createMemo(() => Object.values(fileChanges()).some((files) => files.length > 0))
+  const openFilePreview = () => {
+    if (!view().filePreview.opened()) view().filePreview.open()
+  }
+  const openFileTab = createOpenSessionFileTab({
+    normalizeTab: (tab) => (tab.startsWith("file://") ? file.tab(tab) : tab),
+    openTab: tabs().open,
+    pathFromTab: file.pathFromTab,
+    loadFile: file.load,
+    openReviewPanel: openFilePreview,
+    setActive: tabs().setActive,
+  })
+  const openChangedFile = (path: string) => {
+    setShown(false)
+    openFileTab(file.tab(path))
+  }
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
   let historyOwnerSessionID: string | undefined
 
@@ -231,9 +262,24 @@ export function SessionStatusFloat(props: {
             <Show when={hasFileChanges()}>
               <div data-slot="session-status-file-changes" class="border-b border-border-weaker-base px-3 py-3">
                 <div class="flex flex-col gap-3">
-                  <FileChangeList title={language.t("session.status.files.added")} files={fileChanges().added} />
-                  <FileChangeList title={language.t("session.status.files.modified")} files={fileChanges().modified} />
-                  <FileChangeList title={language.t("session.status.files.deleted")} files={fileChanges().deleted} />
+                  <FileChangeList
+                    title={language.t("session.status.files.added")}
+                    files={fileChanges().added}
+                    status="added"
+                    onOpen={openChangedFile}
+                  />
+                  <FileChangeList
+                    title={language.t("session.status.files.modified")}
+                    files={fileChanges().modified}
+                    status="modified"
+                    onOpen={openChangedFile}
+                  />
+                  <FileChangeList
+                    title={language.t("session.status.files.deleted")}
+                    files={fileChanges().deleted}
+                    status="deleted"
+                    onOpen={openChangedFile}
+                  />
                 </div>
               </div>
             </Show>
@@ -249,18 +295,25 @@ async function loadAllMessageParts(
   directory: string,
   sessionID: string,
 ) {
-  const result: Part[] = []
+  // Pages are fetched newest-first; keep each page's internal order but reverse
+  // the page order so the result is chronological across the whole session.
+  const pages: Part[][] = []
   let before: string | undefined
   do {
     const page = await globalSync.session.messages.page({ directory, sessionID, limit: historyPageSize, before })
     const assistant = new Set(page.session.filter((message) => message.role === "assistant").map((message) => message.id))
-    result.push(...page.part.filter((item) => assistant.has(item.id)).flatMap((item) => item.part))
+    pages.push(page.part.filter((item) => assistant.has(item.id)).flatMap((item) => item.part))
     before = page.cursor
   } while (before)
-  return result
+  return pages.reverse().flat()
 }
 
-function FileChangeList(props: { title: string; files: string[] }) {
+function FileChangeList(props: {
+  title: string
+  files: string[]
+  status: keyof SessionFileChanges
+  onOpen: (file: string) => void
+}) {
   const [open, setOpen] = createSignal(false)
 
   return (
@@ -281,11 +334,39 @@ function FileChangeList(props: { title: string; files: string[] }) {
           </div>
         </Collapsible.Trigger>
         <Collapsible.Content>
-          <ul class="mt-1.5 space-y-1">
+          <ul class="mt-1.5 space-y-0.5">
             <For each={props.files}>
               {(file) => (
-                <li class="rounded-lg border border-border-weaker-base bg-surface-base px-2.5 py-1.5 text-12-regular text-text-strong shadow-xs-border-base">
-                  <code class="block break-all font-mono">{file}</code>
+                <li>
+                  <Tooltip
+                    value={<span class="block max-w-full truncate font-mono text-12-regular">{file}</span>}
+                    contentStyle={{ "max-width": "none", "white-space": "nowrap" }}
+                    placement="left"
+                  >
+                    <Show
+                      when={props.status !== "deleted"}
+                      fallback={
+                        // Deleted files no longer exist, so there is nothing to preview.
+                        <div
+                          data-action="session-status-file-deleted"
+                          data-file={file}
+                          class="block w-full px-2.5 py-1.5 text-left text-12-regular text-text-weak"
+                        >
+                          <code class="block truncate font-mono">{baseName(file)}</code>
+                        </div>
+                      }
+                    >
+                      <button
+                        type="button"
+                        data-action="session-status-open-file"
+                        data-file={file}
+                        class="block w-full rounded-md px-2.5 py-1.5 text-left text-12-regular text-text-strong transition-colors hover:bg-surface-raised-base-hover"
+                        onClick={() => props.onOpen(file)}
+                      >
+                        <code class="block truncate font-mono">{baseName(file)}</code>
+                      </button>
+                    </Show>
+                  </Tooltip>
                 </li>
               )}
             </For>
