@@ -1,12 +1,20 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Ref } from "effect"
+import { Deferred, Effect, Fiber, Layer, Ref } from "effect"
 import { BackgroundJob } from "@/background/job"
 import { disposeInstance } from "@/effect/instance-registry"
-import { TestInstance } from "../fixture/fixture"
+import { InstanceBootstrap } from "@/project/bootstrap-service"
+import { LocationLifecycle } from "@/project/location-lifecycle"
+import { requireInstance, TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 import { withTmpdirInstance } from "../fixture/fixture"
 
 const it = testEffect(BackgroundJob.defaultLayer)
+
+const lifecycleIt = testEffect(
+  Layer.mergeAll(BackgroundJob.defaultLayer, LocationLifecycle.defaultLayer).pipe(
+    Layer.provide(Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))),
+  ),
+)
 
 describe("background.job", () => {
   it.instance("tracks started jobs through completion", () =>
@@ -463,5 +471,70 @@ describe("background.job", () => {
 
       yield* Deferred.await(interrupted).pipe(Effect.timeout("1 second"))
     }),
+  )
+})
+
+describe("background.job location lease", () => {
+  const leaseCount = (lifecycle: LocationLifecycle.Interface, locationID: Parameters<typeof lifecycle.snapshot>[0]) =>
+    lifecycle.snapshot(locationID).pipe(
+      Effect.map((snap) =>
+        snap.runtime.tag === "stopped" || snap.runtime.tag === "stopping" ? 0 : snap.runtime.leases,
+      ),
+      // No entry exists before the first admission reaches the gate.
+      Effect.catch(() => Effect.succeed(0)),
+    )
+
+  const expectLeases = (
+    lifecycle: LocationLifecycle.Interface,
+    locationID: Parameters<typeof lifecycle.snapshot>[0],
+    expected: number,
+  ) =>
+    pollWithTimeout(
+      leaseCount(lifecycle, locationID).pipe(Effect.map((leases) => (leases === expected ? true : undefined))),
+      `lease count did not become ${expected}`,
+    )
+
+  lifecycleIt.instance(
+    "holds one lease until the job settles",
+    () =>
+      Effect.gen(function* () {
+        const ctx = yield* requireInstance
+        const lifecycle = yield* LocationLifecycle.Service
+        const jobs = yield* BackgroundJob.Service
+        const gate = yield* Deferred.make<void>()
+
+        const job = yield* jobs.start({
+          type: "test",
+          run: Deferred.await(gate).pipe(Effect.as("done")),
+        })
+        yield* expectLeases(lifecycle, ctx.location.id, 1)
+
+        yield* Deferred.succeed(gate, undefined)
+        const done = yield* jobs.wait({ id: job.id })
+        expect(done.info?.status).toBe("completed")
+        yield* expectLeases(lifecycle, ctx.location.id, 0)
+      }),
+    { git: true },
+  )
+
+  lifecycleIt.instance(
+    "releases the lease when the job is cancelled",
+    () =>
+      Effect.gen(function* () {
+        const ctx = yield* requireInstance
+        const lifecycle = yield* LocationLifecycle.Service
+        const jobs = yield* BackgroundJob.Service
+
+        const job = yield* jobs.start({
+          type: "test",
+          run: Effect.never.pipe(Effect.as("never")),
+        })
+        yield* expectLeases(lifecycle, ctx.location.id, 1)
+
+        const cancelled = yield* jobs.cancel(job.id)
+        expect(cancelled?.status).toBe("cancelled")
+        yield* expectLeases(lifecycle, ctx.location.id, 0)
+      }),
+    { git: true },
   )
 })

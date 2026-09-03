@@ -1,13 +1,22 @@
 import { describe, expect } from "bun:test"
-import { Cause, Deferred, Effect, Exit, Fiber, Ref } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, Ref } from "effect"
 import { MessageV2 } from "@/session/message-v2"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { SessionRunState } from "@/session/run-state"
+import { InstanceBootstrap } from "@/project/bootstrap-service"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import * as Session from "@/session/session"
-import { testEffect } from "../lib/effect"
+import { requireInstance } from "../fixture/fixture"
+import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const it = testEffect(SessionRunState.defaultLayer)
+
+const lifecycleIt = testEffect(
+  Layer.mergeAll(SessionRunState.defaultLayer, LocationLifecycle.defaultLayer).pipe(
+    Layer.provide(Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))),
+  ),
+)
 
 function reply(sessionID: SessionID, text: string): MessageV2.WithParts {
   const id = MessageID.ascending()
@@ -129,5 +138,91 @@ describe("SessionRunState", () => {
       )
       expect(next.parts[0]?.type === "text" ? next.parts[0].text : undefined).toBe("next")
     }),
+  )
+})
+
+describe("SessionRunState location lease", () => {
+  const leaseCount = (lifecycle: LocationLifecycle.Interface, locationID: Parameters<typeof lifecycle.snapshot>[0]) =>
+    lifecycle.snapshot(locationID).pipe(
+      Effect.map((snap) =>
+        snap.runtime.tag === "stopped" || snap.runtime.tag === "stopping" ? 0 : snap.runtime.leases,
+      ),
+      // No entry exists before the first admission reaches the gate.
+      Effect.catch(() => Effect.succeed(0)),
+    )
+
+  const expectLeases = (
+    lifecycle: LocationLifecycle.Interface,
+    locationID: Parameters<typeof lifecycle.snapshot>[0],
+    expected: number,
+  ) =>
+    pollWithTimeout(
+      leaseCount(lifecycle, locationID).pipe(Effect.map((leases) => (leases === expected ? true : undefined))),
+      `lease count did not become ${expected}`,
+    )
+
+  lifecycleIt.instance(
+    "holds one lease for the complete run and releases it on success",
+    () =>
+      Effect.gen(function* () {
+        const ctx = yield* requireInstance
+        const service = yield* SessionRunState.Service
+        const lifecycle = yield* LocationLifecycle.Service
+        const sessionID = SessionID.descending()
+        const started = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+
+        const done = yield* service
+          .ensureRunning(
+            sessionID,
+            Effect.succeed(reply(sessionID, "interrupted")),
+            Effect.gen(function* () {
+              yield* Deferred.succeed(started, undefined)
+              yield* Deferred.await(release)
+              return reply(sessionID, "ran")
+            }),
+          )
+          .pipe(Effect.forkChild)
+
+        // `started` fires inside the leased work, so the lease is already held.
+        yield* Deferred.await(started)
+        expect(yield* leaseCount(lifecycle, ctx.location.id)).toBe(1)
+
+        yield* Deferred.succeed(release, undefined)
+        yield* Fiber.join(done)
+        yield* expectLeases(lifecycle, ctx.location.id, 0)
+      }),
+    { git: true },
+  )
+
+  lifecycleIt.instance(
+    "releases the lease when the run is cancelled",
+    () =>
+      Effect.gen(function* () {
+        const ctx = yield* requireInstance
+        const service = yield* SessionRunState.Service
+        const lifecycle = yield* LocationLifecycle.Service
+        const sessionID = SessionID.descending()
+        const started = yield* Deferred.make<void>()
+
+        const active = yield* service
+          .ensureRunning(
+            sessionID,
+            Effect.succeed(reply(sessionID, "interrupted")),
+            Deferred.succeed(started, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.as(reply(sessionID, "never")),
+            ),
+          )
+          .pipe(Effect.forkChild)
+
+        yield* Deferred.await(started)
+        expect(yield* leaseCount(lifecycle, ctx.location.id)).toBe(1)
+
+        yield* service.cancel(sessionID)
+        yield* Fiber.join(active)
+        yield* expectLeases(lifecycle, ctx.location.id, 0)
+      }),
+    { git: true },
   )
 })
