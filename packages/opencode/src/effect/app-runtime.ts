@@ -41,6 +41,7 @@ import { Truncate } from "@/tool/truncate"
 import { ToolRegistry } from "@/tool/registry"
 import { Format } from "@/format"
 import { InstanceLayer } from "@/project/instance-layer"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
 import { Reference } from "@/reference/reference"
@@ -128,6 +129,9 @@ export const AppLayer = Layer.mergeAll(
   SyncEvent.defaultLayer,
   EventV2Bridge.defaultLayer,
   DataMigration.defaultLayer,
+  // InstanceStore is supplied by InstanceLayer below; AppFileSystem is
+  // provided here so the lifecycle gate shares this build's instance.
+  LocationLifecycle.layer.pipe(Layer.provide(AppFileSystem.defaultLayer)),
 ).pipe(Layer.provideMerge(InstanceLayer.layer), Layer.provideMerge(Observability.layer))
 
 const noInstanceRt = ManagedRuntime.make(NoInstanceLayer, { memoMap })

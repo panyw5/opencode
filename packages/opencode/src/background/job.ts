@@ -1,5 +1,6 @@
 import { InstanceState } from "@/effect/instance-state"
 import { Identifier } from "@/id/id"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { Cause, Clock, Context, Deferred, Effect, Exit, Fiber, Layer, Scope, SynchronizedRef } from "effect"
 
 export type Status = "running" | "completed" | "error" | "cancelled"
@@ -146,6 +147,7 @@ export const layer = Layer.effect(
     const start: Interface["start"] = Effect.fn("BackgroundJob.start")(function* (input) {
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
+          const directory = (yield* InstanceState.context).directory
           const id = input.id ?? Identifier.ascending("job")
           while (true) {
             const s = yield* InstanceState.get(state)
@@ -208,8 +210,15 @@ export const layer = Layer.effect(
             const ready = yield* Deferred.make<void>()
             const close = (exit: Exit.Exit<unknown, unknown>) =>
               Scope.close(scope, exit).pipe(Effect.exit, Effect.asVoid)
+            // Hold a location lease for the job's full run: from after the
+            // ready gate until terminal settlement (completion, failure, or
+            // cancellation). Scope close and finish bookkeeping stay outside
+            // the lease so they keep running uninterruptibly.
             const fiber = yield* restore(
-              Deferred.await(ready).pipe(Effect.andThen(input.run.pipe(Scope.provide(scope)))),
+              LocationLifecycle.lease(
+                { directory, purpose: "background-job" },
+                Deferred.await(ready).pipe(Effect.andThen(input.run.pipe(Scope.provide(scope)))),
+              ),
             ).pipe(
               Effect.matchCauseEffect({
                 onSuccess: (output) =>

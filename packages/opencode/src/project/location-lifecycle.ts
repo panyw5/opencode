@@ -75,6 +75,44 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Lo
 
 export const use = serviceUse(Service)
 
+const admissionTags = new Set<string>([
+  "LocationLifecycle.LocationUnavailable",
+  "LocationLifecycle.LocationDeleting",
+  "LocationLifecycle.LocationDeleted",
+])
+
+const isAdmissionError = (error: unknown): error is AdmissionError =>
+  typeof error === "object" &&
+  error !== null &&
+  "_tag" in error &&
+  admissionTags.has((error as { _tag: unknown })._tag as string)
+
+/**
+ * Hold a lease on `input.directory` for the duration of `effect`.
+ *
+ * Long-running instance internals (session runs, PTYs, background jobs) call
+ * this instead of depending on `Service` directly, so bare unit-test layers
+ * without the lifecycle gate keep working unleased. When the service is
+ * present, admission is enforced; rejection means the location vanished while
+ * the caller was already inside it, so admission errors are re-raised as
+ * defects.
+ */
+export const lease = <A, E, R>(
+  input: { directory: string; purpose: AdmissionPurpose },
+  effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, R> =>
+  Effect.serviceOption(Service).pipe(
+    Effect.flatMap((service) =>
+      service._tag === "None"
+        ? effect
+        : service.value
+            .provide(input, effect)
+            // catchIf with a refinement keeps the generic handler error E
+            // intact, which catchTags cannot express here.
+            .pipe(Effect.catchIf(isAdmissionError, (error) => Effect.die(error))),
+    ),
+  )
+
 interface EntryState {
   readonly lifecycle: LifecycleState
   readonly generation: number

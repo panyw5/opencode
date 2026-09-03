@@ -1,6 +1,7 @@
 import { InstanceState } from "@/effect/instance-state"
 import { Runner } from "@/effect/runner"
 import { BackgroundJob } from "@/background/job"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { Effect, Latch, Layer, Scope, Context } from "effect"
 import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
@@ -105,12 +106,23 @@ export const layer = Layer.effect(
       yield* cancelBackgroundJobs(background, sessionID)
     })
 
+    // Hold a location lease for the complete run, not only admission: the
+    // runner fiber outlives the HTTP request that started it, and a renderer
+    // disconnect must not release backend work. The lease is released exactly
+    // once by the gate's finalizer on success, failure, interruption, or
+    // instance teardown. Resolution is soft so bare unit-test layers without
+    // the lifecycle service keep running unleased.
+    const leased = (work: Effect.Effect<MessageV2.WithParts>) =>
+      InstanceState.context.pipe(
+        Effect.flatMap((ctx) => LocationLifecycle.lease({ directory: ctx.directory, purpose: "session-run" }, work)),
+      )
+
     const ensureRunning = Effect.fn("SessionRunState.ensureRunning")(function* (
       sessionID: SessionID,
       onInterrupt: Effect.Effect<MessageV2.WithParts>,
       work: Effect.Effect<MessageV2.WithParts>,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(work)
+      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(leased(work))
     })
 
     const startShell = Effect.fn("SessionRunState.startShell")(function* (
@@ -120,7 +132,7 @@ export const layer = Layer.effect(
       ready?: Latch.Latch,
     ) {
       return yield* (yield* runner(sessionID, onInterrupt))
-        .startShell(work, ready)
+        .startShell(leased(work), ready)
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 

@@ -1,7 +1,9 @@
 import { Agent } from "@/agent/agent"
 import { GlobalBus } from "@/bus/global"
+import { InstanceState } from "@/effect/instance-state"
 import { Identifier } from "@/id/id"
 import { InstanceStore } from "@/project/instance-store"
+import { LocationLifecycle } from "@/project/location-lifecycle"
 import { Project } from "@/project/project"
 import type { LocationID } from "@/project/schema"
 import { ProviderID, ModelID } from "@/provider/schema"
@@ -9,6 +11,7 @@ import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
+import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Context, Effect, Fiber, Layer, Scope } from "effect"
 import { ScheduledTaskRepository } from "./repository"
@@ -54,7 +57,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Sc
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const instances = yield* InstanceStore.Service
+    const lifecycle = yield* LocationLifecycle.Service
     const projects = yield* Project.Service
     const sessions = yield* Session.Service
     const prompts = yield* SessionPrompt.Service
@@ -105,114 +108,134 @@ export const layer = Layer.effect(
       yield* sessions.setTitle({ sessionID, title: marked })
     })
 
+    type Outcome = { status: "ok" | "skipped"; sessionID?: Run["sessionID"]; error?: string }
+
+    const skippedAdmission = (reason: string, directory: string): Outcome => ({
+      status: "skipped",
+      sessionID: undefined,
+      error: `location ${reason}: ${directory}`,
+    })
+
     const executePrompt = Effect.fn("ScheduledTask.executePrompt")(function* (task: Info, run: Run) {
-      const instance = yield* instances.load({ directory: task.directory })
-      const persistedLocationID = yield* ScheduledTaskRepository.getLocationID(task.id)
-      const projectMismatch = task.projectID !== instance.project.id
-      const locationMismatch = persistedLocationID !== undefined && persistedLocationID !== instance.location.id
-      const identity = {
-        taskID: task.id,
-        runID: run.id,
-        directory: task.directory,
-        taskProjectID: task.projectID,
-        resolvedProjectID: instance.project.id,
-        persistedLocationID,
-        resolvedLocationID: instance.location.id,
-        projectMismatch,
-        locationMismatch,
-      }
-      if (projectMismatch || locationMismatch) log.warn("scheduled task identity mismatch", identity)
-      else log.info("scheduled task project identity resolved", identity)
-      return yield* instances.provide(
-        {
-          directory: task.directory,
-          worktree: instance.worktree,
-          project: instance.project,
-          location: instance.location,
-        },
-        Effect.gen(function* () {
-          let sessionID = task.sessionID
-          if (task.executionMode === "existing_session") {
-            // Bind a durable session on first run so the user never types a session ID.
-            if (!sessionID) {
-              if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
-              const session = yield* sessions.create({
-                title: markScheduledSessionTitle(task.name),
+      // Hold a location lease for the complete prompt execution. A missing,
+      // deleting, or deleted location is rejected at the gate without invoking
+      // project discovery or instance bootstrap, and the run is skipped.
+      const outcome: Outcome = yield* lifecycle
+        .provide(
+          { directory: task.directory, purpose: "scheduled-task" },
+          Effect.gen(function* () {
+            const instance = yield* InstanceState.context
+            const persistedLocationID = yield* ScheduledTaskRepository.getLocationID(task.id)
+            const projectMismatch = task.projectID !== instance.project.id
+            const locationMismatch = persistedLocationID !== undefined && persistedLocationID !== instance.location.id
+            const identity = {
+              taskID: task.id,
+              runID: run.id,
+              directory: task.directory,
+              taskProjectID: task.projectID,
+              resolvedProjectID: instance.project.id,
+              persistedLocationID,
+              resolvedLocationID: instance.location.id,
+              projectMismatch,
+              locationMismatch,
+            }
+            if (projectMismatch || locationMismatch) log.warn("scheduled task identity mismatch", identity)
+            else log.info("scheduled task project identity resolved", identity)
+            return yield* Effect.gen(function* () {
+              let sessionID = task.sessionID
+              if (task.executionMode === "existing_session") {
+                // Bind a durable session on first run so the user never types a session ID.
+                if (!sessionID) {
+                  if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
+                  const session = yield* sessions.create({
+                    title: markScheduledSessionTitle(task.name),
+                    agent: task.agent,
+                    model: {
+                      id: ModelID.make(task.model.modelID),
+                      providerID: ProviderID.make(task.model.providerID),
+                      variant: task.model.variant,
+                    },
+                  })
+                  sessionID = session.id
+                  yield* ScheduledTaskRepository.update(task.id, { sessionID })
+                }
+                for (let attempt = run.attempt; attempt <= MAX_BUSY_RETRIES; attempt++) {
+                  const current = yield* statuses.get(sessionID)
+                  if (current.type === "idle") break
+                  if (attempt === MAX_BUSY_RETRIES) return { status: "skipped" as const, sessionID }
+                  yield* ScheduledTaskRepository.retry({
+                    runID: run.id,
+                    ownerID,
+                    attempt: attempt + 1,
+                    leaseUntil: Date.now() + LEASE_MS,
+                  })
+                  yield* Effect.sleep(RETRY_INTERVAL)
+                  yield* ScheduledTaskRepository.resume({
+                    runID: run.id,
+                    ownerID,
+                    leaseUntil: Date.now() + LEASE_MS,
+                  })
+                }
+              } else {
+                if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
+                const session = yield* sessions.create({
+                  title: markScheduledSessionTitle(`${task.name} · ${new Date(run.scheduledAt).toLocaleString()}`),
+                  agent: task.agent,
+                  model: {
+                    id: ModelID.make(task.model.modelID),
+                    providerID: ProviderID.make(task.model.providerID),
+                    variant: task.model.variant,
+                  },
+                })
+                sessionID = session.id
+              }
+
+              // Mark any session written by a scheduled task (including user-owned
+              // existing sessions) so the sidebar can show a clock affordance.
+              yield* ensureScheduledTitle(sessionID)
+
+              // Notify clients as soon as the target session is known so an open
+              // session view can refresh before/while the prompt streams.
+              yield* emitRun(task, { ...run, sessionID, status: "running" })
+
+              // Collapsible "计划任务注入提示词" via shared InjectedPrompt UI
+              // (synthetic + metadata.kind = scheduled-injection).
+              yield* prompts.prompt({
+                sessionID,
                 agent: task.agent,
                 model: {
-                  id: ModelID.make(task.model.modelID),
                   providerID: ProviderID.make(task.model.providerID),
-                  variant: task.model.variant,
+                  modelID: ModelID.make(task.model.modelID),
                 },
-              })
-              sessionID = session.id
-              yield* ScheduledTaskRepository.update(task.id, { sessionID })
-            }
-            for (let attempt = run.attempt; attempt <= MAX_BUSY_RETRIES; attempt++) {
-              const current = yield* statuses.get(sessionID)
-              if (current.type === "idle") break
-              if (attempt === MAX_BUSY_RETRIES) return { status: "skipped" as const, sessionID }
-              yield* ScheduledTaskRepository.retry({
-                runID: run.id,
-                ownerID,
-                attempt: attempt + 1,
-                leaseUntil: Date.now() + LEASE_MS,
-              })
-              yield* Effect.sleep(RETRY_INTERVAL)
-              yield* ScheduledTaskRepository.resume({
-                runID: run.id,
-                ownerID,
-                leaseUntil: Date.now() + LEASE_MS,
-              })
-            }
-          } else {
-            if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
-            const session = yield* sessions.create({
-              title: markScheduledSessionTitle(`${task.name} · ${new Date(run.scheduledAt).toLocaleString()}`),
-              agent: task.agent,
-              model: {
-                id: ModelID.make(task.model.modelID),
-                providerID: ProviderID.make(task.model.providerID),
                 variant: task.model.variant,
-              },
-            })
-            sessionID = session.id
-          }
-
-          // Mark any session written by a scheduled task (including user-owned
-          // existing sessions) so the sidebar can show a clock affordance.
-          yield* ensureScheduledTitle(sessionID)
-
-          // Notify clients as soon as the target session is known so an open
-          // session view can refresh before/while the prompt streams.
-          yield* emitRun(task, { ...run, sessionID, status: "running" })
-
-          // Collapsible "计划任务注入提示词" via shared InjectedPrompt UI
-          // (synthetic + metadata.kind = scheduled-injection).
-          yield* prompts.prompt({
-            sessionID,
-            agent: task.agent,
-            model: {
-              providerID: ProviderID.make(task.model.providerID),
-              modelID: ModelID.make(task.model.modelID),
-            },
-            variant: task.model.variant,
-            parts: [
-              {
-                type: "text" as const,
-                text: task.prompt,
-                synthetic: true,
-                metadata: {
-                  kind: "scheduled-injection",
-                  taskID: task.id,
-                  taskName: task.name,
-                },
-              },
-            ],
-          })
-          return { status: "ok" as const, sessionID }
-        }).pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, true)),
-      )
+                parts: [
+                  {
+                    type: "text" as const,
+                    text: task.prompt,
+                    synthetic: true,
+                    metadata: {
+                      kind: "scheduled-injection",
+                      taskID: task.id,
+                      taskName: task.name,
+                    },
+                  },
+                ],
+              })
+              return { status: "ok" as const, sessionID }
+            }).pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, true))
+          }),
+        )
+        .pipe(
+          Effect.catchTags({
+            "LocationLifecycle.LocationUnavailable": (error) =>
+              Effect.succeed(skippedAdmission("unavailable", error.directory)),
+            "LocationLifecycle.LocationDeleting": (error) =>
+              Effect.succeed(skippedAdmission("deleting", error.directory)),
+            "LocationLifecycle.LocationDeleted": (error) =>
+              Effect.succeed(skippedAdmission("deleted", error.directory)),
+          }),
+        )
+      return outcome
     })
 
     const executeClaimed = Effect.fn("ScheduledTask.executeClaimed")(function* (task: Info, run: Run) {
@@ -231,7 +254,7 @@ export const layer = Layer.effect(
       const exit = yield* Effect.exit(executePrompt(task, run))
       yield* Fiber.interrupt(heartbeat)
       if (exit._tag === "Success") {
-        yield* complete(task, run.id, exit.value.status, { sessionID: exit.value.sessionID })
+        yield* complete(task, run.id, exit.value.status, { sessionID: exit.value.sessionID, error: exit.value.error })
         return
       }
       const error = formatCause(exit.cause)
@@ -356,7 +379,7 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide([
-    InstanceStore.defaultLayer,
+    LocationLifecycle.layer.pipe(Layer.provide([InstanceStore.defaultLayer, AppFileSystem.defaultLayer])),
     Project.defaultLayer,
     Session.defaultLayer,
     SessionPrompt.defaultLayer,
