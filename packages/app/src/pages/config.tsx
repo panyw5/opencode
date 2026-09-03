@@ -54,6 +54,8 @@ import { JsonCodeField } from "@/components/json-code-field"
 import { TestProviderModelButton } from "@/components/test-provider-model-button"
 import { Link } from "@/components/link"
 import { paintCode } from "@/utils/paint-code"
+import { decode64 } from "@/utils/base64"
+import { sameWorkspacePath } from "@/pages/layout/helpers"
 import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject } from "@/context/layout"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
@@ -4654,6 +4656,17 @@ export default function ConfigPage() {
     )
     if (!params.dir) {
       console.debug("[config-back] action=navigate target=/ replace=true reason=global-route")
+      navigate("/", { replace: true })
+      return
+    }
+    const directory = decode64(params.dir) ?? ""
+    const hasTabs =
+      layout.sessionBar.all().some((tab) => sameWorkspacePath(tab.directory, directory)) ||
+      layout.sessionBar.drafts().some((draft) => sameWorkspacePath(draft, directory))
+    if (!hasTabs) {
+      console.debug(
+        `[config-back] action=navigate target=/ replace=true reason=no-session-tabs dir=${directory}`,
+      )
       navigate("/", { replace: true })
       return
     }
