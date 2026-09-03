@@ -198,17 +198,53 @@
 ### PR4 验证结果
 
 - `bun run typecheck`：干净。
-- `bun test test/project/`：122 pass, 1 skip, 0 fail（新增 2 个空闲回收测试，共 13 个 lifecycle 测试）。
+- `bun test test/project/`：125 pass, 1 skip, 0 fail（新增 5 个测试：2 空闲回收 + 3 不变式，共 16 个 lifecycle 测试）。
 - `bun test test/scheduled-task/`：19 pass, 0 fail。
 - `bun test --preload ./happydom.ts ./src/context/global-sync/child-store.test.ts`（前端）：5 pass, 0 fail。
-- 新增测试：空闲回收到期后 runtime stopped、新租约取消旧定时器后 runtime 仍 running。
+- 新增测试：空闲回收到期后 runtime stopped、新租约取消旧定时器后 runtime 仍 running、
+  delete 先 dispose 再 removeFileSystem（排序）、unavailable→available 恢复、deleted 不可隐式恢复。
+- **Bug 修复**：`markAvailable` 现在只在 `lifecycle_state=unavailable` 时生效（防止 deleted 被隐式恢复）；
+  `provide` 的 DB 同步现在检测任何状态差异（不只是 non-available）。
+
+### store.load 迁移完成（4/4）
+
+全部 4 处直接 `InstanceStore.load` 调用已通过 lifecycle 门禁迁移：
+
+| 位置 | 方式 | 提交 |
+|------|------|------|
+| `worktree/index.ts` boot | `LocationLifecycle.lease(Effect.void)` | `4787e39fb2` |
+| `event-v2-bridge.ts` provideEventLocation | `LocationLifecycle.lease` + `WorkspaceRef` | `4787e39fb2` |
+| `control-plane/workspace.ts` adapter 解析 | `LocationLifecycle.load` + `provideService(InstanceStore.Service)` | `0598fa4638` |
+| `cli/effect-cmd.ts` handler | `lifecycle.provide` 包裹 handler | `0598fa4638` |
+
+新增 `LocationLifecycle.load` helper：有服务时走 `provide`（返回 `InstanceContext`），无服务时回退 `InstanceStore.load`（裸测试）。
 
 ## 后续收尾
 
-- spec 的 Test Invariants（15 条）和 Release Validation（8 条）在收尾时对照。
-- 待迁移的直接 `InstanceStore.load` 调用（见 PR3 设计要点列表）。
+- spec 的 Test Invariants（15 条）和 Release Validation（8 条）已对照（见下表），剩余缺口主要是手动验证项。
 - 路由注册隐式 project open 暂时保留（有 5 秒墓碑防护），后续可改为需要显式 open intent。
 - `server.projects.last()` / `touch()` API 保留（用于已有列表内 focus 选择），仅移除了 list 为空时的自动复活。
+- Validation 2（InstanceStore.load 诊断）：所有调用点已迁移，可直接加 assert 检测剩余直接调用。
+
+### Test Invariants 对照
+
+| # | 不变式 | 测试 | 说明 |
+|---|--------|------|------|
+| 1 | deleting/deleted 拒绝准入 | ✅ | "delete blocks admission" + "recoverDeleting keeps fence" |
+| 2 | 活跃租约阻止回收和删除 | ✅ | "LocationBusy" + "new lease cancels timer" |
+| 3 | 目录不在 disposer 完成前移除 | ✅ | "delete disposes before filesystem adapter" |
+| 4 | stale generation 不发布 | ✅ 实现 | provide 内 generation 检查（unreachable until delete） |
+| 5 | 并发共享 boot | ✅ | "concurrent admissions share one boot" |
+| 6 | 成功/失败/缺陷/中断释放租约 | ✅ | "releases lease on..." |
+| 7 | child-store 不影响 scheduled-task | ✅ 实现 | PR4 移除 client.instance.dispose() |
+| 8 | renderer detach 不影响其他 | ✅ 实现 | PR4 child-store 只清渲染器 |
+| 9 | scheduled-task 不对 deleting/deleted 调 discovery | ✅ 实现 | provide 拒绝→{status:skipped} |
+| 10 | 删除重试幂等 | ✅ | "idempotent" + "different operationID fails" |
+| 11 | 启动恢复不复活 deleting | ✅ | "keeps fence" + "finishes tombstone" |
+| 12 | unavailable 可恢复，deleted 不可隐式恢复 | ✅ | "unavailable recovers" + "deleted cannot recover" |
+| 13 | Session 历史可读 | ✅ 实现 | Session.listGlobal 直接读 DB |
+| 14 | workspace 缓存不能注册 Location | ✅ 实现 | child-store 只是缓存 |
+| 15 | server shutdown 释放 runtime | ✅ 实现 | layer finalizer + InstanceStore.disposeAll |
 
 ## 验证过的关键事实
 
