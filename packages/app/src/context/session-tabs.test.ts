@@ -2,13 +2,43 @@ import { describe, expect, test } from "bun:test"
 import { sessionBarKey, updateSessionBarTabInfo, type SessionBarTab } from "./layout"
 import {
   createSessionTabsCoordinator,
+  pickSessionTabsTarget,
   planSessionTabClose,
+  sessionTabsTargetHref,
   type SessionTabsRoute,
   type SessionTabsPorts,
   type SessionTabsTarget,
 } from "./session-tabs"
 
 const tab = (id: string, directory = "/repo", parentID?: string): SessionBarTab => ({ directory, id, parentID })
+
+describe("session tab fallback", () => {
+  test("prefers the latest tab in the requested workspace", () => {
+    const target = pickSessionTabsTarget({
+      tabs: [tab("other", "/other"), tab("first"), tab("latest")],
+      drafts: [],
+      directory: "/repo",
+    })
+
+    expect(target).toEqual({ type: "session", directory: "/repo", id: "latest" })
+    expect(sessionTabsTargetHref(target)).toBe("/L3JlcG8/session/latest")
+  })
+
+  test("falls back across workspaces before going home", () => {
+    expect(
+      pickSessionTabsTarget({ tabs: [tab("other", "/other")], drafts: [], directory: "/missing" }),
+    ).toEqual({ type: "session", directory: "/other", id: "other" })
+    expect(pickSessionTabsTarget({ tabs: [], drafts: ["/draft"], directory: "/missing" })).toEqual({
+      type: "draft",
+      directory: "/draft",
+    })
+  })
+
+  test("uses home only when no session or draft tab exists", () => {
+    expect(pickSessionTabsTarget({ tabs: [], drafts: [], directory: "/repo" })).toEqual({ type: "home" })
+    expect(sessionTabsTargetHref({ type: "home" })).toBe("/")
+  })
+})
 
 function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: SessionTabsRoute; timeoutMs?: number }) {
   let tabs = [...(input?.tabs ?? [])]

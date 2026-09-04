@@ -58,6 +58,7 @@ import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
 import { decode64 } from "@/utils/base64"
 import { workspaceKey } from "@/pages/layout/helpers"
+import { pickSessionTabsTarget, useSessionTabs } from "@/context/session-tabs"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -257,7 +258,34 @@ const SessionRoute = () => {
   )
 }
 
-const ProjectIndexRoute = () => null
+const ProjectIndexRoute = () => {
+  const params = useParams()
+  const layout = useLayout()
+  const sessionTabs = useSessionTabs()
+  let navigating = false
+
+  createEffect(() => {
+    if (!layout.ready() || navigating) return
+    const directory = decode64(params.dir ?? "") ?? ""
+    const target = pickSessionTabsTarget({
+      tabs: layout.sessionBar.all(),
+      drafts: layout.sessionBar.drafts(),
+      directory,
+    })
+    navigating = true
+    console.debug(
+      `[project-index] fallback start directory=${directory || "none"} target=${target.type} tabs=${layout.sessionBar.all().length} drafts=${layout.sessionBar.drafts().length}`,
+    )
+    void sessionTabs.activate(target, { replace: true }).then((success) => {
+      console.debug(`[project-index] fallback complete target=${target.type} success=${success}`)
+      if (success || target.type === "home") return
+      console.warn(`[project-index] fallback failed target=${target.type}; navigating home`)
+      return sessionTabs.activate({ type: "home" }, { replace: true })
+    })
+  })
+
+  return null
+}
 
 const ConfigRoute = () => (
   <ConfigRouteFrame>

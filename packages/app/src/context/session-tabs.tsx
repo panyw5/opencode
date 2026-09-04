@@ -2,6 +2,7 @@ import { createContext, useContext, type ParentProps } from "solid-js"
 import type { SessionBarTab } from "@/context/layout"
 import { sessionBarKey } from "@/context/layout"
 import { sameWorkspacePath, workspaceKey } from "@/pages/layout/helpers"
+import { base64Encode } from "@opencode-ai/core/util/encode"
 import {
   collectSessionTabSubtree,
   groupSessionTabs,
@@ -18,6 +19,37 @@ export type SessionTabsTarget =
   | { type: "session"; directory: string; id: string }
   | { type: "draft"; directory: string }
   | { type: "home" }
+
+export function pickSessionTabsTarget(input: {
+  tabs: SessionBarTab[]
+  drafts: string[]
+  directory?: string
+}): SessionTabsTarget {
+  if (input.directory) {
+    for (let i = input.tabs.length - 1; i >= 0; i--) {
+      const tab = input.tabs[i]
+      if (sameWorkspacePath(tab.directory, input.directory)) {
+        return { type: "session", directory: tab.directory, id: tab.id }
+      }
+    }
+    for (let i = input.drafts.length - 1; i >= 0; i--) {
+      const directory = input.drafts[i]
+      if (sameWorkspacePath(directory, input.directory)) return { type: "draft", directory }
+    }
+  }
+
+  const tab = input.tabs.at(-1)
+  if (tab) return { type: "session", directory: tab.directory, id: tab.id }
+  const draft = input.drafts.at(-1)
+  if (draft) return { type: "draft", directory: draft }
+  return { type: "home" }
+}
+
+export function sessionTabsTargetHref(target: SessionTabsTarget) {
+  if (target.type === "home") return "/"
+  const base = `/${base64Encode(target.directory)}/session`
+  return target.type === "session" ? `${base}/${target.id}` : base
+}
 
 export type SessionTabsClosePlan = {
   closing: SessionBarTab[]
@@ -49,7 +81,7 @@ export type SessionTabsPorts = {
   route(): SessionTabsRoute
   parentID(tab: SessionBarTab): string | undefined
   prepare(target: SessionTabsTarget): Promise<void>
-  navigate(target: SessionTabsTarget): void
+  navigate(target: SessionTabsTarget, options?: { replace?: boolean }): void
   cool(tabs: SessionBarTab[]): void
   markViewed(id: string): void
   remember(directory: string, id: string, root?: string): void
@@ -65,7 +97,7 @@ export type SessionTabsCoordinator = {
   ): void
   ensureOpen(tab: SessionBarTab): boolean
   createDraft(directory: string, source: "button" | "keybind" | "menu" | "slash" | "palette" | "deep-link"): void
-  activate(target: SessionTabsTarget): Promise<boolean>
+  activate(target: SessionTabsTarget, options?: { replace?: boolean }): Promise<boolean>
   updateMeta(
     directory: string,
     id: string,
@@ -399,7 +431,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       console.debug(`[session-tabs] explicit draft created directory=${directory} source=${source}`)
       ports.store.openDraft(directory)
     },
-    async activate(target) {
+    async activate(target, options) {
       const intent = beginNavigation(target, "activate")
       try {
         await ports.prepare(target)
@@ -409,7 +441,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
           )
           return false
         }
-        ports.navigate(target)
+        ports.navigate(target, options)
         console.debug(
           `[session-tabs] navigation intent navigated token=${intent.token} source=${intent.source} target=${targetKey(target)}`,
         )

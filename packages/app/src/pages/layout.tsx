@@ -17,10 +17,13 @@ import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useLayout, type LocalProject } from "@/context/layout"
 import {
   createSessionTabsCoordinator,
+  pickSessionTabsTarget,
   SessionTabsProvider,
+  sessionTabsTargetHref,
   type SessionTabsRoute,
   type SessionTabsTarget,
 } from "@/context/session-tabs"
+import { createConfigReturnTarget } from "@/pages/config-navigation"
 import { collectMissingAncestorTabs } from "@/components/session/session-bar-parent"
 import { useGlobalSync } from "@/context/global-sync"
 import { onSessionLifecycle } from "@/context/global-sync/session-lifecycle"
@@ -1787,6 +1790,16 @@ export default function Layout(props: ParentProps) {
     })
   }
 
+  const configReturnTarget = () =>
+    createConfigReturnTarget({
+      pathname: location.pathname,
+      search: location.search,
+      hash: location.hash,
+      directory: routeDir(),
+      id: params.id,
+      session: onSessionRoute(),
+    })
+
   function openSettings() {
     console.debug(
       `[settings-nav] open-settings pathname=${location.pathname} dir=${params.dir ?? "none"} projects=${layout.projects.list().length}`,
@@ -1798,7 +1811,7 @@ export default function Layout(props: ParentProps) {
         return
       }
       console.debug("[settings-nav] open-settings show-dialog")
-      dialog.show(() => <x.DialogSettings />)
+      dialog.show(() => <x.DialogSettings returnTarget={configReturnTarget()} />)
     })
   }
 
@@ -1819,14 +1832,17 @@ export default function Layout(props: ParentProps) {
     const slug = params.dir || (directory ? base64Encode(directory) : undefined)
     const path = slug ? `/${slug}/config` : "/config"
     const next = q.size ? `${path}?${q.toString()}` : path
+    const returnTarget = configReturnTarget()
     if (!slug) console.debug("[settings-nav] open-config using global-route reason=no-directory")
-    console.info(`[config-perf] navigate target=${next} sinceClick=${(performance.now() - clickAt).toFixed(1)}ms`)
+    console.info(
+      `[config-perf] navigate target=${next} return=${returnTarget?.href ?? "fallback"} sinceClick=${(performance.now() - clickAt).toFixed(1)}ms`,
+    )
     batch(() => {
       setStore("sidebarPanel", "project")
       if (platform.platform === "desktop" && layout.sidebar.opened()) {
         layout.sidebar.close()
       }
-      navigate(next)
+      navigate(next, { state: returnTarget })
     })
   }
 
@@ -1914,8 +1930,18 @@ export default function Layout(props: ParentProps) {
       console.debug(`[layout] openImChannel navigate latest id=${imSessions[0].id} dir=${imSessions[0].directory}`)
       navigateToSession(imSessions[0])
     } else {
-      console.debug(`[layout] openImChannel navigate new-session dir=${dir}`)
-      navigateWithSidebarReset(`/${base64Encode(dir)}`)
+      const target = pickSessionTabsTarget({
+        tabs: layout.sessionBar.all(),
+        drafts: layout.sessionBar.drafts(),
+        directory: dir,
+      })
+      console.debug(`[layout] openImChannel no-session dir=${dir} fallback=${target.type}`)
+      void sessionTabs.activate(target).then((success) => {
+        console.debug(`[layout] openImChannel fallback complete target=${target.type} success=${success}`)
+        if (success || target.type === "home") return
+        console.warn(`[layout] openImChannel fallback failed target=${target.type}; navigating home`)
+        return sessionTabs.activate({ type: "home" })
+      })
     }
 
     console.debug(`[layout] openImChannel opened name=${name} type=${entry.type} imCount=${imSessions.length}`)
@@ -2127,13 +2153,8 @@ export default function Layout(props: ParentProps) {
       return child.session.find((item) => item.id === tab.id)?.parentID
     },
     prepare: prepareSessionTabsTarget,
-    navigate(target) {
-      if (target.type === "home") {
-        navigate("/")
-        return
-      }
-      const base = `/${base64Encode(target.directory)}/session`
-      navigate(target.type === "session" ? `${base}/${target.id}` : base)
+    navigate(target, options) {
+      navigate(sessionTabsTargetHref(target), options)
     },
     cool(tabs) {
       const byDirectory = new Map<string, { directory: string; ids: string[] }>()
@@ -2153,7 +2174,6 @@ export default function Layout(props: ParentProps) {
     scheduleTimeout: (run, ms) => setTimeout(run, ms),
     cancelTimeout: (timer) => clearTimeout(timer),
   })
-  let startupHomeRedirected = false
   const stopSessionLifecycle = onSessionLifecycle((event) => {
     const tab = {
       directory: event.directory,
@@ -3041,18 +3061,6 @@ export default function Layout(props: ParentProps) {
           // Non-session routes (home, config, …) still commit pending close
           // transactions so closed tabs leave the bar instead of timing out.
           sessionTabs.observeRoute({ directory: dir ?? "", session: false })
-          if (
-            !startupHomeRedirected &&
-            slug &&
-            !onConfigRoute() &&
-            !scheduledPanelActive() &&
-            layout.sessionBar.all().length === 0 &&
-            layout.sessionBar.drafts().length === 0
-          ) {
-            startupHomeRedirected = true
-            console.debug(`[session-tabs] startup has no tabs; navigating home pathname=${location.pathname}`)
-            navigate("/")
-          }
           return
         }
         if (root && server.projects.last() !== root) server.projects.touch(root)

@@ -11,8 +11,9 @@ import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
 import { SettingsModels } from "./settings-models"
 import { SettingsAssistant } from "./settings-assistant"
+import type { ConfigReturnTarget } from "@/pages/config-navigation"
 
-export const DialogSettings: Component = () => {
+export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
   const navigate = useNavigate()
@@ -23,8 +24,8 @@ export const DialogSettings: Component = () => {
     console.debug(`[settings-nav] dialog-config pathname=${window.location.pathname} dir=${params.dir ?? "none"}`)
     dialog.close()
     const target = params.dir ? `/${params.dir}/config` : "/config"
-    console.debug(`[settings-nav] dialog-config navigate target=${target}`)
-    navigate(target)
+    console.debug(`[settings-nav] dialog-config navigate target=${target} return=${props.returnTarget?.href ?? "fallback"}`)
+    navigate(target, { state: props.returnTarget })
   }
 
   return (

@@ -31,7 +31,7 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { Switch as Toggle } from "@opencode-ai/ui/switch"
 import { showPromiseToast, showToast } from "@opencode-ai/ui/toast"
 import { applyEdits, modify, parse } from "jsonc-parser"
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
+import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { paint } from "@/components/prompt-input/expand"
 import { pair } from "@/components/dialog-prompt-editor-input"
 import { handleTextareaIndent, indent } from "@/components/markdown-editor-indent"
@@ -55,9 +55,10 @@ import { TestProviderModelButton } from "@/components/test-provider-model-button
 import { Link } from "@/components/link"
 import { paintCode } from "@/utils/paint-code"
 import { decode64 } from "@/utils/base64"
-import { sameWorkspacePath } from "@/pages/layout/helpers"
 import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject } from "@/context/layout"
+import { pickSessionTabsTarget, sessionTabsTargetHref } from "@/context/session-tabs"
+import { resolveConfigReturnHref, type ConfigReturnTarget } from "@/pages/config-navigation"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import {
   type ConfigTreeItem,
@@ -3804,6 +3805,7 @@ export default function ConfigPage() {
   const sync = useSync()
   const server = useServer()
   const navigate = useNavigate()
+  const location = useLocation<ConfigReturnTarget>()
   const params = useParams()
   const layout = useLayout()
   const [query] = useSearchParams<{ section?: string; pick?: string }>()
@@ -4654,25 +4656,20 @@ export default function ConfigPage() {
     console.debug(
       `[config-back] click dir=${params.dir ?? ""} historyLength=${window.history.length} pathname=${window.location.pathname}`,
     )
-    if (!params.dir) {
-      console.debug("[config-back] action=navigate target=/ replace=true reason=global-route")
-      navigate("/", { replace: true })
+    const tabs = layout.sessionBar.all()
+    const drafts = layout.sessionBar.drafts()
+    const previous = resolveConfigReturnHref(location.state, tabs, drafts)
+    if (previous) {
+      console.debug(`[config-back] action=navigate target=${previous} replace=true reason=valid-origin`)
+      navigate(previous, { replace: true })
       return
     }
-    const directory = decode64(params.dir) ?? ""
-    const hasTabs =
-      layout.sessionBar.all().some((tab) => sameWorkspacePath(tab.directory, directory)) ||
-      layout.sessionBar.drafts().some((draft) => sameWorkspacePath(draft, directory))
-    if (!hasTabs) {
-      console.debug(
-        `[config-back] action=navigate target=/ replace=true reason=no-session-tabs dir=${directory}`,
-      )
-      navigate("/", { replace: true })
-      return
-    }
-    const target = `/${params.dir}`
-    console.debug(`[config-back] action=navigate target=${target} replace=true`)
-    navigate(target, { replace: true })
+    const target = pickSessionTabsTarget({ tabs, drafts, directory: decode64(params.dir ?? "") ?? undefined })
+    const href = sessionTabsTargetHref(target)
+    console.debug(
+      `[config-back] action=navigate target=${href} replace=true reason=${location.state ? "origin-unavailable" : "missing-origin"} fallback=${target.type}`,
+    )
+    navigate(href, { replace: true })
   }
   const clawsSectionEnabled = createMemo(() => platform.platform === "desktop")
   const querySection = createMemo<Section | undefined>(() => {
