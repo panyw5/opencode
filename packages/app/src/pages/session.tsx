@@ -3442,6 +3442,7 @@ export default function Page() {
             }}
             subagentNavigation={subagentNavigation()}
             subagentTitle={subagentPromptTitle()}
+            mathModeActive={mathModeAgentLocked()}
             setPromptDockRef={(el) => {
               promptDock = el
             }}

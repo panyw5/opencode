@@ -854,6 +854,7 @@ export const dict = {
   "session.mathSwarm.reEnable.short": "Continue work",
   "session.mathSwarm.stop.short": "Stop",
   "session.mathMode.agentLocked": "Agent locked by Math Mode",
+  "session.mathMode.badge": "Math Mode",
   "session.mathSwarm.details": "Math Mode details",
   "session.mathSwarm.facts": "Facts",
   "session.mathSwarm.verified": "Correct",

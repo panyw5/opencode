@@ -3,6 +3,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Markdown } from "@opencode-ai/ui/markdown"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { For, Show, createEffect, createMemo } from "solid-js"
@@ -60,7 +61,19 @@ export function SessionMathFloat(props: SessionMathFloatProps) {
             openMathMode()
           }}
         >
-          <Show when={props.initializing} fallback={<Icon name="branch" size="small" class="text-icon-weak" />}>
+          <Show
+            when={props.initializing}
+            fallback={
+              <Markdown
+                text="$\sum$"
+                math="full"
+                highlight="defer"
+                class="[&>p]:m-0 [&>p]:flex [&>p]:items-center [&_.katex]:text-[14px] [&_.katex]:leading-none [&_.katex]:text-icon-weak"
+                style={{ display: "contents" }}
+                aria-hidden="true"
+              />
+            }
+          >
             <Spinner class="size-3.5 text-icon-weak" />
           </Show>
           <Show when={!props.initializing && running() > 0}>

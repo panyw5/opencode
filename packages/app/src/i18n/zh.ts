@@ -798,6 +798,7 @@ export const dict = {
   "session.mathSwarm.reEnable.short": "继续工作",
   "session.mathSwarm.stop.short": "停止",
   "session.mathMode.agentLocked": "智能体已由数学模式锁定",
+  "session.mathMode.badge": "数学模式",
   "session.mathSwarm.details": "数学模式详情",
   "session.mathSwarm.facts": "事实",
   "session.mathSwarm.verified": "正确",

@@ -6,6 +6,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Markdown } from "@opencode-ai/ui/markdown"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { PromptInput } from "@/components/prompt-input"
@@ -687,6 +688,7 @@ export function SessionComposerRegion(props: {
     onNavigate: (sessionID: string) => void
   }
   subagentTitle?: string
+  mathModeActive?: boolean
   setPromptDockRef: (el: HTMLDivElement) => void
 }) {
   const prompt = usePrompt()
@@ -1197,6 +1199,24 @@ export function SessionComposerRegion(props: {
                 "margin-top": `${-lift()}px`,
               }}
             >
+              <Show when={props.mathModeActive}>
+                <div
+                  data-testid="math-mode-badge"
+                  class="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 -translate-x-1/2"
+                >
+                  <span class="inline-flex items-center gap-1.5 rounded-full border border-text-interactive-base/40 bg-surface-base px-3 py-1 text-11-medium font-medium text-text-interactive-base shadow-sm">
+                    <Markdown
+                      text="$\sum$"
+                      math="full"
+                      highlight="defer"
+                      class="[&>p]:m-0 [&>p]:flex [&>p]:items-center [&_.katex]:text-[13px] [&_.katex]:leading-none [&_.katex]:text-text-interactive-base"
+                      style={{ display: "contents" }}
+                      aria-hidden="true"
+                    />
+                    {language.t("session.mathMode.badge")}
+                  </span>
+                </div>
+              </Show>
               <Show when={props.followup?.items.length ? props.followup : undefined}>
                 {(followup) => (
                   <SessionFollowupDock
