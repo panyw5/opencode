@@ -201,7 +201,6 @@ export function SessionMathInitializeDialog(props: {
               onInput={(value) => setStore("problem", value)}
             />
           </div>
-          <p class="shrink-0 text-11-regular text-text-weak">{language.t("session.mathInitialize.problem.description")}</p>
         </div>
         <div class="flex shrink-0 flex-wrap items-start gap-x-6 gap-y-3">
           <div class="flex flex-col gap-2">
