@@ -262,27 +262,28 @@ const ProjectIndexRoute = () => {
   const params = useParams()
   const layout = useLayout()
   const sessionTabs = useSessionTabs()
-  let navigating = false
+  let generation = 0
 
   createEffect(() => {
-    if (!layout.ready() || navigating) return
+    if (!layout.ready()) return
+    const run = ++generation
     const directory = decode64(params.dir ?? "") ?? ""
     const target = pickSessionTabsTarget({
       tabs: layout.sessionBar.all(),
       drafts: layout.sessionBar.drafts(),
       directory,
     })
-    navigating = true
     console.debug(
-      `[project-index] fallback start directory=${directory || "none"} target=${target.type} tabs=${layout.sessionBar.all().length} drafts=${layout.sessionBar.drafts().length}`,
+      `[project-index] fallback start run=${run} directory=${directory || "none"} target=${target.type} tabs=${layout.sessionBar.all().length} drafts=${layout.sessionBar.drafts().length}`,
     )
-    void sessionTabs.activate(target, { replace: true }).then((success) => {
-      console.debug(`[project-index] fallback complete target=${target.type} success=${success}`)
-      if (success || target.type === "home") return
+    void sessionTabs.activate(target, { replace: true }).then((result) => {
+      console.debug(`[project-index] fallback complete run=${run} target=${target.type} result=${result}`)
+      if (result !== "failed" || target.type === "home" || run !== generation) return
       console.warn(`[project-index] fallback failed target=${target.type}; navigating home`)
       return sessionTabs.activate({ type: "home" }, { replace: true })
     })
   })
+  onCleanup(() => generation++)
 
   return null
 }

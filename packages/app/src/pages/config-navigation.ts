@@ -1,6 +1,6 @@
 import type { SessionBarTab } from "@/context/layout"
 import type { SessionTabsTarget } from "@/context/session-tabs"
-import { sameWorkspacePath } from "@/pages/layout/helpers"
+import { workspaceKey } from "@/pages/layout/helpers"
 
 export type ConfigReturnTarget =
   | { type: "session"; href: string; directory: string; id: string }
@@ -28,14 +28,29 @@ export function resolveConfigReturnHref(
   tabs: SessionBarTab[],
   drafts: string[],
 ) {
+  return resolveConfigReturnTarget(input, tabs, drafts)?.href
+}
+
+export function resolveConfigReturnTarget(
+  input: Readonly<Partial<ConfigReturnTarget>> | null | undefined,
+  tabs: SessionBarTab[],
+  drafts: string[],
+): ConfigReturnTarget | undefined {
   if (!input || typeof input.href !== "string") return
-  if (input.type === "route") return input.href
+  if (input.type === "route") {
+    if (input.href === "/" || /^\/[^/?#]+\/scheduled(?:[/?#]|$)/.test(input.href) || /^\/scheduled(?:[/?#]|$)/.test(input.href)) {
+      return { type: "route", href: input.href }
+    }
+    return
+  }
   if (input.type === "session" && typeof input.id === "string" && typeof input.directory === "string") {
     const id = input.id
     const directory = input.directory
-    return tabs.some((tab) => tab.id === id && sameWorkspacePath(tab.directory, directory)) ? input.href : undefined
+    const found = tabs.some((tab) => tab.id === id && workspaceKey(tab.directory) === workspaceKey(directory))
+    return found ? { type: "session", href: input.href, directory, id } : undefined
   }
   if (input.type !== "draft" || typeof input.directory !== "string") return
   const directory = input.directory
-  return drafts.some((draft) => sameWorkspacePath(draft, directory)) ? input.href : undefined
+  const found = drafts.some((draft) => workspaceKey(draft) === workspaceKey(directory))
+  return found ? { type: "draft", href: input.href, directory } : undefined
 }

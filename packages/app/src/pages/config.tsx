@@ -57,8 +57,8 @@ import { paintCode } from "@/utils/paint-code"
 import { decode64 } from "@/utils/base64"
 import { useLanguage } from "@/context/language"
 import { useLayout, type LocalProject } from "@/context/layout"
-import { pickSessionTabsTarget, sessionTabsTargetHref } from "@/context/session-tabs"
-import { resolveConfigReturnHref, type ConfigReturnTarget } from "@/pages/config-navigation"
+import { pickSessionTabsTarget, sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
+import { resolveConfigReturnTarget, type ConfigReturnTarget } from "@/pages/config-navigation"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import {
   type ConfigTreeItem,
@@ -3808,6 +3808,7 @@ export default function ConfigPage() {
   const location = useLocation<ConfigReturnTarget>()
   const params = useParams()
   const layout = useLayout()
+  const sessionTabs = useSessionTabs()
   const [query] = useSearchParams<{ section?: string; pick?: string }>()
   const initialSection = (() => {
     const section = query.section
@@ -4652,24 +4653,29 @@ export default function ConfigPage() {
     return t("config.agents.badge.agent")
   }
 
-  function back() {
+  async function back() {
     console.debug(
       `[config-back] click dir=${params.dir ?? ""} historyLength=${window.history.length} pathname=${window.location.pathname}`,
     )
     const tabs = layout.sessionBar.all()
     const drafts = layout.sessionBar.drafts()
-    const previous = resolveConfigReturnHref(location.state, tabs, drafts)
-    if (previous) {
-      console.debug(`[config-back] action=navigate target=${previous} replace=true reason=valid-origin`)
-      navigate(previous, { replace: true })
+    const previous = resolveConfigReturnTarget(location.state, tabs, drafts)
+    if (previous?.type === "route") {
+      console.debug(`[config-back] action=navigate target=${previous.href} replace=true reason=valid-origin`)
+      navigate(previous.href, { replace: true })
       return
     }
-    const target = pickSessionTabsTarget({ tabs, drafts, directory: decode64(params.dir ?? "") ?? undefined })
+    const target = previous ??
+      pickSessionTabsTarget({ tabs, drafts, directory: decode64(params.dir ?? "") ?? undefined })
     const href = sessionTabsTargetHref(target)
     console.debug(
-      `[config-back] action=navigate target=${href} replace=true reason=${location.state ? "origin-unavailable" : "missing-origin"} fallback=${target.type}`,
+      `[config-back] action=activate target=${href} replace=true reason=${previous ? "valid-origin" : location.state ? "origin-unavailable" : "missing-origin"} fallback=${target.type}`,
     )
-    navigate(href, { replace: true })
+    const result = await sessionTabs.activate(target, { replace: true })
+    console.debug(`[config-back] activate complete target=${href} result=${result}`)
+    if (result !== "failed" || target.type === "home") return
+    console.warn(`[config-back] activate failed target=${href}; navigating home`)
+    await sessionTabs.activate({ type: "home" }, { replace: true })
   }
   const clawsSectionEnabled = createMemo(() => platform.platform === "desktop")
   const querySection = createMemo<Section | undefined>(() => {

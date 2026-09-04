@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionBarTab } from "@/context/layout"
-import { createConfigReturnTarget, resolveConfigReturnHref } from "./config-navigation"
+import { createConfigReturnTarget, resolveConfigReturnHref, resolveConfigReturnTarget } from "./config-navigation"
 
 const tabs: SessionBarTab[] = [{ directory: "/repo", id: "ses_original" }]
 
@@ -40,12 +40,16 @@ describe("config return navigation", () => {
   test("preserves home and scheduled routes without requiring a session tab", () => {
     const home = createConfigReturnTarget({ pathname: "/", session: false })
     const scheduled = createConfigReturnTarget({ pathname: "/L3JlcG8=/scheduled", search: "?task=1", session: false })
+    const globalScheduled = createConfigReturnTarget({ pathname: "/scheduled", session: false })
 
     expect(resolveConfigReturnHref(home, [], [])).toBe("/")
     expect(resolveConfigReturnHref(scheduled, [], [])).toBe("/L3JlcG8=/scheduled?task=1")
+    expect(resolveConfigReturnHref(globalScheduled, [], [])).toBe("/scheduled")
   })
 
   test("does not preserve a blank project index as a return target", () => {
     expect(createConfigReturnTarget({ pathname: "/L3JlcG8=", directory: "/repo", session: false })).toBeUndefined()
+    expect(resolveConfigReturnTarget({ type: "route", href: "/unexpected" }, [], [])).toBeUndefined()
+    expect(resolveConfigReturnTarget({ type: "session", href: "/bad", id: "ses_original" }, tabs, [])).toBeUndefined()
   })
 })

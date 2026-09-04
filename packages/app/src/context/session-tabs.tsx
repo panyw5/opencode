@@ -20,21 +20,24 @@ export type SessionTabsTarget =
   | { type: "draft"; directory: string }
   | { type: "home" }
 
+export type SessionTabsActivationResult = "navigated" | "superseded" | "failed"
+
 export function pickSessionTabsTarget(input: {
   tabs: SessionBarTab[]
   drafts: string[]
   directory?: string
 }): SessionTabsTarget {
   if (input.directory) {
+    const preferred = workspaceKey(input.directory)
     for (let i = input.tabs.length - 1; i >= 0; i--) {
       const tab = input.tabs[i]
-      if (sameWorkspacePath(tab.directory, input.directory)) {
+      if (workspaceKey(tab.directory) === preferred) {
         return { type: "session", directory: tab.directory, id: tab.id }
       }
     }
     for (let i = input.drafts.length - 1; i >= 0; i--) {
       const directory = input.drafts[i]
-      if (sameWorkspacePath(directory, input.directory)) return { type: "draft", directory }
+      if (workspaceKey(directory) === preferred) return { type: "draft", directory }
     }
   }
 
@@ -97,7 +100,7 @@ export type SessionTabsCoordinator = {
   ): void
   ensureOpen(tab: SessionBarTab): boolean
   createDraft(directory: string, source: "button" | "keybind" | "menu" | "slash" | "palette" | "deep-link"): void
-  activate(target: SessionTabsTarget, options?: { replace?: boolean }): Promise<boolean>
+  activate(target: SessionTabsTarget, options?: { replace?: boolean }): Promise<SessionTabsActivationResult>
   updateMeta(
     directory: string,
     id: string,
@@ -439,17 +442,17 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
           console.debug(
             `[session-tabs] activation superseded token=${intent.token} target=${targetKey(target)}`,
           )
-          return false
+          return "superseded"
         }
         ports.navigate(target, options)
         console.debug(
           `[session-tabs] navigation intent navigated token=${intent.token} source=${intent.source} target=${targetKey(target)}`,
         )
-        return true
+        return "navigated"
       } catch (error) {
         clearNavigation(intent, "activation-failed")
         console.debug(`[session-tabs] activation failed target=${target.type} error=${String(error)}`)
-        return false
+        return "failed"
       }
     },
     updateMeta(directory, id, info) {

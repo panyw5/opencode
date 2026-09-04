@@ -23,7 +23,11 @@ import {
   type SessionTabsRoute,
   type SessionTabsTarget,
 } from "@/context/session-tabs"
-import { createConfigReturnTarget } from "@/pages/config-navigation"
+import {
+  createConfigReturnTarget,
+  resolveConfigReturnTarget,
+  type ConfigReturnTarget,
+} from "@/pages/config-navigation"
 import { collectMissingAncestorTabs } from "@/components/session/session-bar-parent"
 import { useGlobalSync } from "@/context/global-sync"
 import { onSessionLifecycle } from "@/context/global-sync/session-lifecycle"
@@ -200,7 +204,7 @@ export default function Layout(props: ParentProps) {
   const server = useServer()
   const notification = useNotification()
   const permission = usePermission()
-  const location = useLocation()
+  const location = useLocation<ConfigReturnTarget>()
   const navigate = useNavigate()
   setNavigate(navigate)
   const providers = useProviders()
@@ -1798,7 +1802,7 @@ export default function Layout(props: ParentProps) {
       directory: routeDir(),
       id: params.id,
       session: onSessionRoute(),
-    })
+    }) ?? resolveConfigReturnTarget(location.state, layout.sessionBar.all(), layout.sessionBar.drafts())
 
   function openSettings() {
     console.debug(
@@ -1936,9 +1940,9 @@ export default function Layout(props: ParentProps) {
         directory: dir,
       })
       console.debug(`[layout] openImChannel no-session dir=${dir} fallback=${target.type}`)
-      void sessionTabs.activate(target).then((success) => {
-        console.debug(`[layout] openImChannel fallback complete target=${target.type} success=${success}`)
-        if (success || target.type === "home") return
+      void sessionTabs.activate(target).then((result) => {
+        console.debug(`[layout] openImChannel fallback complete target=${target.type} result=${result}`)
+        if (result !== "failed" || target.type === "home") return
         console.warn(`[layout] openImChannel fallback failed target=${target.type}; navigating home`)
         return sessionTabs.activate({ type: "home" })
       })
@@ -2231,8 +2235,8 @@ export default function Layout(props: ParentProps) {
       return
     }
 
-    setSwitching(root)
-    console.debug(`[project-switch] load project sessions root=${root}`)
+    setSwitching(undefined)
+    console.debug(`[project-switch] no cached session root=${root}; resolving project-index fallback`)
     navigateWithSidebarReset(`/${base64Encode(root)}`)
   }
 
@@ -4111,9 +4115,9 @@ export default function Layout(props: ParentProps) {
         setStore("sidebarPanel", "project")
         layout.sidebar.close()
         layout.mobileSidebar.hide()
-        void sessionTabs.activate({ type: "home" }).then((navigated) => {
+        void sessionTabs.activate({ type: "home" }).then((result) => {
           console.debug(
-            `[home-perf] nav-complete duration=${(performance.now() - started).toFixed(1)}ms navigated=${navigated}`,
+            `[home-perf] nav-complete duration=${(performance.now() - started).toFixed(1)}ms result=${result}`,
           )
         })
       }}

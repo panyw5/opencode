@@ -47,6 +47,7 @@ function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: Se
   let failPrepare = false
   const prepareQueue: Promise<void>[] = []
   const targets: SessionTabsTarget[] = []
+  const navigationOptions: Array<{ replace?: boolean } | undefined> = []
   const cooled: string[][] = []
   const viewed: string[] = []
   const remembered: string[] = []
@@ -94,8 +95,9 @@ function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: Se
       const next = prepareQueue.shift()
       if (next) await next
     },
-    navigate(target) {
+    navigate(target, options) {
       targets.push(target)
+      navigationOptions.push(options)
     },
     cool(values) {
       cooled.push(values.map((item) => item.id))
@@ -125,6 +127,7 @@ function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: Se
     tabs: () => tabs,
     drafts: () => drafts,
     targets,
+    navigationOptions,
     cooled,
     viewed,
     remembered,
@@ -471,11 +474,11 @@ describe("session tabs coordinator", () => {
     h.queuePrepare(new Promise<void>((resolve) => (release = resolve)))
     const first = h.coordinator.activate({ type: "session", directory: "/repo", id: "one" })
 
-    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "two" })).toBe(true)
+    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "two" })).toBe("navigated")
     expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "two" }])
 
     release()
-    expect(await first).toBe(false)
+    expect(await first).toBe("superseded")
     expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "two" }])
     h.dispose()
   })
@@ -493,7 +496,7 @@ describe("session tabs coordinator", () => {
     expect(h.tabs().map((item) => item.id)).toEqual(["two"])
 
     release()
-    expect(await activation).toBe(false)
+    expect(await activation).toBe("superseded")
     expect(h.targets).toEqual([])
     expect(h.tabs().map((item) => item.id)).toEqual(["two"])
     h.dispose()
@@ -512,7 +515,7 @@ describe("session tabs coordinator", () => {
     expect(h.tabs().map((item) => item.id)).toEqual(["one", "three"])
 
     release()
-    expect(await activation).toBe(true)
+    expect(await activation).toBe("navigated")
     expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "one" }])
     h.dispose()
   })
@@ -528,12 +531,26 @@ describe("session tabs coordinator", () => {
 
     expect(
       await h.coordinator.activate({ type: "session", directory: "/repo", id: "lifecycle-two" }),
-    ).toBe(true)
+    ).toBe("navigated")
     expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "lifecycle-two" }])
 
     release()
     await removal
     expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "lifecycle-two" }])
+    h.dispose()
+  })
+
+  test("activation reports failure separately and forwards replace navigation", async () => {
+    const h = harness({ tabs: [tab("one")] })
+    h.setFailPrepare(true)
+    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "one" })).toBe("failed")
+    expect(h.targets).toEqual([])
+
+    h.setFailPrepare(false)
+    expect(
+      await h.coordinator.activate({ type: "session", directory: "/repo", id: "one" }, { replace: true }),
+    ).toBe("navigated")
+    expect(h.navigationOptions).toEqual([{ replace: true }])
     h.dispose()
   })
 
