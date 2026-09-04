@@ -705,18 +705,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         if (shouldAutoAccept) permission.enableAutoAccept(session.id, sessionDirectory)
         local.session.promote(sessionDirectory, session.id)
         const sessionID = session.id
-        console.debug(
-          `[session-bar] draft promotion start directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
-        )
-        batch(() => {
-          layout.handoff.setTabs(base64Encode(sessionDirectory), sessionID)
-          sessionTabs.promoteDraft({ directory: sessionDirectory, id: sessionID }, currentDirectory)
-        })
-        console.debug(
-          `[session-bar] draft promotion committed directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
-        )
 
-        // Apply project-task selection made on the new-session screen before navigate.
+        // Apply project-task selection while the draft route is still mounted.
         // Pending is keyed by the UI directory (sdk.directory), which may differ from
         // sessionDirectory when creating a worktree session.
         const pendingMount =
@@ -758,10 +748,20 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           }
         }
 
+        console.debug(
+          `[session-bar] draft transition start directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
+        )
         performance.mark("submit:navigate:start")
-        navigate(`/${base64Encode(sessionDirectory)}/session/${session.id}`)
+        batch(() => {
+          layout.handoff.setTabs(base64Encode(sessionDirectory), sessionID)
+          navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
+          sessionTabs.promoteDraft({ directory: sessionDirectory, id: sessionID }, currentDirectory)
+        })
         performance.mark("submit:navigate:end")
         performance.measure("submit:navigate", "submit:navigate:start", "submit:navigate:end")
+        console.debug(
+          `[session-bar] draft transition committed directory=${currentDirectory} sessionDirectory=${sessionDirectory} sessionID=${sessionID}`,
+        )
       }
     }
     if (!session) {

@@ -789,6 +789,22 @@ describe("session tabs coordinator", () => {
     expect(h.drafts()).toEqual([])
     h.dispose()
   })
+
+  test("draft promotion keeps the active draft until the session route commits", () => {
+    const promoted = tab("promoted")
+    const h = harness({
+      drafts: ["/repo"],
+      route: { directory: "/repo", session: true },
+    })
+
+    h.coordinator.promoteDraft(promoted, "/repo")
+    expect(h.drafts()).toEqual(["/repo"])
+    expect(h.tabs()).toEqual([promoted])
+
+    h.coordinator.observeRoute({ directory: "/repo", id: promoted.id, session: true })
+    expect(h.drafts()).toEqual([])
+    h.dispose()
+  })
 })
 
 describe("planSessionTabClose", () => {

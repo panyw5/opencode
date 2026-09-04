@@ -556,7 +556,20 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       supersedePending("draft-promoted")
       const directory = draftDirectory ?? tab.directory
       invalidateDraftNavigation(directory, "target-draft-promoted")
-      ports.store.closeDraft(directory)
+      const route = ports.route()
+      const active = route.session && !route.id && directoryEqual(route.directory, directory)
+      if (active) {
+        const transaction = startPending({
+          type: "draft",
+          directory,
+          matches: (value) => value.session && !value.id && directoryEqual(value.directory, directory),
+        })
+        console.debug(
+          `[session-tabs] draft promotion transaction started token=${transaction.token} directory=${directory} sessionID=${tab.id}`,
+        )
+      } else {
+        ports.store.closeDraft(directory)
+      }
       ensureOpen(tab)
     },
     restore(tab) {

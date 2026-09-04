@@ -14,8 +14,7 @@ const optimistic: Array<{
   sessionID?: string
   message: {
     agent: string
-    model: { providerID: string; modelID: string }
-    variant?: string
+    model: { providerID: string; modelID: string; variant?: string }
   }
 }> = []
 const optimisticSeeded: boolean[] = []
@@ -76,7 +75,7 @@ const clientFor = (directory: string, track = true) => {
 
 beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
-    useNavigate: () => () => undefined,
+    useNavigate: () => (href: string) => sessionTabEvents.push(`navigate:${href}`),
     useParams: () => params,
   }))
 
@@ -196,8 +195,18 @@ beforeAll(async () => {
 
   mock.module("@/context/global-sync", () => ({
     useGlobalSync: () => ({
-      todo: {
-        set: () => undefined,
+      session: {
+        status: {
+          set: () => undefined,
+        },
+        todo: {
+          set: () => undefined,
+        },
+        messages: {
+          page: async ({ directory }: { directory: string }) => ({
+            session: (messagePages[directory] ?? []).map((item) => item.info),
+          }),
+        },
       },
       child: (directory: string) => {
         syncedDirectories.push(directory)
@@ -307,6 +316,7 @@ describe("prompt submit worktree selection", () => {
     expect(promoted).toEqual([{ directory: "/repo/main", sessionID: "session-1" }])
     expect(sessionTabEvents).toEqual([
       "handoff:/repo/main:session-1",
+      "navigate://repo/main/session/session-1",
       "promote:/repo/main:session-1:/repo/worktree-a",
     ])
   })
@@ -444,8 +454,7 @@ describe("prompt submit worktree selection", () => {
     expect(optimistic[0]).toMatchObject({
       message: {
         agent: "agent",
-        model: { providerID: "provider", modelID: "model" },
-        variant: "high",
+        model: { providerID: "provider", modelID: "model", variant: "high" },
       },
     })
   })
@@ -454,14 +463,13 @@ describe("prompt submit worktree selection", () => {
     const ok = await sendFollowupDraft({
       client: clientFor("/repo/main", false) as never,
       globalSync: {
-        child: () => [
-          {},
-          (...args: unknown[]) => {
-            if (args[0] === "session_status") {
-              syncEvents.push(`status:${(args[2] as { type?: string } | undefined)?.type}`)
-            }
+        session: {
+          status: {
+            set: (_directory: string, _sessionID: string, status: { type?: string }) => {
+              syncEvents.push(`status:${status.type}`)
+            },
           },
-        ],
+        },
       } as never,
       sync: {
         data: { command: [] },
@@ -536,7 +544,14 @@ describe("prompt submit worktree selection", () => {
     const ok = await sendFollowupDraft({
       client: client as never,
       globalSync: {
-        child: () => [{}, () => undefined],
+        session: {
+          messages: {
+            page: async () => ({ session: messagePages["/repo/main"].map((item) => item.info) }),
+          },
+          status: {
+            set: () => undefined,
+          },
+        },
       } as never,
       sync: {
         data: { command: [{ name: "foo" }] },
