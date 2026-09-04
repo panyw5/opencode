@@ -557,18 +557,19 @@ exports[`opencode CLI help-text snapshots every documented command emits stable 
 create a math-worker session and spawn it detached
 
 选项：
-  -h, --help        show help                                                                 [布尔]
-  -v, --version     show version number                                                       [布尔]
-      --print-logs  print logs to stderr                                                      [布尔]
-      --log-level   log level                    [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                              [布尔]
-      --title       child session title                             [字符串] [默认值: "math-worker"]
-      --task        TASK.md body                                               [字符串] [默认值: ""]
-      --parent      parent (orchestrator) session id                                 [字符串] [必需]
-      --project     math problem ID under .math/problems/                                   [字符串]
-      --interval    heartbeat interval ms                                                     [数字]
-      --model       worker model as provider/model                                          [字符串]
-      --variant     worker model effort/variant                                             [字符串]"
+  -h, --help          show help                                                               [布尔]
+  -v, --version       show version number                                                     [布尔]
+      --print-logs    print logs to stderr                                                    [布尔]
+      --log-level     log level                  [字符串] [可选值: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure          run without external plugins                                            [布尔]
+      --title         child session title                           [字符串] [默认值: "math-worker"]
+      --task          TASK.md body                                             [字符串] [默认值: ""]
+      --parent        parent (orchestrator) session id                               [字符串] [必需]
+      --project       math problem ID under .math/problems/                                 [字符串]
+      --problem-file  file whose contents are persisted verbatim as PROBLEM.md              [字符串]
+      --interval      heartbeat interval ms                                                   [数字]
+      --model         worker model as provider/model                                        [字符串]
+      --variant       worker model effort/variant                                           [字符串]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode math status --help 1`] = `

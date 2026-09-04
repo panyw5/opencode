@@ -65,7 +65,7 @@ export function buildMathInitializationPrompt(input: MathInitializationConfig): 
     "",
     "Initialization contract:",
     `- Use ${project} as the project argument for every math worker tool call. Do not read or reuse another problem workspace.`,
-    "- Before the first math_worker_start, persist the complete problem statement above verbatim (every definition, formula, notation, and constant convention) into PROBLEM.md under the problem workspace. Workers never see this message or this session; PROBLEM.md is their only copy of the problem.",
+    "- Before the first math_worker_start, persist the complete problem statement above verbatim (every definition, formula, notation, and constant convention) into PROBLEM.md under the problem workspace — or pass it directly via math_worker_start's problem parameter, which writes PROBLEM.md for you. Workers never see this message or this session; PROBLEM.md is their only copy of the problem. math_worker_start fails when PROBLEM.md is missing, shorter than 200 characters, or contains @file pointer references; stage large background files with the references parameter instead of mentioning them.",
     "- Call math_worker_status before creating anything and reconnect existing durable worker sessions.",
     "- Do not create duplicate workers. Prefer math_worker_ensure for unexpectedly dead workers.",
     `- The user confirmed a bounded roster of ${total} worker${total === 1 ? "" : "s"}: ${roster}.`,

@@ -20,6 +20,7 @@ import { MCP } from "@/mcp"
 import { SessionID, MessageID, PartID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { layout, mathRoot, taskPath } from "./layout"
+import { assertNoPointerReferences, ensureProblemStatementReady, stageReferences, writeProblemStatement } from "./problem"
 import { killProcessGroup, pidAlive, selfArgv, spawnDetached } from "./spawn"
 import { clearStop, patchWorker, readSwarm, setVerifierModel, stopPath, upsertWorker, type SwarmWorker } from "./swarm"
 import { FactGraph } from "./fact-graph"
@@ -111,6 +112,10 @@ export type StartInput = {
   title: string
   task: string
   project?: string
+  /** Full verbatim problem statement to persist as PROBLEM.md before dispatch. */
+  problem?: string
+  /** Background files to copy into <problem>/references/ so the worker can read them. */
+  references?: string[]
   intervalMs?: number
   model?: string
   variant?: string
@@ -297,6 +302,10 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
   const parentContext = yield* InstanceState.context
   const parent = yield* sessions.get(input.parentSessionID).pipe(Effect.orDie)
   const projectDir = resolveProjectDir(parent.directory, input.project, input.parentSessionID)
+  if (input.problem) writeProblemStatement(projectDir, input.problem)
+  if (input.references?.length) stageReferences(projectDir, input.references)
+  ensureProblemStatementReady(projectDir)
+  assertNoPointerReferences(input.task, "TASK")
   const session = yield* sessions
     .create({
       parentID: input.parentSessionID,
@@ -315,13 +324,6 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     problemID: path.basename(projectDir),
     projectDir,
   })
-  if (!existsSync(layout(projectDir).problem)) {
-    log.warn("math worker PROBLEM.md is missing; worker rounds will start without the problem statement", {
-      sessionID: session.id,
-      problemID: path.basename(projectDir),
-      problemFile: layout(projectDir).problem,
-    })
-  }
 
   const taskFile = taskPath(projectDir, session.id)
   writeFileSync(taskFile, input.task.trim() + "\n", "utf8")
@@ -745,6 +747,7 @@ export function updateMathWorkerTask(projectDir: string, sessionID: string, task
   const next = task.trim()
   if (!next) throw new Error("math worker TASK cannot be empty")
   if (next.length > 100_000) throw new Error("math worker TASK is too large")
+  assertNoPointerReferences(next, "TASK")
   const file = taskPath(projectDir, sessionID)
   if (!existsSync(file)) throw new Error(`math worker TASK is missing: ${file}`)
   const tmp = `${file}.tmp`

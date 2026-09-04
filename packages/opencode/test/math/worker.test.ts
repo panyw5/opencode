@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Layer } from "effect"
-import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { Agent } from "@/agent/agent"
 import { Session } from "@/session/session"
@@ -41,11 +41,27 @@ import { InstanceRef } from "@/effect/instance-ref"
 
 const it = testEffect(Layer.mergeAll(Agent.defaultLayer, Session.defaultLayer))
 
+const PROBLEM_SEED = [
+  "Let E_k[phi,theta](q) denote the twisted Eisenstein series defined by the Lambert series",
+  "  -B_k(lambda)/k! + (1/(k-1)!) sum_{r>=0} (r+lambda)^(k-1) theta^-1 q^(r+lambda) / (1 - theta^-1 q^(r+lambda))",
+  "  + ((-1)^k/(k-1)!) sum_{r>=1} (r-lambda)^(k-1) theta q^(r-lambda) / (1 - theta q^(r-lambda)),",
+  "with q = e^(2*pi*i*tau), |q| < 1, theta a nonzero complex number, phi = e^(2*pi*i*lambda),",
+  "and the convention E_0[phi,theta] = -1. Prove the stated polynomial identity among E_2, E_4, E_6, E_8.",
+].join("\n")
+
+function seedProblem(directory: string, project: string): string {
+  const dir = mathRoot(directory, project)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(path.join(dir, "PROBLEM.md"), `${PROBLEM_SEED}\n`)
+  return dir
+}
+
 describe("math.worker", () => {
   it.instance("start records swarm.json without blocking on the child", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const test = yield* TestInstance
       const spawned: string[][] = []
       const spawnedEnv: Array<NodeJS.ProcessEnv | undefined> = []
@@ -116,6 +132,7 @@ describe("math.worker", () => {
       const sessions = yield* Session.Service
       const ctx = yield* InstanceState.context
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const worker = yield* sessions.create({ title: "legacy worker", agent: "math-worker", parentID: parent.id })
       const projectDir = mathRoot(ctx.directory, parent.id)
 
@@ -134,6 +151,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "stopping-heartbeat",
@@ -355,6 +373,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const test = yield* TestInstance
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
@@ -392,6 +411,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "discoverable",
@@ -412,6 +432,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "dead-worker",
@@ -462,6 +483,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "stopped",
@@ -485,6 +507,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "re-enable",
@@ -511,6 +534,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "task-edit",
@@ -532,6 +556,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "blocked",
@@ -571,6 +596,7 @@ describe("math.worker", () => {
     Effect.gen(function* () {
       const sessions = yield* Session.Service
       const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      seedProblem(parent.directory, parent.id)
       const started = yield* startMathWorker({
         parentSessionID: parent.id,
         title: "infra",
@@ -622,6 +648,102 @@ describe("math.worker", () => {
         }),
       )
       expect(Exit.isFailure(contentBlocked)).toBe(true)
+    }),
+  )
+
+  it.instance("start fails without a usable PROBLEM.md or with a pointer TASK", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      const test = yield* TestInstance
+
+      const missing = yield* Effect.exit(
+        startMathWorker({
+          parentSessionID: parent.id,
+          title: "no-problem",
+          task: "prove L",
+          spawn: () => ({ pid: 1 }),
+        }),
+      )
+      expect(Exit.isFailure(missing)).toBe(true)
+      expect((yield* sessions.children(parent.id)).length).toBe(0)
+
+      seedProblem(test.directory, parent.id)
+      const pointerTask = yield* Effect.exit(
+        startMathWorker({
+          parentSessionID: parent.id,
+          title: "pointer",
+          task: "Start from @Eisenstein series identities.md and prove the identity.",
+          spawn: () => ({ pid: 1 }),
+        }),
+      )
+      expect(Exit.isFailure(pointerTask)).toBe(true)
+      expect((yield* sessions.children(parent.id)).length).toBe(0)
+    }),
+  )
+
+  it.instance("start stages problem and references into the workspace and refuses conflicts", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({ title: "orch", agent: "math-orchestrator" })
+      const sourceDir = mkdtempSync(path.join(tmpdir(), "math-refs-"))
+      try {
+        const reference = path.join(sourceDir, "identities.md")
+        writeFileSync(reference, "# Twisted Eisenstein identities\nE_2 E_6 = ...")
+
+        const started = yield* startMathWorker({
+          parentSessionID: parent.id,
+          title: "staged",
+          task: "Prove lemma L using the staged identities.",
+          problem: PROBLEM_SEED,
+          references: [reference],
+          spawn: () => ({ pid: 987654321 }),
+        })
+        const projectDir = started.projectDir
+        expect(readFileSync(path.join(projectDir, "PROBLEM.md"), "utf8").trim()).toBe(PROBLEM_SEED)
+        expect(readFileSync(path.join(projectDir, "references", "identities.md"), "utf8")).toContain(
+          "Twisted Eisenstein identities",
+        )
+        const provenance = JSON.parse(readFileSync(path.join(projectDir, "references", "PROVENANCE.json"), "utf8"))
+        expect(provenance[0]).toMatchObject({ name: "identities.md", source: reference })
+
+        const restaged = yield* startMathWorker({
+          parentSessionID: parent.id,
+          title: "staged-again",
+          task: "Prove lemma M using the staged identities.",
+          problem: PROBLEM_SEED,
+          references: [reference],
+          spawn: () => ({ pid: 987654322 }),
+        })
+        expect(restaged.projectDir).toBe(projectDir)
+
+        const changedReference = path.join(sourceDir, "identities.md")
+        writeFileSync(changedReference, "# A different document entirely")
+        const conflict = yield* Effect.exit(
+          startMathWorker({
+            parentSessionID: parent.id,
+            title: "conflict",
+            task: "Prove lemma N.",
+            problem: PROBLEM_SEED,
+            references: [changedReference],
+            spawn: () => ({ pid: 1 }),
+          }),
+        )
+        expect(Exit.isFailure(conflict)).toBe(true)
+
+        const rewritten = yield* Effect.exit(
+          startMathWorker({
+            parentSessionID: parent.id,
+            title: "rewrite",
+            task: "Prove lemma O.",
+            problem: `${PROBLEM_SEED}\nWith an extra twist.`,
+            spawn: () => ({ pid: 1 }),
+          }),
+        )
+        expect(Exit.isFailure(rewritten)).toBe(true)
+      } finally {
+        rmSync(sourceDir, { recursive: true, force: true })
+      }
     }),
   )
 })

@@ -12,6 +12,7 @@ import { Provider } from "@/provider/provider"
 import { SessionID } from "@/session/schema"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect } from "effect"
+import { readFileSync } from "fs"
 import path from "path"
 import * as Log from "@opencode-ai/core/util/log"
 
@@ -255,6 +256,7 @@ export const MathStartCommand = effectCmd({
       .option("task", { type: "string", default: "", describe: "TASK.md body" })
       .option("parent", { type: "string", demandOption: true, describe: "parent (orchestrator) session id" })
       .option("project", { type: "string", describe: "math problem ID under .math/problems/" })
+      .option("problem-file", { type: "string", describe: "file whose contents are persisted verbatim as PROBLEM.md" })
       .option("interval", { type: "number", describe: "heartbeat interval ms" })
       .option("model", { type: "string", describe: "worker model as provider/model" })
       .option("variant", { type: "string", describe: "worker model effort/variant" }),
@@ -264,6 +266,7 @@ export const MathStartCommand = effectCmd({
       title: args.title || "math-worker",
       task: args.task || "# TASK\n",
       project: args.project,
+      problem: args["problem-file"] ? readFileSync(args["problem-file"], "utf8") : undefined,
       intervalMs: args.interval,
       model: args.model,
       variant: args.variant,

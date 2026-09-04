@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect"
+import path from "path"
 import * as Tool from "./tool"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
@@ -19,6 +20,14 @@ const StartParameters = Schema.Struct({
   }),
   project: Schema.optional(Schema.String).annotate({
     description: "Math problem ID under .math/problems/. Defaults to the parent Math Mode session ID.",
+  }),
+  problem: Schema.optional(Schema.String).annotate({
+    description:
+      "Full verbatim problem statement (every definition, formula, notation, and constant convention) to persist as PROBLEM.md. Required before the first start on a workspace that has no PROBLEM.md; refused if PROBLEM.md already exists with different content.",
+  }),
+  references: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description:
+      "Paths of background files (absolute, or relative to this session's workspace) to copy into the problem workspace under references/ so the worker can read them.",
   }),
   model: Schema.optional(Schema.String).annotate({ description: "Worker model as provider/model" }),
   verifier_model: Schema.optional(Schema.String).annotate({ description: "Verifier model as provider/model" }),
@@ -60,11 +69,16 @@ export const MathWorkerStartTool = Tool.define(
             always: ["*"],
             metadata: { title: params.title },
           })
+          const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
           const result = yield* startMathWorker({
             parentSessionID: SessionID.make(ctx.sessionID),
             title: params.title,
             task: params.task,
             project: params.project,
+            problem: params.problem,
+            references: params.references?.length
+              ? params.references.map((reference) => path.resolve(parent.directory, reference))
+              : undefined,
             model: params.model,
             verifierModel: params.verifier_model,
             variant: params.variant,
