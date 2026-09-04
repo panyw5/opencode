@@ -1,6 +1,7 @@
 import { Database, and, asc, desc, eq, gt, inArray, isNull, lt, or } from "@/storage/db"
 import { Effect, Schema } from "effect"
 import { ProjectID, type LocationID } from "@/project/schema"
+import type { SessionID } from "@/session/schema"
 import { ScheduledTaskRunTable, ScheduledTaskTable } from "./scheduled-task.sql"
 import {
   CreateInput,
@@ -282,6 +283,43 @@ export function renew(input: {
         .run()
       return true
     }),
+  )
+}
+
+export function bindSession(input: {
+  runID: ScheduledTaskRunID
+  ownerID: string
+  sessionID: SessionID
+}): Effect.Effect<boolean> {
+  return Effect.sync(() =>
+    Database.transaction(
+      (db) => {
+        const owned = db
+          .select({ id: ScheduledTaskRunTable.id })
+          .from(ScheduledTaskRunTable)
+          .where(
+            and(
+              eq(ScheduledTaskRunTable.id, input.runID),
+              eq(ScheduledTaskRunTable.owner_id, input.ownerID),
+              inArray(ScheduledTaskRunTable.status, ["running", "retrying"]),
+            ),
+          )
+          .get()
+        if (!owned) return false
+        db.update(ScheduledTaskRunTable)
+          .set({ session_id: input.sessionID })
+          .where(
+            and(
+              eq(ScheduledTaskRunTable.id, input.runID),
+              eq(ScheduledTaskRunTable.owner_id, input.ownerID),
+              inArray(ScheduledTaskRunTable.status, ["running", "retrying"]),
+            ),
+          )
+          .run()
+        return true
+      },
+      { behavior: "immediate" },
+    ),
   )
 }
 

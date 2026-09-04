@@ -117,6 +117,12 @@ export const layer = Layer.effect(
     })
 
     const executePrompt = Effect.fn("ScheduledTask.executePrompt")(function* (task: Info, run: Run) {
+      log.info("scheduled task prompt execution started", {
+        taskID: task.id,
+        runID: run.id,
+        executionMode: task.executionMode,
+        sessionID: run.sessionID,
+      })
       // Hold a location lease for the complete prompt execution. A missing,
       // deleting, or deleted location is rejected at the gate without invoking
       // project discovery or instance bootstrap, and the run is skipped.
@@ -142,7 +148,7 @@ export const layer = Layer.effect(
             if (projectMismatch || locationMismatch) log.warn("scheduled task identity mismatch", identity)
             else log.info("scheduled task project identity resolved", identity)
             return yield* Effect.gen(function* () {
-              let sessionID = task.sessionID
+              let sessionID = task.executionMode === "existing_session" ? task.sessionID : run.sessionID
               if (task.executionMode === "existing_session") {
                 // Bind a durable session on first run so the user never types a session ID.
                 if (!sessionID) {
@@ -158,6 +164,7 @@ export const layer = Layer.effect(
                   })
                   sessionID = session.id
                   yield* ScheduledTaskRepository.update(task.id, { sessionID })
+                  log.info("scheduled task durable session created", { taskID: task.id, runID: run.id, sessionID })
                 }
                 for (let attempt = run.attempt; attempt <= MAX_BUSY_RETRIES; attempt++) {
                   const current = yield* statuses.get(sessionID)
@@ -176,7 +183,7 @@ export const layer = Layer.effect(
                     leaseUntil: Date.now() + LEASE_MS,
                   })
                 }
-              } else {
+              } else if (!sessionID) {
                 if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
                 const session = yield* sessions.create({
                   title: markScheduledSessionTitle(`${task.name} · ${new Date(run.scheduledAt).toLocaleString()}`),
@@ -188,6 +195,15 @@ export const layer = Layer.effect(
                   },
                 })
                 sessionID = session.id
+                log.info("scheduled task occurrence session created", { taskID: task.id, runID: run.id, sessionID })
+              } else {
+                log.info("scheduled task occurrence session recovered", { taskID: task.id, runID: run.id, sessionID })
+              }
+
+              if (run.sessionID !== sessionID) {
+                const bound = yield* ScheduledTaskRepository.bindSession({ runID: run.id, ownerID, sessionID })
+                if (!bound) throw new Error(`Lost scheduled task run ownership before binding session: ${run.id}`)
+                log.info("scheduled task run session bound", { taskID: task.id, runID: run.id, sessionID })
               }
 
               // Mark any session written by a scheduled task (including user-owned
@@ -200,6 +216,7 @@ export const layer = Layer.effect(
 
               // Collapsible "计划任务注入提示词" via shared InjectedPrompt UI
               // (synthetic + metadata.kind = scheduled-injection).
+              log.info("scheduled task prompt dispatch started", { taskID: task.id, runID: run.id, sessionID })
               yield* prompts.prompt({
                 sessionID,
                 agent: task.agent,
@@ -221,6 +238,7 @@ export const layer = Layer.effect(
                   },
                 ],
               })
+              log.info("scheduled task prompt dispatch completed", { taskID: task.id, runID: run.id, sessionID })
               return { status: "ok" as const, sessionID }
             }).pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, true))
           }),
@@ -239,6 +257,7 @@ export const layer = Layer.effect(
     })
 
     const executeClaimed = Effect.fn("ScheduledTask.executeClaimed")(function* (task: Info, run: Run) {
+      log.info("scheduled task claimed execution started", { taskID: task.id, runID: run.id, sessionID: run.sessionID })
       const heartbeat = yield* Effect.gen(function* () {
         for (;;) {
           yield* Effect.sleep(LEASE_HEARTBEAT)
@@ -255,6 +274,12 @@ export const layer = Layer.effect(
       yield* Fiber.interrupt(heartbeat)
       if (exit._tag === "Success") {
         yield* complete(task, run.id, exit.value.status, { sessionID: exit.value.sessionID, error: exit.value.error })
+        log.info("scheduled task claimed execution completed", {
+          taskID: task.id,
+          runID: run.id,
+          status: exit.value.status,
+          sessionID: exit.value.sessionID,
+        })
         return
       }
       const error = formatCause(exit.cause)
@@ -288,6 +313,7 @@ export const layer = Layer.effect(
     const recover = Effect.fn("ScheduledTask.recover")(function* () {
       const now = Date.now()
       const runs = yield* ScheduledTaskRepository.recoverable(now)
+      log.info("scheduled task recovery scan completed", { now, count: runs.length })
       const recovered = new Set<ScheduledTaskID>()
       for (const run of runs) {
         const task = yield* ScheduledTaskRepository.get(run.taskID)

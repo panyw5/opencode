@@ -9,6 +9,9 @@ import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ScheduledTaskRunTable, ScheduledTaskTable } from "@/scheduled-task/scheduled-task.sql"
 import { WorkspaceTable } from "@/control-plane/workspace.sql"
 import { WorkspaceID } from "@/control-plane/schema"
+import { SessionID } from "@/session/schema"
+import { SessionTable } from "@/session/session.sql"
+import { Identifier } from "@/id/id"
 
 const now = 1_700_000_000_000
 
@@ -293,6 +296,22 @@ describe("ScheduledTaskRepository", () => {
 
   test("takes over an expired lease and validates the current owner on finish", async () => {
     const task = await create(project("lease"))
+    const sessionID = SessionID.make(Identifier.ascending("session"))
+    Database.use((db) =>
+      db
+        .insert(SessionTable)
+        .values({
+          id: sessionID,
+          project_id: task.projectID,
+          slug: "scheduled-recovery",
+          directory: task.directory,
+          title: "Scheduled recovery",
+          version: "test",
+          time_created: now,
+          time_updated: now,
+        })
+        .run(),
+    )
     const first = await Effect.runPromise(
       ScheduledTaskRepository.claim({
         taskID: task.id,
@@ -303,6 +322,11 @@ describe("ScheduledTaskRepository", () => {
       }),
     )
     if (first.type !== "claimed") throw new Error("expected initial claim")
+    expect(
+      await Effect.runPromise(
+        ScheduledTaskRepository.bindSession({ runID: first.run.id, ownerID: "owner-a", sessionID }),
+      ),
+    ).toBe(true)
 
     const recovered = await Effect.runPromise(
       ScheduledTaskRepository.claim({
@@ -315,9 +339,14 @@ describe("ScheduledTaskRepository", () => {
     )
     expect(recovered.type).toBe("claimed")
     if (recovered.type === "claimed") {
-      expect(recovered.run).toMatchObject({ id: first.run.id, status: "running" })
+      expect(recovered.run).toMatchObject({ id: first.run.id, status: "running", sessionID })
       expect(recovered.run.time.started).toBe(now)
     }
+    expect(
+      await Effect.runPromise(
+        ScheduledTaskRepository.bindSession({ runID: first.run.id, ownerID: "owner-a", sessionID }),
+      ),
+    ).toBe(false)
 
     expect(
       await Effect.runPromise(
