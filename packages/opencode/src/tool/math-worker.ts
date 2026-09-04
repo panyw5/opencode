@@ -3,7 +3,14 @@ import path from "path"
 import * as Tool from "./tool"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
-import { discoverMathWorkers, ensureMathWorker, startMathWorker, stopMathWorker } from "@/math/worker"
+import {
+  discoverMathWorkers,
+  ensureMathWorker,
+  startMathWorker,
+  statusMathWorker,
+  stopMathWorker,
+  updateMathWorkerTask,
+} from "@/math/worker"
 import { mathRoot } from "@/math/layout"
 import { MathWorkerEvent } from "@/math/event"
 import { Bus } from "@/bus"
@@ -11,6 +18,10 @@ import DESCRIPTION_START from "./math_worker_start.txt"
 import DESCRIPTION_STATUS from "./math_worker_status.txt"
 import DESCRIPTION_STOP from "./math_worker_stop.txt"
 import DESCRIPTION_ENSURE from "./math_worker_ensure.txt"
+import DESCRIPTION_TASK_UPDATE from "./math_worker_task_update.txt"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "tool.math-worker" })
 
 const StartParameters = Schema.Struct({
   title: Schema.String.annotate({ description: "Short title for the worker session" }),
@@ -50,6 +61,15 @@ const EnsureParameters = Schema.Struct({
 const StopParameters = Schema.Struct({
   session_id: Schema.String.annotate({ description: "Worker session id" }),
   force: Schema.optional(Schema.Boolean).annotate({ description: "Use SIGKILL instead of SIGTERM" }),
+  project: Schema.optional(Schema.String).annotate({ description: "Math problem ID under .math/problems/." }),
+})
+
+const TaskUpdateParameters = Schema.Struct({
+  session_id: Schema.String.annotate({ description: "Existing math-worker session id" }),
+  task: Schema.String.annotate({
+    description:
+      "Replacement TASK.md body. It must be self-contained and substantively changed for a content-blocked lane.",
+  }),
   project: Schema.optional(Schema.String).annotate({ description: "Math problem ID under .math/problems/." }),
 })
 
@@ -226,6 +246,69 @@ export const MathWorkerStopTool = Tool.define(
           })
           return {
             title: `stop ${params.session_id}`,
+            output: JSON.stringify(result),
+            metadata: result,
+          }
+        }),
+    }
+  }),
+)
+
+export const MathWorkerTaskUpdateTool = Tool.define(
+  "math_worker_task_update",
+  Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    const bus = yield* Bus.Service
+    return {
+      description: DESCRIPTION_TASK_UPDATE,
+      parameters: TaskUpdateParameters,
+      execute: (params: Schema.Schema.Type<typeof TaskUpdateParameters>, ctx: Tool.Context) =>
+        Effect.gen(function* () {
+          yield* ctx.ask({
+            permission: "math_worker_task_update",
+            patterns: [params.session_id],
+            always: ["*"],
+            metadata: { sessionID: params.session_id, length: params.task.length },
+          })
+          const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
+          const worker = yield* sessions.get(SessionID.make(params.session_id)).pipe(Effect.orDie)
+          if (worker.agent !== "math-worker" || worker.parentID !== parent.id) {
+            log.warn("math worker task update ownership rejected", {
+              parentSessionID: parent.id,
+              workerSessionID: params.session_id,
+              workerParentSessionID: worker.parentID,
+              workerAgent: worker.agent,
+            })
+            throw new Error(`not a math-worker child of this session: ${params.session_id}`)
+          }
+          const projectDir = mathRoot(parent.directory, params.project || parent.id)
+          log.info("math worker task update start", {
+            parentSessionID: parent.id,
+            workerSessionID: params.session_id,
+            projectDir,
+            length: params.task.length,
+          })
+          const result = updateMathWorkerTask(projectDir, params.session_id, params.task)
+          const status = statusMathWorker({ projectDir, sessionID: params.session_id })[0]
+          yield* bus.publish(MathWorkerEvent.Status, {
+            sessionID: params.session_id,
+            parentSessionID: ctx.sessionID,
+            state: status?.state ?? "missing",
+            alive: status?.alive ?? false,
+            pid: status?.pid,
+            round: status?.round,
+            lastFactId: status?.last_fact_id,
+            reason: "task-updated",
+          })
+          log.info("math worker task update finish", {
+            parentSessionID: parent.id,
+            workerSessionID: params.session_id,
+            projectDir,
+            state: status?.state ?? "missing",
+            alive: status?.alive ?? false,
+          })
+          return {
+            title: `task updated ${params.session_id}`,
             output: JSON.stringify(result),
             metadata: result,
           }

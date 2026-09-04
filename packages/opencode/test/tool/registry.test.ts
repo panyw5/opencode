@@ -137,6 +137,13 @@ describe("tool.registry", () => {
       expect(ids).toContain("scheduled_task_run_now")
       expect(ids).toContain("scheduled_task_runs")
       expect(ids).toContain("math_worker_ensure")
+      expect(ids).toContain("math_worker_task_update")
+      expect(ids).toContain("math_gm_add")
+      expect(ids).toContain("math_gm_search")
+      expect(ids).toContain("math_fact_search")
+      expect(ids).toContain("math_fact_get")
+      expect(ids).toContain("math_fact_revoke")
+      expect(ids).not.toContain("math_fact_submit")
     }),
   )
 

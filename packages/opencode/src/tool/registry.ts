@@ -79,7 +79,14 @@ import {
   ScheduledTaskRunNowTool,
   ScheduledTaskUpdateTool,
 } from "./scheduled-task"
-import { MathWorkerEnsureTool, MathWorkerStartTool, MathWorkerStatusTool, MathWorkerStopTool } from "./math-worker"
+import {
+  MathWorkerEnsureTool,
+  MathWorkerStartTool,
+  MathWorkerStatusTool,
+  MathWorkerStopTool,
+  MathWorkerTaskUpdateTool,
+} from "./math-worker"
+import { MathFactGetTool, MathFactRevokeTool, MathFactSearchTool, MathGmAddTool, MathGmSearchTool } from "./math-truth"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -168,6 +175,12 @@ export const layer: Layer.Layer<
     const mathWorkerEnsure = yield* MathWorkerEnsureTool
     const mathWorkerStatus = yield* MathWorkerStatusTool
     const mathWorkerStop = yield* MathWorkerStopTool
+    const mathWorkerTaskUpdate = yield* MathWorkerTaskUpdateTool
+    const mathGmAdd = yield* MathGmAddTool
+    const mathGmSearch = yield* MathGmSearchTool
+    const mathFactSearch = yield* MathFactSearchTool
+    const mathFactGet = yield* MathFactGetTool
+    const mathFactRevoke = yield* MathFactRevokeTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -304,6 +317,12 @@ export const layer: Layer.Layer<
           math_worker_ensure: Tool.init(mathWorkerEnsure),
           math_worker_status: Tool.init(mathWorkerStatus),
           math_worker_stop: Tool.init(mathWorkerStop),
+          math_worker_task_update: Tool.init(mathWorkerTaskUpdate),
+          math_gm_add: Tool.init(mathGmAdd),
+          math_gm_search: Tool.init(mathGmSearch),
+          math_fact_search: Tool.init(mathFactSearch),
+          math_fact_get: Tool.init(mathFactGet),
+          math_fact_revoke: Tool.init(mathFactRevoke),
           search: Tool.init(websearch),
           repo_clone: Tool.init(repoClone),
           repo_overview: Tool.init(repoOverview),
@@ -348,6 +367,12 @@ export const layer: Layer.Layer<
           tool.math_worker_ensure,
           tool.math_worker_status,
           tool.math_worker_stop,
+          tool.math_worker_task_update,
+          tool.math_gm_add,
+          tool.math_gm_search,
+          tool.math_fact_search,
+          tool.math_fact_get,
+          tool.math_fact_revoke,
           tool.search,
           ...(flags.experimentalScout ? [tool.repo_clone, tool.repo_overview] : []),
           tool.codex_consult,
