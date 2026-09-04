@@ -219,6 +219,38 @@
 
 新增 `LocationLifecycle.load` helper：有服务时走 `provide`（返回 `InstanceContext`），无服务时回退 `InstanceStore.load`（裸测试）。
 
+### 真实环境手动验证（CDP + HTTP API，已通过）
+
+验证方法：`OPENCODE_SERVER_PASSWORD=test123 bun run serve --port 4096 --log-level DEBUG --print-logs`（**必须加 --print-logs**，否则 Effect.logInfo 不输出到 stdout），
+用 curl 带 Basic auth 调 `/experimental/worktree` API，grep 服务器日志中的 `[location-lifecycle]` 消息。
+
+**后端（11 项全过）**：
+
+| 功能 | 日志证据 |
+|------|---------|
+| HTTP 准入门禁 | `admission-request purpose=http-request` → `lease-acquired` → `runtime-started` → `lease-released`（0→1→0） |
+| worktree boot 走 lifecycle | `admission-request purpose=scheduled-task`（store.load 迁移生效） |
+| 空闲回收调度 | `idle-scheduled delayMs=120000`（租约归零即调度） |
+| 空闲回收精确触发 | 23:53:49 调度 → 23:55:49 恰好 120s 后 `runtime-disposed reason=idle` |
+| 删除围栏全流程 | `delete-request`(operationID=delop_...) → `delete-fenced`(generation 0→1) → `runtime-disposed reason=delete` → `delete-completed` |
+| delete 取消定时器 | `idle-cancelled reason=new-lease`（cancelIdleTimer 在 delete 中生效） |
+| DB 墓碑 | `lifecycle_state=deleted`, `generation=1`, `delete_operation_id` ✓, `time_deleted` ✓（sqlite3 直查 opencode.db） |
+| 文件系统移除 | worktree 目录已删除 |
+| 删除后轻量 404 | 已删目录返回 `DirectoryNotFound` 404（existsSafe 轻量路径，不触发完整准入） |
+| dispose 后再准入 | 空闲回收后重新请求 HTTP 200（runtime 可重启，generation 不变） |
+| 幂等删除 | 二次 delete → `delete-idempotent result=already-deleted` HTTP 200 |
+
+**前端（5 项全过）**：验证方法：dev electron app（vite dev server 5173 实时加载最新源码），
+`performance.getEntriesByType("resource")` 找到 `/@fs/...` 模块 URL，curl fetch 运行中的 transformed bundle 检查代码内容：
+
+| 检查项 | 运行 bundle 证据 |
+|--------|-----------------|
+| child-store 不再调后端 dispose | `global-sync.tsx` bundle 中 `instance.dispose` 调用 = 0 处 |
+| 新驱逐日志生效 | `child store evicted` 存在 |
+| lastProject 复活已移除 | `layout.tsx` 中 `openProject(last, true)` = 0 处 |
+| 空列表分支直接 return | `if (list.length === 0) { return; }` |
+| focus 选择保留 | `openProject(next.worktree, true)` 存在（else 分支，非复活） |
+
 ## 后续收尾
 
 - spec 的 Test Invariants（15 条）和 Release Validation（8 条）已对照（见下表），剩余缺口主要是手动验证项。
