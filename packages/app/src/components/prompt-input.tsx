@@ -1822,12 +1822,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return {
       width: `${Math.max(0, STOP_REVEAL_WIDTH * v)}px`,
       opacity: `${Math.min(1, Math.max(0, v))}`,
+      // Clip only mid-flight (the reveal wipe); at rest the circle must render
+      // unclipped — anti-aliasing and the overshoot scale bleed past the box.
+      overflow: v > 0 && v < 1 ? ("hidden" as const) : ("visible" as const),
       "pointer-events": v > 0.5 ? ("auto" as const) : ("none" as const),
     }
   })
-  const stopPauseMotion = createMemo(() => ({
-    transform: `scale(${0.5 + 0.5 * stopRevealSpring()})`,
-  }))
+  // Slides in from the right (tucked toward the stop button) while springing
+  // open; the bounce carries it a few px past its resting spot before settling.
+  const stopPauseMotion = createMemo(() => {
+    const v = stopRevealSpring()
+    return {
+      transform: `translateX(${(1 - v) * 20}px) scale(${0.5 + 0.5 * v})`,
+    }
+  })
 
   const toolInFlight = (part: Part) =>
     part.type === "tool" && (part.state.status === "pending" || part.state.status === "running")
@@ -2628,7 +2636,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 onMouseLeave={() => setStopHovered(false)}
               >
                 <Show when={working()}>
-                  <div class="flex justify-end overflow-hidden" style={stopRevealMotion()}>
+                  <div
+                    class="flex justify-end overflow-hidden py-[3px] -my-[3px]"
+                    style={stopRevealMotion()}
+                  >
                     <div class="flex w-[42px] shrink-0 items-center pr-2.5">
                       <Tooltip
                         {...hover}

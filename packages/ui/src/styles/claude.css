@@ -256,6 +256,12 @@ html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="p
   border-radius: 50%;
 }
 
+/* Same specificity as the generic icon-button radius rule above, but later —
+   keeps the hover-revealed stop-after-tool pause button circular everywhere. */
+html[data-theme="claude"] [data-action="prompt-stop-after-tool"] {
+  border-radius: 50%;
+}
+
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-submit"] {
   width: 36px;
   height: 36px;
