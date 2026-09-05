@@ -166,6 +166,93 @@ function normalizeDirectory(value: string) {
   return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
 }
 
+type SidebarQuickAction = {
+  icon: IconName
+  label: string
+  onSelect: () => void
+  disabled?: boolean
+}
+
+/**
+ * Responsive toolbar for the sidebar quick actions. Tracks its own rendered
+ * width: full shows every action, compact keeps the primary + first two,
+ * mini keeps only the primary and moves the rest into the overflow menu.
+ */
+function SidebarQuickActions(props: { primary: SidebarQuickAction; actions: SidebarQuickAction[]; moreLabel: string }) {
+  const [mode, setMode] = createSignal<"full" | "compact" | "mini">("full")
+  let ref: HTMLDivElement | undefined
+
+  onMount(() => {
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0
+      setMode(width >= 280 ? "full" : width >= 170 ? "compact" : "mini")
+    })
+    observer.observe(ref!)
+    onCleanup(() => observer.disconnect())
+  })
+
+  const visible = createMemo(() => {
+    if (mode() === "full") return props.actions
+    if (mode() === "compact") return props.actions.slice(0, 2)
+    return []
+  })
+  const overflow = createMemo(() => props.actions.slice(visible().length))
+
+  return (
+    <div ref={ref} classList={{ "sidebar-actions": true }} data-mode={mode()}>
+      <Tooltip placement="bottom" value={props.primary.label}>
+        <IconButton
+          icon={props.primary.icon}
+          variant="ghost"
+          size="large"
+          class="sidebar-action-button sidebar-action-button-primary h-10 w-full"
+          aria-label={props.primary.label}
+          onClick={props.primary.onSelect}
+        />
+      </Tooltip>
+      <For each={visible()}>
+        {(action) => (
+          <Tooltip placement="bottom" value={action.label}>
+            <IconButton
+              icon={action.icon}
+              variant="ghost"
+              size="large"
+              class="sidebar-action-button h-10 w-full"
+              aria-label={action.label}
+              disabled={action.disabled}
+              onClick={action.onSelect}
+            />
+          </Tooltip>
+        )}
+      </For>
+      <Show when={overflow().length > 0}>
+        <DropdownMenu modal>
+          <DropdownMenu.Trigger
+            as={IconButton}
+            icon="dot-grid"
+            variant="ghost"
+            size="large"
+            class="sidebar-action-button h-10 w-full"
+            aria-label={props.moreLabel}
+          />
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content class="mt-1">
+              <For each={overflow()}>
+                {(action) => (
+                  <DropdownMenu.Item disabled={action.disabled} onSelect={action.onSelect}>
+                    <Icon name={action.icon} class="size-4 shrink-0 text-icon-base" />
+                    <DropdownMenu.ItemLabel>{action.label}</DropdownMenu.ItemLabel>
+                  </DropdownMenu.Item>
+                )}
+              </For>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu>
+      </Show>
+    </div>
+  )
+}
+
 export default function Layout(props: ParentProps) {
   type CurrentProject = LocalProject & {
     root: string
@@ -3831,80 +3918,41 @@ export default function Layout(props: ParentProps) {
                     fallback={
                       <>
                         <div class="shrink-0 py-4 px-3">
-                          <div class="grid grid-cols-6 gap-2">
-                            <Tooltip placement="bottom" value={language.t("command.session.new")}>
-                              <IconButton
-                                icon="new-session"
-                                variant="ghost"
-                                size="large"
-                                class="sidebar-action-button h-10 w-full rounded-xl"
-                                aria-label={language.t("command.session.new")}
-                                onClick={() => {
-                                  const dir = worktree()
-                                  if (!dir) return
-                                  console.debug(`[sidebar-project] new-session root=${dir} source=sidebar-button`)
-                                  sessionTabs.createDraft(dir, "button")
-                                  navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
-                                  layout.sidebar.close()
-                                }}
-                              />
-                            </Tooltip>
-                            <Tooltip placement="bottom" value={language.t("sidebar.project.agentsMd")}>
-                              <IconButton
-                                icon="file"
-                                variant="ghost"
-                                size="large"
-                                class="sidebar-action-button h-10 w-full rounded-xl"
-                                aria-label={language.t("sidebar.project.agentsMd")}
-                                onClick={openAgentsMd}
-                              />
-                            </Tooltip>
-                            <Tooltip placement="bottom" value={language.t("projectTask.title")}>
-                              <IconButton
-                                icon="checklist"
-                                variant="ghost"
-                                size="large"
-                                class="sidebar-action-button h-10 w-full rounded-xl"
-                                aria-label={language.t("projectTask.title")}
-                                onClick={openProjectTasksPanel}
-                              />
-                            </Tooltip>
-                            <Tooltip placement="bottom" value={language.t("scheduled.title")}>
-                              <IconButton
-                                icon="clock"
-                                variant="ghost"
-                                size="large"
-                                class="sidebar-action-button h-10 w-full rounded-xl"
-                                aria-label={language.t("scheduled.title")}
-                                onClick={openScheduledPanel}
-                              />
-                            </Tooltip>
-                            <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
-                              <IconButton
-                                icon="bell-off"
-                                variant="ghost"
-                                size="large"
-                                class="sidebar-action-button h-10 w-full rounded-xl"
-                                disabled={unseenCount() === 0}
-                                aria-label={language.t("sidebar.project.clearNotifications")}
-                                onClick={clearNotifications}
-                              />
-                            </Tooltip>
-                            <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
-                              <IconButton
-                                icon="archive"
-                                variant="ghost"
-                                size="large"
-                                class="sidebar-action-button h-10 w-full rounded-xl"
-                                aria-label={language.t("sidebar.project.viewArchivedSessions")}
-                                onClick={() => {
+                          <SidebarQuickActions
+                            primary={{
+                              icon: "new-session",
+                              label: language.t("command.session.new"),
+                              onSelect: () => {
+                                const dir = worktree()
+                                if (!dir) return
+                                console.debug(`[sidebar-project] new-session root=${dir} source=sidebar-button`)
+                                sessionTabs.createDraft(dir, "button")
+                                navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
+                                layout.sidebar.close()
+                              },
+                            }}
+                            moreLabel={language.t("common.moreOptions")}
+                            actions={[
+                              { icon: "file", label: language.t("sidebar.project.agentsMd"), onSelect: openAgentsMd },
+                              { icon: "checklist", label: language.t("projectTask.title"), onSelect: openProjectTasksPanel },
+                              { icon: "clock", label: language.t("scheduled.title"), onSelect: openScheduledPanel },
+                              {
+                                icon: "bell-off",
+                                label: language.t("sidebar.project.clearNotifications"),
+                                disabled: unseenCount() === 0,
+                                onSelect: clearNotifications,
+                              },
+                              {
+                                icon: "archive",
+                                label: language.t("sidebar.project.viewArchivedSessions"),
+                                onSelect: () => {
                                   const item = project()
                                   if (!item) return
                                   dialog.show(() => <DialogArchivedSessions project={item} />)
-                                }}
-                              />
-                            </Tooltip>
-                          </div>
+                                },
+                              },
+                            ]}
+                          />
                         </div>
                         <div class="flex-1 min-h-0">
                           <LocalWorkspace
@@ -3921,77 +3969,38 @@ export default function Layout(props: ParentProps) {
                   >
                     <>
                       <div class="shrink-0 py-4 px-3">
-                        <div class="grid grid-cols-6 gap-2">
-                          <Tooltip placement="bottom" value={language.t("workspace.new")}>
-                            <IconButton
-                              icon="plus-small"
-                              variant="ghost"
-                              size="large"
-                              class="sidebar-action-button h-10 w-full rounded-xl"
-                              aria-label={language.t("workspace.new")}
-                              onClick={() => {
-                                const item = project()
-                                if (!item) return
-                                createWorkspace(item)
-                              }}
-                            />
-                          </Tooltip>
-                          <Tooltip placement="bottom" value={language.t("sidebar.project.agentsMd")}>
-                            <IconButton
-                              icon="file"
-                              variant="ghost"
-                              size="large"
-                              class="sidebar-action-button h-10 w-full rounded-xl"
-                              aria-label={language.t("sidebar.project.agentsMd")}
-                              onClick={openAgentsMd}
-                            />
-                          </Tooltip>
-                          <Tooltip placement="bottom" value={language.t("projectTask.title")}>
-                            <IconButton
-                              icon="checklist"
-                              variant="ghost"
-                              size="large"
-                              class="sidebar-action-button h-10 w-full rounded-xl"
-                              aria-label={language.t("projectTask.title")}
-                              onClick={openProjectTasksPanel}
-                            />
-                          </Tooltip>
-                          <Tooltip placement="bottom" value={language.t("scheduled.title")}>
-                            <IconButton
-                              icon="clock"
-                              variant="ghost"
-                              size="large"
-                              class="sidebar-action-button h-10 w-full rounded-xl"
-                              aria-label={language.t("scheduled.title")}
-                              onClick={openScheduledPanel}
-                            />
-                          </Tooltip>
-                          <Tooltip placement="bottom" value={language.t("sidebar.project.clearNotifications")}>
-                            <IconButton
-                              icon="bell-off"
-                              variant="ghost"
-                              size="large"
-                              class="sidebar-action-button h-10 w-full rounded-xl"
-                              disabled={unseenCount() === 0}
-                              aria-label={language.t("sidebar.project.clearNotifications")}
-                              onClick={clearNotifications}
-                            />
-                          </Tooltip>
-                          <Tooltip placement="bottom" value={language.t("sidebar.project.viewArchivedSessions")}>
-                            <IconButton
-                              icon="archive"
-                              variant="ghost"
-                              size="large"
-                              class="sidebar-action-button h-10 w-full rounded-xl"
-                              aria-label={language.t("sidebar.project.viewArchivedSessions")}
-                              onClick={() => {
+                        <SidebarQuickActions
+                          primary={{
+                            icon: "plus-small",
+                            label: language.t("workspace.new"),
+                            onSelect: () => {
+                              const item = project()
+                              if (!item) return
+                              createWorkspace(item)
+                            },
+                          }}
+                          moreLabel={language.t("common.moreOptions")}
+                          actions={[
+                            { icon: "file", label: language.t("sidebar.project.agentsMd"), onSelect: openAgentsMd },
+                            { icon: "checklist", label: language.t("projectTask.title"), onSelect: openProjectTasksPanel },
+                            { icon: "clock", label: language.t("scheduled.title"), onSelect: openScheduledPanel },
+                            {
+                              icon: "bell-off",
+                              label: language.t("sidebar.project.clearNotifications"),
+                              disabled: unseenCount() === 0,
+                              onSelect: clearNotifications,
+                            },
+                            {
+                              icon: "archive",
+                              label: language.t("sidebar.project.viewArchivedSessions"),
+                              onSelect: () => {
                                 const item = project()
                                 if (!item) return
                                 dialog.show(() => <DialogArchivedSessions project={item} />)
-                              }}
-                            />
-                          </Tooltip>
-                        </div>
+                              },
+                            },
+                          ]}
+                        />
                       </div>
                       <div class="relative flex-1 min-h-0">
                         <DragDropProvider

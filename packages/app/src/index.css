@@ -433,22 +433,72 @@
     --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
   }
 
-  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"] {
+  /* Segmented toolbar for the sidebar action row: buttons sit on a shared inset
+     track instead of floating as separate cards, and pop out as raised segments
+     on hover. */
+  .sidebar-actions {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: 2px;
+    padding: 3px;
+    border-radius: 14px;
     background-color: light-dark(
-      var(--background-stronger),
-      color-mix(in oklab, var(--color-surface-raised-base) 35%, transparent)
+      color-mix(in oklab, var(--background-stronger) 55%, color-mix(in oklab, var(--surface-base-hover) 45%, transparent)),
+      color-mix(in oklab, var(--color-surface-raised-base) 20%, transparent)
     );
+    border: 1px solid light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.06));
+    box-shadow: inset 0 1px 2px light-dark(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.24));
+  }
+
+  /* Narrow sidebars collapse the row: compact shows primary + 2 actions +
+     overflow menu, mini shows only primary + overflow menu. */
+  .sidebar-actions[data-mode="compact"] {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .sidebar-actions[data-mode="mini"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"] {
+    background-color: transparent;
+    border-radius: 10px;
+    color: var(--icon-base);
     transition:
       background-color 140ms ease-out,
-      color 140ms ease-out;
+      color 140ms ease-out,
+      box-shadow 140ms ease-out,
+      transform 100ms ease-out;
   }
 
   [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
-    background-color: var(--surface-base-hover);
+    background-color: light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 55%, transparent));
+    color: var(--icon-strong-base);
+    box-shadow:
+      0 1px 2px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.4)),
+      0 0 0 1px light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.05));
   }
 
   [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:active:not(:disabled) {
-    background-color: var(--surface-base-active);
+    background-color: light-dark(var(--background-stronger), color-mix(in oklab, var(--color-surface-raised-base) 45%, transparent));
+    transform: scale(0.95);
+    box-shadow: none;
+  }
+
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:disabled {
+    color: var(--icon-weak-disabled);
+  }
+
+  /* Primary action ("new session" / "new workspace") reads as a brand chip so
+     the row has a clear entry point. */
+  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"] {
+    background-color: color-mix(in oklab, var(--surface-brand-base) 42%, transparent);
+    color: var(--icon-strong-base);
+  }
+
+  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
+    background-color: var(--surface-brand-hover);
+    color: var(--icon-strong-base);
   }
 
   /* "+" (open file) in the file preview tab bar. Default background matches the
