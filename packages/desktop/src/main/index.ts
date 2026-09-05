@@ -33,6 +33,9 @@ import { resolveDesktopStartupPaths } from "./server-env"
 import { createWslServersController, type WslServersController } from "./wsl/servers"
 import { spawnWslSidecar } from "./wsl/sidecar"
 import { registerWslIpcHandlers } from "./wsl/ipc"
+import { createSshServersController } from "./ssh/servers"
+import { spawnSshSidecar } from "./ssh/sidecar"
+import { registerSshIpcHandlers } from "./ssh/ipc"
 import {
   createLoadingWindow,
   createMainWindow,
@@ -313,6 +316,14 @@ const main = Effect.gen(function* () {
   registerWslIpcHandlers(wslController)
   app.on("before-quit", () => wslController.stopAll())
 
+  const sshController = createSshServersController(app.getVersion(), (target) =>
+    spawnSshSidecar(target, {
+      onLine: (line) => writeLog("ssh", line.text, { stream: line.stream }),
+    }),
+  )
+  registerSshIpcHandlers(sshController)
+  app.on("before-quit", () => sshController.stopAll())
+
   yield* Effect.promise(() => app.whenReady())
 
   if (!TEST_ONBOARDING) migrate()
@@ -478,6 +489,7 @@ const main = Effect.gen(function* () {
   if (needsMigration) getStore().set(DATABASE_UPGRADE_PROMPT_KEY, true)
   setInitStep({ phase: "done" })
   wslController.initialize()
+  sshController.initialize()
 
   if (overlay) yield* Deferred.await(loadingComplete)
 

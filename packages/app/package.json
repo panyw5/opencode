@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./desktop-menu": "./src/desktop-menu.ts",
     "./wsl/types": "./src/wsl/types.ts",
+    "./ssh/types": "./src/ssh/types.ts",
     "./vite": "./vite.js",
     "./index.css": "./src/index.css"
   },

@@ -30,6 +30,20 @@ export type {
 import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
 export type WslServersAPI = WslServersPlatform
 
+export type {
+  SshDirectoryEntry,
+  SshHostProbe,
+  SshJob,
+  SshOpencodeCheck,
+  SshServerConfig,
+  SshServerItem,
+  SshServerRuntime,
+  SshServersEvent,
+  SshServersState,
+} from "@opencode-ai/app/ssh/types"
+import type { SshServersPlatform } from "@opencode-ai/app/ssh/types"
+export type SshServersAPI = SshServersPlatform
+
 export type LinuxDisplayBackend = "wayland" | "auto"
 export type TitlebarTheme = {
   mode: "light" | "dark"
@@ -280,6 +294,7 @@ export type ElectronAPI = {
   getWslConfig: () => Promise<WslConfig>
   setWslConfig: (config: WslConfig) => Promise<void>
   wslServers: WslServersAPI
+  sshServers: SshServersAPI
   getDisplayBackend: () => Promise<LinuxDisplayBackend | null>
   setDisplayBackend: (backend: LinuxDisplayBackend | null) => Promise<void>
   parseMarkdownCommand: (markdown: string) => Promise<string>

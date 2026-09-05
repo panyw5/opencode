@@ -41,6 +41,26 @@ const api: ElectronAPI = {
     removeServer: (id) => ipcRenderer.invoke("wsl-servers-remove", id),
     startServer: (id) => ipcRenderer.invoke("wsl-servers-start", id),
   },
+  sshServers: {
+    getState: () => ipcRenderer.invoke("ssh-servers-get-state"),
+    subscribe: (cb) => {
+      const handler = (_: unknown, event: unknown) => cb(event as any)
+      ipcRenderer.on("ssh-servers-event", handler)
+      ipcRenderer.invoke("ssh-servers-subscribe")
+      return () => {
+        ipcRenderer.removeListener("ssh-servers-event", handler)
+        ipcRenderer.invoke("ssh-servers-unsubscribe")
+      }
+    },
+    probeHost: (target) => ipcRenderer.invoke("ssh-servers-probe-host", target),
+    probeOpencode: (target) => ipcRenderer.invoke("ssh-servers-probe-opencode", target),
+    installOpencode: (target) => ipcRenderer.invoke("ssh-servers-install-opencode", target),
+    addServer: (target, autoStart) => ipcRenderer.invoke("ssh-servers-add", target, autoStart),
+    removeServer: (id) => ipcRenderer.invoke("ssh-servers-remove", id),
+    startServer: (id) => ipcRenderer.invoke("ssh-servers-start", id),
+    listRemoteDirectory: (target, path) => ipcRenderer.invoke("ssh-servers-list-directory", target, path),
+    validateRemoteDirectory: (target, path) => ipcRenderer.invoke("ssh-servers-validate-directory", target, path),
+  },
   getDisplayBackend: () => ipcRenderer.invoke("get-display-backend"),
   setDisplayBackend: (backend) => ipcRenderer.invoke("set-display-backend", backend),
   parseMarkdownCommand: (markdown) => ipcRenderer.invoke("parse-markdown", markdown),
