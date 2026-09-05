@@ -1091,7 +1091,7 @@ function SessionTab(props: {
         </Show>
         <span
           data-action="session-tab-close"
-          class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow]"
+          class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow] hover:bg-surface-base-hover hover:text-text-strong"
           classList={{
             "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
             "opacity-100": props.active,
@@ -1539,7 +1539,7 @@ function DraftTab(props: { directory: string; active: boolean; onOpen: () => voi
         <span class="min-w-0 flex-1 truncate">{language.t("command.session.new")}</span>
         <span
           data-action="session-tab-close"
-          class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow]"
+          class="session-tab-close flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] text-icon-base transition-[opacity,background-color,color,box-shadow] hover:bg-surface-base-hover hover:text-text-strong"
           classList={{
             "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
             "opacity-100": props.active,

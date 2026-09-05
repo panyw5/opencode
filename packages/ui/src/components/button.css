@@ -10,6 +10,11 @@
   cursor: pointer;
   outline: none;
   white-space: nowrap;
+  transition:
+    background-color 120ms ease,
+    color 120ms ease,
+    box-shadow 120ms ease,
+    border-color 120ms ease;
 
   &[data-variant="primary"] {
     background-color: var(--button-primary-base);

@@ -242,6 +242,15 @@
     opacity: 1;
   }
 
+  [data-slot="markdown-copy-button"]:hover {
+    background: var(--surface-base-hover);
+    border-color: var(--border-strong-base);
+
+    [data-slot="icon-svg"] {
+      color: var(--icon-strong-base);
+    }
+  }
+
   [data-slot="markdown-copy-button"][data-variant="secondary"] {
     background: color-mix(in srgb, var(--background-base) 90%, transparent);
     border: 1px solid var(--border-weak-base);

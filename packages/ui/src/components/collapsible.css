@@ -107,9 +107,9 @@
       border: none;
       padding: 0;
 
-      /* &:hover { */
-      /*   color: var(--text-strong); */
-      /* } */
+      &:hover:not([data-disabled]) {
+        color: var(--text-strong);
+      }
       &:focus-visible {
         outline: none;
         background-color: var(--surface-raised-base-hover);

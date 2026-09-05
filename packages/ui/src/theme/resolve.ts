@@ -300,8 +300,8 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
   tokens["icon-weak-disabled"] = neutral[isDark ? 3 : 5]
   tokens["icon-weak-focus"] = neutral[8]
   tokens["icon-strong-base"] = neutral[11]
-  tokens["icon-strong-hover"] = isDark ? "#f6f3f3" : "#151313"
-  tokens["icon-strong-active"] = isDark ? "#fcfcfc" : "#020202"
+  tokens["icon-strong-hover"] = isDark ? "#f8f6f3" : "#3a3835"
+  tokens["icon-strong-active"] = isDark ? "#dfddd9" : "#4c4a46"
   tokens["icon-strong-selected"] = isDark ? "#fdfcfc" : "#020202"
   tokens["icon-strong-disabled"] = neutral[7]
   tokens["icon-strong-focus"] = isDark ? "#fdfcfc" : "#020202"
@@ -442,16 +442,28 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
 
   if (!("button-primary-hover" in overrides)) {
     const base = tokens["button-primary-base"]
-    tokens["button-primary-hover"] =
-      !isDark && base.startsWith("#") ? shift(base as HexColor, { l: -0.04 }) : tokens["icon-strong-hover"]
+    tokens["button-primary-hover"] = !base.startsWith("#")
+      ? tokens["icon-strong-hover"]
+      : isDark
+        ? shift(base as HexColor, { l: 0.04 })
+        : lum(base) < 0.25
+          ? // Near-black primary (e.g. claude light): darkening is invisible, lighten instead
+            shift(base as HexColor, { l: 0.12 })
+          : shift(base as HexColor, { l: -0.08 })
   }
   if (!("button-primary-active" in overrides)) {
     const base = tokens["button-primary-base"]
-    tokens["button-primary-active"] =
-      !isDark && base.startsWith("#") ? shift(base as HexColor, { l: -0.08 }) : tokens["icon-strong-active"]
+    tokens["button-primary-active"] = !base.startsWith("#")
+      ? tokens["icon-strong-active"]
+      : isDark
+        ? // Pressed darkens the light-on-dark primary for a clear state change
+          shift(base as HexColor, { l: -0.07 })
+        : lum(base) < 0.25
+          ? shift(base as HexColor, { l: 0.2 })
+          : shift(base as HexColor, { l: -0.14 })
   }
   if (!("button-secondary-active" in overrides)) {
-    tokens["button-secondary-active"] = isDark ? tokens["button-secondary-base"] : tokens["surface-base-active"]
+    tokens["button-secondary-active"] = tokens["surface-base-active"]
   }
 
   if (colors.compact && "text-weak" in overrides && !("text-weaker" in overrides)) {
