@@ -489,16 +489,42 @@
     color: var(--icon-weak-disabled);
   }
 
+  /* The svg carries its own color from icon-button.css, which would override
+     any color set on the button itself — so target the icon directly. */
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"] [data-slot="icon-svg"] {
+    color: var(--icon-base);
+    transition: color 140ms ease-out;
+  }
+
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) [data-slot="icon-svg"] {
+    color: var(--icon-strong-base);
+  }
+
+  [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:disabled [data-slot="icon-svg"] {
+    color: var(--icon-weak-disabled);
+  }
+
   /* Primary action ("new session" / "new workspace") reads as a brand chip so
-     the row has a clear entry point. */
+     the row has a clear entry point. Icon colors use the on-brand tokens so
+     contrast holds across themes in both schemes. */
   [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"] {
     background-color: color-mix(in oklab, var(--surface-brand-base) 42%, transparent);
-    color: var(--icon-strong-base);
+  }
+
+  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"] [data-slot="icon-svg"] {
+    color: var(--icon-on-brand-base);
   }
 
   [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) {
     background-color: var(--surface-brand-hover);
-    color: var(--icon-strong-base);
+  }
+
+  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:is(:hover, :focus-visible):not(:disabled) [data-slot="icon-svg"] {
+    color: var(--icon-on-brand-hover);
+  }
+
+  [data-component="icon-button"].sidebar-action-button-primary[data-variant="ghost"]:active:not(:disabled) {
+    background-color: var(--surface-brand-hover);
   }
 
   /* "+" (open file) in the file preview tab bar. Default background matches the
