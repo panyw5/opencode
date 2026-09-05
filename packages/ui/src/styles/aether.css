@@ -95,6 +95,11 @@ html[data-theme="aether"] [data-dock-surface="tray"][data-dock-attach="top"] {
   border-top-right-radius: 0;
 }
 
+/* Keep the dock-prompt wrapper concentric with its shell/tray */
+html[data-theme="aether"] [data-component="dock-prompt"] {
+  border-radius: var(--radius-4xl);
+}
+
 html[data-theme="aether"][data-color-scheme="dark"] [data-component="collapsible"].tool-collapsible {
   background-color: #25221E;
   border-color: #3D3830;

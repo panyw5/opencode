@@ -553,6 +553,18 @@ html[data-theme="arc"] [data-dock-surface="tray"] {
   border-radius: var(--radius-2xl);
 }
 
+/* Composer tray attaches to the 4xl prompt shell, so match its bottom corners */
+html[data-theme="arc"] [data-dock-surface="tray"][data-dock-attach="top"] {
+  border-radius: var(--radius-4xl);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+/* Keep the dock-prompt wrapper concentric with its shell/tray */
+html[data-theme="arc"] [data-component="dock-prompt"] {
+  border-radius: var(--radius-2xl);
+}
+
 html[data-theme="arc"] [data-dock-surface="shell"][data-slot="prompt-shell"] {
   border-radius: var(--radius-4xl);
   /* Beat generic prompt-shell fill; keep Arc's deep solid panel. */

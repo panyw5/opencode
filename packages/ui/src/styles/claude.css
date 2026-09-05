@@ -192,8 +192,14 @@ html[data-theme="claude"] [data-component="user-message"] [data-slot="user-messa
   border-radius: var(--claude-session-radius-sm);
 }
 
-html[data-theme="claude"] [data-component="session-prompt-dock"] [data-dock-surface="shell"][data-slot="prompt-shell"],
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-dock-surface="shell"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-dock-surface="tray"] {
+  border-radius: 24px;
+}
+
+/* Keep the dock-prompt wrapper concentric with its shell/tray so its
+   background does not fill in their corners */
+html[data-theme="claude"] [data-component="session-prompt-dock"] [data-component="dock-prompt"] {
   border-radius: 24px;
 }
 

@@ -47,6 +47,11 @@ html[data-theme="chatgpt"] [data-dock-surface="tray"][data-dock-attach="top"] {
   border-top-right-radius: 0;
 }
 
+/* Keep the dock-prompt wrapper concentric with its shell/tray */
+html[data-theme="chatgpt"] [data-component="dock-prompt"] {
+  border-radius: var(--radius-4xl);
+}
+
 /* ─── Floating panels — menus, popovers, dropdowns ─── */
 html[data-theme="chatgpt"] [data-component="dropdown-menu-content"],
 html[data-theme="chatgpt"] [data-component="dropdown-menu-sub-content"],

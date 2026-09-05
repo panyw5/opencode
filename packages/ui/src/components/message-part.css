@@ -1775,7 +1775,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     color-mix(in srgb, var(--background-stronger) 88%, transparent)
   );
   background-color: var(--question-background);
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 4px;
 
   [data-slot="question-body"] {
