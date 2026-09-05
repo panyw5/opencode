@@ -393,8 +393,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     return language.t("common.requestFailed")
   }
 
-  const abort = async () => {
-    const sessionID = params.id
+  const abort = async (overrideSessionID?: string) => {
+    const sessionID = overrideSessionID ?? params.id
     if (!sessionID) return Promise.resolve()
 
     const t0 = performance.now()

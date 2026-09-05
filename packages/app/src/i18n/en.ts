@@ -462,6 +462,8 @@ export const dict = {
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
+  "prompt.action.stopAfterTool": "Stop after the current tool call",
+  "prompt.action.stopAfterToolArmed": "Will stop after the current tool call — click to cancel",
   "prompt.editor.title": "Edit prompt",
   "prompt.editor.markdownAttachmentTitle": "Add temporary attachment",
   "prompt.editor.markdownAttachmentDescription":

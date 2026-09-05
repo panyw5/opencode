@@ -479,6 +479,8 @@ export const dict = {
   "prompt.attachment.remove": "移除附件",
   "prompt.action.send": "发送",
   "prompt.action.stop": "停止",
+  "prompt.action.stopAfterTool": "当前工具调用完成后停止",
+  "prompt.action.stopAfterToolArmed": "将在当前工具调用完成后停止——点击取消",
   "prompt.editor.title": "编辑提示词",
   "prompt.editor.markdownAttachmentTitle": "附加临时文件",
   "prompt.editor.markdownAttachmentDescription":

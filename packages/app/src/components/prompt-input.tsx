@@ -78,7 +78,8 @@ import { getFilename } from "@opencode-ai/core/util/path"
 import { merge, value } from "./prompt-input/expand"
 import { SessionPickerPopover } from "./prompt-input/session-picker"
 import { type SessionHistoryEntry } from "@/context/session-history"
-import { working as sessionWorking } from "@/pages/session/session-working"
+import { active as sessionActiveMessage, working as sessionWorking } from "@/pages/session/session-working"
+import type { Part } from "@opencode-ai/sdk/v2/client"
 import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputUndo } from "./prompt-input/input-undo"
 import { workspaceKey } from "@/pages/layout/helpers"
 import { uiPerfTriggerDown, uiPerfOpen } from "@/utils/ui-perf"
@@ -1803,6 +1804,80 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
   })
 
+  const [stopHovered, setStopHovered] = createSignal(false)
+  const [stopAfterTool, setStopAfterTool] = createSignal<
+    { sessionID: string; messageID: string; parts: string[] } | undefined
+  >()
+  const stopAfterToolArmed = createMemo(() => !!stopAfterTool())
+  const stopAfterToolRevealed = createMemo(() => stopHovered() || stopAfterToolArmed())
+
+  // 32px pause button + 10px gap to the stop button
+  const STOP_REVEAL_WIDTH = 42
+  const stopRevealSpring = useSpring(() => (stopAfterToolRevealed() ? 1 : 0), {
+    visualDuration: 0.35,
+    bounce: 0.5,
+  })
+  const stopRevealMotion = createMemo(() => {
+    const v = stopRevealSpring()
+    return {
+      width: `${Math.max(0, STOP_REVEAL_WIDTH * v)}px`,
+      opacity: `${Math.min(1, Math.max(0, v))}`,
+      "pointer-events": v > 0.5 ? ("auto" as const) : ("none" as const),
+    }
+  })
+  const stopPauseMotion = createMemo(() => ({
+    transform: `scale(${0.5 + 0.5 * stopRevealSpring()})`,
+  }))
+
+  const toolInFlight = (part: Part) =>
+    part.type === "tool" && (part.state.status === "pending" || part.state.status === "running")
+
+  const toggleStopAfterTool = () => {
+    if (stopAfterTool()) {
+      console.debug("[stop-after-tool] disarmed by user", { sessionID: params.id })
+      setStopAfterTool(undefined)
+      return
+    }
+    const sessionID = params.id
+    if (!sessionID || !working()) return
+    const active = sessionActiveMessage(messages())
+    const parts = active ? (sync.data.part[active.id] ?? []) : []
+    const tracked = parts.filter(toolInFlight).map((part) => part.id)
+    console.debug("[stop-after-tool] armed", { sessionID, messageID: active?.id ?? "", tracked })
+    setStopAfterTool({ sessionID, messageID: active?.id ?? "", parts: tracked })
+  }
+
+  // Abort once every tool call that was in flight when the user armed the
+  // stop-after-tool button has left the pending/running state. Tool parts are
+  // snapshotted by id at arm time so a follow-up step starting a new tool call
+  // in between does not extend the wait.
+  createEffect(() => {
+    const armed = stopAfterTool()
+    if (!armed) return
+    const armedWorking = sessionWorking(
+      sync.session.status.get(armed.sessionID),
+      sync.data.message[armed.sessionID],
+    )
+    if (!armedWorking) {
+      console.debug("[stop-after-tool] session finished on its own — disarming", { sessionID: armed.sessionID })
+      setStopAfterTool(undefined)
+      return
+    }
+    const parts = armed.messageID ? (sync.data.part[armed.messageID] ?? []) : []
+    const inFlight = armed.parts.filter((id) => {
+      const part = parts.find((item) => item.id === id)
+      return !!part && toolInFlight(part)
+    })
+    if (inFlight.length > 0) return
+    console.debug("[stop-after-tool] tracked tool calls finished — aborting", {
+      sessionID: armed.sessionID,
+      messageID: armed.messageID,
+      tracked: armed.parts,
+    })
+    setStopAfterTool(undefined)
+    void abort(armed.sessionID)
+  })
+
   const handleKeyDown = (event: KeyboardEvent) => {
     const mod = event.metaKey || event.ctrlKey
 
@@ -2547,38 +2622,78 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               </div>
             </div>
             <div class="flex items-center gap-2.5 shrink-0">
-              <div class="relative size-10 shrink-0">
+              <div
+                class="flex items-center shrink-0"
+                onMouseEnter={() => setStopHovered(true)}
+                onMouseLeave={() => setStopHovered(false)}
+              >
                 <Show when={working()}>
-                  <div data-component="prompt-stop-halo" aria-hidden="true" class="pointer-events-none absolute inset-0 z-0 flex">
-                    <span data-slot="prompt-stop-halo-ripple" class="absolute inline-flex h-full w-full rounded-full" />
+                  <div class="flex justify-end overflow-hidden" style={stopRevealMotion()}>
+                    <div class="flex w-[42px] shrink-0 items-center pr-2.5">
+                      <Tooltip
+                        {...hover}
+                        placement="top"
+                        value={
+                          stopAfterToolArmed()
+                            ? language.t("prompt.action.stopAfterToolArmed")
+                            : language.t("prompt.action.stopAfterTool")
+                        }
+                      >
+                        <IconButton
+                          data-action="prompt-stop-after-tool"
+                          icon="pause"
+                          variant="secondary"
+                          iconSize="normal"
+                          tabIndex={stopAfterToolRevealed() ? undefined : -1}
+                          onClick={toggleStopAfterTool}
+                          class="size-8 shrink-0 rounded-full"
+                          classList={{
+                            "text-icon-warning-base": stopAfterToolArmed(),
+                          }}
+                          style={stopPauseMotion()}
+                          aria-label={
+                            stopAfterToolArmed()
+                              ? language.t("prompt.action.stopAfterToolArmed")
+                              : language.t("prompt.action.stopAfterTool")
+                          }
+                        />
+                      </Tooltip>
+                    </div>
                   </div>
                 </Show>
-                <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
-                  <IconButton
-                    data-action="prompt-submit"
-                    type="submit"
-                    form={formID}
-                    disabled={store.mode !== "normal" || store.submitting || (!prompt.dirty() && !working() && commentCount() === 0)}
-                    tabIndex={store.mode === "normal" ? undefined : -1}
-                    icon={
-                      working()
-                        ? "stop"
-                        : store.submitting
-                          ? "arrow-sync"
-                          : claudeTheme()
-                            ? "arrow-up"
-                            : "arrow-up-bold"
-                    }
-                    variant="primary"
-                    iconSize={working() ? "normal" : "medium"}
-                    class="relative z-1 size-10 rounded-full shadow-xs-border"
-                    classList={{
-                      "animate-spin": store.submitting && !working(),
-                    }}
-                    style={buttons()}
-                    aria-label={working() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                  />
-                </Tooltip>
+                <div class="relative size-10 shrink-0">
+                  <Show when={working()}>
+                    <div data-component="prompt-stop-halo" aria-hidden="true" class="pointer-events-none absolute inset-0 z-0 flex">
+                      <span data-slot="prompt-stop-halo-ripple" class="absolute inline-flex h-full w-full rounded-full" />
+                    </div>
+                  </Show>
+                  <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
+                    <IconButton
+                      data-action="prompt-submit"
+                      type="submit"
+                      form={formID}
+                      disabled={store.mode !== "normal" || store.submitting || (!prompt.dirty() && !working() && commentCount() === 0)}
+                      tabIndex={store.mode === "normal" ? undefined : -1}
+                      icon={
+                        working()
+                          ? "stop"
+                          : store.submitting
+                            ? "arrow-sync"
+                            : claudeTheme()
+                              ? "arrow-up"
+                              : "arrow-up-bold"
+                      }
+                      variant="primary"
+                      iconSize={working() ? "normal" : "medium"}
+                      class="relative z-1 size-10 rounded-full shadow-xs-border"
+                      classList={{
+                        "animate-spin": store.submitting && !working(),
+                      }}
+                      style={buttons()}
+                      aria-label={working() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                    />
+                  </Tooltip>
+                </div>
               </div>
             </div>
           </div>
