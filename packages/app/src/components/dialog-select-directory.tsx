@@ -7,6 +7,7 @@ import { getFilename } from "@opencode-ai/core/util/path"
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
 import type { DomainId } from "@/pages/layout/extra-agents"
 
 interface DialogSelectDirectoryProps {
@@ -164,8 +165,17 @@ function isPrimaryModifier(event: KeyboardEvent) {
 export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   props.domain
   const platform = usePlatform()
+  const server = useServer()
   const dialog = useDialog()
   const language = useLanguage()
+
+  // When the active connection is an SSH server, browsing and validation run
+  // on the remote host via the desktop SSH bridge instead of the local FS.
+  const remote = createMemo(() => {
+    const conn = server.current
+    if (conn && conn.type === "ssh") return { target: conn.host }
+    return undefined
+  })
 
   let inputRef: HTMLInputElement | undefined
   const rowRefs = new Map<string, HTMLButtonElement>()
@@ -200,6 +210,17 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const [entries] = createResource(
     browseAbsolutePath,
     async (directory) => {
+      const r = remote()
+      if (r && platform.listRemoteDirectory) {
+        const list = await platform.listRemoteDirectory(r.target, directory).catch(() => [])
+        return list
+          .filter((item) => item.kind === "directory")
+          .map((item) => ({
+            name: getFilename(item.path),
+            path: trimDirectoryTrailing(normalizeDirectoryPath(item.path)),
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      }
       if (!directory || !platform.listLocalDirectory) return [] as BrowseEntry[]
       const list = await platform.listLocalDirectory(directory).catch(() => [])
       const directories = list
@@ -280,6 +301,34 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
     setSelecting(true)
     setError("")
     try {
+      const r = remote()
+      if (r && platform.validateRemoteDirectory) {
+        const validate = async (value: string) => {
+          const canonical = await platform.validateRemoteDirectory!(r.target, value).catch(() => null)
+          if (!canonical) {
+            setError(language.t("dialog.directory.remote.invalid"))
+            return null
+          }
+          return canonical
+        }
+        if (props.multiple) {
+          const inputs = absolute.split("\n").filter(Boolean)
+          const valid: string[] = []
+          for (const item of inputs) {
+            const canonical = await validate(item)
+            if (!canonical) return
+            valid.push(canonical)
+          }
+          props.onSelect(valid)
+          dialog.close()
+          return
+        }
+        const canonical = await validate(absolute)
+        if (!canonical) return
+        props.onSelect(canonical)
+        dialog.close()
+        return
+      }
       if (platform.filterDirectories) {
         const [valid] = await platform.filterDirectories([absolute])
         if (!valid) {

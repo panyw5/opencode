@@ -517,6 +517,7 @@ export const dict = {
   "dialog.directory.search.placeholder": "Search folders",
   "dialog.directory.empty": "No folders found",
   "dialog.directory.showHidden": "Show hidden items",
+  "dialog.directory.remote.invalid": "Directory not found on the remote host",
   "dialog.directory.footer.navigate": "Navigate",
   "dialog.directory.footer.select": "Select",
 
@@ -548,6 +549,24 @@ export const dict = {
   "dialog.server.default.set": "Set current server as default",
   "dialog.server.default.clear": "Clear",
   "dialog.server.action.remove": "Remove server",
+
+  "dialog.server.addSsh.title": "Add SSH server",
+  "dialog.server.addSsh.target": "SSH target",
+  "dialog.server.addSsh.targetPlaceholder": "user@host, host:2222, or an ~/.ssh/config alias",
+  "dialog.server.addSsh.hint":
+    "Connects with your SSH keys, agent, and ~/.ssh/config. Password authentication is not supported.",
+  "dialog.server.addSsh.error": "Enter a valid SSH target (no spaces)",
+  "dialog.server.ssh.section": "SSH servers",
+  "dialog.server.ssh.empty": "No SSH servers configured",
+  "dialog.server.ssh.start": "Start",
+  "dialog.server.ssh.restart": "Restart",
+  "dialog.server.ssh.installOpencode": "Install opencode",
+  "dialog.server.ssh.remove": "Remove",
+  "dialog.server.ssh.status.starting": "Starting…",
+  "dialog.server.ssh.status.ready": "Running",
+  "dialog.server.ssh.status.failed": "Failed",
+  "dialog.server.ssh.status.stopped": "Stopped",
+  "dialog.server.ssh.actionFailed": "SSH action failed",
 
   "dialog.server.menu.edit": "Edit",
   "dialog.server.menu.default": "Set as default",

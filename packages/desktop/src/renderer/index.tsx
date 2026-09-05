@@ -15,6 +15,7 @@ import {
   ServerConnection,
   useCommand,
 } from "@opencode-ai/app"
+import type { SshServersState } from "@opencode-ai/app/ssh/types"
 import * as Sentry from "@sentry/solid"
 import type { AsyncStorage } from "@solid-primitives/storage"
 import { createMemoryHistory, MemoryRouter, type BaseRouterProps } from "@solidjs/router"
@@ -25,6 +26,7 @@ import { findInPage } from "../find-in-page"
 import { desktopApi } from "./api"
 import { initI18n, t } from "./i18n"
 import { convertWslPath } from "./wsl/path"
+import { readySshConnections } from "./ssh/connections"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import "./styles.css"
 import { useTheme } from "@opencode-ai/ui/theme"
@@ -371,6 +373,16 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     wslServers: desktopApi.wslServers,
 
+    sshServers: desktopApi.sshServers,
+
+    async listRemoteDirectory(target, path) {
+      return desktopApi.sshServers.listRemoteDirectory(target, path)
+    },
+
+    async validateRemoteDirectory(target, path) {
+      return desktopApi.sshServers.validateRemoteDirectory(target, path)
+    },
+
     getDefaultServer: async () => {
       const url = await desktopApi.getDefaultServerUrl().catch(() => null)
       if (!url) return null
@@ -550,6 +562,19 @@ render(() => {
 
   // Fetch sidecar credentials (available immediately, before health check)
   const [sidecar] = createResource(() => desktopApi.awaitInitialization(() => undefined))
+
+  // Mirror the main-process SSH servers state so ready hosts become connections.
+  const [sshServersState, setSshServersState] = createSignal<SshServersState | undefined>(undefined)
+  const [sshStateReady, setSshStateReady] = createSignal(false)
+  onMount(() => {
+    void desktopApi.sshServers
+      .getState()
+      .then(setSshServersState)
+      .catch(() => undefined)
+      .finally(() => setSshStateReady(true))
+    const unsub = desktopApi.sshServers.subscribe((event) => setSshServersState(event.state))
+    onCleanup(unsub)
+  })
   const [extraAgents, extraAgentActions] = createResource(extraAgentVersion, () =>
     desktopApi.listExtraAgentServers().catch(() => []),
   )
@@ -581,7 +606,7 @@ render(() => {
         password: data.password ?? undefined,
       },
     }
-    return [server, ...extraAgentConnections(extraAgents.latest ?? [])] as ServerConnection.Any[]
+    return [server, ...readySshConnections(sshServersState()), ...extraAgentConnections(extraAgents.latest ?? [])] as ServerConnection.Any[]
   }
 
   function handleClick(e: MouseEvent) {
@@ -643,7 +668,10 @@ render(() => {
             !extraAgentsInitialLoading() &&
             !windowConfig.loading &&
             !windowCount.loading &&
-            !locale.loading
+            !locale.loading &&
+            // SSH connections arrive via IPC; wait once so a default server
+            // pointing at an SSH host can resolve before the app mounts.
+            sshStateReady()
           }
         >
           {(_) => {

@@ -413,6 +413,10 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
     const persistOrigin = (directory?: string) => {
       const agent = extraAgentByDirectory(directory)
       if (agent) return agent.id
+      // SSH servers host their own filesystem, so their projects must not be
+      // filed into the shared main bucket (which implies the local machine).
+      const conn = current()
+      if (conn?.type === "ssh") return projectsKey(ServerConnection.key(conn))
       // Ordinary projects always persist on the main OpenCode bucket, even when
       // the UI is temporarily browsing an extra-agent domain.
       return mainOrigin()

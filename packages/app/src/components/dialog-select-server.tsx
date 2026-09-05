@@ -9,12 +9,13 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { useMutation } from "@tanstack/solid-query"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useNavigate } from "@solidjs/router"
-import { createEffect, createMemo, createResource, onCleanup, Show } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, onCleanup, Show, For } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { ServerHealthIndicator, ServerRow } from "@/components/server/server-row"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
+import type { SshServersState } from "@/ssh/types"
 import { type ServerHealth, useCheckServerHealth } from "@/utils/server-health"
 
 const DEFAULT_USERNAME = "opencode"
@@ -191,6 +192,11 @@ export function DialogSelectServer() {
       showForm: false,
       status: undefined as boolean | undefined,
     },
+    addSsh: {
+      target: "",
+      error: "",
+      showForm: false,
+    },
     editServer: {
       id: undefined as string | undefined,
       value: "",
@@ -212,6 +218,9 @@ export function DialogSelectServer() {
       showForm: false,
       status: undefined,
     })
+  }
+  const resetAddSsh = () => {
+    setStore("addSsh", { target: "", error: "", showForm: false })
   }
   const resetEdit = () => {
     setStore("editServer", {
@@ -302,6 +311,42 @@ export function DialogSelectServer() {
     if (nextActive) server.setActive(nextActive)
     server.remove(ServerConnection.key(original))
   }
+
+  // SSH remote hosts (desktop only): mirror the main-process sidecar state so
+  // hosts can be managed even before they become ready connections.
+  const sshApi = () => platform.sshServers
+  const [sshState, setSshState] = createSignal<SshServersState | undefined>(undefined)
+  createEffect(() => {
+    const api = sshApi()
+    if (!api) return
+    void api
+      .getState()
+      .then(setSshState)
+      .catch(() => undefined)
+    const unsub = api.subscribe((event) => setSshState(event.state))
+    onCleanup(unsub)
+  })
+
+  const sshMutation = useMutation(() => ({
+    mutationFn: async (input: { action: "add" | "remove" | "start" | "install"; target?: string; id?: string }) => {
+      const api = sshApi()
+      if (!api) return
+      if (input.action === "add") {
+        await api.addServer(input.target!.trim(), true)
+        return
+      }
+      if (input.action === "remove") {
+        await api.removeServer(input.id!)
+        return
+      }
+      if (input.action === "start") {
+        await api.startServer(input.id!)
+        return
+      }
+      await api.installOpencode(input.target!)
+    },
+    onError: (err) => showRequestError(language, err),
+  }))
 
   const items = createMemo(() => {
     const current = server.current
@@ -419,8 +464,9 @@ export function DialogSelectServer() {
     )
   }
 
-  const mode = createMemo<"list" | "add" | "edit">(() => {
+  const mode = createMemo<"list" | "add" | "add-ssh" | "edit">(() => {
     if (store.editServer.id) return "edit"
+    if (store.addSsh.showForm) return "add-ssh"
     if (store.addServer.showForm) return "add"
     return "list"
   })
@@ -432,11 +478,13 @@ export function DialogSelectServer() {
 
   const resetForm = () => {
     resetAdd()
+    resetAddSsh()
     resetEdit()
   }
 
   const startAdd = () => {
     resetEdit()
+    setStore("addSsh", { showForm: false })
     setStore("addServer", {
       showForm: true,
       url: "",
@@ -446,6 +494,12 @@ export function DialogSelectServer() {
       error: "",
       status: undefined,
     })
+  }
+
+  const startAddSsh = () => {
+    resetEdit()
+    setStore("addServer", { showForm: false })
+    setStore("addSsh", { showForm: true, target: "", error: "" })
   }
 
   const startEdit = (conn: ServerConnection.Http) => {
@@ -462,6 +516,23 @@ export function DialogSelectServer() {
   }
 
   const submitForm = () => {
+    if (mode() === "add-ssh") {
+      if (sshMutation.isPending) return
+      const target = store.addSsh.target.trim()
+      if (!target || /\s/.test(target)) {
+        setStore("addSsh", { error: language.t("dialog.server.addSsh.error") })
+        return
+      }
+      setStore("addSsh", { error: "" })
+      sshMutation
+        .mutateAsync({ action: "add", target })
+        .then((result) => {
+          if (result === undefined) return
+          resetAddSsh()
+        })
+        .catch(() => undefined)
+      return
+    }
     if (mode() === "add") {
       if (addMutation.isPending) return
       setStore("addServer", { error: "" })
@@ -477,14 +548,22 @@ export function DialogSelectServer() {
 
   const isFormMode = createMemo(() => mode() !== "list")
   const isAddMode = createMemo(() => mode() === "add")
-  const formBusy = createMemo(() => (isAddMode() ? addMutation.isPending : editMutation.isPending))
+  const isAddSshMode = createMemo(() => mode() === "add-ssh")
+  const formBusy = createMemo(() =>
+    isAddSshMode() ? sshMutation.isPending : isAddMode() ? addMutation.isPending : editMutation.isPending,
+  )
 
   const formTitle = createMemo(() => {
     if (!isFormMode()) return language.t("dialog.server.title")
+    const label = isAddMode()
+      ? language.t("dialog.server.add.title")
+      : isAddSshMode()
+        ? language.t("dialog.server.addSsh.title")
+        : language.t("dialog.server.edit.title")
     return (
       <div class="flex items-center gap-2 -ml-2">
         <IconButton icon="arrow-left" variant="ghost" onClick={resetForm} aria-label={language.t("common.goBack")} />
-        <span>{isAddMode() ? language.t("dialog.server.add.title") : language.t("dialog.server.edit.title")}</span>
+        <span>{label}</span>
       </div>
     )
   })
@@ -508,22 +587,57 @@ export function DialogSelectServer() {
         <Show
           when={!isFormMode()}
           fallback={
-            <ServerForm
-              value={isAddMode() ? store.addServer.url : store.editServer.value}
-              name={isAddMode() ? store.addServer.name : store.editServer.name}
-              username={isAddMode() ? store.addServer.username : store.editServer.username}
-              password={isAddMode() ? store.addServer.password : store.editServer.password}
-              placeholder={language.t("dialog.server.add.placeholder")}
-              busy={formBusy()}
-              error={isAddMode() ? store.addServer.error : store.editServer.error}
-              status={isAddMode() ? store.addServer.status : store.editServer.status}
-              onChange={isAddMode() ? handleAddChange : handleEditChange}
-              onNameChange={isAddMode() ? handleAddNameChange : handleEditNameChange}
-              onUsernameChange={isAddMode() ? handleAddUsernameChange : handleEditUsernameChange}
-              onPasswordChange={isAddMode() ? handleAddPasswordChange : handleEditPasswordChange}
-              onSubmit={submitForm}
-              onBack={resetForm}
-            />
+            <Show
+              when={isAddSshMode()}
+              fallback={
+                <ServerForm
+                  value={isAddMode() ? store.addServer.url : store.editServer.value}
+                  name={isAddMode() ? store.addServer.name : store.editServer.name}
+                  username={isAddMode() ? store.addServer.username : store.editServer.username}
+                  password={isAddMode() ? store.addServer.password : store.editServer.password}
+                  placeholder={language.t("dialog.server.add.placeholder")}
+                  busy={formBusy()}
+                  error={isAddMode() ? store.addServer.error : store.editServer.error}
+                  status={isAddMode() ? store.addServer.status : store.editServer.status}
+                  onChange={isAddMode() ? handleAddChange : handleEditChange}
+                  onNameChange={isAddMode() ? handleAddNameChange : handleEditNameChange}
+                  onUsernameChange={isAddMode() ? handleAddUsernameChange : handleEditUsernameChange}
+                  onPasswordChange={isAddMode() ? handleAddPasswordChange : handleEditPasswordChange}
+                  onSubmit={submitForm}
+                  onBack={resetForm}
+                />
+              }
+            >
+              <div class="px-5">
+                <div class="bg-surface-base rounded-md p-5 flex flex-col gap-3">
+                  <div class="[&_[data-slot=input-wrapper]]:relative">
+                    <TextField
+                      type="text"
+                      label={language.t("dialog.server.addSsh.target")}
+                      placeholder={language.t("dialog.server.addSsh.targetPlaceholder")}
+                      value={store.addSsh.target}
+                      autofocus
+                      validationState={store.addSsh.error ? "invalid" : "valid"}
+                      error={store.addSsh.error}
+                      disabled={sshMutation.isPending}
+                      onChange={(value) => setStore("addSsh", { target: value, error: "" })}
+                      onKeyDown={(event: KeyboardEvent) => {
+                        event.stopPropagation()
+                        if (event.key === "Escape") {
+                          event.preventDefault()
+                          resetForm()
+                          return
+                        }
+                        if (event.key !== "Enter" || event.isComposing) return
+                        event.preventDefault()
+                        submitForm()
+                      }}
+                    />
+                  </div>
+                  <p class="text-12-regular text-text-weak m-0">{language.t("dialog.server.addSsh.hint")}</p>
+                </div>
+              </div>
+            </Show>
           }
         >
           <List
@@ -617,29 +731,150 @@ export function DialogSelectServer() {
               )
             }}
           </List>
+
+          <Show when={sshApi()}>
+            <div class="px-5 pb-2 flex flex-col gap-1">
+              <span class="text-12-regular text-text-weak uppercase tracking-wide">
+                {language.t("dialog.server.ssh.section")}
+              </span>
+              <div class="flex flex-col bg-surface-base rounded-md overflow-hidden">
+                <For each={sshState()?.servers ?? []}>
+                  {(item) => {
+                    const target = item.config.target
+                    const ready = item.runtime.kind === "ready"
+                    const busyStarting = item.runtime.kind === "starting"
+                    const installing = () =>
+                      sshMutation.isPending &&
+                      sshMutation.variables?.action === "install" &&
+                      sshMutation.variables.target === target
+                    const conn = () => server.list.find((x) => x.type === "ssh" && x.host === target)
+                    return (
+                      <button
+                        type="button"
+                        class="flex items-center gap-3 w-full min-h-12 pl-3 pr-2 py-2 rounded-md transition-colors text-left hover:bg-surface-base-hover disabled:opacity-60 disabled:pointer-events-none"
+                        disabled={!ready || !conn()}
+                        onClick={() => {
+                          const next = conn()
+                          if (ready && next) select(next)
+                        }}
+                      >
+                        <div
+                          classList={{
+                            "size-1.5 rounded-full shrink-0": true,
+                            "bg-icon-success-base": ready,
+                            "bg-icon-critical-base": item.runtime.kind === "failed",
+                            "bg-icon-warning-base": busyStarting,
+                            "bg-border-weak-base": item.runtime.kind === "stopped",
+                          }}
+                        />
+                        <div class="flex-1 min-w-0 flex flex-col">
+                          <span class="text-14-regular text-text-strong truncate">{target}</span>
+                          <Show when={item.runtime.kind === "failed" ? item.runtime.message : undefined}>
+                            {(message) => (
+                              <span class="text-12-regular text-text-danger-base truncate">{message()}</span>
+                            )}
+                          </Show>
+                          <Show when={busyStarting}>
+                            <span class="text-12-regular text-text-weak truncate">
+                              {language.t("dialog.server.ssh.status.starting")}
+                            </span>
+                          </Show>
+                        </div>
+                        <div class="flex items-center gap-1.5 shrink-0">
+                          <Show when={ready}>
+                            <span class="text-12-regular text-text-weak">
+                              {language.t("dialog.server.ssh.status.ready")}
+                            </span>
+                          </Show>
+                          <Button
+                            variant="secondary"
+                            size="small"
+                            class="h-7 px-2 py-1"
+                            disabled={busyStarting || installing()}
+                            onClick={(event: MouseEvent) => {
+                              event.stopPropagation()
+                              if (busyStarting) return
+                              sshMutation.mutate({ action: "start", id: item.config.id })
+                            }}
+                          >
+                            {ready
+                              ? language.t("dialog.server.ssh.restart")
+                              : language.t("dialog.server.ssh.start")}
+                          </Button>
+                          <Show when={!ready}>
+                            <Button
+                              variant="secondary"
+                              size="small"
+                              class="h-7 px-2 py-1"
+                              disabled={installing()}
+                              onClick={(event: MouseEvent) => {
+                                event.stopPropagation()
+                                sshMutation.mutate({ action: "install", target })
+                              }}
+                            >
+                              {installing()
+                                ? language.t("dialog.server.add.checking")
+                                : language.t("dialog.server.ssh.installOpencode")}
+                            </Button>
+                          </Show>
+                          <IconButton
+                            icon="trash"
+                            variant="ghost"
+                            class="shrink-0 size-7 hover:bg-surface-base-hover"
+                            onClick={(event: MouseEvent) => {
+                              event.stopPropagation()
+                              sshMutation.mutate({ action: "remove", id: item.config.id })
+                            }}
+                          />
+                        </div>
+                      </button>
+                    )
+                  }}
+                </For>
+                <Show when={(sshState()?.servers ?? []).length === 0}>
+                  <div class="px-3 py-3 text-14-regular text-text-weaker">
+                    {language.t("dialog.server.ssh.empty")}
+                  </div>
+                </Show>
+              </div>
+            </div>
+          </Show>
         </Show>
 
-        <div class="px-5 pb-5">
+        <div class="px-5 pb-5 flex items-center gap-2">
           <Show
             when={isFormMode()}
             fallback={
-              <Button
-                variant="secondary"
-                icon="plus-small"
-                size="large"
-                onClick={startAdd}
-                class="py-1.5 pl-1.5 pr-3 flex items-center gap-1.5"
-              >
-                {language.t("dialog.server.add.button")}
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  icon="plus-small"
+                  size="large"
+                  onClick={startAddSsh}
+                  class="py-1.5 pl-1.5 pr-3 flex items-center gap-1.5"
+                >
+                  {language.t("dialog.server.addSsh.title")}
+                </Button>
+                <Button
+                  variant="secondary"
+                  icon="plus-small"
+                  size="large"
+                  onClick={startAdd}
+                  class="py-1.5 pl-1.5 pr-3 flex items-center gap-1.5"
+                >
+                  {language.t("dialog.server.add.button")}
+                </Button>
+              </>
             }
           >
             <Button variant="primary" size="large" onClick={submitForm} disabled={formBusy()} class="px-3 py-1.5">
               {formBusy()
                 ? language.t("dialog.server.add.checking")
-                : isAddMode()
-                  ? language.t("dialog.server.add.button")
-                  : language.t("common.save")}
+                : isAddSshMode()
+                  ? language.t("dialog.server.addSsh.title")
+                  : isAddMode()
+                    ? language.t("dialog.server.add.button")
+                    : language.t("common.save")}
             </Button>
           </Show>
         </div>

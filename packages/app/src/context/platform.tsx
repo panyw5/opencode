@@ -3,6 +3,7 @@ import type { AsyncStorage, SyncStorage } from "@solid-primitives/storage"
 import type { Accessor } from "solid-js"
 import { ServerConnection } from "./server"
 import type { WslServersPlatform } from "../wsl/types"
+import type { SshDirectoryEntry, SshServersPlatform } from "../ssh/types"
 
 type PickerPaths = string | string[] | null
 type OpenDirectoryPickerOptions = { title?: string; multiple?: boolean }
@@ -324,6 +325,15 @@ export type Platform = {
 
   /** WSL multi-server management API (Windows desktop only) */
   wslServers?: WslServersPlatform
+
+  /** SSH remote server management API (desktop only) */
+  sshServers?: SshServersPlatform
+
+  /** List directories on an SSH remote host (desktop only) */
+  listRemoteDirectory?(target: string, path: string): Promise<SshDirectoryEntry[]>
+
+  /** Validate a directory exists on an SSH remote host and return its realpath (desktop only) */
+  validateRemoteDirectory?(target: string, path: string): Promise<string | null>
 
   /** Get the configured OpenClaw integration (desktop only) */
   getOpenclawConfig?(): Promise<OpenclawConfig>
