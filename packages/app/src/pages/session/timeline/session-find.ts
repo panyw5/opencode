@@ -270,7 +270,7 @@ export function createSessionFind(opts: {
       scrollFrame = undefined
 
       // Check if the row is mounted
-      const rowEl = listRoot.querySelector(`[data-timeline-key="${CSS.escape(match.rowKey)}"]`)
+      const rowEl = listRoot.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(match.rowKey)}"]`)
       if (!rowEl) {
         scrollRetries++
         const items = opts.virtualizer.getVirtualItems()
@@ -289,19 +289,41 @@ export function createSessionFind(opts: {
 
       // Apply highlights
       applyHighlights(match)
-      debugFind(
-        `scroll-mounted retry=${String(scrollRetries)} key=${match.rowKey} index=${String(match.rowIndex)} scrollTop=${String(Math.round(listRoot.scrollTop))}`,
-      )
 
-      // Scroll the row into view if needed
-      const rowRect = rowEl.getBoundingClientRect()
-      const listRect = listRoot.getBoundingClientRect()
-      if (rowRect.top < listRect.top + 56 || rowRect.bottom > listRect.bottom - 56) {
-        rowEl.scrollIntoView({ block: "center" })
+      // Virtual rows can be taller than the viewport, so row-level centering
+      // (scrollToIndex align:center / scrollIntoView) can leave the match text
+      // off-screen. Center the matched range itself and re-check for a few
+      // frames while measurements settle.
+      const delta = matchCenterDelta(listRoot, rowEl, match)
+      const settled = Math.abs(delta) <= 2
+      if (!settled) listRoot.scrollTop += delta
+      debugFind(
+        `scroll-mounted retry=${String(scrollRetries)} key=${match.rowKey} index=${String(match.rowIndex)} scrollTop=${String(Math.round(listRoot.scrollTop))} delta=${String(Math.round(delta))}`,
+      )
+      if (!settled && scrollRetries < MAX_SCROLL_RETRIES) {
+        scrollRetries++
+        scrollFrame = requestAnimationFrame(tryApply)
       }
     }
 
     scrollFrame = requestAnimationFrame(tryApply)
+  }
+
+  function matchCenterDelta(scroller: HTMLElement, rowEl: HTMLElement, match: FindMatch): number {
+    const bounds = scroller.getBoundingClientRect()
+    const queryLower = state.query.toLowerCase()
+    if (queryLower) {
+      const ranges = scanRowForRanges(rowEl, queryLower)
+      const hit = ranges[Math.min(match.occurrence, Math.max(0, ranges.length - 1))]
+      if (hit) {
+        const rect = hit.range.getBoundingClientRect()
+        if (rect.width > 0 || rect.height > 0) {
+          return (rect.top + rect.bottom) / 2 - (bounds.top + bounds.height / 2)
+        }
+      }
+    }
+    const rect = rowEl.getBoundingClientRect()
+    return (rect.top + rect.bottom) / 2 - (bounds.top + bounds.height / 2)
   }
 
   // --- State management ---

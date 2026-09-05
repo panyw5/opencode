@@ -246,6 +246,7 @@ export function MessageTimeline(props: {
   hasScrollGesture: () => boolean
   onUserScroll: () => void
   onFindNavigate: () => void
+  onFindOpenChange?: (open: boolean) => void
   onHistoryScroll: (scrollTop: number) => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
@@ -1054,6 +1055,10 @@ export function MessageTimeline(props: {
     virtualRowKeys()
     sessionFind.refreshHighlights()
   })
+  createEffect(() => {
+    props.onFindOpenChange?.(sessionFind.open())
+  })
+  onCleanup(() => props.onFindOpenChange?.(false))
 
   if (lagDebug) {
     let lastRenderTrace = ""

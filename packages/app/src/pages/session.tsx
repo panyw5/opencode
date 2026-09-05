@@ -2156,12 +2156,16 @@ export default function Page() {
   let until = 0
 
   const hasScrollTarget = () => !!location.hash || !!ui.pendingMessage || !!ui.seekingMessageId || !!store.messageId
+  // While the find bar is open the viewport is anchored to the active match;
+  // bottom-follow would fight it and yank the view back to the tail.
+  let findBarOpen = false
   const settling = () => !!initialScrollKey && performance.now() < until && !hasScrollGesture()
   const shouldPinBottom = () =>
     (followBottom || running() || settling() || live()) &&
     !autoScroll.userScrolled() &&
     !hasScrollGesture() &&
-    !hasScrollTarget()
+    !hasScrollTarget() &&
+    !findBarOpen
 
   const settle = (key: string) => {
     initialScrollFrame = undefined
@@ -3250,6 +3254,10 @@ export default function Page() {
                         hasScrollGesture={hasScrollGesture}
                         onUserScroll={markUserScroll}
                         onFindNavigate={prepareFindNavigation}
+                        onFindOpenChange={(open) => {
+                          findBarOpen = open
+                          if (open) prepareFindNavigation()
+                        }}
                         onHistoryScroll={(scrollTop) => {
                           if (!autoScroll.userScrolled() || !scroller) return
                           if (performance.now() < findNavigationUntil) return
@@ -3261,7 +3269,7 @@ export default function Page() {
                           void loadEarlier()
                         }}
                         onAutoScrollInteraction={autoScroll.handleInteraction}
-                        shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled()}
+                        shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled() && !findBarOpen}
                         isInitialScrollSettling={settling}
                         centered={centered()}
                         setContentRef={(el) => {
