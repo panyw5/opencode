@@ -2004,7 +2004,6 @@ function Editor(props: {
   const language = useLanguage()
   const settings = useSettings()
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
-  const source = createMemo(() => sourceKey(props.item?.source))
   const canSave = createMemo(() => !!props.item?.editable && props.dirty)
 
   return (
@@ -2013,22 +2012,8 @@ function Editor(props: {
         <div class="min-w-0">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div class="min-w-0 flex-1">
-              <div class="flex min-w-0 items-center gap-2">
-                <div class="truncate text-20-medium text-text-strong">
-                  {props.item?.label ?? language.t("config.editor.selectItem")}
-                </div>
-                <Show when={props.item?.editable !== undefined}>
-                  <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                    {props.item?.editable
-                      ? language.t("config.editor.badge.editable")
-                      : language.t("config.editor.badge.readOnly")}
-                  </span>
-                </Show>
-                <Show when={source()}>
-                  <span class="shrink-0 rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                    {language.t(source()!)}
-                  </span>
-                </Show>
+              <div class="truncate text-20-medium text-text-strong">
+                {props.item?.label ?? language.t("config.editor.selectItem")}
               </div>
             </div>
             <div class="flex shrink-0 flex-wrap items-center justify-end gap-2">
