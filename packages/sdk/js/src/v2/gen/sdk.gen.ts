@@ -33,10 +33,6 @@ import type {
   ConfigUpdateErrors,
   ConfigUpdateResponses,
   EventSubscribeResponses,
-  EventTuiCommandExecute2,
-  EventTuiPromptAppend2,
-  EventTuiSessionSelect2,
-  EventTuiToastShow2,
   ExperimentalConsoleGetErrors,
   ExperimentalConsoleGetResponses,
   ExperimentalConsoleListOrgsErrors,
@@ -232,6 +228,8 @@ import type {
   SessionDelivery,
   SessionDiffErrors,
   SessionDiffResponses,
+  SessionFlushErrors,
+  SessionFlushResponses,
   SessionForkErrors,
   SessionForkResponses,
   SessionGenerateTitleErrors,
@@ -246,12 +244,24 @@ import type {
   SessionInitResponses,
   SessionListErrors,
   SessionListResponses,
+  SessionMathDetailsErrors,
+  SessionMathDetailsResponses,
+  SessionMathWorkerEnsureErrors,
+  SessionMathWorkerEnsureResponses,
+  SessionMathWorkerEventErrors,
+  SessionMathWorkerEventResponses,
+  SessionMathWorkersErrors,
+  SessionMathWorkersResponses,
+  SessionMathWorkerStopErrors,
+  SessionMathWorkerStopResponses,
+  SessionMathWorkerTaskGetErrors,
+  SessionMathWorkerTaskGetResponses,
+  SessionMathWorkerTaskUpdateErrors,
+  SessionMathWorkerTaskUpdateResponses,
   SessionMessageErrors,
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
-  SessionUserMessageIndexErrors,
-  SessionUserMessageIndexResponses,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
   SessionPromptErrors,
@@ -274,6 +284,8 @@ import type {
   SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
+  SessionUserMessageIndexErrors,
+  SessionUserMessageIndexResponses,
   SubtaskPartInput,
   SyncHistoryListErrors,
   SyncHistoryListResponses,
@@ -288,32 +300,6 @@ import type {
   ToolIdsResponses,
   ToolListErrors,
   ToolListResponses,
-  TuiAppendPromptErrors,
-  TuiAppendPromptResponses,
-  TuiClearPromptErrors,
-  TuiClearPromptResponses,
-  TuiControlNextErrors,
-  TuiControlNextResponses,
-  TuiControlResponseErrors,
-  TuiControlResponseResponses,
-  TuiExecuteCommandErrors,
-  TuiExecuteCommandResponses,
-  TuiOpenHelpErrors,
-  TuiOpenHelpResponses,
-  TuiOpenModelsErrors,
-  TuiOpenModelsResponses,
-  TuiOpenSessionsErrors,
-  TuiOpenSessionsResponses,
-  TuiOpenThemesErrors,
-  TuiOpenThemesResponses,
-  TuiPublishErrors,
-  TuiPublishResponses,
-  TuiSelectSessionErrors,
-  TuiSelectSessionResponses,
-  TuiShowToastErrors,
-  TuiShowToastResponses,
-  TuiSubmitPromptErrors,
-  TuiSubmitPromptResponses,
   V2ModelListErrors,
   V2ModelListResponses,
   V2ProviderGetErrors,
@@ -3699,6 +3685,326 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Get Math Mode workers
+   *
+   * Reconcile durable math-worker child sessions with detached process status.
+   */
+  public mathWorkers<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      project?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "project" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionMathWorkersResponses, SessionMathWorkersErrors, ThrowOnError>({
+      url: "/session/{sessionID}/math-workers",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get Math Mode details
+   *
+   * List accepted facts or proof verification records for a Math Mode project.
+   */
+  public mathDetails<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      project: string
+      kind: "facts" | "correct" | "wrong" | "error"
+      offset?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "project" },
+            { in: "query", key: "kind" },
+            { in: "query", key: "offset" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionMathDetailsResponses, SessionMathDetailsErrors, ThrowOnError>({
+      url: "/session/{sessionID}/math-details",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Ensure Math Mode worker
+   *
+   * Restart an unexpectedly dead worker using its existing durable session identity. A deliberate stop requires explicit reEnable.
+   */
+  public mathWorkerEnsure<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workerID: string
+      directory?: string
+      workspace?: string
+      project?: string
+      model?: string
+      variant?: string
+      verifierModel?: string
+      reEnable?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "project" },
+            { in: "body", key: "model" },
+            { in: "body", key: "variant" },
+            { in: "body", key: "verifierModel" },
+            { in: "body", key: "reEnable" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionMathWorkerEnsureResponses,
+      SessionMathWorkerEnsureErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/math-workers/{workerID}/ensure",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Stop Math Mode worker
+   *
+   * Request a round-boundary stop or force-kill the detached worker process group.
+   */
+  public mathWorkerStop<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workerID: string
+      directory?: string
+      workspace?: string
+      project?: string
+      force?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "project" },
+            { in: "body", key: "force" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionMathWorkerStopResponses,
+      SessionMathWorkerStopErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/math-workers/{workerID}/stop",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Report Math Mode worker event
+   *
+   * Idempotently enqueue a detached Math Mode worker event for its parent session.
+   */
+  public mathWorkerEvent<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workerID: string
+      directory?: string
+      workspace?: string
+      eventID?: string
+      kind?: "progress" | "completed" | "blocked" | "failed"
+      round?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      factID?: string
+      reason?: string
+      summary?: string
+      generation?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      taskFingerprint?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "eventID" },
+            { in: "body", key: "kind" },
+            { in: "body", key: "round" },
+            { in: "body", key: "factID" },
+            { in: "body", key: "reason" },
+            { in: "body", key: "summary" },
+            { in: "body", key: "generation" },
+            { in: "body", key: "taskFingerprint" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionMathWorkerEventResponses,
+      SessionMathWorkerEventErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/math-workers/{workerID}/event",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Get Math Mode worker task
+   *
+   * Read the durable TASK body used at the start of each worker round.
+   */
+  public mathWorkerTaskGet<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workerID: string
+      directory?: string
+      workspace?: string
+      project?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "project" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionMathWorkerTaskGetResponses,
+      SessionMathWorkerTaskGetErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/math-workers/{workerID}/task",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update Math Mode worker task
+   *
+   * Atomically replace the durable TASK body for the worker's next round.
+   */
+  public mathWorkerTaskUpdate<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      workerID: string
+      directory?: string
+      workspace?: string
+      project?: string
+      task?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "workerID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "project" },
+            { in: "body", key: "task" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).put<
+      SessionMathWorkerTaskUpdateResponses,
+      SessionMathWorkerTaskUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/math-workers/{workerID}/task",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
    * Get session todos
    *
    * Retrieve the todo list associated with a specific session, showing tasks and action items.
@@ -3801,42 +4107,6 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
-   * Get user message index
-   *
-   * Retrieve bounded user message previews for navigation without loading assistant history.
-   */
-  public userMessageIndex<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<
-      SessionUserMessageIndexResponses,
-      SessionUserMessageIndexErrors,
-      ThrowOnError
-    >({
-      url: "/session/{sessionID}/user-message-index",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
    * Send message
    *
    * Create and send a new message to a session, streaming the AI response.
@@ -3893,6 +4163,42 @@ export class Session2 extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Get user message index
+   *
+   * Retrieve bounded user message previews for navigation without loading assistant history.
+   */
+  public userMessageIndex<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionUserMessageIndexResponses,
+      SessionUserMessageIndexErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/user-message-index",
+      ...options,
+      ...params,
     })
   }
 
@@ -4034,6 +4340,38 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<SessionAbortResponses, SessionAbortErrors, ThrowOnError>({
       url: "/session/{sessionID}/abort",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Flush queued prompts
+   *
+   * Interrupt the active run (if any) and immediately process queued user prompts instead of waiting for the current step to finish.
+   */
+  public flush<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionFlushResponses, SessionFlushErrors, ThrowOnError>({
+      url: "/session/{sessionID}/flush",
       ...options,
       ...params,
     })
@@ -5634,453 +5972,6 @@ export class V2 extends HeyApiClient {
   }
 }
 
-export class Control extends HeyApiClient {
-  /**
-   * Get next TUI request
-   *
-   * Retrieve the next TUI request from the queue for processing.
-   */
-  public next<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<TuiControlNextResponses, TuiControlNextErrors, ThrowOnError>({
-      url: "/tui/control/next",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Submit TUI response
-   *
-   * Submit a response to the TUI request queue to complete a pending request.
-   */
-  public response<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      body?: unknown
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { key: "body", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiControlResponseResponses, TuiControlResponseErrors, ThrowOnError>({
-      url: "/tui/control/response",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
-export class Tui extends HeyApiClient {
-  /**
-   * Append TUI prompt
-   *
-   * Append prompt to the TUI.
-   */
-  public appendPrompt<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      text?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "text" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiAppendPromptResponses, TuiAppendPromptErrors, ThrowOnError>({
-      url: "/tui/append-prompt",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Open help dialog
-   *
-   * Open the help dialog in the TUI to display user assistance information.
-   */
-  public openHelp<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiOpenHelpResponses, TuiOpenHelpErrors, ThrowOnError>({
-      url: "/tui/open-help",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Open sessions dialog
-   *
-   * Open the session dialog.
-   */
-  public openSessions<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiOpenSessionsResponses, TuiOpenSessionsErrors, ThrowOnError>({
-      url: "/tui/open-sessions",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Open themes dialog
-   *
-   * Open the theme dialog.
-   */
-  public openThemes<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiOpenThemesResponses, TuiOpenThemesErrors, ThrowOnError>({
-      url: "/tui/open-themes",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Open models dialog
-   *
-   * Open the model dialog.
-   */
-  public openModels<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiOpenModelsResponses, TuiOpenModelsErrors, ThrowOnError>({
-      url: "/tui/open-models",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Submit TUI prompt
-   *
-   * Submit the prompt.
-   */
-  public submitPrompt<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiSubmitPromptResponses, TuiSubmitPromptErrors, ThrowOnError>({
-      url: "/tui/submit-prompt",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Clear TUI prompt
-   *
-   * Clear the prompt.
-   */
-  public clearPrompt<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiClearPromptResponses, TuiClearPromptErrors, ThrowOnError>({
-      url: "/tui/clear-prompt",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Execute TUI command
-   *
-   * Execute a TUI command.
-   */
-  public executeCommand<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      command?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "command" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiExecuteCommandResponses, TuiExecuteCommandErrors, ThrowOnError>({
-      url: "/tui/execute-command",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Show TUI toast
-   *
-   * Show a toast notification in the TUI.
-   */
-  public showToast<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      title?: string
-      message?: string
-      variant?: "info" | "success" | "warning" | "error"
-      duration?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "title" },
-            { in: "body", key: "message" },
-            { in: "body", key: "variant" },
-            { in: "body", key: "duration" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiShowToastResponses, TuiShowToastErrors, ThrowOnError>({
-      url: "/tui/show-toast",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Publish TUI event
-   *
-   * Publish a TUI event.
-   */
-  public publish<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      body?: EventTuiPromptAppend2 | EventTuiCommandExecute2 | EventTuiToastShow2 | EventTuiSessionSelect2
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { key: "body", map: "body" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiPublishResponses, TuiPublishErrors, ThrowOnError>({
-      url: "/tui/publish",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Select session
-   *
-   * Navigate the TUI to display the specified session.
-   */
-  public selectSession<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      sessionID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "sessionID" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<TuiSelectSessionResponses, TuiSelectSessionErrors, ThrowOnError>({
-      url: "/tui/select-session",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  private _control?: Control
-  get control(): Control {
-    return (this._control ??= new Control({ client: this.client }))
-  }
-}
-
 export class OpencodeClient extends HeyApiClient {
   public static readonly __registry = new HeyApiRegistry<OpencodeClient>()
 
@@ -6232,10 +6123,5 @@ export class OpencodeClient extends HeyApiClient {
   private _v2?: V2
   get v2(): V2 {
     return (this._v2 ??= new V2({ client: this.client }))
-  }
-
-  private _tui?: Tui
-  get tui(): Tui {
-    return (this._tui ??= new Tui({ client: this.client }))
   }
 }

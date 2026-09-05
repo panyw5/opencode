@@ -55,6 +55,31 @@ function errorName(err: unknown) {
   return typeof value.name === "string" ? value.name : undefined
 }
 
+// Optimistically mark the in-flight assistant turn as finished locally so the
+// timeline stops rendering it as streaming before the server confirms. Shared
+// by the composer abort and the queued-prompt flush (both interrupt the run).
+export function finalizeRunningAssistantLocally(input: {
+  globalSync: ReturnType<typeof useGlobalSync>
+  directory: string
+  sessionID: string
+}) {
+  const [, setStore] = input.globalSync.child(input.directory)
+  input.globalSync.session.todo.set(input.directory, input.sessionID, [])
+  input.globalSync.session.status.set(input.directory, input.sessionID, { type: "idle" })
+  let completed: string | undefined
+  setStore("message", input.sessionID, (list) => {
+    if (!list?.length) return list
+    const lastIdx = list.length - 1
+    const last = list[lastIdx]
+    if (!last || last.role !== "assistant" || typeof last.time.completed === "number") return list
+    completed = last.id
+    const next = list.slice()
+    next[lastIdx] = { ...last, time: { ...last.time, completed: Date.now() } }
+    return next
+  })
+  return completed
+}
+
 function aborted(err: unknown) {
   const name = errorName(err)
   if (name === "AbortError" || name === "MessageAbortedError") return true
@@ -400,20 +425,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const t0 = performance.now()
     console.debug(`[abort] start sessionID=${sessionID} directory=${sdk.directory} t=${t0}`)
 
-    const [, setStore] = globalSync.child(sdk.directory)
-    globalSync.session.todo.set(sdk.directory, sessionID, [])
-    globalSync.session.status.set(sdk.directory, sessionID, { type: "idle" })
-    let optimisticTarget: string | undefined
-    setStore("message", sessionID, (list) => {
-      if (!list?.length) return list
-      const lastIdx = list.length - 1
-      const last = list[lastIdx]
-      if (!last || last.role !== "assistant" || typeof last.time.completed === "number") return list
-      optimisticTarget = last.id
-      const next = list.slice()
-      next[lastIdx] = { ...last, time: { ...last.time, completed: Date.now() } }
-      return next
-    })
+    const optimisticTarget = finalizeRunningAssistantLocally({ globalSync, directory: sdk.directory, sessionID })
     console.debug(`[abort] optimistic local state sessionID=${sessionID} msgCompleted=${optimisticTarget ?? "none"} dt=${performance.now() - t0}`)
 
     try {

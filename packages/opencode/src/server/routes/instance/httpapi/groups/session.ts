@@ -219,6 +219,7 @@ export const SessionPaths = {
   update: `${root}/:sessionID`,
   fork: `${root}/:sessionID/fork`,
   abort: `${root}/:sessionID/abort`,
+  flush: `${root}/:sessionID/flush`,
   hooks: `${root}/:sessionID/hooks`,
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
@@ -496,6 +497,19 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.abort",
             summary: "Abort session",
             description: "Abort an active session and stop any ongoing AI processing or command execution.",
+          }),
+        ),
+        HttpApiEndpoint.post("flush", SessionPaths.flush, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(HttpApiSchema.NoContent, "Queued prompts accepted"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.flush",
+            summary: "Flush queued prompts",
+            description:
+              "Interrupt the active run (if any) and immediately process queued user prompts instead of waiting for the current step to finish.",
           }),
         ),
         HttpApiEndpoint.get("hooks", SessionPaths.hooks, {

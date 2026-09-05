@@ -69,6 +69,10 @@ type Input = {
 
 export interface Interface {
   readonly create: (input: Input) => Effect.Effect<Handle>
+  // Mark the active run for a session so the next interrupt (queue flush)
+  // finalizes the in-flight step without error semantics: no Session.Event.Error
+  // is published and the assistant message completes without MessageAbortedError.
+  readonly prepareGracefulAbort: (sessionID: SessionID) => Effect.Effect<void>
 }
 
 type ToolCall = {
@@ -111,11 +115,29 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
 
+    const gracefulAborts = new Map<SessionID, number>()
+
+    const prepareGracefulAbort = Effect.fn("SessionProcessor.prepareGracefulAbort")(function* (sessionID: SessionID) {
+      gracefulAborts.set(sessionID, Date.now())
+      yield* Effect.log("graceful abort armed").pipe(Effect.annotateLogs({ sessionID }))
+    })
+
     const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
+      // Graceful abort latches are armed by SessionPrompt.flush right before it
+      // cancels the run. takeGracefulAbort consumes the latch so it can never
+      // leak into a later, unrelated abort of the same session.
+      const takeGracefulAbort = () => {
+        const armedAt = gracefulAborts.get(input.sessionID)
+        if (armedAt === undefined) return false
+        gracefulAborts.delete(input.sessionID)
+        return Date.now() - armedAt < 60_000
+      }
+
       // Pre-capture snapshot before the LLM stream starts. The AI SDK
       // may execute tools internally before emitting start-step events,
       // so capturing inside the event handler can be too late.
       const initialSnapshot = yield* snapshot.track()
+      let graceful = false
       const ctx: ProcessorContext = {
         assistantMessage: input.assistantMessage,
         sessionID: input.sessionID,
@@ -861,11 +883,13 @@ export const layer = Layer.effect(
 
         const isErrorCleanup = ctx.assistantMessage.error !== undefined
         const settleTimeout = aborted || isErrorCleanup ? INTERRUPTED_TOOL_SETTLE_TIMEOUT : TOOL_SETTLE_TIMEOUT
-        const abortSource: Session.ToolAbortSource = aborted
-          ? "processor-interrupted"
-          : isErrorCleanup
-            ? "processor-error"
-            : "processor-normal-timeout"
+        const abortSource: Session.ToolAbortSource = graceful
+          ? "queue-flush"
+          : aborted
+            ? "processor-interrupted"
+            : isErrorCleanup
+              ? "processor-error"
+              : "processor-normal-timeout"
         yield* Effect.forEach(
           Object.values(ctx.toolcalls),
           (call) => Deferred.await(call.done).pipe(Effect.timeout(settleTimeout), Effect.ignore),
@@ -939,6 +963,16 @@ export const layer = Layer.effect(
             Effect.onInterrupt(() =>
               Effect.gen(function* () {
                 aborted = true
+                if (takeGracefulAbort()) {
+                  // Queue flush: settle tool parts and let the ensuring cleanup
+                  // finalize the assistant message as a plain completion — no
+                  // MessageAbortedError on the message and no error event, so the
+                  // timeline continues with the queued prompt without an
+                  // "interrupted" marker or error sound.
+                  graceful = true
+                  slog.info("process interrupted gracefully for queue flush")
+                  return
+                }
                 if (!ctx.assistantMessage.error) {
                   yield* halt(new DOMException("Aborted", "AbortError"))
                 }
@@ -1001,7 +1035,7 @@ export const layer = Layer.effect(
       } satisfies Handle
     })
 
-    return Service.of({ create })
+    return Service.of({ create, prepareGracefulAbort })
   }),
 )
 

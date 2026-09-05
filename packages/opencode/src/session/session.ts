@@ -501,6 +501,7 @@ export type ToolAbortSource =
   | "user-cancel"
   | "background-cancel"
   | "tool-specific-interrupt"
+  | "queue-flush"
 
 export type AbortToolPartInput = {
   sessionID: SessionID

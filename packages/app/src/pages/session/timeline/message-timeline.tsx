@@ -232,6 +232,7 @@ function TimelineDiffView(props: { diff: SummaryDiff }) {
 
 export function MessageTimeline(props: {
   actions?: UserActions
+  onSendQueued?: () => void
   onBackgroundShell?: MessageProps["onBackgroundShell"]
   onBackgroundTask?: MessageProps["onBackgroundTask"]
   scroll: { overflow: boolean; bottom: boolean }
@@ -1453,6 +1454,7 @@ export function MessageTimeline(props: {
                     message={value()}
                     parts={getMessageParts(value().id)}
                     queued={queuedMessageIDs().has(value().id)}
+                    onSendQueued={props.onSendQueued}
                     actions={props.actions}
                     onBackgroundShell={props.onBackgroundShell}
                     onBackgroundTask={props.onBackgroundTask}

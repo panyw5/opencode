@@ -8,12 +8,16 @@ export type Event =
   | EventServerInstanceDisposed
   | EventFileEdited
   | EventFileWatcherUpdated
+  | EventMcpToolsChanged
+  | EventMcpBrowserOpenFailed
+  | EventPermissionAsked
+  | EventPermissionReplied
+  | EventCommandExecuted
+  | EventProjectUpdated
   | EventLspClientDiagnostics
   | EventLspUpdated
   | EventMessagePartDelta
   | EventTodoUpdated
-  | EventPermissionAsked
-  | EventPermissionReplied
   | EventSessionDiff
   | EventSessionError
   | EventSessionStatus
@@ -21,15 +25,10 @@ export type Event =
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
-  | EventTuiPromptAppend
-  | EventTuiCommandExecute
-  | EventTuiToastShow1
-  | EventTuiSessionSelect
-  | EventMcpToolsChanged
-  | EventMcpBrowserOpenFailed
-  | EventCommandExecuted
-  | EventProjectUpdated
   | EventSessionCompacted
+  | EventProjectTaskCreated
+  | EventProjectTaskUpdated
+  | EventProjectTaskDeleted
   | EventPtyCreated
   | EventPtyUpdated
   | EventPtyExited
@@ -37,9 +36,11 @@ export type Event =
   | EventBackgroundShellCreated
   | EventBackgroundShellUpdated
   | EventBackgroundShellExited
-  | EventProjectTaskCreated
-  | EventProjectTaskUpdated
-  | EventProjectTaskDeleted
+  | EventScheduledTaskCreated
+  | EventScheduledTaskUpdated
+  | EventScheduledTaskDeleted
+  | EventScheduledTaskRunUpdated
+  | EventMathWorkerStatus1
   | EventVcsBranchUpdated
   | EventWorkspaceReady
   | EventWorkspaceFailed
@@ -81,10 +82,6 @@ export type Event =
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
-  | EventScheduledTaskCreated
-  | EventScheduledTaskUpdated
-  | EventScheduledTaskDeleted
-  | EventScheduledTaskRunUpdated
   | EventServerConnected
   | EventGlobalDisposed
   | EventGlobalConfigUpdated
@@ -130,21 +127,6 @@ export type InvalidRequestError = {
   field?: string
 }
 
-export type Todo = {
-  /**
-   * Brief description of the task
-   */
-  content: string
-  /**
-   * Current status of the task: pending, in_progress, completed, cancelled
-   */
-  status: string
-  /**
-   * Priority level of the task: high, medium, low
-   */
-  priority: string
-}
-
 export type PermissionRequest = {
   id: string
   sessionID: string
@@ -158,6 +140,45 @@ export type PermissionRequest = {
     messageID: string
     callID: string
   }
+}
+
+export type Project = {
+  id: string
+  worktree: string
+  vcs?: "git"
+  name?: string
+  icon?: {
+    url?: string
+    override?: string
+    color?: string
+  }
+  commands?: {
+    /**
+     * Startup script to run when creating a new workspace (worktree)
+     */
+    start?: string
+  }
+  time: {
+    created: number
+    updated: number
+    initialized?: number
+  }
+  sandboxes: Array<string>
+}
+
+export type Todo = {
+  /**
+   * Brief description of the task
+   */
+  content: string
+  /**
+   * Current status of the task: pending, in_progress, completed, cancelled
+   */
+  status: string
+  /**
+   * Priority level of the task: high, medium, low
+   */
+  priority: string
 }
 
 export type SnapshotFileDiff = {
@@ -316,83 +337,31 @@ export type QuestionRejected = {
   requestID: string
 }
 
-export type EventTuiPromptAppend = {
-  id: string
-  type: "tui.prompt.append"
-  properties: {
-    text: string
-  }
+export type ProjectTaskStatus = "open" | "in_progress" | "done" | "archived"
+
+export type ProjectTaskProgress = {
+  total: number
+  completed: number
+  inProgress: number
+  pending: number
+  cancelled: number
 }
 
-export type EventTuiCommandExecute = {
+export type ProjectTask = {
   id: string
-  type: "tui.command.execute"
-  properties: {
-    command:
-      | "session.list"
-      | "session.new"
-      | "session.share"
-      | "session.interrupt"
-      | "session.compact"
-      | "session.page.up"
-      | "session.page.down"
-      | "session.line.up"
-      | "session.line.down"
-      | "session.half.page.up"
-      | "session.half.page.down"
-      | "session.first"
-      | "session.last"
-      | "prompt.clear"
-      | "prompt.submit"
-      | "agent.cycle"
-      | string
-  }
-}
-
-export type EventTuiToastShow = {
-  id: string
-  type: "tui.toast.show"
-  properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
-  }
-}
-
-export type EventTuiSessionSelect = {
-  id: string
-  type: "tui.session.select"
-  properties: {
-    /**
-     * Session ID to navigate to
-     */
-    sessionID: string
-  }
-}
-
-export type Project = {
-  id: string
-  worktree: string
-  vcs?: "git"
-  name?: string
-  icon?: {
-    url?: string
-    override?: string
-    color?: string
-  }
-  commands?: {
-    /**
-     * Startup script to run when creating a new workspace (worktree)
-     */
-    start?: string
-  }
+  projectID: string
+  title: string
+  description: string
+  descriptionPath: string
+  status: ProjectTaskStatus
+  sessionCount: number
+  progress: ProjectTaskProgress
+  sessionDirectories: Array<string>
   time: {
     created: number
     updated: number
-    initialized?: number
+    archived?: number
   }
-  sandboxes: Array<string>
 }
 
 export type Pty = {
@@ -422,33 +391,61 @@ export type BackgroundShell = {
   outputTail?: string
 }
 
-export type ProjectTaskStatus = "open" | "in_progress" | "done" | "archived"
+export type ScheduledTaskSchedule =
+  | {
+      kind: "at"
+      at: number
+    }
+  | {
+      kind: "every"
+      interval: number
+    }
+  | {
+      kind: "cron"
+      expression: string
+      timezone?: string
+    }
 
-export type ProjectTaskProgress = {
-  total: number
-  completed: number
-  inProgress: number
-  pending: number
-  cancelled: number
-}
-
-export type ProjectTask = {
+export type ScheduledTask = {
   id: string
   projectID: string
-  title: string
-  /** Description body loaded from descriptionPath. */
-  description: string
-  /** Project-relative path, e.g. `.project-tasks/<taskID>/prd.md`. */
-  descriptionPath: string
-  status: ProjectTaskStatus
-  sessionCount: number
-  progress: ProjectTaskProgress
-  /** Unique session directories currently mounting this task. */
-  sessionDirectories: Array<string>
+  projectName?: string
+  directory: string
+  name: string
+  prompt: string
+  schedule: ScheduledTaskSchedule
+  executionMode: "new_session" | "existing_session"
+  sessionID?: string
+  agent: string
+  model: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
+  enabled: boolean
+  unattended: true
+  nextRunAt?: number
+  lastRunAt?: number
+  lastStatus?: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
+  lastError?: string
   time: {
     created: number
     updated: number
-    archived?: number
+  }
+}
+
+export type ScheduledTaskRun = {
+  id: string
+  taskID: string
+  scheduledAt: number
+  status: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
+  attempt: number
+  sessionID?: string
+  error?: string
+  time: {
+    created: number
+    started?: number
+    finished?: number
   }
 }
 
@@ -783,6 +780,7 @@ export type CompactionPart = {
   type: "compaction"
   auto: boolean
   overflow?: boolean
+  mid_turn?: boolean
   tail_start_id?: string
 }
 
@@ -799,15 +797,6 @@ export type Part =
   | AgentPart
   | RetryPart
   | CompactionPart
-
-export type UserMessageIndexItem = {
-  id: string
-  sessionID: string
-  time: {
-    created: number
-  }
-  preview: string
-}
 
 export type PermissionAction = "allow" | "deny" | "ask"
 
@@ -878,64 +867,6 @@ export type Prompt = {
   references?: Array<PromptReferenceAttachment>
 }
 
-export type ScheduledTaskSchedule =
-  | {
-      kind: "at"
-      at: number
-    }
-  | {
-      kind: "every"
-      interval: number
-    }
-  | {
-      kind: "cron"
-      expression: string
-      timezone?: string
-    }
-
-export type ScheduledTask = {
-  id: string
-  projectID: string
-  projectName?: string
-  directory: string
-  name: string
-  prompt: string
-  schedule: ScheduledTaskSchedule
-  executionMode: "new_session" | "existing_session"
-  sessionID?: string
-  agent: string
-  model: {
-    providerID: string
-    modelID: string
-    variant?: string
-  }
-  enabled: boolean
-  unattended: true
-  nextRunAt?: number
-  lastRunAt?: number
-  lastStatus?: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
-  lastError?: string
-  time: {
-    created: number
-    updated: number
-  }
-}
-
-export type ScheduledTaskRun = {
-  id: string
-  taskID: string
-  scheduledAt: number
-  status: "pending" | "retrying" | "running" | "ok" | "error" | "skipped" | "missed"
-  attempt: number
-  sessionID?: string
-  error?: string
-  time: {
-    created: number
-    started?: number
-    finished?: number
-  }
-}
-
 /**
  * Log level
  */
@@ -996,6 +927,14 @@ export type PermissionConfig =
       project_task_list?: PermissionActionConfig
       project_task_get?: PermissionActionConfig
       project_task_mount?: PermissionActionConfig
+      project_task_update?: PermissionActionConfig
+      scheduled_task_create?: PermissionActionConfig
+      scheduled_task_list?: PermissionActionConfig
+      scheduled_task_get?: PermissionActionConfig
+      scheduled_task_update?: PermissionActionConfig
+      scheduled_task_delete?: PermissionActionConfig
+      scheduled_task_run_now?: PermissionActionConfig
+      scheduled_task_runs?: PermissionActionConfig
       question?: PermissionActionConfig
       webfetch?: PermissionActionConfig
       websearch?: PermissionActionConfig
@@ -1370,6 +1309,10 @@ export type Config = {
     tail_turns?: number
     preserve_recent_tokens?: number
     reserved?: number
+    /**
+     * Fraction of usable context that triggers automatic compaction (default: 0.9). Set to 1 to wait until the usable window is full.
+     */
+    threshold?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
   experimental?: {
     disable_paste_summary?: boolean
@@ -1389,12 +1332,16 @@ export type GlobalEvent = {
     | EventServerInstanceDisposed
     | EventFileEdited
     | EventFileWatcherUpdated
+    | EventMcpToolsChanged
+    | EventMcpBrowserOpenFailed
+    | EventPermissionAsked
+    | EventPermissionReplied
+    | EventCommandExecuted
+    | EventProjectUpdated
     | EventLspClientDiagnostics
     | EventLspUpdated
     | EventMessagePartDelta
     | EventTodoUpdated
-    | EventPermissionAsked
-    | EventPermissionReplied
     | EventSessionDiff
     | EventSessionError
     | EventSessionStatus
@@ -1402,15 +1349,10 @@ export type GlobalEvent = {
     | EventQuestionAsked
     | EventQuestionReplied
     | EventQuestionRejected
-    | EventTuiPromptAppend
-    | EventTuiCommandExecute
-    | EventTuiToastShow
-    | EventTuiSessionSelect
-    | EventMcpToolsChanged
-    | EventMcpBrowserOpenFailed
-    | EventCommandExecuted
-    | EventProjectUpdated
     | EventSessionCompacted
+    | EventProjectTaskCreated
+    | EventProjectTaskUpdated
+    | EventProjectTaskDeleted
     | EventPtyCreated
     | EventPtyUpdated
     | EventPtyExited
@@ -1418,9 +1360,11 @@ export type GlobalEvent = {
     | EventBackgroundShellCreated
     | EventBackgroundShellUpdated
     | EventBackgroundShellExited
-    | EventProjectTaskCreated
-    | EventProjectTaskUpdated
-    | EventProjectTaskDeleted
+    | EventScheduledTaskCreated
+    | EventScheduledTaskUpdated
+    | EventScheduledTaskDeleted
+    | EventScheduledTaskRunUpdated
+    | EventMathWorkerStatus
     | EventVcsBranchUpdated
     | EventWorkspaceReady
     | EventWorkspaceFailed
@@ -1462,10 +1406,6 @@ export type GlobalEvent = {
     | EventSessionNextCompactionStarted
     | EventSessionNextCompactionDelta
     | EventSessionNextCompactionEnded
-    | EventScheduledTaskCreated
-    | EventScheduledTaskUpdated
-    | EventScheduledTaskDeleted
-    | EventScheduledTaskRunUpdated
     | EventServerConnected
     | EventGlobalDisposed
     | EventGlobalConfigUpdated
@@ -1999,6 +1939,15 @@ export type NotFoundError = {
   }
 }
 
+export type UserMessageIndexItem = {
+  id: string
+  sessionID: string
+  time: {
+    created: number
+  }
+  preview: string
+}
+
 export type PluginHookControl = {
   sessionID: string
   plugin: string
@@ -2131,7 +2080,6 @@ export type ProjectTaskDetail = {
   status: ProjectTaskStatus
   sessionCount: number
   progress: ProjectTaskProgress
-  /** Unique session directories currently mounting this task. */
   sessionDirectories: Array<string>
   time: {
     created: number
@@ -2139,11 +2087,6 @@ export type ProjectTaskDetail = {
     archived?: number
   }
   sessions: Array<ProjectTaskSessionTodos>
-  /**
-   * Absolute directory `descriptionPath` resolves against (git worktree root;
-   * instance directory for non-git projects). Lets clients build correct
-   * absolute file paths from subdirectory instances.
-   */
   workspaceDirectory?: string
 }
 
@@ -2207,57 +2150,6 @@ export type ProviderNotFoundError = {
   message: string
 }
 
-export type EventTuiPromptAppend2 = {
-  type: "tui.prompt.append"
-  properties: {
-    text: string
-  }
-}
-
-export type EventTuiCommandExecute2 = {
-  type: "tui.command.execute"
-  properties: {
-    command:
-      | "session.list"
-      | "session.new"
-      | "session.share"
-      | "session.interrupt"
-      | "session.compact"
-      | "session.page.up"
-      | "session.page.down"
-      | "session.line.up"
-      | "session.line.down"
-      | "session.half.page.up"
-      | "session.half.page.down"
-      | "session.first"
-      | "session.last"
-      | "prompt.clear"
-      | "prompt.submit"
-      | "agent.cycle"
-      | string
-  }
-}
-
-export type EventTuiToastShow2 = {
-  type: "tui.toast.show"
-  properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
-  }
-}
-
-export type EventTuiSessionSelect2 = {
-  type: "tui.session.select"
-  properties: {
-    /**
-     * Session ID to navigate to
-     */
-    sessionID: string
-  }
-}
-
 export type Workspace = {
   id: string
   type: string
@@ -2295,6 +2187,153 @@ export type BackgroundShell3 = {
   startedAt: number | "NaN" | "Infinity" | "-Infinity"
   endedAt?: number | "NaN" | "Infinity" | "-Infinity"
   outputTail?: string
+}
+
+export type Config6 = {
+  $schema?: string
+  shell?: string
+  logLevel?: LogLevel
+  server?: ServerConfig
+  command?: {
+    [key: string]: {
+      template: string
+      description?: string
+      agent?: string
+      model?: string
+      subtask?: boolean
+    }
+  }
+  skills?: {
+    paths?: Array<string>
+    urls?: Array<string>
+  }
+  reference?: ReferenceConfig
+  watcher?: {
+    ignore?: Array<string>
+  }
+  snapshot?: boolean
+  plugin?: Array<
+    | string
+    | [
+        string,
+        {
+          [key: string]: unknown
+        },
+      ]
+  >
+  share?: "manual" | "auto" | "disabled"
+  autoshare?: boolean
+  /**
+   * Automatically update to the latest version. Set to true to auto-update, false to disable, or 'notify' to show update notifications
+   */
+  autoupdate?: boolean | "notify"
+  disabled_providers?: Array<string>
+  enabled_providers?: Array<string>
+  model?: string
+  small_model?: string
+  default_agent?: string
+  subagent_depth?: number
+  username?: string
+  mode?: {
+    build?: AgentConfig
+    plan?: AgentConfig
+    [key: string]: AgentConfig | undefined
+  }
+  agent?: {
+    plan?: AgentConfig
+    build?: AgentConfig
+    general?: AgentConfig
+    explore?: AgentConfig
+    scout?: AgentConfig
+    title?: AgentConfig
+    summary?: AgentConfig
+    compaction?: AgentConfig
+    [key: string]: AgentConfig | undefined
+  }
+  provider?: {
+    [key: string]: ProviderConfig
+  }
+  mcp?: {
+    [key: string]:
+      | McpLocalConfig
+      | McpRemoteConfig
+      | {
+          enabled: boolean
+        }
+  }
+  channels?: {
+    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig
+  }
+  /**
+   * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  formatter?:
+    | boolean
+    | {
+        [key: string]: {
+          disabled?: boolean
+          command?: Array<string>
+          environment?: {
+            [key: string]: string
+          }
+          extensions?: Array<string>
+        }
+      }
+  /**
+   * Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
+   */
+  lsp?:
+    | boolean
+    | {
+        [key: string]:
+          | {
+              disabled: true
+            }
+          | {
+              command: Array<string>
+              extensions?: Array<string>
+              disabled?: boolean
+              env?: {
+                [key: string]: string
+              }
+              initialization?: {
+                [key: string]: unknown
+              }
+            }
+      }
+  instructions?: Array<string>
+  layout?: LayoutConfig
+  permission?: PermissionConfig
+  tools?: {
+    [key: string]: boolean
+  }
+  attachment?: AttachmentConfig
+  enterprise?: {
+    url?: string
+  }
+  tool_output?: {
+    max_lines?: number
+    max_bytes?: number
+  }
+  compaction?: {
+    auto?: boolean
+    prune?: boolean
+    tail_turns?: number
+    preserve_recent_tokens?: number
+    reserved?: number
+    /**
+     * Fraction of usable context that triggers automatic compaction (default: 0.9). Set to 1 to wait until the usable window is full.
+     */
+    threshold?: number | "NaN" | "Infinity" | "-Infinity"
+  }
+  experimental?: {
+    disable_paste_summary?: boolean
+    batch_tool?: boolean
+    openTelemetry?: boolean
+    primary_tools?: Array<string>
+    continue_loop_on_deny?: boolean
+    mcp_timeout?: number
+  }
 }
 
 export type SyncEventMessageUpdated = {
@@ -2856,6 +2895,56 @@ export type EventFileWatcherUpdated = {
   }
 }
 
+export type EventMcpToolsChanged = {
+  id: string
+  type: "mcp.tools.changed"
+  properties: {
+    server: string
+  }
+}
+
+export type EventMcpBrowserOpenFailed = {
+  id: string
+  type: "mcp.browser.open.failed"
+  properties: {
+    mcpName: string
+    url: string
+  }
+}
+
+export type EventPermissionAsked = {
+  id: string
+  type: "permission.asked"
+  properties: PermissionRequest
+}
+
+export type EventPermissionReplied = {
+  id: string
+  type: "permission.replied"
+  properties: {
+    sessionID: string
+    requestID: string
+    reply: "once" | "always" | "reject"
+  }
+}
+
+export type EventCommandExecuted = {
+  id: string
+  type: "command.executed"
+  properties: {
+    name: string
+    sessionID: string
+    arguments: string
+    messageID: string
+  }
+}
+
+export type EventProjectUpdated = {
+  id: string
+  type: "project.updated"
+  properties: Project
+}
+
 export type EventLspClientDiagnostics = {
   id: string
   type: "lsp.client.diagnostics"
@@ -2891,22 +2980,6 @@ export type EventTodoUpdated = {
   properties: {
     sessionID: string
     todos: Array<Todo>
-  }
-}
-
-export type EventPermissionAsked = {
-  id: string
-  type: "permission.asked"
-  properties: PermissionRequest
-}
-
-export type EventPermissionReplied = {
-  id: string
-  type: "permission.replied"
-  properties: {
-    sessionID: string
-    requestID: string
-    reply: "once" | "always" | "reject"
   }
 }
 
@@ -2970,45 +3043,31 @@ export type EventQuestionRejected = {
   properties: QuestionRejected
 }
 
-export type EventMcpToolsChanged = {
-  id: string
-  type: "mcp.tools.changed"
-  properties: {
-    server: string
-  }
-}
-
-export type EventMcpBrowserOpenFailed = {
-  id: string
-  type: "mcp.browser.open.failed"
-  properties: {
-    mcpName: string
-    url: string
-  }
-}
-
-export type EventCommandExecuted = {
-  id: string
-  type: "command.executed"
-  properties: {
-    name: string
-    sessionID: string
-    arguments: string
-    messageID: string
-  }
-}
-
-export type EventProjectUpdated = {
-  id: string
-  type: "project.updated"
-  properties: Project
-}
-
 export type EventSessionCompacted = {
   id: string
   type: "session.compacted"
   properties: {
     sessionID: string
+  }
+}
+
+export type EventProjectTaskCreated = {
+  id: string
+  type: "project-task.created"
+  properties: ProjectTask
+}
+
+export type EventProjectTaskUpdated = {
+  id: string
+  type: "project-task.updated"
+  properties: ProjectTask
+}
+
+export type EventProjectTaskDeleted = {
+  id: string
+  type: "project-task.deleted"
+  properties: {
+    taskID: string
   }
 }
 
@@ -3070,23 +3129,44 @@ export type EventBackgroundShellExited = {
   }
 }
 
-export type EventProjectTaskCreated = {
+export type EventScheduledTaskCreated = {
   id: string
-  type: "project-task.created"
-  properties: ProjectTask
+  type: "scheduled-task.created"
+  properties: ScheduledTask
 }
 
-export type EventProjectTaskUpdated = {
+export type EventScheduledTaskUpdated = {
   id: string
-  type: "project-task.updated"
-  properties: ProjectTask
+  type: "scheduled-task.updated"
+  properties: ScheduledTask
 }
 
-export type EventProjectTaskDeleted = {
+export type EventScheduledTaskDeleted = {
   id: string
-  type: "project-task.deleted"
+  type: "scheduled-task.deleted"
   properties: {
     taskID: string
+  }
+}
+
+export type EventScheduledTaskRunUpdated = {
+  id: string
+  type: "scheduled-task.run-updated"
+  properties: ScheduledTaskRun
+}
+
+export type EventMathWorkerStatus = {
+  id: string
+  type: "math.worker.status"
+  properties: {
+    sessionID: string
+    parentSessionID?: string
+    state: string
+    alive: boolean
+    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    round?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastFactId?: string
+    reason: string
   }
 }
 
@@ -3602,32 +3682,6 @@ export type EventSessionNextCompactionEnded = {
   }
 }
 
-export type EventScheduledTaskCreated = {
-  id: string
-  type: "scheduled-task.created"
-  properties: ScheduledTask
-}
-
-export type EventScheduledTaskUpdated = {
-  id: string
-  type: "scheduled-task.updated"
-  properties: ScheduledTask
-}
-
-export type EventScheduledTaskDeleted = {
-  id: string
-  type: "scheduled-task.deleted"
-  properties: {
-    taskID: string
-  }
-}
-
-export type EventScheduledTaskRunUpdated = {
-  id: string
-  type: "scheduled-task.run-updated"
-  properties: ScheduledTaskRun
-}
-
 export type EventServerConnected = {
   id: string
   type: "server.connected"
@@ -4116,14 +4170,18 @@ export type ProviderV2Info = {
   }
 }
 
-export type EventTuiToastShow1 = {
+export type EventMathWorkerStatus1 = {
   id: string
-  type: "tui.toast.show"
+  type: "math.worker.status"
   properties: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
+    sessionID: string
+    parentSessionID?: string
+    state: string
+    alive: boolean
+    pid?: number | "NaN" | "Infinity" | "-Infinity"
+    round?: number | "NaN" | "Infinity" | "-Infinity"
+    lastFactId?: string
+    reason: string
   }
 }
 
@@ -6997,6 +7055,438 @@ export type SessionChildrenResponses = {
 
 export type SessionChildrenResponse = SessionChildrenResponses[keyof SessionChildrenResponses]
 
+export type SessionMathWorkersData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    project?: string
+  }
+  url: "/session/{sessionID}/math-workers"
+}
+
+export type SessionMathWorkersErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMathWorkersError = SessionMathWorkersErrors[keyof SessionMathWorkersErrors]
+
+export type SessionMathWorkersResponses = {
+  /**
+   * List Math Mode workers
+   */
+  200: Array<{
+    sessionID: string
+    project?: string
+    parentSessionID?: string
+    alive: boolean
+    state: "running" | "stopping" | "blocked" | "dead" | "missing"
+    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    round?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    last_fact_id?: string
+    last_rc?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastHeartbeatAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    logFile?: string
+    attachable?: boolean
+    restartable?: boolean
+    stopRequested?: boolean
+    transcriptUpdatedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    model?: string
+    variant?: string
+    startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    cost?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    tokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    taskUpdatedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    taskPreview?: string
+    factCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationCorrect?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationWrong?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationError?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    latestVerification?: string
+    verifierModel?: string
+    noProgressRounds?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationErrorStreak?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    blockedReason?: string
+    blockedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    generation?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    blockedTaskFingerprint?: string
+    lastOutcome?: "completed" | "blocked" | "failed" | "superseded"
+    lastSummary?: string
+  }>
+}
+
+export type SessionMathWorkersResponse = SessionMathWorkersResponses[keyof SessionMathWorkersResponses]
+
+export type SessionMathDetailsData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query: {
+    directory?: string
+    workspace?: string
+    project: string
+    kind: "facts" | "correct" | "wrong" | "error"
+    offset?: string
+    limit?: string
+  }
+  url: "/session/{sessionID}/math-details"
+}
+
+export type SessionMathDetailsErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMathDetailsError = SessionMathDetailsErrors[keyof SessionMathDetailsErrors]
+
+export type SessionMathDetailsResponses = {
+  /**
+   * Math Mode fact and verification details
+   */
+  200: {
+    kind: "facts" | "correct" | "wrong" | "error"
+    total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    offset: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    limit: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    items: Array<
+      | {
+          kind: "fact"
+          id: string
+          factId: string
+          problemId: string
+          author: string
+          predecessors: Array<string>
+          statement: string
+          proof: string
+          intuition?: string
+          glossaryIntroduces: {
+            [key: string]: string
+          }
+        }
+      | {
+          kind: "correct" | "wrong" | "error"
+          id: string
+          timestamp: string
+          workerSessionID?: string
+          statement: string
+          proof?: string
+          evidence: string
+          factId?: string
+          writeError?: string
+          error?: string
+          report?: {
+            summary: string
+            criticalErrors: Array<string>
+            gaps: Array<string>
+          }
+        }
+    >
+  }
+}
+
+export type SessionMathDetailsResponse = SessionMathDetailsResponses[keyof SessionMathDetailsResponses]
+
+export type SessionMathWorkerEnsureData = {
+  body?: {
+    model?: string
+    variant?: string
+    verifierModel?: string
+    reEnable?: boolean
+  }
+  path: {
+    sessionID: string
+    workerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    project?: string
+  }
+  url: "/session/{sessionID}/math-workers/{workerID}/ensure"
+}
+
+export type SessionMathWorkerEnsureErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMathWorkerEnsureError = SessionMathWorkerEnsureErrors[keyof SessionMathWorkerEnsureErrors]
+
+export type SessionMathWorkerEnsureResponses = {
+  /**
+   * Ensured Math Mode worker
+   */
+  200: {
+    sessionID: string
+    project?: string
+    parentSessionID?: string
+    alive: boolean
+    state: "running" | "stopping" | "blocked" | "dead" | "missing"
+    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    round?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    last_fact_id?: string
+    last_rc?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastHeartbeatAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    logFile?: string
+    attachable?: boolean
+    restartable?: boolean
+    stopRequested?: boolean
+    transcriptUpdatedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    model?: string
+    variant?: string
+    startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    cost?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    tokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    taskUpdatedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    taskPreview?: string
+    factCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationCorrect?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationWrong?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationError?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    latestVerification?: string
+    verifierModel?: string
+    noProgressRounds?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationErrorStreak?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    blockedReason?: string
+    blockedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    generation?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    blockedTaskFingerprint?: string
+    lastOutcome?: "completed" | "blocked" | "failed" | "superseded"
+    lastSummary?: string
+  }
+}
+
+export type SessionMathWorkerEnsureResponse = SessionMathWorkerEnsureResponses[keyof SessionMathWorkerEnsureResponses]
+
+export type SessionMathWorkerStopData = {
+  body?: {
+    force?: boolean
+  }
+  path: {
+    sessionID: string
+    workerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    project?: string
+  }
+  url: "/session/{sessionID}/math-workers/{workerID}/stop"
+}
+
+export type SessionMathWorkerStopErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMathWorkerStopError = SessionMathWorkerStopErrors[keyof SessionMathWorkerStopErrors]
+
+export type SessionMathWorkerStopResponses = {
+  /**
+   * Stopped Math Mode worker
+   */
+  200: {
+    sessionID: string
+    project?: string
+    parentSessionID?: string
+    alive: boolean
+    state: "running" | "stopping" | "blocked" | "dead" | "missing"
+    pid?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    round?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    last_fact_id?: string
+    last_rc?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastHeartbeatAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    logFile?: string
+    attachable?: boolean
+    restartable?: boolean
+    stopRequested?: boolean
+    transcriptUpdatedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    model?: string
+    variant?: string
+    startedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    cost?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    tokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    taskUpdatedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    taskPreview?: string
+    factCount?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationCorrect?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationWrong?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationError?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    latestVerification?: string
+    verifierModel?: string
+    noProgressRounds?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    verificationErrorStreak?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    blockedReason?: string
+    blockedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    generation?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    blockedTaskFingerprint?: string
+    lastOutcome?: "completed" | "blocked" | "failed" | "superseded"
+    lastSummary?: string
+  }
+}
+
+export type SessionMathWorkerStopResponse = SessionMathWorkerStopResponses[keyof SessionMathWorkerStopResponses]
+
+export type SessionMathWorkerEventData = {
+  body?: {
+    eventID: string
+    kind: "progress" | "completed" | "blocked" | "failed"
+    round: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    factID?: string
+    reason?: string
+    summary: string
+    generation: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    taskFingerprint: string
+  }
+  path: {
+    sessionID: string
+    workerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/math-workers/{workerID}/event"
+}
+
+export type SessionMathWorkerEventErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMathWorkerEventError = SessionMathWorkerEventErrors[keyof SessionMathWorkerEventErrors]
+
+export type SessionMathWorkerEventResponses = {
+  /**
+   * Math worker event accepted
+   */
+  204: void
+}
+
+export type SessionMathWorkerEventResponse = SessionMathWorkerEventResponses[keyof SessionMathWorkerEventResponses]
+
+export type SessionMathWorkerTaskGetData = {
+  body?: never
+  path: {
+    sessionID: string
+    workerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    project?: string
+  }
+  url: "/session/{sessionID}/math-workers/{workerID}/task"
+}
+
+export type SessionMathWorkerTaskGetErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMathWorkerTaskGetError = SessionMathWorkerTaskGetErrors[keyof SessionMathWorkerTaskGetErrors]
+
+export type SessionMathWorkerTaskGetResponses = {
+  /**
+   * Math Mode worker task
+   */
+  200: {
+    sessionID: string
+    project: string
+    task: string
+    updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type SessionMathWorkerTaskGetResponse =
+  SessionMathWorkerTaskGetResponses[keyof SessionMathWorkerTaskGetResponses]
+
+export type SessionMathWorkerTaskUpdateData = {
+  body?: {
+    task: string
+  }
+  path: {
+    sessionID: string
+    workerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    project?: string
+  }
+  url: "/session/{sessionID}/math-workers/{workerID}/task"
+}
+
+export type SessionMathWorkerTaskUpdateErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMathWorkerTaskUpdateError =
+  SessionMathWorkerTaskUpdateErrors[keyof SessionMathWorkerTaskUpdateErrors]
+
+export type SessionMathWorkerTaskUpdateResponses = {
+  /**
+   * Updated Math Mode worker task
+   */
+  200: {
+    sessionID: string
+    project: string
+    task: string
+    updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type SessionMathWorkerTaskUpdateResponse =
+  SessionMathWorkerTaskUpdateResponses[keyof SessionMathWorkerTaskUpdateResponses]
+
 export type SessionTodoData = {
   body?: never
   path: {
@@ -7101,17 +7591,6 @@ export type SessionMessagesResponses = {
 
 export type SessionMessagesResponse = SessionMessagesResponses[keyof SessionMessagesResponses]
 
-export type SessionUserMessageIndexErrors = {
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  404: NotFoundError
-}
-
-export type SessionUserMessageIndexResponses = {
-  200: Array<UserMessageIndexItem>
-}
-
-export type SessionUserMessageIndexResponse = SessionUserMessageIndexResponses[keyof SessionUserMessageIndexResponses]
-
 export type SessionPromptData = {
   body?: {
     messageID?: string
@@ -7163,6 +7642,40 @@ export type SessionPromptResponses = {
 }
 
 export type SessionPromptResponse = SessionPromptResponses[keyof SessionPromptResponses]
+
+export type SessionUserMessageIndexData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/user-message-index"
+}
+
+export type SessionUserMessageIndexErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionUserMessageIndexError = SessionUserMessageIndexErrors[keyof SessionUserMessageIndexErrors]
+
+export type SessionUserMessageIndexResponses = {
+  /**
+   * User message navigation index
+   */
+  200: Array<UserMessageIndexItem>
+}
+
+export type SessionUserMessageIndexResponse = SessionUserMessageIndexResponses[keyof SessionUserMessageIndexResponses]
 
 export type SessionDeleteMessageData = {
   body?: never
@@ -7306,6 +7819,40 @@ export type SessionAbortResponses = {
 }
 
 export type SessionAbortResponse = SessionAbortResponses[keyof SessionAbortResponses]
+
+export type SessionFlushData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/flush"
+}
+
+export type SessionFlushErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionFlushError = SessionFlushErrors[keyof SessionFlushErrors]
+
+export type SessionFlushResponses = {
+  /**
+   * Queued prompts accepted
+   */
+  204: void
+}
+
+export type SessionFlushResponse = SessionFlushResponses[keyof SessionFlushResponses]
 
 export type SessionHooksData = {
   body?: never
@@ -8989,391 +9536,6 @@ export type V2ProviderGetResponses = {
 }
 
 export type V2ProviderGetResponse = V2ProviderGetResponses[keyof V2ProviderGetResponses]
-
-export type TuiAppendPromptData = {
-  body?: {
-    text: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/append-prompt"
-}
-
-export type TuiAppendPromptErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type TuiAppendPromptError = TuiAppendPromptErrors[keyof TuiAppendPromptErrors]
-
-export type TuiAppendPromptResponses = {
-  /**
-   * Prompt processed successfully
-   */
-  200: boolean
-}
-
-export type TuiAppendPromptResponse = TuiAppendPromptResponses[keyof TuiAppendPromptResponses]
-
-export type TuiOpenHelpData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/open-help"
-}
-
-export type TuiOpenHelpErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiOpenHelpError = TuiOpenHelpErrors[keyof TuiOpenHelpErrors]
-
-export type TuiOpenHelpResponses = {
-  /**
-   * Help dialog opened successfully
-   */
-  200: boolean
-}
-
-export type TuiOpenHelpResponse = TuiOpenHelpResponses[keyof TuiOpenHelpResponses]
-
-export type TuiOpenSessionsData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/open-sessions"
-}
-
-export type TuiOpenSessionsErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiOpenSessionsError = TuiOpenSessionsErrors[keyof TuiOpenSessionsErrors]
-
-export type TuiOpenSessionsResponses = {
-  /**
-   * Session dialog opened successfully
-   */
-  200: boolean
-}
-
-export type TuiOpenSessionsResponse = TuiOpenSessionsResponses[keyof TuiOpenSessionsResponses]
-
-export type TuiOpenThemesData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/open-themes"
-}
-
-export type TuiOpenThemesErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiOpenThemesError = TuiOpenThemesErrors[keyof TuiOpenThemesErrors]
-
-export type TuiOpenThemesResponses = {
-  /**
-   * Theme dialog opened successfully
-   */
-  200: boolean
-}
-
-export type TuiOpenThemesResponse = TuiOpenThemesResponses[keyof TuiOpenThemesResponses]
-
-export type TuiOpenModelsData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/open-models"
-}
-
-export type TuiOpenModelsErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiOpenModelsError = TuiOpenModelsErrors[keyof TuiOpenModelsErrors]
-
-export type TuiOpenModelsResponses = {
-  /**
-   * Model dialog opened successfully
-   */
-  200: boolean
-}
-
-export type TuiOpenModelsResponse = TuiOpenModelsResponses[keyof TuiOpenModelsResponses]
-
-export type TuiSubmitPromptData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/submit-prompt"
-}
-
-export type TuiSubmitPromptErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiSubmitPromptError = TuiSubmitPromptErrors[keyof TuiSubmitPromptErrors]
-
-export type TuiSubmitPromptResponses = {
-  /**
-   * Prompt submitted successfully
-   */
-  200: boolean
-}
-
-export type TuiSubmitPromptResponse = TuiSubmitPromptResponses[keyof TuiSubmitPromptResponses]
-
-export type TuiClearPromptData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/clear-prompt"
-}
-
-export type TuiClearPromptErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiClearPromptError = TuiClearPromptErrors[keyof TuiClearPromptErrors]
-
-export type TuiClearPromptResponses = {
-  /**
-   * Prompt cleared successfully
-   */
-  200: boolean
-}
-
-export type TuiClearPromptResponse = TuiClearPromptResponses[keyof TuiClearPromptResponses]
-
-export type TuiExecuteCommandData = {
-  body?: {
-    command: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/execute-command"
-}
-
-export type TuiExecuteCommandErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type TuiExecuteCommandError = TuiExecuteCommandErrors[keyof TuiExecuteCommandErrors]
-
-export type TuiExecuteCommandResponses = {
-  /**
-   * Command executed successfully
-   */
-  200: boolean
-}
-
-export type TuiExecuteCommandResponse = TuiExecuteCommandResponses[keyof TuiExecuteCommandResponses]
-
-export type TuiShowToastData = {
-  body?: {
-    title?: string
-    message: string
-    variant: "info" | "success" | "warning" | "error"
-    duration?: number
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/show-toast"
-}
-
-export type TuiShowToastErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiShowToastError = TuiShowToastErrors[keyof TuiShowToastErrors]
-
-export type TuiShowToastResponses = {
-  /**
-   * Toast notification shown successfully
-   */
-  200: boolean
-}
-
-export type TuiShowToastResponse = TuiShowToastResponses[keyof TuiShowToastResponses]
-
-export type TuiPublishData = {
-  body?: EventTuiPromptAppend2 | EventTuiCommandExecute2 | EventTuiToastShow2 | EventTuiSessionSelect2
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/publish"
-}
-
-export type TuiPublishErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type TuiPublishError = TuiPublishErrors[keyof TuiPublishErrors]
-
-export type TuiPublishResponses = {
-  /**
-   * Event published successfully
-   */
-  200: boolean
-}
-
-export type TuiPublishResponse = TuiPublishResponses[keyof TuiPublishResponses]
-
-export type TuiSelectSessionData = {
-  body?: {
-    /**
-     * Session ID to navigate to
-     */
-    sessionID: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/select-session"
-}
-
-export type TuiSelectSessionErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type TuiSelectSessionError = TuiSelectSessionErrors[keyof TuiSelectSessionErrors]
-
-export type TuiSelectSessionResponses = {
-  /**
-   * Session selected successfully
-   */
-  200: boolean
-}
-
-export type TuiSelectSessionResponse = TuiSelectSessionResponses[keyof TuiSelectSessionResponses]
-
-export type TuiControlNextData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/control/next"
-}
-
-export type TuiControlNextErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiControlNextError = TuiControlNextErrors[keyof TuiControlNextErrors]
-
-export type TuiControlNextResponses = {
-  /**
-   * Next TUI request
-   */
-  200: {
-    path: string
-    body: unknown
-  }
-}
-
-export type TuiControlNextResponse = TuiControlNextResponses[keyof TuiControlNextResponses]
-
-export type TuiControlResponseData = {
-  body?: unknown
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/tui/control/response"
-}
-
-export type TuiControlResponseErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type TuiControlResponseError = TuiControlResponseErrors[keyof TuiControlResponseErrors]
-
-export type TuiControlResponseResponses = {
-  /**
-   * Response submitted successfully
-   */
-  200: boolean
-}
-
-export type TuiControlResponseResponse = TuiControlResponseResponses[keyof TuiControlResponseResponses]
 
 export type ExperimentalWorkspaceAdapterListData = {
   body?: never

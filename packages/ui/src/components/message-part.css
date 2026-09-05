@@ -399,6 +399,29 @@
     opacity: 0.82;
   }
 
+  [data-slot="user-message-queued-send"] {
+    appearance: none;
+    background: transparent;
+    border: none;
+    padding: 0 0 0 8px;
+    flex: 0 0 auto;
+    white-space: nowrap;
+    color: var(--text-base);
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.15s ease;
+
+    &:hover:not(:disabled) {
+      color: var(--text-strong);
+      text-decoration: underline;
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.6;
+    }
+  }
+
   .text-text-strong {
     color: var(--text-strong);
   }

@@ -257,6 +257,7 @@ export interface MessageProps {
   message: MessageType
   parts: PartType[]
   queued?: boolean
+  onSendQueued?: () => void
   actions?: UserActions
   showAssistantCopyPartID?: string | null
   assistantCopyText?: string
@@ -985,6 +986,7 @@ export function Message(props: MessageProps) {
             message={userMessage() as UserMessage}
             parts={props.parts}
             queued={props.queued}
+            onSendQueued={props.onSendQueued}
             actions={props.actions}
             interrupted={props.interrupted}
             showCustomHookParts={props.showCustomHookParts}
@@ -1228,6 +1230,7 @@ export function UserMessageDisplay(props: {
   message: UserMessage
   parts: PartType[]
   queued?: boolean
+  onSendQueued?: () => void
   actions?: UserActions
   interrupted?: boolean
   showCustomHookParts?: boolean
@@ -1246,6 +1249,7 @@ export function UserMessageDisplay(props: {
   const [state, setState] = createStore({
     copied: false,
     busy: undefined as "fork" | "revert" | undefined,
+    flushing: false,
   })
   const [expanded, setExpanded] = createSignal(false)
   const copied = () => state.copied
@@ -1470,6 +1474,22 @@ export function UserMessageDisplay(props: {
                   <span data-slot="user-message-queued" class="text-12-regular cursor-default" role="status">
                     {i18n.t("ui.message.queued")}
                   </span>
+                  <Show when={props.onSendQueued}>
+                    <button
+                      data-slot="user-message-queued-send"
+                      class="text-12-medium"
+                      disabled={state.flushing}
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (state.flushing) return
+                        setState("flushing", true)
+                        props.onSendQueued?.()
+                      }}
+                    >
+                      {i18n.t("ui.message.sendQueuedNow")}
+                    </button>
+                  </Show>
                 </Show>
               </span>
             </Show>

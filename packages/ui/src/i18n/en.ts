@@ -227,6 +227,7 @@ export const dict: Record<string, string> = {
   "ui.message.duration.minutesSeconds": "{{minutes}}m {{seconds}}s",
   "ui.message.interrupted": "Interrupted",
   "ui.message.queued": "Queued",
+  "ui.message.sendQueuedNow": "Send now",
   "ui.message.attachment.alt": "attachment",
   "ui.message.showMore": "Show more",
   "ui.message.injection.hookPrompt": "{{hook}} injected prompt",

@@ -210,6 +210,7 @@ export const dict = {
   "ui.message.copied": "已复制！",
   "ui.message.interrupted": "已中断",
   "ui.message.queued": "排队中",
+  "ui.message.sendQueuedNow": "立刻发送",
   "ui.message.attachment.alt": "附件",
   "ui.message.showMore": "展开更多",
   "ui.message.injection.hookPrompt": "{{hook}} 注入提示词",

@@ -931,6 +931,29 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return HttpApiSchema.NoContent.make()
     })
 
+    const flush = Effect.fn("SessionHttpApi.flush")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      // Jump the queue: gracefully interrupt the in-flight step and restart the
+      // run so pending user prompts are served immediately. Forked like
+      // prompt_async so the HTTP call returns without awaiting the restarted run.
+      yield* promptSvc.flush(ctx.params.sessionID).pipe(
+        Effect.catchCause((cause) =>
+          Effect.gen(function* () {
+            const error = promptAsyncErrorDetails(cause)
+            yield* Effect.logError("flush failed").pipe(
+              Effect.annotateLogs({ sessionID: ctx.params.sessionID, cause, error }),
+            )
+            yield* bus.publish(Session.Event.Error, {
+              sessionID: ctx.params.sessionID,
+              error: new NamedError.Unknown({ message: Cause.pretty(cause) }).toObject(),
+            })
+          }),
+        ),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+      return HttpApiSchema.NoContent.make()
+    })
+
     const advisorInterventionStart = Effect.fn("SessionHttpApi.advisorInterventionStart")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof AdvisorInterventionPayload.Type
@@ -1077,6 +1100,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("update", update)
       .handleRaw("fork", forkRaw)
       .handle("abort", abort)
+      .handle("flush", flush)
       .handle("hooks", hooks)
       .handle("hookControl", hookControl)
       .handle("init", init)

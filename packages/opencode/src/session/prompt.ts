@@ -128,6 +128,7 @@ const elog = EffectLogger.create({ service: "session.prompt" })
 
 export interface Interface {
   readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly flush: (sessionID: SessionID) => Effect.Effect<void>
   readonly drain: (sessionID: SessionID) => Effect.Effect<void>
   readonly prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error>
   readonly loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts>
@@ -256,6 +257,20 @@ export const layer = Layer.effect(
       yield* elog.info("cancel inbox drain start", { sessionID })
       yield* requestDrain(sessionID)
       yield* elog.info("cancel inbox drain finish", { sessionID })
+    })
+
+    // Queue flush: interrupt the in-flight step (the loop cannot consume queued
+    // prompts mid-step) and restart the run so pending user prompts are served
+    // immediately. The abort is graceful — the assistant message finalizes as a
+    // plain completion, without the aborted error event or "interrupted" marker.
+    const flush = Effect.fn("SessionPrompt.flush")(function* (sessionID: SessionID) {
+      const current = yield* status.get(sessionID)
+      yield* elog.info("flush start", { sessionID, status: current.type })
+      if (current.type !== "idle") {
+        yield* processor.prepareGracefulAbort(sessionID)
+        yield* cancel(sessionID)
+      }
+      yield* loop({ sessionID })
     })
 
     const resolvePromptParts = Effect.fn("SessionPrompt.resolvePromptParts")(function* (template: string) {
@@ -2856,6 +2871,7 @@ export const layer = Layer.effect(
 
     return Service.of({
       cancel,
+      flush,
       drain: requestDrain,
       prompt,
       loop,

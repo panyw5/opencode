@@ -54,7 +54,11 @@ import { useSessionHistory } from "@/context/session-history"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
-import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
+import {
+  finalizeRunningAssistantLocally,
+  type FollowupDraft,
+  sendFollowupDraft,
+} from "@/components/prompt-input/submit"
 import {
   createSessionComposerState,
   SessionComposerRegion,
@@ -2965,6 +2969,32 @@ export default function Page() {
     setFollowup("edit", id, undefined)
   }
 
+  // Queue jump: interrupt the in-flight step and make the server consume the
+  // queued prompts immediately (POST /session/:id/flush) instead of waiting for
+  // the current model call or tool run to finish.
+  const flushQueued = () => {
+    const sessionID = params.id
+    if (!sessionID) return
+    if (composer.blocked()) return
+
+    // Mirror submit abort(): finalize the running assistant locally so the
+    // timeline does not show the interrupted turn as active until events land.
+    finalizeRunningAssistantLocally({ globalSync, directory: sdk.directory, sessionID })
+
+    void stopCurrentMathWorkerOnAbort().catch(() => {})
+
+    sdk.client.session
+      .flush({ sessionID })
+      .then(() => {
+        console.debug(`[queue-flush] queued prompts flushed session=${sessionID}`)
+      })
+      .catch((err) => {
+        console.warn(
+          `[queue-flush] flush failed session=${sessionID} err=${err instanceof Error ? err.message : String(err)}`,
+        )
+      })
+  }
+
   const halt = (sessionID: string) =>
     busy(sessionID) ? sdk.client.session.abort({ sessionID }).catch(() => {}) : Promise.resolve()
 
@@ -3243,6 +3273,7 @@ export default function Page() {
                     >
                       <MessageTimeline
                         actions={actions}
+                        onSendQueued={composer.blocked() ? undefined : flushQueued}
                         onBackgroundShell={backgroundShell}
                         onBackgroundTask={backgroundTask}
                         scroll={ui.scroll}
