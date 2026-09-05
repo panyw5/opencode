@@ -274,6 +274,12 @@ export const dict = {
   "config.agents.field.prompt": "提示詞",
   "config.agents.field.permission": "權限（JSON 物件）",
   "config.agents.field.options": "選項（JSON 物件）",
+  "config.agents.meta.permissions": "權限",
+  "config.agents.meta.permissions.empty": "frontmatter 中沒有權限。",
+  "config.agents.meta.permissions.all": "全部工具",
+  "config.agents.meta.permissions.unknown": "未知權限鍵",
+  "config.agents.meta.permissions.unknownTool": "未知工具 {{name}}",
+  "config.agents.meta.permissions.invalid": "無效權限動作",
   "common.default": "預設",
   "common.attachment": "附件",
 

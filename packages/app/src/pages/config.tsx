@@ -109,6 +109,8 @@ import { configPluginKey, pluginKey, relativePluginSpecifier, updatePluginEntrie
 import { CONFIG_PAGE_REFRESH_EVENT, refreshAfterConfigWrite } from "@/utils/config-reload"
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
+import { parseAgentMarkdown, upsertAgentMarkdownModel } from "./config-agent-markdown"
+import { AgentMarkdownMeta } from "./config-agent-markdown-meta"
 import {
   changedProviderEntry,
   declaredMcpEntries,
@@ -1994,6 +1996,7 @@ function Editor(props: {
   copyPathCopied?: boolean
   onDelete?: () => void
   extra?: JSX.Element
+  banner?: JSX.Element
   warn?: string
   empty: string
   markdown?: boolean
@@ -2080,6 +2083,7 @@ function Editor(props: {
               {props.warn}
             </div>
           </Show>
+          <Show when={props.banner}>{props.banner}</Show>
         </div>
       </div>
       <Show when={props.item} fallback={<div class="px-5 py-10 text-13-regular text-text-weak">{props.empty}</div>}>
@@ -6310,6 +6314,64 @@ export default function ConfigPage() {
       })
   }
 
+  let agentModelWrite = 0
+  async function applyAgentMarkdownModel(next: string) {
+    const item = currentDoc()
+    if (!item || !file(item.path)) {
+      console.info("[config] agent markdown model change ignored path is not a file")
+      return
+    }
+    if (!item.editable) {
+      console.info(`[config] agent markdown model change ignored read-only path=${item.path}`)
+      return
+    }
+    const current = parseAgentMarkdown(state.text).model ?? ""
+    if (current === next) {
+      console.info(`[config] agent markdown model unchanged path=${item.path} model=${next}`)
+      return
+    }
+    const updated = upsertAgentMarkdownModel(state.text, next || undefined)
+    console.info(
+      `[config] agent markdown model patch path=${item.path} from=${current} to=${next} changed=${String(updated !== state.text)}`,
+    )
+    if (updated === state.text) return
+    const run = ++agentModelWrite
+    setState("text", updated)
+    if (!platform.writeLocalFile) {
+      console.info("[config] agent markdown model write skipped no writeLocalFile")
+      return
+    }
+    try {
+      await platform.writeLocalFile(item.path, updated)
+      if (run !== agentModelWrite) {
+        console.info(`[config] agent markdown model write superseded path=${item.path} run=${String(run)}`)
+        return
+      }
+      cache.set(item.path, updated)
+      setState("saved", updated)
+      console.info(`[config] agent markdown model written path=${item.path} bytes=${String(updated.length)}`)
+      await refreshAfterConfigWrite({
+        source: `agent-markdown-model:${item.path}`,
+        refreshConfig: () => globalSync.refreshConfig(mainDomain),
+        refresh: () => bump("agentRev"),
+      })
+      if (run !== agentModelWrite) return
+      showToast({
+        variant: "success",
+        title: t("config.agents.field.model"),
+        description: next || t("config.agents.field.default"),
+      })
+    } catch (err: unknown) {
+      console.info(
+        `[config] agent markdown model write failed path=${item.path} error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
   async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
     console.info("[config] jsonc agent save started", { name })
     const files = await platform.listConfigFiles?.(null)
@@ -9275,8 +9337,20 @@ export default function ConfigPage() {
                         extra={
                           <Show when={currentAgent()}>
                             <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                              {agentModeLabel(loadedMap().get(currentAgent()!.label)?.mode)}
+                              {agentModeLabel(
+                                parseAgentMarkdown(state.text).mode ?? loadedMap().get(currentAgent()!.label)?.mode,
+                              )}
                             </span>
+                          </Show>
+                        }
+                        banner={
+                          <Show when={file(currentDoc()?.path ?? "")}>
+                            <AgentMarkdownMeta
+                              text={state.text}
+                              editable={!!currentDoc()?.editable}
+                              busy={state.busy}
+                              onModelChange={(next) => void applyAgentMarkdownModel(next)}
+                            />
                           </Show>
                         }
                         empty={t("config.agents.empty")}
