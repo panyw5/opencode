@@ -1255,6 +1255,12 @@ export const dict = {
   "settings.general.row.followup.option.steer": "Steer",
   "settings.general.row.sessionTabsBar.title": "Session tabs",
   "settings.general.row.sessionTabsBar.description": "Show open sessions as tabs at the top of the window",
+  "settings.general.row.mathMode.title": "Math Mode",
+  "settings.general.row.mathMode.description":
+    "Enable the Math Mode swarm. When disabled, its skills, commands and UI entry points are hidden",
+  "settings.general.mathMode.toast.enabled": "Math Mode enabled",
+  "settings.general.mathMode.toast.disabled": "Math Mode disabled",
+  "settings.general.mathMode.toast.failed": "Failed to update Math Mode",
   "settings.general.row.reasoningSummaries.title": "Show thinking",
   "settings.general.row.reasoningSummaries.description": "Display model thinking blocks in the timeline",
   "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",

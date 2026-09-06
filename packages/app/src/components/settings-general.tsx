@@ -4,6 +4,7 @@ import {
   createEffect,
   createMemo,
   createResource,
+  createSignal,
   onCleanup,
   onMount,
   type JSX,
@@ -21,6 +22,7 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSettings, monoFontFamily } from "@/context/settings"
 import { useGlobalSDK } from "@/context/global-sdk"
+import { useGlobalSync } from "@/context/global-sync"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "./link"
 import { SettingsList } from "./settings-list"
@@ -85,6 +87,33 @@ export const SettingsGeneral: Component = () => {
   const platform = usePlatform()
   const settings = useSettings()
   const globalSDK = useGlobalSDK()
+  const globalSync = useGlobalSync()
+
+  const [mathSaving, setMathSaving] = createSignal(false)
+  const mathModeEnabled = createMemo(() => globalSync.data.config.math?.disabled !== true)
+
+  const setMathMode = async (enabled: boolean) => {
+    if (mathSaving()) return
+    setMathSaving(true)
+    try {
+      console.debug(`[settings] mathMode set enabled=${enabled}`)
+      await globalSync.updateConfig({ math: { disabled: !enabled } }, { refreshProviders: false })
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t(
+          enabled ? "settings.general.mathMode.toast.enabled" : "settings.general.mathMode.toast.disabled",
+        ),
+      })
+    } catch (err: unknown) {
+      showToast({
+        title: language.t("settings.general.mathMode.toast.failed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setMathSaving(false)
+    }
+  }
 
   onMount(() => {
     void theme.loadThemes()
@@ -373,6 +402,19 @@ export const SettingsGeneral: Component = () => {
             <Switch
               checked={settings.general.sessionTabsBar()}
               onChange={(checked) => settings.general.setSessionTabsBar(checked)}
+            />
+          </div>
+        </SettingsRow>
+
+        <SettingsRow
+          title={language.t("settings.general.row.mathMode.title")}
+          description={language.t("settings.general.row.mathMode.description")}
+        >
+          <div data-action="settings-math-mode">
+            <Switch
+              checked={mathModeEnabled()}
+              disabled={mathSaving()}
+              onChange={(checked) => void setMathMode(checked)}
             />
           </div>
         </SettingsRow>

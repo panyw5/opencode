@@ -484,7 +484,10 @@ export default function Page() {
       .trim()
     return cleaned || raw
   })
-  const mathModeAvailable = createMemo(() => !subagentPromptTitle() && local.agent.available(MATH_ORCHESTRATOR_AGENT))
+  const mathDisabled = createMemo(() => globalSync.data.config.math?.disabled === true)
+  const mathModeAvailable = createMemo(
+    () => !mathDisabled() && !subagentPromptTitle() && local.agent.available(MATH_ORCHESTRATOR_AGENT),
+  )
   const childAgentSessions = createMemo(() => {
     const id = params.id
     if (!id) return []
@@ -3512,7 +3515,7 @@ export default function Page() {
             }}
             subagentNavigation={subagentNavigation()}
             subagentTitle={subagentPromptTitle()}
-            mathModeActive={mathModeAgentLocked()}
+            mathModeActive={mathModeAgentLocked() && !mathDisabled()}
             setPromptDockRef={(el) => {
               promptDock = el
             }}

@@ -155,6 +155,14 @@ export const Info = Schema.Struct({
     description: "Command configuration, see https://opencode.ai/docs/commands",
   }),
   skills: Schema.optional(ConfigSkills.Info).annotate({ description: "Additional skill folder paths" }),
+  math: Schema.optional(
+    Schema.Struct({
+      disabled: Schema.optional(Schema.Boolean).annotate({
+        description:
+          "Disable Math Mode. Hides its UI entry points and excludes its built-in skills and agents. Defaults to false.",
+      }),
+    }),
+  ).annotate({ description: "Math Mode configuration" }),
   reference: Schema.optional(ConfigReference.Info).annotate({
     description: "Named git or local directory references that can be mentioned as @alias or @alias/path",
   }),

@@ -108,6 +108,8 @@ const MATH_SKILLS = [
   },
 ] as const
 
+export const MATH_SKILL_NAMES: ReadonlySet<string> = new Set(MATH_SKILLS.map((skill) => skill.name))
+
 export const Info = Schema.Struct({
   name: Schema.String,
   description: Schema.optional(Schema.String),
@@ -365,21 +367,37 @@ export const layer = Layer.effect(
       }),
     )
 
+    // Math Mode can be switched off at runtime (config.math.disabled), so the
+    // built-in math skills are filtered when serving lists/lookups instead of
+    // being dropped from the cached state.
+    const mathDisabled = Effect.fn("Skill.mathDisabled")(function* () {
+      const cfg = yield* config.get()
+      return cfg.math?.disabled === true
+    })
+
+    const visible = Effect.fn("Skill.visible")(function* () {
+      const s = yield* InstanceState.get(state)
+      const list = Object.values(s.skills)
+      if (!(yield* mathDisabled())) return list
+      log.info("math mode disabled, hiding built-in math skills")
+      return list.filter((skill) => !MATH_SKILL_NAMES.has(skill.name))
+    })
+
     const get = Effect.fn("Skill.get")(function* (name: string) {
+      if (MATH_SKILL_NAMES.has(name) && (yield* mathDisabled())) return undefined
       const s = yield* InstanceState.get(state)
       return s.skills[name]
     })
 
     const require = Effect.fn("Skill.require")(function* (name: string) {
-      const s = yield* InstanceState.get(state)
-      const info = s.skills[name]
+      const info = yield* get(name)
       if (info) return info
-      return yield* new NotFoundError({ name, available: Object.keys(s.skills).toSorted() })
+      const list = (yield* visible()).map((skill) => skill.name)
+      return yield* new NotFoundError({ name, available: list })
     })
 
     const all = Effect.fn("Skill.all")(function* () {
-      const s = yield* InstanceState.get(state)
-      return Object.values(s.skills)
+      return yield* visible()
     })
 
     const dirs = Effect.fn("Skill.dirs")(function* () {
@@ -387,8 +405,7 @@ export const layer = Layer.effect(
     })
 
     const available = Effect.fn("Skill.available")(function* (agent?: Agent.Info) {
-      const s = yield* InstanceState.get(state)
-      const list = Object.values(s.skills).toSorted((a, b) => a.name.localeCompare(b.name))
+      const list = (yield* visible()).toSorted((a, b) => a.name.localeCompare(b.name))
       if (!agent) return list
       return list.filter((skill) => Permission.evaluate("skill", skill.name, agent.permission).action !== "deny")
     })

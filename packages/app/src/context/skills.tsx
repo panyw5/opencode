@@ -1,6 +1,7 @@
-import { createEffect, createMemo } from "solid-js"
+import { createEffect, createMemo, on } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import { useGlobalSync } from "@/context/global-sync"
 import { useSDK } from "@/context/sdk"
 import { cachedSkills, loadSkills, type SkillInfo } from "@/utils/skills"
 
@@ -9,6 +10,7 @@ export const { use: useSkills, provider: SkillsProvider } = createSimpleContext(
   gate: false,
   init: () => {
     const sdk = useSDK()
+    const globalSync = useGlobalSync()
     const [state, setState] = createStore({
       list: cachedSkills(sdk) ?? ([] as SkillInfo[]),
       loading: false,
@@ -34,6 +36,23 @@ export const { use: useSkills, provider: SkillsProvider } = createSimpleContext(
           setState("loading", false)
         })
     })
+
+    // Math skills are filtered server-side from config.math.disabled, so the
+    // cached list must be re-fetched whenever that flag flips.
+    createEffect(
+      on(
+        () => globalSync.data.config.math?.disabled === true,
+        () => {
+          console.debug(`[skills] math config changed, reloading list`)
+          void loadSkills(sdk, { force: true })
+            .then((list) => {
+              setState("list", list)
+            })
+            .catch(() => undefined)
+        },
+        { defer: true },
+      ),
+    )
 
     return {
       list: createMemo(() => state.list),

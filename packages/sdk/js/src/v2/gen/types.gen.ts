@@ -1195,6 +1195,9 @@ export type Config = {
     paths?: Array<string>
     urls?: Array<string>
   }
+  math?: {
+    disabled?: boolean
+  }
   reference?: ReferenceConfig
   watcher?: {
     ignore?: Array<string>
@@ -2206,6 +2209,9 @@ export type Config6 = {
   skills?: {
     paths?: Array<string>
     urls?: Array<string>
+  }
+  math?: {
+    disabled?: boolean
   }
   reference?: ReferenceConfig
   watcher?: {

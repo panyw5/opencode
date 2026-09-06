@@ -75,6 +75,31 @@ it.instance("build agent has correct default properties", () =>
   }),
 )
 
+it.instance("keeps Math Mode agents when not disabled", () =>
+  Effect.gen(function* () {
+    const agents = yield* load((svc) => svc.list())
+    const names = agents.map((a) => a.name)
+    expect(names).toContain("math-orchestrator")
+    expect(names).toContain("math-worker")
+    expect(names).toContain("math-verifier")
+  }),
+)
+
+it.instance(
+  "excludes Math Mode agents when config.math.disabled is set",
+  () =>
+    Effect.gen(function* () {
+      const agents = yield* load((svc) => svc.list())
+      const names = agents.map((a) => a.name)
+      expect(names).not.toContain("math-orchestrator")
+      expect(names).not.toContain("math-worker")
+      expect(names).not.toContain("math-verifier")
+      expect(names).toContain("build")
+      expect(names).toContain("plan")
+    }),
+  { git: true, config: { math: { disabled: true } } },
+)
+
 it.instance("plan agent denies edits except .opencode/plans/*", () =>
   Effect.gen(function* () {
     const plan = yield* load((svc) => svc.get("plan"))

@@ -341,6 +341,38 @@ description: A skill in the .claude/skills directory.
     ),
   )
 
+  it.live("hides built-in Math Mode skills when config.math.disabled is set", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const skill = yield* Skill.Service
+          const names = (yield* skill.all()).map((item) => item.name)
+          expect(names).not.toContain("math-initialize")
+          expect(names).not.toContain("math-elaboration")
+          expect(names).not.toContain("math-query-memory")
+          expect(names).not.toContain("verify-proof")
+          expect(names).toContain("customize-opencode")
+          const error = yield* Effect.flip(skill.require("math-initialize"))
+          expect(error).toBeInstanceOf(Skill.NotFoundError)
+          expect(error.message).toContain("Available skills: customize-opencode")
+        }),
+      { git: true, config: { math: { disabled: true } } },
+    ),
+  )
+
+  it.live("keeps built-in Math Mode skills when math is not disabled", () =>
+    provideTmpdirInstance(
+      () =>
+        Effect.gen(function* () {
+          const skill = yield* Skill.Service
+          const names = (yield* skill.all()).map((item) => item.name)
+          expect(names).toContain("math-initialize")
+          expect(names).toContain("verify-proof")
+        }),
+      { git: true },
+    ),
+  )
+
   it.effect("exposes tagged expected skill failure classes", () =>
     Effect.sync(() => {
       const invalid = new Skill.InvalidError({ path: "/tmp/SKILL.md", message: "Invalid skill frontmatter" })

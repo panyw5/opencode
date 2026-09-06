@@ -39,6 +39,10 @@ const MATH_WORKER_SKILLS = [
   "verify-proof",
 ] as const
 
+// Built-in Math Mode agents. Excluded from Agent.list() when Math Mode is
+// disabled via config.math.disabled so they are not offered anywhere.
+const MATH_AGENTS: ReadonlySet<string> = new Set(["math-orchestrator", "math-worker", "math-verifier"])
+
 export const Info = Schema.Struct({
   name: Schema.String,
   description: Schema.optional(Schema.String),
@@ -447,9 +451,13 @@ export const layer = Layer.effect(
 
         const list = Effect.fnUntraced(function* () {
           const cfg = yield* config.get()
+          // Agent.get() stays permissive so existing Math Mode sessions keep
+          // working; the listing decides what the UI and model are offered.
+          const items = cfg.math?.disabled
+            ? values(agents).filter((item) => !MATH_AGENTS.has(item.name))
+            : values(agents)
           return pipe(
-            agents,
-            values(),
+            items,
             sortBy(
               [(x) => (cfg.default_agent ? x.name === cfg.default_agent : x.name === "build"), "desc"],
               [(x) => x.name, "asc"],
