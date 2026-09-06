@@ -124,10 +124,35 @@ export function SessionTabsBar() {
     return decode64(slug) ?? ""
   })
   const onSessionRoute = createMemo(() => /\/session(?:\/|$)/.test(location.pathname))
+  // While a draft promotes into a real session the router transition keeps
+  // params.id stale, so both the draft tab and the "no active tab" state would
+  // flash for the whole transition. The handoff envelope marks the promotion;
+  // hide the consumed draft entry and let its target session tab render active.
+  // Must stay above activeTab, which reads it during setup.
+  const promoting = createMemo(() => {
+    const pending = layout.handoff.tabs()
+    if (!pending) return undefined
+    if (!onSessionRoute()) return undefined
+    if (params.id) return undefined
+    if (Date.now() - pending.at > 60_000) return undefined
+    const draftSlug = pending.draftDir ?? pending.dir
+    if (draftSlug !== params.dir) return undefined
+    if (!drafts().some((draft) => workspaceKey(draft) === workspaceKey(routeDir()))) return undefined
+    return pending
+  })
   const activeTab = createMemo(() => {
     const id = params.id
     const directory = routeDir()
-    if (!id || !directory) return undefined
+    if (!id || !directory) {
+      // Draft promotion: the target session tab is active before params.id commits.
+      const pending = promoting()
+      if (!pending) return undefined
+      const promotedDirectory = decode64(pending.dir)
+      if (!promotedDirectory) return undefined
+      return tabs().find(
+        (tab) => tab.id === pending.id && workspaceKey(tab.directory) === workspaceKey(promotedDirectory),
+      )
+    }
     const key = sessionBarKey({ directory, id })
     return tabs().find((tab) => sessionBarKey(tab) === key)
   })
@@ -152,7 +177,13 @@ export function SessionTabsBar() {
     const directory = routeDir()
     return drafts().some((draft) => workspaceKey(draft) === workspaceKey(directory)) ? directory : ""
   })
-  const visibleDrafts = createMemo(() => visibleSessionBarDrafts(drafts(), draftDirectory()))
+  const visibleDrafts = createMemo(() => {
+    const base = visibleSessionBarDrafts(drafts(), draftDirectory())
+    const pending = promoting()
+    if (!pending) return base
+    const consumed = decode64(pending.draftDir ?? pending.dir)
+    return consumed ? base.filter((draft) => workspaceKey(draft) !== workspaceKey(consumed)) : base
+  })
   const shown = createMemo(() => {
     if (!settings.general.sessionTabsBar()) return false
     return tabs().length > 0 || visibleDrafts().length > 0

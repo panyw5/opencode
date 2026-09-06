@@ -765,7 +765,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         )
         performance.mark("submit:navigate:start")
         batch(() => {
-          layout.handoff.setTabs(base64Encode(sessionDirectory), sessionID)
+          // draftDir lets the tab bar and draft route mask the consumed draft
+          // for the rest of the router transition (params.id stays stale until
+          // the new route commits).
+          layout.handoff.setTabs(base64Encode(sessionDirectory), sessionID, base64Encode(currentDirectory))
           navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
           sessionTabs.promoteDraft({ directory: sessionDirectory, id: sessionID }, currentDirectory)
         })

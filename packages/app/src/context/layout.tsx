@@ -163,6 +163,8 @@ type TabHandoff = {
   dir: string
   id: string
   at: number
+  /** Draft route directory (slug) the promotion started from; may differ from `dir` for worktree sessions. */
+  draftDir?: string
 }
 
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
@@ -818,8 +820,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       ready,
       handoff: {
         tabs: createMemo(() => store.handoff?.tabs),
-        setTabs(dir: string, id: string) {
-          setStore("handoff", "tabs", { dir, id, at: Date.now() })
+        setTabs(dir: string, id: string, draftDir?: string) {
+          setStore("handoff", "tabs", { dir, id, at: Date.now(), draftDir })
         },
         clearTabs() {
           if (!store.handoff?.tabs) return

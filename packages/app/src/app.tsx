@@ -249,10 +249,23 @@ const SessionRoute = () => {
     const directory = decode64(params.dir ?? "") ?? ""
     return layout.sessionBar.drafts().some((draft) => workspaceKey(draft) === workspaceKey(directory))
   }
+  // While a submitted draft promotes into a session, the router transition
+  // keeps params.id stale and the draft page would linger as an empty composer.
+  // The promotion envelope marks that window; show a neutral placeholder until
+  // the session route commits.
+  const promoting = () => {
+    if (params.id) return false
+    const pending = layout.handoff.tabs()
+    if (!pending) return false
+    if (Date.now() - pending.at > 60_000) return false
+    return (pending.draftDir ?? pending.dir) === params.dir
+  }
   return (
     <SessionProviders>
-      <Show when={allowed()}>
-        <Session />
+      <Show when={allowed()} fallback={<div class="size-full bg-background-stronger" />}>
+        <Show when={!promoting()} fallback={<div class="size-full bg-background-stronger" />}>
+          <Session />
+        </Show>
       </Show>
     </SessionProviders>
   )
