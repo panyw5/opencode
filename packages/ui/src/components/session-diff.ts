@@ -37,6 +37,9 @@ type PatchSource = {
   patch?: string
   before?: string
   after?: string
+  additions?: number
+  deletions?: number
+  status?: "added" | "deleted" | "modified"
 }
 
 function patch(diff: PatchSource) {
