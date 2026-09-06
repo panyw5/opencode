@@ -23,6 +23,20 @@ There are several opencode instances:
   bun packages/desktop/scripts/cdp.ts screenshot /tmp/opencode-cdp.png
   ```
 
+## Keybinds are user-configurable — never assume source defaults
+
+Keybinds registered in code (e.g. `keybind: "mod+shift+s"` in `pages/layout.tsx`) are DEFAULTS only.
+The user can remap any command in Settings, and this machine has (e.g. `session.new` → `mod+n`, `sidebar.toggle` → `mod+[`).
+
+- Effective keybind = `settings.keybinds[commandId] ?? source default` (resolved by `bind()` in `packages/app/src/context/command.tsx`).
+- BEFORE dispatching keyboard shortcuts over CDP (or reasoning about "why did shortcut X do nothing"), read the actual overrides:
+  ```
+  bun packages/desktop/scripts/cdp.ts eval 'window.api.storeGet("default.dat", "settings.v3").then(v => JSON.parse(v).keybinds)'
+  ```
+- Desktop persistence goes through the Electron IPC bridge (`window.api.storeGet/storeKeys`), NOT localStorage — localStorage is a dead end.
+- TRAP: the persisted command catalog (`command.catalog.v1` in the same storage) lists DEFAULT keybinds only, never user overrides. Do not trust it for actual bindings.
+- A remapped- or unbound-command keypress dispatches nothing and logs nothing; `mod+x` defaults may legitimately do nothing.
+
 Obey the following rules at all times:
 - Read backend logs YOURSELF!!!! You are forbidden to ask user to read backend log for you!!!!
 - When fixing bug: ADD LOGS AT EVERY STEP!!!! ASSUME YOU ARE MORON, AND NEED LOGS TO DO ANY DEBUGGING
