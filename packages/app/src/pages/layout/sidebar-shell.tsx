@@ -147,10 +147,12 @@ export const SidebarContent = (props: {
               data-action="home-open"
               aria-label={props.homeLabel()}
               aria-current={props.homeActive() ? "page" : undefined}
-              class="flex size-10 items-center justify-center rounded-xl border outline-none transition-[background-color,border-color,box-shadow,color,transform] duration-150 focus-visible:ring-2 focus-visible:ring-border-focus-base"
+              style={{ transform: props.homeActive() ? "translateY(-3px) scale(1.16)" : undefined }}
+              class="flex size-10 items-center justify-center rounded-full outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-border-focus"
               classList={{
-                "border-border-brand-base bg-surface-interactive-selected text-icon-strong shadow-xs": props.homeActive(),
-                "border-transparent bg-transparent text-icon-weak hover:border-border-base hover:bg-surface-base-hover hover:text-icon-base active:scale-[0.96]":
+                "relative z-10 border-2 border-border-interactive-selected bg-surface-interactive-weak text-icon-strong shadow-md":
+                  props.homeActive(),
+                "border border-transparent bg-transparent text-icon-weak hover:border-border-base hover:bg-surface-base-hover hover:text-icon-base active:scale-[0.96]":
                   !props.homeActive(),
               }}
               onClick={props.onOpenHome}
