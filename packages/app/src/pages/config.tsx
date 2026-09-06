@@ -109,6 +109,7 @@ import { configPluginKey, pluginKey, relativePluginSpecifier, updatePluginEntrie
 import { CONFIG_PAGE_REFRESH_EVENT, refreshAfterConfigWrite } from "@/utils/config-reload"
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
+import { agentFilePath, agentNameIssue, agentTemplate } from "./config-agent-create"
 import { parseAgentMarkdown, upsertAgentMarkdownModel } from "./config-agent-markdown"
 import { AgentMarkdownMeta } from "./config-agent-markdown-meta"
 import {
@@ -211,6 +212,7 @@ type CustomState = FormState & {
 }
 
 const CUSTOM_NEW = "provider:_new_custom"
+const AGENT_NEW = "agent:_new_custom"
 const SKILL_NEW = "skill:_new_custom"
 const COMMAND_NEW = "cmd:_new_custom"
 const MCP_NEW = "mcp:_new"
@@ -3843,6 +3845,12 @@ export default function ConfigPage() {
     ga: gaCfg(),
     hm: hmCfg(),
     cliAgents: {} as Partial<Record<CliAgentID, ReturnType<typeof cliAgentCfg>>>,
+    agentTitle: "",
+    agentErr: "",
+    agentCreateRoot: "",
+    agentCreateProjectRoot: "",
+    agentCreateProjectLabel: "",
+    agentSaving: false,
     skillTitle: "",
     skillErr: "",
     skillPath: "",
@@ -4715,6 +4723,26 @@ export default function ConfigPage() {
     })),
   )
 
+  const agentDraft = createMemo<DocItem | undefined>(() => {
+    if (state.pick !== AGENT_NEW) return
+    const project = !!state.agentCreateProjectRoot
+    const root = state.agentCreateRoot || space()?.agentsRoot
+    if (!root) return
+    const title = state.agentTitle.trim()
+    return {
+      id: AGENT_NEW,
+      label: title || t("config.agents.create.action"),
+      path: agentFilePath(root, title),
+      editable: true,
+      source: project ? "project" : "opencode",
+      group: project ? "project" : "opencode",
+      project: project ? state.agentCreateProjectLabel : undefined,
+      root: project ? state.agentCreateProjectRoot : undefined,
+      origin: ".opencode",
+      content: state.text,
+    }
+  })
+
   const skills = createMemo<SkillItem[]>(() => {
     const root = local(space()?.skillsRoot ?? "")
     const claude = mainPath().home ? join(mainPath().home, ".claude", "skills") : undefined
@@ -5023,7 +5051,7 @@ export default function ConfigPage() {
 
   const agents = createMemo<DocItem[]>(() => {
     const seen = new Set<string>()
-    return [...globalAgents(), ...(diskAgents.latest ?? []), ...(pluginAgents.latest ?? []), ...runtimeAgents()]
+    return [...(agentDraft() ? [agentDraft()!] : []), ...globalAgents(), ...(diskAgents.latest ?? []), ...(pluginAgents.latest ?? []), ...runtimeAgents()]
       .filter((item) => {
         const key = norm(item.path)
         if (seen.has(key)) return false
@@ -5053,14 +5081,21 @@ export default function ConfigPage() {
   const agentPlugin = createMemo(() => agents().filter((item) => item.group === "plugin" && agentMatches(item)))
 
   const projectAgentGroups = createMemo(() => {
-    const items = agentProject()
-    const groups = new Map<string, DocItem[]>()
-    for (const item of items) {
-      const key = item.project ?? ""
-      if (!groups.has(key)) groups.set(key, [])
-      groups.get(key)!.push(item)
+    const groups = new Map<string, { label: string; path: string; items: DocItem[] }>()
+    for (const project of opened()) {
+      groups.set(project.worktree, {
+        label: project.name ?? name(project.worktree),
+        path: project.worktree,
+        items: [],
+      })
     }
-    return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    for (const item of agentProject()) {
+      const key = item.root ?? item.project ?? item.path
+      const group = groups.get(key)
+      if (group) group.items.push(item)
+      else groups.set(key, { label: item.project ?? name(key), path: item.root ?? key, items: [item] })
+    }
+    return [...groups.values()].sort((a, b) => a.label.localeCompare(b.label))
   })
 
   const agentProjectOpen = (key: string) => !!state.treeClosed[`agent-project:${key}`]
@@ -5827,6 +5862,7 @@ export default function ConfigPage() {
   const agentWait = createMemo(
     () =>
       state.section === "agents" &&
+      state.pick !== AGENT_NEW &&
       (loaded.loading || diskAgents.loading || pluginAgents.loading) &&
       agents().length === 0,
   )
@@ -5972,7 +6008,10 @@ export default function ConfigPage() {
       if (state.pick === CUSTOM_NEW) return [CUSTOM_NEW, ...list]
       return list.length > 0 ? list : [CUSTOM_NEW]
     }
-    if (section === "agents") return agents().map((item) => item.id)
+    if (section === "agents") {
+      const list = agents().map((item) => item.id)
+      return state.pick === AGENT_NEW ? [AGENT_NEW, ...list] : list
+    }
     if (section === "claws") return claws().map((item) => item.id)
     if (section === "skills") {
       const list = skillDocs().map((item) => item.id)
@@ -6066,7 +6105,7 @@ export default function ConfigPage() {
       setState("pick", id)
       return
     }
-    if (id === COMMAND_NEW || id === SKILL_NEW) {
+    if (id === COMMAND_NEW || id === SKILL_NEW || id === AGENT_NEW) {
       setState("pick", id)
       return
     }
@@ -7398,6 +7437,120 @@ export default function ConfigPage() {
     })
   }
 
+  function createAgent(projectRoot = "", projectLabel = "") {
+    const text = agentTemplate("")
+    setState("pick", AGENT_NEW)
+    setState("doc", AGENT_NEW)
+    setState("text", text)
+    setState("saved", text)
+    setState("busy", false)
+    setState("agentTitle", "")
+    setState("agentErr", "")
+    setState("agentCreateRoot", projectRoot ? join(projectRoot, ".opencode", "agents") : "")
+    setState("agentCreateProjectRoot", projectRoot)
+    setState("agentCreateProjectLabel", projectLabel)
+    setState("agentSaving", false)
+  }
+
+  function setAgentTitle(value: string) {
+    const prev = state.agentTitle
+    setState("agentTitle", value)
+    setState("agentErr", "")
+    if (state.text !== agentTemplate(prev)) return
+    const text = agentTemplate(value)
+    setState("text", text)
+    setState("saved", text)
+  }
+
+  function validateAgentTitle() {
+    const issue = agentNameIssue(state.agentTitle)
+    if (!issue) return ""
+    if (issue === "empty") return t("config.agents.create.error.required")
+    if (issue === "reserved") return t("config.agents.create.error.reserved")
+    return t("config.agents.create.error.slash")
+  }
+
+  async function saveAgent() {
+    const root = state.agentCreateRoot || space()?.agentsRoot
+    if (!root || !platform.createLocalFile) {
+      setState("agentErr", t("config.error.globalConfigUnavailable"))
+      return
+    }
+    const err = validateAgentTitle()
+    if (err) {
+      setState("agentErr", err)
+      return
+    }
+    const title = state.agentTitle.trim()
+    const path = agentFilePath(root, title)
+    const text = state.text
+    const isProject = !!state.agentCreateProjectRoot
+    setState("agentSaving", true)
+    await platform
+      .createLocalFile(path, text)
+      .then(async () => {
+        console.info(`[config] agent create saved path=${path} project=${String(isProject)}`)
+        cache.set(path, text)
+        await refreshAfterConfigWrite({
+          source: `agent-create:${path}`,
+          refreshConfig: () => globalSync.refreshConfig(mainDomain),
+          refresh: () => bump("workspaceRev", "agentRev"),
+        })
+        showToast({ variant: "success", title: t("common.save"), description: title })
+        await open({
+          id: `agent:${path}`,
+          label: title,
+          path,
+          editable: true,
+          source: isProject ? "project" : "opencode",
+          group: isProject ? "project" : "opencode",
+          origin: ".opencode",
+          root: isProject ? state.agentCreateProjectRoot : undefined,
+          project: isProject ? state.agentCreateProjectLabel : undefined,
+        })
+      })
+      .catch((err: unknown) => {
+        setState("agentErr", err instanceof Error ? err.message : String(err))
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      })
+      .finally(() => setState("agentSaving", false))
+  }
+
+  function cancelAgentCreate() {
+    const text = agentTemplate("")
+    batch(() => {
+      setState("pick", "")
+      setState("doc", "")
+      setState("text", text)
+      setState("saved", text)
+      setState("agentTitle", "")
+      setState("agentErr", "")
+      setState("agentCreateRoot", "")
+      setState("agentCreateProjectRoot", "")
+      setState("agentCreateProjectLabel", "")
+      setState("agentSaving", false)
+      setState("busy", false)
+    })
+  }
+
+  function applyAgentDraftModel(next: string) {
+    const current = parseAgentMarkdown(state.text).model ?? ""
+    if (current === next) {
+      console.info(`[config] agent draft model unchanged model=${current}`)
+      return
+    }
+    const updated = upsertAgentMarkdownModel(state.text, next || undefined)
+    console.info(
+      `[config] agent draft model from=${current} to=${next} changed=${String(updated !== state.text)}`,
+    )
+    if (updated === state.text) return
+    setState("text", updated)
+    setState("saved", updated)
+  }
+
   async function installMarketSkill(
     item: SkillMarketItem,
     scope: SkillMarketInstallScope,
@@ -7994,6 +8147,18 @@ export default function ConfigPage() {
                       description={t("config.agents.header")}
                       icon={sectionIcon("agents")}
                     />
+                    <div class="mt-4 flex flex-wrap items-center gap-2">
+                      <Button
+                        size="small"
+                        variant="ghost"
+                        icon="folder-add-left"
+                        class="h-8 rounded-lg border border-border-weak-base bg-background-base px-2.5 pr-3 text-12-medium text-text-base shadow-none transition-colors hover:border-border-strong hover:bg-surface-base-hover active:border-border-base active:bg-surface-base-active focus-visible:border-border-strong focus-visible:bg-surface-base-hover disabled:border-border-weak-base disabled:bg-background-base disabled:text-text-weaker"
+                        onClick={() => createAgent()}
+                        disabled={!space()?.agentsRoot || !platform.createLocalFile}
+                      >
+                        {t("config.agents.create.action")}
+                      </Button>
+                    </div>
                   </Match>
                   <Match when={state.section === "claws" && clawsSectionEnabled()}>
                     <ConfigPaneTitle
@@ -8270,7 +8435,7 @@ export default function ConfigPage() {
                             </div>
                           </Show>
 
-                          <Show when={agentProject().length > 0}>
+                          <Show when={projectAgentGroups().length > 0}>
                             <div class="flex flex-col">
                               <div class="flex items-center justify-between gap-3 px-1">
                                 <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
@@ -8282,15 +8447,18 @@ export default function ConfigPage() {
                               </div>
                               <div class="mt-2 flex flex-col gap-3">
                                 <For each={projectAgentGroups()}>
-                                  {([name, items]) => (
+                                  {(group) => (
                                     <ProjectListGroup
-                                      label={name}
-                                      path={items[0]?.root}
-                                      count={items.length}
-                                      open={agentProjectOpen(name)}
-                                      onToggle={() => toggleAgentProject(name)}
+                                      label={group.label}
+                                      path={group.path}
+                                      count={group.items.length}
+                                      open={agentProjectOpen(group.path ?? group.label)}
+                                      onToggle={() => toggleAgentProject(group.path ?? group.label)}
+                                      onAdd={() => group.path && createAgent(group.path, group.label)}
+                                      addLabel={t("config.agents.create.action")}
+                                      addDisabled={!group.path || !platform.createLocalFile}
                                     >
-                                      <For each={items}>
+                                      <For each={group.items}>
                                         {(item) => (
                                           <PluginListButton
                                             active={state.pick === item.id}
@@ -8299,7 +8467,9 @@ export default function ConfigPage() {
                                             meta={[item.origin, short(item.path, item.root)]
                                               .filter(Boolean)
                                               .join(" · ")}
-                                            onClick={() => void open(item)}
+                                            onClick={() =>
+                                              item.id === AGENT_NEW ? setState("pick", AGENT_NEW) : void open(item)
+                                            }
                                           />
                                         )}
                                       </For>
@@ -9306,51 +9476,69 @@ export default function ConfigPage() {
                   when={!agentWait()}
                   fallback={<Wait text={`${t("common.loading")}${t("common.loading.ellipsis")}`} />}
                 >
-                  <Show
-                    when={currentJsoncAgent()}
-                    fallback={
-                      <Editor
-                        item={currentDoc()}
+                  <Switch>
+                    <Match when={state.pick === AGENT_NEW}>
+                      <AgentCreator
+                        root={state.agentCreateRoot || space()?.agentsRoot}
+                        title={state.agentTitle}
                         text={state.text}
-                        dirty={dirty()}
-                        busy={state.busy}
+                        busy={state.agentSaving}
+                        err={state.agentErr || undefined}
+                        onTitle={setAgentTitle}
                         onInput={(value) => setState("text", value)}
-                        onSave={() => void save()}
-                        onOpenFolder={file(currentDoc()?.path ?? "") ? openFolder : undefined}
-                        onCopyPath={file(currentDoc()?.path ?? "") ? copyPath : undefined}
-                        copyPathCopied={state.copied === "config-path"}
-                        extra={
-                          <Show when={currentAgent()}>
-                            <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
-                              {agentModeLabel(
-                                parseAgentMarkdown(state.text).mode ?? loadedMap().get(currentAgent()!.label)?.mode,
-                              )}
-                            </span>
-                          </Show>
-                        }
-                        banner={
-                          <Show when={file(currentDoc()?.path ?? "")}>
-                            <AgentMarkdownMeta
-                              text={state.text}
-                              editable={!!currentDoc()?.editable}
-                              busy={state.busy}
-                              onModelChange={(next) => void applyAgentMarkdownModel(next)}
-                            />
-                          </Show>
-                        }
-                        empty={t("config.agents.empty")}
-                        markdown
+                        onModelChange={applyAgentDraftModel}
+                        onSave={() => void saveAgent()}
+                        onCancel={cancelAgentCreate}
                       />
-                    }
-                  >
-                    {(name) => (
-                      <JsoncAgentEditor
-                        name={name()}
-                        config={configFileAgents()?.[name()]}
-                        onSave={(form) => saveJsoncAgent(name(), form)}
-                      />
-                    )}
-                  </Show>
+                    </Match>
+                    <Match when={true}>
+                      <Show
+                        when={currentJsoncAgent()}
+                        fallback={
+                          <Editor
+                            item={currentDoc()}
+                            text={state.text}
+                            dirty={dirty()}
+                            busy={state.busy}
+                            onInput={(value) => setState("text", value)}
+                            onSave={() => void save()}
+                            onOpenFolder={file(currentDoc()?.path ?? "") ? openFolder : undefined}
+                            onCopyPath={file(currentDoc()?.path ?? "") ? copyPath : undefined}
+                            copyPathCopied={state.copied === "config-path"}
+                            extra={
+                              <Show when={currentAgent()}>
+                                <span class="rounded-full bg-surface-secondary px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em] text-text-weak">
+                                  {agentModeLabel(
+                                    parseAgentMarkdown(state.text).mode ?? loadedMap().get(currentAgent()!.label)?.mode,
+                                  )}
+                                </span>
+                              </Show>
+                            }
+                            banner={
+                              <Show when={file(currentDoc()?.path ?? "")}>
+                                <AgentMarkdownMeta
+                                  text={state.text}
+                                  editable={!!currentDoc()?.editable}
+                                  busy={state.busy}
+                                  onModelChange={(next) => void applyAgentMarkdownModel(next)}
+                                />
+                              </Show>
+                            }
+                            empty={t("config.agents.empty")}
+                            markdown
+                          />
+                        }
+                      >
+                        {(name) => (
+                          <JsoncAgentEditor
+                            name={name()}
+                            config={configFileAgents()?.[name()]}
+                            onSave={(form) => saveJsoncAgent(name(), form)}
+                          />
+                        )}
+                      </Show>
+                    </Match>
+                  </Switch>
                 </Show>
               </Match>
 
@@ -9521,6 +9709,79 @@ function SkillCreator(props: {
             {language.t("config.editor.structure")}
           </div>
           <div class="text-12-regular text-text-weak">{language.t("config.skills.create.structure")}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AgentCreator(props: {
+  root?: string
+  title: string
+  text: string
+  busy: boolean
+  err?: string
+  onTitle: (value: string) => void
+  onInput: (value: string) => void
+  onModelChange: (next: string) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  const language = useLanguage()
+
+  return (
+    <div class="flex h-full min-h-0 flex-col">
+      <div class="border-b border-border-weak-base px-5 py-4">
+        <div class="flex items-center gap-3">
+          <input
+            type="text"
+            class="w-full bg-transparent text-20-medium text-text-strong outline-none placeholder:text-text-weaker"
+            placeholder={language.t("config.agents.create.title")}
+            value={props.title}
+            onInput={(event) => props.onTitle(event.currentTarget.value)}
+            disabled={props.busy}
+          />
+          <Button size="small" variant="ghost" icon="close" onClick={props.onCancel} disabled={props.busy}>
+            {language.t("common.cancel")}
+          </Button>
+          <SaveButton
+            label={language.t("common.save")}
+            onClick={props.onSave}
+            disabled={props.busy || !props.title.trim()}
+          />
+        </div>
+        <Show when={props.root}>
+          {(root) => (
+            <div class="mt-2 break-all font-mono text-[12px] leading-5 text-text-weak">
+              {agentFilePath(root(), props.title)}
+            </div>
+          )}
+        </Show>
+        <AgentMarkdownMeta text={props.text} editable={true} busy={props.busy} onModelChange={props.onModelChange} />
+      </div>
+      <Show when={props.err}>
+        <div class="border-b border-border-weak-base bg-surface-danger-base/10 px-6 py-2 text-12-regular text-text-danger">
+          {props.err}
+        </div>
+      </Show>
+      <div class="grid min-h-0 flex-1 auto-rows-fr gap-4 px-5 py-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div class="flex min-h-0 flex-col gap-4">
+          <div class="min-h-0 flex-1">
+            <MarkdownField
+              text={props.text}
+              busy={props.busy}
+              editable={true}
+              onInput={props.onInput}
+              paint={paint}
+              preview
+            />
+          </div>
+        </div>
+        <div class="flex h-full min-h-0 flex-col rounded-xl border border-border-weak-base bg-background-base p-3">
+          <div class="mb-3 text-11-medium uppercase tracking-[0.08em] text-text-weak">
+            {language.t("config.editor.structure")}
+          </div>
+          <div class="text-12-regular text-text-weak">{language.t("config.agents.create.structure")}</div>
         </div>
       </div>
     </div>

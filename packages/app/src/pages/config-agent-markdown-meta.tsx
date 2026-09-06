@@ -83,7 +83,7 @@ export function AgentMarkdownMeta(props: {
                 icon="close"
                 variant="ghost"
                 iconSize="small"
-                class="size-9 shrink-0"
+                class="w-9 h-auto! aspect-auto! shrink-0 self-stretch"
                 disabled={props.busy}
                 data-action="agent-markdown-model-clear"
                 aria-label={language.t("config.agents.field.default")}
