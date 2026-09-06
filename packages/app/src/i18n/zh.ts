@@ -200,12 +200,12 @@ export const dict = {
 
   "command.input.focus": "聚焦输入框",
 
-  "command.terminal.toggle": "切换终端",
+  "command.terminal.toggle": "终端",
 
-  "command.fileTree.toggle": "切换文件树",
+  "command.fileTree.toggle": "文件树",
 
-  "command.review.toggle": "切换审查",
-  "command.filePreview.toggle": "切换文件预览",
+  "command.review.toggle": "审查",
+  "command.filePreview.toggle": "文件预览",
 
   "command.terminal.new": "新建终端",
   "command.terminal.new.description": "创建新的终端标签页",
