@@ -432,6 +432,9 @@ export const { use: useCommand, provider: CommandProvider } = createSimpleContex
       }
 
       if (!option) return false
+      if (import.meta.env.DEV) {
+        console.debug(`[command-keybind] dispatch id=${option.id} signature=${sig}`)
+      }
       event.preventDefault()
       option.onSelect?.("keybind")
       return true

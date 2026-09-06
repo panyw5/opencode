@@ -1410,6 +1410,33 @@ export default function Layout(props: ParentProps) {
         keybind: "mod+shift+s",
         slash: "new",
         onSelect: (source) => {
+          // Home has no project context, so ask which project the session
+          // belongs to, then jump straight into its new-session view.
+          if (location.pathname === "/") {
+            const canPick = layout.projects.list().length > 0 || enabledExtraAgents(server.list).length > 0
+            console.debug(
+              `[session-new] source=${source ?? "unknown"} route=${location.pathname} home-picker=${canPick}`,
+            )
+            if (!canPick) return
+            dialog.show(
+              () => (
+                <DialogSwitchProject
+                  onSelect={(directory) => {
+                    sessionTabs.createDraft(directory, source ?? "menu")
+                    navigateWithSidebarReset(`/${base64Encode(directory)}/session`)
+                    layout.sidebar.close()
+                  }}
+                  current={() => currentProject()?.entry}
+                />
+              ),
+              undefined,
+              {
+                modal: false,
+                preventScroll: false,
+              },
+            )
+            return
+          }
           const routeDirectory = routeDir()
           const sessionDirectory =
             params.id && routeDirectory
