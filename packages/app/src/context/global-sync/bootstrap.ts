@@ -47,6 +47,15 @@ function waitForPaint() {
   })
 }
 
+// Shared with global-sync's directory-unavailable handling: bootstrapping a
+// directory that no longer exists on the current server (removed remote,
+// deleted local folder, stale history) is expected noise, not an error to
+// surface.
+export function isMissingDirectoryError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  return message.includes("DirectoryNotFound") || message.includes("ENOENT") || message.includes("no such file or directory")
+}
+
 function errors(list: PromiseSettledResult<unknown>[]) {
   return list.filter((item): item is PromiseRejectedResult => item.status === "rejected").map((item) => item.reason)
 }
@@ -317,6 +326,13 @@ export async function bootstrapDirectory(input: {
 
   const errs = errors(await runAll(fast))
   if (errs.length > 0) {
+    if (isMissingDirectoryError(errs[0])) {
+      // The directory no longer exists on this server (removed remote, deleted
+      // local folder, stale history). Rethrow so the caller can mark it
+      // unavailable instead of retrying and toasting on every boot.
+      console.debug(`[global-sync] bootstrap skipped directory=${input.directory} reason=directory-missing`)
+      throw errs[0]
+    }
     console.error("Failed to bootstrap instance", errs[0])
     const project = getFilename(input.directory)
     showToast({
@@ -329,6 +345,10 @@ export async function bootstrapDirectory(input: {
   await waitForPaint()
   const slowErrs = errors(await runAll(slow))
   if (slowErrs.length > 0) {
+    if (isMissingDirectoryError(slowErrs[0])) {
+      console.debug(`[global-sync] bootstrap skipped directory=${input.directory} reason=directory-missing`)
+      throw slowErrs[0]
+    }
     console.error("Failed to finish bootstrap instance", slowErrs[0])
     const project = getFilename(input.directory)
     showToast({

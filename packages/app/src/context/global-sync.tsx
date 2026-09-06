@@ -23,7 +23,7 @@ import { Persist, persisted } from "@/utils/persist"
 import type { InitError } from "../pages/error"
 import { GlobalSyncProvider as GlobalSyncContextProvider, useGlobalSync } from "./global-sync-context"
 import { useGlobalSDK } from "./global-sdk"
-import { bootstrapDirectory, bootstrapGlobal } from "./global-sync/bootstrap"
+import { bootstrapDirectory, bootstrapGlobal, isMissingDirectoryError } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
 import { createRefreshQueue } from "./global-sync/queue"
@@ -149,11 +149,6 @@ function createGlobalSync() {
   // domain has no registered server to talk to. Visible-domain no longer gates hidden
   // domains; each domain runs in parallel so long as it has an active server.
   const isolated = (directory: string) => !server.currentFor(domainFromDirectory(directory))
-
-  const isMissingDirectoryError = (err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err)
-    return message.includes("DirectoryNotFound") || message.includes("ENOENT") || message.includes("no such file or directory")
-  }
 
   onCleanup(() => {
     active = false

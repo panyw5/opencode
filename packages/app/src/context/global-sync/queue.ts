@@ -70,7 +70,10 @@ export function createRefreshQueue(input: QueueInput) {
         }
         const dirs = take(2)
         if (dirs.length === 0) return
-        await Promise.all(dirs.map((dir) => input.bootstrapInstance(dir)))
+        // Bootstrap is best-effort: a directory may be stale (removed server,
+        // deleted folder), and one rejection must not drop its batched peers
+        // or break the drain loop.
+        await Promise.allSettled(dirs.map((dir) => input.bootstrapInstance(dir)))
         await tick()
       }
     } finally {
