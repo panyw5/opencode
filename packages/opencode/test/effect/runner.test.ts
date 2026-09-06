@@ -250,6 +250,104 @@ describe("Runner", () => {
     }),
   )
 
+  // --- gracefulRestart semantics ---
+
+  it.live(
+    "gracefulRestart on idle starts the work",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const result = yield* runner.gracefulRestart(Effect.succeed("fresh"))
+      expect(result).toBe("fresh")
+      expect(runner.busy).toBe(false)
+    }),
+  )
+
+  it.live(
+    "gracefulRestart chains coalesced callers to the replacement run",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s, { onInterrupt: Effect.succeed("fallback") })
+      const interrupted = yield* Ref.make(false)
+      const firstStarted = yield* Deferred.make<void>()
+
+      const a = yield* runner
+        .ensureRunning(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(firstStarted, undefined)
+            return yield* Effect.never.pipe(Effect.onInterrupt(() => Ref.set(interrupted, true)), Effect.as("first"))
+          }),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(firstStarted)
+
+      const b = yield* runner.ensureRunning(Effect.succeed("queued")).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+
+      const result = yield* runner.gracefulRestart(Effect.succeed("second"))
+      expect(result).toBe("second")
+
+      const [exitA, exitB] = yield* Effect.all([Fiber.await(a), Fiber.await(b)])
+      expect(Exit.isSuccess(exitA)).toBe(true)
+      expect(Exit.isSuccess(exitB)).toBe(true)
+      if (Exit.isSuccess(exitA)) expect(exitA.value).toBe("second")
+      if (Exit.isSuccess(exitB)) expect(exitB.value).toBe("second")
+      expect(yield* Ref.get(interrupted)).toBe(true)
+      expect(runner.busy).toBe(false)
+    }),
+  )
+
+  it.live(
+    "cancel after gracefulRestart unwinds chained callers via onInterrupt",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s, { onInterrupt: Effect.succeed("fallback") })
+      const started = yield* Deferred.make<void>()
+
+      const a = yield* runner
+        .ensureRunning(Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never), Effect.as("first")))
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(started)
+
+      const secondStarted = yield* Deferred.make<void>()
+      const restarted = yield* runner
+        .gracefulRestart(
+          Deferred.succeed(secondStarted, undefined).pipe(Effect.andThen(Effect.never), Effect.as("second")),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(secondStarted)
+
+      yield* runner.cancel
+
+      const [exitA, exitRestart] = yield* Effect.all([Fiber.await(a), Fiber.await(restarted)])
+      expect(Exit.isSuccess(exitA)).toBe(true)
+      expect(Exit.isSuccess(exitRestart)).toBe(true)
+      if (Exit.isSuccess(exitA)) expect(exitA.value).toBe("fallback")
+      if (Exit.isSuccess(exitRestart)) expect(exitRestart.value).toBe("fallback")
+      expect(runner.busy).toBe(false)
+    }),
+  )
+
+  it.live(
+    "work can start after gracefulRestart completes",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const runner = Runner.make<string>(s)
+      const started = yield* Deferred.make<void>()
+      const a = yield* runner
+        .ensureRunning(Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never), Effect.as("first")))
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(started)
+
+      expect(yield* runner.gracefulRestart(Effect.succeed("second"))).toBe("second")
+      yield* Fiber.await(a)
+
+      const result = yield* runner.ensureRunning(Effect.succeed("third"))
+      expect(result).toBe("third")
+      expect(runner.busy).toBe(false)
+    }),
+  )
+
   // --- shell semantics ---
 
   it.live(

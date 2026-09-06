@@ -19,6 +19,16 @@ export interface Interface {
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
     work: Effect.Effect<MessageV2.WithParts>,
   ) => Effect.Effect<MessageV2.WithParts>
+  /**
+   * Interrupt the in-flight run and start replacement work while keeping
+   * callers coalesced on the interrupted run attached to the replacement —
+   * they receive its final result instead of unwinding with a cancellation.
+   */
+  readonly gracefulRestart: (
+    sessionID: SessionID,
+    onInterrupt: Effect.Effect<MessageV2.WithParts>,
+    work: Effect.Effect<MessageV2.WithParts>,
+  ) => Effect.Effect<MessageV2.WithParts>
   readonly startShell: (
     sessionID: SessionID,
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
@@ -125,6 +135,14 @@ export const layer = Layer.effect(
       return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(leased(work))
     })
 
+    const gracefulRestart = Effect.fn("SessionRunState.gracefulRestart")(function* (
+      sessionID: SessionID,
+      onInterrupt: Effect.Effect<MessageV2.WithParts>,
+      work: Effect.Effect<MessageV2.WithParts>,
+    ) {
+      return yield* (yield* runner(sessionID, onInterrupt)).gracefulRestart(leased(work))
+    })
+
     const startShell = Effect.fn("SessionRunState.startShell")(function* (
       sessionID: SessionID,
       onInterrupt: Effect.Effect<MessageV2.WithParts>,
@@ -136,7 +154,7 @@ export const layer = Layer.effect(
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, startShell })
+    return Service.of({ assertNotBusy, cancel, ensureRunning, gracefulRestart, startShell })
   }),
 )
 

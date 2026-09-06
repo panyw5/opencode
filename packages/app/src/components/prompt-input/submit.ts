@@ -386,6 +386,16 @@ type PromptSubmitInput = {
   onSubmitted?: () => void
 }
 
+export type SubmitOptions = {
+  /**
+   * Intervention (steer + flush): post the prompt immediately even while the
+   * session is busy, then gracefully interrupt the in-flight step so the
+   * server consumes it right away. The run continues with the new prompt and
+   * callers blocked on it (e.g. a parent task tool) keep waiting.
+   */
+  intervene?: boolean
+}
+
 type CommentItem = {
   path: string
   selection?: FileSelection
@@ -426,7 +436,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     console.debug(`[abort] start sessionID=${sessionID} directory=${sdk.directory} t=${t0}`)
 
     const optimisticTarget = finalizeRunningAssistantLocally({ globalSync, directory: sdk.directory, sessionID })
-    console.debug(`[abort] optimistic local state sessionID=${sessionID} msgCompleted=${optimisticTarget ?? "none"} dt=${performance.now() - t0}`)
+    console.debug(
+      `[abort] optimistic local state sessionID=${sessionID} msgCompleted=${optimisticTarget ?? "none"} dt=${performance.now() - t0}`,
+    )
 
     try {
       await input.onAbort?.()
@@ -444,7 +456,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       queued.cleanup()
       pending.delete(sessionID)
     }
-    console.debug(`[abort] POST /session/:id/abort sessionID=${sessionID} directory=${sdk.directory} queued=${!!queued}`)
+    console.debug(
+      `[abort] POST /session/:id/abort sessionID=${sessionID} directory=${sdk.directory} queued=${!!queued}`,
+    )
     return sdk.client.session
       .abort({
         sessionID,
@@ -483,12 +497,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
   }
 
-  const handleSubmit = async (event: Event) => {
+  const handleSubmit = async (event: Event, options?: SubmitOptions) => {
     event.preventDefault()
+    const intervene = options?.intervene === true
 
     const attempt = crypto.randomUUID()
     const diagnose = (stage: string, details?: Record<string, unknown>) =>
-      console.debug("[prompt-submit]", { attempt, stage, ...details })
+      console.debug("[prompt-submit]", { attempt, stage, intervene, ...details })
 
     // Clear stale marks from previous submit
     performance.clearMarks("submit:start")
@@ -729,9 +744,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         // sessionDirectory when creating a worktree session.
         const pendingMount =
           takePendingProjectTaskMount(currentDirectory) ??
-          (sessionDirectory !== currentDirectory
-            ? takePendingProjectTaskMount(sessionDirectory)
-            : undefined)
+          (sessionDirectory !== currentDirectory ? takePendingProjectTaskMount(sessionDirectory) : undefined)
         if (pendingMount?.taskID) {
           const taskID = pendingMount.taskID
           const inject = pendingMount.inject
@@ -850,7 +863,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
+    if (!isNewSession && mode === "normal" && !intervene && input.shouldQueue?.()) {
       diagnose("queued", { sessionID: session.id, directory: sessionDirectory })
       input.onQueue?.(draft)
       clearContext(submittedScope)
@@ -1037,8 +1050,28 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       before: waitForWorktree,
     })
       .then((sent) => {
-        if (sent) return
-        input.onSubmitFailed?.(session.id)
+        if (!sent) {
+          input.onSubmitFailed?.(session.id)
+          return
+        }
+        if (intervene) {
+          // Mirror flushQueued(): finalize the running assistant locally so the
+          // timeline does not show the interrupted turn as active until events
+          // land, then ask the server to gracefully interrupt the in-flight
+          // step and serve the posted prompt immediately.
+          finalizeRunningAssistantLocally({ globalSync, directory: sdk.directory, sessionID: session.id })
+          console.debug(`[intervene] flushing session=${session.id}`)
+          void sdk.client.session
+            .flush({ sessionID: session.id })
+            .then(() => {
+              console.debug(`[intervene] flush done session=${session.id}`)
+            })
+            .catch((err) => {
+              console.warn(
+                `[intervene] flush failed session=${session.id} err=${err instanceof Error ? err.message : String(err)}`,
+              )
+            })
+        }
       })
       .catch((err) => {
         input.onSubmitFailed?.(session.id)

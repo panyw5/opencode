@@ -22,6 +22,8 @@ const storedSessions: Record<string, Array<{ id: string; title?: string }>> = {}
 const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const sentCommands: Array<{ directory: string; messageID?: string }> = []
+const sentPrompts: Array<{ directory: string; sessionID: string }> = []
+const flushedSessions: Array<{ directory: string; sessionID: string }> = []
 const abortedSessions: Array<{ directory: string; sessionID: string }> = []
 const syncedDirectories: string[] = []
 const messagePages: Record<string, Array<{ info: { id: string } }>> = {}
@@ -60,7 +62,14 @@ const clientFor = (directory: string, track = true) => {
       },
       messages: async () => ({ data: messagePages[directory] ?? [] }),
       prompt: async () => ({ data: undefined }),
-      promptAsync: async () => ({ data: undefined }),
+      promptAsync: async (input: { sessionID: string }) => {
+        sentPrompts.push({ directory, sessionID: input.sessionID })
+        return { data: undefined }
+      },
+      flush: async (input: { sessionID: string }) => {
+        flushedSessions.push({ directory, sessionID: input.sessionID })
+        return { data: undefined }
+      },
       command: async (input: { messageID?: string }) => {
         sentCommands.push({ directory, messageID: input.messageID })
         return { data: undefined }
@@ -277,6 +286,8 @@ beforeEach(() => {
   params = { dir: "/repo/worktree-a", draftID: "draft-1" }
   sentShell.length = 0
   sentCommands.length = 0
+  sentPrompts.length = 0
+  flushedSessions.length = 0
   abortedSessions.length = 0
   syncedDirectories.length = 0
   syncEvents.length = 0
@@ -662,5 +673,61 @@ describe("prompt submit worktree selection", () => {
     await submit.abort()
 
     expect(abortedSessions).toEqual([{ directory: "/repo/worktree-a", sessionID: "session-1" }])
+  })
+})
+
+describe("prompt submit intervene", () => {
+  const baseInput = (overrides?: Partial<Parameters<typeof createPromptSubmit>[0]>) => ({
+    info: () => ({ id: "session-9" }),
+    imageAttachments: () => [],
+    commentCount: () => 0,
+    autoAccept: () => false,
+    mode: () => "normal" as const,
+    working: () => true,
+    editor: () => undefined,
+    queueScroll: () => undefined,
+    promptLength: (value: Prompt) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+    addToHistory: () => undefined,
+    resetHistoryNavigation: () => undefined,
+    setMode: () => undefined,
+    setPopover: () => undefined,
+    resetInputUndo: () => undefined,
+    shouldQueue: () => true,
+    onQueue: () => undefined,
+    onSubmit: () => undefined,
+    ...overrides,
+  })
+
+  test("intervene bypasses the queue, posts immediately and flushes the session", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    const queued: unknown[] = []
+    const submit = createPromptSubmit(baseInput({ onQueue: (draft) => queued.push(draft) }))
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+    await submit.handleSubmit(event, { intervene: true })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(queued).toEqual([])
+    expect(sentPrompts).toEqual([{ directory: "/repo/worktree-a", sessionID: "session-9" }])
+    expect(flushedSessions).toEqual([{ directory: "/repo/worktree-a", sessionID: "session-9" }])
+    expect(abortedSessions).toEqual([])
+  })
+
+  test("regular submit while busy still honors the queue and never flushes", async () => {
+    params = { dir: "/repo/worktree-a", id: "session-9" }
+    const queued: unknown[] = []
+    const submit = createPromptSubmit(
+      baseInput({
+        onQueue: (draft) => queued.push(draft),
+      }),
+    )
+
+    const event = { preventDefault: () => undefined } as unknown as Event
+    await submit.handleSubmit(event)
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(queued).toHaveLength(1)
+    expect(sentPrompts).toEqual([])
+    expect(flushedSessions).toEqual([])
   })
 })

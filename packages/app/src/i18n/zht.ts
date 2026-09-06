@@ -334,6 +334,7 @@ export const dict = {
   "prompt.attachment.remove": "移除附件",
   "prompt.action.send": "傳送",
   "prompt.action.stop": "停止",
+  "prompt.action.intervene": "傳送干預——優雅停止目前步驟，並以該提示詞繼續引導",
   "prompt.editor.title": "編輯提示詞",
   "prompt.editor.discardChanges": "放棄更改",
 

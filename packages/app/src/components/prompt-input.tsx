@@ -94,6 +94,8 @@ interface PromptInputProps {
   shouldQueue?: () => boolean
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void | Promise<void>
+  /** False while the composer is blocked on a permission/question ask — hides the intervention button. */
+  canIntervene?: () => boolean
   onSubmit?: (sessionID: string) => void
   onSubmitFailed?: (sessionID: string) => void
   onSubmitted?: () => void
@@ -2630,6 +2632,23 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               </div>
             </div>
             <div class="flex items-center gap-2.5 shrink-0">
+              <Show when={working() && prompt.dirty() && (props.canIntervene?.() ?? true)}>
+                <Tooltip {...hover} placement="top" value={language.t("prompt.action.intervene")}>
+                  <IconButton
+                    data-action="prompt-intervene"
+                    type="button"
+                    icon="chevron-double-right"
+                    variant="secondary"
+                    iconSize="normal"
+                    class="size-8 shrink-0 rounded-full"
+                    onClick={(event) => {
+                      event.preventDefault()
+                      void handleSubmit(event, { intervene: true })
+                    }}
+                    aria-label={language.t("prompt.action.intervene")}
+                  />
+                </Tooltip>
+              </Show>
               <div
                 class="flex items-center shrink-0"
                 onMouseEnter={() => setStopHovered(true)}

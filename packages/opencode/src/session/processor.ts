@@ -73,6 +73,11 @@ export interface Interface {
   // finalizes the in-flight step without error semantics: no Session.Event.Error
   // is published and the assistant message completes without MessageAbortedError.
   readonly prepareGracefulAbort: (sessionID: SessionID) => Effect.Effect<void>
+  // Consume the graceful-abort latch armed by prepareGracefulAbort. Used by the
+  // run-loop's interrupted-assistant finalizer so interrupts landing outside an
+  // active LLM stream (e.g. between assistant-message creation and the first
+  // stream part) also finalize without the aborted error marker.
+  readonly consumeGracefulAbort: (sessionID: SessionID) => Effect.Effect<boolean>
 }
 
 type ToolCall = {
@@ -115,14 +120,22 @@ export const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
 
-    const gracefulAborts = new Map<SessionID, number>()
+  const gracefulAborts = new Map<SessionID, number>()
 
-    const prepareGracefulAbort = Effect.fn("SessionProcessor.prepareGracefulAbort")(function* (sessionID: SessionID) {
-      gracefulAborts.set(sessionID, Date.now())
-      yield* Effect.log("graceful abort armed").pipe(Effect.annotateLogs({ sessionID }))
+  const takeGracefulAbort = (sessionID: SessionID) =>
+    Effect.sync(() => {
+      const armedAt = gracefulAborts.get(sessionID)
+      if (armedAt === undefined) return false
+      gracefulAborts.delete(sessionID)
+      return Date.now() - armedAt < 60_000
     })
 
-    const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
+  const prepareGracefulAbort = Effect.fn("SessionProcessor.prepareGracefulAbort")(function* (sessionID: SessionID) {
+    gracefulAborts.set(sessionID, Date.now())
+    yield* Effect.log("graceful abort armed").pipe(Effect.annotateLogs({ sessionID }))
+  })
+
+  const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Graceful abort latches are armed by SessionPrompt.flush right before it
       // cancels the run. takeGracefulAbort consumes the latch so it can never
       // leak into a later, unrelated abort of the same session.
@@ -1035,7 +1048,7 @@ export const layer = Layer.effect(
       } satisfies Handle
     })
 
-    return Service.of({ create, prepareGracefulAbort })
+    return Service.of({ create, prepareGracefulAbort, consumeGracefulAbort: takeGracefulAbort })
   }),
 )
 

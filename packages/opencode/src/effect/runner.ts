@@ -4,6 +4,7 @@ export interface Runner<A, E = never> {
   readonly state: State<A, E>
   readonly busy: boolean
   readonly ensureRunning: (work: Effect.Effect<A, E>) => Effect.Effect<A, E>
+  readonly gracefulRestart: (work: Effect.Effect<A, E>) => Effect.Effect<A, E>
   readonly startShell: (work: Effect.Effect<A, E>, ready?: Latch.Latch) => Effect.Effect<A, E | Busy>
   readonly cancel: Effect.Effect<void>
 }
@@ -15,6 +16,12 @@ interface RunHandle<A, E> {
   id: number
   done: Deferred.Deferred<A, E | Cancelled>
   fiber: Fiber.Fiber<A, E>
+  /**
+   * Set by gracefulRestart before interrupting the fiber so its exit handler
+   * skips completing `done` — the relay fiber owns it from then on and keeps
+   * every coalesced caller attached to the replacement run.
+   */
+  abandoned?: boolean
 }
 
 interface ShellHandle<A, E> {
@@ -56,7 +63,7 @@ export const make = <A, E = never>(
     return ids
   }
 
-  const complete = (done: Deferred.Deferred<A, E | Cancelled>, exit: Exit.Exit<A, E>) =>
+  const complete = (done: Deferred.Deferred<A, E | Cancelled>, exit: Exit.Exit<A, E | Cancelled>) =>
     Exit.isFailure(exit) && Cause.hasInterruptsOnly(exit.cause)
       ? Deferred.fail(done, new Cancelled()).pipe(Effect.asVoid)
       : Deferred.done(done, exit).pipe(Effect.asVoid)
@@ -67,28 +74,43 @@ export const make = <A, E = never>(
   const idleIfCurrent = () =>
     SynchronizedRef.modify(ref, (st) => [st._tag === "Idle" ? idle : Effect.void, st] as const).pipe(Effect.flatten)
 
-  const finishRun = (id: number, done: Deferred.Deferred<A, E | Cancelled>, exit: Exit.Exit<A, E>) =>
+  const finishRun = (run: RunHandle<A, E>, exit: Exit.Exit<A, E>) =>
     SynchronizedRef.modify(
       ref,
       (st) =>
         [
           Effect.gen(function* () {
-            if (st._tag === "Running" && st.run.id === id) yield* idle
-            yield* complete(done, exit)
+            if (st._tag === "Running" && st.run.id === run.id) yield* idle
+            if (run.abandoned) return
+            yield* complete(run.done, exit)
           }),
-          st._tag === "Running" && st.run.id === id ? ({ _tag: "Idle" } as const) : st,
+          st._tag === "Running" && st.run.id === run.id ? ({ _tag: "Idle" } as const) : st,
         ] as const,
     ).pipe(Effect.flatten)
 
   const startRun = (work: Effect.Effect<A, E>, done: Deferred.Deferred<A, E | Cancelled>) =>
     Effect.gen(function* () {
       const id = next()
+      const run: RunHandle<A, E> = { id, done, fiber: undefined as unknown as Fiber.Fiber<A, E> }
       const fiber = yield* work.pipe(
-        Effect.onExit((exit) => finishRun(id, done, exit)),
+        Effect.onExit((exit) => finishRun(run, exit)),
         Effect.forkIn(scope),
       )
-      return { id, done, fiber } satisfies RunHandle<A, E>
+      run.fiber = fiber
+      return run
     })
+
+  // Chain the old run's shared Deferred to the replacement run so coalesced
+  // callers keep waiting through the restart instead of unwinding with a
+  // cancellation. If the replacement run is itself cancelled, the relay
+  // completes the old Deferred with that interrupt-only exit, which `complete`
+  // turns back into a RunnerCancelled failure for the original callers.
+  const relayCompletion = (old: RunHandle<A, E>, done: Deferred.Deferred<A, E | Cancelled>) =>
+    Deferred.await(done).pipe(
+      Effect.exit,
+      Effect.flatMap((exit) => complete(old.done, exit)),
+      Effect.forkIn(scope),
+    )
 
   const finishShell = (id: number) =>
     SynchronizedRef.modifyEffect(
@@ -132,6 +154,55 @@ export const make = <A, E = never>(
             const done = yield* Deferred.make<A, E | Cancelled>()
             const run = yield* startRun(work, done)
             return [awaitDone(done), { _tag: "Running", run }] as const
+          }
+        }
+      }),
+    ).pipe(Effect.flatten)
+
+  // Interrupt the in-flight run and start replacement work, keeping every
+  // caller already coalesced on the interrupted run attached to the
+  // replacement: they receive its final result instead of unwinding with a
+  // cancellation. A no-op restart when idle (equivalent to ensureRunning).
+  //
+  // The modifyEffect body runs while holding the ref's permit, so it must
+  // never await a fiber whose exit handler re-enters the ref (deadlock). All
+  // blocking work lives in the returned effect, which runs after the permit
+  // is released.
+  const gracefulRestart = (work: Effect.Effect<A, E>) =>
+    SynchronizedRef.modifyEffect(
+      ref,
+      Effect.fnUntraced(function* (st) {
+        switch (st._tag) {
+          case "Idle": {
+            const done = yield* Deferred.make<A, E | Cancelled>()
+            const run = yield* startRun(work, done)
+            return [awaitDone(done), { _tag: "Running", run }] as const
+          }
+          case "Shell":
+          case "ShellThenRun":
+            // Shells keep their dedicated cancel semantics: stop the shell and
+            // fail any queued run so existing callers unwind, then start the
+            // replacement work fresh.
+            return [
+              Effect.gen(function* () {
+                yield* cancel
+                return yield* ensureRunning(work)
+              }),
+              st,
+            ] as const
+          case "Running": {
+            const old = st.run
+            old.abandoned = true
+            const done = yield* Deferred.make<A, E | Cancelled>()
+            const run = yield* startRun(work, done)
+            yield* relayCompletion(old, done)
+            return [
+              Effect.gen(function* () {
+                yield* Fiber.interrupt(old.fiber)
+                return yield* awaitDone(old.done)
+              }),
+              { _tag: "Running", run },
+            ] as const
           }
         }
       }),
@@ -209,6 +280,7 @@ export const make = <A, E = never>(
       return state()._tag !== "Idle"
     },
     ensureRunning,
+    gracefulRestart,
     startShell,
     cancel,
   }

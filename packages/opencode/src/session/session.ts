@@ -522,6 +522,12 @@ export type FinalizeOrphanedAssistantOptions = {
   abortSource?: ToolAbortSource
   abortReason?: string
   staleAfterMs?: number
+  /**
+   * Finalize as a plain completion (no MessageAbortedError) — used by the
+   * queue-flush / intervention paths so the timeline shows no "interrupted"
+   * marker. Defaults to true (aborted-error semantics, e.g. user cancel).
+   */
+  error?: boolean
 }
 
 export const ORPHANED_ASSISTANT_STALE_AFTER_MS = 24 * 60 * 60 * 1000
@@ -1167,10 +1173,12 @@ export const layer: Layer.Layer<
           ...message.info,
           error:
             message.info.error ??
-            MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
-              providerID: message.info.providerID,
-              aborted: true,
-            }),
+            (options.error === false
+              ? undefined
+              : MessageV2.fromError(new DOMException("Aborted", "AbortError"), {
+                  providerID: message.info.providerID,
+                  aborted: true,
+                })),
           time: {
             ...message.info.time,
             completed: now,

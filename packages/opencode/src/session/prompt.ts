@@ -259,16 +259,23 @@ export const layer = Layer.effect(
       yield* elog.info("cancel inbox drain finish", { sessionID })
     })
 
-    // Queue flush: interrupt the in-flight step (the loop cannot consume queued
-    // prompts mid-step) and restart the run so pending user prompts are served
-    // immediately. The abort is graceful — the assistant message finalizes as a
-    // plain completion, without the aborted error event or "interrupted" marker.
+    // Queue flush / intervention: interrupt the in-flight step (the loop cannot
+    // consume queued prompts mid-step) and restart the run so pending user
+    // prompts are served immediately. The abort is graceful — the assistant
+    // message finalizes as a plain completion, without the aborted error event
+    // or "interrupted" marker. The restart keeps every caller coalesced on the
+    // interrupted run attached to the replacement run, so a parent task tool
+    // blocked on a subagent session receives the restarted run's final result
+    // instead of the interrupted turn's partial output.
     const flush = Effect.fn("SessionPrompt.flush")(function* (sessionID: SessionID) {
       const current = yield* status.get(sessionID)
       yield* elog.info("flush start", { sessionID, status: current.type })
       if (current.type !== "idle") {
         yield* processor.prepareGracefulAbort(sessionID)
-        yield* cancel(sessionID)
+        yield* state
+          .gracefulRestart(sessionID, lastAssistant(sessionID), runLoop(sessionID))
+          .pipe(Effect.ensuring(requestDrain(sessionID)))
+        return
       }
       yield* loop({ sessionID })
     })
@@ -2463,8 +2470,16 @@ export const layer = Layer.effect(
           }
           yield* sessions.updateMessage(msg)
 
+          // Interrupted assistant finalizer. When the interrupt carries the
+          // graceful-abort latch (queue flush / intervention), finalize as a
+          // plain completion so the timeline shows no "interrupted" marker —
+          // matching the in-stream graceful path in the processor.
           const finalizeInterruptedAssistant = Effect.gen(function* () {
-            yield* sessions.finalizeOrphanedAssistant(sessionID, { abortSource: "processor-interrupted" })
+            const graceful = yield* processor.consumeGracefulAbort(sessionID)
+            yield* sessions.finalizeOrphanedAssistant(sessionID, {
+              abortSource: graceful ? "queue-flush" : "processor-interrupted",
+              error: !graceful,
+            })
           })
 
           const handle = yield* processor

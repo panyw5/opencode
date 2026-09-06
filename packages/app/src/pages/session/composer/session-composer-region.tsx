@@ -1235,6 +1235,7 @@ export function SessionComposerRegion(props: {
                 onEditLoaded={props.followup?.onEditLoaded}
                 shouldQueue={props.followup?.queue}
                 onQueue={props.followup?.onQueue}
+                canIntervene={() => !props.state.blocked()}
                 onAbort={async () => {
                   props.followup?.onAbort()
                   await props.onAbort?.()

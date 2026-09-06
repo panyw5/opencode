@@ -162,10 +162,22 @@ const run = SessionRunState.layer.pipe(Layer.provide(status))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
 
 const processorCreateStarted: Array<() => void> = []
+const blockingGracefulAborts = new Map<SessionID, number>()
 const blockingProcessor = Layer.succeed(
   SessionProcessor.Service,
   SessionProcessor.Service.of({
     create: () => Effect.sync(() => processorCreateStarted.shift()?.()).pipe(Effect.andThen(Effect.never)),
+    prepareGracefulAbort: (sessionID: SessionID) =>
+      Effect.sync(() => {
+        blockingGracefulAborts.set(sessionID, Date.now())
+      }),
+    consumeGracefulAbort: (sessionID: SessionID) =>
+      Effect.sync(() => {
+        const armedAt = blockingGracefulAborts.get(sessionID)
+        if (armedAt === undefined) return false
+        blockingGracefulAborts.delete(sessionID)
+        return Date.now() - armedAt < 60_000
+      }),
   }),
 )
 
@@ -1801,6 +1813,61 @@ it.instance(
   3_000,
 )
 
+it.instance(
+  "flush restarts the run and coalesced callers receive the replacement result",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Flush chain" })
+      yield* seed(chat.id)
+
+      // Parent-like caller blocked on the in-flight (hanging) run.
+      yield* llm.hang
+      const original = yield* user(chat.id, "original")
+      const parent = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* llm.wait(1)
+
+      // Intervention: a prompt posted while busy coalesces onto the same run.
+      const intervention = yield* user(chat.id, "intervention")
+      const coalesced = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+
+      // Flush: graceful interrupt + replacement run serving the intervention.
+      // Queued before the fork so the restarted run has a response ready.
+      yield* llm.text("post intervention")
+      const flushFiber = yield* prompt.flush(chat.id).pipe(Effect.forkChild)
+      yield* awaitWithTimeout(llm.wait(2), "flush did not restart the run", "3 seconds")
+
+      const [parentExit, coalescedExit, flushExit] = yield* Effect.all([
+        Fiber.await(parent),
+        Fiber.await(coalesced),
+        Fiber.await(flushFiber),
+      ])
+      expect(Exit.isSuccess(parentExit)).toBe(true)
+      expect(Exit.isSuccess(coalescedExit)).toBe(true)
+      expect(Exit.isSuccess(flushExit)).toBe(true)
+      for (const exit of [parentExit, coalescedExit]) {
+        if (!Exit.isSuccess(exit)) continue
+        expect(exit.value.info.role).toBe("assistant")
+        expect(exit.value.info.parentID).toBe(intervention.id)
+        const text = exit.value.parts.findLast((part) => part.type === "text")
+        expect(text?.type === "text" ? text.text : undefined).toBe("post intervention")
+      }
+
+      // The interrupted turn finalized gracefully — no aborted error marker.
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const interrupted = messages.find((message) => message.info.role === "assistant" && message.info.parentID === original.id)
+      expect(interrupted?.info.role).toBe("assistant")
+      if (interrupted?.info.role === "assistant") {
+        expect(interrupted.info.error).toBeUndefined()
+        expect(typeof interrupted.info.time.completed).toBe("number")
+      }
+    }),
+  5_000,
+)
+
 raceNoLLMServer.instance(
   "finalizes assistant when cancelled before processor creation completes",
   () =>
@@ -1885,6 +1952,66 @@ raceNoLLMServer.instance(
       if (lastUser?.info.role === "user" && lastAssistant?.info.role === "assistant") {
         expect(lastAssistant.info.parentID).toBe(lastUser?.info.id)
       }
+    }),
+  { config: cfg },
+  3_000,
+)
+
+raceNoLLMServer.instance(
+  "graceful flush finalizes a pre-stream interrupted assistant without the aborted marker",
+  () =>
+    Effect.gen(function* () {
+      processorCreateStarted.length = 0
+      blockingGracefulAborts.clear()
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          processorCreateStarted.length = 0
+        }),
+      )
+
+      const prompt = yield* SessionPrompt.Service
+      const processor = yield* SessionProcessor.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({ title: "Graceful pre-stream finalize" })
+
+      yield* prompt.prompt({
+        sessionID: chat.id,
+        agent: "build",
+        noReply: true,
+        parts: [{ type: "text", text: "first" }],
+      })
+
+      const firstCreate = defer<void>()
+      processorCreateStarted.push(firstCreate.resolve)
+      const run = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+      yield* Effect.promise(() => firstCreate.promise)
+
+      // Intervention / queue flush: arm the graceful latch, then restart the
+      // run. The in-flight assistant was created but never reached a stream —
+      // it must finalize as a plain completion, without MessageAbortedError.
+      yield* processor.prepareGracefulAbort(chat.id)
+      const secondCreate = defer<void>()
+      processorCreateStarted.push(secondCreate.resolve)
+      const flushFiber = yield* prompt.flush(chat.id).pipe(Effect.forkChild)
+      yield* Effect.promise(() => secondCreate.promise)
+
+      const messages = yield* sessions.messages({ sessionID: chat.id })
+      const assistants = messages.filter((message) => message.info.role === "assistant")
+      // run#1's pre-stream assistant (plain finalized) + run#2's fresh in-flight one.
+      expect(assistants).toHaveLength(2)
+      const [finalized, replacement] = assistants
+      if (finalized?.info.role === "assistant") {
+        expect(finalized.info.time.completed).toBeNumber()
+        expect(finalized.info.error).toBeUndefined()
+      }
+      expect(replacement?.info.role).toBe("assistant")
+      if (replacement?.info.role === "assistant") {
+        expect(replacement.info.time.completed).toBeUndefined()
+      }
+
+      yield* prompt.cancel(chat.id)
+      expect(Exit.isSuccess(yield* Fiber.await(run))).toBe(true)
+      expect(Exit.isSuccess(yield* Fiber.await(flushFiber))).toBe(true)
     }),
   { config: cfg },
   3_000,
