@@ -266,7 +266,9 @@ export function SessionSidePanel(props: {
                 <DragDropSensors />
                 <ConstrainDragYAxis />
                 <Tabs value={reviewOpen() ? "review" : activeTab()} onChange={openTab}>
-                  <div class="sticky top-0 shrink-0 flex">
+                  {/* Only the file-preview mode puts tabs in the strip; in review mode it
+                       would render as a blank 48px row above the review header. */}
+                  <div class="sticky top-0 shrink-0 flex" classList={{ hidden: !filePreviewOpen() }}>
                     <Tabs.List
                       ref={(el: HTMLDivElement) => {
                         const stop = createFileTabListSync({ el, contextOpen })
