@@ -528,6 +528,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       ? undefined
       : layout.sessionBar.drafts().find((draft) => draft.id === params.draftID)
     const submittedScope = { dir: params.dir!, id: params.id ?? submittedDraft?.id }
+    // When the active draft promotes into a session, the draft route stays
+    // mounted (showing the typed prompt) until the router commits the session
+    // route. Defer resetting the consumed prompt scope until that commit —
+    // sessionTabs.promoteDraft fires it via onCommit.
+    let deferScopeReset = false
+    let pendingScopeReset: (() => void) | undefined
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
     const images = input.imageAttachments().slice()
     const mode = input.mode()
@@ -796,6 +802,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             return
           }
           const active = !params.id && params.draftID === submittedDraft.id
+          if (active) deferScopeReset = true
           console.debug(
             `[session-bar] draft promotion decision draftID=${submittedDraft.id} sessionID=${sessionID} active=${active}`,
           )
@@ -807,7 +814,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
               base64Encode(currentDirectory),
             )
           }
-          sessionTabs.promoteDraft({ directory: sessionDirectory, id: sessionID }, submittedDraft)
+          sessionTabs.promoteDraft(
+            { directory: sessionDirectory, id: sessionID },
+            submittedDraft,
+            active
+              ? () => {
+                  pendingScopeReset?.()
+                  diagnose("draft-scope-reset", { sessionID, draftID: submittedDraft.id })
+                }
+              : undefined,
+          )
           if (active) navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
         })
         performance.mark("submit:navigate:end")
@@ -832,6 +848,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
     const agent = currentAgent.name
     const context = currentContext
+    const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
     const draft: FollowupDraft = {
       sessionID: session.id,
       sessionDirectory,
@@ -842,8 +859,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       variant,
     }
 
-    const clearInput = () => {
+    const scopeResetAction = () => {
       prompt.reset(submittedScope)
+      removeCommentItems(commentItems, submittedScope)
+    }
+
+    const clearInput = () => {
+      if (deferScopeReset) pendingScopeReset = scopeResetAction
+      else prompt.reset(submittedScope)
       input.resetInputUndo()
       input.setMode("normal")
       input.setPopover(null)
@@ -949,7 +972,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }
     }
 
-    const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
     const messageID = Identifier.ascending("message")
 
     const removeOptimisticMessage = () => {
@@ -960,7 +982,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    removeCommentItems(commentItems, submittedScope)
+    // For a deferred draft-promotion reset, comment chips stay visible on the
+    // draft composer until the route commits (scopeResetAction clears them).
+    if (!deferScopeReset) removeCommentItems(commentItems, submittedScope)
     performance.mark("submit:clear-input:start")
     clearInput()
     performance.mark("submit:clear-input:end")

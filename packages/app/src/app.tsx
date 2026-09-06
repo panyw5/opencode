@@ -252,22 +252,13 @@ const SessionRoute = () => {
       .some((draft) => draft.id === params.draftID && workspaceKey(draft.directory) === workspaceKey(directory))
   }
   // While a submitted draft promotes into a session, the router transition
-  // keeps params.id stale and the draft page would linger as an empty composer.
-  // The promotion envelope marks that window; show a neutral placeholder until
-  // the session route commits.
-  const promoting = () => {
-    if (params.id) return false
-    const pending = layout.handoff.tabs()
-    if (!pending) return false
-    if (Date.now() - pending.at > 60_000) return false
-    return pending.draftID === params.draftID && (pending.draftDir ?? pending.dir) === params.dir
-  }
+  // keeps params.id stale for a while. Keep rendering the draft page (composer
+  // text intact, send button spinning) instead of blanking the content area;
+  // submit.ts defers clearing the draft scope until the route commits.
   return (
     <SessionProviders>
       <Show when={allowed()} fallback={<div class="size-full bg-background-stronger" />}>
-        <Show when={!promoting()} fallback={<div class="size-full bg-background-stronger" />}>
-          <Session />
-        </Show>
+        <Session />
       </Show>
     </SessionProviders>
   )

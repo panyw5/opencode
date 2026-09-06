@@ -695,6 +695,10 @@ export default function Page() {
   })
   const sessionRenderOverlayStatus = createMemo<SessionRenderOverlayStatus>(() => {
     if (params.id && !messagesReady()) return "showing"
+    // A freshly promoted draft has no history to settle — its optimistic user
+    // message must be visible on the first frame, so skip the loading overlay.
+    const pending = layout.handoff.tabs()
+    if (params.id && pending && pending.id === params.id && Date.now() - pending.at < 5_000) return "hidden"
     return ui.renderOverlayStatus
   })
   const historyMore = createMemo(() => {

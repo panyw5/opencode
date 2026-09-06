@@ -114,7 +114,7 @@ export type SessionTabsCoordinator = {
   requestClose(tab: SessionBarTab): Promise<boolean>
   requestCloseDescendants(tab: SessionBarTab): Promise<boolean>
   requestCloseDraft(draft: SessionBarDraft): Promise<boolean>
-  promoteDraft(tab: SessionBarTab, draft: SessionBarDraft): void
+  promoteDraft(tab: SessionBarTab, draft: SessionBarDraft, onCommit?: () => void): void
   restore(tab: SessionBarTab): void
   restoreDirectory(directory: string): void
   beginReconcile(directory: string): number
@@ -143,6 +143,7 @@ type CloseHandoff =
       token: number
       type: "draft"
       draft: SessionBarDraft
+      onCommit?: () => void
       matches(route: SessionTabsRoute): boolean
     }
 
@@ -365,6 +366,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       ports.cool(handoff.closing)
     } else {
       ports.store.closeDraft(handoff.draft.id)
+      handoff.onCommit?.()
     }
     console.debug(`[session-tabs] close transaction committed token=${handoff.token}`)
   }
@@ -557,7 +559,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       console.debug(`[session-tabs] draft close transaction started token=${transaction.token} target=${target.type}`)
       return navigate(target, transaction)
     },
-    promoteDraft(tab, draft) {
+    promoteDraft(tab, draft, onCommit) {
       const route = ports.route()
       const active = route.session && !route.id && route.draftID === draft.id
       if (active) {
@@ -566,6 +568,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         const transaction = startPending({
           type: "draft",
           draft,
+          onCommit,
           matches: (value) => value.session && !value.id && value.draftID === draft.id,
         })
         console.debug(
