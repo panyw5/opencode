@@ -72,7 +72,7 @@ export function DialogSwitchProject(props: { onSelect: (directory: string) => vo
   }
 
   return (
-    <Dialog title={language.t("project.switch.title")}>
+    <Dialog>
       <List
         search={{ placeholder: language.t("project.switch.placeholder"), autofocus: true }}
         emptyMessage={language.t("project.switch.empty")}

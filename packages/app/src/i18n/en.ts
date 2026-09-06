@@ -588,7 +588,6 @@ export const dict = {
   "dialog.project.edit.worktree.startup.description": "Runs after creating a new workspace (worktree).",
   "dialog.project.edit.worktree.startup.placeholder": "e.g. bun install",
 
-  "project.switch.title": "Switch Project",
   "project.switch.placeholder": "Search projects...",
   "project.switch.empty": "No projects available",
   "project.switch.current": "Current",
