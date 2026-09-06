@@ -26,7 +26,14 @@ export type ViewDiff = {
 
 const cache = new Map<string, FileDiffMetadata>()
 
-function patch(diff: ReviewDiff) {
+type PatchSource = {
+  file?: string
+  patch?: string
+  before?: string
+  after?: string
+}
+
+function patch(diff: PatchSource) {
   if (typeof diff.patch === "string") {
     try {
       const [patch] = parsePatch(diff.patch)
@@ -76,14 +83,14 @@ function patch(diff: ReviewDiff) {
     }
   }
   return {
-    before: "before" in diff && typeof diff.before === "string" ? diff.before : "",
-    after: "after" in diff && typeof diff.after === "string" ? diff.after : "",
+    before: typeof diff.before === "string" ? diff.before : "",
+    after: typeof diff.after === "string" ? diff.after : "",
     patch: formatPatch(
       structuredPatch(
-        diff.file,
-        diff.file,
-        "before" in diff && typeof diff.before === "string" ? diff.before : "",
-        "after" in diff && typeof diff.after === "string" ? diff.after : "",
+        diff.file ?? "",
+        diff.file ?? "",
+        typeof diff.before === "string" ? diff.before : "",
+        typeof diff.after === "string" ? diff.after : "",
         "",
         "",
         { context: Number.MAX_SAFE_INTEGER },
@@ -116,6 +123,19 @@ export function normalize(diff: ReviewDiff): ViewDiff {
     status: diff.status,
     fileDiff,
   }
+}
+
+/** Resolve rendered file contents for a diff, reconstructing them from the
+ * unified patch when the payload does not carry before/after snapshots. */
+export function diffContents(diff: PatchSource): { before: string; after: string } {
+  if (typeof diff.before === "string" || typeof diff.after === "string") {
+    return {
+      before: typeof diff.before === "string" ? diff.before : "",
+      after: typeof diff.after === "string" ? diff.after : "",
+    }
+  }
+  const parsed = patch(diff)
+  return { before: parsed.before, after: parsed.after }
 }
 
 export function text(diff: ViewDiff, side: "deletions" | "additions") {

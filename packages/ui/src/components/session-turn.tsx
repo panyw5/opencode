@@ -25,6 +25,7 @@ import { createAutoScroll, suppressAutoScrollResize } from "../hooks"
 import { useI18n } from "../context/i18n"
 import { formatThinkingElapsed, hiddenReasoning } from "./session-turn-state"
 import { hasVisibleText } from "./message-part-text"
+import { diffContents } from "./session-diff"
 import { isCustomHookTool, normalizeTool } from "./tool-meta"
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -636,6 +637,7 @@ export function SessionTurn(
                                 {(diff) => {
                                   const active = createMemo(() => expanded().includes(diff.file ?? ""))
                                   const [visible, setVisible] = createSignal(false)
+                                  const contents = createMemo(() => diffContents(diff))
 
                                   createEffect(
                                     on(
@@ -687,8 +689,8 @@ export function SessionTurn(
                                             <Dynamic
                                               component={fileComponent}
                                               mode="diff"
-                                              before={{ name: diff.file ?? "", contents: diff.before }}
-                                              after={{ name: diff.file ?? "", contents: diff.after }}
+                                              before={{ name: diff.file ?? "", contents: contents().before }}
+                                              after={{ name: diff.file ?? "", contents: contents().after }}
                                             />
                                           </div>
                                         </Show>

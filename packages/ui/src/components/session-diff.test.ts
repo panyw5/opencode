@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { normalize, text } from "./session-diff"
+import { diffContents, normalize, text } from "./session-diff"
 
 describe("session diff", () => {
   test("keeps unified patch content", () => {
@@ -64,5 +64,39 @@ describe("session diff", () => {
     expect(view.patch).toBe(diff.patch)
     expect(text(view, "deletions")).toBe("")
     expect(text(view, "additions")).toBe("")
+  })
+
+  test("reconstructs contents from a patch when snapshots are absent", () => {
+    const diff = {
+      file: "a.ts",
+      patch:
+        "Index: a.ts\n===================================================================\n--- a.ts\t\n+++ a.ts\t\n@@ -1,2 +1,2 @@\n one\n-two\n+three\n",
+      additions: 1,
+      deletions: 1,
+      status: "modified" as const,
+    }
+    const contents = diffContents(diff)
+
+    expect(contents.before).toBe("one\ntwo\n")
+    expect(contents.after).toBe("one\nthree\n")
+  })
+
+  test("prefers snapshot contents over patch reconstruction", () => {
+    const diff = {
+      file: "a.ts",
+      patch: "Index: a.ts\n--- a.ts\t\n+++ a.ts\t\n@@ -1,2 +1,2 @@\n one\n-two\n+three\n",
+      before: "snapshot before\n",
+      after: "snapshot after\n",
+      additions: 1,
+      deletions: 1,
+      status: "modified" as const,
+    }
+
+    expect(diffContents(diff)).toEqual({ before: "snapshot before\n", after: "snapshot after\n" })
+  })
+
+  test("falls back to empty contents for patches missing file text", () => {
+    expect(diffContents({ file: "a.ts", additions: 1, deletions: 1 })).toEqual({ before: "", after: "" })
+    expect(diffContents({ additions: 1, deletions: 1 })).toEqual({ before: "", after: "" })
   })
 })
