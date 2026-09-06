@@ -49,6 +49,8 @@ export const dict = {
   "scheduled.back": "返回会话列表",
   "scheduled.refresh": "刷新定时任务",
   "scheduled.edit": "编辑任务",
+  "scheduled.discard": "放弃更改",
+  "scheduled.saved": "更改已保存",
   "scheduled.delete": "删除任务",
   "scheduled.delete.confirm": "确定删除 {{name}}？",
   "scheduled.empty": "当前项目没有定时任务。",

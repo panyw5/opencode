@@ -66,6 +66,8 @@ export const dict = {
   "scheduled.back": "Back to sessions",
   "scheduled.refresh": "Refresh scheduled tasks",
   "scheduled.edit": "Edit task",
+  "scheduled.discard": "Discard changes",
+  "scheduled.saved": "All changes saved",
   "scheduled.delete": "Delete task",
   "scheduled.delete.confirm": "Delete {{name}}?",
   "scheduled.empty": "No scheduled tasks match this project filter.",

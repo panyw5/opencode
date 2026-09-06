@@ -16,7 +16,7 @@ import { Switch } from "@opencode-ai/ui/switch"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { createEffect, createMemo, For, onCleanup, onMount, Show } from "solid-js"
+import { createEffect, createMemo, For, onCleanup, onMount, Show, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
@@ -26,6 +26,7 @@ import { useModels } from "@/context/models"
 import { decode64 } from "@/utils/base64"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
+import { MarkdownEditorField } from "@/components/markdown-editor-field"
 import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
 import { filterActiveProjects, filterTasksForActiveProjects } from "@/pages/scheduled-utils"
 
@@ -51,6 +52,15 @@ function scheduleLabel(
     return t("scheduled.schedule.every.interval", { count: Math.round(schedule.interval / 60_000) })
   }
   return `${schedule.expression}${schedule.timezone ? ` · ${schedule.timezone}` : ""}`
+}
+
+function FieldLabel(props: { label: string; children: JSX.Element }): JSX.Element {
+  return (
+    <label class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+      <span class="shrink-0 text-12-medium text-text-weak">{props.label}</span>
+      <div class="ml-auto max-w-full">{props.children}</div>
+    </label>
+  )
 }
 
 function statusTone(status?: ScheduledTask["lastStatus"] | ScheduledTaskRun["status"]) {
@@ -100,6 +110,7 @@ export default function Scheduled() {
     cron: "0 9 * * 1-5",
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     unattended: false,
+    baseline: "",
   })
 
   const projects = createMemo(() =>
@@ -196,6 +207,26 @@ export default function Scheduled() {
   })
   const selected = createMemo(() => state.tasks.find((task) => task.id === state.selectedID))
 
+  function formSnapshot() {
+    return JSON.stringify([
+      state.name,
+      state.prompt,
+      state.agent,
+      state.providerID,
+      state.modelID,
+      state.variant,
+      state.executionMode,
+      state.sessionID,
+      state.scheduleKind,
+      state.at,
+      state.intervalMinutes,
+      state.cron,
+      state.timezone,
+      state.unattended,
+    ])
+  }
+  const dirty = createMemo(() => formSnapshot() !== state.baseline)
+
   async function load(options?: { silent?: boolean }) {
     const current = ++listRequest
     if (!options?.silent) setState({ loading: true, error: "" })
@@ -234,7 +265,7 @@ export default function Scheduled() {
   }
 
   function selectTask(task: ScheduledTask) {
-    setState({ selectedID: task.id, formOpen: false, editing: false })
+    resetForm(task)
     void loadRuns(task.id)
   }
 
@@ -268,6 +299,13 @@ export default function Scheduled() {
       unattended: !!task,
       error: "",
     })
+    setState("baseline", formSnapshot())
+  }
+
+  function discardChanges() {
+    const task = state.tasks.find((item) => item.id === state.selectedID)
+    if (task) resetForm(task)
+    else setState("formOpen", false)
   }
 
   function chooseProject(id: string) {
@@ -356,9 +394,11 @@ export default function Scheduled() {
         const result = await sdk.client.scheduledTask.create({ scheduledTaskCreateInput: input })
         setState("selectedID", result.data?.id)
       }
-      setState({ formOpen: false, editing: false })
+      setState({ formOpen: true, editing: true })
       await load()
       if (state.selectedID) await loadRuns(state.selectedID)
+      const saved = state.tasks.find((item) => item.id === state.selectedID)
+      if (saved) resetForm(saved)
     } catch (error) {
       setState("error", error instanceof Error ? error.message : String(error))
     } finally {
@@ -480,284 +520,229 @@ export default function Scheduled() {
           </div>
         </aside>
 
-        <main class="min-h-0 overflow-y-auto">
+        <main class="flex min-h-0 flex-col overflow-hidden">
           <Show
             when={state.formOpen}
             fallback={
-              <Show
-                when={selected()}
-                fallback={
-                  <div class="flex h-full items-center justify-center p-8 text-13-regular text-text-weak">
-                    {language.t("scheduled.select")}
-                  </div>
-                }
-              >
-                {(task) => (
-                  <div class="mx-auto flex max-w-5xl flex-col gap-7 p-5 md:p-8">
-                    <div class="flex flex-wrap items-start justify-between gap-3">
-                      <div class="min-w-0">
-                        <h2 class="truncate text-24-medium text-text-strong">{task().name}</h2>
-                        <p class="mt-1 truncate text-13-regular text-text-weak">{task().directory}</p>
-                      </div>
-                      <div class="flex items-center gap-2">
+              <div class="flex h-full items-center justify-center p-8 text-13-regular text-text-weak">
+                {language.t("scheduled.select")}
+              </div>
+            }
+          >
+            <form onSubmit={save} class="flex min-h-0 w-full flex-1 flex-col overflow-hidden p-5 md:p-8">
+              <div class="flex shrink-0 items-center justify-between gap-3 pb-4">
+                <div class="min-w-0">
+                  <h2 class="truncate text-20-medium text-text-strong">
+                    {state.editing ? language.t("scheduled.edit") : language.t("scheduled.create")}
+                  </h2>
+                  <p class="mt-0.5 truncate text-12-regular text-text-weak">
+                    {state.directory || language.t("scheduled.subtitle")}
+                  </p>
+                </div>
+                <div class="flex shrink-0 items-center gap-2">
+                  <Show when={state.editing && selected()}>
+                    {(task) => (
+                      <>
                         <Tooltip value={language.t("scheduled.runNow")}>
                           <IconButton icon="arrow-right" onClick={() => void runNow(task())} />
-                        </Tooltip>
-                        <Tooltip value={language.t("scheduled.edit")}>
-                          <IconButton icon="edit" onClick={() => resetForm(task())} />
                         </Tooltip>
                         <Tooltip value={language.t("scheduled.delete")}>
                           <IconButton icon="trash" onClick={() => void remove(task())} />
                         </Tooltip>
-                      </div>
-                    </div>
+                      </>
+                    )}
+                  </Show>
+                  <Show when={!state.editing}>
+                    <IconButton
+                      icon="close"
+                      variant="ghost"
+                      onClick={() => setState("formOpen", false)}
+                      aria-label={language.t("common.cancel")}
+                    />
+                  </Show>
+                </div>
+              </div>
 
-                    <div class="grid gap-5 border-y border-border-weak-base py-5 sm:grid-cols-2 xl:grid-cols-4">
-                      <div>
-                        <div class="text-11-medium text-text-weaker">{language.t("scheduled.nextRun")}</div>
-                        <div class="mt-1 text-13-regular text-text-strong">{formatDate(task().nextRunAt)}</div>
-                      </div>
-                      <div>
-                        <div class="text-11-medium text-text-weaker">{language.t("scheduled.schedule")}</div>
-                        <div class="mt-1 text-13-regular text-text-strong">
-                          {scheduleLabel(task().schedule, language.t)}
-                        </div>
-                      </div>
-                      <div>
-                        <div class="text-11-medium text-text-weaker">{language.t("scheduled.model")}</div>
-                        <div class="mt-1 text-13-regular text-text-strong">
-                          {task().model.providerID}/{task().model.modelID}
-                        </div>
-                      </div>
-                      <div class="flex items-center">
-                        <Switch checked={task().enabled} onChange={() => void toggle(task())}>
-                          {task().enabled ? language.t("scheduled.enabled") : language.t("scheduled.disabled")}
-                        </Switch>
-                      </div>
-                    </div>
+              <div class="grid min-h-0 flex-1 gap-5 overflow-hidden lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]">
+                <MarkdownEditorField
+                  text={state.prompt}
+                  preview
+                  placeholder={language.t("scheduled.prompt.placeholder")}
+                  onInput={(value) => setState("prompt", value)}
+                  class="min-h-[320px] min-w-0 bg-background-base lg:min-h-0"
+                />
 
-                    <section>
-                      <div class="mb-2 flex items-center gap-2 text-13-medium text-text-strong">
-                        <Icon name="shield" />
-                        {language.t("scheduled.unattended.title")}
-                      </div>
-                      <p class="text-12-regular text-text-weak">{language.t("scheduled.unattended.detail")}</p>
-                    </section>
-                    <section>
-                      <h3 class="mb-2 text-13-medium text-text-strong">{language.t("scheduled.prompt")}</h3>
-                      <pre class="whitespace-pre-wrap border-l-2 border-border-strong-base pl-4 text-13-regular text-text-base">
-                        {task().prompt}
-                      </pre>
-                    </section>
-                    <section>
-                      <h3 class="mb-3 text-13-medium text-text-strong">{language.t("scheduled.history")}</h3>
-                      <Show when={!state.runsLoading} fallback={<Spinner />}>
-                        <Show
-                          when={state.runs.length > 0}
-                          fallback={
-                            <div class="text-12-regular text-text-weak">{language.t("scheduled.history.empty")}</div>
-                          }
-                        >
-                          <div class="divide-y divide-border-weak-base border-y border-border-weak-base">
-                            <For each={state.runs}>
-                              {(run) => (
-                                <div class="grid grid-cols-[110px_minmax(0,1fr)_auto] items-center gap-3 py-3 text-12-regular">
-                                  <span class={statusTone(run.status)}>{run.status}</span>
-                                  <div class="min-w-0">
-                                    <div class="truncate text-text-base">{formatDate(run.scheduledAt)}</div>
-                                    <Show when={run.error}>
-                                      <div class="truncate text-text-danger">{run.error}</div>
-                                    </Show>
-                                  </div>
-                                  <Show when={run.sessionID}>
-                                    <Button
-                                      size="small"
-                                      variant="ghost"
-                                      onClick={() =>
-                                        navigate(`/${base64Encode(task().directory)}/session/${run.sessionID}`)
-                                      }
-                                    >
-                                      {language.t("scheduled.openSession")}
-                                    </Button>
-                                  </Show>
-                                </div>
-                              )}
-                            </For>
-                          </div>
-                        </Show>
+                <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto pr-1">
+                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+                    <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
+                      <Icon name="settings-gear" size="small" class="text-icon-base" />
+                      {language.t("scheduled.section.basics")}
+                    </div>
+                    <div class="grid gap-4">
+                      <TextField
+                        label={language.t("scheduled.name")}
+                        value={state.name}
+                        onChange={(value) => setState("name", value)}
+                      />
+                      <Show when={!state.editing && !routeDirectory()}>
+                        <FieldLabel label={language.t("scheduled.project")}>
+                          <Select
+                            options={projects()}
+                            current={projects().find((item) => item.id === state.projectIDForm)}
+                            value={(item) => item.id}
+                            label={(item) => item.name || getFilename(item.worktree)}
+                            onSelect={(item) => item && chooseProject(item.id)}
+                            class="max-w-full"
+                          />
+                        </FieldLabel>
                       </Show>
-                    </section>
-                  </div>
-                )}
-              </Show>
-            }
-          >
-            <form onSubmit={save} class="mx-auto flex max-w-4xl flex-col gap-6 p-5 md:p-8">
-              <div class="flex items-center justify-between">
-                <h2 class="text-20-medium text-text-strong">
-                  {state.editing ? language.t("scheduled.edit") : language.t("scheduled.create")}
-                </h2>
-                <IconButton icon="close" variant="ghost" onClick={() => setState("formOpen", false)} />
+                      <FieldLabel label={language.t("scheduled.agent")}>
+                        <Select
+                          options={agentOptions()}
+                          current={state.agent}
+                          onSelect={(item) => item && setState("agent", item)}
+                          class="max-w-full"
+                        />
+                      </FieldLabel>
+                      <FieldLabel label={language.t("scheduled.model")}>
+                        <Select
+                          options={modelOptions()}
+                          current={currentModel()}
+                          value={(item) => item.key}
+                          label={(item) => `${item.providerName} / ${item.name}`}
+                          groupBy={(item) => item.providerName}
+                          onSelect={(item) => {
+                            if (!item) return
+                            const variants = item.variants ? Object.keys(item.variants) : []
+                            setState({
+                              providerID: item.providerID,
+                              modelID: item.modelID,
+                              variant: state.variant && variants.includes(state.variant) ? state.variant : "",
+                            })
+                          }}
+                          class="max-w-full"
+                        />
+                      </FieldLabel>
+                      <Show when={variantOptions().length > 1}>
+                        <FieldLabel label={language.t("scheduled.variant")}>
+                          <Select
+                            options={variantOptions()}
+                            current={state.variant || "default"}
+                            label={(item) => (item === "default" ? language.t("common.default") : item)}
+                            onSelect={(item) => item && setState("variant", item === "default" ? "" : item)}
+                            class="max-w-full"
+                          />
+                        </FieldLabel>
+                      </Show>
+                      <Show when={state.editing && selected()}>
+                        {(task) => (
+                          <FieldLabel label={language.t("scheduled.enabled")}>
+                            <Switch checked={task().enabled} onChange={() => void toggle(task())}>
+                              {task().enabled ? language.t("scheduled.enabled") : language.t("scheduled.disabled")}
+                            </Switch>
+                          </FieldLabel>
+                        )}
+                      </Show>
+                    </div>
+                  </section>
+
+                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+                    <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
+                      <Icon name="clock" size="small" class="text-icon-base" />
+                      {language.t("scheduled.section.timing")}
+                    </div>
+                    <div class="grid gap-4">
+                      <FieldLabel label={language.t("scheduled.execution")}>
+                        <Select
+                          options={["existing_session", "new_session"] as const}
+                          current={state.executionMode}
+                          label={(item) =>
+                            language.t(
+                              item === "new_session" ? "scheduled.execution.new" : "scheduled.execution.existing",
+                            )
+                          }
+                          onSelect={(item) => item && setState("executionMode", item)}
+                          class="max-w-full"
+                        />
+                      </FieldLabel>
+                      <FieldLabel label={language.t("scheduled.schedule")}>
+                        <Select
+                          options={["at", "every", "cron"] as const}
+                          current={state.scheduleKind}
+                          label={(item) => language.t(`scheduled.schedule.${item}`)}
+                          onSelect={(item) => item && setState("scheduleKind", item)}
+                          class="max-w-full"
+                        />
+                      </FieldLabel>
+                      <Show when={state.scheduleKind === "at"}>
+                        <TextField
+                          type="datetime-local"
+                          label={language.t("scheduled.schedule.at")}
+                          value={state.at}
+                          onChange={(value) => setState("at", value)}
+                        />
+                      </Show>
+                      <Show when={state.scheduleKind === "every"}>
+                        <TextField
+                          type="number"
+                          min="1"
+                          label={language.t("scheduled.intervalMinutes")}
+                          value={state.intervalMinutes}
+                          onChange={(value) => setState("intervalMinutes", value)}
+                        />
+                      </Show>
+                      <Show when={state.scheduleKind === "cron"}>
+                        <CronExpressionField
+                          label={language.t("scheduled.cron")}
+                          meaningLabel={language.t("scheduled.cron.meaning")}
+                          value={state.cron}
+                          timezone={state.timezone}
+                          locale={language.locale()}
+                          onChange={(value) => setState("cron", value)}
+                        />
+                        <TimezoneSelectField
+                          label={language.t("scheduled.timezone")}
+                          value={state.timezone}
+                          onChange={(value) => setState("timezone", value)}
+                        />
+                      </Show>
+                    </div>
+                  </section>
+
+                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+                    <Checkbox
+                      checked={state.unattended}
+                      onChange={(value) => setState("unattended", value)}
+                      description={language.t("scheduled.unattended.detail")}
+                    >
+                      {language.t("scheduled.unattended.accept")}
+                    </Checkbox>
+                  </section>
+
+                  <Show when={state.error}>
+                    <div class="rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
+                      {state.error}
+                    </div>
+                  </Show>
+                </div>
               </div>
-              <div class="grid gap-5 md:grid-cols-2">
-                <div class="md:col-span-2">
-                  <TextField
-                    label={language.t("scheduled.name")}
-                    value={state.name}
-                    onChange={(value) => setState("name", value)}
-                  />
+
+              <div class="mt-4 flex shrink-0 items-center justify-between gap-2 border-t border-border-weak-base pt-4">
+                <span class="text-12-regular text-text-weak">
+                  {dirty() ? "" : language.t("scheduled.saved")}
+                </span>
+                <div class="flex justify-end gap-2">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => (state.editing ? discardChanges() : setState("formOpen", false))}
+                  >
+                    {state.editing ? language.t("scheduled.discard") : language.t("common.cancel")}
+                  </Button>
+                  <Button type="submit" variant="primary" disabled={!dirty() || state.saving}>
+                    {state.saving ? language.t("common.saving") : language.t("common.save")}
+                  </Button>
                 </div>
-                <Show when={!state.editing && !routeDirectory()}>
-                  <div class="md:col-span-2">
-                    <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.project")}</label>
-                    <Select
-                      options={projects()}
-                      current={projects().find((item) => item.id === state.projectIDForm)}
-                      value={(item) => item.id}
-                      label={(item) => item.name || getFilename(item.worktree)}
-                      onSelect={(item) => item && chooseProject(item.id)}
-                      class="w-full"
-                    />
-                  </div>
-                </Show>
-                <div class="md:col-span-2">
-                  <TextField
-                    multiline
-                    label={language.t("scheduled.prompt")}
-                    value={state.prompt}
-                    onChange={(value) => setState("prompt", value)}
-                    class="min-h-32"
-                  />
-                </div>
-                <div>
-                  <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.agent")}</label>
-                  <Select
-                    options={agentOptions()}
-                    current={state.agent}
-                    onSelect={(item) => item && setState("agent", item)}
-                    class="w-full"
-                  />
-                </div>
-                <div>
-                  <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.model")}</label>
-                  <Select
-                    options={modelOptions()}
-                    current={currentModel()}
-                    value={(item) => item.key}
-                    label={(item) => `${item.providerName} / ${item.name}`}
-                    groupBy={(item) => item.providerName}
-                    onSelect={(item) => {
-                      if (!item) return
-                      const variants = item.variants ? Object.keys(item.variants) : []
-                      setState({
-                        providerID: item.providerID,
-                        modelID: item.modelID,
-                        variant: state.variant && variants.includes(state.variant) ? state.variant : "",
-                      })
-                    }}
-                    class="w-full"
-                  />
-                </div>
-                <Show when={variantOptions().length > 1}>
-                  <div>
-                    <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.variant")}</label>
-                    <Select
-                      options={variantOptions()}
-                      current={state.variant || "default"}
-                      label={(item) => (item === "default" ? language.t("common.default") : item)}
-                      onSelect={(item) => item && setState("variant", item === "default" ? "" : item)}
-                      class="w-full"
-                    />
-                  </div>
-                </Show>
-                <div>
-                  <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.execution")}</label>
-                  <Select
-                    options={["existing_session", "new_session"] as const}
-                    current={state.executionMode}
-                    label={(item) =>
-                      language.t(item === "new_session" ? "scheduled.execution.new" : "scheduled.execution.existing")
-                    }
-                    onSelect={(item) => item && setState("executionMode", item)}
-                    class="w-full"
-                  />
-                </div>
-                <div>
-                  <label class="mb-1 block text-12-medium text-text-weak">{language.t("scheduled.schedule")}</label>
-                  <Select
-                    options={["at", "every", "cron"] as const}
-                    current={state.scheduleKind}
-                    label={(item) =>
-                      item === "at"
-                        ? language.t("scheduled.schedule.at")
-                        : item === "every"
-                          ? language.t("scheduled.schedule.every")
-                          : language.t("scheduled.schedule.cron")
-                    }
-                    onSelect={(item) => item && setState("scheduleKind", item)}
-                    class="w-full"
-                  />
-                </div>
-                <Show when={state.scheduleKind === "at"}>
-                  <div>
-                    <TextField
-                      type="datetime-local"
-                      label={language.t("scheduled.schedule.at")}
-                      value={state.at}
-                      onChange={(value) => setState("at", value)}
-                    />
-                  </div>
-                </Show>
-                <Show when={state.scheduleKind === "every"}>
-                  <div>
-                    <TextField
-                      type="number"
-                      min="1"
-                      label={language.t("scheduled.intervalMinutes")}
-                      value={state.intervalMinutes}
-                      onChange={(value) => setState("intervalMinutes", value)}
-                    />
-                  </div>
-                </Show>
-                <Show when={state.scheduleKind === "cron"}>
-                  <div class="md:col-span-2">
-                    <CronExpressionField
-                      label={language.t("scheduled.cron")}
-                      meaningLabel={language.t("scheduled.cron.meaning")}
-                      value={state.cron}
-                      timezone={state.timezone}
-                      locale={language.locale()}
-                      onChange={(value) => setState("cron", value)}
-                    />
-                  </div>
-                  <div>
-                    <TimezoneSelectField
-                      label={language.t("scheduled.timezone")}
-                      value={state.timezone}
-                      onChange={(value) => setState("timezone", value)}
-                    />
-                  </div>
-                </Show>
-              </div>
-              <div class="border-y border-border-weak-base py-4">
-                <Checkbox
-                  checked={state.unattended}
-                  onChange={(value) => setState("unattended", value)}
-                  description={language.t("scheduled.unattended.detail")}
-                >
-                  {language.t("scheduled.unattended.accept")}
-                </Checkbox>
-              </div>
-              <Show when={state.error}>
-                <div class="text-12-regular text-text-danger">{state.error}</div>
-              </Show>
-              <div class="flex justify-end gap-2">
-                <Button type="button" variant="ghost" onClick={() => setState("formOpen", false)}>
-                  {language.t("common.cancel")}
-                </Button>
-                <Button type="submit" variant="primary" disabled={state.saving}>
-                  {state.saving ? language.t("common.saving") : language.t("common.save")}
-                </Button>
               </div>
             </form>
           </Show>
