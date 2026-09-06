@@ -255,7 +255,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
       return entry.value
     }
 
-    const session = createMemo(() => load(params.dir!, params.id))
+    const session = createMemo(() => load(params.dir!, params.id ?? params.draftID))
     const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
 
     return {
@@ -264,13 +264,18 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
       cursor: () => session().cursor(),
       dirty: () => session().dirty(),
       context: {
-        items: () => session().context.items(),
-        add: (item: ContextItem) => session().context.add(item),
-        remove: (key: string) => session().context.remove(key),
-        removeComment: (path: string, commentID: string) => session().context.removeComment(path, commentID),
-        updateComment: (path: string, commentID: string, next: Partial<FileContextItem> & { comment?: string }) =>
-          session().context.updateComment(path, commentID, next),
-        replaceComments: (items: FileContextItem[]) => session().context.replaceComments(items),
+        items: (scope?: Scope) => pick(scope).context.items(),
+        add: (item: ContextItem, scope?: Scope) => pick(scope).context.add(item),
+        remove: (key: string, scope?: Scope) => pick(scope).context.remove(key),
+        removeComment: (path: string, commentID: string, scope?: Scope) =>
+          pick(scope).context.removeComment(path, commentID),
+        updateComment: (
+          path: string,
+          commentID: string,
+          next: Partial<FileContextItem> & { comment?: string },
+          scope?: Scope,
+        ) => pick(scope).context.updateComment(path, commentID, next),
+        replaceComments: (items: FileContextItem[], scope?: Scope) => pick(scope).context.replaceComments(items),
       },
       set: (prompt: Prompt, cursorPosition?: number, scope?: Scope) => pick(scope).set(prompt, cursorPosition),
       reset: (scope?: Scope) => pick(scope).reset(),

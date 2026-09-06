@@ -234,8 +234,13 @@ export default function Page() {
 
   const composer = createSessionComposerState()
 
-  const workspaceKey = createMemo(() => params.dir ?? "")
-  const workspaceTabs = createMemo(() => layout.tabs(workspaceKey))
+  const draftTabs = createMemo(() => {
+    const pending = layout.handoff.tabs()
+    const key = pending
+      ? `${pending.draftDir ?? pending.dir}/${pending.draftID}`
+      : `${params.dir}/${params.draftID ?? ""}`
+    return layout.tabs(() => key)
+  })
 
   createEffect(
     on(
@@ -255,7 +260,7 @@ export default function Page() {
         layout.handoff.clearTabs()
         if (pending.dir !== (params.dir ?? "")) return
 
-        const from = workspaceTabs().tabs()
+        const from = draftTabs().tabs()
         if (from.all.length === 0 && !from.active) return
 
         const current = tabs().tabs()
@@ -266,8 +271,8 @@ export default function Page() {
         tabs().setAll(all)
         tabs().setActive(active && all.includes(active) ? active : all[0])
 
-        workspaceTabs().setAll([])
-        workspaceTabs().setActive(undefined)
+        draftTabs().setAll([])
+        draftTabs().setActive(undefined)
       },
       { defer: true },
     ),

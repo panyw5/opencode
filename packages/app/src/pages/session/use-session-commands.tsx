@@ -10,7 +10,7 @@ import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
-import { useSessionTabs } from "@/context/session-tabs"
+import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { useTerminal } from "@/context/terminal"
 import { DialogSelectFile } from "@/components/dialog-select-file"
 import { DialogSelectModel } from "@/components/dialog-select-model"
@@ -278,8 +278,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             `[session-new] source=${source ?? "session-command"} session=${params.id || "none"} session-directory=${info()?.directory || "none"} sdk-directory=${sdk.directory || "none"} route-directory=${projectDirectory() || "none"} sidebar-project=${layout.sidebar.project() || "none"} sidebar-opened=${sidebarOpened} prefer-sidebar=${shouldPreferSidebarForNewSession(source, sidebarOpened)} target=${directory || "none"}`,
           )
           if (!directory) return
-          sessionTabs.createDraft(directory, source ?? "menu")
-          navigate(`/${base64Encode(directory)}/session`)
+          const draft = sessionTabs.createDraft(directory, source ?? "menu")
+          navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
           layout.sidebar.close()
         },
       }),
@@ -559,7 +559,9 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
             await sdk.client.session.abort({ sessionID }).catch(() => {})
           }
           const revert = info()?.revert?.messageID
-          const boundary = revert ? resolveMessage(messages(), revert) ?? resolveMessage(userMessages(), revert) : undefined
+          const boundary = revert
+            ? (resolveMessage(messages(), revert) ?? resolveMessage(userMessages(), revert))
+            : undefined
           const message = findLast(userMessages(), (x) => !boundary || compareMessages(x, boundary) < 0)
           if (!message) return
           await sdk.client.session.revert({ sessionID, messageID: message.id })
@@ -584,8 +586,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
           if (!sessionID) return
           const revertMessageID = info()?.revert?.messageID
           if (!revertMessageID) return
-          const boundary =
-            resolveMessage(messages(), revertMessageID) ?? resolveMessage(userMessages(), revertMessageID) ?? {
+          const boundary = resolveMessage(messages(), revertMessageID) ??
+            resolveMessage(userMessages(), revertMessageID) ?? {
               id: revertMessageID,
             }
           const nextMessage = userMessages().find((x) => compareMessages(x, boundary) > 0)

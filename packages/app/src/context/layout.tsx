@@ -47,6 +47,12 @@ export type SessionBarTab = {
   parentID?: string | null
 }
 
+/** A local-only new-session tab. It becomes a SessionBarTab after the first successful submit. */
+export type SessionBarDraft = {
+  id: string
+  directory: string
+}
+
 // Session IDs are database primary keys and are globally unique. Including the
 // route directory here lets a stale/wrong route render the same session twice.
 export const sessionBarKey = (tab: Pick<SessionBarTab, "directory" | "id">) => tab.id
@@ -98,11 +104,7 @@ export function updateSessionBarTabInfo(
     title: info.title ?? tab.title,
     parentID: info.parentID === undefined ? tab.parentID : info.parentID,
   }
-  if (
-    next.directory === tab.directory &&
-    next.title === tab.title &&
-    next.parentID === tab.parentID
-  ) {
+  if (next.directory === tab.directory && next.title === tab.title && next.parentID === tab.parentID) {
     return tabs
   }
 
@@ -128,20 +130,17 @@ export function openSessionBarTab(tabs: SessionBarTab[], tab: SessionBarTab, lim
   return next.length <= limit ? next : next.slice(next.length - limit)
 }
 
-export function addSessionBarDraft(drafts: readonly string[], directory: string) {
-  if (!directory || drafts.some((item) => workspaceKey(item) === workspaceKey(directory))) return [...drafts]
-  return [...drafts, directory]
+export function addSessionBarDraft(drafts: readonly SessionBarDraft[], draft: SessionBarDraft) {
+  if (!draft.directory || drafts.some((item) => item.id === draft.id)) return [...drafts]
+  return [...drafts, draft]
 }
 
-export function removeSessionBarDraft(drafts: readonly string[], directory: string) {
-  return drafts.filter((item) => workspaceKey(item) !== workspaceKey(directory))
+export function removeSessionBarDraft(drafts: readonly SessionBarDraft[], id: string) {
+  return drafts.filter((item) => item.id !== id)
 }
 
-export function visibleSessionBarDrafts(stored: readonly string[], current: string, closed = "") {
-  const closedKey = closed ? workspaceKey(closed) : ""
-  const drafts = closedKey ? stored.filter((directory) => workspaceKey(directory) !== closedKey) : [...stored]
-  if (!current || (closedKey && workspaceKey(current) === closedKey)) return drafts
-  return drafts
+export function visibleSessionBarDrafts(stored: readonly SessionBarDraft[], closedID = "") {
+  return closedID ? stored.filter((draft) => draft.id !== closedID) : [...stored]
 }
 
 export function cycleSessionBarIndex(length: number, activeIndex: number, delta: number) {
@@ -163,18 +162,14 @@ type TabHandoff = {
   dir: string
   id: string
   at: number
-  /** Draft route directory (slug) the promotion started from; may differ from `dir` for worktree sessions. */
+  /** Draft identity and route directory the promotion started from. */
+  draftID: string
   draftDir?: string
 }
 
 export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
 
-export function resolveRailProjects<T>(input: {
-  current: boolean
-  main: boolean
-  live: T[]
-  cached: T[]
-}) {
+export function resolveRailProjects<T>(input: { current: boolean; main: boolean; live: T[]; cached: T[] }) {
   // The live list is authoritative in the main OpenCode domain. Using the
   // cache to merge existence here can leave the rail stale after open/close.
   if (!input.current || input.main) return input.live
@@ -237,8 +232,7 @@ function nextSessionTabsForOpen(current: SessionTabs | undefined, tab: string): 
 export const isSessionFileTab = (tab: string) => tab !== "context" && tab !== "review"
 
 /** Collapse file preview after close when no file tabs remain. */
-export const shouldAutoCollapseFilePreview = (remainingTabs: readonly string[]) =>
-  !remainingTabs.some(isSessionFileTab)
+export const shouldAutoCollapseFilePreview = (remainingTabs: readonly string[]) => !remainingTabs.some(isSessionFileTab)
 
 const sessionPath = (key: string) => {
   const dir = key.split("/")[0]
@@ -362,13 +356,28 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             !!tab.id,
         )
         const all = dedupePersistedSessionBarTabs(valid)
-        const drafts = Array.isArray(sessionBar.drafts) ? sessionBar.drafts.length : 0
-        if (valid.length === storedTabs.length && same(valid, all) && drafts === 0) return sessionBar
+        const storedDrafts = Array.isArray(sessionBar.drafts) ? sessionBar.drafts : []
+        const drafts = storedDrafts.filter(
+          (draft): draft is SessionBarDraft =>
+            isRecord(draft) &&
+            typeof draft.id === "string" &&
+            !!draft.id &&
+            typeof draft.directory === "string" &&
+            !!draft.directory,
+        )
+        const uniqueDrafts = drafts.filter((draft, index) => drafts.findIndex((item) => item.id === draft.id) === index)
+        if (
+          valid.length === storedTabs.length &&
+          same(valid, all) &&
+          uniqueDrafts.length === storedDrafts.length &&
+          same(uniqueDrafts, storedDrafts)
+        )
+          return sessionBar
 
         console.debug(
-          `[session-bar] migrate persisted state tabs-before=${storedTabs.length} tabs-after=${all.length} invalid=${storedTabs.length - valid.length} drafts-cleared=${drafts}`,
+          `[session-bar] migrate persisted state tabs-before=${storedTabs.length} tabs-after=${all.length} invalid=${storedTabs.length - valid.length} drafts-before=${storedDrafts.length} drafts-after=${uniqueDrafts.length}`,
         )
-        return { ...sessionBar, all, drafts: [] }
+        return { ...sessionBar, all, drafts: uniqueDrafts }
       })()
 
       if (
@@ -427,7 +436,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         sessionView: {} as Record<string, SessionView>,
         sessionBar: {
           all: [] as SessionBarTab[],
-          drafts: [] as string[],
+          drafts: [] as SessionBarDraft[],
         },
         handoff: {
           tabs: undefined as TabHandoff | undefined,
@@ -574,7 +583,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           .flat()
           .filter((x): x is NonNullable<typeof x> => Boolean(x))
           .find((x) => x.worktree === project.worktree) ??
-        (projectID ? Object.values(globalSync.data.projectByDomain).flat().filter((x): x is NonNullable<typeof x> => Boolean(x)).find((x) => x.id === projectID) : undefined)
+        (projectID
+          ? Object.values(globalSync.data.projectByDomain)
+              .flat()
+              .filter((x): x is NonNullable<typeof x> => Boolean(x))
+              .find((x) => x.id === projectID)
+          : undefined)
 
       const local = childStore.projectMeta
       const localOverride =
@@ -611,7 +625,9 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
 
     const roots = createMemo(() => {
       const map = new Map<string, string>()
-      const allProjects = Object.values(globalSync.data.projectByDomain).flat().filter((x): x is NonNullable<typeof x> => Boolean(x))
+      const allProjects = Object.values(globalSync.data.projectByDomain)
+        .flat()
+        .filter((x): x is NonNullable<typeof x> => Boolean(x))
       const worktrees = new Set(allProjects.map((project) => workspaceKey(project.worktree)))
       for (const project of allProjects) {
         const sandboxes = project.sandboxes ?? []
@@ -820,8 +836,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       ready,
       handoff: {
         tabs: createMemo(() => store.handoff?.tabs),
-        setTabs(dir: string, id: string, draftDir?: string) {
-          setStore("handoff", "tabs", { dir, id, at: Date.now(), draftDir })
+        setTabs(dir: string, id: string, draftID: string, draftDir?: string) {
+          setStore("handoff", "tabs", { dir, id, at: Date.now(), draftID, draftDir })
         },
         clearTabs() {
           if (!store.handoff?.tabs) return
@@ -847,27 +863,31 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             return openSessionBarTab(current, { directory, id, title, parentID })
           })
         },
-        openDraft(directory: string) {
+        openDraft(draft: SessionBarDraft) {
           const before = store.sessionBar?.drafts ?? []
-          const next = addSessionBarDraft(before, directory)
+          const next = addSessionBarDraft(before, draft)
           if (next.length === before.length) {
-            console.debug(`[session-bar] draft open skip existing directory=${directory} count=${before.length}`)
-            return
+            console.debug(
+              `[session-bar] draft open skip existing id=${draft.id} directory=${draft.directory} count=${before.length}`,
+            )
+            return draft
           }
           console.debug(
-            `[session-bar] draft open directory=${directory} before=${before.length} after=${next.length} drafts=${next.join(",")}`,
+            `[session-bar] draft open id=${draft.id} directory=${draft.directory} before=${before.length} after=${next.length}`,
           )
           setStore("sessionBar", "drafts", next)
+          return draft
         },
-        closeDraft(directory: string) {
+        closeDraft(id: string) {
           const before = store.sessionBar?.drafts ?? []
-          const next = removeSessionBarDraft(before, directory)
+          const draft = before.find((item) => item.id === id)
+          const next = removeSessionBarDraft(before, id)
           if (next.length === before.length) {
-            console.debug(`[session-bar] draft close skip missing directory=${directory} count=${before.length}`)
+            console.debug(`[session-bar] draft close skip missing id=${id} count=${before.length}`)
             return
           }
           console.debug(
-            `[session-bar] draft close directory=${directory} before=${before.length} after=${next.length} drafts=${next.join(",")}`,
+            `[session-bar] draft close id=${id} directory=${draft?.directory ?? "unknown"} before=${before.length} after=${next.length}`,
           )
           setStore("sessionBar", "drafts", next)
         },
@@ -904,11 +924,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             return [...ordered, ...byKey.values()]
           })
         },
-        setInfo(
-          directory: string,
-          id: string,
-          info: { directory?: string; title?: string; parentID: string | null },
-        ) {
+        setInfo(directory: string, id: string, info: { directory?: string; title?: string; parentID: string | null }) {
           let targetDirectory: string | undefined
           setStore("sessionBar", "all", (prev) => {
             const current = prev ?? []

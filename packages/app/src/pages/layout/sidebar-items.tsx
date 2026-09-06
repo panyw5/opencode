@@ -9,7 +9,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { A, useParams } from "@solidjs/router"
+import { A, useNavigate, useParams } from "@solidjs/router"
 import { type Accessor, createEffect, createMemo, createSignal, For, type JSX, Match, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useCommand } from "@/context/command"
@@ -19,7 +19,7 @@ import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
-import { useSessionTabs } from "@/context/session-tabs"
+import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { ensureSessionProfile, startSessionProfile } from "@/utils/session-profile"
@@ -939,17 +939,22 @@ export const NewSessionItem = (props: {
 }): JSX.Element => {
   const layout = useLayout()
   const sessionTabs = useSessionTabs()
+  const navigate = useNavigate()
   const language = useLanguage()
   const label = language.t("command.session.new")
   const tooltip = () => props.mobile || !props.sidebarExpanded()
   const item = (
     <A
-      href={`/${props.slug}/session`}
+      href={`/${props.slug}`}
       end
       class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
-      onClick={() => {
+      onClick={(event) => {
+        event.preventDefault()
         const directory = decode64(props.slug)
-        if (directory) sessionTabs.createDraft(directory, "button")
+        if (directory) {
+          const draft = sessionTabs.createDraft(directory, "button")
+          navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
+        }
         layout.sidebar.close()
       }}
     >

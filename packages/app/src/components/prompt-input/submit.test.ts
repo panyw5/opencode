@@ -27,13 +27,15 @@ const syncedDirectories: string[] = []
 const messagePages: Record<string, Array<{ info: { id: string } }>> = {}
 const syncEvents: string[] = []
 const sessionTabEvents: string[] = []
+const promptResetScopes: Array<{ dir: string; id?: string } | undefined> = []
 
-let params: { id?: string } = {}
+let params: { dir?: string; id?: string; draftID?: string } = {}
 let current = "/repo/worktree-a"
 let root = "/repo/main"
 let selected = "/repo/worktree-a"
 let variant: string | undefined
 let integration: string | undefined
+let sessionCreateGate: { promise: Promise<void>; resolve: () => void } | undefined
 
 const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 
@@ -42,6 +44,7 @@ const clientFor = (directory: string, track = true) => {
   return {
     session: {
       create: async (_parameters?: unknown, options?: { body?: { cwd?: string } }) => {
+        await sessionCreateGate?.promise
         createdSessions.push(directory)
         sessionCreateOptions.push({ directory, body: options?.body })
         return {
@@ -120,7 +123,7 @@ beforeAll(async () => {
   mock.module("@/context/prompt", () => ({
     usePrompt: () => ({
       current: () => promptValue,
-      reset: () => undefined,
+      reset: (scope?: { dir: string; id?: string }) => promptResetScopes.push(scope),
       set: () => undefined,
       context: {
         add: () => undefined,
@@ -132,9 +135,12 @@ beforeAll(async () => {
 
   mock.module("@/context/layout", () => ({
     useLayout: () => ({
+      sessionBar: {
+        drafts: () => [{ id: "draft-1", directory: current }],
+      },
       handoff: {
-        setTabs: (directory: string, sessionID: string) => {
-          sessionTabEvents.push(`handoff:${directory}:${sessionID}`)
+        setTabs: (directory: string, sessionID: string, draftID: string) => {
+          sessionTabEvents.push(`handoff:${directory}:${sessionID}:${draftID}`)
         },
       },
     }),
@@ -142,8 +148,11 @@ beforeAll(async () => {
 
   mock.module("@/context/session-tabs", () => ({
     useSessionTabs: () => ({
-      promoteDraft: (tab: { directory: string; id: string }, draftDirectory: string) => {
-        sessionTabEvents.push(`promote:${tab.directory}:${tab.id}:${draftDirectory}`)
+      ensureOpen: (tab: { directory: string; id: string }) => {
+        sessionTabEvents.push(`ensure:${tab.directory}:${tab.id}`)
+      },
+      promoteDraft: (tab: { directory: string; id: string }, draft: { id: string; directory: string }) => {
+        sessionTabEvents.push(`promote:${tab.directory}:${tab.id}:${draft.id}:${draft.directory}`)
       },
     }),
   }))
@@ -265,24 +274,62 @@ beforeEach(() => {
   optimistic.length = 0
   optimisticSeeded.length = 0
   promoted.length = 0
-  params = {}
+  params = { dir: "/repo/worktree-a", draftID: "draft-1" }
   sentShell.length = 0
   sentCommands.length = 0
   abortedSessions.length = 0
   syncedDirectories.length = 0
   syncEvents.length = 0
   sessionTabEvents.length = 0
+  promptResetScopes.length = 0
   toasts.length = 0
   current = "/repo/worktree-a"
   root = "/repo/main"
   selected = "/repo/worktree-a"
   variant = undefined
   integration = undefined
+  sessionCreateGate = undefined
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
   for (const key of Object.keys(messagePages)) delete messagePages[key]
 })
 
 describe("prompt submit worktree selection", () => {
+  test("promotes a submitted draft in the background after the user opens another draft", async () => {
+    let resolve!: () => void
+    sessionCreateGate = {
+      promise: new Promise<void>((done) => {
+        resolve = done
+      }),
+      resolve: () => resolve(),
+    }
+    const submit = createPromptSubmit({
+      info: () => undefined,
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "shell",
+      working: () => false,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+      resetInputUndo: () => undefined,
+      onNewSessionWorktreeReset: () => undefined,
+      onSubmit: () => undefined,
+    })
+
+    const submitted = submit.handleSubmit({ preventDefault: () => undefined } as unknown as Event)
+    params.draftID = "draft-2"
+    sessionCreateGate.resolve()
+    await submitted
+
+    expect(sessionTabEvents).toEqual(["promote:/repo/main:session-1:draft-1:/repo/worktree-a"])
+    expect(promptResetScopes).toEqual([{ dir: "/repo/worktree-a", id: "draft-1" }])
+  })
+
   test("routes main selection to the project root from a sandbox page", async () => {
     selected = "main"
 
@@ -315,9 +362,9 @@ describe("prompt submit worktree selection", () => {
     expect(sentShell).toEqual(["/repo/main"])
     expect(promoted).toEqual([{ directory: "/repo/main", sessionID: "session-1" }])
     expect(sessionTabEvents).toEqual([
-      "handoff:/repo/main:session-1",
+      "handoff:/repo/main:session-1:draft-1",
+      "promote:/repo/main:session-1:draft-1:/repo/worktree-a",
       "navigate://repo/main/session/session-1",
-      "promote:/repo/main:session-1:/repo/worktree-a",
     ])
   })
 

@@ -14,7 +14,7 @@ import { getAvatarColors, useLayout } from "@/context/layout"
 import { LocalProvider } from "@/context/local"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { SkillsProvider } from "@/context/skills"
-import { useSessionTabs } from "@/context/session-tabs"
+import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { SyncProvider, useSync } from "@/context/sync"
 import { extraAgentByDirectory } from "@/pages/layout/extra-agents"
 import { newSessionProjectLabel, splitI18nTemplate } from "@/pages/layout/helpers"
@@ -98,19 +98,15 @@ function ProjectStatusPortal() {
     const parts = splitI18nTemplate(language.t("command.session.new.tooltip"), "project")
     return (
       <For each={parts}>
-        {(part) =>
-          part.type === "token" ? <span data-slot="rail-tooltip-mark">{project}</span> : part.value
-        }
+        {(part) => (part.type === "token" ? <span data-slot="rail-tooltip-mark">{project}</span> : part.value)}
       </For>
     )
   }
   const projects = createMemo(() => layout.projects.rail())
   const newSessionIn = (projectDirectory: string) => {
-    console.debug(
-      `[directory-layout] new-session-project current=${directory() || "none"} target=${projectDirectory}`,
-    )
-    sessionTabs.createDraft(projectDirectory, "button")
-    navigate(`/${base64Encode(projectDirectory)}/session`)
+    console.debug(`[directory-layout] new-session-project current=${directory() || "none"} target=${projectDirectory}`)
+    const draft = sessionTabs.createDraft(projectDirectory, "button")
+    navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
   }
 
   return (
@@ -132,8 +128,8 @@ function ProjectStatusPortal() {
                     console.debug(
                       `[directory-layout] new-session dir=${directory() || "none"} project=${projectLabel() || "none"}`,
                     )
-                    sessionTabs.createDraft(directory(), "button")
-                    navigate(`/${params.dir}/session`)
+                    const draft = sessionTabs.createDraft(directory(), "button")
+                    navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
                   }}
                 />
               </RailTooltip>

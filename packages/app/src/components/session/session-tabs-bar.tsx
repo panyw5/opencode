@@ -30,6 +30,7 @@ import {
   sessionBarKey,
   useLayout,
   visibleSessionBarDrafts,
+  type SessionBarDraft,
   type SessionBarTab,
 } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
@@ -137,7 +138,7 @@ export function SessionTabsBar() {
     if (Date.now() - pending.at > 60_000) return undefined
     const draftSlug = pending.draftDir ?? pending.dir
     if (draftSlug !== params.dir) return undefined
-    if (!drafts().some((draft) => workspaceKey(draft) === workspaceKey(routeDir()))) return undefined
+    if (!drafts().some((draft) => draft.id === pending.draftID)) return undefined
     return pending
   })
   const activeTab = createMemo(() => {
@@ -171,18 +172,17 @@ export function SessionTabsBar() {
     return owner?.project.name || getFilename(owner?.project.worktree ?? directory) || directory
   }
   // An id-less route is a draft only after an explicit creation command stored it.
-  const draftDirectory = createMemo(() => {
-    if (!onSessionRoute()) return ""
-    if (params.id) return ""
+  const activeDraft = createMemo(() => {
+    if (!onSessionRoute()) return undefined
+    if (params.id || !params.draftID) return undefined
     const directory = routeDir()
-    return drafts().some((draft) => workspaceKey(draft) === workspaceKey(directory)) ? directory : ""
+    return drafts().find(
+      (draft) => draft.id === params.draftID && workspaceKey(draft.directory) === workspaceKey(directory),
+    )
   })
   const visibleDrafts = createMemo(() => {
-    const base = visibleSessionBarDrafts(drafts(), draftDirectory())
     const pending = promoting()
-    if (!pending) return base
-    const consumed = decode64(pending.draftDir ?? pending.dir)
-    return consumed ? base.filter((draft) => workspaceKey(draft) !== workspaceKey(consumed)) : base
+    return visibleSessionBarDrafts(drafts(), pending?.draftID)
   })
   const shown = createMemo(() => {
     if (!settings.general.sessionTabsBar()) return false
@@ -284,7 +284,11 @@ export function SessionTabsBar() {
       try {
         const runtime = globalSDK.forDomain(domainFromDirectory(value.directory))
         const marker = `${runtime.url}:${runtime.version}`
-        void reconcilePersistedTabs(value.directory, marker, value.tabs.map((tab) => ({ ...tab })))
+        void reconcilePersistedTabs(
+          value.directory,
+          marker,
+          value.tabs.map((tab) => ({ ...tab })),
+        )
       } catch (error) {
         console.debug(
           `[session-tabs] persisted reconcile unavailable directory=${value.directory} error=${String(error)}`,
@@ -331,10 +335,9 @@ export function SessionTabsBar() {
     }
   })
 
-  const open = (tab: SessionBarTab) =>
-    sessionTabs.activate({ type: "session", directory: tab.directory, id: tab.id })
+  const open = (tab: SessionBarTab) => sessionTabs.activate({ type: "session", directory: tab.directory, id: tab.id })
 
-  const openDraft = (directory: string) => sessionTabs.activate({ type: "draft", directory })
+  const openDraft = (draft: SessionBarDraft) => sessionTabs.activate({ type: "draft", ...draft })
 
   const subtreeFor = (tab: SessionBarTab) => {
     const all = orderedTabs()
@@ -362,10 +365,10 @@ export function SessionTabsBar() {
     void sessionTabs.requestCloseDescendants(tab)
   }
 
-  const closeDraft = (directory = draftDirectory()) => {
-    if (!directory) return
-    console.debug(`[session-tabs] draft close delegated directory=${directory}`)
-    void sessionTabs.requestCloseDraft(directory)
+  const closeDraft = (draft = activeDraft()) => {
+    if (!draft) return
+    console.debug(`[session-tabs] draft close delegated id=${draft.id} directory=${draft.directory}`)
+    void sessionTabs.requestCloseDraft(draft)
   }
 
   // Cycle through open tabs, then any persisted draft tabs at the end.
@@ -375,9 +378,7 @@ export function SessionTabsBar() {
     const roots = groups().map((group) => group.tab)
     const draftRoots = visibleDrafts()
     if (roots.length === 0 && draftRoots.length === 0) return
-    const draftIndex = draftRoots.findIndex(
-      (directory) => !params.id && workspaceKey(directory) === workspaceKey(routeDir()),
-    )
+    const draftIndex = draftRoots.findIndex((draft) => !params.id && draft.id === params.draftID)
     const sessionIndex = groups().findIndex(
       (group) => isActive(group.tab) || group.children.some((item) => isActive(item.tab)),
     )
@@ -393,16 +394,16 @@ export function SessionTabsBar() {
       void open(target)
       return
     }
-    const directory = draftRoots[next - roots.length]
-    if (!directory) return
+    const draft = draftRoots[next - roots.length]
+    if (!draft) return
     console.debug(
-      `[session-bar] switchBy delta=${delta} roots=${roots.map((tab) => tab.id).join(",")} drafts=${draftRoots.length} activeIndex=${index} target=draft:${directory}`,
+      `[session-bar] switchBy delta=${delta} roots=${roots.map((tab) => tab.id).join(",")} drafts=${draftRoots.length} activeIndex=${index} target=draft:${draft.id}`,
     )
-    void openDraft(directory)
+    void openDraft(draft)
   }
 
   const closeActive = () => {
-    if (draftDirectory()) {
+    if (activeDraft()) {
       closeDraft()
       return
     }
@@ -416,7 +417,7 @@ export function SessionTabsBar() {
       title: language.t("command.sessionTabs.close"),
       keywords: kw("command.sessionTabs.close"),
       category: language.t("command.category.session"),
-      disabled: !draftDirectory() && !tabs().some((tab) => isActive(tab)),
+      disabled: !activeDraft() && !tabs().some((tab) => isActive(tab)),
       onSelect: closeActive,
     },
     {
@@ -441,8 +442,8 @@ export function SessionTabsBar() {
 
   const keys = createMemo(() => groups().map((group) => sessionBarKey(group.tab)))
   const scrollTarget = createMemo(() => {
-    const draft = draftDirectory()
-    if (draft) return `draft:${workspaceKey(draft)}:${tabs().length}:${visibleDrafts().length}`
+    const draft = activeDraft()
+    if (draft) return `draft:${draft.id}:${tabs().length}:${visibleDrafts().length}`
     const active = tabs().find((tab) => isActive(tab))
     if (!active) return
     return `${sessionBarKey(active)}:${tabs().length}`
@@ -552,8 +553,8 @@ export function SessionTabsBar() {
                 <DropdownMenu.Group>
                   <For each={orderedTabs()}>{(tab) => compactSessionItem(tab)}</For>
                   <For each={visibleDrafts()}>
-                    {(directory) => (
-                      <DropdownMenu.Item class="min-w-0" onSelect={() => void openDraft(directory)}>
+                    {(draft) => (
+                      <DropdownMenu.Item class="min-w-0" onSelect={() => void openDraft(draft)}>
                         <span
                           class="flex size-5 shrink-0 items-center justify-center text-icon-weak"
                           aria-hidden="true"
@@ -565,7 +566,7 @@ export function SessionTabsBar() {
                             {language.t("session.tab.session")}
                           </DropdownMenu.ItemLabel>
                           <DropdownMenu.ItemDescription class="max-w-[42%] shrink-0 truncate text-right text-11-regular text-text-weak">
-                            {projectName(directory)}
+                            {projectName(draft.directory)}
                           </DropdownMenu.ItemDescription>
                         </div>
                       </DropdownMenu.Item>
@@ -604,12 +605,12 @@ export function SessionTabsBar() {
                 </For>
               </SortableProvider>
               <For each={visibleDrafts()}>
-                {(directory) => (
+                {(draft) => (
                   <DraftTab
-                    directory={directory}
-                    active={!params.id && workspaceKey(directory) === workspaceKey(routeDir())}
-                    onOpen={() => void openDraft(directory)}
-                    onClose={() => closeDraft(directory)}
+                    draft={draft}
+                    active={!params.id && draft.id === params.draftID}
+                    onOpen={() => void openDraft(draft)}
+                    onClose={() => closeDraft(draft)}
                   />
                 )}
               </For>
@@ -1535,7 +1536,7 @@ function SessionTabPermissionCapsule(props: {
   )
 }
 
-function DraftTab(props: { directory: string; active: boolean; onOpen: () => void; onClose: () => void }) {
+function DraftTab(props: { draft: SessionBarDraft; active: boolean; onOpen: () => void; onClose: () => void }) {
   const language = useLanguage()
 
   return (
@@ -1543,7 +1544,8 @@ function DraftTab(props: { directory: string; active: boolean; onOpen: () => voi
       <div
         data-component="session-tab"
         data-draft="true"
-        data-directory={props.directory}
+        data-directory={props.draft.directory}
+        data-draft-id={props.draft.id}
         data-active={props.active ? "true" : undefined}
         role="button"
         aria-selected={props.active}
@@ -1554,13 +1556,17 @@ function DraftTab(props: { directory: string; active: boolean; onOpen: () => voi
           "session-tab-inactive text-text-weak hover:bg-surface-base-hover hover:text-text-base": !props.active,
         }}
         onClick={() => {
-          console.debug(`[session-bar] draft click directory=${props.directory} active=${String(props.active)}`)
+          console.debug(
+            `[session-bar] draft click id=${props.draft.id} directory=${props.draft.directory} active=${String(props.active)}`,
+          )
           props.onOpen()
         }}
         onKeyDown={(event) => {
           if (event.key !== "Enter" && event.key !== " ") return
           event.preventDefault()
-          console.debug(`[session-bar] draft key directory=${props.directory} key=${event.key}`)
+          console.debug(
+            `[session-bar] draft key id=${props.draft.id} directory=${props.draft.directory} key=${event.key}`,
+          )
           props.onOpen()
         }}
       >
@@ -1580,7 +1586,7 @@ function DraftTab(props: { directory: string; active: boolean; onOpen: () => voi
           aria-label={language.t("common.closeTab")}
           onClick={(event) => {
             event.stopPropagation()
-            console.debug(`[session-tabs] draft close clicked directory=${props.directory}`)
+            console.debug(`[session-tabs] draft close clicked id=${props.draft.id} directory=${props.draft.directory}`)
             props.onClose()
           }}
         >

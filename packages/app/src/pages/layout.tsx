@@ -1422,8 +1422,8 @@ export default function Layout(props: ParentProps) {
               () => (
                 <DialogSwitchProject
                   onSelect={(directory) => {
-                    sessionTabs.createDraft(directory, source ?? "menu")
-                    navigateWithSidebarReset(`/${base64Encode(directory)}/session`)
+                    const draft = sessionTabs.createDraft(directory, source ?? "menu")
+                    navigateWithSidebarReset(sessionTabsTargetHref({ type: "draft", ...draft }))
                     layout.sidebar.close()
                   }}
                   current={() => currentProject()?.entry}
@@ -1457,8 +1457,8 @@ export default function Layout(props: ParentProps) {
             `[session-new] source=${source ?? "unknown"} route=${location.pathname} session=${params.id || "none"} session-directory=${sessionDirectory || "none"} route-directory=${routeDirectory || "none"} sidebar-project=${sidebarDirectory || "none"} sidebar-opened=${sidebarOpened} prefer-sidebar=${preferSidebar} target=${directory || "none"}`,
           )
           if (!directory) return
-          sessionTabs.createDraft(directory, source ?? "menu")
-          navigateWithSidebarReset(`/${base64Encode(directory)}/session`)
+          const draft = sessionTabs.createDraft(directory, source ?? "menu")
+          navigateWithSidebarReset(sessionTabsTargetHref({ type: "draft", ...draft }))
           layout.sidebar.close()
         },
       },
@@ -1471,7 +1471,7 @@ export default function Layout(props: ParentProps) {
         keybind: "mod+shift+p",
         onSelect: (source) => {
           const home = location.pathname === "/"
-          const newSession = !!params.dir && !params.id && /\/session\/?$/.test(location.pathname)
+          const newSession = !!params.dir && !!params.draftID && !params.id
           const defaultCommandIds = home ? HOME_COMMAND_IDS : newSession ? NEW_SESSION_COMMAND_IDS : undefined
           console.debug(
             `[command-palette] open source=${source ?? "unknown"} scope=layout home=${home ? "true" : "false"} new-session=${newSession ? "true" : "false"}`,
@@ -1915,6 +1915,7 @@ export default function Layout(props: ParentProps) {
       hash: location.hash,
       directory: routeDir(),
       id: params.id,
+      draftID: params.draftID,
       session: onSessionRoute(),
     }) ?? resolveConfigReturnTarget(location.state, layout.sessionBar.all(), layout.sessionBar.drafts())
 
@@ -2225,6 +2226,7 @@ export default function Layout(props: ParentProps) {
   const currentSessionTabsRoute = (): SessionTabsRoute => ({
     directory: routeDir(),
     id: params.id,
+    draftID: params.draftID,
     session: onSessionRoute(),
   })
 
@@ -2393,11 +2395,12 @@ export default function Layout(props: ParentProps) {
     for (const link of collectNewSessionDeepLinks(urls)) {
       openProject(link.directory, false)
       const slug = base64Encode(link.directory)
-      sessionTabs.createDraft(link.directory, "deep-link")
+      const draft = sessionTabs.createDraft(link.directory, "deep-link")
       if (link.prompt) {
-        setSessionHandoff(slug, { prompt: link.prompt })
+        setSessionHandoff(`${slug}/${draft.id}`, { prompt: link.prompt })
       }
-      const href = link.prompt ? `/${slug}/session?prompt=${encodeURIComponent(link.prompt)}` : `/${slug}/session`
+      const base = sessionTabsTargetHref({ type: "draft", ...draft })
+      const href = link.prompt ? `${base}?prompt=${encodeURIComponent(link.prompt)}` : base
       navigateWithSidebarReset(href)
     }
   }
@@ -2755,9 +2758,8 @@ export default function Layout(props: ParentProps) {
         {
           label: language.t("command.session.new"),
           onClick: () => {
-            const href = `/${base64Encode(directory)}/session`
-            sessionTabs.createDraft(directory, "button")
-            navigate(href)
+            const draft = sessionTabs.createDraft(directory, "button")
+            navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
             layout.mobileSidebar.hide()
           },
         },
@@ -3162,11 +3164,11 @@ export default function Layout(props: ParentProps) {
   createEffect(
     on(
       () => {
-        return [pageReady(), layoutReady(), routeSlug(), params.id, currentProject()?.root, routeDir(), onSessionRoute()] as const
+        return [pageReady(), layoutReady(), routeSlug(), params.id, params.draftID, currentProject()?.root, routeDir(), onSessionRoute()] as const
       },
-      ([ready, persistedReady, slug, id, root, dir, sessionRoute]) => {
+      ([ready, persistedReady, slug, id, draftID, root, dir, sessionRoute]) => {
         console.debug(
-          `[session-tabs] route observed ready=${ready} persistedReady=${persistedReady} slug=${slug ?? "none"} id=${id ?? "none"} root=${root ?? "none"} directory=${dir || "none"} sessionRoute=${sessionRoute}`,
+          `[session-tabs] route observed ready=${ready} persistedReady=${persistedReady} slug=${slug ?? "none"} id=${id ?? "none"} draftID=${draftID ?? "none"} root=${root ?? "none"} directory=${dir || "none"} sessionRoute=${sessionRoute}`,
         )
         if (!persistedReady) {
           if (sessionRoute && id) {
@@ -3187,15 +3189,17 @@ export default function Layout(props: ParentProps) {
           ? normalizeDirectory(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
           : ""
         if (!id) {
-          const explicit = layout.sessionBar.drafts().some((draft) => sameWorkspacePath(draft, dir))
+          const explicit = layout.sessionBar.drafts().some(
+            (draft) => draft.id === draftID && sameWorkspacePath(draft.directory, dir),
+          )
           if (!explicit) {
-            console.debug(`[session-tabs] reject implicit draft route directory=${dir} target=project-root`)
+            console.debug(`[session-tabs] reject implicit draft route draftID=${draftID ?? "none"} directory=${dir} target=project-root`)
             sessionTabs.observeRoute({ directory: dir, session: false })
             navigateWithSidebarReset(`/${slug}`)
             return
           }
           sessionTabs.observeRoute(
-            { directory: dir, session: true },
+            { directory: dir, draftID, session: true },
             { root, hidden: normalizeDirectory(dir) === quickAssistant },
           )
           return
@@ -3953,8 +3957,8 @@ export default function Layout(props: ParentProps) {
                                 const dir = worktree()
                                 if (!dir) return
                                 console.debug(`[sidebar-project] new-session root=${dir} source=sidebar-button`)
-                                sessionTabs.createDraft(dir, "button")
-                                navigateWithSidebarReset(`/${base64Encode(dir)}/session`)
+                                const draft = sessionTabs.createDraft(dir, "button")
+                                navigateWithSidebarReset(sessionTabsTargetHref({ type: "draft", ...draft }))
                                 layout.sidebar.close()
                               },
                             }}

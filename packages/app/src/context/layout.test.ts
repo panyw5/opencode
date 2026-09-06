@@ -107,29 +107,28 @@ describe("pruneSessionKeys", () => {
 })
 
 describe("session bar drafts", () => {
-  test("deduplicates drafts by workspace", () => {
-    expect(addSessionBarDraft(["/work/project"], "/work/project/")).toEqual(["/work/project"])
-    expect(addSessionBarDraft(["/work/project"], "/work/other")).toEqual(["/work/project", "/work/other"])
+  const first = { id: "draft-1", directory: "/work/project" }
+  const second = { id: "draft-2", directory: "/work/project" }
+
+  test("allows multiple drafts in one workspace and deduplicates only by id", () => {
+    expect(addSessionBarDraft([first], first)).toEqual([first])
+    expect(addSessionBarDraft([first], second)).toEqual([first, second])
   })
 
-  test("removes every path alias for a workspace", () => {
-    expect(removeSessionBarDraft(["/work/project", "/work/other"], "/work/project/")).toEqual(["/work/other"])
+  test("removes only the requested draft", () => {
+    expect(removeSessionBarDraft([first, second], first.id)).toEqual([second])
   })
 
   test("keeps stored drafts after leaving the new-session route", () => {
-    expect(visibleSessionBarDrafts(["/work/project"], "")).toEqual(["/work/project"])
-  })
-
-  test("does not derive a draft from an id-less session route", () => {
-    expect(visibleSessionBarDrafts([], "/work/project")).toEqual([])
+    expect(visibleSessionBarDrafts([first])).toEqual([first])
   })
 
   test("hides a draft that is being closed on the current route", () => {
-    expect(visibleSessionBarDrafts([], "/work/project", "/work/project/")).toEqual([])
+    expect(visibleSessionBarDrafts([first, second], first.id)).toEqual([second])
   })
 
   test("shows only drafts created in explicit state", () => {
-    expect(visibleSessionBarDrafts(["/work/project"], "/work/project")).toEqual(["/work/project"])
+    expect(visibleSessionBarDrafts([first, second])).toEqual([first, second])
   })
 
   test("cycles past the last session tab onto a draft", () => {
@@ -183,9 +182,7 @@ describe("session bar tabs", () => {
     })
 
     expect(repeated).toBe(first)
-    expect(updated).toEqual([
-      { directory: "/work/stale", id: "same", title: "Current", parentID: "parent" },
-    ])
+    expect(updated).toEqual([{ directory: "/work/stale", id: "same", title: "Current", parentID: "parent" }])
     expect(new Set(updated.map((tab) => sessionBarKey(tab))).size).toBe(updated.length)
   })
 
@@ -199,9 +196,7 @@ describe("session bar tabs", () => {
     })
 
     expect(missing).toBe(tabs)
-    expect(updated).toEqual([
-      { directory: "/work/canonical", id: "one", title: "Current", parentID: null },
-    ])
+    expect(updated).toEqual([{ directory: "/work/canonical", id: "one", title: "Current", parentID: null }])
     expect(new Set(updated.map((tab) => sessionBarKey(tab))).size).toBe(updated.length)
   })
 
@@ -211,7 +206,9 @@ describe("session bar tabs", () => {
       { directory: "/private/tmp/workspace", id: "same", title: "Private tmp" },
     ]
 
-    expect(dedupePersistedSessionBarTabs(tabs)).toEqual([{ directory: "/tmp/workspace", id: "same", title: "Private tmp" }])
+    expect(dedupePersistedSessionBarTabs(tabs)).toEqual([
+      { directory: "/tmp/workspace", id: "same", title: "Private tmp" },
+    ])
   })
 
   test("deduplicates a session restored under two different directories", () => {

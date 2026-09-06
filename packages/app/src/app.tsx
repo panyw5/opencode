@@ -247,7 +247,9 @@ const SessionRoute = () => {
   const allowed = () => {
     if (params.id) return true
     const directory = decode64(params.dir ?? "") ?? ""
-    return layout.sessionBar.drafts().some((draft) => workspaceKey(draft) === workspaceKey(directory))
+    return layout.sessionBar
+      .drafts()
+      .some((draft) => draft.id === params.draftID && workspaceKey(draft.directory) === workspaceKey(directory))
   }
   // While a submitted draft promotes into a session, the router transition
   // keeps params.id stale and the draft page would linger as an empty composer.
@@ -258,7 +260,7 @@ const SessionRoute = () => {
     const pending = layout.handoff.tabs()
     if (!pending) return false
     if (Date.now() - pending.at > 60_000) return false
-    return (pending.draftDir ?? pending.dir) === params.dir
+    return pending.draftID === params.draftID && (pending.draftDir ?? pending.dir) === params.dir
   }
   return (
     <SessionProviders>
@@ -635,7 +637,9 @@ function ServerScopedApp(
               <Route path="/config" component={GlobalConfigRoute} />
               <Route path="/:dir" component={DirectoryLayout}>
                 <Route path="/" component={ProjectIndexRoute} />
-                <Route path="/session/:id?" component={SessionRoute} />
+                <Route path="/session" component={ProjectIndexRoute} />
+                <Route path="/session/new/:draftID" component={SessionRoute} />
+                <Route path="/session/:id" component={SessionRoute} />
                 <Route path="/scheduled" component={Scheduled} />
                 <Route path="/config" component={ConfigRoute} />
               </Route>

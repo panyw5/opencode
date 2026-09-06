@@ -471,15 +471,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
   }
 
-  const removeCommentItems = (items: { key: string }[]) => {
+  const removeCommentItems = (items: { key: string }[], scope?: { dir: string; id?: string }) => {
     for (const item of items) {
-      prompt.context.remove(item.key)
+      prompt.context.remove(item.key, scope)
     }
   }
 
-  const clearContext = () => {
-    for (const item of prompt.context.items()) {
-      prompt.context.remove(item.key)
+  const clearContext = (scope?: { dir: string; id?: string }) => {
+    for (const item of prompt.context.items(scope)) {
+      prompt.context.remove(item.key, scope)
     }
   }
 
@@ -508,12 +508,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     performance.mark("submit:start")
 
     const currentPrompt = prompt.current()
+    const currentContext = prompt.context.items().slice()
+    const submittedDraft = params.id
+      ? undefined
+      : layout.sessionBar.drafts().find((draft) => draft.id === params.draftID)
+    const submittedScope = { dir: params.dir!, id: params.id ?? submittedDraft?.id }
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
     const images = input.imageAttachments().slice()
     const mode = input.mode()
 
     diagnose("start", {
       sessionID: params.id,
+      draftID: submittedDraft?.id,
       mode,
       textLength: text.length,
       images: images.length,
@@ -768,9 +774,28 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           // draftDir lets the tab bar and draft route mask the consumed draft
           // for the rest of the router transition (params.id stays stale until
           // the new route commits).
-          layout.handoff.setTabs(base64Encode(sessionDirectory), sessionID, base64Encode(currentDirectory))
-          navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
-          sessionTabs.promoteDraft({ directory: sessionDirectory, id: sessionID }, currentDirectory)
+          if (!submittedDraft) {
+            console.error(
+              `[session-bar] draft transition missing draft routeDraftID=${params.draftID ?? "none"} sessionID=${sessionID}`,
+            )
+            sessionTabs.ensureOpen({ directory: sessionDirectory, id: sessionID })
+            navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
+            return
+          }
+          const active = !params.id && params.draftID === submittedDraft.id
+          console.debug(
+            `[session-bar] draft promotion decision draftID=${submittedDraft.id} sessionID=${sessionID} active=${active}`,
+          )
+          if (active) {
+            layout.handoff.setTabs(
+              base64Encode(sessionDirectory),
+              sessionID,
+              submittedDraft.id,
+              base64Encode(currentDirectory),
+            )
+          }
+          sessionTabs.promoteDraft({ directory: sessionDirectory, id: sessionID }, submittedDraft)
+          if (active) navigate(`/${base64Encode(sessionDirectory)}/session/${sessionID}`)
         })
         performance.mark("submit:navigate:end")
         performance.measure("submit:navigate", "submit:navigate:start", "submit:navigate:end")
@@ -793,7 +818,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       providerID: currentModel.provider.id,
     }
     const agent = currentAgent.name
-    const context = prompt.context.items().slice()
+    const context = currentContext
     const draft: FollowupDraft = {
       sessionID: session.id,
       sessionDirectory,
@@ -805,14 +830,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const clearInput = () => {
-      prompt.reset()
+      prompt.reset(submittedScope)
       input.resetInputUndo()
       input.setMode("normal")
       input.setPopover(null)
     }
 
     const restoreInput = () => {
-      prompt.set(currentPrompt, input.promptLength(currentPrompt))
+      prompt.set(currentPrompt, input.promptLength(currentPrompt), submittedScope)
       input.resetInputUndo(currentPrompt, input.promptLength(currentPrompt))
       input.setMode(mode)
       input.setPopover(null)
@@ -828,7 +853,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (!isNewSession && mode === "normal" && input.shouldQueue?.()) {
       diagnose("queued", { sessionID: session.id, directory: sessionDirectory })
       input.onQueue?.(draft)
-      clearContext()
+      clearContext(submittedScope)
       clearInput()
       return
     }
@@ -922,7 +947,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    removeCommentItems(commentItems)
+    removeCommentItems(commentItems, submittedScope)
     performance.mark("submit:clear-input:start")
     clearInput()
     performance.mark("submit:clear-input:end")

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { sessionBarKey, updateSessionBarTabInfo, type SessionBarTab } from "./layout"
+import { sessionBarKey, updateSessionBarTabInfo, type SessionBarDraft, type SessionBarTab } from "./layout"
 import {
   createSessionTabsCoordinator,
   pickSessionTabsTarget,
@@ -11,6 +11,7 @@ import {
 } from "./session-tabs"
 
 const tab = (id: string, directory = "/repo", parentID?: string): SessionBarTab => ({ directory, id, parentID })
+const draft = (id: string, directory = "/repo"): SessionBarDraft => ({ id, directory })
 
 describe("session tab fallback", () => {
   test("prefers the latest tab in the requested workspace", () => {
@@ -25,12 +26,15 @@ describe("session tab fallback", () => {
   })
 
   test("falls back across workspaces before going home", () => {
-    expect(
-      pickSessionTabsTarget({ tabs: [tab("other", "/other")], drafts: [], directory: "/missing" }),
-    ).toEqual({ type: "session", directory: "/other", id: "other" })
-    expect(pickSessionTabsTarget({ tabs: [], drafts: ["/draft"], directory: "/missing" })).toEqual({
+    expect(pickSessionTabsTarget({ tabs: [tab("other", "/other")], drafts: [], directory: "/missing" })).toEqual({
+      type: "session",
+      directory: "/other",
+      id: "other",
+    })
+    expect(pickSessionTabsTarget({ tabs: [], drafts: [draft("draft-1", "/draft")], directory: "/missing" })).toEqual({
       type: "draft",
       directory: "/draft",
+      id: "draft-1",
     })
   })
 
@@ -40,7 +44,12 @@ describe("session tab fallback", () => {
   })
 })
 
-function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: SessionTabsRoute; timeoutMs?: number }) {
+function harness(input?: {
+  tabs?: SessionBarTab[]
+  drafts?: SessionBarDraft[]
+  route?: SessionTabsRoute
+  timeoutMs?: number
+}) {
   let tabs = [...(input?.tabs ?? [])]
   let drafts = [...(input?.drafts ?? [])]
   let route = input?.route ?? ({ directory: "/repo", session: true } satisfies SessionTabsRoute)
@@ -74,11 +83,11 @@ function harness(input?: { tabs?: SessionBarTab[]; drafts?: string[]; route?: Se
         const closing = new Set(values.map(sessionBarKey))
         tabs = tabs.filter((item) => !closing.has(sessionBarKey(item)))
       },
-      openDraft(directory) {
-        if (!drafts.includes(directory)) drafts.push(directory)
+      openDraft(value) {
+        if (!drafts.some((item) => item.id === value.id)) drafts.push(value)
       },
-      closeDraft(directory) {
-        drafts = drafts.filter((item) => item !== directory)
+      closeDraft(id) {
+        drafts = drafts.filter((item) => item.id !== id)
       },
       setInfo(directory, id, info) {
         const current = tabs.find((item) => item.id === id)
@@ -160,10 +169,11 @@ describe("session tabs coordinator", () => {
   test("only an explicit creation command creates a draft", () => {
     const h = harness()
 
-    h.coordinator.createDraft("/repo", "button")
-    h.coordinator.createDraft("/repo", "keybind")
+    const first = h.coordinator.createDraft("/repo", "button")
+    const second = h.coordinator.createDraft("/repo", "keybind")
 
-    expect(h.drafts()).toEqual(["/repo"])
+    expect(first.id).not.toBe(second.id)
+    expect(h.drafts()).toEqual([first, second])
     h.dispose()
   })
 
@@ -195,9 +205,7 @@ describe("session tabs coordinator", () => {
       parentID: null,
     })
 
-    expect(h.tabs()).toEqual([
-      { directory: "/repo/canonical", id: "relocate", title: "Canonical", parentID: null },
-    ])
+    expect(h.tabs()).toEqual([{ directory: "/repo/canonical", id: "relocate", title: "Canonical", parentID: null }])
     h.dispose()
   })
 
@@ -529,9 +537,7 @@ describe("session tabs coordinator", () => {
     h.queuePrepare(new Promise<void>((resolve) => (release = resolve)))
     const removal = h.coordinator.remove(tab("lifecycle-one"), "deleted")
 
-    expect(
-      await h.coordinator.activate({ type: "session", directory: "/repo", id: "lifecycle-two" }),
-    ).toBe("navigated")
+    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "lifecycle-two" })).toBe("navigated")
     expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "lifecycle-two" }])
 
     release()
@@ -547,9 +553,9 @@ describe("session tabs coordinator", () => {
     expect(h.targets).toEqual([])
 
     h.setFailPrepare(false)
-    expect(
-      await h.coordinator.activate({ type: "session", directory: "/repo", id: "one" }, { replace: true }),
-    ).toBe("navigated")
+    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "one" }, { replace: true })).toBe(
+      "navigated",
+    )
     expect(h.navigationOptions).toEqual([{ replace: true }])
     h.dispose()
   })
@@ -780,11 +786,11 @@ describe("session tabs coordinator", () => {
   test("draft close waits for the target route before removing the draft", async () => {
     const h = harness({
       tabs: [tab("one")],
-      drafts: ["/repo"],
-      route: { directory: "/repo", session: true },
+      drafts: [draft("draft-close")],
+      route: { directory: "/repo", draftID: "draft-close", session: true },
     })
-    expect(await h.coordinator.requestCloseDraft("/repo")).toBe(true)
-    expect(h.drafts()).toEqual(["/repo"])
+    expect(await h.coordinator.requestCloseDraft(draft("draft-close"))).toBe(true)
+    expect(h.drafts()).toEqual([draft("draft-close")])
     h.coordinator.observeRoute({ directory: "/repo", id: "one", session: true })
     expect(h.drafts()).toEqual([])
     h.dispose()
@@ -793,12 +799,12 @@ describe("session tabs coordinator", () => {
   test("draft promotion keeps the active draft until the session route commits", () => {
     const promoted = tab("promoted")
     const h = harness({
-      drafts: ["/repo"],
-      route: { directory: "/repo", session: true },
+      drafts: [draft("draft-promote")],
+      route: { directory: "/repo", draftID: "draft-promote", session: true },
     })
 
-    h.coordinator.promoteDraft(promoted, "/repo")
-    expect(h.drafts()).toEqual(["/repo"])
+    h.coordinator.promoteDraft(promoted, draft("draft-promote"))
+    expect(h.drafts()).toEqual([draft("draft-promote")])
     expect(h.tabs()).toEqual([promoted])
 
     h.coordinator.observeRoute({ directory: "/repo", id: promoted.id, session: true })

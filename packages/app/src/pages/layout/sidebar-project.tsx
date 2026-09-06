@@ -10,7 +10,7 @@ import { useLayout, type LocalProject } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { usePlatform } from "@/context/platform"
-import { useSessionTabs } from "@/context/session-tabs"
+import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { ProjectIcon } from "./sidebar-items"
 import { displayName } from "./helpers"
 import { projectSelected } from "./sidebar-project-helpers"
@@ -151,8 +151,8 @@ const ProjectTile = (props: {
     const directory = props.project.worktree
     if (!directory) return
     console.debug(`[sidebar-project] new session dir=${directory}`)
-    sessionTabs.createDraft(directory, "button")
-    navigate(`/${base64Encode(directory)}/session`)
+    const draft = sessionTabs.createDraft(directory, "button")
+    navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
     layout.sidebar.close()
   }
 

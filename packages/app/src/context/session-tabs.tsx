@@ -1,5 +1,5 @@
 import { createContext, useContext, type ParentProps } from "solid-js"
-import type { SessionBarTab } from "@/context/layout"
+import type { SessionBarDraft, SessionBarTab } from "@/context/layout"
 import { sessionBarKey } from "@/context/layout"
 import { sameWorkspacePath, workspaceKey } from "@/pages/layout/helpers"
 import { base64Encode } from "@opencode-ai/core/util/encode"
@@ -12,19 +12,20 @@ import {
 export type SessionTabsRoute = {
   directory: string
   id?: string
+  draftID?: string
   session: boolean
 }
 
 export type SessionTabsTarget =
   | { type: "session"; directory: string; id: string }
-  | { type: "draft"; directory: string }
+  | { type: "draft"; directory: string; id: string }
   | { type: "home" }
 
 export type SessionTabsActivationResult = "navigated" | "superseded" | "failed"
 
 export function pickSessionTabsTarget(input: {
   tabs: SessionBarTab[]
-  drafts: string[]
+  drafts: SessionBarDraft[]
   directory?: string
 }): SessionTabsTarget {
   if (input.directory) {
@@ -36,22 +37,23 @@ export function pickSessionTabsTarget(input: {
       }
     }
     for (let i = input.drafts.length - 1; i >= 0; i--) {
-      const directory = input.drafts[i]
-      if (workspaceKey(directory) === preferred) return { type: "draft", directory }
+      const draft = input.drafts[i]
+      if (workspaceKey(draft.directory) === preferred)
+        return { type: "draft", directory: draft.directory, id: draft.id }
     }
   }
 
   const tab = input.tabs.at(-1)
   if (tab) return { type: "session", directory: tab.directory, id: tab.id }
   const draft = input.drafts.at(-1)
-  if (draft) return { type: "draft", directory: draft }
+  if (draft) return { type: "draft", directory: draft.directory, id: draft.id }
   return { type: "home" }
 }
 
 export function sessionTabsTargetHref(target: SessionTabsTarget) {
   if (target.type === "home") return "/"
   const base = `/${base64Encode(target.directory)}/session`
-  return target.type === "session" ? `${base}/${target.id}` : base
+  return target.type === "session" ? `${base}/${target.id}` : `${base}/new/${target.id}`
 }
 
 export type SessionTabsClosePlan = {
@@ -67,11 +69,11 @@ export type SessionTabsReconcileEntry = {
 
 export type SessionTabsStoreAdapter = {
   all(): SessionBarTab[]
-  drafts(): string[]
+  drafts(): SessionBarDraft[]
   open(tab: SessionBarTab): void
   closeAll(tabs: SessionBarTab[]): void
-  openDraft(directory: string): void
-  closeDraft(directory: string): void
+  openDraft(draft: SessionBarDraft): void
+  closeDraft(id: string): void
   setInfo(
     directory: string,
     id: string,
@@ -99,7 +101,10 @@ export type SessionTabsCoordinator = {
     meta?: { title?: string; parentID?: string | null; root?: string; hidden?: boolean },
   ): void
   ensureOpen(tab: SessionBarTab): boolean
-  createDraft(directory: string, source: "button" | "keybind" | "menu" | "slash" | "palette" | "deep-link"): void
+  createDraft(
+    directory: string,
+    source: "button" | "keybind" | "menu" | "slash" | "palette" | "deep-link",
+  ): SessionBarDraft
   activate(target: SessionTabsTarget, options?: { replace?: boolean }): Promise<SessionTabsActivationResult>
   updateMeta(
     directory: string,
@@ -108,12 +113,16 @@ export type SessionTabsCoordinator = {
   ): void
   requestClose(tab: SessionBarTab): Promise<boolean>
   requestCloseDescendants(tab: SessionBarTab): Promise<boolean>
-  requestCloseDraft(directory: string): Promise<boolean>
-  promoteDraft(tab: SessionBarTab, draftDirectory?: string): void
+  requestCloseDraft(draft: SessionBarDraft): Promise<boolean>
+  promoteDraft(tab: SessionBarTab, draft: SessionBarDraft): void
   restore(tab: SessionBarTab): void
   restoreDirectory(directory: string): void
   beginReconcile(directory: string): number
-  reconcileDirectory(input: { directory: string; epoch: number; entries: SessionTabsReconcileEntry[] }): Promise<boolean>
+  reconcileDirectory(input: {
+    directory: string
+    epoch: number
+    entries: SessionTabsReconcileEntry[]
+  }): Promise<boolean>
   remove(tab: SessionBarTab, reason: "archived" | "deleted" | "workspace-removed"): Promise<void>
   removeDirectory(directory: string, options?: { navigate?: boolean }): Promise<void>
   dispose(): void
@@ -121,8 +130,7 @@ export type SessionTabsCoordinator = {
 
 const canonical = (value: string) => value.replace(/^\/private(?=\/(?:tmp|var)(?:\/|$))/, "")
 const directoryEqual = (a: string, b: string) => canonical(a) === canonical(b)
-const routeMatches = (route: SessionTabsRoute, tab: SessionBarTab) =>
-  route.session && route.id === tab.id
+const routeMatches = (route: SessionTabsRoute, tab: SessionBarTab) => route.session && route.id === tab.id
 
 type CloseHandoff =
   | {
@@ -134,7 +142,7 @@ type CloseHandoff =
   | {
       token: number
       type: "draft"
-      directory: string
+      draft: SessionBarDraft
       matches(route: SessionTabsRoute): boolean
     }
 
@@ -175,13 +183,13 @@ let navigationSequence = 0
 
 const routeKey = (route: SessionTabsRoute) => {
   if (!route.session) return "home"
-  if (!route.id) return `draft:${canonical(route.directory)}`
+  if (!route.id) return `draft:${route.draftID ?? "missing"}`
   return `session:${canonical(route.directory)}:${sessionBarKey({ directory: route.directory, id: route.id })}`
 }
 
 const targetKey = (target: SessionTabsTarget) => {
   if (target.type === "home") return "home"
-  if (target.type === "draft") return `draft:${canonical(target.directory)}`
+  if (target.type === "draft") return `draft:${target.id}`
   return `session:${canonical(target.directory)}:${sessionBarKey(target)}`
 }
 
@@ -190,8 +198,8 @@ const targetMatchesRoute = (target: SessionTabsTarget, route: SessionTabsRoute) 
 const targetMatchesTab = (target: SessionTabsTarget, tab: SessionBarTab) =>
   target.type === "session" && sessionBarKey(target) === sessionBarKey(tab)
 
-const targetMatchesDraft = (target: SessionTabsTarget, directory: string) =>
-  target.type === "draft" && directoryEqual(target.directory, directory)
+const targetMatchesDraft = (target: SessionTabsTarget, draft: SessionBarDraft) =>
+  target.type === "draft" && target.id === draft.id
 
 export function planSessionTabClose(input: {
   tabs: SessionBarTab[]
@@ -230,9 +238,7 @@ export function planSessionTabClose(input: {
     active,
     // No neighbor means every tab is gone: show home instead of opening a
     // fresh draft for the project the user just closed out of.
-    target: neighbor
-      ? { type: "session", directory: neighbor.directory, id: neighbor.id }
-      : { type: "home" },
+    target: neighbor ? { type: "session", directory: neighbor.directory, id: neighbor.id } : { type: "home" },
   }
 }
 
@@ -291,9 +297,9 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
     clearNavigation(intent, reason)
   }
 
-  const invalidateDraftNavigation = (directory: string, reason: string) => {
+  const invalidateDraftNavigation = (draft: SessionBarDraft, reason: string) => {
     const intent = navigationIntent
-    if (!intent || !targetMatchesDraft(intent.target, directory)) return
+    if (!intent || !targetMatchesDraft(intent.target, draft)) return
     clearNavigation(intent, reason)
   }
 
@@ -358,7 +364,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       ports.store.closeAll(handoff.closing)
       ports.cool(handoff.closing)
     } else {
-      ports.store.closeDraft(handoff.directory)
+      ports.store.closeDraft(handoff.draft.id)
     }
     console.debug(`[session-tabs] close transaction committed token=${handoff.token}`)
   }
@@ -430,18 +436,17 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
     },
     ensureOpen,
     createDraft(directory, source) {
-      if (!directory) return
-      console.debug(`[session-tabs] explicit draft created directory=${directory} source=${source}`)
-      ports.store.openDraft(directory)
+      const draft = { id: `draft_${crypto.randomUUID()}`, directory }
+      console.debug(`[session-tabs] explicit draft created id=${draft.id} directory=${directory} source=${source}`)
+      ports.store.openDraft(draft)
+      return draft
     },
     async activate(target, options) {
       const intent = beginNavigation(target, "activate")
       try {
         await ports.prepare(target)
         if (!ownsNavigation(intent)) {
-          console.debug(
-            `[session-tabs] activation superseded token=${intent.token} target=${targetKey(target)}`,
-          )
+          console.debug(`[session-tabs] activation superseded token=${intent.token} target=${targetKey(target)}`)
           return "superseded"
         }
         ports.navigate(target, options)
@@ -526,49 +531,49 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       })
       return navigate(target, transaction)
     },
-    async requestCloseDraft(directory) {
+    async requestCloseDraft(draft) {
       const route = ports.route()
-      const active = route.session && !route.id && directoryEqual(route.directory, directory)
+      const active = route.session && !route.id && route.draftID === draft.id
       console.debug(
-        `[session-tabs] draft close requested directory=${directory} active=${active} routeDirectory=${route.directory || "none"} routeID=${route.id ?? "none"}`,
+        `[session-tabs] draft close requested id=${draft.id} directory=${draft.directory} active=${active} routeDirectory=${route.directory || "none"} routeID=${route.id ?? "none"}`,
       )
       if (!active) {
-        invalidateDraftNavigation(directory, "target-draft-closed")
-        ports.store.closeDraft(directory)
+        invalidateDraftNavigation(draft, "target-draft-closed")
+        ports.store.closeDraft(draft.id)
         return true
       }
       const last = ports.store.all().at(-1)
-      const otherDraft = ports.store.drafts().find((item) => !directoryEqual(item, directory))
+      const otherDraft = ports.store.drafts().find((item) => item.id !== draft.id)
       const target: SessionTabsTarget = last
         ? { type: "session", directory: last.directory, id: last.id }
         : otherDraft
-          ? { type: "draft", directory: otherDraft }
+          ? { type: "draft", directory: otherDraft.directory, id: otherDraft.id }
           : { type: "home" }
       const transaction = startPending({
         type: "draft",
-        directory,
-        matches: (value) => value.session && !value.id && directoryEqual(value.directory, directory),
+        draft,
+        matches: (value) => value.session && !value.id && value.draftID === draft.id,
       })
       console.debug(`[session-tabs] draft close transaction started token=${transaction.token} target=${target.type}`)
       return navigate(target, transaction)
     },
-    promoteDraft(tab, draftDirectory) {
-      supersedePending("draft-promoted")
-      const directory = draftDirectory ?? tab.directory
-      invalidateDraftNavigation(directory, "target-draft-promoted")
+    promoteDraft(tab, draft) {
       const route = ports.route()
-      const active = route.session && !route.id && directoryEqual(route.directory, directory)
+      const active = route.session && !route.id && route.draftID === draft.id
       if (active) {
+        supersedePending("draft-promoted")
+        invalidateDraftNavigation(draft, "target-draft-promoted")
         const transaction = startPending({
           type: "draft",
-          directory,
-          matches: (value) => value.session && !value.id && directoryEqual(value.directory, directory),
+          draft,
+          matches: (value) => value.session && !value.id && value.draftID === draft.id,
         })
         console.debug(
-          `[session-tabs] draft promotion transaction started token=${transaction.token} directory=${directory} sessionID=${tab.id}`,
+          `[session-tabs] draft promotion transaction started token=${transaction.token} draftID=${draft.id} directory=${draft.directory} sessionID=${tab.id}`,
         )
       } else {
-        ports.store.closeDraft(directory)
+        invalidateDraftNavigation(draft, "background-draft-promoted")
+        ports.store.closeDraft(draft.id)
       }
       ensureOpen(tab)
     },
@@ -623,7 +628,9 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         }
         if (!directoryEqual(entry.tab.directory, input.directory)) continue
         if (entry.state === "unknown") {
-          console.debug(`[session-tabs] reconcile retained unknown key=${sessionBarKey(entry.tab)} epoch=${input.epoch}`)
+          console.debug(
+            `[session-tabs] reconcile retained unknown key=${sessionBarKey(entry.tab)} epoch=${input.epoch}`,
+          )
           continue
         }
         if (entry.state === "present") {
@@ -635,9 +642,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         }
         await coordinator.remove(entry.tab, entry.state)
       }
-      console.debug(
-        `[session-tabs] reconcile committed directory=${input.directory} key=${key} epoch=${input.epoch}`,
-      )
+      console.debug(`[session-tabs] reconcile committed directory=${input.directory} key=${key} epoch=${input.epoch}`)
       return true
     },
     async remove(tab, reason) {
@@ -725,7 +730,10 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       supersedePending("directory-removed")
       const closing = ports.store.all().filter((tab) => directoryEqual(tab.directory, directory))
       invalidateTabNavigation(closing, "target-directory-removed")
-      invalidateDraftNavigation(directory, "target-directory-removed")
+      for (const draft of ports.store.drafts().filter((item) => directoryEqual(item.directory, directory))) {
+        invalidateDraftNavigation(draft, "target-directory-removed")
+        ports.store.closeDraft(draft.id)
+      }
       for (const tab of closing) {
         const key = sessionBarKey(tab)
         if (lifecycleTombstones.has(key)) continue
@@ -738,11 +746,10 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         lifecycleTombstones.set(key, owner)
         console.debug(`[session-tabs] lifecycle remove owner key=${key} token=${owner.token} reason=${owner.reason}`)
       }
-      ports.store.closeDraft(directory)
       if (closing.length === 0) return
       const route = ports.route()
-      const active = closing.some((tab) => routeMatches(route, tab)) ||
-        (route.session && directoryEqual(route.directory, directory))
+      const active =
+        closing.some((tab) => routeMatches(route, tab)) || (route.session && directoryEqual(route.directory, directory))
       ports.store.closeAll(closing)
       ports.cool(closing)
       console.debug(
@@ -757,9 +764,7 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
       try {
         await ports.prepare(target)
         if (!ownsNavigation(intent)) {
-          console.debug(
-            `[session-tabs] directory navigation superseded token=${intent.token} directory=${directory}`,
-          )
+          console.debug(`[session-tabs] directory navigation superseded token=${intent.token} directory=${directory}`)
           return
         }
         ports.navigate(target)

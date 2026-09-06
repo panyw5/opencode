@@ -14,9 +14,7 @@ describe("config return navigation", () => {
       session: true,
     })
 
-    expect(resolveConfigReturnHref(target, tabs, [])).toBe(
-      "/L3JlcG8=/session/ses_original?view=review",
-    )
+    expect(resolveConfigReturnHref(target, tabs, [])).toBe("/L3JlcG8=/session/ses_original?view=review")
   })
 
   test("rejects an originating session or draft after its tab closes", () => {
@@ -27,14 +25,17 @@ describe("config return navigation", () => {
       session: true,
     })
     const draft = createConfigReturnTarget({
-      pathname: "/L3JlcG8=/session",
+      pathname: "/L3JlcG8=/session/new/draft-1",
       directory: "/repo",
+      draftID: "draft-1",
       session: true,
     })
 
     expect(resolveConfigReturnHref(session, [], [])).toBeUndefined()
     expect(resolveConfigReturnHref(draft, [], [])).toBeUndefined()
-    expect(resolveConfigReturnHref(draft, [], ["/repo"])).toBe("/L3JlcG8=/session")
+    expect(resolveConfigReturnHref(draft, [], [{ id: "draft-1", directory: "/repo" }])).toBe(
+      "/L3JlcG8=/session/new/draft-1",
+    )
   })
 
   test("preserves home and scheduled routes without requiring a session tab", () => {
