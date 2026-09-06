@@ -40,7 +40,6 @@ export function SessionSidePanel(props: {
   reviewPanel: () => JSX.Element
   activeDiff?: string
   focusReviewDiff: (path: string) => void
-  reviewSnap: boolean
   size: Sizing
 }) {
   const layout = useLayout()
@@ -240,11 +239,11 @@ export function SessionSidePanel(props: {
         class="relative min-w-0 h-full flex shrink-0 overflow-hidden bg-background-base"
         classList={{
           "pointer-events-none": !open(),
-          "will-change-[width]": !props.size.active() && !props.reviewSnap,
+          "will-change-[width]": !props.size.active(),
         }}
         style={{
           width: panelWidth(),
-          transition: props.size.active() || props.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+          transition: props.size.active() ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
         }}
       >
         <div class="size-full flex border-l border-border-weaker-base">
@@ -331,7 +330,13 @@ export function SessionSidePanel(props: {
                   </div>
 
                   <Show when={reviewOpen() && props.canReview()}>
-                    <Tabs.Content value="review" class="flex flex-col h-full overflow-hidden contain-strict">
+                    {/* Remounts on every open, so the pop-in animation class
+                        replays each time. Must be a class: Tabs.Content hardcodes
+                        its own data-slot after spreading props. */}
+                    <Tabs.Content
+                      value="review"
+                      class="session-review-panel-pop flex flex-col h-full overflow-hidden contain-strict"
+                    >
                       {props.reviewPanel()}
                     </Tabs.Content>
                   </Show>

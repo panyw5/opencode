@@ -39,4 +39,20 @@ describe("session diff controller", () => {
     expect(service.get("/project", "session")).toBeUndefined()
     expect(service.inspect()).toEqual({ inflight: 0, revision: 0 })
   })
+
+  test("tracks loadedAt on completed loads and drops it on clear", async () => {
+    const request = deferred<{ data?: SnapshotFileDiff[] }>()
+    const harness = createSessionControllerHarness({ diff: async () => request.promise })
+    const service = createSessionDiffService(harness.deps)
+    expect(service.loadedAt("/project", "session")).toBeUndefined()
+
+    const loading = service.refresh("/project", "session")
+    expect(service.loadedAt("/project", "session")).toBeUndefined()
+    request.resolve({ data: [diff("fresh")] })
+    await loading
+    expect(service.loadedAt("/project", "session")).toBeTypeOf("number")
+
+    service.clear("/project", ["session"])
+    expect(service.loadedAt("/project", "session")).toBeUndefined()
+  })
 })

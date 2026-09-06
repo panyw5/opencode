@@ -122,6 +122,14 @@ const scrollBottomThreshold = 16
 const settleMs = 1_500
 const sessionBackgroundDelayMs = typeof navigator === "undefined" ? 250 : sessionBackgroundDelay(navigator.userAgent)
 const sessionTodoDelayMs = typeof navigator === "undefined" ? 500 : sessionBackgroundDelay(navigator.userAgent, 500)
+// Background-prefetch delay for review data: after the children/todo prefetches
+// so first-paint requests are never competing with review warm-up.
+const sessionReviewDelayMs = typeof navigator === "undefined" ? 750 : sessionBackgroundDelay(navigator.userAgent, 750)
+// Opening the review panel force-refreshes the session diff to catch external
+// changes, but re-fetching on every open is waste when the data was just
+// loaded; within this window the store copy is trusted (session.diff events
+// also refresh it live while a turn runs).
+const reviewDiffFreshMs = 15_000
 const initialScrollRevealMs = 300
 const emptyFollowups: (FollowupDraft & { id: string })[] = []
 const smoothBottomSnapDistance = 900
@@ -214,7 +222,6 @@ export default function Page() {
   const [ui, setUi] = createStore({
     pendingMessage: undefined as string | undefined,
     seekingMessageId: undefined as string | undefined,
-    reviewSnap: false,
     scrollGesture: 0,
     mode: "live" as ScrollMode,
     // Keep the first paint covered while timeline scroll settles.
@@ -783,7 +790,6 @@ export default function Page() {
   })
 
   let root: HTMLDivElement | undefined
-  let reviewFrame: number | undefined
   let refreshFrame: number | undefined
   let refreshTimer: number | undefined
   let refreshRun = 0
@@ -851,18 +857,30 @@ export default function Page() {
     void loadVcs(mode, true)
   }
 
-  createComputed((prev) => {
-    const open = desktopReviewOpen()
-    if (prev === undefined || prev === open) return open
-
-    if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
-    setUi("reviewSnap", true)
-    reviewFrame = requestAnimationFrame(() => {
-      reviewFrame = undefined
-      setUi("reviewSnap", false)
-    })
-    return open
-  }, desktopReviewOpen())
+  // Warm the review data in the background shortly after a session opens so
+  // the review panel renders its list instantly on first open instead of
+  // showing a loading state while the request round-trips. The git diff covers
+  // the default uncommitted-changes mode; the session diff covers the
+  // session/turn modes (and the file tree change count). Turn-in-progress
+  // sessions don't need this: the backend pushes session.diff events when a
+  // turn summarizes, which already populate the store.
+  createEffect(
+    on(
+      () => params.id,
+      (id) => {
+        if (!id) return
+        const timer = window.setTimeout(() => {
+          if (params.id !== id) return
+          if (sync.status === "loading") return
+          if ((info()?.summary?.files ?? 0) > 0 && globalSync.session.diff.get(sdk.directory, id) === undefined) {
+            void sync.session.diff(id)
+          }
+          if (sync.project?.vcs === "git") void loadVcs("git")
+        }, sessionReviewDelayMs)
+        onCleanup(() => window.clearTimeout(timer))
+      },
+    ),
+  )
 
   const turnDiffs = createMemo(() => list(lastUserMessage()?.summary?.diffs))
   const changesOptions = createMemo<ChangeMode[]>(() => {
@@ -2044,6 +2062,8 @@ export default function Page() {
         const id = params.id
         if (!id) return
         if (!untrack(() => globalSync.session.diff.get(sdk.directory, id) !== undefined)) return
+        const loadedAt = untrack(() => globalSync.session.diff.loadedAt(sdk.directory, id))
+        if (loadedAt !== undefined && Date.now() - loadedAt < reviewDiffFreshMs) return
 
         diffFrame = requestAnimationFrame(() => {
           diffFrame = undefined
@@ -3193,7 +3213,6 @@ export default function Page() {
   onCleanup(() => {
     refreshRun += 1
     document.removeEventListener("keydown", handleKeyDown)
-    if (reviewFrame !== undefined) cancelAnimationFrame(reviewFrame)
     if (refreshFrame !== undefined) cancelAnimationFrame(refreshFrame)
     if (refreshTimer !== undefined) window.clearTimeout(refreshTimer)
     if (diffFrame !== undefined) cancelAnimationFrame(diffFrame)
@@ -3244,11 +3263,11 @@ export default function Page() {
         <div
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full bg-background-stronger flex-1 md:flex-none": true,
-            "will-change-[width]": !size.active() && !ui.reviewSnap,
+            "will-change-[width]": !size.active(),
           }}
           style={{
             width: sessionPanelWidth(),
-            transition: size.active() || ui.reviewSnap ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
+            transition: size.active() ? undefined : "width 300ms cubic-bezier(0.16, 1, 0.3, 1)",
           }}
         >
           <div class="relative flex-1 min-h-0">
@@ -3538,7 +3557,6 @@ export default function Page() {
           reviewPanel={reviewPanel}
           activeDiff={tree.activeDiff}
           focusReviewDiff={focusReviewDiff}
-          reviewSnap={ui.reviewSnap}
           size={size}
         />
       </div>

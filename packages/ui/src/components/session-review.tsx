@@ -309,10 +309,20 @@ export const SessionReview = (props: SessionReviewProps) => {
                       return changedLines() > MAX_DIFF_CHANGED_LINES
                     })
 
-                    const isAdded = () =>
-                      diff.status === "added" || (beforeText().length === 0 && afterText().length > 0)
-                    const isDeleted = () =>
-                      diff.status === "deleted" || (afterText().length === 0 && beforeText().length > 0)
+                    // Trust the recorded status first: resolving the badge from
+                    // contents forces a full unified-patch parse per file, which
+                    // is wasted work while the item is still collapsed. Only
+                    // legacy records without a status fall back to contents.
+                    const isAdded = () => {
+                      if (diff.status === "added") return true
+                      if (diff.status !== undefined) return false
+                      return beforeText().length === 0 && afterText().length > 0
+                    }
+                    const isDeleted = () => {
+                      if (diff.status === "deleted") return true
+                      if (diff.status !== undefined) return false
+                      return afterText().length === 0 && beforeText().length > 0
+                    }
 
                     const selectedLines = createMemo(() => {
                       const current = selection()

@@ -26,6 +26,12 @@ export type ViewDiff = {
 
 const cache = new Map<string, FileDiffMetadata>()
 
+// Parsing a unified patch into before/after contents is expensive and the
+// inputs are immutable, so memoize results by patch text. Bounded: entries are
+// full file texts, so an unbounded map would pin megabytes for long app lives.
+const CONTENTS_CACHE_MAX = 32
+const contentsCache = new Map<string, { before: string; after: string }>()
+
 type PatchSource = {
   file?: string
   patch?: string
@@ -134,8 +140,19 @@ export function diffContents(diff: PatchSource): { before: string; after: string
       after: typeof diff.after === "string" ? diff.after : "",
     }
   }
+  if (typeof diff.patch !== "string") return { before: "", after: "" }
+
+  const hit = contentsCache.get(diff.patch)
+  if (hit) return hit
+
   const parsed = patch(diff)
-  return { before: parsed.before, after: parsed.after }
+  const value = { before: parsed.before, after: parsed.after }
+  if (contentsCache.size >= CONTENTS_CACHE_MAX) {
+    const oldest = contentsCache.keys().next().value
+    if (oldest !== undefined) contentsCache.delete(oldest)
+  }
+  contentsCache.set(diff.patch, value)
+  return value
 }
 
 export function text(diff: ViewDiff, side: "deletions" | "additions") {

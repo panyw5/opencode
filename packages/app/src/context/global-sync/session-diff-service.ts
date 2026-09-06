@@ -6,6 +6,7 @@ import type { SessionControllerDeps } from "./session-service-types"
 export function createSessionDiffService(deps: SessionControllerDeps) {
   const inflight = new Map<string, Promise<FileDiff[] | undefined>>()
   const revision = new Map<string, number>()
+  const loadedAt = new Map<string, number>()
   const keyFor = (directory: string, sessionID: string) => `${deps.canonical(directory)}\n${sessionID}`
   const rev = (directory: string, sessionID: string) => revision.get(keyFor(directory, sessionID)) ?? 0
   const bump = (directory: string, sessionID: string) => {
@@ -34,6 +35,7 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
         if (rev(directory, sessionID) !== eventRevision) return child[0].session_diff[sessionID]
         const list = response.data ?? []
         child[1]("session_diff", sessionID, reconcile(list, { key: "file" }))
+        loadedAt.set(keyFor(directory, sessionID), Date.now())
         return list
       })
       .finally(() => {
@@ -54,6 +56,9 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
     refresh(directory: string, sessionID: string) {
       return load(directory, sessionID, true)
     },
+    loadedAt(directory: string, sessionID: string) {
+      return loadedAt.get(keyFor(directory, sessionID))
+    },
     event: bump,
     clear(directory: string, sessionIDs: string[]) {
       directory = deps.canonical(directory)
@@ -62,6 +67,7 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
         const pending = inflight.get(key)
         bump(directory, sessionID)
         inflight.delete(key)
+        loadedAt.delete(key)
         if (!pending) revision.delete(key)
       }
     },
@@ -72,6 +78,9 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
       }
       for (const key of revision.keys()) {
         if (key.startsWith(prefix)) revision.delete(key)
+      }
+      for (const key of loadedAt.keys()) {
+        if (key.startsWith(prefix)) loadedAt.delete(key)
       }
     },
     inspect() {

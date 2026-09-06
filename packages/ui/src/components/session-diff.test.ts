@@ -81,6 +81,15 @@ describe("session diff", () => {
     expect(contents.after).toBe("one\nthree\n")
   })
 
+  test("reuses parsed contents across calls for the same patch", () => {
+    const patch =
+      "Index: a.ts\n===================================================================\n--- a.ts\t\n+++ a.ts\t\n@@ -1,2 +1,2 @@\n one\n-two\n+three\n"
+    const first = diffContents({ file: "a.ts", patch })
+    const second = diffContents({ file: "b.ts", patch })
+
+    expect(second).toBe(first)
+  })
+
   test("prefers snapshot contents over patch reconstruction", () => {
     const diff = {
       file: "a.ts",
