@@ -138,8 +138,7 @@ function getConfig() {
         appId,
         productName: "OpenCode",
         protocols: { name: "OpenCode", schemes: ["opencode"] },
-        // TODO: Update owner/repo to the fork's production release repository
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        publish: { provider: "github", owner: "panyw5", repo: "opencode", channel: "latest" },
         rpm: { packageName: "opencode" },
       }
     }
