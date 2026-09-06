@@ -472,6 +472,131 @@ describe("MessageV2.page", () => {
   )
 })
 
+describe("MessageV2.stripInlineMediaAttachments", () => {
+  const stripSessionID = "ses_strip_test" as SessionID
+
+  const filePart = (overrides: Partial<MessageV2.FilePart> & Pick<MessageV2.FilePart, "mime" | "url">) => ({
+    id: PartID.ascending(),
+    sessionID: stripSessionID,
+    messageID: MessageID.ascending(),
+    type: "file",
+    ...overrides,
+  })
+
+  const toolPart = (attachments: MessageV2.FilePart[]): MessageV2.ToolPart => ({
+    id: PartID.ascending(),
+    sessionID: stripSessionID,
+    messageID: MessageID.ascending(),
+    type: "tool",
+    callID: "call_1",
+    tool: "read",
+    state: {
+      status: "completed",
+      input: { filePath: "/tmp/picture.png" },
+      output: "tool output",
+      title: "Read picture",
+      metadata: { prefix: "picture" },
+      time: { start: 1, end: 2 },
+      attachments,
+    },
+  })
+
+  const item = (parts: MessageV2.Part[]): MessageV2.WithParts => ({
+    info: {
+      id: MessageID.ascending(),
+      sessionID: stripSessionID,
+      role: "assistant",
+      time: { created: 1 },
+      parentID: MessageID.ascending(),
+      modelID: ModelID.make("test"),
+      providerID: ProviderID.make("test"),
+      mode: "",
+      agent: "default",
+      path: { cwd: "/", root: "/" },
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    } as unknown as MessageV2.Info,
+    parts,
+  })
+
+  test("strips only inline media data urls from completed tool parts", () => {
+    const png = filePart({ mime: "image/png", url: `data:image/png;base64,${"A".repeat(100)}` })
+    const pdf = filePart({ mime: "application/pdf", url: "data:application/pdf;base64,SkY=" })
+    const remote = filePart({ mime: "image/png", url: "https://example.com/remote.png" })
+    const text = filePart({ mime: "text/plain", url: "data:text/plain;base64,bm90ZXM=" })
+    const part = toolPart([png, pdf, remote, text])
+
+    const result = MessageV2.stripInlineMediaAttachments([item([part])])
+
+    expect(result.stripped).toBe(2)
+    expect(result.bytes).toBe(png.url.length + pdf.url.length)
+    const state = (result.items[0].parts[0] as MessageV2.ToolPart).state
+    expect(state.status).toBe("completed")
+    if (state.status !== "completed") throw new Error("expected completed tool state")
+    expect(state.attachments).toEqual([remote, text])
+    // non-media fields of the tool state survive untouched
+    expect(state.output).toBe("tool output")
+    expect(state.title).toBe("Read picture")
+    expect(state.metadata).toEqual({ prefix: "picture" })
+    expect(state.time).toEqual({ start: 1, end: 2 })
+    expect(state.input).toEqual({ filePath: "/tmp/picture.png" })
+  })
+
+  test("does not mutate the input objects", () => {
+    const part = toolPart([filePart({ mime: "image/png", url: "data:image/png;base64,AAAA" })])
+    const items = [item([part])]
+    const snapshot = structuredClone(items)
+
+    const result = MessageV2.stripInlineMediaAttachments(items)
+
+    expect(items).toEqual(snapshot)
+    expect((part.state as MessageV2.ToolStateCompleted).attachments).toHaveLength(1)
+    expect(result.items[0].parts[0]).not.toBe(part)
+  })
+
+  test("removes the attachments key when no attachment survives", () => {
+    const part = toolPart([filePart({ mime: "image/png", url: "data:image/png;base64,AAAA" })])
+
+    const result = MessageV2.stripInlineMediaAttachments([item([part])])
+
+    const state = (result.items[0].parts[0] as MessageV2.ToolPart).state
+    expect(state.status).toBe("completed")
+    if (state.status !== "completed") throw new Error("expected completed tool state")
+    expect("attachments" in state).toBe(false)
+  })
+
+  test("keeps untouched items and parts by reference", () => {
+    const textPart: MessageV2.TextPart = {
+      id: PartID.ascending(),
+      sessionID: stripSessionID,
+      messageID: MessageID.ascending(),
+      type: "text",
+      text: "hi",
+    }
+    const pending: MessageV2.ToolPart = {
+      id: PartID.ascending(),
+      sessionID: stripSessionID,
+      messageID: MessageID.ascending(),
+      type: "tool",
+      callID: "call_2",
+      tool: "bash",
+      state: { status: "pending", input: {}, raw: "" },
+    }
+    const entry = item([textPart, pending])
+
+    const result = MessageV2.stripInlineMediaAttachments([entry])
+
+    expect(result.stripped).toBe(0)
+    expect(result.bytes).toBe(0)
+    expect(result.items[0]).toBe(entry)
+    expect(result.items[0].parts).toBe(entry.parts)
+  })
+
+  test("handles empty input", () => {
+    expect(MessageV2.stripInlineMediaAttachments([])).toEqual({ items: [], stripped: 0, bytes: 0 })
+  })
+})
+
 describe("MessageV2.stream", () => {
   it.instance("yields items newest first", () =>
     withSession(({ sessionID }) =>

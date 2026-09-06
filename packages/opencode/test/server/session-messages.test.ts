@@ -75,6 +75,74 @@ const fill = Effect.fn("SessionMessagesTest.fill")(function* (
   )
 })
 
+const addAssistantWithToolAttachments = Effect.fn("SessionMessagesTest.addAssistantWithToolAttachments")(function* (
+  sessionID: SessionID,
+  parentID: MessageID,
+) {
+  const session = yield* SessionNs.Service
+  const id = MessageID.ascending()
+  yield* session.updateMessage({
+    id,
+    sessionID,
+    role: "assistant",
+    time: { created: Date.now() + 1000 },
+    parentID,
+    modelID: model.modelID,
+    providerID: model.providerID,
+    mode: "",
+    agent: "test",
+    path: { cwd: "/", root: "/" },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  } satisfies MessageV2.Assistant)
+  yield* session.updatePart({
+    id: PartID.ascending(),
+    sessionID,
+    messageID: id,
+    type: "tool",
+    callID: "call_attachments",
+    tool: "read",
+    state: {
+      status: "completed",
+      input: { filePath: "/tmp/picture.png" },
+      output: "read the picture",
+      title: "Picture",
+      metadata: {},
+      time: { start: 1, end: 2 },
+      attachments: [
+        {
+          id: PartID.ascending(),
+          sessionID,
+          messageID: id,
+          type: "file",
+          mime: "image/png",
+          filename: "picture.png",
+          url: `data:image/png;base64,${"A".repeat(4096)}`,
+        },
+        {
+          id: PartID.ascending(),
+          sessionID,
+          messageID: id,
+          type: "file",
+          mime: "image/png",
+          filename: "remote.png",
+          url: "https://example.com/remote.png",
+        },
+        {
+          id: PartID.ascending(),
+          sessionID,
+          messageID: id,
+          type: "file",
+          mime: "text/plain",
+          filename: "notes.txt",
+          url: "data:text/plain;base64,bm90ZXM=",
+        },
+      ],
+    },
+  } satisfies MessageV2.ToolPart)
+  return id
+})
+
 function request(path: string) {
   return Effect.promise(() => Promise.resolve(Server.Default().app.request(path)))
 }
@@ -119,6 +187,66 @@ describe("session messages endpoint", () => {
         expect(res.status).toBe(200)
         const body = yield* json<MessageV2.WithParts[]>(res)
         expect(body.map((item) => item.info.id)).toEqual(ids)
+      }),
+    ),
+    { git: true },
+  )
+
+  it.instance(
+    "strips inline tool media from paginated responses only",
+    withoutWatcher(
+      Effect.gen(function* () {
+        const session = yield* sessionScoped
+        const [userID] = yield* fill(session.id, 1)
+        const assistantID = yield* addAssistantWithToolAttachments(session.id, userID)
+        const pngDataUrl = `data:image/png;base64,${"A".repeat(4096)}`
+
+        // Paginated, no-cursor path: media data URLs are stripped, everything
+        // else (output/title/other attachments) is preserved.
+        const page = yield* request(`/session/${session.id}/message?limit=10`)
+        expect(page.status).toBe(200)
+        const pageBody = yield* json<MessageV2.WithParts[]>(page)
+        const pageText = JSON.stringify(pageBody)
+        expect(pageText).not.toContain("data:image/png;base64,")
+        expect(pageText).not.toContain(pngDataUrl)
+        // page items are chronological (oldest first)
+        expect(pageBody.map((item) => item.info.id)).toEqual([userID, assistantID])
+        const pageTool = pageBody
+          .flatMap((item) => item.parts)
+          .find((part): part is MessageV2.ToolPart => part.type === "tool")
+        expect(pageTool?.state.status).toBe("completed")
+        if (pageTool?.state.status !== "completed") throw new Error("expected completed tool state")
+        expect(pageTool.state.attachments?.map((attachment) => attachment.url)).toEqual([
+          "https://example.com/remote.png",
+          "data:text/plain;base64,bm90ZXM=",
+        ])
+        expect(pageTool.state.output).toBe("read the picture")
+        expect(pageTool.state.title).toBe("Picture")
+
+        // Paginated cursor path strips too (newest page holds the tool part).
+        const cursorPage = yield* request(`/session/${session.id}/message?limit=1`)
+        expect(cursorPage.status).toBe(200)
+        expect(cursorPage.headers.get("x-next-cursor")).toBeTruthy()
+        const cursorBody = yield* json<MessageV2.WithParts[]>(cursorPage)
+        expect(cursorBody.map((item) => item.info.id)).toEqual([assistantID])
+        expect(JSON.stringify(cursorBody)).not.toContain("data:image/png;base64,")
+
+        // Full history without limit stays complete.
+        const full = yield* request(`/session/${session.id}/message`)
+        expect(full.status).toBe(200)
+        const fullBody = yield* json<MessageV2.WithParts[]>(full)
+        expect(JSON.stringify(fullBody)).toContain(pngDataUrl)
+        expect(JSON.stringify(fullBody)).toContain("https://example.com/remote.png")
+
+        // Single message GET stays complete.
+        const single = yield* request(`/session/${session.id}/message/${assistantID}`)
+        expect(single.status).toBe(200)
+        const singleBody = yield* json<MessageV2.WithParts>(single)
+        const singleTool = singleBody.parts.find((part): part is MessageV2.ToolPart => part.type === "tool")
+        expect(singleTool?.state.status).toBe("completed")
+        if (singleTool?.state.status !== "completed") throw new Error("expected completed tool state")
+        expect(singleTool.state.attachments).toHaveLength(3)
+        expect(singleTool.state.attachments?.[0].url).toBe(pngDataUrl)
       }),
     ),
     { git: true },

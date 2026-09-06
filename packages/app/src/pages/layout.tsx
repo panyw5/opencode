@@ -863,6 +863,9 @@ export default function Layout(props: ParentProps) {
       entry: active.extra ?? active.root,
     } satisfies CurrentProject
   })
+  // currentProject is rebuilt when project metadata changes. Effects that only
+  // care about the route root must not rerun for an equivalent project object.
+  const currentProjectRoot = createMemo(() => currentProject()?.root)
 
   // Directories the user just closed. The route-registration effect must not
   // immediately re-open them while navigation catches up (especially when the
@@ -3109,7 +3112,7 @@ export default function Layout(props: ParentProps) {
 
   createEffect(
     on(
-      () => [pageReady(), routeDir(), params.id, currentProject()?.root, switching(), onSessionRoute()] as const,
+      () => [pageReady(), routeDir(), params.id, currentProjectRoot(), switching(), onSessionRoute()] as const,
       ([ready, dir, id, root, pending, sessionRoute]) => {
         if (!sessionRoute) {
           if (pending) setSwitching(undefined)
@@ -3164,7 +3167,7 @@ export default function Layout(props: ParentProps) {
   createEffect(
     on(
       () => {
-        return [pageReady(), layoutReady(), routeSlug(), params.id, params.draftID, currentProject()?.root, routeDir(), onSessionRoute()] as const
+        return [pageReady(), layoutReady(), routeSlug(), params.id, params.draftID, currentProjectRoot(), routeDir(), onSessionRoute()] as const
       },
       ([ready, persistedReady, slug, id, draftID, root, dir, sessionRoute]) => {
         console.debug(
@@ -3246,7 +3249,7 @@ export default function Layout(props: ParentProps) {
 
   createEffect(
     on(
-      () => [currentProject()?.root, layout.projects.list()] as const,
+      () => [currentProjectRoot(), layout.projects.list()] as const,
       ([root, projects]) => {
         if (!pendingSidebarRoute || !root) return
         const project = root
@@ -3268,7 +3271,7 @@ export default function Layout(props: ParentProps) {
 
   createEffect(
     on(
-      () => [sidebarProjectRoot(), layout.projects.list(), currentProject()?.root] as const,
+      () => [sidebarProjectRoot(), layout.projects.list(), currentProjectRoot()] as const,
       ([selected, projects, routeRoot]) => {
         if (!selected) return
         if (projects.some((item) => workspaceKey(item.worktree) === workspaceKey(selected))) return

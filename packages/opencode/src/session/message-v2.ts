@@ -1083,6 +1083,50 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
 })
 
 /**
+ * Removes inline media data URLs (`data:image/*`, `data:application/pdf`) from
+ * completed tool part `state.attachments`. Used by HTTP pagination responses so
+ * clients don't download megabytes of hidden media when paging a session;
+ * full-history and single-message reads stay complete.
+ *
+ * Pure: never mutates the input — untouched items/parts keep their references.
+ * `bytes` is the approximate payload size (data URL character count) removed.
+ */
+export function stripInlineMediaAttachments(items: WithParts[]): {
+  items: WithParts[]
+  stripped: number
+  bytes: number
+} {
+  let stripped = 0
+  let bytes = 0
+  const next = items.map((item) => {
+    let changed = false
+    const parts = item.parts.map((part) => {
+      if (part.type !== "tool") return part
+      const state = part.state
+      if (state.status !== "completed" || !state.attachments?.length) return part
+      const keep = state.attachments.filter(
+        (attachment) => !(isMedia(attachment.mime) && attachment.url.startsWith("data:")),
+      )
+      if (keep.length === state.attachments.length) return part
+      for (const attachment of state.attachments) {
+        if (isMedia(attachment.mime) && attachment.url.startsWith("data:")) {
+          stripped++
+          bytes += attachment.url.length
+        }
+      }
+      changed = true
+      const nextState = { ...state }
+      if (keep.length > 0) nextState.attachments = keep
+      else delete nextState.attachments
+      return { ...part, state: nextState }
+    })
+    if (!changed) return item
+    return { ...item, parts }
+  })
+  return { items: next, stripped, bytes }
+}
+
+/**
  * Lightweight navigation index for a session's user turns. This deliberately
  * bypasses the mixed-message history cursor: callers can populate navigation
  * without hydrating assistant turns or mutating timeline pagination state.

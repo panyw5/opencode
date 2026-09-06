@@ -704,7 +704,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           before: ctx.query.before,
         }),
       )
-      if (!page.cursor) return page.items
+      // Paginated responses drop inline media data URLs hidden in tool part
+      // state.attachments so session switching doesn't download megabytes of
+      // media. Full-history (no limit) and single-message reads stay complete.
+      const stripped = MessageV2.stripInlineMediaAttachments(page.items)
+      if (stripped.stripped > 0) {
+        log.warn("pagination stripped inline tool media attachments", {
+          sessionID: ctx.params.sessionID,
+          attachments: stripped.stripped,
+          bytes: stripped.bytes,
+        })
+      }
+      if (!page.cursor) return stripped.items
 
       const request = yield* HttpServerRequest.HttpServerRequest
       // toURL() honors the Host + x-forwarded-proto headers, so the Link
@@ -712,7 +723,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       const url = Option.getOrElse(HttpServerRequest.toURL(request), () => new URL(request.url, "http://localhost"))
       url.searchParams.set("limit", ctx.query.limit.toString())
       url.searchParams.set("before", page.cursor)
-      return HttpServerResponse.jsonUnsafe(page.items, {
+      return HttpServerResponse.jsonUnsafe(stripped.items, {
         headers: {
           "Access-Control-Expose-Headers": "Link, X-Next-Cursor",
           Link: `<${url.toString()}>; rel="next"`,
