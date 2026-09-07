@@ -100,6 +100,22 @@ describe("buildRequestParts", () => {
     expect(synthetic).toHaveLength(1)
   })
 
+  test("deduplicates Windows file paths across casing and separator variants", () => {
+    const prompt: Prompt = [{ type: "file", path: "Src\\Foo.ts", content: "@Src\\Foo.ts", start: 0, end: 11 }]
+
+    const result = buildRequestParts({
+      prompt,
+      context: [{ key: "ctx:dup", type: "file", path: "src/foo.ts" }],
+      images: [],
+      text: "@Src\\Foo.ts",
+      messageID: "msg_win_case",
+      sessionID: "ses_win_case",
+      sessionDirectory: "D:\\Projects\\MyApp",
+    })
+
+    expect(result.requestParts.filter((part) => part.type === "file")).toHaveLength(1)
+  })
+
   test("handles Windows paths correctly (simulated on macOS)", () => {
     const prompt: Prompt = [{ type: "file", path: "src\\foo.ts", content: "@src\\foo.ts", start: 0, end: 11 }]
 

@@ -306,7 +306,7 @@ export const SortableProject = (props: {
     const next = `session=${sessionCurrent() ? "true" : "false"} sidebar=${sidebarExpanded() ? "true" : "false"}`
     if (next === lastIndicator) return
     lastIndicator = next
-    console.debug(`[sidebar-project] indicator root=${props.project.worktree} ${next}`)
+    console.debug(`[sidebar-project] indicator root=${props.project.worktree} session-root=${props.ctx.sessionCurrent() ?? "none"} sidebar-root=${props.ctx.sidebarExpanded() ?? "none"} ${next}`)
   })
   const language = useLanguage()
   const dirs = createMemo(() => props.ctx.workspaceIds(props.project))

@@ -167,11 +167,11 @@ export const ProjectIcon = (props: { project: LocalProject; class?: string; noti
   let last = ""
   createEffect(() => {
     if (!props.notify) return
-    const next = `${count()}:${error()}:${perms()}:${unseenSummary()}`
+    const next = `${loaded()}:${count()}:${error()}:${perms()}:${unseenSummary()}`
     if (next === last) return
     last = next
     console.debug(
-      `[project-icon] inspect root=${props.project.worktree} dirs=${dirs().join(",") || "none"} count=${count()} error=${error() ? 1 : 0} permission=${perms() ? 1 : 0} unseen=${unseenSummary()}`,
+      `[project-icon] inspect root=${props.project.worktree} key=${workspaceKey(props.project.worktree)} dirs=${dirs().join(",") || "none"} loaded=${loaded() ? 1 : 0} count=${count()} error=${error() ? 1 : 0} permission=${perms() ? 1 : 0} unseen=${unseenSummary()}`,
     )
   })
   return (

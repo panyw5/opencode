@@ -1,4 +1,4 @@
-import { getFilename } from "@opencode-ai/core/util/path"
+import { getFilename, pathIdentityKey } from "@opencode-ai/core/util/path"
 import { type Message, type PermissionRequest, type Session, type SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { CommandSource } from "@/context/command"
 import { working } from "../session/session-working"
@@ -43,13 +43,8 @@ export type ProjectOwner<T extends ProjectOwnerInput> = {
   sandbox: boolean
 }
 
-export const workspaceKey = (directory: string) => {
-  const value = directory.replaceAll("\\", "/")
-  const drive = value.match(/^([A-Za-z]:)\/+$/)
-  if (drive) return `${drive[1]}/`
-  if (/^\/+$/i.test(value)) return "/"
-  return value.replace(/\/+$/, "")
-}
+/** @deprecated Import pathIdentityKey from @opencode-ai/core/util/path in non-layout code. */
+export const workspaceKey = (directory: string) => pathIdentityKey(directory)
 
 /** macOS often exposes the same folder as both /tmp and /private/tmp (and /var). */
 export function workspacePathAliases(directory: string): string[] {

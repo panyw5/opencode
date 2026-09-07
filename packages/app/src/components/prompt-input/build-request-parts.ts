@@ -1,4 +1,4 @@
-import { getFilename } from "@opencode-ai/core/util/path"
+import { getFilename, pathIdentityKey } from "@opencode-ai/core/util/path"
 import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@opencode-ai/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
@@ -38,6 +38,9 @@ const absolute = (directory: string, path: string) => {
 
 const fileQuery = (selection: FileSelection | undefined) =>
   selection ? `?start=${selection.startLine}&end=${selection.endLine}` : ""
+
+const fileIdentityKey = (path: string, selection: FileSelection | undefined) =>
+  `${pathIdentityKey(path)}${fileQuery(selection)}`
 
 const isFileAttachment = (part: Prompt[number]): part is FileAttachmentPart => part.type === "file"
 const isAgentAttachment = (part: Prompt[number]): part is AgentPart => part.type === "agent"
@@ -120,13 +123,18 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
     } satisfies PromptRequestPart
   })
 
-  const used = new Set(files.map((part) => part.url))
+  const used = new Set(
+    input.prompt
+      .filter(isFileAttachment)
+      .map((attachment) => fileIdentityKey(absolute(input.sessionDirectory, attachment.path), attachment.selection)),
+  )
   const context = input.context.flatMap((item) => {
     const path = absolute(input.sessionDirectory, item.path)
     const url = `file://${encodeFilePath(path)}${fileQuery(item.selection)}`
+    const key = fileIdentityKey(path, item.selection)
     const comment = item.comment?.trim()
-    if (!comment && used.has(url)) return []
-    used.add(url)
+    if (!comment && used.has(key)) return []
+    used.add(key)
 
     const filePart = {
       id: Identifier.ascending("part"),

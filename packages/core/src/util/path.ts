@@ -8,8 +8,7 @@
  *  - trailing slashes collapsed (but `C:/` and `/` keep their trailing slash
  *    so drive-rooted or posix-root keys remain distinguishable from relative
  *    segments)
- *  - case preserved (case-folding is a separate concern; callers that need
- *    case-insensitive identity on Windows should lowercase the result)
+ *  - case preserved (use {@link pathIdentityKey} for Map/Set keys and equality)
  *
  * Anything that touches the real filesystem (fs.*, spawn, Electron shell)
  * should convert to native separators at that boundary, not beforehand.
@@ -24,6 +23,19 @@ export function toLogicalPath(p: string | undefined): string {
 }
 
 /**
+ * Stable identity key for logical filesystem paths.
+ *
+ * Windows drive and UNC paths are case-insensitive, including when they are
+ * received by a web renderer connected to a Windows backend. POSIX and remote
+ * paths retain case because their filesystem can be case-sensitive.
+ */
+export function pathIdentityKey(p: string | undefined): string {
+  const value = toLogicalPath(p)
+  if (/^[A-Za-z]:\//.test(value) || /^\/\/[^/]/.test(value)) return value.toLowerCase()
+  return value
+}
+
+/**
  * Directory identity equality. Two paths are the same directory when they
  * share the same logical-path form. Prefer this over raw `===` for any
  * comparison involving session.directory / project.worktree / channel
@@ -31,7 +43,7 @@ export function toLogicalPath(p: string | undefined): string {
  */
 export function directoryEquals(a: string | undefined, b: string | undefined): boolean {
   if (!a || !b) return a === b
-  return toLogicalPath(a) === toLogicalPath(b)
+  return pathIdentityKey(a) === pathIdentityKey(b)
 }
 
 export function getFilename(path: string | undefined) {

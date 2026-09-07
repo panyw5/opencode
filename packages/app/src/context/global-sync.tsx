@@ -1040,7 +1040,7 @@ function createGlobalSync() {
       return globalStore.error
     },
     loaded(directory: string) {
-      return !!loaded.dir[directory]
+      return !!loaded.dir[storeKey(directory)]
     },
     child: children.child,
     peek: children.peek,

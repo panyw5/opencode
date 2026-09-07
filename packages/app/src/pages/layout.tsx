@@ -162,10 +162,6 @@ function joinPath(root: string, child: string) {
   return root.replace(/[\\/]+$/, "") + slash + child
 }
 
-function normalizeDirectory(value: string) {
-  return value.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase()
-}
-
 type SidebarQuickAction = {
   icon: IconName
   label: string
@@ -686,9 +682,9 @@ export default function Layout(props: ParentProps) {
         const icon = e.details.type === "permission.asked" ? ("checklist" as const) : ("bubble-5" as const)
         const directory = e.name
         const quickAssistantDirectory = globalSync.data.path.config
-          ? normalizeDirectory(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
+          ? workspaceKey(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
           : ""
-        if (quickAssistantDirectory && normalizeDirectory(directory) === quickAssistantDirectory) return
+        if (quickAssistantDirectory && workspaceKey(directory) === quickAssistantDirectory) return
         const props = e.details.properties
         if (e.details.type === "permission.asked" && permission.autoResponds(e.details.properties, directory)) return
 
@@ -3189,7 +3185,7 @@ export default function Layout(props: ParentProps) {
         if (root && server.projects.last() !== root) server.projects.touch(root)
 
         const quickAssistant = globalSync.data.path.config
-          ? normalizeDirectory(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
+          ? workspaceKey(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
           : ""
         if (!id) {
           const explicit = layout.sessionBar.drafts().some(
@@ -3203,7 +3199,7 @@ export default function Layout(props: ParentProps) {
           }
           sessionTabs.observeRoute(
             { directory: dir, draftID, session: true },
-            { root, hidden: normalizeDirectory(dir) === quickAssistant },
+            { root, hidden: workspaceKey(dir) === quickAssistant },
           )
           return
         }
@@ -3216,10 +3212,10 @@ export default function Layout(props: ParentProps) {
             title: session?.title,
             parentID: session ? (session.parentID ?? null) : undefined,
             root,
-            hidden: normalizeDirectory(dir) === quickAssistant,
+            hidden: workspaceKey(dir) === quickAssistant,
           },
         )
-        if (normalizeDirectory(dir) === quickAssistant) return
+        if (workspaceKey(dir) === quickAssistant) return
         if (session?.parentID) openAncestorSessionTabs(dir, session.parentID, child.session)
         else if (!session) void ensureSessionBarMeta(dir, id)
       },
