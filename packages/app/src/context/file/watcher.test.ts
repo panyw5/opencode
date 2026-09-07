@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { invalidateFromWatcher } from "./watcher"
+import { createWatcherInvalidator, invalidateFromWatcher } from "./watcher"
 
 describe("file watcher invalidation", () => {
   test("reloads open files and refreshes loaded parent on add", () => {
@@ -145,5 +145,58 @@ describe("file watcher invalidation", () => {
     )
 
     expect(refresh).toEqual([])
+  })
+
+  test("batches bursts into one deduplicated action per target", async () => {
+    const loads: string[] = []
+    const refresh: string[] = []
+    const invalidator = createWatcherInvalidator(
+      {
+        normalize: (input) => input,
+        hasFile: (path) => path === "src/a.ts",
+        isOpen: () => false,
+        loadFile: (path) => loads.push(path),
+        node: () => undefined,
+        isDirLoaded: (path) => path === "src" || path === "lib",
+        refreshDir: (path) => refresh.push(path),
+      },
+      1,
+    )
+
+    for (let i = 0; i < 1000; i++) {
+      invalidator.handle({ type: "file.watcher.updated", properties: { file: `src/new${i}.ts`, event: "add" } })
+      invalidator.handle({ type: "file.watcher.updated", properties: { file: "src/a.ts", event: "change" } })
+    }
+    invalidator.handle({ type: "file.watcher.updated", properties: { file: "lib/x.ts", event: "unlink" } })
+
+    await Bun.sleep(20)
+
+    expect(loads).toEqual(["src/a.ts"])
+    expect(refresh.sort()).toEqual(["lib", "src"])
+    invalidator.dispose()
+  })
+
+  test("flush coalesces targets collected before the timer fires", async () => {
+    const refresh: string[] = []
+    const invalidator = createWatcherInvalidator(
+      {
+        normalize: (input) => input,
+        hasFile: () => false,
+        loadFile: () => {},
+        node: () => undefined,
+        isDirLoaded: () => true,
+        refreshDir: (path) => refresh.push(path),
+      },
+      500,
+    )
+
+    invalidator.handle({ type: "file.watcher.updated", properties: { file: "src/a.ts", event: "add" } })
+    invalidator.handle({ type: "file.watcher.updated", properties: { file: "src/b.ts", event: "add" } })
+    expect(refresh).toEqual([])
+
+    invalidator.flush()
+    expect(refresh).toEqual(["src"])
+
+    invalidator.dispose()
   })
 })

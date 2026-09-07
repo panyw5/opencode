@@ -25,7 +25,7 @@ import { useServer } from "@/context/server"
 import { usePlatform } from "@/context/platform"
 import { workspacePathContext } from "@/pages/layout/helpers"
 import { createFileTreeStore } from "./file/tree-store"
-import { invalidateFromWatcher } from "./file/watcher"
+import { createWatcherInvalidator } from "./file/watcher"
 import {
   selectionFromLines,
   type FileState,
@@ -201,20 +201,22 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
         () => [],
       )
 
+    const invalidator = createWatcherInvalidator({
+      normalize: path.normalize,
+      hasFile: (file) => Boolean(store.file[file]),
+      isOpen: (file) => tabs.all().some((tab) => path.pathFromTab(tab) === file),
+      loadFile: (file) => {
+        void load(file, { force: true })
+      },
+      node: tree.node,
+      isDirLoaded: tree.isLoaded,
+      refreshDir: (dir) => {
+        void tree.listDir(dir, { force: true })
+      },
+    })
+
     const stop = sdk.event.listen((e) => {
-      invalidateFromWatcher(e.details, {
-        normalize: path.normalize,
-        hasFile: (file) => Boolean(store.file[file]),
-        isOpen: (file) => tabs.all().some((tab) => path.pathFromTab(tab) === file),
-        loadFile: (file) => {
-          void load(file, { force: true })
-        },
-        node: tree.node,
-        isDirLoaded: tree.isLoaded,
-        refreshDir: (dir) => {
-          void tree.listDir(dir, { force: true })
-        },
-      })
+      invalidator.handle(e.details)
     })
 
     const get = (input: string) => {
@@ -243,6 +245,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     onCleanup(() => {
       stop()
+      invalidator.dispose()
       viewCache.clear()
     })
 

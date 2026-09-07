@@ -21,6 +21,62 @@ declare const OPENCODE_LIBC: string | undefined
 const log = Log.create({ service: "file.watcher" })
 const SUBSCRIBE_TIMEOUT_MS = 10_000
 
+// Native watchers deliver events in batches. Heavy filesystem churn (git gc,
+// builds, checkouts) can produce tens of thousands of events in a single
+// callback. Publishing each one individually floods every Bus subscriber (SSE
+// clients, the desktop bridge) and freezes both the server event loop and the
+// UI. Batch the callback into short windows, coalesce duplicates, and collapse
+// oversized floods to one event per directory.
+const FLUSH_INTERVAL_MS = 100
+const MAX_EVENTS_PER_FLUSH = 2_000
+
+export type WatcherFileEvent = {
+  file: string
+  event: "add" | "change" | "unlink"
+}
+
+/**
+ * Merge raw watcher events by path. The most recent kind wins, except that a
+ * path created during the window stays "add" unless it was deleted again (the
+ * renderer must both reload open editors and refresh the parent tree node).
+ */
+export function coalesceEvents(events: WatcherFileEvent[]): WatcherFileEvent[] {
+  const byPath = new Map<string, { event: WatcherFileEvent["event"]; added: boolean }>()
+  for (const evt of events) {
+    const prev = byPath.get(evt.file)
+    byPath.set(evt.file, {
+      event: evt.event,
+      added: (prev?.added ?? false) || evt.event === "add",
+    })
+  }
+  return Array.from(byPath, ([file, item]) => ({
+    file,
+    event: item.added && item.event !== "unlink" ? ("add" as const) : item.event,
+  }))
+}
+
+/**
+ * Collapse add/unlink events to one representative per (parent directory,
+ * kind). The renderer only uses them to refresh the parent directory, so
+ * per-file granularity is not needed; "change" events are kept as-is because
+ * they carry per-file reload semantics for open editors.
+ */
+export function collapseByDirectory(events: WatcherFileEvent[]): WatcherFileEvent[] {
+  const collapsed: WatcherFileEvent[] = []
+  const seen = new Set<string>()
+  for (const evt of events) {
+    if (evt.event === "change") {
+      collapsed.push(evt)
+      continue
+    }
+    const key = `${evt.event}\n${path.dirname(evt.file)}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    collapsed.push(evt)
+  }
+  return collapsed
+}
+
 export const Event = {
   Updated: BusEvent.define(
     "file.watcher.updated",
@@ -99,13 +155,43 @@ export const layer = Layer.effect(
             await sub.unsubscribe()
             log.warn(`unsubscribe settled directory=${dir} reason=${reason}`)
           }
-          yield* Effect.addFinalizer(() =>
-            Effect.promise(async () => {
-              log.warn(`finalize begin directory=${ctx.directory} subscriptions=${String(subs.length)}`)
-              for (const sub of subs) await close(sub, ctx.directory, "scope-finalizer").catch(() => undefined)
-              log.warn(`finalize settled directory=${ctx.directory} subscriptions=${String(subs.length)}`)
-            }),
-          )
+          let queue: WatcherFileEvent[] = []
+          let flushTimer: ReturnType<typeof setTimeout> | undefined
+          const KINDS = { create: "add", update: "change", delete: "unlink" } as const
+
+          function scheduleFlush() {
+            if (flushTimer) return
+            flushTimer = setTimeout(() => {
+              flushTimer = undefined
+              flush()
+            }, FLUSH_INTERVAL_MS)
+          }
+
+          function flush() {
+            if (queue.length === 0) return
+            const raw = queue
+            queue = []
+
+            let events = coalesceEvents(raw)
+            if (events.length > MAX_EVENTS_PER_FLUSH) {
+              events = collapseByDirectory(events)
+              log.warn("file event flood collapsed to directories", {
+                directory: ctx.directory,
+                received: raw.length,
+                publishing: events.length,
+              })
+            }
+            if (events.length > MAX_EVENTS_PER_FLUSH) {
+              log.warn("file event flood truncated", {
+                directory: ctx.directory,
+                received: raw.length,
+                publishing: MAX_EVENTS_PER_FLUSH,
+              })
+              events = events.slice(0, MAX_EVENTS_PER_FLUSH)
+            }
+
+            for (const evt of events) void Bus.publish(ctx, Event.Updated, evt)
+          }
 
           const cb: ParcelWatcher.SubscribeCallback = bridge.bind((err, evts) => {
             if (err) {
@@ -113,11 +199,23 @@ export const layer = Layer.effect(
               return
             }
             for (const evt of evts) {
-              if (evt.type === "create") void Bus.publish(ctx, Event.Updated, { file: evt.path, event: "add" })
-              if (evt.type === "update") void Bus.publish(ctx, Event.Updated, { file: evt.path, event: "change" })
-              if (evt.type === "delete") void Bus.publish(ctx, Event.Updated, { file: evt.path, event: "unlink" })
+              const kind = KINDS[evt.type]
+              if (!kind) continue
+              queue.push({ file: evt.path, event: kind })
             }
+            if (queue.length > 0) scheduleFlush()
           })
+
+          yield* Effect.addFinalizer(() =>
+            Effect.promise(async () => {
+              log.warn(`finalize begin directory=${ctx.directory} subscriptions=${String(subs.length)}`)
+              for (const sub of subs) await close(sub, ctx.directory, "scope-finalizer").catch(() => undefined)
+              if (flushTimer) clearTimeout(flushTimer)
+              flushTimer = undefined
+              queue = []
+              log.warn(`finalize settled directory=${ctx.directory} subscriptions=${String(subs.length)}`)
+            }),
+          )
 
           const subscribe = (dir: string, ignore: string[]) => {
             log.warn(`subscribe begin directory=${dir} backend=${backend} ignoreCount=${String(ignore.length)}`)

@@ -1,4 +1,4 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import path from "path"
 import { realpath } from "fs/promises"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -178,6 +178,48 @@ function ready(directory: string) {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Flood coalescing (pure, no native binding required)
+// ---------------------------------------------------------------------------
+
+describe("FileWatcher event coalescing", () => {
+  test("coalesceEvents keeps one entry per path with the strongest kind", () => {
+    const events = [
+      { file: "/repo/src/a.ts", event: "change" as const },
+      { file: "/repo/src/a.ts", event: "unlink" as const },
+      { file: "/repo/src/a.ts", event: "add" as const },
+      { file: "/repo/src/b.ts", event: "change" as const },
+      { file: "/repo/src/b.ts", event: "change" as const },
+      { file: "/repo/src/c.ts", event: "add" as const },
+      { file: "/repo/src/c.ts", event: "unlink" as const },
+    ]
+
+    expect(FileWatcher.coalesceEvents(events)).toEqual([
+      { file: "/repo/src/a.ts", event: "add" },
+      { file: "/repo/src/b.ts", event: "change" },
+      { file: "/repo/src/c.ts", event: "unlink" },
+    ])
+  })
+
+  test("collapseByDirectory keeps changes and reduces adds/unlinks to one per parent", () => {
+    const events = [
+      { file: "/repo/src/a.ts", event: "change" as const },
+      { file: "/repo/obj/00/1", event: "add" as const },
+      { file: "/repo/obj/00/2", event: "add" as const },
+      { file: "/repo/obj/01/3", event: "add" as const },
+      { file: "/repo/obj/02/4", event: "unlink" as const },
+      { file: "/repo/obj/02/5", event: "unlink" as const },
+    ]
+
+    expect(FileWatcher.collapseByDirectory(events)).toEqual([
+      { file: "/repo/src/a.ts", event: "change" },
+      { file: "/repo/obj/00/1", event: "add" },
+      { file: "/repo/obj/01/3", event: "add" },
+      { file: "/repo/obj/02/4", event: "unlink" },
+    ])
+  })
+})
 
 describeWatcher("FileWatcher", () => {
   it.instance(
