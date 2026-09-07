@@ -42,6 +42,9 @@ jobs:
             $rootVersion = "$base-$tag.$env:GITHUB_RUN_NUMBER"
           }
           bun ./script/sync-version.ts $rootVersion
+          # Export the explicit version so the CLI sidecar build bakes the exact
+          # release version instead of a "<version>-prod.<timestamp>" preview one.
+          Add-Content -Path $env:GITHUB_ENV -Value "OPENCODE_VERSION=$rootVersion"
         shell: pwsh
 
       - name: Build Desktop App
