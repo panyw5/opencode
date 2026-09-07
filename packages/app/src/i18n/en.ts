@@ -970,6 +970,8 @@ export const dict = {
   "session.status.collapse": "Collapse session status",
   "session.status.empty": "No skills have been activated in this session.",
   "session.status.contextUsage": "Context usage",
+  "session.status.files.more": "Show {{count}} more",
+  "session.status.files.less": "Show less",
   "session.question.collapse": "Collapse",
   "session.question.expand": "Expand",
   "session.question.progress": "{{current}} of {{total}} questions",

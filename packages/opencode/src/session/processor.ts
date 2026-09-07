@@ -35,6 +35,17 @@ const TOOL_SETTLE_TIMEOUT = "10 seconds"
 const INTERRUPTED_TOOL_SETTLE_TIMEOUT = "250 millis"
 const log = Log.create({ service: "session.processor" })
 
+// A single step can touch thousands of files (mass deletes, checkouts). The
+// full path list becomes a huge JSON blob persisted per part, shipped to every
+// client on every message fetch, and stored in the reactive graph — for data
+// nothing renders file-by-file. Keep a bounded sample; consumers only need to
+// know which files changed at a glance.
+const PATCH_PART_FILES_LIMIT = 200
+
+function patchPartFiles(files: string[]) {
+  return files.length <= PATCH_PART_FILES_LIMIT ? files : files.slice(0, PATCH_PART_FILES_LIMIT)
+}
+
 export type Result = "compact" | "stop" | "continue"
 
 export interface Handle {
@@ -736,7 +747,7 @@ export const layer = Layer.effect(
                   sessionID: ctx.sessionID,
                   type: "patch",
                   hash: patch.hash,
-                  files: patch.files,
+                  files: patchPartFiles(patch.files),
                 })
               }
               ctx.snapshot = undefined
@@ -856,7 +867,7 @@ export const layer = Layer.effect(
               sessionID: ctx.sessionID,
               type: "patch",
               hash: patch.hash,
-              files: patch.files,
+              files: patchPartFiles(patch.files),
             })
           }
           ctx.snapshot = undefined

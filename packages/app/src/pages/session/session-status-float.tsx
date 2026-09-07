@@ -25,6 +25,9 @@ import { sessionStatusHistoryKey } from "./session-status-history"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
 
 const historyPageSize = 100
+// Cap rendered rows per file-change list; sessions touching thousands of files
+// otherwise flood the panel with tooltips and freeze the UI.
+const fileChangeDisplayLimit = 50
 
 const baseName = (file: string) => file.slice(file.lastIndexOf("/") + 1) || file
 
@@ -273,18 +276,21 @@ export function SessionStatusFloat(props: {
                     title={language.t("session.status.files.added")}
                     files={fileChanges().added}
                     status="added"
+                    limit={fileChangeDisplayLimit}
                     onOpen={openChangedFile}
                   />
                   <FileChangeList
                     title={language.t("session.status.files.modified")}
                     files={fileChanges().modified}
                     status="modified"
+                    limit={fileChangeDisplayLimit}
                     onOpen={openChangedFile}
                   />
                   <FileChangeList
                     title={language.t("session.status.files.deleted")}
                     files={fileChanges().deleted}
                     status="deleted"
+                    limit={fileChangeDisplayLimit}
                     onOpen={openChangedFile}
                   />
                 </div>
@@ -317,9 +323,14 @@ function FileChangeList(props: {
   title: string
   files: string[]
   status: keyof SessionFileChanges
+  limit: number
   onOpen: (file: string) => void
 }) {
+  const language = useLanguage()
   const [open, setOpen] = createSignal(false)
+  const [expanded, setExpanded] = createSignal(false)
+  const truncated = () => !expanded() && props.files.length > props.limit
+  const visible = () => (truncated() ? props.files.slice(0, props.limit) : props.files)
 
   return (
     <Show when={props.files.length > 0}>
@@ -335,7 +346,7 @@ function FileChangeList(props: {
         </Collapsible.Trigger>
         <Collapsible.Content>
           <ul class="mt-1.5 space-y-0.5">
-            <For each={props.files}>
+            <For each={visible()}>
               {(file) => (
                 <li>
                   <Tooltip
@@ -371,6 +382,18 @@ function FileChangeList(props: {
               )}
             </For>
           </ul>
+          <Show when={props.files.length > props.limit}>
+            <button
+              type="button"
+              data-action="session-status-files-toggle-more"
+              class="mt-1 w-full rounded-md px-2.5 py-1.5 text-left text-12-regular text-text-weak transition-colors hover:text-text-strong"
+              onClick={() => setExpanded((value) => !value)}
+            >
+              {expanded()
+                ? language.t("session.status.files.less")
+                : language.t("session.status.files.more", { count: props.files.length - props.limit })}
+            </button>
+          </Show>
         </Collapsible.Content>
       </Collapsible>
     </Show>
