@@ -11,7 +11,10 @@ node_modules
 out
 dist
 dist-ssr
-resources/icons
+resources/icons/*
+!resources/icons/icon.png
+!resources/icons/icon.icns
+!resources/icons/icon.ico
 resources/sidecars
 resources/*.metainfo.xml
 src-tauri/sidecars
