@@ -3790,6 +3790,9 @@ export default function ConfigPage() {
   console.info(`[config-perf] page construct start sinceClick=${configPerfSinceClick()}`)
   const dialog = useDialog()
   const language = useLanguage()
+  // Bound early: resource fetchers below (e.g. project config records) run while
+  // the component is still constructing and must not hit this binding's TDZ.
+  const t = language.t
   const platform = usePlatform()
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
@@ -4507,7 +4510,6 @@ export default function ConfigPage() {
       .map((entry) => entry.replace(/\x1f|\x1e/g, ""))
       .join("\x1e"),
   )
-  const t = language.t
   const [marketSkills, setMarketSkills] = createSignal<SkillMarketLoadResult>({ skills: [] })
   const [marketSkillsLoading, setMarketSkillsLoading] = createSignal(false)
   const [marketLoadMeta, setMarketLoadMeta] = createSignal<SkillMarketLoadMeta>()
