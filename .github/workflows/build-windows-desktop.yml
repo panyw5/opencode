@@ -161,8 +161,14 @@ jobs:
           $sidecar = Join-Path $installRoot "resources/sidecars/opencode-cli-$($env:RUST_TARGET).exe"
           if (-not (Test-Path -LiteralPath $sidecar)) { throw "Installed sidecar was not found at $sidecar." }
 
-          $sidecarVersion = (& $sidecar --version | Select-Object -First 1)
-          if ($LASTEXITCODE -ne 0) { throw "Installed sidecar --version failed with exit code $LASTEXITCODE." }
+          # Capture the full output without piping through Select-Object: an
+          # early-stopping pipeline can kill the process before it exits and
+          # leaves $LASTEXITCODE unset.
+          $output = @(& $sidecar --version)
+          $sidecarExit = $LASTEXITCODE
+          Write-Host "sidecar raw output: $($output -join ' | ')"
+          if ($sidecarExit -ne 0) { throw "Installed sidecar --version failed with exit code $sidecarExit." }
+          $sidecarVersion = (@($output | Where-Object { "$_".Trim() }) | Select-Object -First 1)
           $sidecarVersion = "$sidecarVersion".Trim()
 
           Write-Host "expected version=$version"
