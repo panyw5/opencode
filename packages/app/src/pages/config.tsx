@@ -6325,10 +6325,19 @@ export default function ConfigPage() {
     if (!item?.editable || !platform.writeLocalFile) return
     await platform
       .writeLocalFile(item.path, state.text)
-      .then(() => {
+      .then(async () => {
         cache.set(item.path, state.text)
         setState("saved", state.text)
         showToast({ title: t("common.save"), description: item.label })
+        // Editing an existing command file: hot-reload backend caches and the
+        // session command list so the next slash invocation uses the new template.
+        if (item.id.startsWith("cmd:")) {
+          await refreshAfterConfigWrite({
+            source: `command-edit:${item.path}`,
+            refreshConfig: () => globalSync.refreshConfig(mainDomain),
+          })
+          await globalSync.refreshCommands(`command-edit:${item.label}`)
+        }
       })
       .catch((err: unknown) => {
         showToast({
@@ -7260,6 +7269,13 @@ export default function ConfigPage() {
         setState("busy", false)
       })
       bump("commandRev")
+      // Hot-reload: invalidate backend config/command caches, then re-pull the
+      // command list so open sessions can use the new command immediately.
+      await refreshAfterConfigWrite({
+        source: `command-save:${path}`,
+        refreshConfig: () => globalSync.refreshConfig(mainDomain),
+      })
+      await globalSync.refreshCommands(`command-save:${safeName}`)
       await open({
         id: `cmd:${path}`,
         label: safeName,
@@ -7282,7 +7298,7 @@ export default function ConfigPage() {
     if (!item?.path || !platform.deleteLocalFile) return
     await platform
       .deleteLocalFile(item.path)
-      .then(() => {
+      .then(async () => {
         cache.delete(item.path)
         batch(() => {
           setState("pick", "")
@@ -7292,6 +7308,13 @@ export default function ConfigPage() {
           setState("cmdPath", "")
         })
         bump("commandRev")
+        // Hot-reload: invalidate backend caches and re-pull the command list so
+        // open sessions stop offering the removed command immediately.
+        await refreshAfterConfigWrite({
+          source: `command-delete:${item.path}`,
+          refreshConfig: () => globalSync.refreshConfig(mainDomain),
+        })
+        await globalSync.refreshCommands(`command-delete:${item.label}`)
         showToast({ variant: "success", title: t("config.action.delete"), description: item.label })
       })
       .catch((err: unknown) => {
