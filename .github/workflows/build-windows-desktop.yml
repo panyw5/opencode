@@ -141,6 +141,35 @@ jobs:
           }
         shell: pwsh
 
+      - name: Verify installed sidecar version
+        run: |
+          $version = $env:APP_VERSION -replace '^v', ''
+          $installer = Join-Path $PWD "packages/desktop/dist/OpenCode_${version}_x64-setup.exe"
+          if (-not (Test-Path -LiteralPath $installer)) { throw "Installer for sidecar verification was not found at $installer." }
+          $verifyRoot = Join-Path $env:RUNNER_TEMP "OpenCode Sidecar Verify"
+          $installRoot = Join-Path $verifyRoot "Install"
+
+          Remove-Item -LiteralPath $verifyRoot -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $installRoot | Out-Null
+
+          $installProcess = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$installRoot") -Wait -PassThru
+          if ($installProcess.ExitCode -ne 0) { throw "NSIS installation for sidecar verification failed with exit code $($installProcess.ExitCode)." }
+
+          $sidecar = Join-Path $installRoot "resources/sidecars/opencode-cli-$($env:RUST_TARGET).exe"
+          if (-not (Test-Path -LiteralPath $sidecar)) { throw "Installed sidecar was not found at $sidecar." }
+
+          $sidecarVersion = (& $sidecar --version | Select-Object -First 1)
+          if ($LASTEXITCODE -ne 0) { throw "Installed sidecar --version failed with exit code $LASTEXITCODE." }
+          $sidecarVersion = "$sidecarVersion".Trim()
+
+          Write-Host "expected version=$version"
+          Write-Host "sidecar path=$sidecar"
+          Write-Host "sidecar version=$sidecarVersion"
+          Write-Host "RUST_TARGET=$($env:RUST_TARGET)"
+
+          if ($sidecarVersion -ne $version) { throw "Installed sidecar version mismatch: got '$sidecarVersion', expected '$version' (RUST_TARGET=$($env:RUST_TARGET))." }
+        shell: pwsh
+
       - name: Upload Windows Installer
         if: always()
         uses: actions/upload-artifact@v4
@@ -156,8 +185,17 @@ jobs:
           $asset = "packages/desktop/dist/OpenCode_${version}_x64-setup.exe"
           gh release view $tag -R $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $tag -R $env:GITHUB_REPOSITORY --draft --title $tag --target $env:GITHUB_SHA
+            # Another workflow may create the same release concurrently; a
+            # failure here is retried via the wait loop below.
+            gh release create $tag -R $env:GITHUB_REPOSITORY --draft --title $tag --target $env:GITHUB_SHA *> $null
           }
+          $found = $false
+          for ($i = 0; $i -lt 24; $i++) {
+            gh release view $tag -R $env:GITHUB_REPOSITORY *> $null
+            if ($LASTEXITCODE -eq 0) { $found = $true; break }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $found) { throw "Release $tag was not created (waited 120 seconds)." }
           gh release upload $tag $asset -R $env:GITHUB_REPOSITORY --clobber
         shell: pwsh
         env:

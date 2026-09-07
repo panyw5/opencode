@@ -61,8 +61,9 @@ jobs:
           done
           test -n "$APP_PATH"
           APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-          SIDECAR_VERSION="$("$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}" --version)"
-          printf 'expected=%s app=%s sidecar=%s\n' "$OPENCODE_VERSION" "$APP_VERSION" "$SIDECAR_VERSION"
+          SIDECAR_PATH="$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}"
+          SIDECAR_VERSION="$("$SIDECAR_PATH" --version)"
+          printf 'expected version=%s\napp version=%s\nsidecar path=%s\nsidecar version=%s\nRUST_TARGET=%s\n' "$OPENCODE_VERSION" "$APP_VERSION" "$SIDECAR_PATH" "$SIDECAR_VERSION" "$RUST_TARGET"
           test "$APP_VERSION" = "$OPENCODE_VERSION"
           test "$SIDECAR_VERSION" = "$OPENCODE_VERSION"
 
@@ -78,7 +79,16 @@ jobs:
           TAG="${APP_VERSION}"
           ASSET="packages/desktop/dist/OpenCode_${TAG#v}_x64.dmg"
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA"
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" >/dev/null 2>&1 || true
+          found=0
+          for _ in $(seq 1 24); do
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              found=1
+              break
+            fi
+            sleep 5
+          done
+          [ "$found" = "1" ] || { echo "release $TAG was not created (waited 120 seconds)"; exit 1; }
           gh release upload "$TAG" "$ASSET" -R "$GITHUB_REPOSITORY" --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,8 +143,9 @@ jobs:
           done
           test -n "$APP_PATH"
           APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
-          SIDECAR_VERSION="$("$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}" --version)"
-          printf 'expected=%s app=%s sidecar=%s\n' "$OPENCODE_VERSION" "$APP_VERSION" "$SIDECAR_VERSION"
+          SIDECAR_PATH="$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}"
+          SIDECAR_VERSION="$("$SIDECAR_PATH" --version)"
+          printf 'expected version=%s\napp version=%s\nsidecar path=%s\nsidecar version=%s\nRUST_TARGET=%s\n' "$OPENCODE_VERSION" "$APP_VERSION" "$SIDECAR_PATH" "$SIDECAR_VERSION" "$RUST_TARGET"
           test "$APP_VERSION" = "$OPENCODE_VERSION"
           test "$SIDECAR_VERSION" = "$OPENCODE_VERSION"
 
@@ -150,7 +161,16 @@ jobs:
           TAG="${APP_VERSION}"
           ASSET="packages/desktop/dist/OpenCode_${TAG#v}_aarch64.dmg"
           gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA"
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" >/dev/null 2>&1 || true
+          found=0
+          for _ in $(seq 1 24); do
+            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              found=1
+              break
+            fi
+            sleep 5
+          done
+          [ "$found" = "1" ] || { echo "release $TAG was not created (waited 120 seconds)"; exit 1; }
           gh release upload "$TAG" "$ASSET" -R "$GITHUB_REPOSITORY" --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
