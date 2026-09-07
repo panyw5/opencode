@@ -488,6 +488,31 @@ function createGlobalSync() {
     return next
   }
 
+  /** Re-pull command.list for every loaded directory store so newly written or
+   * edited command files appear in the slash palette without a backend restart. */
+  async function refreshCommands(reason: string) {
+    const targets: Array<{ directory: string; manager: ChildManager }> = []
+    forEachDirectory((directory, manager) => {
+      if (isolated(directory)) return
+      targets.push({ directory, manager })
+    })
+    const results = await Promise.allSettled(
+      targets.map(async ({ directory, manager }) => {
+        const next = await sdkFor(directory).command.list()
+        const child = manager.children[directory]
+        if (!child) return
+        child[1]("command", next.data ?? [])
+      }),
+    )
+    const failed = results.filter((result) => result.status === "rejected")
+    if (failed.length > 0) {
+      console.warn(
+        `[global-sync] command refresh partial reason=${reason} failed=${String(failed.length)} total=${String(results.length)}`,
+      )
+    }
+    console.info(`[global-sync] command refresh done reason=${reason} total=${String(results.length)}`)
+  }
+
   /** Boundary-only: refresh status for every currently loaded directory store. */
   function refreshLoadedSessionStatuses(reason: SessionStatusRefreshReason) {
     forEachDirectory((directory) => {
@@ -1068,6 +1093,7 @@ function createGlobalSync() {
     peek: children.peek,
     bootstrap,
     refreshConfig,
+    refreshCommands,
     updateConfig,
     provider: providerApi,
     project: projectApi,

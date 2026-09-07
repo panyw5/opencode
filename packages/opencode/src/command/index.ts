@@ -58,6 +58,7 @@ export const Default = {
 export interface Interface {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
   readonly list: () => Effect.Effect<Info[]>
+  readonly invalidate: () => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Command") {}
@@ -168,7 +169,11 @@ export const layer = Layer.effect(
       return Object.values(s.commands)
     })
 
-    return Service.of({ get, list })
+    const invalidate = Effect.fn("Command.invalidate")(function* () {
+      yield* InstanceState.invalidateAll(state)
+    })
+
+    return Service.of({ get, list, invalidate })
   }),
 )
 

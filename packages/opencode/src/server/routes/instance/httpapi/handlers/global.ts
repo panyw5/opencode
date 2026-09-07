@@ -1,4 +1,5 @@
 import { Config } from "@/config/config"
+import { Command } from "@/command"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { Bus } from "@/bus"
 import { Installation } from "@/installation"
@@ -70,6 +71,7 @@ function eventResponse() {
 export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handlers) =>
   Effect.gen(function* () {
     const config = yield* Config.Service
+    const command = yield* Command.Service
     const installation = yield* Installation.Service
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
       return { healthy: true as const, version: InstallationVersion }
@@ -115,6 +117,9 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     const configRefresh = Effect.fn("GlobalHttpApi.configRefresh")(function* () {
       log.info("global config runtime refresh requested")
       const result = yield* config.refreshGlobal()
+      // Command/MCP/skill listings are cached per-instance from config; drop them so
+      // a config refresh also makes newly written command files visible without a restart.
+      yield* command.invalidate()
       log.info("global config runtime refresh completed", { agentCount: Object.keys(result.agent ?? {}).length })
       GlobalBus.emit("event", {
         directory: "global",
