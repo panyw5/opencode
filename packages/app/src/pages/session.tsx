@@ -2694,7 +2694,11 @@ export default function Page() {
   // One history page per "arrive at top" gesture. Re-arm only after the user leaves the edge,
   // so a failed scroll pin cannot chain-load the entire session while stuck at scrollTop≈0.
   const historyEdgePx = 200
-  let historyLoadInFlight = false
+  // Reactive so navigation-driven loaders (pending message jump) observe the full
+  // loadEarlier window — the underlying fetch flag clears at commit, before the
+  // anchor restore/finally finishes, and a non-reactive flag would silently
+  // swallow the retry that keeps the jump alive.
+  const [historyInFlight, setHistoryInFlight] = createSignal(false)
   let historyEdgeArmed = true
   const prepareFindNavigation = () => {
     findNavigationUntil = performance.now() + 1_500
@@ -2706,7 +2710,7 @@ export default function Page() {
     on(
       () => params.id,
       () => {
-        historyLoadInFlight = false
+        setHistoryInFlight(false)
         historyEdgeArmed = true
       },
     ),
@@ -2715,14 +2719,14 @@ export default function Page() {
   const loadEarlier = async () => {
     const id = params.id
     if (!id) return
-    if (historyLoadInFlight || !historyMore() || historyLoading()) {
+    if (historyInFlight() || !historyMore() || historyLoading()) {
       console.debug(
-        `[session] history-skip sid=${id} inFlight=${String(historyLoadInFlight)} more=${String(historyMore())} loading=${String(historyLoading())}`,
+        `[session] history-skip sid=${id} inFlight=${String(historyInFlight())} more=${String(historyMore())} loading=${String(historyLoading())}`,
       )
       return
     }
 
-    historyLoadInFlight = true
+    setHistoryInFlight(true)
     historyEdgeArmed = false
     console.debug(
       `[session] history-start sid=${id} loaded=${String(messages().length)} visible=${String(visibleUserMessages().length)} more=${String(historyMore())}`,
@@ -2758,7 +2762,7 @@ export default function Page() {
       historyAnchor.restore(true)
       throw error
     } finally {
-      historyLoadInFlight = false
+      setHistoryInFlight(false)
       console.debug(`[session] history-finally sid=${id} inFlight=false loaded=${String(messages().length)}`)
     }
   }
@@ -3322,7 +3326,7 @@ export default function Page() {
     live,
     visibleUserMessages,
     historyMore,
-    historyLoading,
+    historyBusy: () => historyLoading() || historyInFlight(),
     loadMore: () => loadEarlier(),
     currentMessageId: () => store.messageId,
     pendingMessage: () => ui.pendingMessage,
@@ -3455,7 +3459,7 @@ export default function Page() {
                             historyEdgeArmed = true
                             return
                           }
-                          if (!historyEdgeArmed || historyLoadInFlight) return
+                          if (!historyEdgeArmed || historyInFlight()) return
                           void loadEarlier()
                         }}
                         onAutoScrollInteraction={autoScroll.handleInteraction}

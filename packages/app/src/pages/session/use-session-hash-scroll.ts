@@ -13,7 +13,8 @@ export const useSessionHashScroll = (input: {
   live: () => boolean
   visibleUserMessages: () => UserMessage[]
   historyMore: () => boolean
-  historyLoading: () => boolean
+  /** True for the whole history-load window, including the multi-page loadEarlier wrapper. */
+  historyBusy: () => boolean
   loadMore: (sessionID: string) => Promise<void>
   currentMessageId: () => string | undefined
   pendingMessage: () => string | undefined
@@ -362,10 +363,10 @@ export const useSessionHashScroll = (input: {
     if (!targetId && !clearing) targetId = messageIdFromHash(location.hash)
     if (!targetId) return
     if (messageById().has(targetId)) return
-    if (!input.historyMore() || input.historyLoading()) return
+    if (!input.historyMore() || input.historyBusy()) return
 
     console.debug(
-      `[autoLoadMore] loading more messages: targetId=${targetId} visibleCount=${visibleUserMessages().length} historyMore=${input.historyMore()} historyLoading=${input.historyLoading()}`,
+      `[autoLoadMore] loading more messages: targetId=${targetId} visibleCount=${visibleUserMessages().length} historyMore=${input.historyMore()} historyBusy=${input.historyBusy()}`,
     )
     void input.loadMore(sessionID)
   })
