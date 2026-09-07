@@ -33,7 +33,7 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
   const inflight = new Map<string, Promise<LoadResult>>()
   const optimistic = new Map<string, Map<string, SessionOptimisticItem>>()
   const [activity, setActivity] = createStore({ loading: {} as Record<string, number | undefined> })
-  const keyFor = (directory: string, sessionID: string) => `${deps.canonical(directory)}\n${sessionID}`
+  const keyFor = (directory: string, sessionID: string) => `${deps.key(directory)}\n${sessionID}`
   const rev = (directory: string, sessionID: string) => revision.get(keyFor(directory, sessionID)) ?? 0
   const bump = (directory: string, sessionID: string) => {
     const key = keyFor(directory, sessionID)
@@ -56,7 +56,7 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
   }
 
   const page = (input: { directory: string; sessionID: string; limit: number; before?: string }) => {
-    const directory = deps.canonical(input.directory)
+    const directory = input.directory
     const key = `${keyFor(directory, input.sessionID)}\n${String(input.limit)}\n${input.before ?? ""}`
     const pending = pageInflight.get(key)
     if (pending) return pending
@@ -106,7 +106,7 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     before?: string
     mode?: "replace" | "prepend"
   }): Promise<LoadResult> => {
-    const directory = deps.canonical(input.directory)
+    const directory = input.directory
     const key = keyFor(directory, input.sessionID)
     const pending = inflight.get(key)
     if (pending) return pending
@@ -184,7 +184,6 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
   }
 
   const addOptimistic = (directory: string, input: { sessionID: string; message: Message; parts: Part[] }) => {
-    directory = deps.canonical(directory)
     const key = keyFor(directory, input.sessionID)
     const items = optimistic.get(key)
     const value = { message: input.message, parts: sortSessionParts(input.parts) }
@@ -202,7 +201,6 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
   }
 
   const removeOptimistic = (directory: string, input: { sessionID: string; messageID: string }) => {
-    directory = deps.canonical(directory)
     clearOptimistic(directory, input.sessionID, input.messageID)
     const child = deps.child(directory)
     const messages = child[0].message[input.sessionID]
@@ -224,10 +222,10 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
 
   return {
     get(directory: string, sessionID: string) {
-      return deps.child(deps.canonical(directory))[0].message[sessionID]
+      return deps.child(directory)[0].message[sessionID]
     },
     parts(directory: string, messageID: string) {
-      return deps.child(deps.canonical(directory))[0].part[messageID]
+      return deps.child(directory)[0].part[messageID]
     },
     page,
     load,
@@ -235,17 +233,16 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       return (activity.loading[keyFor(directory, sessionID)] ?? 0) > 0
     },
     history(directory: string, sessionID: string) {
-      return deps.child(deps.canonical(directory))[0].session_history?.[sessionID]
+      return deps.child(directory)[0].session_history?.[sessionID]
     },
     setShow(directory: string, sessionID: string, show: number | undefined) {
-      const child = deps.child(deps.canonical(directory))
+      const child = deps.child(directory)
       const history = child[0].session_history?.[sessionID]
       if (history) child[1]("session_history", sessionID, { ...history, show })
     },
     optimistic: {
       add: addOptimistic,
       complete(directory: string, input: { sessionID: string; messageID: string }) {
-        directory = deps.canonical(directory)
         clearOptimistic(directory, input.sessionID, input.messageID)
         const [, setStore] = deps.child(directory)
         setStore("part", input.messageID, (parts: Part[]) =>
@@ -265,7 +262,6 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       }
     },
     clear(directory: string, sessionIDs: string[]) {
-      directory = deps.canonical(directory)
       for (const sessionID of sessionIDs) {
         const key = keyFor(directory, sessionID)
         const pending = inflight.get(key)
@@ -290,7 +286,7 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       }
     },
     clearDirectory(directory: string) {
-      const prefix = `${deps.canonical(directory)}\n`
+      const prefix = `${deps.key(directory)}\n`
       const clear = (map: { keys(): IterableIterator<string>; delete(key: string): boolean }) => {
         for (const key of map.keys()) {
           if (key.startsWith(prefix)) map.delete(key)

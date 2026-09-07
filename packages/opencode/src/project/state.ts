@@ -1,4 +1,5 @@
 import { Log } from "@/util/log"
+import type { PathIdentity } from "@opencode-ai/core/util/path"
 
 export namespace State {
   interface Entry {
@@ -7,14 +8,17 @@ export namespace State {
   }
 
   const log = Log.create({ service: "state" })
-  const recordsByKey = new Map<string, Map<any, Entry>>()
+  // State is scoped by the same identity key as Instance. Keep logical paths
+  // out of this map: on Windows `D:/repo` and `d:\repo` must share one state
+  // bucket, while POSIX path casing and backslashes remain significant.
+  const recordsByKey = new Map<PathIdentity, Map<Function, Entry>>()
 
-  export function create<S>(root: () => string, init: () => S, dispose?: (state: Awaited<S>) => Promise<void>) {
+  export function create<S>(root: () => PathIdentity, init: () => S, dispose?: (state: Awaited<S>) => Promise<void>) {
     return () => {
       const key = root()
       let entries = recordsByKey.get(key)
       if (!entries) {
-        entries = new Map<string, Entry>()
+        entries = new Map<Function, Entry>()
         recordsByKey.set(key, entries)
       }
       const exists = entries.get(init)
@@ -28,7 +32,7 @@ export namespace State {
     }
   }
 
-  export async function dispose(key: string) {
+  export async function dispose(key: PathIdentity) {
     const entries = recordsByKey.get(key)
     if (!entries) return
 

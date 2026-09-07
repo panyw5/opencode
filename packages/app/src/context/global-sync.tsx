@@ -47,6 +47,7 @@ import type { ProjectMeta } from "./global-sync/types"
 import { normalizeProviderList, sanitizeProject, stripProvider } from "./global-sync/utils"
 import { formatServerError, permissionNotice } from "@/utils/server-errors"
 import { useServer } from "./server"
+import { usePlatform } from "./platform"
 import {
   domainFromDirectory,
   extraAgentByIntegration,
@@ -54,7 +55,7 @@ import {
   mainDomain,
   type DomainId,
 } from "@/pages/layout/extra-agents"
-import { workspaceKey } from "@/pages/layout/helpers"
+import { workspaceKey, workspacePathContext } from "@/pages/layout/helpers"
 
 export type GlobalStore = {
   ready: boolean
@@ -78,9 +79,17 @@ function createGlobalSync() {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const server = useServer()
+  const platform = usePlatform()
+  const pathContext = (directory: string) =>
+    workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory })
+  const storeKey = (directory: string) => workspaceKey(directory, pathContext(directory))
   const owner = getOwner()
   if (!owner) throw new Error("GlobalSync must be created within owner")
   const [version, setVersion] = createSignal(0)
+  const pathDebug = (event: string, details: Record<string, string>) => {
+    if (!import.meta.env?.DEV) return
+    console.debug(`[path-identity] ${event}`, details)
+  }
 
   const sdkCache = new Map<string, OpencodeClient>()
   const booting = new Map<string, Promise<void>>()
@@ -275,6 +284,7 @@ function createGlobalSync() {
       paused,
       bootstrap: () => bootstrap(domain),
       bootstrapInstance,
+      key: storeKey,
     })
     queues.set(domain, queue)
     return queue
@@ -322,14 +332,14 @@ function createGlobalSync() {
         console.debug(`[global-sync] child store evicted directory=${directory} domain=${domain}`)
       },
       translate: language.t,
+      pathContext,
     })
     managers.set(domain, manager)
     return manager
   }
   // Child stores are keyed by one canonical directory representation. SDK wire
   // formatting is deliberately separate, so Windows slash variants share state.
-  const storeKey = (directory: string) => workspaceKey(directory)
-  const managerOf = (directory: string): ChildManager => managerFor(domainFromDirectory(storeKey(directory)))
+  const managerOf = (directory: string): ChildManager => managerFor(domainFromDirectory(directory))
   const forEachDirectory = (visit: (directory: string, manager: ChildManager) => void) => {
     for (const manager of managers.values()) {
       for (const directory of Object.keys(manager.children)) {
@@ -353,16 +363,16 @@ function createGlobalSync() {
     const exact = manager.children[key]
     if (exact) return { key, child: exact, manager, domain: domainFromDirectory(key) }
 
-    const want = workspaceKey(directory)
+    const want = storeKey(directory)
     if (!want) return
 
     for (const manager of managers.values()) {
       for (const [key, child] of Object.entries(manager.children)) {
-        if (workspaceKey(key) === want) {
+        if (storeKey(key) === want) {
           return { key, child, manager, domain: domainFromDirectory(key) }
         }
         const pathDir = child[0].path?.directory
-        if (pathDir && workspaceKey(pathDir) === want) {
+        if (pathDir && storeKey(pathDir) === want) {
           return { key, child, manager, domain: domainFromDirectory(key) }
         }
       }
@@ -370,10 +380,10 @@ function createGlobalSync() {
   }
   const children = {
     child: (directory: string, options?: Parameters<ChildManager["child"]>[1]) =>
-      managerOf(directory).child(storeKey(directory), options),
+      managerOf(directory).child(storeKey(directory), { ...options, logicalDirectory: directory }),
     peek: (directory: string, options?: Parameters<ChildManager["peek"]>[1]) =>
-      managerOf(directory).peek(storeKey(directory), options),
-    ensureChild: (directory: string) => managerOf(directory).ensureChild(storeKey(directory)),
+      managerOf(directory).peek(storeKey(directory), { ...options, logicalDirectory: directory }),
+    ensureChild: (directory: string) => managerOf(directory).ensureChild(storeKey(directory), directory),
     pin: (directory: string) => managerOf(directory).pin(storeKey(directory)),
     unpin: (directory: string) => managerOf(directory).unpin(storeKey(directory)),
     mark: (directory: string) => managerOf(directory).mark(storeKey(directory)),
@@ -388,16 +398,25 @@ function createGlobalSync() {
     },
   }
 
+  /** Resolve a keyed directory back to the case-preserving path owned by its store. */
+  const logicalDirectory = (directory: string) => {
+    const key = storeKey(directory)
+    const stored = managerOf(directory).children[key]?.[0].path.directory
+    if (stored && storeKey(stored) === key) return stored
+    return directory
+  }
+
   const sdkFor = (directory: string) => {
     const key = storeKey(directory)
+    const logical = logicalDirectory(directory)
     const cached = sdkCache.get(key)
     if (cached) {
-      console.debug(`[global-sync] sdkFor cache hit directory=${directory}`)
+      pathDebug("sync-cache-hit", { rawPath: directory, logicalPath: logical, identity: key })
       return cached
     }
-    console.log(`[global-sync] sdkFor creating directory=${directory}`)
-    const sdk = runtime(domainFromDirectory(directory)).createClient({
-      directory,
+    pathDebug("sync-cache-miss", { rawPath: directory, logicalPath: logical, identity: key })
+    const sdk = runtime(domainFromDirectory(logical)).createClient({
+      directory: logical,
       throwOnError: true,
     })
     sdkCache.set(key, sdk)
@@ -405,12 +424,12 @@ function createGlobalSync() {
   }
 
   const sessionService = createSessionService({
-      canonical: storeKey,
+      key: storeKey,
       isolated,
       sdk: sdkFor,
       child: (directory) => children.peek(directory, { bootstrap: false }) as SessionChildStore,
       current: (directory, child, revision) =>
-        rev(directory) === revision && managerOf(directory).children[directory] === child,
+        rev(directory) === revision && managerOf(directory).children[storeKey(directory)] === child,
       revision: rev,
       pin: children.pin,
       unpin: children.unpin,
@@ -534,48 +553,48 @@ function createGlobalSync() {
     directory: string,
     opts?: { silent?: boolean; force?: boolean },
   ): Promise<void> {
-    directory = storeKey(directory)
+    const logical = logicalDirectory(directory)
+    const directoryKey = storeKey(directory)
     if (isolated(directory)) {
       return
     }
-    const pending = sessionLoads.get(directory)
+    const pending = sessionLoads.get(directoryKey)
     if (pending) {
       if (opts?.force) {
-        return pending.then(() => loadSessions(directory, { ...opts, force: true }))
+        return pending.then(() => loadSessions(logical, { ...opts, force: true }))
       }
       return pending
     }
 
-    children.pin(directory)
-    const child = children.peek(directory, { bootstrap: false })
-    const mark = rev(directory)
+    children.pin(directoryKey)
+    const child = children.peek(logical, { bootstrap: false })
+    const mark = rev(directoryKey)
     const raw = child[1] as (...args: unknown[]) => unknown
     const store = child[0]
     const setStore = ((...input: unknown[]) => {
-      if (rev(directory) !== mark || managerOf(directory).children[directory] !== child) return input[0]
+      if (rev(directoryKey) !== mark || managerOf(logical).children[directoryKey] !== child) return input[0]
       return raw(...input)
     }) as typeof child[1]
-    if (!opts?.force && sessionLoaded.has(directory)) {
+    if (!opts?.force && sessionLoaded.has(directoryKey)) {
       setStore("sessions", "ready")
       setStore("session_error", undefined)
-      children.unpin(directory)
+      children.unpin(directoryKey)
       return
     }
-    if (opts?.force) sessionLoaded.delete(directory)
+    if (opts?.force) sessionLoaded.delete(directoryKey)
 
     const startedAt = Date.now()
     console.debug(
-      `[global-sync] load sessions start directory=${directory} force=${opts?.force ? 1 : 0} silent=${opts?.silent ? 1 : 0}`,
+      `[global-sync] load sessions start directory=${logical} identity=${directoryKey} force=${opts?.force ? 1 : 0} silent=${opts?.silent ? 1 : 0}`,
     )
     setStore("sessions", "loading")
     setStore("session_error", undefined)
 
     const promise = loadRootSessions({
-      directory,
+      directory: logical,
       list: (query) => {
-        console.log(`[global-sync] loadSessions list query directory=${directory} roots=${query.roots}`)
-        const sdk = sdkFor(directory)
-        console.log(`[global-sync] loadSessions using sdk directory=${(sdk as any).directory}`)
+        console.debug(`[global-sync] loadSessions list query directory=${logical} identity=${directoryKey} roots=${query.roots}`)
+        const sdk = sdkFor(logical)
         return sdk.session.list(query)
       },
     })
@@ -593,27 +612,27 @@ function createGlobalSync() {
         setStore("session", reconcile(sessions, { key: "id" }))
         const stale = cleanupDroppedSessionCaches(store, setStore, sessions)
         if (stale.length > 0) {
-          clearSessionPrefetch(directory, stale)
-          sessionService.api.clear(directory, stale)
+          clearSessionPrefetch(logical, stale)
+          sessionService.api.clear(logical, stale)
         }
-        sessionLoaded.add(directory)
+        sessionLoaded.add(directoryKey)
         setStore("sessions", "ready")
         setStore("session_error", undefined)
-        setLoaded("dir", directory, true)
+        setLoaded("dir", directoryKey, true)
         console.debug(
-          `[global-sync] load sessions success directory=${directory} roots=${total} sessions=${sessions.length} elapsed=${Date.now() - startedAt}ms`,
+          `[global-sync] load sessions success directory=${logical} identity=${directoryKey} roots=${total} sessions=${sessions.length} elapsed=${Date.now() - startedAt}ms`,
         )
       })
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err)
         console.error(
-          `[global-sync] failed to load sessions directory=${directory} elapsed=${Date.now() - startedAt}ms err=${message}`,
+          `[global-sync] failed to load sessions directory=${logical} identity=${directoryKey} elapsed=${Date.now() - startedAt}ms err=${message}`,
         )
         setStore("sessions", "idle")
         const note = permissionNotice(err, language.t, "session")
         setStore("session_error", note)
         if (opts?.silent || note) return
-        const project = getFilename(directory)
+        const project = getFilename(logical)
         const agent = extraAgentByIntegration(server.current?.integration)
         const title = agent?.sessionListFailedTitleKey
           ? language.t(agent.sessionListFailedTitleKey)
@@ -625,11 +644,11 @@ function createGlobalSync() {
         })
       })
 
-    sessionLoads.set(directory, promise)
+    sessionLoads.set(directoryKey, promise)
     promise.finally(() => {
-      console.debug(`[global-sync] load sessions done directory=${directory} elapsed=${Date.now() - startedAt}ms`)
-      sessionLoads.delete(directory)
-      children.unpin(directory)
+      console.debug(`[global-sync] load sessions done directory=${logical} identity=${directoryKey} elapsed=${Date.now() - startedAt}ms`)
+      sessionLoads.delete(directoryKey)
+      children.unpin(directoryKey)
     })
     return promise
   }
@@ -679,52 +698,54 @@ function createGlobalSync() {
   }
 
   async function bootstrapInstance(directory: string) {
-    directory = storeKey(directory)
-    if (!directory) return
-    if (unavailableDirectories.has(directory)) {
-      throw new Error(`DirectoryNotFound: ${directory} is marked unavailable`)
+    const logical = logicalDirectory(directory)
+    const directoryKey = storeKey(directory)
+    if (!directoryKey) return
+    if (unavailableDirectories.has(directoryKey)) {
+      throw new Error(`DirectoryNotFound: ${logical} is marked unavailable`)
     }
     if (isolated(directory)) {
       return
     }
-    const pending = booting.get(directory)
+    const pending = booting.get(directoryKey)
     if (pending) {
       return pending
     }
 
-    children.pin(directory)
+    children.pin(directoryKey)
     const promise = (async () => {
-      const child = children.ensureChild(directory)
-      const mark = rev(directory)
+      const child = children.ensureChild(logical)
+      const mark = rev(directoryKey)
       const raw = child[1] as (...args: unknown[]) => unknown
       const setStore = ((...input: unknown[]) => {
-        if (rev(directory) !== mark || managerOf(directory).children[directory] !== child) return input[0]
+        if (rev(directoryKey) !== mark || managerOf(logical).children[directoryKey] !== child) return input[0]
         return raw(...input)
       }) as typeof child[1]
-      const cache = children.vcsCache.get(directory)
+      const cache = children.vcsCache.get(directoryKey)
       if (!cache) return
-      const sdk = sdkFor(directory)
+      const sdk = sdkFor(logical)
+      pathDebug("bootstrap-start", { rawPath: directory, logicalPath: logical, identity: directoryKey })
       await bootstrapDirectory({
-        directory,
+        directory: logical,
         global: {
           config: globalStore.config,
-          project: projectBucket(domainFromDirectory(directory)),
+          project: projectBucket(domainFromDirectory(logical)),
           provider: globalStore.provider,
         },
         sdk,
         store: child[0],
         setStore,
-        setProject: (projects) => setProjectsFor(domainFromDirectory(directory), projects),
+        setProject: (projects) => setProjectsFor(domainFromDirectory(logical), projects),
         vcsCache: cache,
         translate: language.t,
       })
-      setLoaded("dir", directory, true)
+      setLoaded("dir", directoryKey, true)
     })()
 
-    booting.set(directory, promise)
+    booting.set(directoryKey, promise)
     promise.finally(() => {
-      booting.delete(directory)
-      children.unpin(directory)
+      booting.delete(directoryKey)
+      children.unpin(directoryKey)
     })
     return promise
   }
@@ -789,6 +810,7 @@ function createGlobalSync() {
     const { key, child, domain: resolvedDomain } = resolved
     children.mark(key)
     const [store, setStore] = child
+    const logical = store.path.directory || directory
     const completedSession = sessionToReconcileOnStatusEvent(event, store.session_status)
     const revertTrace = (() => {
       const props = ((event as { properties?: unknown }).properties ?? {}) as {
@@ -831,7 +853,7 @@ function createGlobalSync() {
         if (messages?.some((message) => message.id === messageID)) return sessionID
       }
     })
-    if (mutation) sessionService.event(key, mutation)
+    if (mutation) sessionService.event(logical, mutation)
     const removedSession = (() => {
       if (event.type === "session.deleted") return (event.properties as { info?: { id?: string } }).info?.id
       if (event.type !== "session.updated") return
@@ -839,25 +861,25 @@ function createGlobalSync() {
       return info?.time?.archived ? info.id : undefined
     })()
     if (removedSession) {
-      clearSessionPrefetch(key, [removedSession])
-      sessionService.api.clear(key, [removedSession])
+      clearSessionPrefetch(logical, [removedSession])
+      sessionService.api.clear(logical, [removedSession])
     }
     try {
       applyDirectoryEvent({
         event,
-        directory: key,
+        directory: logical,
         store,
         setStore,
         push: queueFor(resolvedDomain).push,
         vcsCache: children.vcsCache.get(key),
         loadLsp: () => {
-          sdkFor(key)
+          sdkFor(logical)
             .lsp.status()
             .then((x) => setStore("lsp", x.data ?? []))
         },
       })
       if (completedSession) {
-        void reconcileSessionMessages(key, [completedSession], "session-completed").catch((error) => {
+        void reconcileSessionMessages(logical, [completedSession], "session-completed").catch((error) => {
           console.warn(
             `[global-sync] completed session reconcile failed directory=${key} session=${completedSession} error=${error instanceof Error ? error.message : String(error)}`,
           )
@@ -1056,13 +1078,20 @@ function createGlobalSync() {
 export { createGlobalSync, useGlobalSync }
 
 export function useQueryOptions() {
+  const platform = usePlatform()
+  const server = useServer()
+  const directory = (value: string | null) => {
+    if (value === null) return null
+    const context = workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory: value })
+    return workspaceKey(value, context)
+  }
   return {
-    mcp: (directory: string) => ({ queryKey: [directory, "mcp"] as const }),
-    lsp: (directory: string) => ({ queryKey: [directory, "lsp"] as const }),
-    agents: (directory: string) => ({ queryKey: [directory, "agents"] as const }),
-    providers: (directory: string | null) => ({ queryKey: [directory, "providers"] as const }),
-    path: (directory: string | null) => ({ queryKey: [directory, "path"] as const }),
-    sessions: (directory: string) => ({ queryKey: [directory, "loadSessions"] as const }),
+    mcp: (value: string) => ({ queryKey: [directory(value), "mcp"] as const }),
+    lsp: (value: string) => ({ queryKey: [directory(value), "lsp"] as const }),
+    agents: (value: string) => ({ queryKey: [directory(value), "agents"] as const }),
+    providers: (value: string | null) => ({ queryKey: [directory(value), "providers"] as const }),
+    path: (value: string | null) => ({ queryKey: [directory(value), "path"] as const }),
+    sessions: (value: string) => ({ queryKey: [directory(value), "loadSessions"] as const }),
     projects: () => ({ queryKey: ["projects"] as const }),
     globalConfig: () => ({ queryKey: ["globalConfig"] as const }),
   }

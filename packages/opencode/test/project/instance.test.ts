@@ -1,9 +1,11 @@
 import { describe, expect } from "bun:test"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
+import { Path } from "@opencode-ai/core/util/path"
 import { Deferred, Effect, Fiber, Layer } from "effect"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { registerDisposer } from "../../src/effect/instance-registry"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
+import { localPathContext } from "../../src/project/instance-context"
 import { InstanceStore } from "../../src/project/instance-store"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -42,8 +44,10 @@ describe("InstanceStore", () => {
       const store = yield* InstanceStore.Service
       const ctx = yield* store.load({ directory: dir })
 
-      expect(ctx.directory).toBe(dir)
-      expect(ctx.worktree).toBe(dir)
+      expect(ctx.directory).toBe(Path.logical(dir, localPathContext))
+      expect(ctx.worktree).toBe(Path.logical(dir, localPathContext))
+      expect(String(ctx.directoryKey)).toBe(String(Path.identity(dir, localPathContext)))
+      expect(String(ctx.nativeDirectory)).toBe(String(Path.native(dir, localPathContext)))
     }),
   )
 
@@ -60,7 +64,7 @@ describe("InstanceStore", () => {
       )
       yield* store.load({ directory: dir })
 
-      expect(initializedDirectory).toBe(dir)
+      expect(initializedDirectory).toBe(Path.logical(dir, localPathContext))
     }),
   )
 
@@ -80,6 +84,57 @@ describe("InstanceStore", () => {
 
       expect(second).toBe(first)
       expect(initialized).toBe(1)
+    }),
+  )
+
+  it.live("dedupes Windows slash, drive-case, and trailing-slash aliases", () =>
+    Effect.gen(function* () {
+      if (localPathContext.platform !== "win32") return
+      const dir = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      let initialized = 0
+
+      yield* setBootstrap(
+        Effect.sync(() => {
+          initialized++
+        }),
+      )
+
+      const forward = dir.replace(/\\/g, "/")
+      const alias = `${forward[0]!.toLowerCase()}${forward.slice(1)}/`
+      const first = yield* store.load({ directory: dir })
+      const second = yield* store.load({ directory: alias })
+
+      expect(second).toBe(first)
+      expect(initialized).toBe(1)
+      expect(String(first.directoryKey)).toBe(String(Path.identity(alias, localPathContext)))
+    }),
+  )
+
+  it.live("keeps POSIX case variants in separate instance identities", () =>
+    Effect.gen(function* () {
+      if (localPathContext.platform === "win32") return
+      const dir = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      const base = yield* store.load({ directory: dir })
+      const lower = `${dir}-case`
+      const upper = `${dir}-CASE`
+
+      const first = yield* store.load({
+        directory: lower,
+        worktree: lower,
+        project: base.project,
+        location: base.location,
+      })
+      const second = yield* store.load({
+        directory: upper,
+        worktree: upper,
+        project: base.project,
+        location: base.location,
+      })
+
+      expect(first).not.toBe(second)
+      expect(String(first.directoryKey)).not.toBe(String(second.directoryKey))
     }),
   )
 
@@ -144,7 +199,7 @@ describe("InstanceStore", () => {
       )
       const ctx = yield* store.load({ directory: dir })
 
-      expect(ctx.directory).toBe(dir)
+      expect(ctx.directory).toBe(Path.logical(dir, localPathContext))
       expect(attempts).toBe(2)
     }),
   )
@@ -190,7 +245,7 @@ describe("InstanceStore", () => {
       const second = yield* Fiber.join(reload)
       yield* Fiber.join(staleDispose)
 
-      expect(disposed).toEqual([dir])
+      expect(disposed).toEqual([String(Path.identity(dir, localPathContext))])
       expect(yield* store.load({ directory: dir })).toBe(second)
     }),
   )
@@ -216,10 +271,10 @@ describe("InstanceStore", () => {
       const release = yield* Deferred.await(releaseDispose)
       const second = yield* store.disposeAll().pipe(Effect.forkScoped)
 
-      expect(disposed).toEqual([dir])
+      expect(disposed).toEqual([String(Path.identity(dir, localPathContext))])
       yield* Effect.sync(release)
       yield* Effect.all([Fiber.join(first), Fiber.join(second)])
-      expect(disposed).toEqual([dir])
+      expect(disposed).toEqual([String(Path.identity(dir, localPathContext))])
     }),
   )
 
@@ -235,11 +290,14 @@ describe("InstanceStore", () => {
 
       yield* store.load({ directory: dir1 })
       yield* store.disposeAll()
-      expect(disposed).toEqual([dir1])
+      expect(disposed).toEqual([String(Path.identity(dir1, localPathContext))])
 
       yield* store.load({ directory: dir2 })
       yield* store.disposeAll()
-      expect(disposed).toEqual([dir1, dir2])
+      expect(disposed).toEqual([
+        String(Path.identity(dir1, localPathContext)),
+        String(Path.identity(dir2, localPathContext)),
+      ])
     }),
   )
 })

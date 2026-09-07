@@ -7,21 +7,19 @@ export function createSessionStatusService(deps: SessionControllerDeps) {
   const inflight = new Map<string, Promise<void>>()
 
   const get = (directory: string, sessionID: string) => {
-    directory = deps.canonical(directory)
-    if (!directory || !sessionID) return
+    if (!deps.key(directory) || !sessionID) return
     return deps.child(directory)[0].session_status[sessionID]
   }
 
   const all = (directory: string) => {
-    directory = deps.canonical(directory)
-    if (!directory) return {} as Record<string, SessionStatus | undefined>
+    if (!deps.key(directory)) return {} as Record<string, SessionStatus | undefined>
     return deps.child(directory)[0].session_status
   }
 
   const refresh = async (directory: string, reason: SessionStatusRefreshReason = "manual") => {
-    directory = deps.canonical(directory)
-    if (!directory || deps.isolated(directory)) return
-    const pending = inflight.get(directory)
+    const key = deps.key(directory)
+    if (!key || deps.isolated(directory)) return
+    const pending = inflight.get(key)
     if (pending) return pending
 
     deps.pin(directory)
@@ -44,10 +42,10 @@ export function createSessionStatusService(deps: SessionControllerDeps) {
         )
       })
       .finally(() => {
-        if (inflight.get(directory) === promise) inflight.delete(directory)
+        if (inflight.get(key) === promise) inflight.delete(key)
         deps.unpin(directory)
       })
-    inflight.set(directory, promise)
+    inflight.set(key, promise)
     return promise
   }
 
@@ -55,12 +53,11 @@ export function createSessionStatusService(deps: SessionControllerDeps) {
     get,
     all,
     set(directory: string, sessionID: string, status: SessionStatus) {
-      directory = deps.canonical(directory)
       deps.child(directory)[1]("session_status", sessionID, reconcile(status))
     },
     refresh,
     clearDirectory(directory: string) {
-      inflight.delete(deps.canonical(directory))
+      inflight.delete(deps.key(directory))
     },
     inspect() {
       return { inflight: inflight.size }

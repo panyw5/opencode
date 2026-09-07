@@ -10,7 +10,7 @@ import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { decode64 } from "@/utils/base64"
 import { same } from "@/utils/same"
 import { isExtraAgentDirectory, mainDomain } from "@/pages/layout/extra-agents"
-import { sameWorkspacePath, workspaceKey } from "@/pages/layout/helpers"
+import { sameWorkspacePath, workspaceKey, workspacePathContext } from "@/pages/layout/helpers"
 import { createScrollPersistence, type SessionScroll } from "./layout-scroll"
 import { createPathHelpers } from "./file/path"
 import { removeSessionTabSubtree } from "@/components/session/session-bar-parent"
@@ -466,9 +466,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const dir = parts[0]
         const session = parts[1]
         if (!dir) continue
+        const context = workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory: dir })
 
         for (const entry of SESSION_STATE_KEYS) {
-          const target = session ? Persist.session(dir, session, entry.key) : Persist.workspace(dir, entry.key)
+          const target = session
+            ? Persist.session(dir, session, entry.key, undefined, context)
+            : Persist.workspace(dir, entry.key, undefined, context)
           void removePersisted(target, platform)
 
           const legacyKey = `${dir}/${entry.legacy}${session ? "/" + session : ""}.${entry.version}`

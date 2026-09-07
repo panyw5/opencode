@@ -7,7 +7,7 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
   const inflight = new Map<string, Promise<FileDiff[] | undefined>>()
   const revision = new Map<string, number>()
   const loadedAt = new Map<string, number>()
-  const keyFor = (directory: string, sessionID: string) => `${deps.canonical(directory)}\n${sessionID}`
+  const keyFor = (directory: string, sessionID: string) => `${deps.key(directory)}\n${sessionID}`
   const rev = (directory: string, sessionID: string) => revision.get(keyFor(directory, sessionID)) ?? 0
   const bump = (directory: string, sessionID: string) => {
     const key = keyFor(directory, sessionID)
@@ -15,12 +15,10 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
   }
 
   const get = (directory: string, sessionID: string) => {
-    directory = deps.canonical(directory)
     return deps.child(directory)[0].session_diff[sessionID]
   }
 
   const load = (directory: string, sessionID: string, force = false) => {
-    directory = deps.canonical(directory)
     const child = deps.child(directory)
     const existing = child[0].session_diff[sessionID]
     if (existing !== undefined && !force) return Promise.resolve(existing)
@@ -61,7 +59,6 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
     },
     event: bump,
     clear(directory: string, sessionIDs: string[]) {
-      directory = deps.canonical(directory)
       for (const sessionID of sessionIDs) {
         const key = keyFor(directory, sessionID)
         const pending = inflight.get(key)
@@ -72,7 +69,7 @@ export function createSessionDiffService(deps: SessionControllerDeps) {
       }
     },
     clearDirectory(directory: string) {
-      const prefix = `${deps.canonical(directory)}\n`
+      const prefix = `${deps.key(directory)}\n`
       for (const key of inflight.keys()) {
         if (key.startsWith(prefix)) inflight.delete(key)
       }

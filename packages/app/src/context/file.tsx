@@ -21,6 +21,9 @@ import {
   touchFileContent,
 } from "./file/content-cache"
 import { createFileViewCache } from "./file/view-cache"
+import { useServer } from "@/context/server"
+import { usePlatform } from "@/context/platform"
+import { workspacePathContext } from "@/pages/layout/helpers"
 import { createFileTreeStore } from "./file/tree-store"
 import { invalidateFromWatcher } from "./file/watcher"
 import {
@@ -56,6 +59,8 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const sdk = useSDK()
     useSync()
     const params = useParams()
+    const server = useServer()
+    const platform = usePlatform()
     const language = useLanguage()
     const layout = useLayout()
 
@@ -101,7 +106,9 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       })
     })
 
-    const viewCache = createFileViewCache()
+    const viewCache = createFileViewCache(
+      workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory: scope() }),
+    )
     const view = createMemo(() => viewCache.load(scope(), params.id))
 
     const ensure = (file: string) => {

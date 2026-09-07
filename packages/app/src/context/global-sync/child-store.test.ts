@@ -42,6 +42,33 @@ describe("createChildStoreManager", () => {
     })
   })
 
+  test("keeps the identity key separate from the logical directory", () => {
+    createRoot((dispose) => {
+      const owner = getOwner()
+      if (!owner) throw new Error("owner required")
+
+      const manager = createChildStoreManager({
+        owner,
+        isBooting: () => false,
+        isLoadingSessions: () => false,
+        onBootstrap() {},
+        onDispose() {},
+        translate: (key) => key,
+      })
+
+      const [store] = manager.child("d:/project", {
+        bootstrap: false,
+        logicalDirectory: "D:\\Project",
+      })
+
+      expect(manager.children["d:/project"]).toBeDefined()
+      expect(store.path.directory).toBe("D:\\Project")
+      manager.resetDirectory("d:/project")
+      expect(store.path.directory).toBe("D:\\Project")
+      dispose()
+    })
+  })
+
   test("does not evict the active directory during mark", () => {
     const owner = createRoot((dispose) => {
       const current = getOwner()

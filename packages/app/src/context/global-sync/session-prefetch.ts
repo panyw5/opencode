@@ -1,6 +1,6 @@
-import { workspaceKey } from "@/pages/layout/helpers"
+import { pathIdentityKey } from "@opencode-ai/core/util/path"
 
-const key = (directory: string, sessionID: string) => `${workspaceKey(directory)}\n${sessionID}`
+const key = (directory: string, sessionID: string) => `${pathIdentityKey(directory)}\n${sessionID}`
 
 export const SESSION_PREFETCH_TTL = 15_000
 export const SESSION_PREFETCH_MAX = 200
@@ -126,7 +126,7 @@ export function clearSessionPrefetch(directory: string, sessionIDs: Iterable<str
 }
 
 export function clearSessionPrefetchDirectory(directory: string) {
-  const prefix = `${workspaceKey(directory)}\n`
+  const prefix = `${pathIdentityKey(directory)}\n`
   const keys = new Set([...cache.keys(), ...inflight.keys(), ...rev.keys(), ...cold.keys()])
   let removed = 0
   for (const id of keys) {

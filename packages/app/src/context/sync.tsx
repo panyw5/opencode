@@ -1,6 +1,7 @@
 import { batch, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@opencode-ai/core/util/binary"
+import { Path } from "@opencode-ai/core/util/path"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import {
   clearSessionPrefetch,
@@ -17,15 +18,16 @@ import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } fro
 
 function runInflight(map: Map<string, Promise<void>>, key: string, task: () => Promise<void>) {
   const pending = map.get(key)
-  if (pending) return pending
+  if (pending) {
+    console.debug(`[sync] inflight-dedupe key=${key}`)
+    return pending
+  }
   const promise = task().finally(() => {
     map.delete(key)
   })
   map.set(key, promise)
   return promise
 }
-
-const keyFor = (directory: string, id: string) => `${directory}\n${id}`
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
@@ -44,6 +46,8 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
   init: () => {
     const globalSync = useGlobalSync()
     const sdk = useSDK()
+    const identity = (directory: string) => String(Path.identity(directory, sdk.pathContext))
+    const keyFor = (directory: string, id: string) => `${identity(directory)}\n${id}`
 
     type Child = ReturnType<(typeof globalSync)["child"]>
     type Setter = Child[1]
@@ -65,7 +69,9 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     const historyMessagePageSize = 40
     const inflight = new Map<string, Promise<void>>()
     const maxDirs = 30
-    const seen = new Map<string, Set<string>>()
+    // The map key is an identity key, while the entry retains a logical path
+    // for all SDK/global-sync/IO calls. Never use the identity key as a path.
+    const seen = new Map<string, { directory: string; sessions: Set<string> }>()
     const [meta, setMeta] = createStore({
       show: {} as Record<string, number | undefined>,
       cursor: {} as Record<string, string | undefined>,
@@ -116,27 +122,33 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }
 
     const seenFor = (directory: string) => {
-      const existing = seen.get(directory)
+      const directoryKey = identity(directory)
+      const existing = seen.get(directoryKey)
       if (existing) {
-        seen.delete(directory)
-        seen.set(directory, existing)
-        return existing
+        // Keep the freshest logical spelling for subsequent cache operations.
+        existing.directory = directory
+        seen.delete(directoryKey)
+        seen.set(directoryKey, existing)
+        return existing.sessions
       }
-      const created = new Set<string>()
-      seen.set(directory, created)
+      const created = { directory, sessions: new Set<string>() }
+      seen.set(directoryKey, created)
       while (seen.size > maxDirs) {
         const first = seen.keys().next().value
         if (!first) break
-        const stale = [...(seen.get(first) ?? [])]
+        const staleEntry = seen.get(first)
+        const stale = [...(staleEntry?.sessions ?? [])]
         seen.delete(first)
-        if (!globalSync.loaded(first)) {
-          clearMeta(first, stale)
+        if (!staleEntry || !globalSync.loaded(staleEntry.directory)) {
+          if (staleEntry) clearMeta(staleEntry.directory, stale)
           continue
         }
-        const [, setStore] = globalSync.child(first, { bootstrap: false })
-        evict(first, setStore, stale)
+        if (staleEntry) {
+          const [, setStore] = globalSync.child(staleEntry.directory, { bootstrap: false })
+          evict(staleEntry.directory, setStore, stale)
+        }
       }
-      return created
+      return created.sessions
     }
 
     const clearMeta = (directory: string, sessionIDs: string[]) => {
@@ -205,10 +217,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
     }) => {
       const key = keyFor(input.directory, input.sessionID)
       console.debug(
-        `[sync] messages load-start directory=${input.directory} sid=${input.sessionID} mode=${input.mode ?? "replace"} limit=${String(input.limit)} before=${input.before ?? "none"} cached=${String(count(input.directory, input.sessionID))}`,
+        `[sync] messages load-start directory=${input.directory} sid=${input.sessionID} identity=${identity(input.directory)} mode=${input.mode ?? "replace"} limit=${String(input.limit)} before=${input.before ?? "none"} cached=${String(count(input.directory, input.sessionID))}`,
       )
       const result = await globalSync.session.messages.load(input)
-      if (!result.committed) return false
+      if (!result.committed) {
+        console.debug(
+          `[sync] messages load-end directory=${input.directory} sid=${input.sessionID} identity=${identity(input.directory)} mode=${input.mode ?? "replace"} committed=false`,
+        )
+        return false
+      }
       const previousShow = meta.show[key]
       const nextShow = previousShow !== undefined && previousShow > result.count ? result.count : previousShow
       batch(() => {
@@ -219,7 +236,7 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
       globalSync.session.messages.setShow(input.directory, input.sessionID, nextShow)
       markSessionProfile(input.sessionID, "store-commit", `count=${String(result.count)}`)
       console.debug(
-        `[sync] messages load-end directory=${input.directory} sid=${input.sessionID} mode=${input.mode ?? "replace"} count=${String(result.count)} show=${String(meta.show[key] ?? "none")}`,
+        `[sync] messages load-end directory=${input.directory} sid=${input.sessionID} identity=${identity(input.directory)} mode=${input.mode ?? "replace"} committed=true count=${String(result.count)} show=${String(meta.show[key] ?? "none")}`,
       )
       return true
     }
@@ -373,8 +390,15 @@ export const { use: useSync, provider: SyncProvider } = createSimpleContext({
             const currentShow = view(directory, sessionID)
             if (cached && hasSession && !opts?.force) {
               markSessionProfile(sessionID, "sync-cache-hit")
+              console.debug(
+                `[sync] messages cache-hit directory=${directory} sid=${sessionID} identity=${identity(directory)} count=${String(currentLength)}`,
+              )
               return
             }
+
+            console.debug(
+              `[sync] messages cache-miss directory=${directory} sid=${sessionID} identity=${identity(directory)} force=${String(!!opts?.force)} hasSession=${String(hasSession)} cached=${String(cached)}`,
+            )
 
             const limit = Math.max(view(directory, sessionID), initialMessagePageSize)
             console.debug(

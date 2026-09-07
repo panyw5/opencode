@@ -11,6 +11,9 @@ import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } fro
 import { internalAgent, primaryAgents, selectableAgents } from "./agent-selection"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
+import { useServer } from "./server"
+import { usePlatform } from "./platform"
+import { workspacePathContext } from "@/pages/layout/helpers"
 
 export type ModelKey = { providerID: string; modelID: string }
 
@@ -58,9 +61,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
   init: () => {
     const params = useParams()
     const sdk = useSDK()
+    const server = useServer()
+    const platform = usePlatform()
     const sync = useSync()
     const providers = useProviders()
     const models = useModels()
+    const pathContext = workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory: sdk.directory })
 
     const id = createMemo(() => params.id || undefined)
     const available = createMemo(() => primaryAgents(sync.data.agent))
@@ -69,7 +75,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const [saved, setSaved] = persisted(
       {
-        ...Persist.workspace(sdk.directory, "model-selection", ["model-selection.v1"]),
+        ...Persist.workspace(sdk.directory, "model-selection", ["model-selection.v1"], pathContext),
         migrate,
       },
       createStore<Saved>({

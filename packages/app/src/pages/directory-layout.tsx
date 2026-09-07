@@ -1,15 +1,17 @@
 import { DataProvider } from "@opencode-ai/ui/context"
 import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
-import { getFilename } from "@opencode-ai/core/util/path"
+import { getFilename, type PathContext } from "@opencode-ai/core/util/path"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { createEffect, createMemo, For, type ParentProps, Show } from "solid-js"
+import { createEffect, createMemo, createSignal, For, onCleanup, type Accessor, type ParentProps, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
 import { getAvatarColors, useLayout } from "@/context/layout"
 import { LocalProvider } from "@/context/local"
 import { SDKProvider, useSDK } from "@/context/sdk"
@@ -17,28 +19,103 @@ import { SkillsProvider } from "@/context/skills"
 import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { SyncProvider, useSync } from "@/context/sync"
 import { extraAgentByDirectory } from "@/pages/layout/extra-agents"
-import { newSessionProjectLabel, splitI18nTemplate } from "@/pages/layout/helpers"
+import {
+  directoryProviderKey,
+  newSessionProjectLabel,
+  sameWorkspacePath,
+  shouldNavigateDirectory,
+  splitI18nTemplate,
+  workspacePathContext,
+} from "@/pages/layout/helpers"
 import { RailTooltip } from "@/pages/layout/rail-tooltip"
 import { decode64 } from "@/utils/base64"
 
-function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
+let nextProviderID = 0
+
+function directoryDebug(
+  event: string,
+  input: { rawPath?: string; logicalPath?: string; identity?: string; providerID?: number; navigated?: boolean },
+) {
+  if (!import.meta.env.DEV) return
+  console.debug(`[directory-layout] ${event}`, input)
+}
+
+function DirectoryDataProvider(
+  props: ParentProps<{
+    directory: Accessor<string>
+    identity: string
+    setDirectory: (directory: string) => void
+  }>,
+) {
   const location = useLocation()
   const navigate = useNavigate()
+  const params = useParams()
   const sync = useSync()
   const sdk = useSDK()
-  const slug = createMemo(() => base64Encode(props.directory))
+  const directory = createMemo(props.directory)
+  const slug = createMemo(() => base64Encode(directory()))
+  const providerID = ++nextProviderID
+  let previousDirectory = directory()
+
+  directoryDebug("provider-created", {
+    rawPath: previousDirectory,
+    logicalPath: previousDirectory,
+    identity: props.identity,
+    providerID,
+  })
+  onCleanup(() => {
+    directoryDebug("provider-disposed", {
+      rawPath: previousDirectory,
+      logicalPath: previousDirectory,
+      identity: props.identity,
+      providerID,
+    })
+  })
+
+  createEffect(() => {
+    const next = directory()
+    if (next === previousDirectory) return
+    directoryDebug("provider-reused", {
+      rawPath: previousDirectory,
+      logicalPath: next,
+      identity: props.identity,
+      providerID,
+    })
+    previousDirectory = next
+  })
 
   createEffect(() => {
     const next = sync.data.path.directory
-    if (!next || next === props.directory) return
-    const path = location.pathname.slice(slug().length + 1)
+    const current = directory()
+    if (!next || next === current) return
+
+    const navigateRequired = shouldNavigateDirectory(current, next, sdk.pathContext)
+    directoryDebug("route-canonicalized", {
+      rawPath: current,
+      logicalPath: next,
+      identity: props.identity,
+      providerID,
+      navigated: navigateRequired,
+    })
+    if (!navigateRequired || sameWorkspacePath(current, next, sdk.pathContext)) {
+      // Keep the route/provider identity stable while allowing the backend's
+      // case-preserving logical path to flow through SDK and UI consumers.
+      props.setDirectory(next)
+      return
+    }
+
+    const routeSlug = params.dir ?? slug()
+    const routePrefix = `/${routeSlug}`
+    const path = location.pathname.startsWith(routePrefix)
+      ? location.pathname.slice(routePrefix.length)
+      : location.pathname
     navigate(`/${base64Encode(next)}${path}${location.search}${location.hash}`, { replace: true })
   })
 
   return (
     <DataProvider
       data={sync.data as never}
-      directory={props.directory}
+      directory={directory()}
       onNavigateToSession={(sessionID: string) => navigate(`/${slug()}/session/${sessionID}`)}
       onSessionHref={(sessionID: string) => `/${slug()}/session/${sessionID}`}
       onAbortSession={(sessionID: string) => {
@@ -72,14 +149,46 @@ function DirectoryDataProvider(props: ParentProps<{ directory: string }>) {
   )
 }
 
-function ProjectStatusPortal() {
+function DirectoryProviders(
+  props: ParentProps<{
+    identity: string
+    routeDirectory: Accessor<string>
+    context: Accessor<PathContext>
+  }>,
+) {
+  // This signal belongs to the keyed identity scope. A true identity change
+  // constructs a fresh scope with the matching logical path, while a spelling
+  // change keeps the existing provider tree and SDK state alive.
+  const [directory, setDirectory] = createSignal(props.routeDirectory())
+
+  createEffect(() => {
+    const next = props.routeDirectory()
+    if (!next) return
+    setDirectory((current) => (!current || shouldNavigateDirectory(current, next, props.context()) ? next : current))
+  })
+
+  return (
+    <SDKProvider directory={directory}>
+      <SyncProvider>
+        <SkillsProvider>
+          <ProjectStatusPortal directory={directory} />
+          <DirectoryDataProvider directory={directory} identity={props.identity} setDirectory={setDirectory}>
+            {props.children}
+          </DirectoryDataProvider>
+        </SkillsProvider>
+      </SyncProvider>
+    </SDKProvider>
+  )
+}
+
+function ProjectStatusPortal(props: { directory: Accessor<string> }) {
   const language = useLanguage()
   const params = useParams()
   const navigate = useNavigate()
   const layout = useLayout()
   const sessionTabs = useSessionTabs()
   const mount = createMemo(() => document.getElementById("opencode-titlebar-center-project"))
-  const directory = createMemo(() => (params.dir ? (decode64(params.dir) ?? "") : ""))
+  const directory = createMemo(props.directory)
   const projectLabel = createMemo(() => {
     const dir = directory()
     return newSessionProjectLabel(dir, layout.projects.list(), {
@@ -201,11 +310,26 @@ export default function Layout(props: ParentProps) {
   const params = useParams()
   const language = useLanguage()
   const navigate = useNavigate()
+  const platform = usePlatform()
+  const server = useServer()
   let invalid = ""
 
   const resolved = createMemo(() => {
     if (!params.dir) return ""
     return decode64(params.dir) ?? ""
+  })
+  const context = createMemo(() =>
+    workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory: resolved() }),
+  )
+  const identity = createMemo(() => directoryProviderKey(resolved(), context()))
+
+  createEffect(() => {
+    const next = resolved()
+    directoryDebug("route-input", {
+      rawPath: params.dir,
+      logicalPath: next,
+      identity: directoryProviderKey(next, context()),
+    })
   })
 
   createEffect(() => {
@@ -226,16 +350,11 @@ export default function Layout(props: ParentProps) {
   })
 
   return (
-    <Show when={resolved()} keyed>
-      {(resolved) => (
-        <SDKProvider directory={() => resolved}>
-          <SyncProvider>
-            <SkillsProvider>
-              <ProjectStatusPortal />
-              <DirectoryDataProvider directory={resolved}>{props.children}</DirectoryDataProvider>
-            </SkillsProvider>
-          </SyncProvider>
-        </SDKProvider>
+    <Show when={identity()} keyed>
+      {(providerIdentity) => (
+        <DirectoryProviders identity={providerIdentity} routeDirectory={resolved} context={context}>
+          {props.children}
+        </DirectoryProviders>
       )}
     </Show>
   )

@@ -1,4 +1,5 @@
 import type { OpencodeClient, Session, SessionStatus, Todo } from "@opencode-ai/sdk/v2/client"
+import { pathIdentityKey } from "@opencode-ai/core/util/path"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import type { SessionControllerDeps } from "./session-service-types"
@@ -62,9 +63,10 @@ const childState = (directory: string): State => ({
   part: {},
 })
 
-export function createSessionControllerHarness(client: Partial<FakeSessionClient> = {}) {
-  const child = createStore<State>(childState("/project"))
-  const children = new Map<string, typeof child>([["/project", child]])
+export function createSessionControllerHarness(client: Partial<FakeSessionClient> = {}, directory = "/project") {
+  const child = createStore<State>(childState(directory))
+  const children = new Map<string, typeof child>([[pathIdentityKey(directory), child]])
+  const sdkDirectories: string[] = []
   let revision = 0
   let pins = 0
   const session = {
@@ -77,11 +79,14 @@ export function createSessionControllerHarness(client: Partial<FakeSessionClient
     status: client.status ?? (async () => ({ data: {} })),
   }
   const deps: SessionControllerDeps = {
-    canonical: (directory) => directory.replace(/\/$/, ""),
+    key: pathIdentityKey,
     isolated: () => false,
-    sdk: () => ({ session } as unknown as OpencodeClient),
-    child: (directory) => children.get(directory)!,
-    current: (directory, value, mark) => revision === mark && children.get(directory) === value,
+    sdk: (directory) => {
+      sdkDirectories.push(directory)
+      return { session } as unknown as OpencodeClient
+    },
+    child: (directory) => children.get(pathIdentityKey(directory))!,
+    current: (directory, value, mark) => revision === mark && children.get(pathIdentityKey(directory)) === value,
     revision: () => revision,
     pin: () => {
       pins += 1
@@ -96,8 +101,9 @@ export function createSessionControllerHarness(client: Partial<FakeSessionClient
     session,
     reset() {
       revision += 1
-      children.set("/project", createStore<State>(childState("/project")))
+      children.set(pathIdentityKey(directory), createStore<State>(childState(directory)))
     },
+    sdkDirectories,
     get pins() {
       return pins
     },

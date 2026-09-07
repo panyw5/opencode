@@ -1,7 +1,27 @@
-import { getFilename, pathIdentityKey } from "@opencode-ai/core/util/path"
+import { getFilename, Path, pathIdentityKey, type PathContext } from "@opencode-ai/core/util/path"
 import { type Message, type PermissionRequest, type Session, type SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { CommandSource } from "@/context/command"
 import { working } from "../session/session-working"
+
+/**
+ * Resolve the persistence namespace at the workspace boundary. `isLocal` is
+ * supplied by the active server connection; the desktop host OS alone is not
+ * authoritative because the app can browse SSH, WSL, or virtual workspaces.
+ */
+export function workspacePathContext(input: {
+  os?: "macos" | "windows" | "linux"
+  isLocal: boolean
+  directory?: string
+}): PathContext {
+  // Remote server OS is intentionally unknown here. Treat it as POSIX so a
+  // Windows desktop cannot rewrite or case-fold a remote drive-looking path.
+  const platform = !input.isLocal ? "linux" : input.os === "windows" ? "win32" : input.os === "macos" ? "darwin" : "linux"
+  const virtual = !!input.directory && /^\/(openclaw|hermes|genericagent)(?:\/|$)/.test(input.directory)
+  return {
+    platform,
+    kind: virtual ? "virtual" : input.isLocal ? "local-filesystem" : "remote-filesystem",
+  }
+}
 
 type SessionStore = {
   session?: Session[]
@@ -44,15 +64,26 @@ export type ProjectOwner<T extends ProjectOwnerInput> = {
 }
 
 /** @deprecated Import pathIdentityKey from @opencode-ai/core/util/path in non-layout code. */
-export const workspaceKey = (directory: string) => pathIdentityKey(directory)
+export const workspaceKey = (directory: string, context?: PathContext) =>
+  context ? String(Path.identity(directory, context)) : pathIdentityKey(directory)
+
+/**
+ * Identity used by the directory provider tree. Keep this separate from
+ * route slugs: a slug is an URL transport value, never a workspace path.
+ */
+export const directoryProviderKey = (directory: string, context?: PathContext) => workspaceKey(directory, context)
+
+/** Whether a backend directory change requires replacing the directory route. */
+export const shouldNavigateDirectory = (routeDirectory: string, nextDirectory: string, context?: PathContext) =>
+  !!nextDirectory && !sameWorkspacePath(routeDirectory, nextDirectory, context)
 
 /** macOS often exposes the same folder as both /tmp and /private/tmp (and /var). */
-export function workspacePathAliases(directory: string): string[] {
-  const key = workspaceKey(directory)
+export function workspacePathAliases(directory: string, context?: PathContext): string[] {
+  const key = workspaceKey(directory, context)
   if (!key) return []
   const aliases = new Set<string>([directory, key])
   const add = (value: string) => {
-    const next = workspaceKey(value)
+    const next = workspaceKey(value, context)
     if (next) aliases.add(next)
   }
   if (key === "/tmp" || key.startsWith("/tmp/")) add(key.replace(/^\/tmp/, "/private/tmp"))
@@ -62,12 +93,12 @@ export function workspacePathAliases(directory: string): string[] {
   return [...aliases]
 }
 
-export function sameWorkspacePath(a: string, b: string) {
+export function sameWorkspacePath(a: string, b: string, context?: PathContext) {
   if (!a || !b) return false
-  const left = workspaceKey(a)
-  const right = workspaceKey(b)
+  const left = workspaceKey(a, context)
+  const right = workspaceKey(b, context)
   if (left === right) return true
-  const aliases = new Set(workspacePathAliases(a).map(workspaceKey))
+  const aliases = new Set(workspacePathAliases(a, context).map((value) => workspaceKey(value, context)))
   return aliases.has(right)
 }
 
@@ -330,7 +361,7 @@ export const latestProjectSession = (
   const key = workspaceKey(input.root)
   const dirs = input.dirs.filter((dir) => workspaceKey(dir) !== key)
   const all = [input.root, ...dirs]
-  const allowed = new Set(all.map(workspaceKey))
+  const allowed = new Set(all.map((value) => workspaceKey(value)))
   const stores = input.stores.filter((store) => allowed.has(workspaceKey(store.path.directory)))
   const recent =
     input.recent &&

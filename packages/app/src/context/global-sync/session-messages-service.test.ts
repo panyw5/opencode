@@ -44,6 +44,30 @@ describe("session messages controller", () => {
     })
   })
 
+  test("dedupes Windows aliases without sending the identity key to the SDK", async () => {
+    const request = deferred<ReturnType<typeof response>>()
+    let calls = 0
+    const harness = createSessionControllerHarness(
+      {
+        messages: async () => {
+          calls += 1
+          return request.promise
+        },
+      },
+      "D:\\Project",
+    )
+    const service = createSessionMessagesService(harness.deps)
+    const first = service.load({ directory: "D:\\Project", sessionID: "session", limit: 80 })
+    const second = service.load({ directory: "d:/project/", sessionID: "session", limit: 80 })
+
+    expect(second).toBe(first)
+    expect(calls).toBe(1)
+    expect(harness.sdkDirectories).toEqual(["D:\\Project"])
+
+    request.resolve(response([message("message")]))
+    await Promise.all([first, second])
+  })
+
   test("merges incremental SSE state over an older HTTP snapshot", async () => {
     const request = deferred<ReturnType<typeof response>>()
     const harness = createSessionControllerHarness({ messages: async () => request.promise })

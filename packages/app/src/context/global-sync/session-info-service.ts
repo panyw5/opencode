@@ -12,16 +12,14 @@ import type { SessionControllerDeps } from "./session-service-types"
 
 export function createSessionInfoService(deps: SessionControllerDeps) {
   const get = (directory: string, sessionID: string) => {
-    directory = deps.canonical(directory)
-    if (!directory || !sessionID) return
+    if (!deps.key(directory) || !sessionID) return
     const [store] = deps.child(directory)
     const match = Binary.search(store.session, sessionID, (session) => session.id)
     return match.found ? store.session[match.index] : undefined
   }
 
   const load = async (directory: string, sessionID: string, force = false): Promise<Session | undefined> => {
-    directory = deps.canonical(directory)
-    if (!directory || !sessionID || deps.isolated(directory)) return
+    if (!deps.key(directory) || !sessionID || deps.isolated(directory)) return
     const cached = get(directory, sessionID)
     if (cached && !force) return cached
 

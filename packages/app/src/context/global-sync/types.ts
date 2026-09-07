@@ -104,6 +104,8 @@ export type IconCache = {
 
 export type ChildOptions = {
   bootstrap?: boolean
+  /** Case-preserving path used for persistence, SDK and display; never a cache key. */
+  logicalDirectory?: string
 }
 
 export type DirState = {

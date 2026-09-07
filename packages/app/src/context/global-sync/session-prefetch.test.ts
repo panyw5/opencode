@@ -71,6 +71,69 @@ describe("session prefetch", () => {
     expect(b).toEqual({ count: 100, cursor: "next", complete: true, at: 456 })
   })
 
+  test("dedupes Windows path aliases using one workspace identity", async () => {
+    const aliases = ["D:/identity-test", "d:/identity-test", "D:\\identity-test\\"]
+    for (const directory of aliases) clearSessionPrefetch(directory, ["ses_windows"])
+
+    setSessionPrefetch({
+      directory: aliases[0],
+      sessionID: "ses_windows",
+      count: 3,
+      cursor: "next",
+      complete: false,
+      at: 123,
+    })
+
+    for (const directory of aliases) {
+      expect(getSessionPrefetch(directory, "ses_windows")).toEqual({
+        count: 3,
+        cursor: "next",
+        complete: false,
+        at: 123,
+      })
+    }
+
+    let calls = 0
+    const task = (directory: string) =>
+      runSessionPrefetch({
+        directory,
+        sessionID: "ses_windows",
+        task: async () => {
+          calls += 1
+          await Promise.resolve()
+          return { count: 4, cursor: "after", complete: true, at: 456 }
+        },
+      })
+
+    clearSessionPrefetch(aliases[0], ["ses_windows"])
+    const [first, second] = await Promise.all([task(aliases[0]), task(aliases[2])])
+    expect(calls).toBe(1)
+    expect(first).toEqual(second)
+    clearSessionPrefetchDirectory(aliases[1])
+  })
+
+  test("keeps POSIX path casing as separate identities", () => {
+    clearSessionPrefetch("/Users/A/identity-test", ["ses_posix"])
+    clearSessionPrefetch("/Users/a/identity-test", ["ses_posix"])
+
+    setSessionPrefetch({
+      directory: "/Users/A/identity-test",
+      sessionID: "ses_posix",
+      count: 1,
+      complete: true,
+      at: 1,
+    })
+
+    expect(getSessionPrefetch("/Users/a/identity-test", "ses_posix")).toBeUndefined()
+    expect(getSessionPrefetch("/Users/A/identity-test", "ses_posix")).toEqual({
+      count: 1,
+      complete: true,
+      at: 1,
+    })
+
+    clearSessionPrefetchDirectory("/Users/A/identity-test")
+  })
+
   test("clears a whole directory", () => {
     setSessionPrefetch({ directory: "/tmp/d", sessionID: "ses_1", count: 10, cursor: "a", complete: true, at: 1 })
     setSessionPrefetch({ directory: "/tmp/d", sessionID: "ses_2", count: 20, cursor: "b", complete: false, at: 2 })

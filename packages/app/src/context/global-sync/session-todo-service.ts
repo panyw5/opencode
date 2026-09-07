@@ -6,7 +6,7 @@ import type { SessionControllerDeps } from "./session-service-types"
 export function createSessionTodoService(deps: SessionControllerDeps) {
   const inflight = new Map<string, Promise<Todo[] | undefined>>()
   const revision = new Map<string, number>()
-  const keyFor = (directory: string, sessionID: string) => `${deps.canonical(directory)}\n${sessionID}`
+  const keyFor = (directory: string, sessionID: string) => `${deps.key(directory)}\n${sessionID}`
   const rev = (directory: string, sessionID: string) => revision.get(keyFor(directory, sessionID)) ?? 0
   const bump = (directory: string, sessionID: string) => {
     const key = keyFor(directory, sessionID)
@@ -14,12 +14,10 @@ export function createSessionTodoService(deps: SessionControllerDeps) {
   }
 
   const get = (directory: string, sessionID: string) => {
-    directory = deps.canonical(directory)
     return deps.child(directory)[0].todo[sessionID]
   }
 
   const load = (directory: string, sessionID: string, force = false) => {
-    directory = deps.canonical(directory)
     const child = deps.child(directory)
     const existing = child[0].todo[sessionID]
     if (existing !== undefined && !force) return Promise.resolve(existing)
@@ -56,12 +54,10 @@ export function createSessionTodoService(deps: SessionControllerDeps) {
       return load(directory, sessionID, true)
     },
     set(directory: string, sessionID: string, todos: Todo[]) {
-      directory = deps.canonical(directory)
       deps.child(directory)[1]("todo", sessionID, reconcile(todos, { key: "id" }))
     },
     event: bump,
     clear(directory: string, sessionIDs: string[]) {
-      directory = deps.canonical(directory)
       for (const sessionID of sessionIDs) {
         const key = keyFor(directory, sessionID)
         const pending = inflight.get(key)
@@ -71,7 +67,7 @@ export function createSessionTodoService(deps: SessionControllerDeps) {
       }
     },
     clearDirectory(directory: string) {
-      const prefix = `${deps.canonical(directory)}\n`
+      const prefix = `${deps.key(directory)}\n`
       for (const key of inflight.keys()) {
         if (key.startsWith(prefix)) inflight.delete(key)
       }

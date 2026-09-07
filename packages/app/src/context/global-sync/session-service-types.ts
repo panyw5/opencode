@@ -5,8 +5,10 @@ import type { State } from "./types"
 export type SessionChildStore = [Store<State>, SetStoreFunction<State>]
 
 export type SessionControllerDeps = {
-  canonical(directory: string): string
+  /** Stable identity used only for keyed state and comparisons. */
+  key(directory: string): string
   isolated(directory: string): boolean
+  /** SDK clients must be created from a logical directory, never an identity key. */
   sdk(directory: string): OpencodeClient
   child(directory: string): SessionChildStore
   current(directory: string, child: SessionChildStore, revision: number): boolean

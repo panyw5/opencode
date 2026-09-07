@@ -5,6 +5,11 @@ import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
 import { createStore, type SetStoreFunction } from "solid-js/store"
 import type { FileSelection } from "@/context/file"
 import { Persist, persisted } from "@/utils/persist"
+import { decode64 } from "@/utils/base64"
+import { Path } from "@opencode-ai/core/util/path"
+import { useServer } from "@/context/server"
+import { usePlatform } from "@/context/platform"
+import { workspacePathContext } from "@/pages/layout/helpers"
 
 interface PartBase {
   content: string
@@ -123,6 +128,8 @@ function isCommentItem(item: ContextItem | (ContextItem & { key: string })) {
 const WORKSPACE_KEY = "__workspace__"
 const MAX_PROMPT_SESSIONS = 20
 
+const decodeRouteDirectory = (value: string | undefined) => decode64(value) ?? value ?? ""
+
 type PromptSession = ReturnType<typeof createPromptSession>
 
 type Scope = {
@@ -135,11 +142,11 @@ type PromptCacheEntry = {
   dispose: VoidFunction
 }
 
-function createPromptSession(dir: string, id: string | undefined) {
+function createPromptSession(dir: string, id: string | undefined, context: ReturnType<typeof workspacePathContext>) {
   const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
 
   const [store, setStore, _, ready] = persisted(
-    Persist.scoped(dir, id, "prompt", [legacy]),
+    Persist.scoped(dir, id, "prompt", [legacy], context),
     createStore<{
       prompt: Prompt
       cursor?: number
@@ -211,6 +218,10 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
   gate: false,
   init: () => {
     const params = useParams()
+    const server = useServer()
+    const platform = usePlatform()
+    const pathContext = (directory: string) =>
+      workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory })
     const cache = new Map<string, PromptCacheEntry>()
 
     const disposeAll = () => {
@@ -234,7 +245,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
 
     const owner = getOwner()
     const load = (dir: string, id: string | undefined) => {
-      const key = `${dir}:${id ?? WORKSPACE_KEY}`
+      const key = `${Path.identity(dir, pathContext(dir))}:${id ?? WORKSPACE_KEY}`
       const existing = cache.get(key)
       if (existing) {
         cache.delete(key)
@@ -244,7 +255,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
 
       const entry = createRoot(
         (dispose) => ({
-          value: createPromptSession(dir, id),
+          value: createPromptSession(dir, id, pathContext(dir)),
           dispose,
         }),
         owner,
@@ -255,7 +266,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
       return entry.value
     }
 
-    const session = createMemo(() => load(params.dir!, params.id ?? params.draftID))
+    const session = createMemo(() => load(decodeRouteDirectory(params.dir), params.id ?? params.draftID))
     const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
 
     return {

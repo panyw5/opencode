@@ -41,7 +41,10 @@ import {
   waitForMatch,
   workingSessionTreeIDs,
   workspaceKey,
+  directoryProviderKey,
+  shouldNavigateDirectory,
   workspacePathAliases,
+  workspacePathContext,
   sameWorkspacePath,
   shouldPreferSidebarForNewSession,
 } from "./helpers"
@@ -359,6 +362,27 @@ describe("layout workspace helpers", () => {
     expect(projectSelected("/tmp/demo///", "/tmp/demo")).toBe(true)
     expect(projectSelected("d:/apps/opencode", "D:\\Apps\\OpenCode")).toBe(true)
     expect(projectSelected("/tmp/other", "/tmp/demo", ["/tmp/sandbox"])).toBe(false)
+  })
+
+  test("uses path identity for directory providers while preserving logical paths", () => {
+    const paths = ["D:/chat", "d:/chat", "D:\\chat", "D:\\chat\\"]
+    expect(new Set(paths.map((value) => directoryProviderKey(value))).size).toBe(1)
+    expect(directoryProviderKey(paths[0]!)).toBe("d:/chat")
+    expect(shouldNavigateDirectory("D:/chat", "D:\\chat\\")).toBe(false)
+    expect(shouldNavigateDirectory("D:/chat", "D:/other")).toBe(true)
+  })
+
+  test("keeps POSIX case-sensitive identities and never treats a route slug as a path", () => {
+    expect(directoryProviderKey("/Users/A/project")).not.toBe(directoryProviderKey("/Users/a/project"))
+    const slug = "RC9jaGF0"
+    expect(directoryProviderKey(slug)).toBe(slug)
+    expect(shouldNavigateDirectory("/Users/A/project", "/Users/a/project")).toBe(true)
+  })
+
+  test("does not apply local Windows identity rules to a remote workspace", () => {
+    const context = workspacePathContext({ os: "windows", isLocal: false, directory: "D:/chat" })
+    expect(directoryProviderKey("D:/chat", context)).not.toBe(directoryProviderKey("d:/chat", context))
+    expect(shouldNavigateDirectory("D:/chat", "d:/chat", context)).toBe(true)
   })
 
   test("does not select a project from unrelated sandbox metadata", () => {
@@ -873,6 +897,27 @@ describe("layout workspace helpers", () => {
     expect(errorMessage({ data: { message: "boom" } }, "fallback")).toBe("boom")
     expect(errorMessage(new Error("broken"), "fallback")).toBe("broken")
     expect(errorMessage("unknown", "fallback")).toBe("fallback")
+  })
+})
+
+describe("workspacePathContext", () => {
+  test("uses local Windows semantics only for a local Windows server", () => {
+    expect(workspacePathContext({ os: "windows", isLocal: true, directory: "D:/chat" })).toEqual({
+      platform: "win32",
+      kind: "local-filesystem",
+    })
+    expect(workspacePathContext({ os: "windows", isLocal: false, directory: "D:/chat" })).toEqual({
+      platform: "linux",
+      kind: "remote-filesystem",
+    })
+    expect(workspacePathContext({ os: "windows", isLocal: false, directory: "/openclaw" })).toEqual({
+      platform: "linux",
+      kind: "virtual",
+    })
+    expect(workspacePathContext({ os: "windows", isLocal: true, directory: "/genericagent" })).toEqual({
+      platform: "win32",
+      kind: "virtual",
+    })
   })
 })
 

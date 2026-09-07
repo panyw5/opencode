@@ -112,4 +112,43 @@ describe("persist localStorage resilience", () => {
     expect(result.endsWith(".dat")).toBeTrue()
     expect(/[:\\/]/.test(result)).toBeFalse()
   })
+
+  test("folds only explicit Windows local workspace identities", () => {
+    const windows = { platform: "win32", kind: "local-filesystem" } as const
+    expect(persistTesting.workspaceStorage("D:/chat", windows)).toBe(
+      persistTesting.workspaceStorage("d:\\CHAT\\", windows),
+    )
+    expect(persistTesting.workspaceStorage("/Users/A/project", { platform: "darwin", kind: "local-filesystem" })).not.toBe(
+      persistTesting.workspaceStorage("/Users/a/project", { platform: "darwin", kind: "local-filesystem" }),
+    )
+    expect(persistTesting.workspaceStorage("D:/chat")).not.toBe(persistTesting.workspaceStorage("d:/chat"))
+  })
+
+  test("keeps legacy Windows storage candidates available for migration", () => {
+    const windows = { platform: "win32", kind: "local-filesystem" } as const
+    const current = persistTesting.workspaceStorage("D:/chat", windows)
+    const legacy = persistTesting.legacyWorkspaceStorages("D:/chat", windows, current)
+
+    expect(legacy).toContain(persistTesting.rawWorkspaceStorage("D:/chat"))
+    expect(legacy).toContain(persistTesting.rawWorkspaceStorage("D:\\chat"))
+    expect(legacy).toContain(persistTesting.rawWorkspaceStorage("RDovY2hhdA"))
+    expect(legacy).not.toContain(current)
+
+    const lowercase = persistTesting.legacyWorkspaceStorages("d:/chat", windows, "new.dat")
+    expect(lowercase).toContain(persistTesting.rawWorkspaceStorage("D:\\chat"))
+  })
+
+  test("merges legacy object state and prefers the newest timestamped payload", () => {
+    expect(persistTesting.mergeMigrated([{ prompt: "old", cursor: 1 }, { terminal: "kept" }])).toEqual({
+      prompt: "old",
+      cursor: 1,
+      terminal: "kept",
+    })
+    expect(
+      persistTesting.mergeMigrated([
+        { value: "older", updatedAt: 1 },
+        { value: "newer", updatedAt: 2 },
+      ]),
+    ).toEqual({ value: "newer", updatedAt: 2 })
+  })
 })

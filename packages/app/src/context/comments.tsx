@@ -6,6 +6,11 @@ import { Persist, persisted } from "@/utils/persist"
 import { createScopedCache } from "@/utils/scoped-cache"
 import { uuid } from "@/utils/uuid"
 import type { SelectedLineRange } from "@/context/file"
+import { decode64 } from "@/utils/base64"
+import { Path } from "@opencode-ai/core/util/path"
+import { useServer } from "@/context/server"
+import { usePlatform } from "@/context/platform"
+import { workspacePathContext } from "@/pages/layout/helpers"
 
 export type LineComment = {
   id: string
@@ -20,9 +25,7 @@ type CommentFocus = { file: string; id: string }
 const WORKSPACE_KEY = "__workspace__"
 const MAX_COMMENT_SESSIONS = 20
 
-function sessionKey(dir: string, id: string | undefined) {
-  return `${dir}\n${id ?? WORKSPACE_KEY}`
-}
+const decodeRouteDirectory = (value: string | undefined) => decode64(value) ?? value ?? ""
 
 function decodeSessionKey(key: string) {
   const split = key.lastIndexOf("\n")
@@ -166,11 +169,11 @@ export function createCommentSessionForTest(comments: Record<string, LineComment
   return createCommentSessionState(store, setStore)
 }
 
-function createCommentSession(dir: string, id: string | undefined) {
+function createCommentSession(dir: string, id: string | undefined, context: ReturnType<typeof workspacePathContext>) {
   const legacy = `${dir}/comments${id ? "/" + id : ""}.v1`
 
   const [store, setStore, _, ready] = persisted(
-    Persist.scoped(dir, id, "comments", [legacy]),
+    Persist.scoped(dir, id, "comments", [legacy], context),
     createStore<CommentStore>({
       comments: {},
     }),
@@ -200,28 +203,44 @@ export const { use: useComments, provider: CommentsProvider } = createSimpleCont
   gate: false,
   init: () => {
     const params = useParams()
+    const server = useServer()
+    const platform = usePlatform()
+    const pathContext = (directory: string) =>
+      workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory })
+    const logicalDirectories = new Map<string, string>()
     const cache = createScopedCache(
       (key) => {
         const decoded = decodeSessionKey(key)
         return createRoot((dispose) => ({
-          value: createCommentSession(decoded.dir, decoded.id === WORKSPACE_KEY ? undefined : decoded.id),
+          value: createCommentSession(
+            logicalDirectories.get(key) ?? decoded.dir,
+            decoded.id === WORKSPACE_KEY ? undefined : decoded.id,
+            pathContext(logicalDirectories.get(key) ?? decoded.dir),
+          ),
           dispose,
         }))
       },
       {
         maxEntries: MAX_COMMENT_SESSIONS,
-        dispose: (entry) => entry.dispose(),
+        dispose: (entry, key) => {
+          entry.dispose()
+          logicalDirectories.delete(key)
+        },
       },
     )
 
-    onCleanup(() => cache.clear())
+    onCleanup(() => {
+      cache.clear()
+      logicalDirectories.clear()
+    })
 
     const load = (dir: string, id: string | undefined) => {
-      const key = sessionKey(dir, id)
+      const key = `${Path.identity(dir, pathContext(dir))}\n${id ?? WORKSPACE_KEY}`
+      logicalDirectories.set(key, dir)
       return cache.get(key).value
     }
 
-    const session = createMemo(() => load(params.dir!, params.id))
+    const session = createMemo(() => load(decodeRouteDirectory(params.dir), params.id))
 
     return {
       ready: () => session().ready(),

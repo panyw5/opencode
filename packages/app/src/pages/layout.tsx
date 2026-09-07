@@ -120,6 +120,7 @@ import {
   stripScheduledSessionTitle,
   waitForMatch,
   workspaceKey,
+  workspacePathContext,
   workspacePathAliases,
 } from "./layout/helpers"
 import {
@@ -2712,6 +2713,7 @@ export default function Layout(props: ParentProps) {
       directory,
       sessions.map((s) => s.id),
       platform,
+      workspacePathContext({ os: platform.os, isLocal: !!server.isLocal(), directory }),
     )
     await globalSDK.client.instance.dispose({ directory }).catch(() => undefined)
 

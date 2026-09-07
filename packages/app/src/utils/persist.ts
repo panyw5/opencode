@@ -1,6 +1,7 @@
 import { Platform, usePlatform } from "@/context/platform"
 import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
 import { checksum } from "@opencode-ai/core/util/encode"
+import { Path, isWindowsDrivePath, isWindowsUNCPath, type PathContext } from "@opencode-ai/core/util/path"
 import { createResource, type Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"
 
@@ -17,6 +18,10 @@ type PersistTarget = {
   key: string
   legacy?: string[]
   migrate?: (value: unknown) => unknown
+  /** Logical workspace path. Storage is resolved after the desktop platform is known. */
+  directory?: string
+  /** Explicit filesystem context for remote/virtual workspaces. */
+  context?: PathContext
 }
 
 const LEGACY_STORAGE = "default.dat"
@@ -208,10 +213,100 @@ function normalize(defaults: unknown, raw: string, migrate?: (value: unknown) =>
   return JSON.stringify(merged)
 }
 
-function workspaceStorage(dir: string) {
+function updateTime(value: unknown): number | undefined {
+  if (!isRecord(value)) return
+  const direct = [value.updatedAt, value.updated, value.modifiedAt, value.timestamp].find(
+    (item): item is number => typeof item === "number" && Number.isFinite(item),
+  )
+  if (direct !== undefined) return direct
+  for (const key of ["time", "meta", "session"]) {
+    const nested = value[key]
+    const time = updateTime(nested)
+    if (time !== undefined) return time
+  }
+}
+
+function mergeMigrated(values: unknown[]) {
+  if (values.length === 0) return
+  const timed = values
+    .map((value, index) => ({ value, index, time: updateTime(value) }))
+    .filter((item): item is { value: unknown; index: number; time: number } => item.time !== undefined)
+  if (timed.length > 0) {
+    return snapshot(timed.sort((a, b) => b.time - a.time || b.index - a.index)[0]!.value)
+  }
+
+  let result = values[0]
+  for (const value of values.slice(1)) {
+    result = isRecord(result) && isRecord(value) ? merge(result, value) : value
+  }
+  return snapshot(result)
+}
+
+function rawWorkspaceStorage(dir: string) {
   const head = (dir.slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
   const sum = checksum(dir) ?? "0"
   return `opencode.workspace.${head}.${sum}.dat`
+}
+
+function isWindowsLocal(context: PathContext | undefined, dir: string): context is PathContext & { platform: "win32"; kind: "local-filesystem" } {
+  return (
+    context?.platform === "win32" &&
+    context.kind === "local-filesystem" &&
+    (isWindowsDrivePath(dir) || isWindowsUNCPath(dir))
+  )
+}
+
+function workspaceStorage(dir: string, context?: PathContext) {
+  if (!isWindowsLocal(context, dir)) return rawWorkspaceStorage(dir)
+  const identity = Path.identity(dir, context) as string
+  const head = (identity.slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
+  const sum = checksum(identity) ?? "0"
+  return `opencode.workspace.${head}.${sum}.dat`
+}
+
+function legacyWorkspaceStorages(dir: string, context: PathContext | undefined, current: string) {
+  if (!isWindowsLocal(context, dir)) return []
+
+  // Old releases used the raw route/workspace string as the checksum input.
+  // Keep every known spelling readable, but never delete those files. The route
+  // slug is included because Prompt/Comments/Terminal historically received it.
+  const logical = Path.logical(dir, context) as string
+  const native = Path.native(dir, context) as string
+  const forward = logical.replace(/\\/g, "/")
+  const driveCase = (value: string) => {
+    const match = value.match(/^([A-Za-z]):/)
+    if (!match) return [value]
+    return [value, `${match[1]!.toLowerCase()}:${value.slice(2)}`, `${match[1]!.toUpperCase()}:${value.slice(2)}`]
+  }
+  const candidates = new Set<string>()
+  for (const value of [dir, logical, native, forward]) {
+    for (const variant of driveCase(value)) {
+      candidates.add(variant)
+      candidates.add(variant.toLowerCase())
+      candidates.add(variant.replace(/\\/g, "/"))
+      candidates.add(variant.replace(/\\/g, "/").toLowerCase())
+      candidates.add(variant.replace(/\//g, "\\"))
+      candidates.add(variant.replace(/\//g, "\\").toLowerCase())
+    }
+  }
+  for (const value of Array.from(candidates)) candidates.add(Path.route.encode(value) as string)
+  return Array.from(candidates)
+    .map((value) => rawWorkspaceStorage(value))
+    .filter((value, index, all) => value !== current && all.indexOf(value) === index)
+}
+
+function targetStorage(config: PersistTarget, context?: PathContext) {
+  if (!config.directory) return config.storage
+  return workspaceStorage(config.directory, config.context ?? context)
+}
+
+function targetLegacyStorages(config: PersistTarget, context: PathContext | undefined, current: string | undefined) {
+  if (!config.directory) return []
+  return legacyWorkspaceStorages(config.directory, config.context ?? context, current ?? "")
+}
+
+function persistDebug(event: string, details: Record<string, unknown>) {
+  if (import.meta.env.DEV) console.debug(`[persist] ${event}`, details)
 }
 
 function localStorageWithPrefix(prefix: string): SyncStorage {
@@ -306,37 +401,42 @@ export const PersistTesting = {
   localStorageWithPrefix,
   normalize,
   workspaceStorage,
+  rawWorkspaceStorage,
+  legacyWorkspaceStorages,
+  mergeMigrated,
 }
 
 export const Persist = {
   global(key: string, legacy?: string[]): PersistTarget {
     return { storage: GLOBAL_STORAGE, key, legacy }
   },
-  workspace(dir: string, key: string, legacy?: string[]): PersistTarget {
-    return { storage: workspaceStorage(dir), key: `workspace:${key}`, legacy }
+  workspace(dir: string, key: string, legacy?: string[], context?: PathContext): PersistTarget {
+    return { storage: workspaceStorage(dir, context), key: `workspace:${key}`, legacy, directory: dir, context }
   },
-  session(dir: string, session: string, key: string, legacy?: string[]): PersistTarget {
-    return { storage: workspaceStorage(dir), key: `session:${session}:${key}`, legacy }
+  session(dir: string, session: string, key: string, legacy?: string[], context?: PathContext): PersistTarget {
+    return { storage: workspaceStorage(dir, context), key: `session:${session}:${key}`, legacy, directory: dir, context }
   },
-  scoped(dir: string, session: string | undefined, key: string, legacy?: string[]): PersistTarget {
-    if (session) return Persist.session(dir, session, key, legacy)
-    return Persist.workspace(dir, key, legacy)
+  scoped(dir: string, session: string | undefined, key: string, legacy?: string[], context?: PathContext): PersistTarget {
+    if (session) return Persist.session(dir, session, key, legacy, context)
+    return Persist.workspace(dir, key, legacy, context)
   },
 }
 
-export function removePersisted(target: { storage?: string; key: string }, platform?: Platform) {
+export function removePersisted(target: Pick<PersistTarget, "storage" | "key" | "directory" | "context">, platform?: Platform) {
   const isDesktop = platform?.platform === "desktop" && !!platform.storage
+  const context = target.context
+  const storageName = targetStorage(target, context)
 
   if (isDesktop) {
-    return platform.storage?.(target.storage)?.removeItem(target.key)
+    return platform.storage?.(storageName)?.removeItem(target.key)
   }
 
-  if (!target.storage) {
+  if (!storageName) {
     localStorageDirect().removeItem(target.key)
     return
   }
 
-  localStorageWithPrefix(target.storage).removeItem(target.key)
+  localStorageWithPrefix(storageName).removeItem(target.key)
 }
 
 export function persisted<T>(
@@ -346,20 +446,36 @@ export function persisted<T>(
   const platform = usePlatform()
   const config: PersistTarget = typeof target === "string" ? { key: target } : target
 
+  // Workspace kind is intentionally explicit. The desktop host OS is not
+  // authoritative when a Windows client connects to a remote workspace.
+  const pathContext = config.context
+  const resolvedStorage = targetStorage(config, pathContext)
+  const legacyStorages = targetLegacyStorages(config, pathContext, resolvedStorage)
+
+  if (config.directory && resolvedStorage && resolvedStorage !== config.storage) {
+    persistDebug("storage-resolved", {
+      directory: config.directory,
+      storage: resolvedStorage,
+      legacyStorages,
+      platform: pathContext?.platform,
+      kind: pathContext?.kind,
+    })
+  }
+
   const defaults = snapshot(store[0])
   const legacy = config.legacy ?? []
 
   const isDesktop = platform.platform === "desktop" && !!platform.storage
 
   const currentStorage = (() => {
-    if (isDesktop) return platform.storage?.(config.storage)
-    if (!config.storage) return localStorageDirect()
-    return localStorageWithPrefix(config.storage)
+    if (isDesktop) return platform.storage?.(resolvedStorage)
+    if (!resolvedStorage) return localStorageDirect()
+    return localStorageWithPrefix(resolvedStorage)
   })()
 
   const legacyStorage = (() => {
     if (!isDesktop) return localStorageDirect()
-    if (!config.storage) return platform.storage?.()
+    if (!resolvedStorage) return platform.storage?.()
     return platform.storage?.(LEGACY_STORAGE)
   })()
 
@@ -410,6 +526,13 @@ export function persisted<T>(
 
     const current = currentStorage as AsyncStorage
     const legacyStore = legacyStorage as AsyncStorage | undefined
+    const migrationStores = [
+      ...(legacyStore ? [{ name: LEGACY_STORAGE, store: legacyStore }] : []),
+      ...legacyStorages
+        .filter((name) => name !== LEGACY_STORAGE && name !== resolvedStorage)
+        .map((name) => ({ name, store: platform.storage?.(name) }))
+        .filter((item): item is { name: string; store: AsyncStorage } => !!item.store),
+    ]
 
     const api: AsyncStorage = {
       getItem: async (key) => {
@@ -424,23 +547,37 @@ export function persisted<T>(
           return next
         }
 
-        if (!legacyStore) return null
+        if (migrationStores.length === 0) return null
 
-        for (const legacyKey of legacy) {
-          const legacyRaw = await legacyStore.getItem(legacyKey)
-          if (legacyRaw === null) continue
+        // Legacy workspace files remain untouched so users can roll back for a
+        // full release cycle. Only the new identity-keyed file is written.
+        const keys = [key, ...legacy.filter((item) => item !== key)]
+        const migrated: Array<{ name: string; legacyKey: string; value: unknown }> = []
+        for (const candidate of migrationStores) {
+          for (const legacyKey of keys) {
+            const legacyRaw = await candidate.store.getItem(legacyKey)
+            if (legacyRaw === null) continue
 
-          const next = normalize(defaults, legacyRaw, config.migrate)
-          if (next === undefined) {
-            await legacyStore.removeItem(legacyKey).catch(() => undefined)
-            continue
+            const next = normalize(defaults, legacyRaw, config.migrate)
+            if (next === undefined) continue
+            const value = parse(next)
+            if (value !== undefined) migrated.push({ name: candidate.name, legacyKey, value })
           }
-          await current.setItem(key, next)
-          await legacyStore.removeItem(legacyKey)
-          return next
         }
 
-        return null
+        const next = mergeMigrated(migrated.map((item) => item.value))
+        if (next === undefined) return null
+        const serialized = JSON.stringify(next)
+        await current.setItem(key, serialized)
+        persistDebug("legacy-migrated", {
+          directory: config.directory,
+          fromStorage: migrated.map((item) => `${item.name}:${item.legacyKey}`),
+          toStorage: resolvedStorage,
+          key,
+          count: migrated.length,
+        })
+        return serialized
+
       },
       setItem: async (key, value) => {
         await current.setItem(key, value)

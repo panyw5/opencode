@@ -2,6 +2,7 @@ import { createRoot, getOwner, onCleanup, runWithOwner, type Owner } from "solid
 import { createStore, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
 import type { VcsInfo } from "@opencode-ai/sdk/v2/client"
+import type { PathContext } from "@opencode-ai/core/util/path"
 import {
   DIR_IDLE_TTL_MS,
   MAX_DIR_STORES,
@@ -22,7 +23,12 @@ export function createChildStoreManager(input: {
   onBootstrap: (directory: string) => void
   onDispose: (directory: string) => void
   translate: (key: string, vars?: Record<string, string | number>) => string
+  pathContext?: (directory: string) => PathContext
 }) {
+  const pathDebug = (event: string, details: { identity: string; directory: string }) => {
+    if (!import.meta.env?.DEV) return
+    console.debug(`[path-identity] ${event}`, details)
+  }
   const seed = (input: {
     directory: string
     meta: ProjectMeta | undefined
@@ -132,7 +138,12 @@ export function createChildStoreManager(input: {
       dispose()
       disposers.delete(directory)
     }
+    const logicalDirectory = children[directory]?.[0].path?.directory ?? directory
     delete children[directory]
+    pathDebug("provider-disposed", {
+      identity: directory,
+      directory: logicalDirectory,
+    })
     try {
       input.onDispose(directory)
     } catch (error) {
@@ -160,12 +171,18 @@ export function createChildStoreManager(input: {
     }
   }
 
-  function ensureChild(directory: string) {
+  function ensureChild(directory: string, logicalDirectory = directory) {
     if (!directory) console.error("No directory provided")
     if (!children[directory]) {
+      pathDebug("provider-created", { identity: directory, directory: logicalDirectory })
       const vcs = runWithOwner(input.owner, () =>
         persisted(
-          Persist.workspace(directory, "vcs", ["vcs.v1"]),
+          Persist.workspace(
+            logicalDirectory,
+            "vcs",
+            ["vcs.v1"],
+            input.pathContext?.(logicalDirectory) ?? { platform: "linux", kind: "local-filesystem" },
+          ),
           createStore({ value: undefined as VcsInfo | undefined }),
         ),
       )
@@ -175,7 +192,12 @@ export function createChildStoreManager(input: {
 
       const meta = runWithOwner(input.owner, () =>
         persisted(
-          Persist.workspace(directory, "project", ["project.v1"]),
+          Persist.workspace(
+            logicalDirectory,
+            "project",
+            ["project.v1"],
+            input.pathContext?.(logicalDirectory) ?? { platform: "linux", kind: "local-filesystem" },
+          ),
           createStore({ value: undefined as ProjectMeta | undefined }),
         ),
       )
@@ -184,7 +206,12 @@ export function createChildStoreManager(input: {
 
       const icon = runWithOwner(input.owner, () =>
         persisted(
-          Persist.workspace(directory, "icon", ["icon.v1"]),
+          Persist.workspace(
+            logicalDirectory,
+            "icon",
+            ["icon.v1"],
+            input.pathContext?.(logicalDirectory) ?? { platform: "linux", kind: "local-filesystem" },
+          ),
           createStore({ value: undefined as string | undefined }),
         ),
       )
@@ -196,7 +223,7 @@ export function createChildStoreManager(input: {
           const initialMeta = meta[0].value
           const initialIcon = icon[0].value
           const child = createStore<State>(
-            seed({ directory, meta: initialMeta, icon: initialIcon, vcs: vcsStore.value }),
+            seed({ directory: logicalDirectory, meta: initialMeta, icon: initialIcon, vcs: vcsStore.value }),
           )
           children[directory] = child
           disposers.set(directory, dispose)
@@ -237,7 +264,7 @@ export function createChildStoreManager(input: {
   }
 
   function child(directory: string, options: ChildOptions = {}) {
-    const childStore = ensureChild(directory)
+    const childStore = ensureChild(directory, options.logicalDirectory)
     pinForOwner(directory)
     const shouldBootstrap = options.bootstrap ?? true
     if (shouldBootstrap && childStore[0].status === "loading") {
@@ -247,7 +274,7 @@ export function createChildStoreManager(input: {
   }
 
   function peek(directory: string, options: ChildOptions = {}) {
-    const childStore = ensureChild(directory)
+    const childStore = ensureChild(directory, options.logicalDirectory)
     const shouldBootstrap = options.bootstrap ?? true
     if (shouldBootstrap && childStore[0].status === "loading") {
       input.onBootstrap(directory)
@@ -284,11 +311,12 @@ export function createChildStoreManager(input: {
   function resetDirectory(directory: string) {
     const child = children[directory]
     if (!child) return
+    const logicalDirectory = child[0].path?.directory || directory
     const vcs = vcsCache.get(directory)?.store.value
     const meta = metaCache.get(directory)?.store.value
     const icon = iconCache.get(directory)?.store.value
     // Preserve local persisted project metadata while wiping server-derived state.
-    child[1](reconcile(seed({ directory, meta, icon, vcs })))
+    child[1](reconcile(seed({ directory: logicalDirectory, meta, icon, vcs })))
   }
 
   return {
