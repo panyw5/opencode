@@ -6,9 +6,20 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Logo } from "@opencode-ai/ui/logo"
 import { Spinner } from "@opencode-ai/ui/spinner"
+import { showToast } from "@opencode-ai/ui/toast"
 import { useNavigate } from "@solidjs/router"
 import { DateTime } from "luxon"
-import { batch, createEffect, createMemo, createRenderEffect, createResource, For, onCleanup, Show, untrack } from "solid-js"
+import {
+  batch,
+  createEffect,
+  createMemo,
+  createRenderEffect,
+  createResource,
+  For,
+  onCleanup,
+  Show,
+  untrack,
+} from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import {
@@ -30,6 +41,7 @@ import { HomePathInput } from "@/pages/home-path-input"
 import "./home.css"
 
 const HOME_SESSION_LIMIT = 6
+const HOME_FAVORITE_LIMIT = 6
 const HOME_TASK_LIMIT = 10
 
 function SectionHeader(props: { id: string; title: string; action?: string; onAction?: () => void }) {
@@ -64,11 +76,12 @@ export default function Home() {
   const sessionTabs = useSessionTabs()
   const notification = useNotification()
   const homedir = createMemo(() => sync.data.path.home)
-  const latestProject = createMemo(() =>
-    sync.data.project
-      .slice()
-      .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
-      .at(0)?.worktree,
+  const latestProject = createMemo(
+    () =>
+      sync.data.project
+        .slice()
+        .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
+        .at(0)?.worktree,
   )
   const warmed = createMemo(() => {
     const last = server.projects.last()
@@ -80,11 +93,16 @@ export default function Home() {
     () => (sync.ready ? warmed() : undefined),
     async (dirs) => {
       const started = performance.now()
-      console.debug(`[home-perf] warm-start sinceClick=${typeof navClickAt === "number" ? `${(started - navClickAt).toFixed(1)}ms` : "n/a"} dirs=${dirs.length}`)
+      console.debug(
+        `[home-perf] warm-start sinceClick=${typeof navClickAt === "number" ? `${(started - navClickAt).toFixed(1)}ms` : "n/a"} dirs=${dirs.length}`,
+      )
       await Promise.allSettled(
         dirs.map(async (dir) => {
           sync.child(dir, { bootstrap: true })
-          await Promise.race([sync.project.loadSessions(dir, { silent: true }), new Promise((resolve) => setTimeout(resolve, 1500))])
+          await Promise.race([
+            sync.project.loadSessions(dir, { silent: true }),
+            new Promise((resolve) => setTimeout(resolve, 1500)),
+          ])
         }),
       )
       console.debug(`[home-perf] warm-end duration=${(performance.now() - started).toFixed(1)}ms dirs=${dirs.length}`)
@@ -95,17 +113,30 @@ export default function Home() {
     const result = await sdk.client.experimental.session.list({ roots: true, limit: RECENT_SESSION_LIMIT })
     return mergeRecentSessions([result.data ?? []])
   }
+  const loadFavoriteSessions = async () => {
+    const result = await sdk.client.experimental.session.list({
+      roots: true,
+      limit: HOME_FAVORITE_LIMIT,
+      favorited: true,
+    })
+    return mergeRecentSessions([result.data ?? []])
+  }
   const [dashboard, setDashboard] = createStore({
     sessions: [] as GlobalSession[],
     sessionsLoaded: false,
     sessionsLoading: true,
     sessionsError: false,
+    favorites: [] as GlobalSession[],
+    favoritesLoaded: false,
+    favoritesLoading: true,
+    favoritesError: false,
     tasks: [] as ScheduledTask[],
     tasksLoaded: false,
     tasksLoading: true,
     tasksError: false,
   })
   const homeSessions = createMemo(() => dashboard.sessions.slice(0, HOME_SESSION_LIMIT))
+  const homeFavorites = createMemo(() => dashboard.favorites.slice(0, HOME_FAVORITE_LIMIT))
 
   let sessionsGeneration = 0
   async function refreshSessions(reset = false) {
@@ -130,6 +161,62 @@ export default function Home() {
     } finally {
       if (generation === sessionsGeneration) setDashboard("sessionsLoading", false)
     }
+  }
+
+  let favoritesGeneration = 0
+  async function refreshFavorites(reset = false) {
+    const generation = ++favoritesGeneration
+    if (reset) {
+      setDashboard("favorites", [])
+      setDashboard("favoritesLoaded", false)
+    }
+    setDashboard("favoritesLoading", !dashboard.favoritesLoaded)
+    setDashboard("favoritesError", false)
+    console.debug(`[home-refresh] favorites-start generation=${String(generation)} reset=${String(reset)}`)
+    try {
+      const result = await loadFavoriteSessions()
+      if (generation !== favoritesGeneration) return
+      setDashboard("favorites", reconcile(result, { key: "id" }))
+      setDashboard("favoritesLoaded", true)
+      console.debug(`[home-refresh] favorites-end generation=${String(generation)} count=${String(result.length)}`)
+    } catch (error) {
+      if (generation !== favoritesGeneration) return
+      setDashboard("favoritesError", true)
+      console.error(`[home-refresh] favorites-failed generation=${String(generation)}`, error)
+    } finally {
+      if (generation === favoritesGeneration) setDashboard("favoritesLoading", false)
+    }
+  }
+
+  async function toggleFavorite(session: GlobalSession, event: MouseEvent) {
+    event.stopPropagation()
+    event.preventDefault()
+    const isFavorited = typeof session.time.favorited === "number" && session.time.favorited > 0
+    const nextTime = isFavorited ? null : Date.now()
+    const directory = session.directory
+    console.debug(
+      `[home-favorite] toggle session=${session.id} directory=${directory} from=${String(isFavorited)} to=${String(nextTime)}`,
+    )
+    try {
+      await sdk.client.session.update(
+        {
+          sessionID: session.id,
+          directory,
+          time: { favorited: nextTime },
+        },
+        { throwOnError: true },
+      )
+    } catch (error) {
+      console.error(`[home-favorite] toggle-failed session=${session.id} directory=${directory}`, error)
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+      return
+    }
+    void refreshFavorites()
+    void refreshSessions()
   }
 
   let tasksGeneration = 0
@@ -171,6 +258,7 @@ export default function Home() {
     console.debug(`[home-refresh] source domain=${domain} sdkVersion=${String(sdk.version)} reset=${String(reset)}`)
     untrack(() => {
       void refreshSessions(reset)
+      void refreshFavorites(reset)
       void refreshTasks(reset)
     })
   })
@@ -204,13 +292,18 @@ export default function Home() {
           }
           return [session.id, undefined] as const
         } catch (error) {
-          console.error(`[home-recent] failed latest user message session=${session.id} directory=${session.directory}`, error)
+          console.error(
+            `[home-recent] failed latest user message session=${session.id} directory=${session.directory}`,
+            error,
+          )
           return [session.id, undefined] as const
         }
       }),
     ).then((previews) => {
       if (generation !== previewGeneration) return
-      console.debug(`[home-perf] previews-end duration=${(performance.now() - started).toFixed(1)}ms sessions=${items.length}`)
+      console.debug(
+        `[home-perf] previews-end duration=${(performance.now() - started).toFixed(1)}ms sessions=${items.length}`,
+      )
       setLatestUserMessages(reconcile(Object.fromEntries(previews) as Record<string, string | undefined>))
     })
   })
@@ -243,7 +336,7 @@ export default function Home() {
           sdk.client.session
             .status({ directory })
             .then((x) => x.data ?? {})
-            .catch(() => ({} as Record<string, SessionStatus | undefined>)),
+            .catch(() => ({}) as Record<string, SessionStatus | undefined>),
         ])
         return { directory, permissions, questions, statuses }
       }),
@@ -295,6 +388,7 @@ export default function Home() {
     if (["session.created", "session.updated", "session.deleted"].includes(event.details.type)) {
       console.debug(`[home-refresh] event=${event.details.type} action=refresh-sessions`)
       void refreshSessions()
+      void refreshFavorites()
     }
     if (
       [
@@ -312,6 +406,7 @@ export default function Home() {
   })
   onCleanup(() => {
     sessionsGeneration++
+    favoritesGeneration++
     tasksGeneration++
     if (statusTimer) clearTimeout(statusTimer)
     stop()
@@ -339,7 +434,8 @@ export default function Home() {
 
   const displayPath = (directory: string) => directory.replace(homedir(), "~")
   const relativeTime = (value: number) =>
-    DateTime.fromMillis(value).setLocale(language.intl()).toRelative() ?? new Date(value).toLocaleString(language.intl())
+    DateTime.fromMillis(value).setLocale(language.intl()).toRelative() ??
+    new Date(value).toLocaleString(language.intl())
 
   function openProject(directory: string) {
     sessionTabs.restoreDirectory(directory)
@@ -362,11 +458,10 @@ export default function Home() {
   }
 
   function showRecentSessions() {
-    dialog.show(
-      () => <DialogRecentSessions load={loadRecentSessions} onSelect={openSession} />,
-      undefined,
-      { modal: false, preventScroll: false },
-    )
+    dialog.show(() => <DialogRecentSessions load={loadRecentSessions} onSelect={openSession} />, undefined, {
+      modal: false,
+      preventScroll: false,
+    })
   }
 
   async function chooseProject() {
@@ -434,7 +529,9 @@ export default function Home() {
     <div
       ref={() => {
         const visibleAt = performance.now()
-        console.debug(`[home-perf] dom-created sinceClick=${typeof navClickAt === "number" ? `${(visibleAt - navClickAt).toFixed(1)}ms` : "n/a"}`)
+        console.debug(
+          `[home-perf] dom-created sinceClick=${typeof navClickAt === "number" ? `${(visibleAt - navClickAt).toFixed(1)}ms` : "n/a"}`,
+        )
       }}
       data-component="home-shell"
       class="size-full overflow-y-auto bg-background-base"
@@ -464,6 +561,92 @@ export default function Home() {
         </section>
 
         <div class="mt-9 grid min-w-0 items-start gap-x-8 gap-y-9 lg:grid-cols-2">
+          <section class="home-section min-w-0" aria-labelledby="home-favorite-sessions">
+            <SectionHeader
+              id="home-favorite-sessions"
+              title={language.t("home.favoriteSessions")}
+              action={language.t("home.favoriteSessions.viewAll")}
+              onAction={showRecentSessions}
+            />
+            <Show
+              when={!dashboard.favoritesLoading}
+              fallback={
+                <div class="flex min-h-28 items-center justify-center">
+                  <Spinner />
+                </div>
+              }
+            >
+              <Show
+                when={!dashboard.favoritesError}
+                fallback={
+                  <button
+                    type="button"
+                    class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
+                    onClick={() => void refreshFavorites()}
+                  >
+                    {language.t("home.section.loadError")}
+                  </button>
+                }
+              >
+                <Show
+                  when={dashboard.favorites.length > 0}
+                  fallback={
+                    <div class="px-3 py-8 text-center text-12-regular text-text-weak">
+                      {language.t("home.favoriteSessions.empty")}
+                    </div>
+                  }
+                >
+                  <ul class="home-work-list divide-y divide-border-weak-base">
+                    <For each={homeFavorites()}>
+                      {(session) => (
+                        <li>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            class="home-work-row group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 text-left outline-none"
+                            onClick={() => openSession(session)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return
+                              event.preventDefault()
+                              openSession(session)
+                            }}
+                          >
+                            <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-base text-icon-warning-base">
+                              <Icon name="star-active" size="small" />
+                            </span>
+                            <span class="min-w-0 flex-1">
+                              <span class="block truncate text-13-medium text-text-strong">
+                                {session.title?.trim() || session.id.slice(0, 8)}
+                              </span>
+                              <span class="mt-0.5 block truncate text-11-regular text-text-weak">
+                                {session.project?.name ||
+                                  getFilename(session.project?.worktree ?? session.directory) ||
+                                  displayPath(session.directory)}
+                              </span>
+                            </span>
+                            <span class="shrink-0 text-right text-11-regular text-text-weaker">
+                              {relativeTime(session.time.favorited ?? session.time.updated ?? session.time.created)}
+                            </span>
+                            <button
+                              type="button"
+                              class="home-favorite-toggle -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-icon-warning-base outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
+                              aria-label={language.t("home.favorite.remove")}
+                              aria-pressed="true"
+                              title={language.t("home.favorite.remove")}
+                              onClick={(event) => void toggleFavorite(session, event)}
+                            >
+                              <Icon name="star-active" size="small" />
+                            </button>
+                          </div>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+              </Show>
+            </Show>
+          </section>
+
           <section class="home-section home-section-primary min-w-0" aria-labelledby="home-recent-sessions">
             <SectionHeader
               id="home-recent-sessions"
@@ -493,16 +676,26 @@ export default function Home() {
               >
                 <Show
                   when={dashboard.sessions.length > 0}
-                  fallback={<div class="px-3 py-10 text-center text-12-regular text-text-weak">{language.t("home.recentSessions.empty")}</div>}
+                  fallback={
+                    <div class="px-3 py-10 text-center text-12-regular text-text-weak">
+                      {language.t("home.recentSessions.empty")}
+                    </div>
+                  }
                 >
                   <ul class="home-work-list divide-y divide-border-weak-base">
                     <For each={homeSessions()}>
                       {(session) => (
                         <li>
-                          <button
-                            type="button"
-                            class="home-work-row group flex w-full items-center gap-3 rounded-lg px-2 py-3 text-left outline-none"
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            class="home-work-row group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-left outline-none"
                             onClick={() => openSession(session)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "Enter" && event.key !== " ") return
+                              event.preventDefault()
+                              openSession(session)
+                            }}
                           >
                             <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-base text-icon-base">
                               <Icon name="speech-bubble" size="small" />
@@ -515,7 +708,9 @@ export default function Home() {
                                 {latestUserMessages[session.id] ?? language.t("home.recentSessions.noUserMessage")}
                               </span>
                               <span class="mt-0.5 block truncate text-11-regular text-text-weak">
-                                {session.project?.name || getFilename(session.project?.worktree ?? session.directory) || displayPath(session.directory)}
+                                {session.project?.name ||
+                                  getFilename(session.project?.worktree ?? session.directory) ||
+                                  displayPath(session.directory)}
                               </span>
                             </span>
                             <span class="flex shrink-0 flex-col items-end gap-0.5">
@@ -531,8 +726,41 @@ export default function Home() {
                                 {relativeTime(session.time.updated ?? session.time.created)}
                               </span>
                             </span>
-                            <Icon name="arrow-right" size="small" class="shrink-0 text-icon-weak group-hover:text-icon-base" />
-                          </button>
+                            <button
+                              type="button"
+                              class={`home-favorite-toggle -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover ${
+                                typeof session.time.favorited === "number" && session.time.favorited > 0
+                                  ? "text-icon-warning-base"
+                                  : "text-icon-weak opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                              }`}
+                              aria-label={
+                                typeof session.time.favorited === "number" && session.time.favorited > 0
+                                  ? language.t("home.favorite.remove")
+                                  : language.t("home.favorite.add")
+                              }
+                              aria-pressed={typeof session.time.favorited === "number" && session.time.favorited > 0}
+                              title={
+                                typeof session.time.favorited === "number" && session.time.favorited > 0
+                                  ? language.t("home.favorite.remove")
+                                  : language.t("home.favorite.add")
+                              }
+                              onClick={(event) => void toggleFavorite(session, event)}
+                            >
+                              <Icon
+                                name={
+                                  typeof session.time.favorited === "number" && session.time.favorited > 0
+                                    ? "star-active"
+                                    : "star"
+                                }
+                                size="small"
+                              />
+                            </button>
+                            <Icon
+                              name="arrow-right"
+                              size="small"
+                              class="shrink-0 text-icon-weak group-hover:text-icon-base"
+                            />
+                          </div>
                         </li>
                       )}
                     </For>
@@ -571,7 +799,11 @@ export default function Home() {
               >
                 <Show
                   when={dashboard.tasks.length > 0}
-                  fallback={<div class="px-3 py-8 text-center text-12-regular text-text-weak">{language.t("home.upcomingTasks.empty")}</div>}
+                  fallback={
+                    <div class="px-3 py-8 text-center text-12-regular text-text-weak">
+                      {language.t("home.upcomingTasks.empty")}
+                    </div>
+                  }
                 >
                   <ul class="home-work-list divide-y divide-border-weak-base">
                     <For each={dashboard.tasks}>
@@ -591,7 +823,10 @@ export default function Home() {
                             </span>
                             <span class="shrink-0 text-right text-11-regular text-text-weaker">
                               <span class="block text-text-weak">{taskStatus(task)}</span>
-                              <span class="mt-0.5 block" title={new Date(task.nextRunAt!).toLocaleString(language.intl())}>
+                              <span
+                                class="mt-0.5 block"
+                                title={new Date(task.nextRunAt!).toLocaleString(language.intl())}
+                              >
                                 {relativeTime(task.nextRunAt!)}
                               </span>
                             </span>

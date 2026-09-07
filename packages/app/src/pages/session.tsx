@@ -2330,12 +2330,14 @@ export default function Page() {
     initialScrollDeadlineTimer = window.setTimeout(() => {
       initialScrollDeadlineTimer = undefined
       if (initialScrollKey !== key || sessionKey() !== key) return
-      initialScrollKey = undefined
       const id = params.id
       if (!id) return
       markSessionProfile(id, "initial-scroll-deadline", "source=wall-clock")
+      // The wall-clock deadline only reveals readable content. Keep the
+      // settling loop alive so late row measurements can still pin the
+      // viewport to the bottom until it stabilizes or reaches `until`.
       dispatchSessionRender({ type: "deadline", sessionID: id }, "initial-scroll")
-    }, 500)
+    }, 1_000)
   }
 
   const settle = (key: string) => {

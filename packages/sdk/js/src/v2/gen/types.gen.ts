@@ -848,6 +848,7 @@ export type Session = {
     updated: number
     compacting?: number
     archived?: number
+    favorited?: number
   }
   permission?: PermissionRuleset
   revert?: {
@@ -1652,6 +1653,7 @@ export type GlobalSession = {
     updated: number
     compacting?: number
     archived?: number
+    favorited?: number
   }
   permission?: PermissionRuleset
   revert?: {
@@ -2452,6 +2454,7 @@ export type SyncEventSessionUpdated = {
         updated?: number | null
         compacting?: number | null
         archived?: number | null
+        favorited?: number | null
       }
       permission?: PermissionRuleset | null
       revert?: {
@@ -6993,6 +6996,7 @@ export type SessionUpdateData = {
     injectTaskContext?: boolean
     time?: {
       archived?: number | null
+      favorited?: number | null
     }
   }
   path: {

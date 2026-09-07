@@ -443,7 +443,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const permission = usePermission()
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
-  const [menu, setMenu] = createStore({ pendingRename: false, copied: false })
+  const [menu, setMenu] = createStore({ pendingRename: false, copied: false, favoritePending: false })
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
   // Keep module shimmer signal subscribed at SessionItem level so remounts still animate.
   const titleShimmer = createMemo(() => isTitleShimmering(props.session.id))
@@ -523,6 +523,60 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     if (!index) return
     return command.keybind(`session.jump.${index}`)
   })
+  const isFavorited = createMemo(
+    () => typeof props.session.time.favorited === "number" && props.session.time.favorited > 0,
+  )
+  const favoriteLabel = createMemo(() => language.t(isFavorited() ? "home.favorite.remove" : "home.favorite.add"))
+  const toggleFavorite = () => {
+    if (menu.favoritePending) {
+      console.debug(`[sidebar-session] favorite skipped id=${props.session.id} reason=pending`)
+      return
+    }
+
+    const previous = props.session.time.favorited
+    const next = isFavorited() ? null : Date.now()
+    const [, setSessionStore] = globalSync.child(props.session.directory, { bootstrap: false })
+    const updateLocal = (favorited: number | undefined) => {
+      setSessionStore("session", (list) =>
+        list.map((item) => (item.id === props.session.id ? { ...item, time: { ...item.time, favorited } } : item)),
+      )
+    }
+
+    console.debug(
+      `[sidebar-session] favorite start id=${props.session.id} dir=${props.session.directory} from=${String(previous ?? null)} to=${String(next)}`,
+    )
+    setMenu("favoritePending", true)
+    updateLocal(next ?? undefined)
+    void globalSDK.client.session
+      .update(
+        {
+          sessionID: props.session.id,
+          directory: props.session.directory,
+          time: { favorited: next },
+        },
+        { throwOnError: true },
+      )
+      .then(
+        () => {
+          console.debug(
+            `[sidebar-session] favorite success id=${props.session.id} dir=${props.session.directory} value=${String(next)}`,
+          )
+        },
+        (error: unknown) => {
+          updateLocal(previous)
+          const message = error instanceof Error ? error.message : String(error)
+          console.error(
+            `[sidebar-session] favorite failed id=${props.session.id} dir=${props.session.directory} value=${String(next)} error=${message}`,
+            error,
+          )
+          showToast({ variant: "error", title: language.t("common.requestFailed"), description: message })
+        },
+      )
+      .finally(() => {
+        setMenu("favoritePending", false)
+        console.debug(`[sidebar-session] favorite settled id=${props.session.id}`)
+      })
+  }
   const copy = () => {
     const text = `Session ID: ${props.session.id}\nProject path: ${props.session.directory}`
     const clip = typeof navigator === "undefined" ? undefined : navigator.clipboard
@@ -746,12 +800,12 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
           class="relative overflow-hidden flex items-center gap-1"
           classList={{
             "transition-[width,opacity]": !props.reduced,
-            "w-[84px] opacity-100 pointer-events-auto":
+            "w-[112px] opacity-100 pointer-events-auto":
               !!props.mobile || (!props.mobile && !props.reduced && !!jumpKeybind()),
             "w-0 opacity-0 pointer-events-none": (!props.mobile && !jumpKeybind()) || !!props.reduced,
-            "group-hover/session:w-[84px] group-hover/session:opacity-100 group-hover/session:pointer-events-auto":
+            "group-hover/session:w-[112px] group-hover/session:opacity-100 group-hover/session:pointer-events-auto":
               !props.reduced,
-            "group-focus-within/session:w-[84px] group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto":
+            "group-focus-within/session:w-[112px] group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto":
               !props.reduced,
           }}
         >
@@ -766,6 +820,22 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             when={!props.reduced}
             fallback={
               <>
+                <IconButton
+                  data-action="session-favorite"
+                  data-session={base64Encode(props.session.id)}
+                  icon={isFavorited() ? "star-active" : "star"}
+                  variant="ghost"
+                  class="size-6 rounded-md shrink-0"
+                  classList={{ "text-icon-warning-base": isFavorited() }}
+                  aria-label={favoriteLabel()}
+                  aria-pressed={isFavorited()}
+                  disabled={menu.favoritePending}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    toggleFavorite()
+                  }}
+                />
                 <IconButton
                   icon="refresh"
                   variant="ghost"
@@ -803,6 +873,28 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
             }
           >
             <>
+              <Tooltip value={favoriteLabel()} placement="top">
+                <IconButton
+                  data-action="session-favorite"
+                  data-session={base64Encode(props.session.id)}
+                  icon={isFavorited() ? "star-active" : "star"}
+                  variant="ghost"
+                  class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
+                  classList={{
+                    "text-icon-warning-base": isFavorited(),
+                    "opacity-0 pointer-events-none group-hover/session:pointer-events-auto group-focus-within/session:pointer-events-auto":
+                      !isFavorited() && !props.mobile && !!jumpKeybind(),
+                  }}
+                  aria-label={favoriteLabel()}
+                  aria-pressed={isFavorited()}
+                  disabled={menu.favoritePending}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    toggleFavorite()
+                  }}
+                />
+              </Tooltip>
               <Tooltip value={language.t("session.generateTitle")} placement="top">
                 <IconButton
                   icon="refresh"

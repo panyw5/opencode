@@ -48,6 +48,7 @@ images/
 
 # Desktop icon backups / generated folders
 packages/desktop/src-tauri/icons/*.backup.*/
+packages/desktop/resources/icons.backup.*/
 packages/desktop/icons/
 
 # Desktop app icon design exports (track only selected finals)
@@ -73,5 +74,6 @@ packages/opencode/bin/.opencode
 # Local tool state / plans / artifacts (not for version control)
 .commandcode/
 .plans/
+.workbuddy/
 opencode.db
 sidecar.js

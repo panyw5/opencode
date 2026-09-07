@@ -214,6 +214,15 @@
   background: color-mix(in srgb, var(--home-brand) 14%, var(--surface-base-active));
 }
 
+.home-favorite-toggle {
+  transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease;
+}
+
+.home-favorite-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--home-brand) 58%, transparent);
+  outline-offset: 1px;
+}
+
 html[data-theme="aether"] [data-component="home-shell"] {
   --home-radius: 6px;
   --home-deck-radius: 8px;

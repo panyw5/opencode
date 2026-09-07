@@ -79,6 +79,12 @@ export const SessionListQuery = Schema.Struct({
   search: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.NumberFromString),
   archived: Schema.optional(QueryBoolean),
+  /**
+   * When true, only favorited sessions are returned; when false, only
+   * non-favorited sessions are returned; when undefined, no favorite
+   * filter is applied.
+   */
+  favorited: Schema.optional(QueryBoolean),
 })
 export const SessionContentSearchQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,

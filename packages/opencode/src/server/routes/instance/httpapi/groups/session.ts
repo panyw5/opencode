@@ -13,6 +13,7 @@ import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Snapshot } from "@/snapshot"
 import { Schema, Struct } from "effect"
+import { NonNegativeInt } from "@opencode-ai/core/schema"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
@@ -36,6 +37,12 @@ export const ListQuery = Schema.Struct({
   search: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.NumberFromString),
   archived: Schema.optional(QueryBoolean),
+  /**
+   * When true, only favorited sessions are returned; when false, only
+   * non-favorited sessions are returned; when undefined, no favorite
+   * filter is applied.
+   */
+  favorited: Schema.optional(QueryBoolean),
 })
 export const DiffQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -168,6 +175,11 @@ export const UpdatePayload = Schema.Struct({
   time: Schema.optional(
     Schema.Struct({
       archived: Schema.optional(Schema.NullOr(Session.ArchivedTimestamp)),
+      /**
+       * Pass a timestamp to mark the session as favorited; pass null to
+       * clear the favorite flag.
+       */
+      favorited: Schema.optional(Schema.NullOr(NonNegativeInt)),
     }),
   ),
 })

@@ -15,7 +15,9 @@ import { NotFoundError } from "@/storage/storage"
 import { eq } from "drizzle-orm"
 import { and } from "drizzle-orm"
 import { gte } from "drizzle-orm"
+import { gt } from "drizzle-orm"
 import { isNull } from "drizzle-orm"
+import { isNotNull } from "drizzle-orm"
 import { desc } from "drizzle-orm"
 import { like } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
@@ -118,6 +120,7 @@ export function fromRow(row: SessionRow): Info {
   if (row.permission !== null) result.permission = [...row.permission]
   if (row.time_compacting !== null) result.time.compacting = row.time_compacting
   if (row.time_archived !== null) result.time.archived = row.time_archived
+  if (row.time_favorited !== null && row.time_favorited !== undefined) result.time.favorited = row.time_favorited
 
   if (row.model !== null) {
     result.model = {
@@ -179,6 +182,7 @@ export function toRow(info: Info) {
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
     time_archived: info.time.archived,
+    time_favorited: info.time.favorited,
   }
 }
 
@@ -228,6 +232,12 @@ const Time = Schema.Struct({
   updated: NonNegativeInt,
   compacting: optionalOmitUndefined(NonNegativeInt),
   archived: optionalOmitUndefined(ArchivedTimestamp),
+  /**
+   * When non-null, marks the session as favorited. The value is the
+   * timestamp at which the session was favorited. A null/missing value
+   * means the session is not favorited.
+   */
+  favorited: optionalOmitUndefined(NonNegativeInt),
 })
 
 const Revert = Schema.Struct({
@@ -329,6 +339,12 @@ export type ListInput = {
   search?: string
   limit?: number
   archived?: boolean
+  /**
+   * Filter by favorite status. When true, only favorited sessions are
+   * returned; when false, only non-favorited sessions are returned; when
+   * undefined, no favorite filter is applied.
+   */
+  favorited?: boolean
 }
 
 const CreatedEventSchema = Schema.Struct({
@@ -345,6 +361,7 @@ const UpdatedTime = Schema.Struct({
   updated: Schema.optional(Schema.NullOr(NonNegativeInt)),
   compacting: Schema.optional(Schema.NullOr(NonNegativeInt)),
   archived: Schema.optional(Schema.NullOr(ArchivedTimestamp)),
+  favorited: Schema.optional(Schema.NullOr(NonNegativeInt)),
 })
 
 const UpdatedInfo = Schema.Struct({
@@ -556,14 +573,16 @@ export interface Interface {
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   /** Rebind an existing session to the currently provided Instance context. */
-  readonly relocate: (
-    sessionID: SessionID,
-    options?: { preserveProject?: boolean },
-  ) => Effect.Effect<Info, NotFound>
+  readonly relocate: (sessionID: SessionID, options?: { preserveProject?: boolean }) => Effect.Effect<Info, NotFound>
   readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
+  /**
+   * Toggle the favorite flag for a session. Pass a non-null timestamp to mark
+   * the session as favorited; pass null to clear the favorite.
+   */
+  readonly setFavorited: (input: { sessionID: SessionID; time?: number | null }) => Effect.Effect<void>
   readonly setPermission: (input: { sessionID: SessionID; permission: Permission.Ruleset }) => Effect.Effect<void>
   readonly setMountedTask: (input: { sessionID: SessionID; taskID: ProjectTaskID | null }) => Effect.Effect<void>
   readonly setInjectTaskContext: (input: { sessionID: SessionID; enabled: boolean }) => Effect.Effect<void>
@@ -955,6 +974,13 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { time: { archived: input.time, updated: Date.now() } })
     })
 
+    const setFavorited = Effect.fn("Session.setFavorited")(function* (input: {
+      sessionID: SessionID
+      time?: number | null
+    }) {
+      yield* patch(input.sessionID, { time: { favorited: input.time, updated: Date.now() } })
+    })
+
     const setPermission = Effect.fn("Session.setPermission")(function* (input: {
       sessionID: SessionID
       permission: Permission.Ruleset
@@ -1202,6 +1228,7 @@ export const layer: Layer.Layer<
       get,
       setTitle,
       setArchived,
+      setFavorited,
       setPermission,
       setMountedTask,
       setInjectTaskContext,
@@ -1301,6 +1328,13 @@ function* listByProject(
   if (!input.archived) {
     conditions.push(isNull(SessionTable.time_archived))
   }
+  if (input.favorited !== undefined) {
+    if (input.favorited) {
+      conditions.push(gt(SessionTable.time_favorited, 0))
+    } else {
+      conditions.push(or(isNull(SessionTable.time_favorited), eq(SessionTable.time_favorited, 0))!)
+    }
+  }
 
   const limit = input.limit ?? 100
 
@@ -1334,6 +1368,7 @@ export function* listGlobal(input?: {
   search?: string
   limit?: number
   archived?: boolean
+  favorited?: boolean
 }) {
   const conditions: SQL[] = []
 
@@ -1357,6 +1392,13 @@ export function* listGlobal(input?: {
   }
   if (!input?.archived) {
     conditions.push(isNull(SessionTable.time_archived))
+  }
+  if (input?.favorited !== undefined) {
+    if (input.favorited) {
+      conditions.push(gt(SessionTable.time_favorited, 0))
+    } else {
+      conditions.push(or(isNull(SessionTable.time_favorited), eq(SessionTable.time_favorited, 0))!)
+    }
   }
 
   const limit = input?.limit ?? 100

@@ -28,17 +28,39 @@ export function wrapClientError(
       (typeof obj.message === "string" && obj.message) ||
       (typeof obj.name === "string" && obj.name) ||
       describe(request, response)
-    return new Error(message, { cause: { body: error, status: response?.status } })
+    return new Error(message, {
+      cause: {
+        body: error,
+        method: request?.method,
+        status: response?.status,
+        statusText: response?.statusText,
+        url: request?.url,
+      },
+    })
   }
 
   if (typeof error === "string" && error.length > 0) {
-    return new Error(error, { cause: { body: error, status: response?.status } })
+    return new Error(error, {
+      cause: {
+        body: error,
+        method: request?.method,
+        status: response?.status,
+        statusText: response?.statusText,
+        url: request?.url,
+      },
+    })
   }
 
   // Empty body / network failure / undefined / null / empty object.
   const reason = response ? "(empty response body)" : "network error (no response)"
   return new Error(`opencode server ${describe(request, response)}: ${reason}`, {
-    cause: { body: error, status: response?.status },
+    cause: {
+      body: error,
+      method: request?.method,
+      status: response?.status,
+      statusText: response?.statusText,
+      url: request?.url,
+    },
   })
 }
 

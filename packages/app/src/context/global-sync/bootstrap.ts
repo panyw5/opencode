@@ -60,6 +60,27 @@ function errors(list: PromiseSettledResult<unknown>[]) {
   return list.filter((item): item is PromiseRejectedResult => item.status === "rejected").map((item) => item.reason)
 }
 
+function logBootstrapErrors(phase: string, directory: string, list: unknown[]) {
+  for (const error of list) {
+    const cause = error instanceof Error && typeof error.cause === "object" && error.cause !== null ? error.cause : undefined
+    const details = cause as
+      | { method?: string; status?: number; statusText?: string; url?: string; body?: unknown }
+      | undefined
+    console.error(
+      `[global-sync] bootstrap request failed phase=${phase} directory=${directory} method=${details?.method ?? "?"} status=${details?.status ?? "?"} statusText=${details?.statusText ?? "?"} url=${details?.url ?? "?"} error=${error instanceof Error ? error.message : String(error)} stack=${error instanceof Error ? (error.stack ?? "") : ""} body=${stringifyLogValue(details?.body)}`,
+    )
+  }
+}
+
+function stringifyLogValue(value: unknown) {
+  if (value === undefined) return "undefined"
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
 function runAll(list: Array<() => Promise<unknown>>) {
   return Promise.allSettled(list.map((item) => item()))
 }
@@ -326,6 +347,7 @@ export async function bootstrapDirectory(input: {
 
   const errs = errors(await runAll(fast))
   if (errs.length > 0) {
+    logBootstrapErrors("fast", input.directory, errs)
     if (isMissingDirectoryError(errs[0])) {
       // The directory no longer exists on this server (removed remote, deleted
       // local folder, stale history). Rethrow so the caller can mark it
@@ -345,6 +367,7 @@ export async function bootstrapDirectory(input: {
   await waitForPaint()
   const slowErrs = errors(await runAll(slow))
   if (slowErrs.length > 0) {
+    logBootstrapErrors("slow", input.directory, slowErrs)
     if (isMissingDirectoryError(slowErrs[0])) {
       console.debug(`[global-sync] bootstrap skipped directory=${input.directory} reason=directory-missing`)
       throw slowErrs[0]

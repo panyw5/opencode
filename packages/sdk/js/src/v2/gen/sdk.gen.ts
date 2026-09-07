@@ -1082,6 +1082,7 @@ export class Session extends HeyApiClient {
       search?: string
       limit?: number
       archived?: boolean | "true" | "false"
+      favorited?: boolean | "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1098,6 +1099,7 @@ export class Session extends HeyApiClient {
             { in: "query", key: "search" },
             { in: "query", key: "limit" },
             { in: "query", key: "archived" },
+            { in: "query", key: "favorited" },
           ],
         },
       ],
@@ -3431,6 +3433,7 @@ export class Session2 extends HeyApiClient {
       search?: string
       limit?: number
       archived?: "true" | "false"
+      favorited?: "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3449,6 +3452,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "search" },
             { in: "query", key: "limit" },
             { in: "query", key: "archived" },
+            { in: "query", key: "favorited" },
           ],
         },
       ],
@@ -3620,6 +3624,7 @@ export class Session2 extends HeyApiClient {
       injectTaskContext?: boolean
       time?: {
         archived?: number | null
+        favorited?: number | null
       }
     },
     options?: Options<never, ThrowOnError>,

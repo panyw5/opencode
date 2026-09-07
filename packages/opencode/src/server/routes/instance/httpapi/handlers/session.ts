@@ -175,6 +175,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         search: ctx.query.search,
         limit: ctx.query.limit,
         archived: ctx.query.archived,
+        favorited: ctx.query.favorited,
       })
       try {
         Schema.decodeUnknownSync(Schema.Array(Session.Info))(result)
@@ -794,6 +795,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         if (ctx.payload.time.archived !== null) {
           yield* promptSvc.cancel(ctx.params.sessionID)
         }
+      }
+      if (ctx.payload.time?.favorited !== undefined) {
+        yield* session.setFavorited({ sessionID: ctx.params.sessionID, time: ctx.payload.time.favorited })
       }
       if (ctx.payload.injectTaskContext !== undefined) {
         yield* session.setInjectTaskContext({

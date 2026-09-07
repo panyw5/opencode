@@ -92,6 +92,12 @@ export const SessionTable = sqliteTable(
     ...Timestamps,
     time_compacting: integer(),
     time_archived: integer(),
+    /**
+     * When non-null, marks the session as a favorite (bookmarked). The value
+     * is the timestamp at which the session was favorited. Clearing the
+     * favorite is done by setting this back to null.
+     */
+    time_favorited: integer(),
   },
   (table) => [
     index("session_project_idx").on(table.project_id),
@@ -115,6 +121,7 @@ export const SessionTable = sqliteTable(
     index("session_workspace_parent_time_idx").on(table.workspace_id, table.parent_id, table.time_updated, table.id),
     index("session_parent_idx").on(table.parent_id),
     index("session_mounted_task_idx").on(table.mounted_task_id),
+    index("session_time_favorited_idx").on(table.time_favorited),
   ],
 )
 

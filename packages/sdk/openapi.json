@@ -1507,6 +1507,22 @@
               ]
             },
             "required": false
+          },
+          {
+            "name": "favorited",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": ["true", "false"]
+                }
+              ]
+            },
+            "required": false
           }
         ],
         "responses": {
@@ -1794,6 +1810,11 @@
                     "properties": {
                       "archived": {
                         "type": "number",
+                        "nullable": true
+                      },
+                      "favorited": {
+                        "type": "integer",
+                        "minimum": 0,
                         "nullable": true
                       }
                     }
@@ -7825,6 +7846,22 @@
             "in": "query",
             "schema": {
               "type": "number"
+            },
+            "required": false
+          },
+          {
+            "name": "favorited",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string",
+                  "enum": ["true", "false"]
+                }
+              ]
             },
             "required": false
           }
@@ -15626,6 +15663,10 @@
               },
               "archived": {
                 "type": "number"
+              },
+              "favorited": {
+                "type": "integer",
+                "minimum": 0
               }
             },
             "required": ["created", "updated"],
@@ -17766,6 +17807,10 @@
               },
               "archived": {
                 "type": "number"
+              },
+              "favorited": {
+                "type": "integer",
+                "minimum": 0
               }
             },
             "required": ["created", "updated"],

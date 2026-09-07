@@ -712,6 +712,28 @@ describe("session archive state", () => {
   )
 })
 
+describe("session favorite state", () => {
+  it.instance("can set, filter, and clear a favorite", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionNs.Service
+      const info = yield* session.create({})
+      const favoritedAt = Date.now()
+
+      yield* session.setFavorited({ sessionID: info.id, time: favoritedAt })
+      expect((yield* session.get(info.id)).time.favorited).toBe(favoritedAt)
+      expect((yield* session.list({ roots: true, favorited: true })).map((item) => item.id)).toContain(info.id)
+      expect((yield* session.list({ roots: true, favorited: false })).map((item) => item.id)).not.toContain(info.id)
+
+      yield* session.setFavorited({ sessionID: info.id, time: null })
+      expect((yield* session.get(info.id)).time.favorited).toBeUndefined()
+      expect((yield* session.list({ roots: true, favorited: true })).map((item) => item.id)).not.toContain(info.id)
+      expect((yield* session.list({ roots: true, favorited: false })).map((item) => item.id)).toContain(info.id)
+
+      yield* session.remove(info.id)
+    }),
+  )
+})
+
 describe("session.list directory slash matching", () => {
   it.instance("matches Windows backslash directories when queried with forward slashes", () =>
     Effect.gen(function* () {
