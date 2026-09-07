@@ -17,6 +17,7 @@
     "prebuild": "bun ./scripts/prebuild.ts",
     "build": "electron-vite build",
     "profile:session-tabs": "bun ./scripts/profile-session-tabs.ts",
+    "profile:session-render": "bun ./scripts/benchmark-session-render.ts",
     "cdp": "bun ./scripts/cdp.ts",
     "preview": "electron-vite preview",
     "package": "bun run build && electron-builder --config electron-builder.config.ts",

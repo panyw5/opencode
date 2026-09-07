@@ -36,12 +36,19 @@ import { promptLength } from "@/components/prompt-input/history"
 import { NewSessionView, SessionHeader } from "@/components/session"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
-import { markSessionProfile } from "@/utils/session-profile"
+import { ensureSessionProfile, markSessionProfile, startSessionProfile } from "@/utils/session-profile"
+import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import {
   sessionBackgroundDelay,
   shouldFinishInitialScroll,
   shouldRefreshStaleSession,
 } from "@/pages/session/session-switch-performance"
+import {
+  initialSessionRenderState,
+  reduceSessionRenderState,
+  sessionContentVisible,
+  type SessionRenderEvent,
+} from "@/pages/session/session-render-state"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -130,7 +137,6 @@ const sessionReviewDelayMs = typeof navigator === "undefined" ? 750 : sessionBac
 // loaded; within this window the store copy is trusted (session.diff events
 // also refresh it live while a turn runs).
 const reviewDiffFreshMs = 15_000
-const initialScrollRevealMs = 300
 const emptyFollowups: (FollowupDraft & { id: string })[] = []
 const smoothBottomSnapDistance = 900
 const smoothBottomMaxStep = 180
@@ -140,8 +146,6 @@ const smoothBottomMinDistance = 64
 type ChangeMode = "git" | "branch" | "session" | "turn"
 type VcsMode = "git" | "branch"
 type ScrollMode = "live" | "anchored"
-type SessionRenderOverlayStatus = "showing" | "hiding" | "hidden"
-
 function mergeKnownSessions(current: Session[], incoming: readonly Session[]): Session[] {
   if (incoming.length === 0) return current
 
@@ -194,6 +198,12 @@ export default function Page() {
   const terminal = useTerminal()
   const [searchParams, setSearchParams] = useSearchParams<{ prompt?: string }>()
   const { params, sessionKey, tabs, view } = useSessionLayout()
+  useComponentMountProfile(() => ({
+    name: "SessionPage",
+    session: params.id,
+    workspace: sdk.directory,
+    surface: "session",
+  }))
 
   createEffect(() => {
     if (!untrack(() => prompt.ready())) return
@@ -224,8 +234,6 @@ export default function Page() {
     seekingMessageId: undefined as string | undefined,
     scrollGesture: 0,
     mode: "live" as ScrollMode,
-    // Keep the first paint covered while timeline scroll settles.
-    renderOverlayStatus: (params.id ? "showing" : "hidden") as SessionRenderOverlayStatus,
     scroll: {
       overflow: false,
       bottom: true,
@@ -696,14 +704,140 @@ export default function Page() {
     if (!id) return true
     return sync.data.message[id] !== undefined
   })
-  const sessionRenderOverlayStatus = createMemo<SessionRenderOverlayStatus>(() => {
-    if (params.id && !messagesReady()) return "showing"
-    // A freshly promoted draft has no history to settle — its optimistic user
-    // message must be visible on the first frame, so skip the loading overlay.
-    const pending = layout.handoff.tabs()
-    if (params.id && pending && pending.id === params.id && Date.now() - pending.at < 5_000) return "hidden"
-    return ui.renderOverlayStatus
+  const [sessionRenderState, setSessionRenderState] = createSignal(initialSessionRenderState)
+  const dispatchSessionRender = (event: SessionRenderEvent, reason?: string) => {
+    const previous = sessionRenderState()
+    const next = reduceSessionRenderState(previous, event)
+    if (next === previous) return
+    setSessionRenderState(next)
+    if (!next.sessionID) return
+    if (event.type === "session-change") startSessionProfile(next.sessionID, "session-change")
+    else ensureSessionProfile(next.sessionID, "session-render")
+    markSessionProfile(
+      next.sessionID,
+      "render-state",
+      `from=${previous.phase}/${previous.overlay} to=${next.phase}/${next.overlay} generation=${String(next.generation)} event=${event.type}${reason ? ` reason=${reason}` : ""}`,
+    )
+  }
+  createComputed(() => {
+    const id = params.id
+    const ready = messagesReady()
+    const current = sessionRenderState()
+    if (current.sessionID !== id) {
+      const pending = layout.handoff.tabs()
+      const optimistic = !!id && !!pending && pending.id === id && Date.now() - pending.at < 5_000
+      dispatchSessionRender({ type: "session-change", sessionID: id, cached: ready || optimistic })
+      return
+    }
+    if (id && ready && !current.hasContent) dispatchSessionRender({ type: "messages-ready", sessionID: id })
   })
+  let renderOverlayTimer: number | undefined
+  createEffect(
+    on(
+      () => [sessionRenderState().sessionID, sessionRenderState().overlay] as const,
+      ([id, overlay]) => {
+        if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
+        renderOverlayTimer = undefined
+        if (!id || overlay !== "hiding") return
+        renderOverlayTimer = window.setTimeout(() => {
+          renderOverlayTimer = undefined
+          dispatchSessionRender({ type: "overlay-hidden", sessionID: id }, "fade-deadline")
+        }, 120)
+      },
+    ),
+  )
+  onCleanup(() => {
+    if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
+  })
+  onMount(() => {
+    const restore = (event: Event) => {
+      if (event.type === "visibilitychange" && document.visibilityState !== "visible") return
+      const state = sessionRenderState()
+      if (!state.sessionID || !state.hasContent || state.overlay === "hidden") return
+      markSessionProfile(state.sessionID, "visibility-restored", `source=${event.type}`)
+      dispatchSessionRender({ type: "deadline", sessionID: state.sessionID }, event.type)
+    }
+    document.addEventListener("visibilitychange", restore)
+    window.addEventListener("focus", restore)
+    onCleanup(() => {
+      document.removeEventListener("visibilitychange", restore)
+      window.removeEventListener("focus", restore)
+    })
+  })
+  let userMessageIndexTimer: number | undefined
+  let userMessageIndexIdle: number | undefined
+  let userMessageIndexGeneration = 0
+  let userMessageIndexScheduledFor: string | undefined
+  const cancelUserMessageIndex = () => {
+    userMessageIndexGeneration += 1
+    if (userMessageIndexTimer !== undefined) window.clearTimeout(userMessageIndexTimer)
+    const cancelIdle = Reflect.get(window, "cancelIdleCallback") as typeof window.cancelIdleCallback | undefined
+    if (userMessageIndexIdle !== undefined) cancelIdle?.call(window, userMessageIndexIdle)
+    userMessageIndexTimer = undefined
+    userMessageIndexIdle = undefined
+  }
+  const scheduleUserMessageIndex = () => {
+    const state = sessionRenderState()
+    const id = state.sessionID
+    if (!id || !sessionContentVisible(state) || document.visibilityState === "hidden") return
+    if (userMessageIndexScheduledFor === id) return
+    cancelUserMessageIndex()
+    userMessageIndexScheduledFor = id
+    const generation = userMessageIndexGeneration
+    const run = () => {
+      userMessageIndexTimer = undefined
+      userMessageIndexIdle = undefined
+      if (generation !== userMessageIndexGeneration || params.id !== id || !sessionContentVisible(sessionRenderState()))
+        return
+      markSessionProfile(id, "user-message-index-start", "priority=P3")
+      void sync.session.userMessageIndex.ensure(id).then(
+        () => markSessionProfile(id, "user-message-index-end"),
+        (error) => {
+          if (generation !== userMessageIndexGeneration || params.id !== id) return
+          console.debug(
+            `[user-message-menu] index-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
+          )
+          markSessionProfile(id, "user-message-index-error")
+        },
+      )
+    }
+    markSessionProfile(id, "user-message-index-scheduled", "priority=P3")
+    const requestIdle = Reflect.get(window, "requestIdleCallback") as typeof window.requestIdleCallback | undefined
+    if (requestIdle) {
+      userMessageIndexIdle = requestIdle.call(window, run, { timeout: 1_000 })
+      return
+    }
+    userMessageIndexTimer = window.setTimeout(run, 250)
+  }
+  createEffect(() => {
+    const id = params.id
+    const state = sessionRenderState()
+    if (!id || state.sessionID !== id || !sessionContentVisible(state)) {
+      if (userMessageIndexScheduledFor !== id) {
+        cancelUserMessageIndex()
+        userMessageIndexScheduledFor = undefined
+      }
+      return
+    }
+    scheduleUserMessageIndex()
+  })
+  onMount(() => {
+    const resume = () => {
+      if (document.visibilityState === "visible") {
+        scheduleUserMessageIndex()
+        return
+      }
+      if (!userMessageIndexScheduledFor || (userMessageIndexTimer === undefined && userMessageIndexIdle === undefined))
+        return
+      markSessionProfile(userMessageIndexScheduledFor, "user-message-index-cancelled", "reason=hidden")
+      cancelUserMessageIndex()
+      userMessageIndexScheduledFor = undefined
+    }
+    document.addEventListener("visibilitychange", resume)
+    onCleanup(() => document.removeEventListener("visibilitychange", resume))
+  })
+  onCleanup(cancelUserMessageIndex)
+  const sessionRenderOverlayStatus = () => sessionRenderState().overlay
   const historyMore = createMemo(() => {
     const id = params.id
     if (!id) return false
@@ -1179,14 +1313,6 @@ export default function Page() {
       markSessionProfile(id, "route-effect", `cached=${String(cached)} stale=${String(stale)}`)
 
       const initialSync = untrack(() => sync.session.sync(id))
-      untrack(() => {
-        void sync.session.userMessageIndex.ensure(id).catch((error) => {
-          if (run !== refreshRun || params.id !== id || sdk.directory !== directory) return
-          console.debug(
-            `[user-message-menu] index-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
-          )
-        })
-      })
       markSessionProfile(id, "todo-request-scheduled", `delayMs=${String(sessionTodoDelayMs)} force=${String(todos)}`)
 
       refreshFrame = requestAnimationFrame(() => {
@@ -1326,19 +1452,6 @@ export default function Page() {
         setUi("pendingMessage", undefined)
       },
       { defer: true },
-    ),
-  )
-
-  // Must run during the same reactive turn as params.id change — deferred
-  // effects paint one empty frame with the previous "hidden" overlay state.
-  createComputed(
-    on(
-      () => params.id,
-      (id, prev) => {
-        if (!id || id === prev) return
-        if (!prev) return
-        setUi("renderOverlayStatus", "showing")
-      },
     ),
   )
 
@@ -2189,9 +2302,9 @@ export default function Page() {
   let fillFrame: number | undefined
   let initialScrollKey: string | undefined
   let initialScrollFrame: number | undefined
+  let initialScrollDeadlineTimer: number | undefined
   let initialScrollStableFrames = 0
   let initialScrollHeight: number | undefined
-  let initialScrollRevealUntil = 0
   let until = 0
 
   const hasScrollTarget = () => !!location.hash || !!ui.pendingMessage || !!ui.seekingMessageId || !!store.messageId
@@ -2206,16 +2319,36 @@ export default function Page() {
     !hasScrollTarget() &&
     !findBarOpen
 
+  const clearInitialScrollDeadline = () => {
+    if (initialScrollDeadlineTimer !== undefined) window.clearTimeout(initialScrollDeadlineTimer)
+    initialScrollDeadlineTimer = undefined
+  }
+
+  const armInitialScrollDeadline = (key: string) => {
+    clearInitialScrollDeadline()
+    until = performance.now() + settleMs
+    initialScrollDeadlineTimer = window.setTimeout(() => {
+      initialScrollDeadlineTimer = undefined
+      if (initialScrollKey !== key || sessionKey() !== key) return
+      initialScrollKey = undefined
+      const id = params.id
+      if (!id) return
+      markSessionProfile(id, "initial-scroll-deadline", "source=wall-clock")
+      dispatchSessionRender({ type: "deadline", sessionID: id }, "initial-scroll")
+    }, 500)
+  }
+
   const settle = (key: string) => {
     initialScrollFrame = undefined
+    if (initialScrollKey !== key) return
     if (sessionKey() !== key) {
       initialScrollKey = undefined
-      if (scroller) scroller.style.visibility = ""
+      clearInitialScrollDeadline()
       return
     }
     if (hasScrollTarget() || hasScrollGesture()) {
       initialScrollKey = undefined
-      if (scroller) scroller.style.visibility = ""
+      clearInitialScrollDeadline()
       return
     }
 
@@ -2236,19 +2369,12 @@ export default function Page() {
       initialScrollStableFrames = 0
     }
     initialScrollHeight = height
-    // Do not reveal while virtual row measurements are still changing total height.
-    if (
-      root.style.visibility === "hidden" &&
-      (initialScrollStableFrames >= 2 || performance.now() >= initialScrollRevealUntil)
-    ) {
-      root.style.visibility = ""
-    }
 
     if (
       shouldFinishInitialScroll({ stableFrames: initialScrollStableFrames, now: performance.now(), deadline: until })
     ) {
       initialScrollKey = undefined
-      if (root.style.visibility === "hidden") root.style.visibility = ""
+      clearInitialScrollDeadline()
       const id = params.id
       if (id) {
         markSessionProfile(
@@ -2256,6 +2382,7 @@ export default function Page() {
           "initial-scroll-settled",
           `frames=${String(initialScrollStableFrames)} gap=${String(gapAfter)} height=${String(height)}`,
         )
+        dispatchSessionRender({ type: "settled", sessionID: id }, "initial-scroll")
       }
       return
     }
@@ -2422,27 +2549,25 @@ export default function Page() {
         initialScrollKey = key
         initialScrollStableFrames = 0
         initialScrollHeight = undefined
-        initialScrollRevealUntil = performance.now() + initialScrollRevealMs
+        armInitialScrollDeadline(key)
         const id = params.id
         if (id) markSessionProfile(id, "messages-ready")
         if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
 
-        // Synchronously scroll to bottom before the browser paints to prevent
-        // the visible flash of the conversation top on session entry.
+        // Seed the scroll position synchronously, but never hide readable
+        // content while virtual measurements continue in later frames.
         if (!hasScrollTarget() && scroller) {
-          // Hide the scroller until scroll position is settled at the bottom.
-          // Content renders with scrollTop=0 initially because windowing disables
-          // during session switch, causing a visible flash of the middle content.
-          scroller.style.visibility = "hidden"
           lockBottom(scroller, "initial-scroll:immediate")
         }
 
         initialScrollFrame = requestAnimationFrame(() => {
+          if (initialScrollKey !== key) return
           initialScrollFrame = requestAnimationFrame(() => {
             initialScrollFrame = undefined
+            if (initialScrollKey !== key) return
             if (sessionKey() !== key) {
               initialScrollKey = undefined
-              if (scroller?.style.visibility === "hidden") scroller.style.visibility = ""
+              clearInitialScrollDeadline()
               return
             }
             if (hasScrollTarget()) {
@@ -2450,7 +2575,7 @@ export default function Page() {
                 `[session] initial bottom skipped: key=${key} hash=${location.hash || "none"} pending=${ui.pendingMessage || "none"} seeking=${ui.seekingMessageId || "none"} current=${store.messageId || "none"}`,
               )
               initialScrollKey = undefined
-              if (scroller?.style.visibility === "hidden") scroller.style.visibility = ""
+              clearInitialScrollDeadline()
               return
             }
             const el = scroller
@@ -2462,7 +2587,6 @@ export default function Page() {
             setStore("messageId", undefined)
             enterLive()
             clearMessageHash()
-            until = performance.now() + settleMs
             lockBottom(el, "initial-scroll:bottom")
             scheduleScrollState(el)
             debug("initial:after", el, { key })
@@ -2553,13 +2677,11 @@ export default function Page() {
       initialScrollKey = key
       initialScrollStableFrames = 0
       initialScrollHeight = undefined
-      initialScrollRevealUntil = performance.now() + initialScrollRevealMs
+      armInitialScrollDeadline(key)
       if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
       if (!hasScrollTarget()) {
-        el.style.visibility = "hidden"
         lockBottom(el, "initial-scroll:ref-late")
       }
-      until = performance.now() + settleMs
       initialScrollFrame = requestAnimationFrame(() => settle(key))
     }
   }
@@ -3233,7 +3355,7 @@ export default function Page() {
     if (contentResizeFrame !== undefined) cancelAnimationFrame(contentResizeFrame)
     if (fillFrame !== undefined) cancelAnimationFrame(fillFrame)
     if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
-    if (scroller?.style.visibility === "hidden") scroller.style.visibility = ""
+    clearInitialScrollDeadline()
   })
 
   return (
@@ -3241,6 +3363,9 @@ export default function Page() {
       ref={(el) => {
         root = el
       }}
+      data-component="session-page"
+      data-session-id={params.id}
+      data-render-phase={sessionRenderState().phase}
       onClick={handleFileLinkClick}
       class="relative bg-background-stronger size-full overflow-hidden flex flex-col"
     >
@@ -3358,7 +3483,16 @@ export default function Page() {
                         setHistoryAnchor={(handlers) => {
                           historyAnchor = handlers
                         }}
-                        onRenderOverlayStatusChange={(status) => setUi("renderOverlayStatus", status)}
+                        onContentReady={(detail) => {
+                          const id = params.id
+                          if (!id) return
+                          markSessionProfile(
+                            id,
+                            "timeline-content-ready",
+                            `rows=${String(detail.rows)} cached=${String(detail.cached)}`,
+                          )
+                          dispatchSessionRender({ type: "content-ready", sessionID: id })
+                        }}
                       />
                     </Show>
                   </Show>
@@ -3524,12 +3658,14 @@ export default function Page() {
           <Show when={sessionRenderOverlayStatus() !== "hidden"}>
             <div
               data-slot="session-render-overlay"
+              data-state={sessionRenderOverlayStatus()}
+              data-session-id={params.id}
               aria-live="polite"
               aria-busy={sessionRenderOverlayStatus() === "showing" ? "true" : "false"}
               class="absolute inset-0 z-[70] flex items-center justify-center"
               classList={{
                 "opacity-100 pointer-events-auto": sessionRenderOverlayStatus() === "showing",
-                "opacity-0 pointer-events-none transition-opacity duration-200 ease-out":
+                "opacity-0 pointer-events-none transition-opacity duration-100 ease-out":
                   sessionRenderOverlayStatus() === "hiding",
               }}
               style={{

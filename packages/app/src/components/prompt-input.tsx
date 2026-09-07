@@ -1,6 +1,18 @@
 import { useFilteredList } from "@opencode-ai/ui/hooks"
 import { useSpring } from "@opencode-ai/ui/motion-spring"
-import { createEffect, on, Component, Show, onCleanup, Switch, Match, createMemo, createSignal, createUniqueId, For } from "solid-js"
+import {
+  createEffect,
+  on,
+  Component,
+  Show,
+  onCleanup,
+  Switch,
+  Match,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  For,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
@@ -63,6 +75,7 @@ import {
   type ReadyConsultMention,
 } from "./prompt-input/consult-mentions"
 import { PromptContextItems } from "./prompt-input/context-items"
+import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
 import { promptPlaceholder } from "./prompt-input/placeholder"
@@ -168,7 +181,11 @@ function logPromptOpen(name: string, fields: Record<string, string | number | bo
 }
 
 const isAbsolutePath = (input: string) =>
-  input.startsWith("/") || /^[A-Za-z]:[\\/]/.test(input) || /^[A-Za-z]:$/.test(input) || input.startsWith("\\\\") || input.startsWith("//")
+  input.startsWith("/") ||
+  /^[A-Za-z]:[\\/]/.test(input) ||
+  /^[A-Za-z]:$/.test(input) ||
+  input.startsWith("\\\\") ||
+  input.startsWith("//")
 
 const joinPath = (directory: string, input: string) => {
   if (!directory || isAbsolutePath(input)) return input
@@ -210,7 +227,12 @@ const GitContext = () => {
     if (listed().some((item) => workspaceKey(item.path) === workspaceKey(root()))) return listed()
     return [{ path: root(), branch: current()?.branch || rawBranch() }, ...listed()]
   })
-  const branch = createMemo(() => worktrees().find((item) => item.path === root())?.branch?.trim() || rawBranch())
+  const branch = createMemo(
+    () =>
+      worktrees()
+        .find((item) => item.path === root())
+        ?.branch?.trim() || rawBranch(),
+  )
   const branches = createMemo(() => {
     const items = (snap()?.branches ?? sync.data.vcs?.branches ?? []).filter(Boolean)
     if (items.length) return items
@@ -432,7 +454,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       : BASE_PLACEHOLDER_SUGGESTIONS,
   )
   const { params, tabs, view } = useSessionLayout()
-  const extraAgentIntegration = createMemo(() => extraAgentByDirectory(sdk.directory)?.id ?? server.current?.integration)
+  useComponentMountProfile(() => ({
+    name: "PromptInput",
+    session: params.id,
+    workspace: sdk.directory,
+    surface: "composer",
+  }))
+  const extraAgentIntegration = createMemo(
+    () => extraAgentByDirectory(sdk.directory)?.id ?? server.current?.integration,
+  )
   const extraAgentCaps = createMemo(() => extraAgentCapabilities(extraAgentIntegration()))
   const hasAgentChoose = createMemo(() => !!extraAgentCaps()?.agentChoose)
   const hideAgentSelector = createMemo(() => !!extraAgentCaps()?.hideAgent)
@@ -693,7 +723,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     promptPlaceholder({
       mode: store.mode,
       commentCount: commentCount(),
-      suggestion: suggest() ? language.t(placeholderSuggestions()[store.placeholder] ?? placeholderSuggestions()[0]) : "",
+      suggestion: suggest()
+        ? language.t(placeholderSuggestions()[store.placeholder] ?? placeholderSuggestions()[0])
+        : "",
       suggest: suggest(),
       t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
     }),
@@ -1017,9 +1049,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const agentList = createMemo((): AtOption[] =>
-    filterAgentsForConsultMentions(
-      sync.data.agent.filter((agent) => !agent.hidden && agent.mode !== "primary"),
-    ).map((agent) => ({ type: "agent" as const, name: agent.name, display: agent.name })),
+    filterAgentsForConsultMentions(sync.data.agent.filter((agent) => !agent.hidden && agent.mode !== "primary")).map(
+      (agent) => ({ type: "agent" as const, name: agent.name, display: agent.name }),
+    ),
   )
   const [readyConsults, setReadyConsults] = createSignal<ReadyConsultMention[]>([])
   createEffect(() => {
@@ -1036,14 +1068,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       cancelled = true
     })
   })
-  const consultList = createMemo(
-    (): AtOption[] =>
-      readyConsults().map((item) => ({
-        type: "consult" as const,
-        id: item.id,
-        name: item.name,
-        display: item.display,
-      })),
+  const consultList = createMemo((): AtOption[] =>
+    readyConsults().map((item) => ({
+      type: "consult" as const,
+      id: item.id,
+      name: item.name,
+      display: item.display,
+    })),
   )
   const lockedAgent = createMemo(() => local.agent.locked()?.name)
   const agentNames = createMemo(() => {
@@ -1728,8 +1759,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const buildSessionRefXml = (entry: SessionHistoryEntry) => {
-    const xmlEscape = (s: string) =>
-      s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+    const xmlEscape = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
     const project = (getFilename(entry.directory) || entry.directory || "").trim()
     const title = (entry.title ?? "").trim()
     return [
@@ -1864,10 +1894,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   createEffect(() => {
     const armed = stopAfterTool()
     if (!armed) return
-    const armedWorking = sessionWorking(
-      sync.session.status.get(armed.sessionID),
-      sync.data.message[armed.sessionID],
-    )
+    const armedWorking = sessionWorking(sync.session.status.get(armed.sessionID), sync.data.message[armed.sessionID])
     if (!armedWorking) {
       console.debug("[stop-after-tool] session finished on its own — disarming", { sessionID: armed.sessionID })
       setStopAfterTool(undefined)
@@ -2060,7 +2087,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Note: Shift+Enter is handled earlier, before IME check
     if (event.key === "Enter" && !event.shiftKey) {
       performance.mark("submit:keydown")
-      console.debug("[perf:submit] Enter keydown", { timeStamp: event.timeStamp, now: performance.now(), delta: `${Math.round(performance.now() - event.timeStamp)}ms since event created` })
+      console.debug("[perf:submit] Enter keydown", {
+        timeStamp: event.timeStamp,
+        now: performance.now(),
+        delta: `${Math.round(performance.now() - event.timeStamp)}ms since event created`,
+      })
       event.preventDefault()
       if (event.repeat) {
         console.debug("[prompt-submit]", { stage: "keydown-skip", reason: "repeat" })
@@ -2089,7 +2120,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const variantLabel = createMemo(() => {
     const defaultText = language.t("common.default")
-    return (x: string) => x === "default" ? defaultText : x
+    return (x: string) => (x === "default" ? defaultText : x)
   })
 
   return (
@@ -2209,7 +2240,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 )}
               </Show>
             </div>
-
           </div>
         </DockShellForm>
       </Show>
@@ -2591,32 +2621,35 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </div>
                 </Show>
                 <GitContext />
-                  <TooltipKeybind
-                    {...hover}
-                    placement="top"
-                    gutter={8}
-                    title={acceptLabel()}
-                    keybind={command.keybind("permissions.autoaccept")}
+                <TooltipKeybind
+                  {...hover}
+                  placement="top"
+                  gutter={8}
+                  title={acceptLabel()}
+                  keybind={command.keybind("permissions.autoaccept")}
+                >
+                  <Button
+                    data-action="prompt-permissions"
+                    variant="ghost"
+                    onClick={toggleAccept}
+                    classList={{
+                      "h-7 shrink-0 flex items-center justify-center gap-1 select-none font-medium transition-colors !important": true,
+                      "w-7 p-0 text-text-base": !accepting(),
+                      "px-2.5 rounded-md border border-border-success-base bg-surface-success-base text-text-on-success-base shadow-xs-border hover:border-border-success-hover active:border-border-success-selected":
+                        accepting(),
+                    }}
+                    style={control()}
+                    aria-label={acceptLabel()}
+                    aria-pressed={accepting()}
                   >
-                    <Button
-                      data-action="prompt-permissions"
-                      variant="ghost"
-                      onClick={toggleAccept}
-                      classList={{
-                        "h-7 shrink-0 flex items-center justify-center gap-1 select-none font-medium transition-colors !important": true,
-                        "w-7 p-0 text-text-base": !accepting(),
-                        "px-2.5 rounded-md border border-border-success-base bg-surface-success-base text-text-on-success-base shadow-xs-border hover:border-border-success-hover active:border-border-success-selected": accepting(),
-                      }}
-                      style={control()}
-                      aria-label={acceptLabel()}
-                      aria-pressed={accepting()}
-                    >
-                      <Icon name="shield" size="small" classList={{ "text-icon-success-base": accepting() }} />
-                      <Show when={accepting()}>
-                        <span class="text-xs whitespace-nowrap">{language.t("prompt.permissions.autoaccept.active")}</span>
-                      </Show>
-                    </Button>
-                  </TooltipKeybind>
+                    <Icon name="shield" size="small" classList={{ "text-icon-success-base": accepting() }} />
+                    <Show when={accepting()}>
+                      <span class="text-xs whitespace-nowrap">
+                        {language.t("prompt.permissions.autoaccept.active")}
+                      </span>
+                    </Show>
+                  </Button>
+                </TooltipKeybind>
                 <Show when={!!extraAgentIntegration()}>
                   <Tooltip {...hover} placement="top" value={language.t("prompt.action.insertSession")}>
                     <SessionPickerPopover
@@ -2655,10 +2688,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 onMouseLeave={() => setStopHovered(false)}
               >
                 <Show when={working()}>
-                  <div
-                    class="flex justify-end overflow-hidden py-[3px] -my-[3px]"
-                    style={stopRevealMotion()}
-                  >
+                  <div class="flex justify-end overflow-hidden py-[3px] -my-[3px]" style={stopRevealMotion()}>
                     <div class="flex w-[42px] shrink-0 items-center pr-2.5">
                       <Tooltip
                         {...hover}
@@ -2693,8 +2723,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 </Show>
                 <div class="relative size-10 shrink-0">
                   <Show when={working()}>
-                    <div data-component="prompt-stop-halo" aria-hidden="true" class="pointer-events-none absolute inset-0 z-0 flex">
-                      <span data-slot="prompt-stop-halo-ripple" class="absolute inline-flex h-full w-full rounded-full" />
+                    <div
+                      data-component="prompt-stop-halo"
+                      aria-hidden="true"
+                      class="pointer-events-none absolute inset-0 z-0 flex"
+                    >
+                      <span
+                        data-slot="prompt-stop-halo-ripple"
+                        class="absolute inline-flex h-full w-full rounded-full"
+                      />
                     </div>
                   </Show>
                   <Tooltip {...hover} placement="top" inactive={!prompt.dirty() && !working()} value={tip()}>
@@ -2702,7 +2739,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       data-action="prompt-submit"
                       type="submit"
                       form={formID}
-                      disabled={store.mode !== "normal" || store.submitting || (!prompt.dirty() && !working() && commentCount() === 0)}
+                      disabled={
+                        store.mode !== "normal" ||
+                        store.submitting ||
+                        (!prompt.dirty() && !working() && commentCount() === 0)
+                      }
                       tabIndex={store.mode === "normal" ? undefined : -1}
                       icon={
                         working()

@@ -57,6 +57,8 @@ import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
+import { markSessionProfile } from "@/utils/session-profile"
+import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import {
   captureVirtualViewportAnchor,
   heightFromResizeObserverEntry,
@@ -260,7 +262,7 @@ export function MessageTimeline(props: {
   setPrepareNavigation?: (fn: () => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => void }) => void
-  onRenderOverlayStatusChange?: (status: "showing" | "hiding" | "hidden") => void
+  onContentReady?: (detail: { rows: number; cached: boolean }) => void
 }) {
   const sync = useSync()
   const settings = useSettings()
@@ -270,6 +272,12 @@ export function MessageTimeline(props: {
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
 
   const sessionID = createMemo(() => params.id)
+  useComponentMountProfile(() => ({
+    name: "MessageTimeline",
+    session: sessionID(),
+    workspace: sync.data.path.directory,
+    surface: "session",
+  }))
   // Debug profiling is intentionally sampled once per timeline mount. Reading
   // localStorage in resize/scroll hot paths caused hundreds of synchronous IPC
   // reads during a short wheel gesture. Set the flag and reload to profile.
@@ -1106,12 +1114,27 @@ export function MessageTimeline(props: {
   })
 
   let overscanTimer: number | undefined
+  let contentReadyID: string | undefined
+  createEffect(() => {
+    const id = sessionID()
+    const rows = timelineRows().length
+    const messages = sessionMessages().length
+    if (!id || contentReadyID === id) return
+    if (messages > 0 && rows === 0) return
+    contentReadyID = id
+    markSessionProfile(
+      id,
+      "timeline-rows-ready",
+      `rows=${String(rows)} messages=${String(messages)} cachedMeasurements=${String(hasCachedMeasurements)}`,
+    )
+    props.onContentReady?.({ rows, cached: hasCachedMeasurements })
+  })
   onMount(() => {
-    if (lagging()) {
-      console.debug(
-        `[timeline] mount session=${sessionID() ?? "none"} owner=${ownerSessionKey} cached=${String(!!initialMeasurements)} rows=${String(timelineRows().length)}`,
-      )
-    }
+    const id = sessionID()
+    console.debug(
+      `[timeline] mount session=${id ?? "none"} owner=${ownerSessionKey} cached=${String(hasCachedMeasurements)} rows=${String(timelineRows().length)}`,
+    )
+    if (id) markSessionProfile(id, "timeline-mounted", `cachedMeasurements=${String(hasCachedMeasurements)}`)
     overscanTimer = window.setTimeout(() => {
       overscanTimer = undefined
       const previousOverscan = renderOverscan()
@@ -1121,11 +1144,9 @@ export function MessageTimeline(props: {
 
   onCleanup(() => {
     mounted = false
-    if (lagging()) {
-      console.debug(
-        `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
-      )
-    }
+    console.debug(
+      `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
+    )
     clearPrependAnchor()
     pendingNearBottomShrinks.clear()
     deferredFastMeasurements.clear()
@@ -1154,59 +1175,6 @@ export function MessageTimeline(props: {
     props.setPrepareNavigation?.(() => {})
     props.setScrollToEnd?.(() => {})
     props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
-    if (renderOverlayFrame !== undefined) cancelAnimationFrame(renderOverlayFrame)
-    if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
-  })
-
-  let renderOverlayFrame: number | undefined
-  let renderOverlayTimer: number | undefined
-  let renderOverlayPendingID: string | undefined
-  createEffect(
-    on(
-      sessionID,
-      (id, previous) => {
-        if (!id) {
-          renderOverlayPendingID = undefined
-          props.onRenderOverlayStatusChange?.("hidden")
-          return
-        }
-        if (id !== previous) {
-          if (renderOverlayFrame !== undefined) cancelAnimationFrame(renderOverlayFrame)
-          if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
-          renderOverlayPendingID = id
-          props.onRenderOverlayStatusChange?.("showing")
-        }
-      },
-    ),
-  )
-  const releaseRenderOverlay = (id: string) => {
-    renderOverlayFrame = undefined
-    if (!mounted || sessionID() !== id || renderOverlayPendingID !== id) return
-    if (props.isInitialScrollSettling()) {
-      renderOverlayFrame = requestAnimationFrame(() => releaseRenderOverlay(id))
-      return
-    }
-    renderOverlayPendingID = undefined
-    if (lagging()) timelineLag("overlay-ready", `rows=${String(timelineRows().length)}`)
-    props.onRenderOverlayStatusChange?.("hiding")
-    if (renderOverlayTimer !== undefined) window.clearTimeout(renderOverlayTimer)
-    renderOverlayTimer = window.setTimeout(() => {
-      if (!mounted || sessionID() !== id) return
-      props.onRenderOverlayStatusChange?.("hidden")
-    }, 180)
-  }
-  createEffect(() => {
-    const rows = timelineRows().length
-    const id = sessionID()
-    if (!id || renderOverlayPendingID !== id) return
-    if (!rows) {
-      if (sessionMessages().length > 0) return
-      renderOverlayPendingID = undefined
-      props.onRenderOverlayStatusChange?.("hidden")
-      return
-    }
-    if (renderOverlayFrame !== undefined) cancelAnimationFrame(renderOverlayFrame)
-    renderOverlayFrame = requestAnimationFrame(() => releaseRenderOverlay(id))
   })
 
   let restoreScrollTopDebug: (() => void) | undefined
@@ -1889,7 +1857,12 @@ export function MessageTimeline(props: {
     )
   }
   return (
-    <div class="relative w-full h-full min-w-0">
+    <div
+      data-component="message-timeline"
+      data-session-id={sessionID()}
+      data-owner-session-key={ownerSessionKey}
+      class="relative w-full h-full min-w-0"
+    >
       <Show when={props.scroll.overflow && !props.scroll.bottom}>
         <button class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60]" onClick={props.onResumeScroll}>
           {language.t("session.messages.jumpToBottom")}

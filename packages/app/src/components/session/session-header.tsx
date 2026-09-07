@@ -24,7 +24,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { dict as enDict } from "@/i18n/en"
 import { StatusPopover } from "@/components/status-popover"
 import { OPEN_APPS, apps, getOpenPlan, type OpenApp, type OS } from "./open-app"
-
+import { useComponentMountProfile } from "@/utils/component-mount-profile"
 
 const detectOS = (platform: ReturnType<typeof usePlatform>): OS => {
   if (platform.platform === "desktop" && platform.os) return platform.os
@@ -57,6 +57,12 @@ export function SessionHeader() {
   const kw = (...keys: DictKey[]) => (language.locale() === "en" ? undefined : keys.map((k) => enDict[k]).join(" "))
 
   const projectDirectory = createMemo(() => decode64(params.dir) ?? "")
+  useComponentMountProfile(() => ({
+    name: "SessionHeader",
+    session: params.id,
+    workspace: projectDirectory(),
+    surface: "session",
+  }))
   const os = createMemo(() => detectOS(platform))
 
   const [exists, setExists] = createStore<Partial<Record<OpenApp, boolean>>>({
@@ -314,11 +320,7 @@ export function SessionHeader() {
                                 }}
                               >
                                 <div class="flex size-5 shrink-0 items-center justify-center">
-                                  <Icon
-                                    name={menu.copied ? "check" : "copy"}
-                                    size="small"
-                                    class="text-icon-weak"
-                                  />
+                                  <Icon name={menu.copied ? "check" : "copy"} size="small" class="text-icon-weak" />
                                 </div>
                                 <DropdownMenu.ItemLabel>
                                   {language.t("session.header.open.copyPath")}

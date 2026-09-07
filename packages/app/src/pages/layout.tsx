@@ -23,11 +23,7 @@ import {
   type SessionTabsRoute,
   type SessionTabsTarget,
 } from "@/context/session-tabs"
-import {
-  createConfigReturnTarget,
-  resolveConfigReturnTarget,
-  type ConfigReturnTarget,
-} from "@/pages/config-navigation"
+import { createConfigReturnTarget, resolveConfigReturnTarget, type ConfigReturnTarget } from "@/pages/config-navigation"
 import { collectMissingAncestorTabs } from "@/components/session/session-bar-parent"
 import { useGlobalSync } from "@/context/global-sync"
 import { onSessionLifecycle } from "@/context/global-sync/session-lifecycle"
@@ -74,6 +70,8 @@ import { Worktree as WorktreeState } from "@/utils/worktree"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { requestConfigPageRefresh } from "@/utils/config-reload"
 import { prefetchConfigPage } from "@/utils/prefetch-config"
+import { ComponentMountProfile } from "@/utils/component-mount-profile"
+import { createMediaQuery } from "@solid-primitives/media"
 
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { triggerFileFind } from "@opencode-ai/ui/pierre/file-find"
@@ -296,6 +294,7 @@ export default function Layout(props: ParentProps) {
   const command = useCommand()
   const theme = useTheme()
   const language = useLanguage()
+  const desktopSidebar = createMediaQuery("(min-width: 1280px)")
   const [reloadingBackend, setReloadingBackend] = createSignal(false)
   createEffect(() => {
     if (!import.meta.env.DEV) return
@@ -1476,14 +1475,10 @@ export default function Layout(props: ParentProps) {
           console.debug(
             `[command-palette] open source=${source ?? "unknown"} scope=layout home=${home ? "true" : "false"} new-session=${newSession ? "true" : "false"}`,
           )
-          dialog.show(
-            () => <DialogSelectFile mode="commands" defaultCommandIds={defaultCommandIds} />,
-            undefined,
-            {
-              modal: false,
-              preventScroll: false,
-            },
-          )
+          dialog.show(() => <DialogSelectFile mode="commands" defaultCommandIds={defaultCommandIds} />, undefined, {
+            modal: false,
+            preventScroll: false,
+          })
         },
       },
       {
@@ -2162,7 +2157,10 @@ export default function Layout(props: ParentProps) {
     const byID = new Map(sessions.map((session) => [session.id, session]))
     const key = workspaceKey(directory)
     const openIDs = new Set(
-      layout.sessionBar.all().filter((tab) => workspaceKey(tab.directory) === key).map((tab) => tab.id),
+      layout.sessionBar
+        .all()
+        .filter((tab) => workspaceKey(tab.directory) === key)
+        .map((tab) => tab.id),
     )
     const chain = collectMissingAncestorTabs(openIDs, parentID, byID)
     for (const item of chain.reverse()) {
@@ -2543,8 +2541,9 @@ export default function Layout(props: ParentProps) {
     }
 
     const index = list.findIndex((item) => sameWorkspacePath(item.worktree, directory))
-    const next = list.find((item, i) => i > index && !sameWorkspacePath(item.worktree, directory))
-      ?? list.find((item) => !sameWorkspacePath(item.worktree, directory))
+    const next =
+      list.find((item, i) => i > index && !sameWorkspacePath(item.worktree, directory)) ??
+      list.find((item) => !sameWorkspacePath(item.worktree, directory))
     const routeMatches = sameWorkspacePath(routeDir() || "", directory)
     const active =
       routeMatches ||
@@ -3165,7 +3164,16 @@ export default function Layout(props: ParentProps) {
   createEffect(
     on(
       () => {
-        return [pageReady(), layoutReady(), routeSlug(), params.id, params.draftID, currentProjectRoot(), routeDir(), onSessionRoute()] as const
+        return [
+          pageReady(),
+          layoutReady(),
+          routeSlug(),
+          params.id,
+          params.draftID,
+          currentProjectRoot(),
+          routeDir(),
+          onSessionRoute(),
+        ] as const
       },
       ([ready, persistedReady, slug, id, draftID, root, dir, sessionRoute]) => {
         console.debug(
@@ -3190,11 +3198,13 @@ export default function Layout(props: ParentProps) {
           ? workspaceKey(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
           : ""
         if (!id) {
-          const explicit = layout.sessionBar.drafts().some(
-            (draft) => draft.id === draftID && sameWorkspacePath(draft.directory, dir),
-          )
+          const explicit = layout.sessionBar
+            .drafts()
+            .some((draft) => draft.id === draftID && sameWorkspacePath(draft.directory, dir))
           if (!explicit) {
-            console.debug(`[session-tabs] reject implicit draft route draftID=${draftID ?? "none"} directory=${dir} target=project-root`)
+            console.debug(
+              `[session-tabs] reject implicit draft route draftID=${draftID ?? "none"} directory=${dir} target=project-root`,
+            )
             sessionTabs.observeRoute({ directory: dir, session: false })
             navigateWithSidebarReset(`/${slug}`)
             return
@@ -3250,9 +3260,7 @@ export default function Layout(props: ParentProps) {
       () => [currentProjectRoot(), layout.projects.list()] as const,
       ([root, projects]) => {
         if (!pendingSidebarRoute || !root) return
-        const project = root
-          ? projects.find((item) => workspaceKey(item.worktree) === workspaceKey(root))
-          : undefined
+        const project = root ? projects.find((item) => workspaceKey(item.worktree) === workspaceKey(root)) : undefined
         const next = project?.worktree
         if (workspaceKey(sidebarProjectRoot() ?? "") !== workspaceKey(next ?? "")) {
           console.debug(
@@ -3537,9 +3545,8 @@ export default function Layout(props: ParentProps) {
     const hasCurrentSession = onSessionRoute() && !!params.id
     selectSidebarProject(project.worktree, { navigateWhenNoSession: false })
 
-    const directories = new Set(workspaceIds(project).map(workspaceKey))
-    const openTab = layout
-      .sessionBar
+    const directories = new Set(workspaceIds(project).map((value) => workspaceKey(value)))
+    const openTab = layout.sessionBar
       .all()
       .toReversed()
       .find((tab) => directories.has(workspaceKey(tab.directory)))
@@ -3966,7 +3973,11 @@ export default function Layout(props: ParentProps) {
                             moreLabel={language.t("common.moreOptions")}
                             actions={[
                               { icon: "file", label: language.t("sidebar.project.agentsMd"), onSelect: openAgentsMd },
-                              { icon: "checklist", label: language.t("projectTask.title"), onSelect: openProjectTasksPanel },
+                              {
+                                icon: "checklist",
+                                label: language.t("projectTask.title"),
+                                onSelect: openProjectTasksPanel,
+                              },
                               { icon: "clock", label: language.t("scheduled.title"), onSelect: openScheduledPanel },
                               {
                                 icon: "bell-off",
@@ -4014,7 +4025,11 @@ export default function Layout(props: ParentProps) {
                           moreLabel={language.t("common.moreOptions")}
                           actions={[
                             { icon: "file", label: language.t("sidebar.project.agentsMd"), onSelect: openAgentsMd },
-                            { icon: "checklist", label: language.t("projectTask.title"), onSelect: openProjectTasksPanel },
+                            {
+                              icon: "checklist",
+                              label: language.t("projectTask.title"),
+                              onSelect: openProjectTasksPanel,
+                            },
                             { icon: "clock", label: language.t("scheduled.title"), onSelect: openScheduledPanel },
                             {
                               icon: "bell-off",
@@ -4261,258 +4276,265 @@ export default function Layout(props: ParentProps) {
         data-component="app-root"
         class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"
       >
-      <Show when={folderDragging() || fileDragging()}>
-        <div class="fixed inset-0 z-[100] flex items-center justify-center bg-background-base/80 pointer-events-none">
-          <div class="flex flex-col items-center gap-3 text-text-weak">
-            <Show when={folderDragging()} fallback={<Icon name="photo" class="size-12" />}>
-              <Icon name="folder" class="size-12" />
-            </Show>
-            <span class="text-16-medium">
-              {folderDragging() ? language.t("sidebar.dropFolder") : language.t("sidebar.dropFile")}
-            </span>
+        <Show when={folderDragging() || fileDragging()}>
+          <div class="fixed inset-0 z-[100] flex items-center justify-center bg-background-base/80 pointer-events-none">
+            <div class="flex flex-col items-center gap-3 text-text-weak">
+              <Show when={folderDragging()} fallback={<Icon name="photo" class="size-12" />}>
+                <Icon name="folder" class="size-12" />
+              </Show>
+              <span class="text-16-medium">
+                {folderDragging() ? language.t("sidebar.dropFolder") : language.t("sidebar.dropFile")}
+              </span>
+            </div>
           </div>
-        </div>
-      </Show>
-      <Show when={reloadingBackend()}>
-        <div
-          class="fixed inset-0 z-[120] flex items-center justify-center bg-background-base/80 backdrop-blur-sm"
-          role="status"
-          aria-live="polite"
-          aria-busy="true"
-        >
-          <div class="flex items-center gap-3 rounded-[24px] border border-border-weak-base bg-surface-raised-base/90 px-5 py-4 text-text-strong shadow-2xl">
-            <Spinner class="size-5 text-text-strong" />
-            <span class="text-15-medium">{language.t("config.reloadBackend.loading")}</span>
+        </Show>
+        <Show when={reloadingBackend()}>
+          <div
+            class="fixed inset-0 z-[120] flex items-center justify-center bg-background-base/80 backdrop-blur-sm"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+          >
+            <div class="flex items-center gap-3 rounded-[24px] border border-border-weak-base bg-surface-raised-base/90 px-5 py-4 text-text-strong shadow-2xl">
+              <Spinner class="size-5 text-text-strong" />
+              <span class="text-15-medium">{language.t("config.reloadBackend.loading")}</span>
+            </div>
           </div>
-        </div>
-      </Show>
-      <Titlebar />
-      <div class="flex-1 min-h-0 min-w-0 flex">
-        <div class="flex-1 min-h-0 relative">
-          <div class="size-full relative overflow-x-hidden">
-            <nav
-              aria-label={language.t("sidebar.nav.projectsAndSessions")}
-              data-component="sidebar-nav-desktop"
-              classList={{
-                "hidden xl:block": true,
-                "absolute inset-y-0 left-0": true,
-                // Floating overlay: under main when fully collapsed so the panel
-                // hit area does not steal clicks; above main while open/closing
-                // so the width transition is visible.
-                "z-10": !sidebarElevated(),
-                "z-30": sidebarElevated(),
-                "pointer-events-none": state.sizing,
-              }}
-              style={{
-                // Collapse to the rail only when closed so no full-width
-                // chrome slab appears ahead of the session list.
-                width: layout.sidebar.opened() ? `${side()}px` : "4rem",
-                transition: state.sizing
-                  ? undefined
-                  : `width ${SIDEBAR_WIDTH_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`,
-              }}
-              ref={(el) => {
-                setState("nav", el)
-              }}
-            >
-              <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
-              {/* Cast shadow rides on the nav's right edge (left: 100%) so it
+        </Show>
+        <Titlebar />
+        <div class="flex-1 min-h-0 min-w-0 flex">
+          <div class="flex-1 min-h-0 relative">
+            <div class="size-full relative overflow-x-hidden">
+              <Show when={desktopSidebar()}>
+                <nav
+                  aria-label={language.t("sidebar.nav.projectsAndSessions")}
+                  data-component="sidebar-nav-desktop"
+                  data-sidebar-surface="desktop"
+                  classList={{
+                    "absolute inset-y-0 left-0": true,
+                    // Floating overlay: under main when fully collapsed so the panel
+                    // hit area does not steal clicks; above main while open/closing
+                    // so the width transition is visible.
+                    "z-10": !sidebarElevated(),
+                    "z-30": sidebarElevated(),
+                    "pointer-events-none": state.sizing,
+                  }}
+                  style={{
+                    // Collapse to the rail only when closed so no full-width
+                    // chrome slab appears ahead of the session list.
+                    width: layout.sidebar.opened() ? `${side()}px` : "4rem",
+                    transition: state.sizing ? undefined : `width ${SIDEBAR_WIDTH_MS}ms cubic-bezier(0.16, 1, 0.3, 1)`,
+                  }}
+                  ref={(el) => {
+                    setState("nav", el)
+                  }}
+                >
+                  <ComponentMountProfile name="SidebarNav" surface="desktop" />
+                  <div class="@container w-full h-full contain-strict">{sidebarContent()}</div>
+                  {/* Cast shadow rides on the nav's right edge (left: 100%) so it
                   tracks the CSS width transition on open/close. A layout
                   sibling with an absolute `left` would jump to the final width
                   on mount while the panel is still expanding. Kept outside
                   contain-strict so paint containment cannot clip it. */}
-              <Show when={sidebarElevated()}>
-                <div
-                  data-component="sidebar-float-shadow"
-                  aria-hidden="true"
-                  class="pointer-events-none absolute inset-y-0 left-full"
-                  ref={(el) => {
-                    if (!import.meta.env.DEV) return
-                    requestAnimationFrame(() => {
-                      const panelEl = el.closest("nav")?.querySelector<HTMLElement>('[data-component="sidebar-panel"]')
-                      const shadowStyle = getComputedStyle(el)
-                      const panelStyle = panelEl ? getComputedStyle(panelEl) : undefined
-                      const rect = el.getBoundingClientRect()
-                      console.debug(
-                        `[sidebar-float-shadow] x=${rect.x.toFixed(1)} y=${rect.y.toFixed(1)} width=${rect.width.toFixed(1)} height=${rect.height.toFixed(1)} radius=${shadowStyle.borderTopLeftRadius || "none"} panel-radius=${panelStyle?.borderTopRightRadius ?? "missing"} mask=${shadowStyle.maskImage}`,
-                      )
-                    })
-                  }}
-                />
-              </Show>
-            </nav>
+                  <Show when={sidebarElevated()}>
+                    <div
+                      data-component="sidebar-float-shadow"
+                      aria-hidden="true"
+                      class="pointer-events-none absolute inset-y-0 left-full"
+                      ref={(el) => {
+                        if (!import.meta.env.DEV) return
+                        requestAnimationFrame(() => {
+                          const panelEl = el
+                            .closest("nav")
+                            ?.querySelector<HTMLElement>('[data-component="sidebar-panel"]')
+                          const shadowStyle = getComputedStyle(el)
+                          const panelStyle = panelEl ? getComputedStyle(panelEl) : undefined
+                          const rect = el.getBoundingClientRect()
+                          console.debug(
+                            `[sidebar-float-shadow] x=${rect.x.toFixed(1)} y=${rect.y.toFixed(1)} width=${rect.width.toFixed(1)} height=${rect.height.toFixed(1)} radius=${shadowStyle.borderTopLeftRadius || "none"} panel-radius=${panelStyle?.borderTopRightRadius ?? "missing"} mask=${shadowStyle.maskImage}`,
+                          )
+                        })
+                      }}
+                    />
+                  </Show>
+                </nav>
 
-            <Show when={layout.sidebar.opened()}>
-              {/* Click-outside dismiss: covers main (z-20) while the floating
+                <Show when={layout.sidebar.opened()}>
+                  {/* Click-outside dismiss: covers main (z-20) while the floating
                   session list (z-30) and resize handle (z-40) stay above. */}
-              <div
-                data-component="sidebar-dismiss-overlay"
-                aria-hidden="true"
-                class="hidden xl:block absolute inset-0 z-[25]"
-                style={{ left: `${side()}px` }}
-                onClick={() => layout.sidebar.close()}
-              />
-              <div
-                class="hidden xl:block absolute inset-y-0 z-40 w-0 overflow-visible"
-                style={{ left: `${dragSide()}px` }}
-                onPointerDown={() => {
-                  setState("sizing", true)
-                  setState("previewSidebarWidth", layout.sidebar.width())
-                }}
-              >
-                <ResizeHandle
-                  direction="horizontal"
-                  size={state.previewSidebarWidth ?? layout.sidebar.width()}
-                  min={244}
-                  max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3 + 64}
-                  onResize={(w) => {
-                    setState("sizing", true)
-                    if (sizet !== undefined) clearTimeout(sizet)
-                    sizet = window.setTimeout(() => setState("sizing", false), 120)
-                    setState("previewSidebarWidth", w)
-                  }}
-                  onResizeEnd={(w) => {
-                    setState("previewSidebarWidth", undefined)
-                    layout.sidebar.resize(w)
-                  }}
-                />
-              </div>
-            </Show>
-
-            <div
-              data-component="layout-top-divider"
-              class="hidden xl:block pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
-              style={{ left: "calc(4rem + 12px)" }}
-            />
-
-            {/* Same ScoopJoin as the session panel: fills main's top-left
-                radius when the list is collapsed (panel covers it when open). */}
-            <ScoopJoin class="hidden xl:block z-[15]" style={{ left: "4rem" }} />
-
-            <div class="xl:hidden">
-              <div
-                classList={{
-                  "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
-                  "opacity-100 pointer-events-auto": layout.mobileSidebar.opened(),
-                  "opacity-0 pointer-events-none": !layout.mobileSidebar.opened(),
-                }}
-                onClick={(e) => {
-                  if (e.target === e.currentTarget) layout.mobileSidebar.hide()
-                }}
-              />
-              <nav
-                aria-label={language.t("sidebar.nav.projectsAndSessions")}
-                data-component="sidebar-nav-mobile"
-                classList={{
-                  "@container fixed top-10 bottom-0 left-0 z-50 w-full max-w-[400px] overflow-hidden border-r border-border-weaker-base bg-background-base transition-transform duration-200 ease-out": true,
-                  "translate-x-0": layout.mobileSidebar.opened(),
-                  "-translate-x-full": !layout.mobileSidebar.opened(),
-                }}
-                onClick={(e) => e.stopPropagation()}
-              >
-                {sidebarContent(true)}
-              </nav>
-            </div>
-
-            <Show when={findbar.open && platform.find}>
-              <div class="pointer-events-none absolute top-3 right-3 z-30 w-[min(480px,calc(100%-24px))]">
-                <div
-                  data-page-find-ignore
-                  class="pointer-events-auto flex flex-row items-center gap-2 rounded-2xl border border-border-weak-base px-2 py-2 shadow-lg"
-                  style={{
-                    "background-color": "color-mix(in srgb, var(--background-stronger) 92%, transparent)",
-                    "backdrop-filter": "blur(24px) saturate(150%)",
-                    "-webkit-backdrop-filter": "blur(24px) saturate(150%)",
-                  }}
-                >
-                  <div class="flex flex-1 min-w-0 flex-row items-center gap-2 rounded-xl bg-surface-panel px-3 ring-1 ring-border-weaker-base/70">
-                    <Icon name="magnifying-glass" size="small" class="shrink-0 text-text-weaker" />
-                    <InlineInput
-                      ref={findInput}
-                      value={findbar.q}
-                      autofocus
-                      placeholder={language.t("common.search.placeholder")}
-                      style={{ "--inline-input-shadow": "none" }}
-                      class="h-10 flex-1 min-w-0 bg-transparent text-14-regular text-text-strong placeholder:text-text-weaker"
-                      onInput={(event) => setFindbar("q", event.currentTarget.value)}
-                      onKeyDown={findbarKeyDown}
+                  <div
+                    data-component="sidebar-dismiss-overlay"
+                    aria-hidden="true"
+                    class="absolute inset-0 z-[25]"
+                    style={{ left: `${side()}px` }}
+                    onClick={() => layout.sidebar.close()}
+                  />
+                  <div
+                    class="absolute inset-y-0 z-40 w-0 overflow-visible"
+                    style={{ left: `${dragSide()}px` }}
+                    onPointerDown={() => {
+                      setState("sizing", true)
+                      setState("previewSidebarWidth", layout.sidebar.width())
+                    }}
+                  >
+                    <ResizeHandle
+                      direction="horizontal"
+                      size={state.previewSidebarWidth ?? layout.sidebar.width()}
+                      min={244}
+                      max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.3 + 64}
+                      onResize={(w) => {
+                        setState("sizing", true)
+                        if (sizet !== undefined) clearTimeout(sizet)
+                        sizet = window.setTimeout(() => setState("sizing", false), 120)
+                        setState("previewSidebarWidth", w)
+                      }}
+                      onResizeEnd={(w) => {
+                        setState("previewSidebarWidth", undefined)
+                        layout.sidebar.resize(w)
+                      }}
                     />
                   </div>
-                  <div class="flex flex-row items-center gap-1 rounded-xl bg-surface-panel px-1.5 py-1 ring-1 ring-border-weaker-base/70">
-                    <IconButton
-                      icon="arrow-left"
-                      variant="ghost"
-                      size="large"
-                      class="rounded-lg text-text-weak hover:text-text-strong"
-                      aria-label={language.t("command.page.find.previous")}
-                      onClick={() => runFindbar(-1)}
-                    />
-                    <IconButton
-                      icon="arrow-right"
-                      variant="ghost"
-                      size="large"
-                      class="rounded-lg text-text-weak hover:text-text-strong"
-                      aria-label={language.t("command.page.find.next")}
-                      onClick={() => runFindbar(1)}
-                    />
-                    <div class="mx-0.5 h-5 w-px bg-border-weaker-base" />
-                    <IconButton
-                      icon="close"
-                      variant="ghost"
-                      size="large"
-                      class="rounded-lg text-text-weak hover:text-text-strong"
-                      aria-label={language.t("common.close")}
-                      onClick={closeFindbar}
-                    />
+                </Show>
+
+                <div
+                  data-component="layout-top-divider"
+                  class="pointer-events-none absolute top-0 right-0 z-0 border-t border-border-weaker-base"
+                  style={{ left: "calc(4rem + 12px)" }}
+                />
+
+                {/* Same ScoopJoin as the session panel: fills main's top-left
+                radius when the list is collapsed (panel covers it when open). */}
+                <ScoopJoin class="z-[15]" style={{ left: "4rem" }} />
+              </Show>
+
+              <Show when={!desktopSidebar()}>
+                <div>
+                  <div
+                    classList={{
+                      "fixed inset-x-0 top-10 bottom-0 z-40 transition-opacity duration-200": true,
+                      "opacity-100 pointer-events-auto": layout.mobileSidebar.opened(),
+                      "opacity-0 pointer-events-none": !layout.mobileSidebar.opened(),
+                    }}
+                    onClick={(e) => {
+                      if (e.target === e.currentTarget) layout.mobileSidebar.hide()
+                    }}
+                  />
+                  <nav
+                    aria-label={language.t("sidebar.nav.projectsAndSessions")}
+                    data-component="sidebar-nav-mobile"
+                    data-sidebar-surface="mobile"
+                    classList={{
+                      "@container fixed top-10 bottom-0 left-0 z-50 w-full max-w-[400px] overflow-hidden border-r border-border-weaker-base bg-background-base transition-transform duration-200 ease-out": true,
+                      "translate-x-0": layout.mobileSidebar.opened(),
+                      "-translate-x-full": !layout.mobileSidebar.opened(),
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ComponentMountProfile name="SidebarNav" surface="mobile" />
+                    {sidebarContent(true)}
+                  </nav>
+                </div>
+              </Show>
+
+              <Show when={findbar.open && platform.find}>
+                <div class="pointer-events-none absolute top-3 right-3 z-30 w-[min(480px,calc(100%-24px))]">
+                  <div
+                    data-page-find-ignore
+                    class="pointer-events-auto flex flex-row items-center gap-2 rounded-2xl border border-border-weak-base px-2 py-2 shadow-lg"
+                    style={{
+                      "background-color": "color-mix(in srgb, var(--background-stronger) 92%, transparent)",
+                      "backdrop-filter": "blur(24px) saturate(150%)",
+                      "-webkit-backdrop-filter": "blur(24px) saturate(150%)",
+                    }}
+                  >
+                    <div class="flex flex-1 min-w-0 flex-row items-center gap-2 rounded-xl bg-surface-panel px-3 ring-1 ring-border-weaker-base/70">
+                      <Icon name="magnifying-glass" size="small" class="shrink-0 text-text-weaker" />
+                      <InlineInput
+                        ref={findInput}
+                        value={findbar.q}
+                        autofocus
+                        placeholder={language.t("common.search.placeholder")}
+                        style={{ "--inline-input-shadow": "none" }}
+                        class="h-10 flex-1 min-w-0 bg-transparent text-14-regular text-text-strong placeholder:text-text-weaker"
+                        onInput={(event) => setFindbar("q", event.currentTarget.value)}
+                        onKeyDown={findbarKeyDown}
+                      />
+                    </div>
+                    <div class="flex flex-row items-center gap-1 rounded-xl bg-surface-panel px-1.5 py-1 ring-1 ring-border-weaker-base/70">
+                      <IconButton
+                        icon="arrow-left"
+                        variant="ghost"
+                        size="large"
+                        class="rounded-lg text-text-weak hover:text-text-strong"
+                        aria-label={language.t("command.page.find.previous")}
+                        onClick={() => runFindbar(-1)}
+                      />
+                      <IconButton
+                        icon="arrow-right"
+                        variant="ghost"
+                        size="large"
+                        class="rounded-lg text-text-weak hover:text-text-strong"
+                        aria-label={language.t("command.page.find.next")}
+                        onClick={() => runFindbar(1)}
+                      />
+                      <div class="mx-0.5 h-5 w-px bg-border-weaker-base" />
+                      <IconButton
+                        icon="close"
+                        variant="ghost"
+                        size="large"
+                        class="rounded-lg text-text-weak hover:text-text-strong"
+                        aria-label={language.t("common.close")}
+                        onClick={closeFindbar}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Show>
+              </Show>
 
-            <div
-              classList={{
-                "absolute inset-0": true,
-                // Always dock to the project rail (4rem). The session list
-                // floats over this pane instead of pushing it sideways.
-                "xl:inset-y-0 xl:right-0 xl:left-16": true,
-                "z-20": true,
-              }}
-            >
-              <main
+              <div
                 classList={{
-                  "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base xl:border-l xl:rounded-tl-[12px]": true,
-                  "bg-background-base": !onSessionRoute(),
-                  "bg-background-stronger": onSessionRoute(),
-                  "overflow-y-hidden": onConfigRoute(),
+                  "absolute inset-0": true,
+                  // Always dock to the project rail (4rem). The session list
+                  // floats over this pane instead of pushing it sideways.
+                  "xl:inset-y-0 xl:right-0 xl:left-16": true,
+                  "z-20": true,
                 }}
               >
-                <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
-                  <Show
-                    when={!projectContentLoading()}
-                    fallback={
-                      <div
-                        data-component="project-content-loading"
-                        class="size-full flex items-center justify-center bg-background-stronger text-14-regular text-text-weak"
-                      >
-                        <div class="flex items-center gap-2 rounded-lg border border-border-weak-base bg-surface-raised-base/40 px-3 py-2">
-                          <Spinner class="size-4" />
-                          <span>
-                            {language.t("common.loading")}
-                            {language.t("common.loading.ellipsis")}
-                          </span>
+                <main
+                  classList={{
+                    "size-full overflow-x-hidden flex flex-col items-start contain-strict border-t border-border-weak-base xl:border-l xl:rounded-tl-[12px]": true,
+                    "bg-background-base": !onSessionRoute(),
+                    "bg-background-stronger": onSessionRoute(),
+                    "overflow-y-hidden": onConfigRoute(),
+                  }}
+                >
+                  <Show when={!autoselecting.loading} fallback={<div class="size-full" />}>
+                    <Show
+                      when={!projectContentLoading()}
+                      fallback={
+                        <div
+                          data-component="project-content-loading"
+                          class="size-full flex items-center justify-center bg-background-stronger text-14-regular text-text-weak"
+                        >
+                          <div class="flex items-center gap-2 rounded-lg border border-border-weak-base bg-surface-raised-base/40 px-3 py-2">
+                            <Spinner class="size-4" />
+                            <span>
+                              {language.t("common.loading")}
+                              {language.t("common.loading.ellipsis")}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    }
-                  >
-                    {props.children}
+                      }
+                    >
+                      {props.children}
+                    </Show>
                   </Show>
-                </Show>
-              </main>
+                </main>
+              </div>
             </div>
           </div>
+          {import.meta.env.DEV && platform.platform !== "desktop" && <DebugBar />}
         </div>
-        {import.meta.env.DEV && platform.platform !== "desktop" && <DebugBar />}
-      </div>
         <QuickAssistant />
         <Toast.Region />
       </div>

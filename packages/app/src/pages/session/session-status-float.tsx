@@ -22,6 +22,7 @@ import {
   type SessionFileChanges,
 } from "./session-file-changes"
 import { sessionStatusHistoryKey } from "./session-status-history"
+import { useComponentMountProfile } from "@/utils/component-mount-profile"
 
 const historyPageSize = 100
 
@@ -39,6 +40,12 @@ export function SessionStatusFloat(props: {
   const sdk = useSDK()
   const file = useFile()
   const { tabs, view } = useSessionLayout()
+  useComponentMountProfile(() => ({
+    name: "SessionStatusFloat",
+    session: props.sessionID,
+    workspace: sdk.directory,
+    surface: "session",
+  }))
   const [shown, setShown] = createSignal(false)
   const [copied, setCopied] = createSignal(false)
   const [childDiffs, setChildDiffs] = createSignal<SnapshotFileDiff[]>([])
@@ -290,18 +297,16 @@ export function SessionStatusFloat(props: {
   )
 }
 
-async function loadAllMessageParts(
-  globalSync: ReturnType<typeof useGlobalSync>,
-  directory: string,
-  sessionID: string,
-) {
+async function loadAllMessageParts(globalSync: ReturnType<typeof useGlobalSync>, directory: string, sessionID: string) {
   // Pages are fetched newest-first; keep each page's internal order but reverse
   // the page order so the result is chronological across the whole session.
   const pages: Part[][] = []
   let before: string | undefined
   do {
     const page = await globalSync.session.messages.page({ directory, sessionID, limit: historyPageSize, before })
-    const assistant = new Set(page.session.filter((message) => message.role === "assistant").map((message) => message.id))
+    const assistant = new Set(
+      page.session.filter((message) => message.role === "assistant").map((message) => message.id),
+    )
     pages.push(page.part.filter((item) => assistant.has(item.id)).flatMap((item) => item.part))
     before = page.cursor
   } while (before)
@@ -318,12 +323,7 @@ function FileChangeList(props: {
 
   return (
     <Show when={props.files.length > 0}>
-      <Collapsible
-        data-slot="session-status-file-change-list"
-        variant="ghost"
-        open={open()}
-        onOpenChange={setOpen}
-      >
+      <Collapsible data-slot="session-status-file-change-list" variant="ghost" open={open()} onOpenChange={setOpen}>
         <Collapsible.Trigger>
           <div class="flex w-full items-center justify-between gap-2">
             <span class="text-13-medium text-text-strong">
