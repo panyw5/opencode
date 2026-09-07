@@ -92,7 +92,7 @@ import { merge, value } from "./prompt-input/expand"
 import { SessionPickerPopover } from "./prompt-input/session-picker"
 import { type SessionHistoryEntry } from "@/context/session-history"
 import { active as sessionActiveMessage, working as sessionWorking } from "@/pages/session/session-working"
-import type { Part } from "@opencode-ai/sdk/v2/client"
+import type { AssistantMessage, Part } from "@opencode-ai/sdk/v2/client"
 import { createInputUndoEntry, createInputUndoState, recordInputUndo, stepInputUndo } from "./prompt-input/input-undo"
 import { workspaceKey } from "@/pages/layout/helpers"
 import { uiPerfTriggerDown, uiPerfOpen } from "@/utils/ui-perf"
@@ -1910,7 +1910,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // Abort once every tool call that was in flight when the user armed the
   // stop-after-tool button has left the pending/running state. Tool parts are
   // snapshotted by id at arm time so a follow-up step starting a new tool call
-  // in between does not extend the wait.
+  // in between does not extend the wait. When no tool was in flight at arm
+  // time (step gap or pure text generation), wait for the armed message to
+  // complete instead of aborting instantly, so the button keeps a graceful
+  // stop meaning.
   createEffect(() => {
     const armed = stopAfterTool()
     if (!armed) return
@@ -1926,6 +1929,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       return !!part && toolInFlight(part)
     })
     if (inFlight.length > 0) return
+    if (armed.parts.length === 0 && armed.messageID) {
+      const armedMessage = (sync.data.message[armed.sessionID] ?? []).find(
+        (item): item is AssistantMessage => item.role === "assistant" && item.id === armed.messageID,
+      )
+      if (armedMessage && typeof armedMessage.time.completed !== "number") {
+        console.debug("[stop-after-tool] no tools in flight — waiting for the message to finish", {
+          sessionID: armed.sessionID,
+          messageID: armed.messageID,
+        })
+        return
+      }
+    }
     console.debug("[stop-after-tool] tracked tool calls finished — aborting", {
       sessionID: armed.sessionID,
       messageID: armed.messageID,
