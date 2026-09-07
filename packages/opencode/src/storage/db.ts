@@ -140,6 +140,70 @@ function seedDrizzleJournal(db: Client) {
   log.info("seeded drizzle journal with baseline migration")
 }
 
+function reconcileSessionFavoriteMigration(db: Client, entries: Journal, dbPath: string) {
+  const entry = entries.find((entry) => entry.name === "20260907144648_session_favorite")
+  if (!entry || !hasTable(db, "session") || !hasTable(db, "__drizzle_migrations")) return
+
+  const recorded = () =>
+    rawAll(db, "SELECT name FROM __drizzle_migrations WHERE name = ? LIMIT 1", entry.name).length > 0
+  const column = () => rawAll(db, "PRAGMA table_info(session)").find((column) => column.name === "time_favorited")
+  if (recorded() || !column()) return
+
+  // An earlier build recorded 20260907191858_session_favorite, sometimes without
+  // its index. Verify both schema changes before recording the canonical name.
+  log.warn("reconciling existing session favorite migration", {
+    path: dbPath,
+    migration: entry.name,
+    recorded: rawAll(db, "SELECT name FROM __drizzle_migrations WHERE name LIKE '%_session_favorite'").map(
+      (row) => row.name,
+    ),
+  })
+  withSQLiteLockRetry(
+    () =>
+      db.transaction(
+        () => {
+          // Recheck after acquiring the write lock in case another sidecar repaired it.
+          if (recorded()) return
+          const field = column()
+          if (
+            !field ||
+            String(field.type).toUpperCase() !== "INTEGER" ||
+            field.notnull !== 0 ||
+            field.dflt_value !== null ||
+            field.pk !== 0
+          ) {
+            throw new Error("Cannot reconcile session favorite migration: incompatible session.time_favorited column")
+          }
+          log.info("session favorite migration column verified", { migration: entry.name })
+
+          const index = "session_time_favorited_idx"
+          db.run(`CREATE INDEX IF NOT EXISTS ${index} ON session (time_favorited)`)
+          const definition = rawAll(db, "PRAGMA index_list(session)").find((row) => row.name === index)
+          const columns = rawAll(db, `PRAGMA index_info(${index})`)
+          if (
+            !definition ||
+            definition.unique !== 0 ||
+            definition.partial !== 0 ||
+            columns.length !== 1 ||
+            columns[0].name !== "time_favorited"
+          ) {
+            throw new Error(`Cannot reconcile session favorite migration: incompatible ${index} index`)
+          }
+          log.info("session favorite migration index verified", { migration: entry.name, index })
+
+          db.run(`
+            INSERT INTO __drizzle_migrations (hash, created_at, name, applied_at)
+            VALUES ('', ${entry.timestamp}, ${sqlString(entry.name)}, ${sqlString(new Date().toISOString())})
+          `)
+          log.info("session favorite migration journal recorded", { migration: entry.name })
+        },
+        { behavior: "immediate" },
+      ),
+    { operation: "reconcile session favorite migration", databasePath: dbPath },
+  )
+  log.info("session favorite migration reconciled", { path: dbPath, migration: entry.name })
+}
+
 function createSessionMessageSeqIndexes(db: Client) {
   db.run("DROP INDEX IF EXISTS session_message_session_idx")
   db.run("DROP INDEX IF EXISTS session_message_session_type_idx")
@@ -312,37 +376,50 @@ export const Client = Object.assign(
 
     const db = init(dbPath)
 
-    // Seed drizzle journal when empty/missing but schema already exists (CLI DBs often track
-    // applied migrations only in the `migration` table, leaving __drizzle_migrations empty).
-    seedDrizzleJournal(db)
+    try {
+      // Seed drizzle journal when empty/missing but schema already exists (CLI DBs often track
+      // applied migrations only in the `migration` table, leaving __drizzle_migrations empty).
+      seedDrizzleJournal(db)
 
-    db.run("PRAGMA journal_mode = WAL")
-    db.run("PRAGMA synchronous = NORMAL")
-    db.run("PRAGMA busy_timeout = 5000")
-    db.run("PRAGMA cache_size = -64000")
-    db.run("PRAGMA foreign_keys = ON")
-    db.run("PRAGMA wal_checkpoint(PASSIVE)")
+      db.run("PRAGMA journal_mode = WAL")
+      db.run("PRAGMA synchronous = NORMAL")
+      db.run("PRAGMA busy_timeout = 5000")
+      db.run("PRAGMA cache_size = -64000")
+      db.run("PRAGMA foreign_keys = ON")
+      db.run("PRAGMA wal_checkpoint(PASSIVE)")
 
-    // Apply schema migrations
-    const entries =
-      typeof OPENCODE_MIGRATIONS !== "undefined"
-        ? OPENCODE_MIGRATIONS
-        : migrations(path.join(import.meta.dirname, "../../migration"))
-    if (entries.length > 0) {
-      log.info("applying migrations", {
-        count: entries.length,
-        mode: typeof OPENCODE_MIGRATIONS !== "undefined" ? "bundled" : "dev",
-      })
-      if (flags.skipMigrations) {
-        for (const item of entries) {
-          item.sql = "select 1;"
+      // Apply schema migrations
+      const entries =
+        typeof OPENCODE_MIGRATIONS !== "undefined"
+          ? OPENCODE_MIGRATIONS
+          : migrations(path.join(import.meta.dirname, "../../migration"))
+      if (entries.length > 0) {
+        log.info("applying migrations", {
+          count: entries.length,
+          mode: typeof OPENCODE_MIGRATIONS !== "undefined" ? "bundled" : "dev",
+        })
+        if (flags.skipMigrations) {
+          for (const item of entries) {
+            item.sql = "select 1;"
+          }
+        } else {
+          reconcileSessionFavoriteMigration(db, entries, dbPath)
         }
+        applyMigrations(db, entries)
+        log.info("schema migrations applied", { path: dbPath, count: entries.length })
       }
-      applyMigrations(db, entries)
+      UpstreamMigration.apply(db, dbPath, { pathContext: UpstreamMigration.localPathContext(process.platform) })
+      repairSessionMessageSchema(db)
+      repairPermissionSchema(db)
+    } catch (error) {
+      log.error("database initialization failed", {
+        path: dbPath,
+        error: String(error),
+        cause: error instanceof Error ? String(error.cause ?? "") : undefined,
+      })
+      db.$client.close()
+      throw error
     }
-    UpstreamMigration.apply(db, dbPath, { pathContext: UpstreamMigration.localPathContext(process.platform) })
-    repairSessionMessageSchema(db)
-    repairPermissionSchema(db)
 
     client = db
     loaded = true
