@@ -6,9 +6,11 @@ import { ScheduledTaskTable } from "@/scheduled-task/scheduled-task.sql"
 import { SessionTable } from "@/session/session.sql"
 import { WorkspaceTable } from "@/control-plane/workspace.sql"
 import * as Log from "@opencode-ai/core/util/log"
+import { Path } from "@opencode-ai/core/util/path"
 import { and, eq, isNotNull, sql } from "drizzle-orm"
 import { ProjectAliasTable, ProjectLocationTable } from "./location.sql"
 import { ProjectTable } from "./project.sql"
+import { localPathContext } from "./instance-context"
 
 const log = Log.create({ service: "project-ownership-migration" })
 
@@ -35,9 +37,7 @@ const emptyResult = (completed: boolean): Result => ({
 })
 
 function pathKey(value: string) {
-  const normalized = value.replaceAll("\\", "/")
-  if (/^\/+$/i.test(normalized)) return "/"
-  return normalized.replace(/\/+$/, "")
+  return Path.identity(value, localPathContext) as string
 }
 
 /**
@@ -82,7 +82,7 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
 
       for (const location of locations) {
         if (location.vcs_type !== "git" || !location.marker) continue
-        const canonical = pathKey(location.canonical_directory)
+        const canonical = pathKey(location.directory)
         const target = projects.find((project) => project.id === location.project_id)
         if (!target || pathKey(target.worktree) !== canonical) continue
 
@@ -97,7 +97,8 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
           log.warn("project ownership migration candidate rejected", {
             targetProjectID: target.id,
             locationID: location.id,
-            canonicalDirectory: location.canonical_directory,
+            directory: location.directory,
+            directoryIdentity: location.canonical_directory,
             reason: "missing-high-confidence-git-marker",
           })
           continue
@@ -114,7 +115,8 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
           log.warn("project ownership migration candidate rejected", {
             targetProjectID: target.id,
             locationID: location.id,
-            canonicalDirectory: location.canonical_directory,
+            directory: location.directory,
+            directoryIdentity: location.canonical_directory,
             sourceProjectIDs: sources.map((source) => source.id),
             reason: "ambiguous-legacy-sources",
           })
@@ -167,7 +169,8 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
             sourceProjectID: source.id,
             targetProjectID: target.id,
             locationID: location.id,
-            canonicalDirectory: location.canonical_directory,
+            directory: location.directory,
+            directoryIdentity: location.canonical_directory,
             sourceLocations: sourceLocations.length,
             foreignDirectories: foreignDirectories.length,
             projectTasks: projectTasks.length,
@@ -186,7 +189,8 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
           sourceProjectID: source.id,
           targetProjectID: target.id,
           locationID: location.id,
-          canonicalDirectory: location.canonical_directory,
+          directory: location.directory,
+          directoryIdentity: location.canonical_directory,
           sessions: sessionDirectories.length,
           scheduledTasks: taskDirectories.length,
           workspaces: workspaceDirectories.length,
@@ -202,7 +206,7 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
           .where(
             and(
               eq(SessionTable.project_id, source.id),
-              directorySqlEq(SessionTable.directory, location.canonical_directory),
+              directorySqlEq(SessionTable.directory, location.directory),
             ),
           )
           .returning({ id: SessionTable.id })
@@ -217,7 +221,7 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
           .where(
             and(
               eq(ScheduledTaskTable.project_id, source.id),
-              directorySqlEq(ScheduledTaskTable.directory, location.canonical_directory),
+              directorySqlEq(ScheduledTaskTable.directory, location.directory),
             ),
           )
           .returning({ id: ScheduledTaskTable.id })
@@ -228,7 +232,7 @@ export function runDuplicateWorktreeOwnershipMigration(): Result {
           .where(
             and(
               eq(WorkspaceTable.project_id, source.id),
-              directorySqlEq(WorkspaceTable.directory, location.canonical_directory),
+              directorySqlEq(WorkspaceTable.directory, location.directory),
             ),
           )
           .returning({ id: WorkspaceTable.id })

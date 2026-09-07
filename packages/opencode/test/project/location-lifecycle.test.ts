@@ -10,6 +10,8 @@ import { ProjectLocationTable } from "../../src/project/location.sql"
 import type { LocationID } from "../../src/project/schema"
 import { Database } from "../../src/storage/db"
 import { eq } from "drizzle-orm"
+import { Path } from "@opencode-ai/core/util/path"
+import { localPathContext } from "../../src/project/instance-context"
 import { tmpdirScoped } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
@@ -198,7 +200,7 @@ describe("LocationLifecycle", () => {
       expect(result.generation).toBeGreaterThan(0)
 
       // Verify DB state is deleted
-      const row = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(dir))
+      const row = yield* Effect.sync(() => ProjectLocation.getByDirectory(dir))
       expect(row?.lifecycle.state).toBe("deleted")
       expect(row?.lifecycle.timeDeleted).toBeTruthy()
 
@@ -239,7 +241,7 @@ describe("LocationLifecycle", () => {
       expect((error as LocationLifecycle.LocationBusy).leases).toBeGreaterThan(0)
 
       // Verify DB state is still available (delete was rejected)
-      const row = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(dir))
+      const row = yield* Effect.sync(() => ProjectLocation.getByDirectory(dir))
       expect(row?.lifecycle.state).toBe("available")
 
       // Release the lease
@@ -319,7 +321,7 @@ describe("LocationLifecycle", () => {
       yield* lifecycle.recoverDeleting()
 
       // Verify the location is now deleted
-      const row = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(dir))
+      const row = yield* Effect.sync(() => ProjectLocation.getByDirectory(dir))
       expect(row?.lifecycle.state).toBe("deleted")
       expect(row?.lifecycle.timeDeleted).toBeTruthy()
     }),
@@ -340,7 +342,7 @@ describe("LocationLifecycle", () => {
       yield* lifecycle.recoverDeleting()
 
       // Verify the location is still deleting
-      const row = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(dir))
+      const row = yield* Effect.sync(() => ProjectLocation.getByDirectory(dir))
       expect(row?.lifecycle.state).toBe("deleting")
 
       // Admission should be blocked (LocationDeleting)
@@ -454,7 +456,7 @@ describe("LocationLifecycle", () => {
 
       const order: string[] = []
       const unregister = registerDisposer(async (d: string) => {
-        if (d === dir) order.push("dispose")
+        if (d === Path.identity(dir, localPathContext)) order.push("dispose")
       })
 
       try {
@@ -486,7 +488,7 @@ describe("LocationLifecycle", () => {
           db
             .update(ProjectLocationTable)
             .set({ lifecycle_state: "unavailable" })
-            .where(eq(ProjectLocationTable.canonical_directory, dir))
+            .where(eq(ProjectLocationTable.canonical_directory, Path.identity(dir, localPathContext)))
             .run(),
         ),
       )
@@ -518,7 +520,7 @@ describe("LocationLifecycle", () => {
       expect(recovered).toBeUndefined()
 
       // DB state should still be deleted
-      const row = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(dir))
+      const row = yield* Effect.sync(() => ProjectLocation.getByDirectory(dir))
       expect(row?.lifecycle.state).toBe("deleted")
 
       // Admission should still be blocked

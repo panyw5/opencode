@@ -37,6 +37,7 @@ target
 # Local tool state / backups (not for version control)
 .mindfs/
 .project-tasks/
+.backups/
 
 # Local-only README scratch image
 image/README/image.png

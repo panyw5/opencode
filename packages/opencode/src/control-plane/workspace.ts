@@ -914,7 +914,7 @@ export const layer = Layer.effect(
             const directory = info.directory
             const location = directory
               ? yield* Effect.sync(() =>
-                  ProjectLocation.getByCanonicalDirectory(toLogicalPath(AppFileSystem.resolve(directory))),
+                  ProjectLocation.getByDirectory(AppFileSystem.resolve(directory)),
                 )
               : undefined
 

@@ -193,11 +193,11 @@ describe("Worktree", () => {
           const fs = yield* AppFileSystem.Service
           const canonicalDirectory = yield* fs.realPath(info.directory)
 
-          const location = ProjectLocation.getByCanonicalDirectory(canonicalDirectory)
+          const location = ProjectLocation.getByDirectory(canonicalDirectory)
           expect(location?.kind).toBe("git_worktree")
 
           yield* svc.remove({ directory: info.directory })
-          expect(ProjectLocation.getByCanonicalDirectory(canonicalDirectory)?.vcsState).toBe("unavailable")
+          expect(ProjectLocation.getByDirectory(canonicalDirectory)?.vcsState).toBe("unavailable")
         }),
       { git: true },
     )

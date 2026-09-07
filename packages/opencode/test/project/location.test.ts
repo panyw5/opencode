@@ -42,7 +42,6 @@ describe("ProjectLocation", () => {
     const first = ProjectLocation.upsert({
       projectID,
       directory,
-      canonicalDirectory: directory,
       kind: "directory",
       vcsState: "none",
       worktreeRoot: directory,
@@ -50,7 +49,6 @@ describe("ProjectLocation", () => {
     const second = ProjectLocation.upsert({
       projectID,
       directory,
-      canonicalDirectory: directory,
       kind: "git_main",
       vcsType: "git",
       vcsState: "unborn",
@@ -62,7 +60,7 @@ describe("ProjectLocation", () => {
     expect(second.projectID).toBe(projectID)
     expect(second.kind).toBe("git_main")
     expect(second.vcsState).toBe("unborn")
-    expect(ProjectLocation.getByCanonicalDirectory(directory)).toEqual(second)
+    expect(ProjectLocation.getByDirectory(directory)).toEqual(second)
 
     const aliasID = ProjectAliasID.ascending()
     Database.use((db) =>
@@ -85,6 +83,75 @@ describe("ProjectLocation", () => {
       db.select().from(ProjectAliasTable).where(eq(ProjectAliasTable.id, aliasID)).get(),
     )
     expect(alias?.source_location_id).toBe(second.id)
+  })
+
+  test("uses one identity for Windows separator and case variants", () => {
+    const now = Date.now()
+    const projectID = ProjectID.make(`windows-location-${crypto.randomUUID()}`)
+    Database.use((db) =>
+      db
+        .insert(ProjectTable)
+        .values({
+          id: projectID,
+          worktree: "D:/Chat",
+          sandboxes: [],
+          time_created: now,
+          time_updated: now,
+        })
+        .run(),
+    )
+    const pathContext = { platform: "win32" as const, kind: "local-filesystem" as const }
+    const first = ProjectLocation.upsert({
+      projectID,
+      directory: "D:/Chat",
+      pathContext,
+      kind: "directory",
+      vcsState: "none",
+    })
+    const second = ProjectLocation.upsert({
+      projectID,
+      directory: "d:\\chat\\",
+      pathContext,
+      kind: "git_main",
+      vcsType: "git",
+      vcsState: "ready",
+    })
+
+    expect(second.id).toBe(first.id)
+    expect(second.directory).toBe("d:/chat")
+    expect(second.directoryIdentity).toBe("d:/chat")
+    expect(ProjectLocation.getByDirectory("D:\\CHAT", pathContext)?.id).toBe(first.id)
+  })
+
+  test("rejects an identity upsert owned by another project", () => {
+    const now = Date.now()
+    const firstProject = ProjectID.make(`owner-one-${crypto.randomUUID()}`)
+    const secondProject = ProjectID.make(`owner-two-${crypto.randomUUID()}`)
+    Database.use((db) => {
+      for (const id of [firstProject, secondProject]) {
+        db
+          .insert(ProjectTable)
+          .values({ id, worktree: `D:/owner-${id}`, sandboxes: [], time_created: now, time_updated: now })
+          .run()
+      }
+    })
+    const pathContext = { platform: "win32" as const, kind: "local-filesystem" as const }
+    ProjectLocation.upsert({
+      projectID: firstProject,
+      directory: "D:/Shared",
+      pathContext,
+      kind: "directory",
+      vcsState: "none",
+    })
+    expect(() =>
+      ProjectLocation.upsert({
+        projectID: secondProject,
+        directory: "d:\\shared\\",
+        pathContext,
+        kind: "directory",
+        vcsState: "none",
+      }),
+    ).toThrow(/identity conflict/)
   })
 
   test("returns a remote candidate only while it identifies one project", () => {

@@ -193,7 +193,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
         if (existing) return existing
         // Sync with DB: a deleting/deleted row from a previous process must
         // block new admissions immediately.
-        const row = ProjectLocation.getByCanonicalDirectory(directory)
+        const row = ProjectLocation.getByDirectory(directory)
         const created: Entry = {
           directory,
           ref: SynchronizedRef.makeUnsafe<EntryState>({
@@ -261,7 +261,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
           // Sync lifecycle state with DB: the DB might have been modified
           // externally (e.g. a crashed delete, markDeleting, or markAvailable
           // recovery). Always check and update if they differ.
-          const dbRow = ProjectLocation.getByCanonicalDirectory(directory)
+          const dbRow = ProjectLocation.getByDirectory(directory)
           if (dbRow) {
             yield* SynchronizedRef.modify(
               entry.ref,
@@ -413,7 +413,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
 
           // Sync in-memory state with DB (the DB might have been modified
           // externally, e.g. a crashed delete from a previous process).
-          const row = ProjectLocation.getByCanonicalDirectory(directory)
+          const row = ProjectLocation.getByDirectory(directory)
           if (row && row.lifecycle.state !== current.lifecycle) {
             yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
               undefined,
@@ -533,18 +533,18 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
       Effect.gen(function* () {
         const rows = ProjectLocation.listByLifecycleState("deleting")
         for (const row of rows) {
-          const exists = yield* fs.existsSafe(row.canonicalDirectory)
+          const exists = yield* fs.existsSafe(row.directory)
           if (!exists) {
             // Directory is absent → finish the tombstone
-            ProjectLocation.markDeleted({ directory: row.canonicalDirectory })
+            ProjectLocation.markDeleted({ directory: row.directory })
             yield* log(
-              `[location-lifecycle] delete-recovered location=${row.canonicalDirectory} generation=${row.lifecycle.generation} result=deleted`,
+              `[location-lifecycle] delete-recovered location=${row.directory} identity=${row.directoryIdentity} generation=${row.lifecycle.generation} result=deleted`,
             )
           } else {
             // Directory remains → keep the fence; entryFor will pick up
             // lifecycle=deleting from the DB when the location is next touched.
             yield* log(
-              `[location-lifecycle] delete-pending location=${row.canonicalDirectory} generation=${row.lifecycle.generation} result=fenced`,
+              `[location-lifecycle] delete-pending location=${row.directory} identity=${row.directoryIdentity} generation=${row.lifecycle.generation} result=fenced`,
             )
           }
         }

@@ -103,7 +103,9 @@ function seedDrizzleJournal(db: Client) {
   if (!columns.has("name")) db.run("ALTER TABLE __drizzle_migrations ADD COLUMN name text")
   if (!columns.has("applied_at")) db.run("ALTER TABLE __drizzle_migrations ADD COLUMN applied_at TEXT")
 
-  const existingNames = new Set(rawAll(db, "SELECT name FROM __drizzle_migrations WHERE name IS NOT NULL").map((row) => String(row.name)))
+  const existingNames = new Set(
+    rawAll(db, "SELECT name FROM __drizzle_migrations WHERE name IS NOT NULL").map((row) => String(row.name)),
+  )
 
   // Prefer names already recorded by the upstream migration tracker.
   if (hasTable(db, "migration")) {
@@ -338,7 +340,7 @@ export const Client = Object.assign(
       }
       applyMigrations(db, entries)
     }
-    UpstreamMigration.apply(db, dbPath)
+    UpstreamMigration.apply(db, dbPath, { pathContext: UpstreamMigration.localPathContext(process.platform) })
     repairSessionMessageSchema(db)
     repairPermissionSchema(db)
 

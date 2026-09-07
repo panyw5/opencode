@@ -334,7 +334,7 @@ export const layer: Layer.Layer<
         // fork-1.13.21 behavior: non-git directories used a `dir:<hash>` project id keyed by worktree
         // path, so sessions created before the 1.15 rebase live under those ids rather than `global`.
         // Reuse the existing row so listByProject lands on the correct project_id.
-        const existingLocation = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(canonicalDirectory))
+        const existingLocation = yield* Effect.sync(() => ProjectLocation.getByDirectory(canonicalDirectory))
         const existingByWorktree = yield* db((d) =>
           d.select().from(ProjectTable).where(directorySqlEq(ProjectTable.worktree, canonicalDirectory)).get(),
         )
@@ -526,7 +526,7 @@ export const layer: Layer.Layer<
         commonDir: dataRaw.commonDir ? toLogicalPath(dataRaw.commonDir) : undefined,
         cachedID: dataRaw.cachedID,
       }
-      const existingLocation = yield* Effect.sync(() => ProjectLocation.getByCanonicalDirectory(data.sandbox))
+      const existingLocation = yield* Effect.sync(() => ProjectLocation.getByDirectory(data.sandbox))
       if (existingLocation && existingLocation.projectID !== data.id) {
         log.warn("project identity reconciled from location", {
           canonicalDirectory: data.sandbox,
@@ -629,7 +629,6 @@ export const layer: Layer.Layer<
         ProjectLocation.upsert({
           projectID: result.id,
           directory: locationRoot,
-          canonicalDirectory: locationRoot,
           kind: GitEvidence.kind({
             gitDir: data.gitDir,
             locationRoot,
@@ -646,7 +645,7 @@ export const layer: Layer.Layer<
       log.info("project location resolved", {
         projectID: result.id,
         locationID: location.id,
-        canonicalDirectory: location.canonicalDirectory,
+        directoryIdentity: location.directoryIdentity,
         kind: location.kind,
         vcsState: location.vcsState,
       })

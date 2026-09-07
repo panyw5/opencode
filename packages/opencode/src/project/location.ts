@@ -1,6 +1,7 @@
 import { Database } from "@/storage/db"
-import { directorySqlEq } from "@/util/directory-sql"
 import { and, eq } from "drizzle-orm"
+import * as Log from "@opencode-ai/core/util/log"
+import { Path, type PathContext } from "@opencode-ai/core/util/path"
 import { ProjectLocationTable } from "./location.sql"
 import type {
   ProjectLocationKind,
@@ -9,6 +10,9 @@ import type {
   ProjectLocationVcsType,
 } from "./location.sql"
 import { LocationID, type ProjectID } from "./schema"
+import { localPathContext } from "./instance-context"
+
+const log = Log.create({ service: "project-location" })
 
 type Row = typeof ProjectLocationTable.$inferSelect
 
@@ -16,7 +20,7 @@ export interface Info {
   id: LocationID
   projectID: ProjectID
   directory: string
-  canonicalDirectory: string
+  directoryIdentity: string
   kind: ProjectLocationKind
   vcsType?: ProjectLocationVcsType
   vcsState: ProjectLocationVcsState
@@ -40,7 +44,7 @@ export interface Info {
 export interface UpsertInput {
   projectID: ProjectID
   directory: string
-  canonicalDirectory: string
+  pathContext?: PathContext
   kind: ProjectLocationKind
   vcsType?: ProjectLocationVcsType
   vcsState: ProjectLocationVcsState
@@ -54,7 +58,7 @@ export function fromRow(row: Row): Info {
     id: row.id,
     projectID: row.project_id,
     directory: row.directory,
-    canonicalDirectory: row.canonical_directory,
+    directoryIdentity: row.canonical_directory,
     kind: row.kind,
     vcsType: row.vcs_type ?? undefined,
     vcsState: row.vcs_state,
@@ -76,12 +80,18 @@ export function fromRow(row: Row): Info {
   }
 }
 
-export function getByCanonicalDirectory(directory: string): Info | undefined {
+function pathParts(directory: string, pathContext: PathContext = localPathContext) {
+  const logical = Path.logical(directory, pathContext) as string
+  return { directory: logical, identity: Path.identity(logical, pathContext) as string }
+}
+
+export function getByDirectory(directory: string, pathContext: PathContext = localPathContext): Info | undefined {
+  const parts = pathParts(directory, pathContext)
   const row = Database.use((db) =>
     db
       .select()
       .from(ProjectLocationTable)
-      .where(directorySqlEq(ProjectLocationTable.canonical_directory, directory))
+      .where(eq(ProjectLocationTable.canonical_directory, parts.identity))
       .get(),
   )
   return row ? fromRow(row) : undefined
@@ -111,14 +121,16 @@ export function listByLifecycleState(state: ProjectLocationLifecycleState): Info
 export function markDeleting(input: {
   directory: string
   operationID: string
+  pathContext?: PathContext
 }): Info | undefined {
   const now = Date.now()
+  const parts = pathParts(input.directory, input.pathContext)
   return Database.transaction(
     (db) => {
       const existing = db
         .select()
         .from(ProjectLocationTable)
-        .where(directorySqlEq(ProjectLocationTable.canonical_directory, input.directory))
+        .where(eq(ProjectLocationTable.canonical_directory, parts.identity))
         .get()
       if (!existing) return undefined
       const row = db
@@ -138,8 +150,9 @@ export function markDeleting(input: {
   )
 }
 
-export function markDeleted(input: { directory: string }): Info | undefined {
+export function markDeleted(input: { directory: string; pathContext?: PathContext }): Info | undefined {
   const now = Date.now()
+  const parts = pathParts(input.directory, input.pathContext)
   const row = Database.use((db) =>
     db
       .update(ProjectLocationTable)
@@ -148,15 +161,16 @@ export function markDeleted(input: { directory: string }): Info | undefined {
         time_deleted: now,
         time_updated: now,
       })
-      .where(directorySqlEq(ProjectLocationTable.canonical_directory, input.directory))
+      .where(eq(ProjectLocationTable.canonical_directory, parts.identity))
       .returning()
       .get(),
   )
   return row ? fromRow(row) : undefined
 }
 
-export function markAvailable(input: { directory: string }): Info | undefined {
+export function markAvailable(input: { directory: string; pathContext?: PathContext }): Info | undefined {
   const now = Date.now()
+  const parts = pathParts(input.directory, input.pathContext)
   const row = Database.use((db) =>
     db
       .update(ProjectLocationTable)
@@ -167,7 +181,7 @@ export function markAvailable(input: { directory: string }): Info | undefined {
       })
       .where(
         and(
-          directorySqlEq(ProjectLocationTable.canonical_directory, input.directory),
+          eq(ProjectLocationTable.canonical_directory, parts.identity),
           eq(ProjectLocationTable.lifecycle_state, "unavailable"),
         ),
       )
@@ -180,30 +194,47 @@ export function markAvailable(input: { directory: string }): Info | undefined {
 export function uniqueProjectByGitCommonDir(gitCommonDir: string): ProjectID | undefined {
   const rows = Database.use((db) =>
     db
-      .select({ projectID: ProjectLocationTable.project_id })
+      .select({ projectID: ProjectLocationTable.project_id, gitCommonDir: ProjectLocationTable.git_common_dir })
       .from(ProjectLocationTable)
-      .where(directorySqlEq(ProjectLocationTable.git_common_dir, gitCommonDir))
       .all(),
   )
-  const projects = new Set(rows.map((row) => row.projectID))
+  const projects = new Set(
+    rows
+      .filter((row) => row.gitCommonDir && Path.equals(row.gitCommonDir, gitCommonDir, localPathContext))
+      .map((row) => row.projectID),
+  )
   return projects.size === 1 ? projects.values().next().value : undefined
 }
 
 export function upsert(input: UpsertInput): Info {
+  const parts = pathParts(input.directory, input.pathContext)
   return Database.transaction(
     (db) => {
       const now = Date.now()
       const existing = db
         .select()
         .from(ProjectLocationTable)
-        .where(directorySqlEq(ProjectLocationTable.canonical_directory, input.canonicalDirectory))
+        .where(eq(ProjectLocationTable.canonical_directory, parts.identity))
         .get()
       if (existing) {
+        if (existing.project_id !== input.projectID) {
+          log.error("project location identity conflict", {
+            directory: parts.directory,
+            directoryIdentity: parts.identity,
+            existingLocationID: existing.id,
+            existingProjectID: existing.project_id,
+            requestedProjectID: input.projectID,
+          })
+          throw new Error(
+            `ProjectLocation identity conflict: directory=${parts.directory} identity=${parts.identity} ` +
+              `existingProjectID=${existing.project_id} requestedProjectID=${input.projectID}`,
+          )
+        }
         const row = db
           .update(ProjectLocationTable)
           .set({
             project_id: input.projectID,
-            directory: input.directory,
+            directory: parts.directory,
             kind: input.kind,
             vcs_type: input.vcsType ?? null,
             vcs_state: input.vcsState,
@@ -224,8 +255,8 @@ export function upsert(input: UpsertInput): Info {
         .values({
           id: LocationID.ascending(),
           project_id: input.projectID,
-          directory: input.directory,
-          canonical_directory: input.canonicalDirectory,
+          directory: parts.directory,
+          canonical_directory: parts.identity,
           kind: input.kind,
           vcs_type: input.vcsType ?? null,
           vcs_state: input.vcsState,
@@ -244,8 +275,13 @@ export function upsert(input: UpsertInput): Info {
   )
 }
 
-export function markUnavailableByDirectory(input: { projectID: ProjectID; directory: string }): void {
+export function markUnavailableByDirectory(input: {
+  projectID: ProjectID
+  directory: string
+  pathContext?: PathContext
+}): void {
   const now = Date.now()
+  const parts = pathParts(input.directory, input.pathContext)
   Database.use((db) =>
     db
       .update(ProjectLocationTable)
@@ -253,7 +289,7 @@ export function markUnavailableByDirectory(input: { projectID: ProjectID; direct
       .where(
         and(
           eq(ProjectLocationTable.project_id, input.projectID),
-          directorySqlEq(ProjectLocationTable.canonical_directory, input.directory),
+          eq(ProjectLocationTable.canonical_directory, parts.identity),
         ),
       )
       .run(),

@@ -3,7 +3,6 @@ import { ScheduledTask } from "@/scheduled-task/service"
 import { ScheduledTaskID } from "@/scheduled-task/schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
-import { toLogicalPath } from "@opencode-ai/core/util/path"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -24,19 +23,19 @@ export const scheduledTaskHandlers = HttpApiBuilder.group(InstanceHttpApi, "sche
             locationID: ctx.query.locationID,
             directory: ctx.query.directory,
           })
-          const canonicalDirectory = ctx.query.directory
-            ? toLogicalPath(AppFileSystem.resolve(ctx.query.directory))
+          const directory = ctx.query.directory
+            ? AppFileSystem.resolve(ctx.query.directory)
             : undefined
-          const persistedLocation = canonicalDirectory
-            ? ProjectLocation.getByCanonicalDirectory(canonicalDirectory)
+          const persistedLocation = directory
+            ? ProjectLocation.getByDirectory(directory)
             : undefined
           const locationID = ctx.query.locationID
             ? ctx.query.locationID
             : persistedLocation
               ? persistedLocation.id
               : undefined
-          if (canonicalDirectory && !locationID) {
-            log.warn("scheduled task list skipped unresolved directory", { directory: canonicalDirectory })
+          if (directory && !locationID) {
+            log.warn("scheduled task list skipped unresolved directory", { directory })
             return []
           }
           const tasks = yield* scheduled.list({

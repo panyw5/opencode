@@ -1,5 +1,7 @@
 import * as Log from "@opencode-ai/core/util/log"
+import type { PathContext, PathPlatform } from "@opencode-ai/core/util/path"
 import { withSQLiteLockRetry } from "./sqlite-lock"
+import { migrateProjectLocationIdentity } from "./project-location-identity-migration"
 
 const log = Log.create({ service: "db.upstream-migration" })
 
@@ -19,7 +21,17 @@ type MigrationClient = {
 
 type Migration = {
   id: string
-  up: (db: MigrationClient) => void
+  when?: (pathContext: PathContext) => boolean
+  up: (db: MigrationClient, pathContext: PathContext) => void
+}
+
+export type ApplyOptions = {
+  pathContext?: PathContext
+}
+
+export function localPathContext(platform: string = process.platform): PathContext {
+  const pathPlatform: PathPlatform = platform === "win32" ? "win32" : platform === "darwin" ? "darwin" : "linux"
+  return { platform: pathPlatform, kind: "local-filesystem" }
 }
 
 function rawAll(db: MigrationClient, sql: string, ...params: unknown[]) {
@@ -418,6 +430,15 @@ const migrations: Migration[] = [
       ensureFinalSessionContextEpoch(db)
     },
   },
+  {
+    id: "20260907000000_project_location_identity_win32",
+    when(pathContext) {
+      return pathContext.platform === "win32" && pathContext.kind === "local-filesystem"
+    },
+    up(db, pathContext) {
+      migrateProjectLocationIdentity(db, pathContext)
+    },
+  },
 ]
 
 function seedFromDrizzleJournal(db: MigrationClient) {
@@ -428,12 +449,12 @@ function completed(db: MigrationClient) {
   return new Set(rawAll(db, "SELECT id FROM migration").map((row) => String(row.id)))
 }
 
-function runMigration(db: MigrationClient, migration: Migration, dbPath?: string) {
+function runMigration(db: MigrationClient, migration: Migration, pathContext: PathContext, dbPath?: string) {
   return withSQLiteLockRetry(
     () => {
       db.run("BEGIN IMMEDIATE")
       try {
-        migration.up(db)
+        migration.up(db, pathContext)
         db.run(
           `INSERT OR IGNORE INTO migration (id, time_completed) VALUES (${quoteString(migration.id)}, ${Date.now()})`,
         )
@@ -454,8 +475,10 @@ function runMigration(db: MigrationClient, migration: Migration, dbPath?: string
   )
 }
 
-export function apply(db: MigrationClient, dbPath: string) {
+export function apply(db: MigrationClient, dbPath: string, options: ApplyOptions = {}) {
   if (!hasTable(db, "session")) return
+
+  const pathContext = options.pathContext ?? localPathContext()
 
   db.run("CREATE TABLE IF NOT EXISTS migration (id TEXT PRIMARY KEY, time_completed INTEGER NOT NULL)")
   let done = completed(db)
@@ -468,14 +491,28 @@ export function apply(db: MigrationClient, dbPath: string) {
     done = completed(db)
   }
 
-  const pending = migrations.filter((migration) => !done.has(migration.id))
+  const pending = migrations.filter(
+    (migration) => !done.has(migration.id) && (migration.when ? migration.when(pathContext) : true),
+  )
+  const skipped = migrations.filter(
+    (migration) => !done.has(migration.id) && migration.when && !migration.when(pathContext),
+  )
   if (pending.length > 0) {
     log.info("applying upstream migrations", {
       path: dbPath,
       count: pending.length,
       migrations: pending.map((migration) => migration.id),
     })
-    for (const migration of pending) runMigration(db, migration, dbPath)
+    for (const migration of pending) runMigration(db, migration, pathContext, dbPath)
+  }
+
+  if (skipped.length > 0) {
+    log.info("upstream migrations gated by path context", {
+      path: dbPath,
+      platform: pathContext.platform,
+      kind: pathContext.kind,
+      migrations: skipped.map((migration) => migration.id),
+    })
   }
 
   // Always re-assert fork invariants (idempotent; no core-row deletes).

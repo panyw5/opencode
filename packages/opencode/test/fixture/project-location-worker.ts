@@ -49,7 +49,7 @@ function waitFor(file: string) {
 async function main() {
   const input = JSON.parse(process.argv[2] ?? "null") as Input
   log("start", `action=${input?.action}`)
-  if (!input || input.db !== process.env.OPENCODE_DB || !input.db.startsWith("/")) {
+  if (!input || input.db !== process.env.OPENCODE_DB || !path.isAbsolute(input.db)) {
     throw new Error("Worker requires an explicit temporary OPENCODE_DB")
   }
   Database.Client({ disableChannelDb: true, skipMigrations: input.action === "claim" })
@@ -73,7 +73,6 @@ async function main() {
   const location = ProjectLocation.upsert({
     projectID,
     directory: input.directory,
-    canonicalDirectory: input.directory,
     kind: "directory",
     vcsState: "none",
     worktreeRoot: input.directory,

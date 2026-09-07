@@ -3,6 +3,7 @@ import { Database as SQLite } from "bun:sqlite"
 import { watch } from "node:fs"
 import fs from "fs/promises"
 import path from "path"
+import { Path } from "@opencode-ai/core/util/path"
 
 import { Process } from "@/util/process"
 import { tmpdir } from "../fixture/fixture"
@@ -140,8 +141,9 @@ describe("ProjectLocation multi-process convergence", () => {
     expect(repeated.claimed).toEqual({ sessions: 0, scheduledTasks: 0, workspaces: 0 })
 
     const verify = new SQLite(dbPath)
+    const directoryIdentity = Path.identity(directory, { platform: "win32", kind: "local-filesystem" })
     expect(
-      verify.query("SELECT count(*) AS count FROM project_location WHERE canonical_directory = ?").get(directory),
+      verify.query("SELECT count(*) AS count FROM project_location WHERE canonical_directory = ?").get(directoryIdentity),
     ).toEqual({ count: 1 })
     for (const table of ["session", "scheduled_task", "workspace"]) {
       expect(verify.query(`SELECT project_id, location_id FROM ${table}`).get()).toEqual({
