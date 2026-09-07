@@ -346,7 +346,21 @@ export function MessageTimeline(props: {
     }
     return ordered
   })
-  const getMessageParts = (messageID: string) => displayParts(sync.data.part[messageID] ?? emptyParts)
+    const partsCache = new Map<string, { source: PartType[]; result: PartType[] }>()
+    const getMessageParts = (messageID: string) => {
+      const source = sync.data.part[messageID]
+      if (!source) return emptyParts
+      // displayParts is linear and allocates when a message carries duplicate
+      // tool parts. Timeline rebuilds call this for every message repeatedly
+      // (projection memos, virtualizer, row renderers), so cache by array
+      // identity — the store hands back the same reference until a write
+      // replaces it, and Solid still tracks the keyed read above.
+      const cached = partsCache.get(messageID)
+      if (cached && cached.source === source) return cached.result
+      const result = displayParts(source)
+      partsCache.set(messageID, { source, result })
+      return result
+    }
   const getMessagePart = (messageID: string, partID: string) =>
     getMessageParts(messageID).find((part) => part.id === partID)
   const userMessageText = (messageID: string) => {
