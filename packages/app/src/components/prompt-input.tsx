@@ -1872,6 +1872,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const toolInFlight = (part: Part) =>
     part.type === "tool" && (part.state.status === "pending" || part.state.status === "running")
 
+  const inFlightToolParts = (messageID: string | undefined) =>
+    messageID ? (sync.data.part[messageID] ?? []).filter(toolInFlight).map((part) => part.id) : []
+
   const toggleStopAfterTool = () => {
     if (stopAfterTool()) {
       console.debug("[stop-after-tool] disarmed by user", { sessionID: params.id })
@@ -1881,10 +1884,27 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const sessionID = params.id
     if (!sessionID || !working()) return
     const active = sessionActiveMessage(messages())
-    const parts = active ? (sync.data.part[active.id] ?? []) : []
-    const tracked = parts.filter(toolInFlight).map((part) => part.id)
-    console.debug("[stop-after-tool] armed", { sessionID, messageID: active?.id ?? "", tracked })
-    setStopAfterTool({ sessionID, messageID: active?.id ?? "", parts: tracked })
+    let messageID = active?.id
+    let tracked = inFlightToolParts(messageID)
+    // The locally active assistant message may be missing or already completed
+    // while a tool still runs (between steps, or message list sync lag). Fall
+    // back to scanning the session's messages so an in-flight tool elsewhere
+    // is still tracked instead of aborting instantly.
+    if (tracked.length === 0) {
+      const sessionMessages = sync.data.message[sessionID] ?? []
+      for (let i = sessionMessages.length - 1; i >= 0; i--) {
+        const msg = sessionMessages[i]
+        if (msg.role !== "assistant") continue
+        const found = inFlightToolParts(msg.id)
+        if (found.length > 0) {
+          messageID = msg.id
+          tracked = found
+          break
+        }
+      }
+    }
+    console.debug("[stop-after-tool] armed", { sessionID, messageID: messageID ?? "", tracked })
+    setStopAfterTool({ sessionID, messageID: messageID ?? "", parts: tracked })
   }
 
   // Abort once every tool call that was in flight when the user armed the
