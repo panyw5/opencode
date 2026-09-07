@@ -267,7 +267,7 @@ export const { use: usePrompt, provider: PromptProvider } = createSimpleContext(
     }
 
     const session = createMemo(() => load(decodeRouteDirectory(params.dir), params.id ?? params.draftID))
-    const pick = (scope?: Scope) => (scope ? load(scope.dir, scope.id) : session())
+    const pick = (scope?: Scope) => (scope ? load(decodeRouteDirectory(scope.dir), scope.id) : session())
 
     return {
       ready: () => session().ready(),
