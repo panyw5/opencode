@@ -643,6 +643,11 @@
     animation: genericagent-refresh-icon-spin 0.7s linear infinite;
   }
 
+  [data-component="prompt-stop-after-tool-spin"] {
+    transform-origin: center;
+    animation: prompt-stop-after-tool-spin 0.8s linear infinite;
+  }
+
   [data-component="project-icon-loading"] [data-slot="sheen"] {
     background: linear-gradient(
       110deg,
@@ -1084,6 +1089,12 @@
   }
 
   @keyframes genericagent-refresh-icon-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes prompt-stop-after-tool-spin {
     to {
       transform: rotate(360deg);
     }

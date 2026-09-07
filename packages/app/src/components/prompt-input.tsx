@@ -2734,24 +2734,32 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                             : language.t("prompt.action.stopAfterTool")
                         }
                       >
-                        <IconButton
-                          data-action="prompt-stop-after-tool"
-                          icon="pause"
-                          variant="secondary"
-                          iconSize="normal"
-                          tabIndex={stopAfterToolRevealed() ? undefined : -1}
-                          onClick={toggleStopAfterTool}
-                          class="size-8 shrink-0 rounded-full"
-                          classList={{
-                            "text-icon-warning-base": stopAfterToolArmed(),
-                          }}
-                          style={stopPauseMotion()}
-                          aria-label={
-                            stopAfterToolArmed()
-                              ? language.t("prompt.action.stopAfterToolArmed")
-                              : language.t("prompt.action.stopAfterTool")
-                          }
-                        />
+                        <div class="relative size-8 shrink-0" style={stopPauseMotion()}>
+                          <IconButton
+                            data-action="prompt-stop-after-tool"
+                            icon="pause"
+                            variant="secondary"
+                            iconSize="normal"
+                            tabIndex={stopAfterToolRevealed() ? undefined : -1}
+                            onClick={toggleStopAfterTool}
+                            class="size-8 shrink-0 rounded-full"
+                            classList={{
+                              "text-icon-warning-base": stopAfterToolArmed(),
+                            }}
+                            aria-label={
+                              stopAfterToolArmed()
+                                ? language.t("prompt.action.stopAfterToolArmed")
+                                : language.t("prompt.action.stopAfterTool")
+                            }
+                          />
+                          <Show when={stopAfterToolArmed()}>
+                            <div
+                              aria-hidden="true"
+                              data-component="prompt-stop-after-tool-spin"
+                              class="pointer-events-none absolute -inset-[2.5px] rounded-full border-2 border-transparent border-t-current text-icon-warning-base"
+                            />
+                          </Show>
+                        </div>
                       </Tooltip>
                     </div>
                   </div>
