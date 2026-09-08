@@ -642,6 +642,13 @@ const cleanTitle = (value: string) => {
 
 const sessionTabPermissionLayoutEvent = "opencode:session-tab-permission-layout"
 
+// Stable fallbacks for the transient window where a tab group is missing while
+// its tab is being removed from the bar. Placeholder values only; the item is
+// disposed by the end of the same flush.
+const NO_SESSION_TAB_CHILDREN: SessionTabGroup<SessionBarTab>["children"] = []
+const NO_SESSION_TABS: SessionBarTab[] = []
+const MISSING_SESSION_TAB: SessionBarTab = { directory: "", id: "" }
+
 function SessionTabGroup(props: {
   tabKey: string
   group: () => SessionTabGroup<SessionBarTab> | undefined
@@ -660,14 +667,19 @@ function SessionTabGroup(props: {
   let childrenViewport: HTMLDivElement | undefined
   let skipAutoRevealID: string | undefined
   let parentContextMenuOpen = false
-  const group = () => {
-    const value = props.group()
-    if (!value) throw new Error(`Missing session tab group: ${props.tabKey}`)
-    return value
-  }
+  // A tab group can be transiently missing while a tab is being closed: the
+  // group map drops the key before the `<For>` item is disposed, and this
+  // component's effects/getters may still run in between. Render through it
+  // instead of throwing and crashing the renderer.
+  const group = () => props.group()
 
   createEffect(() => {
-    if (group().children.length > 0) return
+    const value = group()
+    if (!value) {
+      console.debug(`[session-bar] tab group missing during update tabKey=${props.tabKey}`)
+      return
+    }
+    if (value.children.length > 0) return
     setState("open", false)
   })
 
@@ -683,7 +695,8 @@ function SessionTabGroup(props: {
   }
   const open = () => {
     if (parentContextMenuOpen) return
-    if (!group().children.length) return
+    const value = group()
+    if (!value || !value.children.length) return
     cancelClose()
     cancelAutoClose()
     setState("open", true)
@@ -696,13 +709,13 @@ function SessionTabGroup(props: {
       setState("open", false)
     }, 150)
   }
-  const activeChildID = createMemo(() => group().children.find((item) => props.active(item.tab))?.tab.id)
+  const activeChildID = createMemo(() => group()?.children.find((item) => props.active(item.tab))?.tab.id)
 
   createEffect(
     on(activeChildID, (childID, previousChildID) => {
       if (!childID) return
       const value = group()
-      if (!value.children.length) return
+      if (!value || !value.children.length) return
       if (skipAutoRevealID === childID) {
         skipAutoRevealID = undefined
         cancelClose()
@@ -734,6 +747,7 @@ function SessionTabGroup(props: {
   )
   const groupActive = () => {
     const value = group()
+    if (!value) return false
     return props.active(value.tab) || value.children.some((item) => props.active(item.tab))
   }
   const trigger = () => (
@@ -745,12 +759,12 @@ function SessionTabGroup(props: {
       onFocusOut={close}
     >
       <SessionTab
-        tab={group().tab}
+        tab={group()?.tab ?? MISSING_SESSION_TAB}
         active={groupActive()}
-        relatedTabs={group().children.map((item) => item.tab)}
-        childCount={group().children.length}
+        relatedTabs={group()?.children.map((item) => item.tab) ?? NO_SESSION_TABS}
+        childCount={group()?.children.length ?? 0}
         preventPopoverToggle
-        hasOpenDescendants={props.hasOpenDescendants(group().tab)}
+        hasOpenDescendants={props.hasOpenDescendants(group()?.tab ?? MISSING_SESSION_TAB)}
         onMenuOpenChange={(open) => {
           parentContextMenuOpen = open
           if (open) {
@@ -758,9 +772,18 @@ function SessionTabGroup(props: {
             setState("open", false)
           }
         }}
-        onOpen={() => props.onOpen(group().tab)}
-        onClose={() => props.onClose(group().tab)}
-        onCloseDescendants={() => props.onCloseDescendants(group().tab)}
+        onOpen={() => {
+          const value = group()
+          if (value) props.onOpen(value.tab)
+        }}
+        onClose={() => {
+          const value = group()
+          if (value) props.onClose(value.tab)
+        }}
+        onCloseDescendants={() => {
+          const value = group()
+          if (value) props.onCloseDescendants(value.tab)
+        }}
       />
     </div>
   )
@@ -773,7 +796,7 @@ function SessionTabGroup(props: {
 
   return (
     <div use:sortable class="h-full flex min-w-28 items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
-      <Show when={group().children.length} fallback={trigger()}>
+      <Show when={group()?.children.length} fallback={trigger()}>
         <Popover
           open={state.open}
           onOpenChange={(open) => setState("open", open)}
@@ -791,7 +814,7 @@ function SessionTabGroup(props: {
             onFocusIn={open}
             onFocusOut={close}
           >
-            <For each={group().children}>
+            <For each={group()?.children ?? NO_SESSION_TAB_CHILDREN}>
               {(item) => (
                 <div class="flex min-w-0" style={{ "padding-left": `${(item.depth - 1) * 12}px` }}>
                   <SessionTab

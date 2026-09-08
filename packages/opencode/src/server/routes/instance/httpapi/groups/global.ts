@@ -37,6 +37,7 @@ export const GlobalPaths = {
   health: "/global/health",
   event: "/global/event",
   config: "/global/config",
+  configProvider: "/global/config/provider/:providerID",
   configRefresh: "/global/config/refresh",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
@@ -81,6 +82,16 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.config.update",
           summary: "Update global configuration",
           description: "Update global OpenCode configuration settings and preferences.",
+        }),
+      ),
+      HttpApiEndpoint.delete("configProviderRemove", GlobalPaths.configProvider, {
+        params: { providerID: Schema.String },
+        success: described(Config.Info, "Global config after removing provider"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.config.removeProvider",
+          summary: "Remove global provider configuration",
+          description: "Remove one provider entry from the global OpenCode configuration.",
         }),
       ),
       HttpApiEndpoint.post("configRefresh", GlobalPaths.configRefresh, {

@@ -4501,6 +4501,34 @@ export type GlobalConfigUpdateResponses = {
 
 export type GlobalConfigUpdateResponse = GlobalConfigUpdateResponses[keyof GlobalConfigUpdateResponses]
 
+export type GlobalConfigRemoveProviderData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query?: never
+  url: "/global/config/provider/{providerID}"
+}
+
+export type GlobalConfigRemoveProviderErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalConfigRemoveProviderError = GlobalConfigRemoveProviderErrors[keyof GlobalConfigRemoveProviderErrors]
+
+export type GlobalConfigRemoveProviderResponses = {
+  /**
+   * Global config after removing provider
+   */
+  200: Config
+}
+
+export type GlobalConfigRemoveProviderResponse =
+  GlobalConfigRemoveProviderResponses[keyof GlobalConfigRemoveProviderResponses]
+
 export type GlobalConfigRefreshData = {
   body?: never
   path?: never

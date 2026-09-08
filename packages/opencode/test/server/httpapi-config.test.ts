@@ -257,6 +257,49 @@ describe("config HttpApi", () => {
   )
 
   it.live(
+    "removes a global provider config entry from disk",
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirEffect({})
+      const previousConfigPath = Global.Path.config
+      ;(Global.Path as { config: string }).config = tmp.path
+      const providerID = "delete-regression-provider"
+
+      try {
+        yield* Effect.promise(() =>
+          Bun.write(
+            path.join(tmp.path, "opencode.jsonc"),
+            JSON.stringify({
+              provider: {
+                [providerID]: { npm: "@ai-sdk/openai-compatible", models: { test: { name: "Test" } } },
+                keep: { npm: "@ai-sdk/openai-compatible", models: { test: { name: "Keep" } } },
+              },
+            }),
+          ),
+        )
+
+        const response = yield* Effect.promise(() =>
+          Promise.resolve(
+            app().request(`/global/config/provider/${providerID}`, {
+              method: "DELETE",
+            }),
+          ),
+        )
+
+        expect(response.status).toBe(200)
+        const body = (yield* Effect.promise(() => response.json())) as { provider?: Record<string, unknown> }
+        expect(body.provider?.[providerID]).toBeUndefined()
+        expect(body.provider?.keep).toBeDefined()
+
+        const written = yield* Effect.promise(() => Bun.file(path.join(tmp.path, "opencode.jsonc")).json())
+        expect(written.provider?.[providerID]).toBeUndefined()
+        expect(written.provider?.keep).toBeDefined()
+      } finally {
+        ;(Global.Path as { config: string }).config = previousConfigPath
+      }
+    }),
+  )
+
+  it.live(
     "refreshes provider list after manual global provider config changes",
     Effect.gen(function* () {
       const tmp = yield* tmpdirEffect({})

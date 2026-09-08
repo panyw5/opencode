@@ -356,6 +356,7 @@ export interface Interface {
   readonly getConsoleState: () => Effect.Effect<ConsoleState>
   readonly update: (config: Info) => Effect.Effect<void>
   readonly updateGlobal: (config: Info) => Effect.Effect<{ info: Info; changed: boolean }>
+  readonly removeGlobalProvider: (providerID: string) => Effect.Effect<{ info: Info; changed: boolean }>
   readonly invalidate: () => Effect.Effect<void>
   readonly directories: () => Effect.Effect<string[]>
   readonly waitForDependencies: () => Effect.Effect<void>
@@ -976,9 +977,7 @@ export const layer = Layer.effect(
       const dir = yield* InstanceState.directory
       const file = path.join(dir, "config.json")
       const existing = yield* loadFile(file)
-      yield* fs
-        .writeFileString(file, JSON.stringify(mergeWritableConfig(existing, config), null, 2))
-        .pipe(Effect.orDie)
+      yield* fs.writeFileString(file, JSON.stringify(mergeWritableConfig(existing, config), null, 2)).pipe(Effect.orDie)
     })
 
     const invalidate = Effect.fn("Config.invalidate")(function* () {
@@ -1106,6 +1105,43 @@ export const layer = Layer.effect(
       return { info: next, changed }
     })
 
+    const removeGlobalProvider = Effect.fn("Config.removeGlobalProvider")(function* (providerID: string) {
+      const file = globalConfigFile()
+      const before = (yield* readConfigFile(file)) ?? "{}"
+      log.info("removing global provider config", { providerID, file })
+
+      let updated: string
+      if (file.endsWith(".jsonc")) {
+        const edits = modify(before, ["provider", providerID], undefined, {
+          formattingOptions: {
+            insertSpaces: true,
+            tabSize: 2,
+          },
+        })
+        updated = applyEdits(before, edits)
+      } else {
+        const existing = ConfigParse.schema(Info, ConfigParse.jsonc(before, file), file)
+        const providers = { ...(existing.provider ?? {}) }
+        delete providers[providerID]
+        const next = { ...existing, provider: providers }
+        updated = JSON.stringify(next, null, 2)
+      }
+
+      const changed = updated !== before
+      log.info("global provider config removal prepared", { providerID, changed })
+      if (changed) {
+        yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
+        log.info("global provider config removal persisted", { providerID, file })
+      }
+      yield* invalidate()
+      const info = yield* cachedGlobal
+      log.info("global provider config removal reloaded", {
+        providerID,
+        present: providerID in (info.provider ?? {}),
+      })
+      return { info, changed }
+    })
+
     return Service.of({
       get,
       getGlobal,
@@ -1113,6 +1149,7 @@ export const layer = Layer.effect(
       getConsoleState,
       update,
       updateGlobal,
+      removeGlobalProvider,
       invalidate,
       directories,
       waitForDependencies,

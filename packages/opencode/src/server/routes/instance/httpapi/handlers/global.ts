@@ -114,6 +114,27 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return result.info
     })
 
+    const configProviderRemove = Effect.fn("GlobalHttpApi.configProviderRemove")(function* (ctx: {
+      params: { providerID: string }
+    }) {
+      log.info("global provider config remove requested", { providerID: ctx.params.providerID })
+      const result = yield* config.removeGlobalProvider(ctx.params.providerID)
+      log.info("global provider config remove completed", {
+        providerID: ctx.params.providerID,
+        changed: result.changed,
+      })
+      if (result.changed) {
+        GlobalBus.emit("event", {
+          directory: "global",
+          payload: {
+            type: Event.ConfigUpdated.type,
+            properties: result.info,
+          },
+        })
+      }
+      return result.info
+    })
+
     const configRefresh = Effect.fn("GlobalHttpApi.configRefresh")(function* () {
       log.info("global config runtime refresh requested")
       const result = yield* config.refreshGlobal()
@@ -192,6 +213,7 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handleRaw("event", event)
       .handle("configGet", configGet)
       .handle("configUpdate", configUpdate)
+      .handle("configProviderRemove", configProviderRemove)
       .handle("configRefresh", configRefresh)
       .handle("dispose", dispose)
       .handleRaw("upgrade", upgradeRaw)

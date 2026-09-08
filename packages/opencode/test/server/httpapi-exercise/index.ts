@@ -105,6 +105,43 @@ const scenarios: Scenario[] = [
       check(body.username === "httpapi-refreshed", "global config refresh should return disk config")
     }),
   http.protected
+    .delete("/global/config/provider/{providerID}", "global.config.removeProvider")
+    .global()
+    .seeded(() =>
+      Effect.promise(() =>
+        Bun.write(
+          path.join(exerciseConfigDirectory, "opencode.jsonc"),
+          JSON.stringify(
+            {
+              provider: {
+                "httpapi-remove": { npm: "@ai-sdk/openai-compatible", models: { test: { name: "Test" } } },
+                "httpapi-keep": { npm: "@ai-sdk/openai-compatible", models: { test: { name: "Keep" } } },
+              },
+            },
+            null,
+            2,
+          ),
+        ),
+      ),
+    )
+    .at(() => ({ path: "/global/config/provider/httpapi-remove" }))
+    .jsonEffect(
+      200,
+      (body) =>
+        Effect.gen(function* () {
+          object(body)
+          object(body.provider)
+          check(body.provider["httpapi-remove"] === undefined, "provider remove should omit the deleted provider")
+          check(body.provider["httpapi-keep"] !== undefined, "provider remove should preserve other providers")
+          const text = yield* Effect.promise(() =>
+            Bun.file(path.join(exerciseConfigDirectory, "opencode.jsonc")).text(),
+          )
+          check(!text.includes('"httpapi-remove"'), "provider remove should persist deletion to isolated config file")
+          check(text.includes('"httpapi-keep"'), "provider remove should preserve other isolated provider config")
+        }),
+      "status",
+    ),
+  http.protected
     .post("/global/dispose", "global.dispose")
     .global()
     .mutating()

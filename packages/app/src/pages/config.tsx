@@ -787,8 +787,6 @@ function sourceKey(source?: string) {
   return undefined
 }
 
-
-
 function home(path: string) {
   const list = norm(path).split("/").filter(Boolean)
   if (list.at(-1) !== "opencode") return
@@ -1335,7 +1333,8 @@ function ListButton(props: {
       type="button"
       class="group flex w-full items-start justify-between gap-3 border-b border-border-weak-base px-3 py-3 text-left transition-[background-color,border-color,box-shadow] duration-150"
       classList={{
-        "bg-transparent hover:bg-[color-mix(in_srgb,var(--surface-brand-base)_6%,var(--background-base))]": !props.active,
+        "bg-transparent hover:bg-[color-mix(in_srgb,var(--surface-brand-base)_6%,var(--background-base))]":
+          !props.active,
         "border-border-base bg-[color-mix(in_srgb,var(--surface-brand-base)_14%,var(--background-base))] shadow-[inset_3px_0_0_color-mix(in_srgb,var(--surface-brand-base)_55%,transparent)]":
           props.active,
       }}
@@ -4565,7 +4564,9 @@ export default function ConfigPage() {
     })
       .then((skills) => {
         if (marketLoadRun !== run) return
-        console.log(`[skill-market] load success repo=${repo.repo} branch=${repo.branch ?? ""} count=${String(skills.length)}`)
+        console.log(
+          `[skill-market] load success repo=${repo.repo} branch=${repo.branch ?? ""} count=${String(skills.length)}`,
+        )
         setMarketSkills({ skills })
         if (isCustomSkillMarketRepoID(repo.id)) {
           const parsed = cleanRepoParts(repo.repo, repo.branch)
@@ -4968,8 +4969,7 @@ export default function ConfigPage() {
   )
 
   const [pluginAgents] = createResource(
-    () =>
-      state.section === "agents" ? ([state.agentRev, mainPath().home, enabledPluginKey()] as const) : false,
+    () => (state.section === "agents" ? ([state.agentRev, mainPath().home, enabledPluginKey()] as const) : false),
     async ([, home]) => {
       const plugins = untrack(() => cfg().plugin)
       const cache = home ? join(home, ".cache", "opencode") : undefined
@@ -5480,9 +5480,7 @@ export default function ConfigPage() {
           )
           if (run !== projectPluginConfigsRun) return
           setProjectPluginConfigs(configs.flatMap((result) => (result.status === "fulfilled" ? result.value : [])))
-          console.info(
-            `[config-perf] fetch projectPluginConfigs done ms=${(performance.now() - started).toFixed(1)}`,
-          )
+          console.info(`[config-perf] fetch projectPluginConfigs done ms=${(performance.now() - started).toFixed(1)}`)
         })()
       },
       { defer: false },
@@ -5909,8 +5907,7 @@ export default function ConfigPage() {
     const prev = pending.get(item.path)
     if (prev) return prev
     const next = (
-      (platform.readLocalFile?.(item.path).catch(() => "") as Promise<string | null | undefined>) ??
-      Promise.resolve("")
+      (platform.readLocalFile?.(item.path).catch(() => "") as Promise<string | null | undefined>) ?? Promise.resolve("")
     ).then((text) => {
       const value = text ?? ""
       cache.set(item.path, value)
@@ -7779,13 +7776,6 @@ export default function ConfigPage() {
     if (!id) return
     setState("custom", "deleting", true)
     setState("providerBusy", id)
-    const nextProvider = { [id]: {} as ProviderCfg } as NonNullable<Config["provider"]>
-    const currentDisabled = cfg().disabled_providers ?? []
-    const nextDisabled = currentDisabled.filter((item) => item !== id)
-    const patch = globalProviderPatch(
-      nextProvider,
-      JSON.stringify(currentDisabled) === JSON.stringify(nextDisabled) ? undefined : nextDisabled,
-    )
     console.info("[config] custom provider delete requested", {
       providerID: id,
       providerInConfig: id in (cfg().provider ?? {}),
@@ -7801,10 +7791,11 @@ export default function ConfigPage() {
         }),
       )
       .then(() => {
-        console.info(`[config] custom provider delete fields=provider,disabled_providers provider=${id}`)
-        return globalSync.updateConfig(patch, { refreshProviders: false })
+        console.info("[config] custom provider config removal requested", { providerID: id })
+        return globalSDK.client.global.config.removeProvider({ providerID: id })
       })
-      .then(async (synced) => {
+      .then(async (result) => {
+        const synced = result.data!
         console.info("[config] custom provider config delete completed", {
           providerID: id,
           providerStillInConfig: id in (synced.provider ?? {}),
@@ -7824,6 +7815,7 @@ export default function ConfigPage() {
           globalSync.provider.remove(id)
           createCustomProvider()
         })
+        console.info("[config] custom provider delete completed", { providerID: id })
         showToast({ variant: "success", title: t("config.action.delete"), description: id })
       })
       .catch((err: unknown) => {
@@ -8333,10 +8325,7 @@ export default function ConfigPage() {
                                 }}
                               >
                                 <div class="flex items-center gap-2">
-                                  <Icon
-                                    name={providerOffExpanded() ? "chevron-down" : "chevron-right"}
-                                    size="small"
-                                  />
+                                  <Icon name={providerOffExpanded() ? "chevron-down" : "chevron-right"} size="small" />
                                   <div class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
                                     {t("config.providers.group.existing")}
                                   </div>

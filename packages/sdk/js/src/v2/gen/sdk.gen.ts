@@ -82,6 +82,8 @@ import type {
   FormatterStatusResponses,
   GlobalConfigGetErrors,
   GlobalConfigGetResponses,
+  GlobalConfigRemoveProviderErrors,
+  GlobalConfigRemoveProviderResponses,
   GlobalConfigRefreshErrors,
   GlobalConfigRefreshResponses,
   GlobalConfigUpdateErrors,
@@ -581,6 +583,29 @@ export class Config extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Remove global provider configuration
+   *
+   * Remove one provider entry from the global OpenCode configuration.
+   */
+  public removeProvider<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "providerID" }] }])
+    return (options?.client ?? this.client).delete<
+      GlobalConfigRemoveProviderResponses,
+      GlobalConfigRemoveProviderErrors,
+      ThrowOnError
+    >({
+      url: "/global/config/provider/{providerID}",
+      ...options,
+      ...params,
     })
   }
 
