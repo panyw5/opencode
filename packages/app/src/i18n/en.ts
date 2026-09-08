@@ -1175,6 +1175,8 @@ export const dict = {
   "sidebar.sessions.restart.genericagent.unavailable.title": "Restart requires desktop reload",
   "sidebar.sessions.restart.genericagent.unavailable.description":
     "Restart OpenCode Desktop once to load the updated GenericAgent restart API.",
+  "sidebar.session.messageCount.one": "{{count}} message",
+  "sidebar.session.messageCount.other": "{{count}} messages",
 
   "debugBar.ariaLabel": "Development performance diagnostics",
   "debugBar.na": "n/a",

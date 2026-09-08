@@ -41,6 +41,10 @@ const projectActivityPulseDuration = 1_000
 /** Module-level so title shimmer survives SessionItem remount after title update. */
 const titleShimmerTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const [titleShimmerById, setTitleShimmerById] = createSignal<Record<string, boolean>>({})
+const userMessageCountCache = new Map<string, number>()
+const userMessageCountInflight = new Map<string, Promise<number>>()
+
+const userMessageCountKey = (directory: string, sessionID: string) => `${directory}\n${sessionID}`
 
 const isTitleShimmering = (sessionID: string) => !!titleShimmerById()[sessionID]
 
@@ -349,6 +353,7 @@ const SessionRow = (props: {
     <A
       href={`/${base64Encode(props.session.directory)}/session/${props.session.id}`}
       class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
+      data-slot="session-link"
       onPointerDown={(event) => {
         if (isPlainPrimaryPointer(event)) {
           startSessionProfile(props.session.id, "pointerdown")
@@ -451,6 +456,49 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
   const [sessionStore] = globalSync.child(props.session.directory, { bootstrap: false })
+  const [indexedUserMessageCount, setIndexedUserMessageCount] = createSignal<number | undefined>(
+    userMessageCountCache.get(userMessageCountKey(props.session.directory, props.session.id)),
+  )
+  const loadedUserMessageCount = createMemo(
+    () => sessionStore.message[props.session.id]?.filter((message) => message.role === "user").length ?? 0,
+  )
+  const messageCount = createMemo(() => {
+    const indexed = indexedUserMessageCount()
+    const loaded = loadedUserMessageCount()
+    if (indexed === undefined && loaded === 0) return undefined
+    return Math.max(indexed ?? 0, loaded)
+  })
+  createEffect(() => {
+    const directory = props.session.directory
+    const sessionID = props.session.id
+    const key = userMessageCountKey(directory, sessionID)
+    const cached = userMessageCountCache.get(key)
+    if (cached !== undefined) {
+      setIndexedUserMessageCount(cached)
+      return
+    }
+    if (userMessageCountInflight.has(key)) return
+
+    console.debug(`[sidebar-session] user-message-count load-start directory=${directory} sid=${sessionID}`)
+    const pending = globalSDK.client.session
+      .userMessageIndex({ sessionID, directory })
+      .then((response) => {
+        const count = (response.data ?? []).length
+        userMessageCountCache.set(key, count)
+        setIndexedUserMessageCount(count)
+        console.debug(`[sidebar-session] user-message-count load-end directory=${directory} sid=${sessionID} count=${count}`)
+        return count
+      })
+      .catch((error: unknown) => {
+        console.debug(
+          `[sidebar-session] user-message-count load-error directory=${directory} sid=${sessionID} error=${error instanceof Error ? error.message : String(error)}`,
+        )
+        throw error
+      })
+      .finally(() => userMessageCountInflight.delete(key))
+    userMessageCountInflight.set(key, pending)
+    void pending.catch(() => undefined)
+  })
   const hasPermissions = createMemo(() => {
     return !!sessionPermissionRequest(sessionStore.session, sessionStore.permission, props.session.id, (item) => {
       return !permission.autoResponds(item, props.session.directory)
@@ -772,6 +820,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         data-session-id={props.session.id}
         data-component="sidebar-session"
         data-active={isSelected() ? "true" : "false"}
+        data-has-shortcut={jumpKeybind() ? "true" : "false"}
         classList={{
           "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-4 pr-3 border border-transparent":
             true,
@@ -795,19 +844,27 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         </Show>
       </div>
 
-      <div class="shrink-0 flex items-center gap-1">
+      <Show when={messageCount() !== undefined}>
+        <span
+          data-slot="session-message-count"
+          class="pointer-events-none absolute top-1/2 z-0 -translate-y-1/2 whitespace-nowrap text-12-regular text-text-weak tabular-nums"
+        >
+          {language.t(
+            messageCount() === 1 ? "sidebar.session.messageCount.one" : "sidebar.session.messageCount.other",
+            { count: messageCount() ?? 0 },
+          )}
+        </span>
+      </Show>
+
+      <div
+        data-slot="sidebar-session-actions"
+        class="relative z-10 shrink-0 flex items-center gap-1"
+      >
         <div
-          class="relative overflow-hidden flex items-center gap-1"
-          classList={{
-            "transition-[width,opacity]": !props.reduced,
-            "w-[112px] opacity-100 pointer-events-auto":
-              !!props.mobile || (!props.mobile && !props.reduced && !!jumpKeybind()),
-            "w-0 opacity-0 pointer-events-none": (!props.mobile && !jumpKeybind()) || !!props.reduced,
-            "group-hover/session:w-[112px] group-hover/session:opacity-100 group-hover/session:pointer-events-auto":
-              !props.reduced,
-            "group-focus-within/session:w-[112px] group-focus-within/session:opacity-100 group-focus-within/session:pointer-events-auto":
-              !props.reduced,
-          }}
+          data-slot="sidebar-session-actions-panel"
+          data-visible={props.mobile || (!props.mobile && !props.reduced && !!jumpKeybind()) ? "true" : "false"}
+          data-hoverable={!props.reduced ? "true" : "false"}
+          class="relative flex items-center gap-1 overflow-hidden transition-[width,opacity]"
         >
           <Show when={!props.mobile && !props.reduced && jumpKeybind()}>
             {(keybind) => (

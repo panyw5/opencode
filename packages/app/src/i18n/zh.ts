@@ -1065,6 +1065,8 @@ export const dict = {
   "sidebar.sessions.restart.genericagent.unavailable.title": "需要重载桌面端",
   "sidebar.sessions.restart.genericagent.unavailable.description":
     "请重启一次 OpenCode Desktop，以加载新的 GenericAgent 重启 API。",
+  "sidebar.session.messageCount.one": "{{count}} 条消息",
+  "sidebar.session.messageCount.other": "{{count}} 条消息",
 
   "app.name.desktop": "OpenCode Desktop",
 
