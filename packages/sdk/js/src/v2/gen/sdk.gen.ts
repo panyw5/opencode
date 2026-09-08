@@ -164,6 +164,8 @@ import type {
   Prompt,
   ProviderAuthErrors,
   ProviderAuthResponses,
+  ProviderCatalogErrors,
+  ProviderCatalogResponses,
   ProviderListErrors,
   ProviderListResponses,
   ProviderOauthAuthorizeErrors,
@@ -1111,7 +1113,7 @@ export class Session extends HeyApiClient {
       search?: string
       limit?: number
       archived?: boolean | "true" | "false"
-      favorited?: "true" | "false"
+      favorited?: boolean | "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3379,6 +3381,36 @@ export class Oauth extends HeyApiClient {
 
 export class Provider extends HeyApiClient {
   /**
+   * Get model presets
+   *
+   * Get cached models.dev metadata without runtime defaults or user overrides.
+   */
+  public catalog<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ProviderCatalogResponses, ProviderCatalogErrors, ThrowOnError>({
+      url: "/provider/catalog",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * List providers
    *
    * Get a list of all available AI providers, including both available and connected ones.
@@ -3462,7 +3494,7 @@ export class Session2 extends HeyApiClient {
       search?: string
       limit?: number
       archived?: "true" | "false"
-      favorited?: "true" | "false"
+      favorited?: boolean | "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3653,7 +3685,7 @@ export class Session2 extends HeyApiClient {
       injectTaskContext?: boolean
       time?: {
         archived?: number | null
-        favorited?: number
+        favorited?: number | null
       }
     },
     options?: Options<never, ThrowOnError>,

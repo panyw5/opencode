@@ -5135,7 +5135,7 @@ export type ExperimentalSessionListData = {
     search?: string
     limit?: number
     archived?: boolean | "true" | "false"
-    favorited?: "true" | "false"
+    favorited?: boolean | "true" | "false"
   }
   url: "/experimental/session"
 }
@@ -6707,6 +6707,42 @@ export type PermissionReplyResponses = {
 
 export type PermissionReplyResponse = PermissionReplyResponses[keyof PermissionReplyResponses]
 
+export type ProviderCatalogData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/catalog"
+}
+
+export type ProviderCatalogErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProviderCatalogError = ProviderCatalogErrors[keyof ProviderCatalogErrors]
+
+export type ProviderCatalogResponses = {
+  /**
+   * Unmodified models.dev model metadata
+   */
+  200: {
+    [key: string]: {
+      models: {
+        [key: string]: {
+          [key: string]: unknown
+        }
+      }
+    }
+  }
+}
+
+export type ProviderCatalogResponse = ProviderCatalogResponses[keyof ProviderCatalogResponses]
+
 export type ProviderListData = {
   body?: never
   path?: never
@@ -6859,7 +6895,7 @@ export type SessionListData = {
     search?: string
     limit?: number
     archived?: "true" | "false"
-    favorited?: "true" | "false"
+    favorited?: boolean | "true" | "false"
   }
   url: "/session"
 }
@@ -7026,7 +7062,7 @@ export type SessionUpdateData = {
     injectTaskContext?: boolean
     time?: {
       archived?: number | null
-      favorited?: number
+      favorited?: number | null
     }
   }
   path: {

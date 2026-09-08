@@ -59,11 +59,13 @@ const QueryParameterSchemas: Record<string, OpenApiSchema> = {
   "GET /experimental/session start": { type: "number" },
   "GET /experimental/session roots": QueryBooleanOpenApi,
   "GET /experimental/session archived": QueryBooleanOpenApi,
+  "GET /experimental/session favorited": QueryBooleanOpenApi,
   "GET /find/file limit": { type: "integer", minimum: 1, maximum: 200 },
   "GET /experimental/session cursor": { type: "number" },
   "GET /experimental/session limit": { type: "number" },
   "GET /session start": { type: "number" },
   "GET /session roots": QueryBooleanOpenApi,
+  "GET /session favorited": QueryBooleanOpenApi,
   "GET /session limit": { type: "number" },
   "GET /session/{sessionID}/message limit": { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
   "GET /vcs/diff context": { type: "integer", minimum: 0 },
@@ -140,6 +142,8 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
         if (path === "/session/{sessionID}" && method === "patch") {
           const archived = body?.schema?.properties?.time?.properties?.archived
           if (archived) body.schema!.properties!.time!.properties!.archived = nullable(archived)
+          const favorited = body?.schema?.properties?.time?.properties?.favorited
+          if (favorited) body.schema!.properties!.time!.properties!.favorited = nullable(favorited)
         }
       }
       for (const response of Object.values(operation.responses ?? {})) {
