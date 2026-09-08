@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { modelConfig, validateCustomProvider, type ModelRow } from "./dialog-custom-provider-form"
+import {
+  isModelConfigFieldVisible,
+  modelConfig,
+  validateCustomProvider,
+  type ModelRow,
+} from "./dialog-custom-provider-form"
 
 const t = (key: string) => key
 
@@ -18,6 +23,45 @@ function model(input: { row: string; id: string; name: string; values?: Record<s
 }
 
 describe("validateCustomProvider", () => {
+  test("hides uncommon detail fields without removing their form rows", () => {
+    const rows = modelConfig()
+    const hidden = rows.filter((row) => !isModelConfigFieldVisible(row.key)).map((row) => row.key)
+    expect(hidden).toEqual(["family", "release_date", "status", "provider.npm", "provider.api"])
+    expect(rows.filter((row) => isModelConfigFieldVisible(row.key))).toHaveLength(22)
+    expect(isModelConfigFieldVisible("reasoning")).toBe(true)
+    expect(isModelConfigFieldVisible("limit.context")).toBe(true)
+    expect(isModelConfigFieldVisible("cost.input")).toBe(true)
+  })
+
+  test("saving a visible edit preserves hidden metadata and connection overrides", () => {
+    const metadata = {
+      family: "existing-family",
+      release_date: "2026-01-01",
+      status: "beta",
+      provider: { npm: "@ai-sdk/openai", api: "https://example.com/v1" },
+      reasoning: false,
+    }
+    const row = { ...model({ row: "m0", id: "model-a", name: "Model A" }), config: modelConfig(metadata) }
+    const index = row.config.findIndex((item) => item.key === "reasoning")
+    row.config[index].value = "true"
+    const result = validateCustomProvider({
+      form: {
+        providerID: "custom-provider",
+        name: "Provider",
+        baseURL: "https://api.example.com",
+        apiKey: "",
+        models: [row],
+        headers: [],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+    const expected = { ...metadata, name: "Model A", reasoning: true }
+    expect(result.result?.config.models["model-a"]).toEqual(expected)
+  })
+
   test("builds trimmed config payload", () => {
     const result = validateCustomProvider({
       form: {

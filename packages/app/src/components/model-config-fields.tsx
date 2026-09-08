@@ -9,7 +9,7 @@ import { useServer } from "@/context/server"
 import { mainDomain } from "@/pages/layout/extra-agents"
 import { authTokenFromCredentials } from "@/utils/server"
 import { JsonCodeField } from "./json-code-field"
-import { modelConfigPlaceholder, type ModelRow } from "./dialog-custom-provider-form"
+import { isModelConfigFieldVisible, modelConfigPlaceholder, type ModelRow } from "./dialog-custom-provider-form"
 import { findModelPresets, type ModelCatalog } from "./model-presets"
 import { createModelPresetQuery } from "./model-preset-query"
 
@@ -81,7 +81,7 @@ export function ModelConfigFields(props: {
         {(config, index) => {
           const value = () => preset()?.values[config.key]
           return (
-            <>
+            <Show when={isModelConfigFieldVisible(config.key)}>
               <div class="min-w-0 break-all rounded-lg bg-background-base px-2.5 py-2 font-mono text-[11px] leading-5 text-text-weak">
                 {config.key}
               </div>
@@ -122,7 +122,7 @@ export function ModelConfigFields(props: {
                       ? language.t("provider.custom.models.config.presetFailed")
                       : value() === undefined
                         ? language.t("provider.custom.models.config.noPreset")
-                        : `models.dev: ${preset()?.source}\n${value()}`
+                        : `${preset()?.approximate ? "参考系列" : "来源模型"} ${preset()?.source}\n${value()}`
                   }
                   aria-label={`${language.t("provider.custom.models.config.fillPreset")} ${config.key}`}
                   onClick={() => {
@@ -142,7 +142,7 @@ export function ModelConfigFields(props: {
                   {language.t("provider.custom.models.config.fillPreset")}
                 </Button>
               </div>
-            </>
+            </Show>
           )
         }}
       </For>

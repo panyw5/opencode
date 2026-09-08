@@ -5,6 +5,12 @@ type Translator = (key: string, vars?: Record<string, string | number | boolean>
 
 const MODALITIES = ["text", "audio", "image", "video", "pdf"] as const
 const MODEL_STATUSES = ["active", "beta", "alpha", "deprecated"] as const
+const HIDDEN_MODEL_CONFIG_FIELDS = new Set(["family", "release_date", "status", "provider.npm", "provider.api"])
+
+// Keep hidden rows in the form so saving other fields preserves existing metadata.
+export function isModelConfigFieldVisible(key: string) {
+  return !HIDDEN_MODEL_CONFIG_FIELDS.has(key)
+}
 
 type ModelConfigKind = "string" | "number" | "boolean" | "status" | "modalities" | "json"
 

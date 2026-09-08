@@ -58,16 +58,62 @@ describe("model presets", () => {
     expect(findModelPresets(catalog, "official", model.id)?.values.family).toBe("a")
   })
 
-  test("custom providers borrow only unambiguous metadata, not pricing", () => {
+  test("custom providers get reference values even when resellers disagree or omit fields", () => {
+    const sol = { ...model, id: "gpt-5.6-sol", limit: { context: 1050000, input: 922000, output: 128000 } }
     const catalog = {
-      official: provider("official"),
-      other: provider("other", { ...model, limit: { context: 64000, output: 8000 } }),
+      reseller: provider("reseller", { ...sol, limit: { context: 372000, output: 128000 } }),
+      openai: provider("openai", sol),
     }
-    const result = findModelPresets(catalog, "custom", model.id)!
-    expect(result.values.family).toBe("a")
-    expect(result.values["limit.context"]).toBeUndefined()
-    expect(result.values["limit.output"]).toBe("8000")
-    expect(result.values["cost.input"]).toBeUndefined()
+    for (const id of ["aether", "axonhub", "reseller"]) {
+      const result = findModelPresets(catalog, id, sol.id)!
+      expect(result.source).toBe("openai/gpt-5.6-sol")
+      expect(result.values["limit.context"]).toBe("1050000")
+      expect(result.values["limit.input"]).toBe("922000")
+      expect(result.values["limit.output"]).toBe("128000")
+      expect(result.values["cost.input"]).toBe("0")
+    }
+    expect(findModelPresets(Object.fromEntries(Object.entries(catalog).reverse()), "aether", sol.id)).toEqual(
+      findModelPresets(catalog, "axonhub", sol.id),
+    )
+  })
+
+  test("matches namespaced IDs and case without confusing model versions or suffixes", () => {
+    const sol = { ...model, id: "gpt-5.6-sol" }
+    const catalog = { openai: provider("openai", sol) }
+    expect(findModelPresets(catalog, "axonhub", " OpenAI/GPT-5.6-SOL ")?.source).toBe("openai/gpt-5.6-sol")
+    for (const id of ["gpt-5.6", "gpt-5.6-sol-latest", "gpt-5.5-sol"]) {
+      expect(findModelPresets(catalog, "aether", id)).toBeUndefined()
+    }
+    expect(findModelPresets(catalog, "aether", "gpt-5.6-luna")?.approximate).toBe(true)
+    expect(
+      findModelPresets({ router: provider("router", { ...sol, id: "openai/gpt-5.6-sol" }) }, "aether", sol.id)?.source,
+    ).toBe("router/openai/gpt-5.6-sol")
+  })
+
+  test("uses a same-family reference for an unknown alias", () => {
+    const sol = { ...model, id: "gpt-5.6-sol", limit: { context: 1050000, input: 922000, output: 128000 } }
+    const result = findModelPresets({ openai: provider("openai", sol) }, "axonhub", "gpt-5.6-astra")!
+    expect(result.approximate).toBe(true)
+    expect(result.source).toBe("openai/gpt-5.6-sol")
+    expect(result.values["limit.context"]).toBe("1050000")
+    expect(result.values["limit.input"]).toBe("922000")
+    expect(result.values["limit.output"]).toBe("128000")
+  })
+
+  test("does not use an unrelated model as a family fallback", () => {
+    expect(findModelPresets({ openai: provider("openai") }, "axonhub", "claude-3-opus")).toBeUndefined()
+  })
+
+  test("uses a stable populated reference when the original vendor is unavailable", () => {
+    const catalog = {
+      sparse: { models: { "model-a": { id: "model-a" } } },
+      beta: provider("beta"),
+      alpha: provider("alpha"),
+    }
+    expect(findModelPresets(catalog, "aether", model.id)?.source).toBe("alpha/model-a")
+    expect(findModelPresets(Object.fromEntries(Object.entries(catalog).reverse()), "axonhub", model.id)?.source).toBe(
+      "alpha/model-a",
+    )
   })
 
   test("supports explicit provider/model IDs without fuzzy matching", () => {
