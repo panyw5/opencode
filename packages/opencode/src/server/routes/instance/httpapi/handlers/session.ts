@@ -63,6 +63,7 @@ import {
   PromptPayload,
   RevertPayload,
   ShellPayload,
+  StopAfterStepPayload,
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
@@ -836,6 +837,21 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
+    const stopAfterStep = Effect.fn("SessionHttpApi.stopAfterStep")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload?: typeof StopAfterStepPayload.Type
+    }) {
+      yield* promptSvc.prepareStopAfterStep(ctx.params.sessionID, ctx.payload?.messageID)
+      return true
+    })
+
+    const clearStopAfterStep = Effect.fn("SessionHttpApi.clearStopAfterStep")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      yield* promptSvc.clearStopAfterStep(ctx.params.sessionID)
+      return true
+    })
+
     const hooks = Effect.fn("SessionHttpApi.hooks")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
       return yield* pluginSvc.listHookControls(ctx.params.sessionID)
@@ -1116,6 +1132,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handleRaw("fork", forkRaw)
       .handle("abort", abort)
       .handle("flush", flush)
+      .handle("stopAfterStep", stopAfterStep)
+      .handle("clearStopAfterStep", clearStopAfterStep)
       .handle("hooks", hooks)
       .handle("hookControl", hookControl)
       .handle("init", init)

@@ -139,6 +139,8 @@ export interface Interface {
     sessionID: SessionID
     force?: boolean
   }) => Effect.Effect<Session.Info, Session.NotFound | InstanceType<typeof NamedError.Unknown>>
+  readonly prepareStopAfterStep: (sessionID: SessionID, messageID?: string) => Effect.Effect<void>
+  readonly clearStopAfterStep: (sessionID: SessionID) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionPrompt") {}
@@ -2894,6 +2896,8 @@ export const layer = Layer.effect(
       command,
       resolvePromptParts,
       generateTitle,
+      prepareStopAfterStep: (sessionID, messageID) => processor.prepareStopAfterStep(sessionID, messageID),
+      clearStopAfterStep: (sessionID) => processor.clearStopAfterStep(sessionID),
     })
   }),
 )

@@ -54,7 +54,7 @@ export interface Handle {
     toolCallID: string,
     name: string,
     input: Record<string, unknown>,
-  ) => Effect.Effect<MessageV2.ToolPart | undefined>
+  ) => Effect.Effect<MessageV2.ToolPart | undefined, Error>
   readonly updateToolCall: (
     toolCallID: string,
     update: (part: MessageV2.ToolPart) => MessageV2.ToolPart,
@@ -89,6 +89,15 @@ export interface Interface {
   // active LLM stream (e.g. between assistant-message creation and the first
   // stream part) also finalize without the aborted error marker.
   readonly consumeGracefulAbort: (sessionID: SessionID) => Effect.Effect<boolean>
+  // Arm the stop-after-step latch for a session. While latched, tool calls
+  // belonging to the latched step's assistant message (or any tool call when no
+  // messageID is given) are blocked from executing: the tool part is finalized
+  // as aborted and the step ends the turn without a follow-up step. Used by the
+  // UI's "stop after the current reply" affordance so a tool call the model
+  // emits right after the reply never runs.
+  readonly prepareStopAfterStep: (sessionID: SessionID, messageID?: string) => Effect.Effect<void>
+  // Remove a previously armed stop-after-step latch (user disarmed the button).
+  readonly clearStopAfterStep: (sessionID: SessionID) => Effect.Effect<void>
 }
 
 type ToolCall = {
@@ -105,6 +114,7 @@ interface ProcessorContext extends Input {
   snapshot: string | undefined
   blocked: boolean
   needsCompaction: boolean
+  stopAfterStepHit: boolean
   currentText: MessageV2.TextPart | undefined
   reasoningMap: Record<string, MessageV2.ReasoningPart>
 }
@@ -146,6 +156,21 @@ export const layer = Layer.effect(
     yield* Effect.log("graceful abort armed").pipe(Effect.annotateLogs({ sessionID }))
   })
 
+  const stopAfterSteps = new Map<SessionID, { messageID?: string; armedAt: number }>()
+
+  const prepareStopAfterStep = Effect.fn("SessionProcessor.prepareStopAfterStep")(function* (
+    sessionID: SessionID,
+    messageID?: string,
+  ) {
+    stopAfterSteps.set(sessionID, { messageID, armedAt: Date.now() })
+    yield* Effect.log("stop-after-step armed").pipe(Effect.annotateLogs({ sessionID, messageID: messageID ?? "" }))
+  })
+
+  const clearStopAfterStep = Effect.fn("SessionProcessor.clearStopAfterStep")(function* (sessionID: SessionID) {
+    stopAfterSteps.delete(sessionID)
+    yield* Effect.log("stop-after-step cleared").pipe(Effect.annotateLogs({ sessionID }))
+  })
+
   const create = Effect.fn("SessionProcessor.create")(function* (input: Input) {
       // Graceful abort latches are armed by SessionPrompt.flush right before it
       // cancels the run. takeGracefulAbort consumes the latch so it can never
@@ -171,11 +196,37 @@ export const layer = Layer.effect(
         snapshot: initialSnapshot,
         blocked: false,
         needsCompaction: false,
+        stopAfterStepHit: false,
         currentText: undefined,
         reasoningMap: {},
       }
       let aborted = false
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
+
+      // Stop-after-step latches are armed by the UI while a reply streams. A
+      // latch pinned to a specific assistant message is stale once the loop
+      // moves on to a different message — drop it so it can never block a
+      // later step's tools. Wildcard latches (no messageID) stay until they
+      // expire or are consumed.
+      const armedLatch = stopAfterSteps.get(input.sessionID)
+      if (armedLatch?.messageID && armedLatch.messageID !== input.assistantMessage.id) {
+        stopAfterSteps.delete(input.sessionID)
+        slog.info("stale stop-after-step latch dropped", { armedFor: armedLatch.messageID })
+      }
+
+      // Non-consuming check: every tool call that starts while the latch is
+      // armed must be blocked, not just the first one. The latch expires with
+      // the step (message-pinned) or after the TTL.
+      const checkStopAfterStep = () => {
+        const latch = stopAfterSteps.get(input.sessionID)
+        if (!latch) return false
+        if (Date.now() - latch.armedAt >= 60_000) {
+          stopAfterSteps.delete(input.sessionID)
+          return false
+        }
+        if (latch.messageID && latch.messageID !== ctx.assistantMessage.id) return false
+        return true
+      }
 
       const parse = (e: unknown) =>
         MessageV2.fromError(e, {
@@ -405,6 +456,23 @@ export const layer = Layer.effect(
             status: match.part.state.status,
           })
           return match.part
+        }
+        // The execute wrapper (tools.ts) fails out before running the tool when
+        // this fails, and the AI SDK surfaces the rejection as a tool-error
+        // event; the part keeps the aborted state written here.
+        if (checkStopAfterStep()) {
+          ctx.stopAfterStepHit = true
+          yield* session.abortToolPart({
+            sessionID: match.part.sessionID,
+            messageID: match.part.messageID,
+            partID: match.part.id,
+            source: "stop-after-step",
+            error: "Stopped before execution",
+            ownerMessageID: ctx.assistantMessage.id,
+          })
+          yield* settleToolCall(toolCallID)
+          slog.info("tool call blocked by stop-after-step latch", { toolCallID, partID: match.part.id, tool: name })
+          return yield* Effect.fail(new Error(`Tool "${name}" blocked by stop-after-step`))
         }
         const part = yield* session.updatePart({
           ...match.part,
@@ -1042,7 +1110,7 @@ export const layer = Layer.effect(
           )
 
           if (ctx.needsCompaction) return "compact"
-          if (ctx.blocked || ctx.assistantMessage.error) return "stop"
+          if (ctx.stopAfterStepHit || ctx.blocked || ctx.assistantMessage.error) return "stop"
           return "continue"
         })
       })
@@ -1059,7 +1127,13 @@ export const layer = Layer.effect(
       } satisfies Handle
     })
 
-    return Service.of({ create, prepareGracefulAbort, consumeGracefulAbort: takeGracefulAbort })
+    return Service.of({
+      create,
+      prepareGracefulAbort,
+      consumeGracefulAbort: takeGracefulAbort,
+      prepareStopAfterStep,
+      clearStopAfterStep,
+    })
   }),
 )
 

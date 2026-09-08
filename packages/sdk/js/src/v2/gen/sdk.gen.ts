@@ -82,10 +82,10 @@ import type {
   FormatterStatusResponses,
   GlobalConfigGetErrors,
   GlobalConfigGetResponses,
-  GlobalConfigRemoveProviderErrors,
-  GlobalConfigRemoveProviderResponses,
   GlobalConfigRefreshErrors,
   GlobalConfigRefreshResponses,
+  GlobalConfigRemoveProviderErrors,
+  GlobalConfigRemoveProviderResponses,
   GlobalConfigUpdateErrors,
   GlobalConfigUpdateResponses,
   GlobalDisposeErrors,
@@ -219,6 +219,8 @@ import type {
   SessionAdvisorInterventionStartResponses,
   SessionChildrenErrors,
   SessionChildrenResponses,
+  SessionClearStopAfterStepErrors,
+  SessionClearStopAfterStepResponses,
   SessionCommandErrors,
   SessionCommandResponses,
   SessionCreateErrors,
@@ -276,6 +278,8 @@ import type {
   SessionShellResponses,
   SessionStatusErrors,
   SessionStatusResponses,
+  SessionStopAfterStepErrors,
+  SessionStopAfterStepResponses,
   SessionSummarizeErrors,
   SessionSummarizeResponses,
   SessionTodoErrors,
@@ -1107,7 +1111,7 @@ export class Session extends HeyApiClient {
       search?: string
       limit?: number
       archived?: boolean | "true" | "false"
-      favorited?: boolean | "true" | "false"
+      favorited?: "true" | "false"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3649,7 +3653,7 @@ export class Session2 extends HeyApiClient {
       injectTaskContext?: boolean
       time?: {
         archived?: number | null
-        favorited?: number | null
+        favorited?: number
       }
     },
     options?: Options<never, ThrowOnError>,
@@ -4404,6 +4408,85 @@ export class Session2 extends HeyApiClient {
       url: "/session/{sessionID}/flush",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Clear stop-after-step
+   *
+   * Remove a previously armed stop-after-step latch.
+   */
+  public clearStopAfterStep<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      SessionClearStopAfterStepResponses,
+      SessionClearStopAfterStepErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/stop-after-step",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Arm stop-after-step
+   *
+   * Arm a latch so tool calls the model emits for the given assistant message (or any tool call when no messageID is given) are blocked from executing and the current step ends the turn.
+   */
+  public stopAfterStep<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      messageID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "messageID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      SessionStopAfterStepResponses,
+      SessionStopAfterStepErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/stop-after-step",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

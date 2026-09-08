@@ -1270,6 +1270,41 @@ const scenarios: Scenario[] = [
       check(body === true, "missing session abort should remain a no-op success")
     }),
   http.protected
+    .post("/session/{sessionID}/stop-after-step", "session.stopAfterStep")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Stop after step" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/stop-after-step", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: {},
+    }))
+    .json(200, (body) => {
+      check(body === true, "stop-after-step arm should return true")
+    }),
+  http.protected
+    .post("/session/{sessionID}/stop-after-step", "session.stopAfterStep.messageID")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Stop after step pinned" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/stop-after-step", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { messageID: "msg_httpapi_stop_after_step" },
+    }))
+    .json(200, (body) => {
+      check(body === true, "stop-after-step arm with messageID should return true")
+    }),
+  http.protected
+    .delete("/session/{sessionID}/stop-after-step", "session.clearStopAfterStep")
+    .mutating()
+    .seeded((ctx) => ctx.session({ title: "Stop after step cleared" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/stop-after-step", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      check(body === true, "stop-after-step clear should return true")
+    }),
+  http.protected
     .post("/session/{sessionID}/init", "session.init")
     .preserveDatabase()
     .withLlm()

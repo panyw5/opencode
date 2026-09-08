@@ -209,6 +209,9 @@ export const AdvisorInterventionMessagePayload = Schema.Struct({
   message: Schema.String,
 })
 export const HookControlPayload = Plugin.HookControlInput
+export const StopAfterStepPayload = Schema.Struct({
+  messageID: Schema.optional(Schema.String),
+})
 
 export const SessionPaths = {
   list: root,
@@ -232,6 +235,7 @@ export const SessionPaths = {
   fork: `${root}/:sessionID/fork`,
   abort: `${root}/:sessionID/abort`,
   flush: `${root}/:sessionID/flush`,
+  stopAfterStep: `${root}/:sessionID/stop-after-step`,
   hooks: `${root}/:sessionID/hooks`,
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
@@ -522,6 +526,32 @@ export const SessionApi = HttpApi.make("session")
             summary: "Flush queued prompts",
             description:
               "Interrupt the active run (if any) and immediately process queued user prompts instead of waiting for the current step to finish.",
+          }),
+        ),
+        HttpApiEndpoint.post("stopAfterStep", SessionPaths.stopAfterStep, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: Schema.optional(StopAfterStepPayload),
+          success: described(Schema.Boolean, "Stop-after-step latch armed"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.stopAfterStep",
+            summary: "Arm stop-after-step",
+            description:
+              "Arm a latch so tool calls the model emits for the given assistant message (or any tool call when no messageID is given) are blocked from executing and the current step ends the turn.",
+          }),
+        ),
+        HttpApiEndpoint.delete("clearStopAfterStep", SessionPaths.stopAfterStep, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Boolean, "Stop-after-step latch cleared"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.clearStopAfterStep",
+            summary: "Clear stop-after-step",
+            description: "Remove a previously armed stop-after-step latch.",
           }),
         ),
         HttpApiEndpoint.get("hooks", SessionPaths.hooks, {

@@ -3848,3 +3848,183 @@ it.instance(
     ),
   30_000,
 )
+
+it.instance(
+  "stop-after-step latch blocks tool calls the model emits after arming",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const gate = yield* Deferred.make<void>()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const status = yield* SessionStatus.Service
+      const chat = yield* sessions.create({
+        title: "Stop after step",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* llm.push(
+        reply()
+          .wait(deferredAsPromise(gate))
+          .text("Let me look for the files.")
+          .tool("glob", { pattern: "**/*.txt" }),
+      )
+
+      const runFiber = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "find text files" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* llm.wait(1)
+
+      const msgID = yield* pollWithTimeout(
+        sessions.messages({ sessionID: chat.id }).pipe(
+          Effect.map((msgs) => {
+            const active = msgs.find(
+              (msg) => msg.info.role === "assistant" && typeof msg.info.time.completed !== "number",
+            )
+            return active?.info.id
+          }),
+        ),
+        "timed out waiting for the active assistant message",
+      )
+
+      yield* prompt.prepareStopAfterStep(chat.id, msgID)
+      yield* Deferred.succeed(gate, void 0)
+
+      const exit = yield* Fiber.await(runFiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(yield* llm.calls).toBe(1)
+
+      const msgs = yield* sessions.messages({ sessionID: chat.id })
+      const assistants = msgs.filter((msg) => msg.info.role === "assistant")
+      expect(assistants).toHaveLength(1)
+      expect(assistants[0]?.info.error).toBeUndefined()
+      expect(typeof assistants[0]?.info.time.completed).toBe("number")
+
+      const tool = msgs
+        .flatMap((msg) => msg.parts)
+        .find((part): part is MessageV2.ToolPart => part.type === "tool" && part.tool === "glob")
+      expect(tool?.state.status).toBe("error")
+      if (tool?.state.status !== "error") return
+      expect(tool.state.error).toBe("Stopped before execution")
+      expect(tool.state.metadata?.interrupted).toBe(true)
+      expect(tool.state.metadata?.abortSource).toBe("stop-after-step")
+
+      const state = yield* status.get(chat.id)
+      expect(state.type).toBe("idle")
+    }),
+  5_000,
+)
+
+it.instance(
+  "without the stop-after-step latch the tool runs and the loop continues",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const gate = yield* Deferred.make<void>()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "No latch control",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* llm.push(
+        reply()
+          .wait(deferredAsPromise(gate))
+          .text("Let me look for the files.")
+          .tool("glob", { pattern: "**/*.txt" }),
+      )
+      yield* llm.text("done")
+
+      const runFiber = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "find text files" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* llm.wait(1)
+      yield* Deferred.succeed(gate, void 0)
+
+      const exit = yield* Fiber.await(runFiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(yield* llm.calls).toBe(2)
+
+      const msgs = yield* sessions.messages({ sessionID: chat.id })
+      const tool = msgs
+        .flatMap((msg) => msg.parts)
+        .find((part): part is CompletedToolPart => part.type === "tool" && part.tool === "glob")
+      expect(tool?.state.status).toBe("completed")
+      expect(tool?.state.output).toBeDefined()
+    }),
+  5_000,
+)
+
+it.instance(
+  "clearing the stop-after-step latch lets later tool calls run",
+  () =>
+    Effect.gen(function* () {
+      const { llm } = yield* useServerConfig(providerCfg)
+      const gate = yield* Deferred.make<void>()
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      const chat = yield* sessions.create({
+        title: "Stop after step cleared",
+        permission: [{ permission: "*", pattern: "*", action: "allow" }],
+      })
+
+      yield* llm.push(
+        reply()
+          .wait(deferredAsPromise(gate))
+          .text("Let me look for the files.")
+          .tool("glob", { pattern: "**/*.txt" }),
+      )
+      yield* llm.text("done")
+
+      const runFiber = yield* prompt
+        .prompt({
+          sessionID: chat.id,
+          agent: "build",
+          model: ref,
+          parts: [{ type: "text", text: "find text files" }],
+        })
+        .pipe(Effect.forkChild)
+
+      yield* llm.wait(1)
+
+      const msgID = yield* pollWithTimeout(
+        sessions.messages({ sessionID: chat.id }).pipe(
+          Effect.map((msgs) => {
+            const active = msgs.find(
+              (msg) => msg.info.role === "assistant" && typeof msg.info.time.completed !== "number",
+            )
+            return active?.info.id
+          }),
+        ),
+        "timed out waiting for the active assistant message",
+      )
+
+      yield* prompt.prepareStopAfterStep(chat.id, msgID)
+      yield* prompt.clearStopAfterStep(chat.id)
+      yield* Deferred.succeed(gate, void 0)
+
+      const exit = yield* Fiber.await(runFiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(yield* llm.calls).toBe(2)
+
+      const msgs = yield* sessions.messages({ sessionID: chat.id })
+      const tool = msgs
+        .flatMap((msg) => msg.parts)
+        .find((part): part is CompletedToolPart => part.type === "tool" && part.tool === "glob")
+      expect(tool?.state.status).toBe("completed")
+    }),
+  5_000,
+)

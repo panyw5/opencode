@@ -1947,6 +1947,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (stopAfterTool()) {
       console.debug("[stop-after-tool] disarmed by user", { sessionID: params.id })
       setStopAfterTool(undefined)
+      const sessionID = params.id
+      if (sessionID) {
+        void sdk.client.session.clearStopAfterStep({ sessionID }).catch(() => {})
+      }
       return
     }
     const sessionID = params.id
@@ -1973,6 +1977,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
     console.debug("[stop-after-tool] armed", { sessionID, messageID: messageID ?? "", tracked })
     setStopAfterTool({ sessionID, messageID: messageID ?? "", parts: tracked })
+    // With no tool in flight the wait target is the armed message itself. Arm a
+    // backend latch too so tool calls the model emits later in that same
+    // message are blocked from executing instead of running to completion.
+    if (tracked.length === 0 && messageID) {
+      void sdk.client.session
+        .stopAfterStep({ sessionID, messageID })
+        .catch((error) => console.debug("[stop-after-tool] latch arm failed", error))
+    }
   }
 
   // Abort once every tool call that was in flight when the user armed the

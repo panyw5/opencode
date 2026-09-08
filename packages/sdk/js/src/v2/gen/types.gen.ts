@@ -2194,7 +2194,7 @@ export type BackgroundShell3 = {
   outputTail?: string
 }
 
-export type Config6 = {
+export type Config7 = {
   $schema?: string
   shell?: string
   logLevel?: LogLevel
@@ -5135,6 +5135,7 @@ export type ExperimentalSessionListData = {
     search?: string
     limit?: number
     archived?: boolean | "true" | "false"
+    favorited?: "true" | "false"
   }
   url: "/experimental/session"
 }
@@ -6858,6 +6859,7 @@ export type SessionListData = {
     search?: string
     limit?: number
     archived?: "true" | "false"
+    favorited?: "true" | "false"
   }
   url: "/session"
 }
@@ -7024,7 +7026,7 @@ export type SessionUpdateData = {
     injectTaskContext?: boolean
     time?: {
       archived?: number | null
-      favorited?: number | null
+      favorited?: number
     }
   }
   path: {
@@ -7891,6 +7893,77 @@ export type SessionFlushResponses = {
 }
 
 export type SessionFlushResponse = SessionFlushResponses[keyof SessionFlushResponses]
+
+export type SessionClearStopAfterStepData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/stop-after-step"
+}
+
+export type SessionClearStopAfterStepErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionClearStopAfterStepError = SessionClearStopAfterStepErrors[keyof SessionClearStopAfterStepErrors]
+
+export type SessionClearStopAfterStepResponses = {
+  /**
+   * Stop-after-step latch cleared
+   */
+  200: boolean
+}
+
+export type SessionClearStopAfterStepResponse =
+  SessionClearStopAfterStepResponses[keyof SessionClearStopAfterStepResponses]
+
+export type SessionStopAfterStepData = {
+  body?: {
+    messageID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/session/{sessionID}/stop-after-step"
+}
+
+export type SessionStopAfterStepErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionStopAfterStepError = SessionStopAfterStepErrors[keyof SessionStopAfterStepErrors]
+
+export type SessionStopAfterStepResponses = {
+  /**
+   * Stop-after-step latch armed
+   */
+  200: boolean
+}
+
+export type SessionStopAfterStepResponse = SessionStopAfterStepResponses[keyof SessionStopAfterStepResponses]
 
 export type SessionHooksData = {
   body?: never
