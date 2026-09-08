@@ -217,7 +217,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
       // Extract paths from token-authorized result and release authorization
       const paths = result.files.map((f) => f.path)
       desktopApi.releasePickedFiles(result.token)
-      const pathResult = opts?.multiple ? paths : paths[0] ?? null
+      const pathResult = opts?.multiple ? paths : (paths[0] ?? null)
       return handleWslPicker(pathResult)
     },
 
@@ -275,6 +275,10 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
     },
 
     storage,
+    promptHistory: {
+      append: (kind, entry) => desktopApi.promptHistoryAppend(kind, entry),
+      page: (kind, offset, limit) => desktopApi.promptHistoryPage(kind, offset, limit),
+    },
 
     checkUpdate: async () => {
       const config = await desktopApi.getWindowConfig().catch(() => ({ updaterEnabled: false }))
@@ -606,7 +610,11 @@ render(() => {
         password: data.password ?? undefined,
       },
     }
-    return [server, ...readySshConnections(sshServersState()), ...extraAgentConnections(extraAgents.latest ?? [])] as ServerConnection.Any[]
+    return [
+      server,
+      ...readySshConnections(sshServersState()),
+      ...extraAgentConnections(extraAgents.latest ?? []),
+    ] as ServerConnection.Any[]
   }
 
   function handleClick(e: MouseEvent) {

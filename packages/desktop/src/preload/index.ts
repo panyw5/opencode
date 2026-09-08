@@ -73,6 +73,8 @@ const api: ElectronAPI = {
   storeClear: (name) => ipcRenderer.invoke("store-clear", name),
   storeKeys: (name) => ipcRenderer.invoke("store-keys", name),
   storeLength: (name) => ipcRenderer.invoke("store-length", name),
+  promptHistoryAppend: (kind, entry) => ipcRenderer.invoke("prompt-history-append", kind, entry),
+  promptHistoryPage: (kind, offset, limit) => ipcRenderer.invoke("prompt-history-page", kind, offset, limit),
 
   getWindowCount: () => ipcRenderer.invoke("get-window-count"),
   onSqliteMigrationProgress: (cb) => {

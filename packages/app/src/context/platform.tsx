@@ -11,6 +11,15 @@ type OpenFilePickerOptions = { title?: string; multiple?: boolean; accept?: stri
 type SaveFilePickerOptions = { title?: string; defaultPath?: string }
 type UpdateInfo = { updateAvailable: boolean; version?: string }
 
+export type PromptHistoryPlatform = {
+  append(kind: "normal" | "shell", entry: string): Promise<{ added: boolean }>
+  page(
+    kind: "normal" | "shell",
+    offset: number,
+    limit: number,
+  ): Promise<{ entries: string[]; nextOffset: number; hasMore: boolean }>
+}
+
 export type ConfigFile = {
   id: string
   label: string
@@ -283,6 +292,9 @@ export type Platform = {
 
   /** Storage mechanism, defaults to localStorage */
   storage?: (name?: string) => SyncStorage | AsyncStorage
+
+  /** File-backed, paged prompt history (desktop only). */
+  promptHistory?: PromptHistoryPlatform
 
   /** Check for updates (Tauri only) */
   checkUpdate?(): Promise<UpdateInfo>

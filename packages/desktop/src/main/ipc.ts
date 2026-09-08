@@ -27,6 +27,7 @@ import {
   testOpenclawBridge,
 } from "./extra-agents"
 import { getStore } from "./store"
+import { getPromptHistoryStore, type PromptHistoryKind } from "./prompt-history"
 import type { UpdaterController } from "./updater-controller"
 import { createUpdaterSubscriptions } from "./updater-subscriptions"
 import { getPinchZoomEnabled, setPinchZoomEnabled, setTitlebar, updateTitlebar } from "./windows"
@@ -295,6 +296,15 @@ export function registerIpcHandlers(deps: Deps) {
       throw error
     }
   })
+
+  ipcMain.handle("prompt-history-append", (_event: IpcMainInvokeEvent, kind: PromptHistoryKind, entry: string) =>
+    getPromptHistoryStore().append(kind, entry),
+  )
+  ipcMain.handle(
+    "prompt-history-page",
+    (_event: IpcMainInvokeEvent, kind: PromptHistoryKind, offset: number, limit: number) =>
+      getPromptHistoryStore().page(kind, offset, limit),
+  )
   ipcMain.handle("open-in-finder", (_event: IpcMainInvokeEvent, path: string) => openInFinder(path))
   ipcMain.handle("open-in-editor", (_event: IpcMainInvokeEvent, editor: string, path: string) =>
     openInEditor(editor, path),
@@ -304,9 +314,7 @@ export function registerIpcHandlers(deps: Deps) {
     setCustomEditorPath(path),
   )
   ipcMain.handle("get-default-editor", () => getDefaultEditor())
-  ipcMain.handle("set-default-editor", (_event: IpcMainInvokeEvent, editor: string | null) =>
-    setDefaultEditor(editor),
-  )
+  ipcMain.handle("set-default-editor", (_event: IpcMainInvokeEvent, editor: string | null) => setDefaultEditor(editor))
   ipcMain.handle("filter-directories", (_event: IpcMainInvokeEvent, paths: string[]) => filterDirectories(paths))
   ipcMain.handle("list-config-files", (_event: IpcMainInvokeEvent, directory?: string | null) =>
     listConfigFiles(directory),

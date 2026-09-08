@@ -307,6 +307,12 @@ export type ElectronAPI = {
   storeClear: (name: string) => Promise<void>
   storeKeys: (name: string) => Promise<string[]>
   storeLength: (name: string) => Promise<number>
+  promptHistoryAppend: (kind: "normal" | "shell", entry: string) => Promise<{ added: boolean }>
+  promptHistoryPage: (
+    kind: "normal" | "shell",
+    offset: number,
+    limit: number,
+  ) => Promise<{ entries: string[]; nextOffset: number; hasMore: boolean }>
 
   getWindowCount: () => Promise<number>
   onSqliteMigrationProgress: (cb: (progress: SqliteMigrationProgress) => void) => () => void

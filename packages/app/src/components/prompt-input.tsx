@@ -61,12 +61,12 @@ import { ACCEPTED_FILE_TYPES } from "./prompt-input/files"
 import {
   canNavigateHistoryAtCursor,
   navigatePromptHistory,
-  prependHistoryEntry,
   type PromptHistoryComment,
   type PromptHistoryEntry,
   type PromptHistoryStoredEntry,
   promptLength,
 } from "./prompt-input/history"
+import { createPromptHistoryStorage, type PromptHistoryKind } from "./prompt-input/history-storage"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import {
@@ -679,21 +679,34 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const [submit, setSubmit] = createSignal(false)
 
-  const [history, setHistory] = persisted(
-    Persist.global("prompt-history", ["prompt-history.v1"]),
+  const historyStorage = createPromptHistoryStorage(platform)
+  const createHistoryState = () =>
     createStore<{
       entries: PromptHistoryStoredEntry[]
-    }>({
-      entries: [],
-    }),
-  )
-  const [shellHistory, setShellHistory] = persisted(
-    Persist.global("prompt-history-shell", ["prompt-history-shell.v1"]),
-    createStore<{
-      entries: PromptHistoryStoredEntry[]
-    }>({
-      entries: [],
-    }),
+      nextOffset: number
+      hasMore: boolean
+      loading: boolean
+    }>({ entries: [], nextOffset: 0, hasMore: true, loading: false })
+  const [history, setHistory] = createHistoryState()
+  const [shellHistory, setShellHistory] = createHistoryState()
+  const historyWrites: Record<PromptHistoryKind, Promise<unknown>> = {
+    normal: Promise.resolve(),
+    shell: Promise.resolve(),
+  }
+  let historyGeneration = 0
+  createEffect(
+    on(
+      () => params.id,
+      () => {
+        historyGeneration += 1
+        setHistory({ entries: [], nextOffset: 0, hasMore: true, loading: false })
+        setShellHistory({ entries: [], nextOffset: 0, hasMore: true, loading: false })
+        setStore("historyIndex", -1)
+        setStore("savedPrompt", null)
+        console.debug("[prompt-history] resident pages released", { sessionID: params.id })
+      },
+      { defer: true },
+    ),
   )
   const [prefs, setPrefs] = persisted(
     Persist.global("prompt-layout", ["prompt-layout.v1"]),
@@ -1618,11 +1631,24 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const addToHistory = (prompt: Prompt, mode: "normal" | "shell") => {
-    const currentHistory = mode === "shell" ? shellHistory : history
+    const comments = mode === "shell" ? [] : historyComments()
     const setCurrentHistory = mode === "shell" ? setShellHistory : setHistory
-    const next = prependHistoryEntry(currentHistory.entries, prompt, mode === "shell" ? [] : historyComments())
-    if (next === currentHistory.entries) return
-    setCurrentHistory("entries", next)
+    console.debug("[prompt-history] append queued", {
+      mode,
+      parts: prompt.length,
+      images: prompt.filter((part) => part.type === "image").length,
+      comments: comments.length,
+    })
+    historyWrites[mode] = historyWrites[mode]
+      .then(() => historyStorage.append(mode, prompt, comments))
+      .then((result) => {
+        console.debug("[prompt-history] append acknowledged", { mode, added: result.added })
+        if (!result.added) return
+        setCurrentHistory({ entries: [], nextOffset: 0, hasMore: true, loading: false })
+      })
+      .catch((error) => {
+        console.error("[prompt-history] append failed", { mode, error })
+      })
   }
 
   createEffect(
@@ -1665,10 +1691,52 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     ),
   )
 
-  const navigateHistory = (direction: "up" | "down") => {
+  const loadHistoryPage = async (mode: PromptHistoryKind) => {
+    const current = mode === "shell" ? shellHistory : history
+    const setCurrent = mode === "shell" ? setShellHistory : setHistory
+    if (current.loading || !current.hasMore) return false
+    setCurrent("loading", true)
+    const generation = historyGeneration
+    console.debug("[prompt-history] page requested", { mode, offset: current.nextOffset })
+    try {
+      await historyWrites[mode]
+      const page = await historyStorage.page(mode, current.nextOffset, 10)
+      if (generation !== historyGeneration) {
+        console.debug("[prompt-history] stale page discarded", { mode, offset: current.nextOffset })
+        return false
+      }
+      setCurrent("entries", [...current.entries, ...page.entries])
+      setCurrent("nextOffset", page.nextOffset)
+      setCurrent("hasMore", page.hasMore)
+      console.debug("[prompt-history] page applied", {
+        mode,
+        returned: page.entries.length,
+        nextOffset: page.nextOffset,
+        hasMore: page.hasMore,
+      })
+      return page.entries.length > 0
+    } catch (error) {
+      console.error("[prompt-history] page failed", { mode, offset: current.nextOffset, error })
+      return false
+    } finally {
+      setCurrent("loading", false)
+    }
+  }
+
+  const navigateHistory = async (direction: "up" | "down") => {
+    const mode = store.mode
+    let current = mode === "shell" ? shellHistory : history
+    if (
+      direction === "up" &&
+      current.hasMore &&
+      (current.entries.length === 0 || store.historyIndex === current.entries.length - 1)
+    ) {
+      await loadHistoryPage(mode)
+      current = mode === "shell" ? shellHistory : history
+    }
     const result = navigatePromptHistory({
       direction,
-      entries: store.mode === "shell" ? shellHistory.entries : history.entries,
+      entries: current.entries,
       historyIndex: store.historyIndex,
       currentPrompt: prompt.current(),
       currentComments: historyComments(),
@@ -2113,9 +2181,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         .join("")
       const direction = event.key === "ArrowUp" ? "up" : "down"
       if (!canNavigateHistoryAtCursor(direction, textContent, cursorPosition, store.historyIndex >= 0)) return
-      if (navigateHistory(direction)) {
-        event.preventDefault()
-      }
+      event.preventDefault()
+      void navigateHistory(direction)
       return
     }
 
