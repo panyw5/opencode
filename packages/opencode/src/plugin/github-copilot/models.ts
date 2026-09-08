@@ -1,51 +1,55 @@
 import type { Model } from "@opencode-ai/sdk/v2"
-import { Schema } from "effect"
+import * as Log from "@opencode-ai/core/util/log"
+import { Option, Schema } from "effect"
 
-export const schema = Schema.Struct({
-  data: Schema.Array(
+const log = Log.create({ service: "plugin.copilot.models" })
+
+const item = Schema.Struct({
+  model_picker_enabled: Schema.Boolean,
+  id: Schema.String,
+  name: Schema.String,
+  // every version looks like: `{model.id}-YYYY-MM-DD`
+  version: Schema.String,
+  supported_endpoints: Schema.optional(Schema.Array(Schema.String)),
+  policy: Schema.optional(
     Schema.Struct({
-      model_picker_enabled: Schema.Boolean,
-      id: Schema.String,
-      name: Schema.String,
-      // every version looks like: `{model.id}-YYYY-MM-DD`
-      version: Schema.String,
-      supported_endpoints: Schema.optional(Schema.Array(Schema.String)),
-      policy: Schema.optional(
-        Schema.Struct({
-          state: Schema.optional(Schema.String),
-        }),
-      ),
-      capabilities: Schema.Struct({
-        family: Schema.String,
-        limits: Schema.Struct({
-          max_context_window_tokens: Schema.Number,
-          max_output_tokens: Schema.Number,
-          max_prompt_tokens: Schema.Number,
-          vision: Schema.optional(
-            Schema.Struct({
-              max_prompt_image_size: Schema.Number,
-              max_prompt_images: Schema.Number,
-              supported_media_types: Schema.Array(Schema.String),
-            }),
-          ),
-        }),
-        supports: Schema.Struct({
-          adaptive_thinking: Schema.optional(Schema.Boolean),
-          max_thinking_budget: Schema.optional(Schema.Number),
-          min_thinking_budget: Schema.optional(Schema.Number),
-          reasoning_effort: Schema.optional(Schema.Array(Schema.String)),
-          streaming: Schema.Boolean,
-          structured_outputs: Schema.optional(Schema.Boolean),
-          tool_calls: Schema.Boolean,
-          vision: Schema.optional(Schema.Boolean),
-        }),
-      }),
+      state: Schema.optional(Schema.String),
     }),
   ),
+  capabilities: Schema.Struct({
+    family: Schema.String,
+    limits: Schema.Struct({
+      max_context_window_tokens: Schema.optional(Schema.Number),
+      max_output_tokens: Schema.Number,
+      max_prompt_tokens: Schema.Number,
+      vision: Schema.optional(
+        Schema.Struct({
+          max_prompt_image_size: Schema.Number,
+          max_prompt_images: Schema.Number,
+          supported_media_types: Schema.Array(Schema.String),
+        }),
+      ),
+    }),
+    supports: Schema.Struct({
+      adaptive_thinking: Schema.optional(Schema.Boolean),
+      max_thinking_budget: Schema.optional(Schema.Number),
+      min_thinking_budget: Schema.optional(Schema.Number),
+      reasoning_effort: Schema.optional(Schema.Array(Schema.String)),
+      streaming: Schema.Boolean,
+      structured_outputs: Schema.optional(Schema.Boolean),
+      tool_calls: Schema.Boolean,
+      vision: Schema.optional(Schema.Boolean),
+    }),
+  }),
 })
 
-type Item = Schema.Schema.Type<typeof schema>["data"][number]
+export const schema = Schema.Struct({
+  data: Schema.Array(Schema.Unknown),
+})
+
+type Item = Schema.Schema.Type<typeof item>
 const decodeModels = Schema.decodeUnknownSync(schema)
+const decodeItem = Schema.decodeUnknownOption(item)
 
 function build(key: string, remote: Item, url: string, prev?: Model): Model {
   const reasoning =
@@ -70,7 +74,7 @@ function build(key: string, remote: Item, url: string, prev?: Model): Model {
     // API response wins
     status: "active",
     limit: {
-      context: remote.capabilities.limits.max_context_window_tokens,
+      context: remote.capabilities.limits.max_context_window_tokens ?? remote.capabilities.limits.max_prompt_tokens,
       input: remote.capabilities.limits.max_prompt_tokens,
       output: remote.capabilities.limits.max_output_tokens,
     },
@@ -170,9 +174,22 @@ export async function get(
   })
 
   const result = { ...existing }
+  const invalid: string[] = []
   const remote = new Map(
-    data.data.filter((m) => m.model_picker_enabled && m.policy?.state !== "disabled").map((m) => [m.id, m] as const),
+    data.data.flatMap((raw) => {
+      const model = Option.getOrUndefined(decodeItem(raw))
+      if (!model) {
+        const id = typeof raw === "object" && raw !== null && "id" in raw ? raw.id : undefined
+        invalid.push(typeof id === "string" ? id : "unknown")
+        return []
+      }
+      if (!model.model_picker_enabled || model.policy?.state === "disabled") return []
+      return [[model.id, model] as const]
+    }),
   )
+  if (invalid.length > 0) {
+    log.warn("skipped invalid models", { invalid: invalid.length, total: data.data.length, models: invalid.join(",") })
+  }
 
   // prune existing models whose api.id isn't in the endpoint response
   for (const [key, model] of Object.entries(result)) {

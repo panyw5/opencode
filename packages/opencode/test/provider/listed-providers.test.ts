@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { listedProviders, type Info } from "../../src/provider/provider"
+import { defaultModelIDs, listedProviders, type Info } from "../../src/provider/provider"
 import { ProviderID } from "../../src/provider/schema"
 
 function provider(id: string): Info {
@@ -37,5 +37,16 @@ describe("listedProviders", () => {
     })
 
     expect(Object.keys(result)).toEqual(["commandcode"])
+  })
+})
+
+describe("defaultModelIDs", () => {
+  test("skips providers with no models", () => {
+    const result = defaultModelIDs({
+      empty: { models: {} },
+      available: { models: { model: { id: "model" } } },
+    })
+
+    expect(result).toEqual({ available: "model" })
   })
 })

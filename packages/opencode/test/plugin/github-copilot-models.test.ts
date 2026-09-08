@@ -40,7 +40,6 @@ test("preserves temperature support from existing provider models", async () => 
               capabilities: {
                 family: "test",
                 limits: {
-                  max_context_window_tokens: 32000,
                   max_output_tokens: 8192,
                   max_prompt_tokens: 32000,
                 },
@@ -49,6 +48,10 @@ test("preserves temperature support from existing provider models", async () => 
                   tool_calls: false,
                 },
               },
+            },
+            {
+              model_picker_enabled: true,
+              id: "malformed",
             },
           ],
         }),
@@ -115,6 +118,8 @@ test("preserves temperature support from existing provider models", async () => 
 
   expect(models["gpt-4o"].capabilities.temperature).toBe(true)
   expect(models["brand-new"].capabilities.temperature).toBe(true)
+  expect(models["brand-new"].limit.context).toBe(32000)
+  expect(models.malformed).toBeUndefined()
 })
 
 test("clears existing variants so refreshed models calculate provider-specific variants", async () => {
