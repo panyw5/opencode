@@ -10,6 +10,12 @@ import { described } from "./metadata"
 
 const root = "/provider"
 
+// Catalog snapshots may omit metadata required by the runtime model schema.
+export const ModelPresetCatalog = Schema.Record(
+  Schema.String,
+  Schema.Struct({ models: Schema.Record(Schema.String, Schema.Record(Schema.String, Schema.Json)) }),
+)
+
 const ProviderAuthErrorName = Schema.Union([
   Schema.Literal("BadRequest"),
   Schema.Literal("ProviderAuthOauthMissing"),
@@ -34,6 +40,16 @@ export const ProviderApi = HttpApi.make("provider")
   .add(
     HttpApiGroup.make("provider")
       .add(
+        HttpApiEndpoint.get("catalog", `${root}/catalog`, {
+          query: WorkspaceRoutingQuery,
+          success: described(ModelPresetCatalog, "Unmodified models.dev model metadata"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "provider.catalog",
+            summary: "Get model presets",
+            description: "Get cached models.dev metadata without runtime defaults or user overrides.",
+          }),
+        ),
         HttpApiEndpoint.get("list", root, {
           query: WorkspaceRoutingQuery,
           success: described(Provider.ListResult, "List of providers"),

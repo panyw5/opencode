@@ -41,16 +41,14 @@ import {
   OPENAI_COMPATIBLE,
   headerRow as blankHeaderRow,
   modelConfig as modelConfigRows,
-  modelConfigPlaceholder,
   modelRow as blankModelRow,
   type FormState,
   type HeaderRow,
-  type ModelConfigRow,
   type ModelRow,
   validateCustomProvider,
 } from "@/components/dialog-custom-provider-form"
 import { FetchProviderModels } from "@/components/fetch-provider-models"
-import { JsonCodeField } from "@/components/json-code-field"
+import { ModelConfigFields } from "@/components/model-config-fields"
 import { TestProviderModelButton } from "@/components/test-provider-model-button"
 import { Link } from "@/components/link"
 import { paintCode } from "@/utils/paint-code"
@@ -3678,41 +3676,11 @@ function CustomEditor(props: {
                         />
                       </div>
                       <Show when={item.expanded}>
-                        <div class="mt-2 grid grid-cols-[minmax(150px,0.8fr)_minmax(0,1.2fr)] items-start gap-2 border-t border-border-weak-base pt-2">
-                          <For each={item.config}>
-                            {(config: ModelConfigRow, configIndex) => (
-                              <>
-                                <div class="min-w-0 break-all rounded-lg bg-background-base px-2.5 py-2 font-mono text-[11px] leading-5 text-text-weak">
-                                  {config.key}
-                                </div>
-                                <Show
-                                  when={config.kind === "json"}
-                                  fallback={
-                                    <TextField
-                                      label={config.key}
-                                      hideLabel
-                                      placeholder={modelConfigPlaceholder(config, language.t)}
-                                      value={config.value}
-                                      onChange={(value) => props.onModelConfig(idx(), configIndex(), value)}
-                                      validationState={item.err.config?.[config.key] ? "invalid" : undefined}
-                                      error={item.err.config?.[config.key]}
-                                    />
-                                  }
-                                >
-                                  <JsonCodeField
-                                    label={config.key}
-                                    hideLabel
-                                    placeholder={modelConfigPlaceholder(config, language.t)}
-                                    value={config.value}
-                                    onChange={(value) => props.onModelConfig(idx(), configIndex(), value)}
-                                    validationState={item.err.config?.[config.key] ? "invalid" : undefined}
-                                    error={item.err.config?.[config.key]}
-                                  />
-                                </Show>
-                              </>
-                            )}
-                          </For>
-                        </div>
+                        <ModelConfigFields
+                          providerID={props.form.providerID}
+                          model={item}
+                          onChange={(configIndex, value) => props.onModelConfig(idx(), configIndex, value)}
+                        />
                       </Show>
                     </div>
                   )}

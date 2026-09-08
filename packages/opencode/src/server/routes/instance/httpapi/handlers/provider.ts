@@ -2,6 +2,7 @@ import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { Provider } from "@/provider/provider"
 import { ProviderID } from "@/provider/schema"
+import * as ModelsDev from "@opencode-ai/core/models-dev"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -36,6 +37,14 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     const cfg = yield* Config.Service
     const provider = yield* Provider.Service
     const svc = yield* ProviderAuth.Service
+    const modelsDev = yield* ModelsDev.Service
+
+    const catalog = Effect.fn("ProviderHttpApi.catalog")(function* () {
+      log.info("model preset catalog start")
+      const result = yield* modelsDev.get()
+      log.info("model preset catalog loaded", { providers: Object.keys(result).length })
+      return result
+    })
 
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
       const started = Date.now()
@@ -120,6 +129,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     })
 
     return handlers
+      .handle("catalog", catalog)
       .handle("list", list)
       .handle("auth", auth)
       .handleRaw("authorize", authorizeRaw)
