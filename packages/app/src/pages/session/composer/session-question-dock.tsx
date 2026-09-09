@@ -4,7 +4,9 @@ import { useMutation } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@opencode-ai/ui/dock-prompt"
 import { Icon } from "@opencode-ai/ui/icon"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { showToast } from "@opencode-ai/ui/toast"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ImagePreview } from "@opencode-ai/ui/image-preview"
 import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
@@ -55,12 +57,14 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     images: cached?.images ?? ([] as Image[][]),
     editing: false,
     sending: false,
+    copiedOption: "",
     focusedOption: -1, // -1 means no option focused, 0-n for options, options.length for custom
   })
 
   let root: HTMLDivElement | undefined
   let replied = false
   let max = ""
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   const submission = createQuestionSubmissionGuard()
 
   const question = createMemo(() => questions()[store.tab])
@@ -202,6 +206,7 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
   })
 
   onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
     if (replied) return
     questionCache.set(props.request.id, {
       tab: store.tab,
@@ -388,6 +393,38 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
     pick(opt.label)
   }
 
+  const copyOption = async (optIndex: number, event: MouseEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+
+    const opt = options()[optIndex]
+    if (!opt) return
+
+    const key = `${store.tab}:${optIndex}`
+    const value = opt.description ? `${opt.label}\n${opt.description}` : opt.label
+    console.debug(
+      `[question-dock] option copy dispatch id=${props.request.id} session=${props.request.sessionID} question=${store.tab} option=${optIndex}`,
+    )
+    try {
+      await navigator.clipboard.writeText(value)
+      console.debug(
+        `[question-dock] option copy success id=${props.request.id} session=${props.request.sessionID} question=${store.tab} option=${optIndex}`,
+      )
+      setStore("copiedOption", key)
+      if (copiedTimer) clearTimeout(copiedTimer)
+      copiedTimer = setTimeout(() => setStore("copiedOption", ""), 2000)
+    } catch (err) {
+      console.error(
+        `[question-dock] option copy failed id=${props.request.id} session=${props.request.sessionID} question=${store.tab} option=${optIndex}`,
+        err,
+      )
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
   const commitCustom = () => {
     setStore("editing", false)
     customUpdate(input())
@@ -508,26 +545,24 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
         </>
       }
       footer={
-        <>
+        <div data-slot="question-footer-actions">
           <Button variant="ghost" size="large" disabled={sending()} onClick={() => reject()}>
             {language.t("ui.common.dismiss")}
           </Button>
-          <div data-slot="question-footer-actions">
-            <Show when={store.tab > 0}>
-              <Button variant="secondary" size="large" disabled={sending()} onClick={back}>
-                {language.t("ui.common.back")}
-              </Button>
-            </Show>
-            <Button
-              variant={last() ? "primary" : "secondary"}
-              size="large"
-              disabled={sending()}
-              onClick={() => next("submit-button")}
-            >
-              {last() ? language.t("ui.common.submit") : language.t("ui.common.next")}
+          <Show when={store.tab > 0}>
+            <Button variant="secondary" size="large" disabled={sending()} onClick={back}>
+              {language.t("ui.common.back")}
             </Button>
-          </div>
-        </>
+          </Show>
+          <Button
+            variant={last() ? "primary" : "secondary"}
+            size="large"
+            disabled={sending()}
+            onClick={() => next("submit-button")}
+          >
+            {last() ? language.t("ui.common.submit") : language.t("ui.common.next")}
+          </Button>
+        </div>
       }
     >
       <div data-slot="question-text">{question()?.question}</div>
@@ -539,34 +574,58 @@ export const SessionQuestionDock: Component<{ request: QuestionRequest; onSubmit
           {(opt, i) => {
             const picked = () => store.answers[store.tab]?.includes(opt.label) ?? false
             const focused = () => store.focusedOption === i()
+            const copied = () => store.copiedOption === `${store.tab}:${i()}`
             return (
-              <button
-                data-slot="question-option"
-                data-picked={picked()}
-                data-focused={focused()}
-                role={multi() ? "checkbox" : "radio"}
-                aria-checked={picked()}
-                disabled={sending()}
-                onClick={() => selectOption(i())}
-              >
-                <span data-slot="question-option-check" aria-hidden="true">
-                  <span
-                    data-slot="question-option-box"
-                    data-type={multi() ? "checkbox" : "radio"}
-                    data-picked={picked()}
-                  >
-                    <Show when={multi()} fallback={<span data-slot="question-option-radio-dot" />}>
-                      <Icon name="check-small" size="small" />
+              <div data-slot="question-option-wrap" data-picked={picked()}>
+                <button
+                  data-slot="question-option"
+                  data-picked={picked()}
+                  data-focused={focused()}
+                  role={multi() ? "checkbox" : "radio"}
+                  aria-checked={picked()}
+                  disabled={sending()}
+                  onClick={() => selectOption(i())}
+                >
+                  <span data-slot="question-option-check" aria-hidden="true">
+                    <span
+                      data-slot="question-option-box"
+                      data-type={multi() ? "checkbox" : "radio"}
+                      data-picked={picked()}
+                    >
+                      <Show when={multi()} fallback={<span data-slot="question-option-radio-dot" />}>
+                        <Icon name="check-small" size="small" />
+                      </Show>
+                    </span>
+                  </span>
+                  <span data-slot="question-option-main">
+                    <span data-slot="option-label">{opt.label}</span>
+                    <Show when={opt.description}>
+                      <span data-slot="option-description">{opt.description}</span>
                     </Show>
                   </span>
+                </button>
+                <span data-slot="question-option-actions">
+                  <Tooltip
+                    value={copied() ? language.t("ui.message.copied") : language.t("ui.message.copy")}
+                    placement="top"
+                    gutter={4}
+                    lazyMount
+                  >
+                    <IconButton
+                      icon={copied() ? "check" : "copy"}
+                      size="small"
+                      variant="ghost"
+                      disabled={sending()}
+                      onMouseDown={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                      }}
+                      onClick={(event) => void copyOption(i(), event)}
+                      aria-label={copied() ? language.t("ui.message.copied") : language.t("ui.message.copy")}
+                    />
+                  </Tooltip>
                 </span>
-                <span data-slot="question-option-main">
-                  <span data-slot="option-label">{opt.label}</span>
-                  <Show when={opt.description}>
-                    <span data-slot="option-description">{opt.description}</span>
-                  </Show>
-                </span>
-              </button>
+              </div>
             )
           }}
         </For>

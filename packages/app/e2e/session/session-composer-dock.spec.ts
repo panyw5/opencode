@@ -324,6 +324,67 @@ test("blocked question flow unblocks after submit", async ({ page, sdk, gotoSess
   })
 })
 
+test("question options support multi-select and copying without changing selection", async ({
+  page,
+  sdk,
+  gotoSession,
+}) => {
+  await withDockSession(sdk, "e2e composer dock multi question", async (session) => {
+    await withDockSeed(sdk, session.id, async () => {
+      await gotoSession(session.id)
+      await page.evaluate(() => {
+        const state = window as unknown as { __questionCopiedText?: string }
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: {
+            writeText: async (value: string) => {
+              state.__questionCopiedText = value
+            },
+          },
+        })
+      })
+
+      await seedSessionQuestion(sdk, {
+        sessionID: session.id,
+        questions: [
+          {
+            header: "Multiple input",
+            question: "Pick multiple options",
+            multiple: true,
+            options: [
+              { label: "Alpha", description: "First option" },
+              { label: "Beta", description: "Second option" },
+            ],
+          },
+        ],
+      })
+
+      const dock = page.locator(questionDockSelector)
+      await expectQuestionBlocked(page)
+
+      const options = dock.locator('[data-slot="question-option"]:not([data-custom="true"])')
+      await options.nth(0).click()
+      await options.nth(1).click()
+      await expect(options.nth(0)).toHaveAttribute("aria-checked", "true")
+      await expect(options.nth(1)).toHaveAttribute("aria-checked", "true")
+
+      await dock.getByRole("button", { name: "Copy", exact: true }).nth(0).click()
+      await expect(dock.getByRole("button", { name: "Copied", exact: true })).toHaveCount(1)
+      await expect(options.nth(0)).toHaveAttribute("aria-checked", "true")
+      await expect(options.nth(1)).toHaveAttribute("aria-checked", "true")
+      await expect
+        .poll(() => page.evaluate(() => (window as unknown as { __questionCopiedText?: string }).__questionCopiedText))
+        .toBe("Alpha\nFirst option")
+
+      const footerButtons = await dock.locator('[data-slot="question-footer-actions"] > button').allTextContents()
+      expect(footerButtons.map((text) => text.trim())).toEqual(["Dismiss", "Submit"])
+
+      await dock.getByRole("button", { name: /submit/i }).click()
+      await expectQuestionOpen(page)
+    })
+  })
+})
+
 test("blocked permission flow supports allow once", async ({ page, sdk, gotoSession }) => {
   await withDockSession(sdk, "e2e composer dock permission once", async (session) => {
     await gotoSession(session.id)
