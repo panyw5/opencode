@@ -50,7 +50,7 @@ export type ChannelPlatform = "feishu" | "discord"
 
 type ChannelConfig = NonNullable<Config["channels"]>[string]
 
-export const CHANNEL_PLATFORMS: ChannelPlatform[] = ["feishu", "discord"]
+export const CHANNEL_PLATFORMS: ChannelPlatform[] = ["feishu"]
 
 export function channelPick(platform: ChannelPlatform) {
   return `channels:${platform}` as const
