@@ -191,21 +191,33 @@ function ScheduledTaskDetailDialog(props: {
         height: "min(calc(100vh - 32px), 860px)",
       }}
       action={
-        <div class="flex items-center gap-1">
+        <div class="flex items-center gap-2">
           <Tooltip value={language.t("scheduled.edit")}>
-            <IconButton icon="edit" variant="ghost" onClick={edit} aria-label={language.t("scheduled.edit")} />
+            <Button
+              icon="edit"
+              size="large"
+              variant="ghost"
+              onClick={edit}
+              aria-label={language.t("scheduled.edit")}
+            >
+              {language.t("common.edit")}
+            </Button>
           </Tooltip>
           <Tooltip value={language.t("scheduled.delete")}>
-            <IconButton
+            <Button
               icon="trash"
+              size="large"
               variant="ghost"
               disabled={state.pending}
               onClick={() => void remove()}
               aria-label={language.t("scheduled.delete")}
-            />
+            >
+              {language.t("common.delete")}
+            </Button>
           </Tooltip>
           <IconButton
             icon="close"
+            size="large"
             variant="ghost"
             onClick={() => dialog.close()}
             aria-label={language.t("common.close")}

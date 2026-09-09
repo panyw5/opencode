@@ -95,7 +95,7 @@ export const dict = {
   "scheduled.openLatestSession": "打开最近会话",
   "scheduled.unattended.title": "无人值守模式",
   "scheduled.unattended.accept": "我了解该任务将以无人值守模式运行",
-  "scheduled.unattended.detail": "本次定时运行会自动允许工作区内的权限询问；外部目录访问和交互式问题会被拒绝。",
+  "scheduled.unattended.detail": "自动允许工作区内权限请求，拒绝外部目录访问和交互式问题。",
   "scheduled.error.required": "请完整填写任务、项目、提示词、Agent、Provider、模型和执行计划。",
   "scheduled.error.unattended": "保存前必须确认无人值守模式。",
   "scheduled.error.session": "已有会话模式必须填写 Session ID。",
