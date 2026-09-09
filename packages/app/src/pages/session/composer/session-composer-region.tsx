@@ -243,6 +243,17 @@ type SessionUserMessageEntry = {
   created: number
 }
 
+function shellOutputMarkdown(output: string) {
+  const maxRun = (character: "`" | "~") => {
+    const matches = output.match(new RegExp(`${character === "`" ? "`" : "~"}+`, "g")) ?? []
+    return Math.max(0, ...matches.map((match) => match.length))
+  }
+
+  const character = maxRun("`") <= maxRun("~") ? "`" : "~"
+  const fence = character.repeat(Math.max(3, maxRun(character) + 1))
+  return `${fence}bash\n${output}\n${fence}`
+}
+
 function SessionUserMessageMenu(props: {
   entries: SessionUserMessageEntry[]
   loading: boolean
@@ -450,12 +461,12 @@ function SessionBackgroundShellDialog(props: {
           )}
         </Show>
 
-        <pre
-          class="max-h-[52dvh] min-h-48 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border-weak-base bg-background-base p-3 font-mono text-12-regular leading-5 text-text-base"
+        <Markdown
+          text={shellOutputMarkdown(output())}
+          highlight="full"
+          class="max-h-[52dvh] min-h-48 overflow-auto rounded-lg bg-background-base font-mono text-11-regular leading-5 [&_.shiki]:m-0 [&_.shiki]:max-w-none [&_.shiki]:overflow-x-auto [&_.shiki]:rounded-lg [&_.shiki]:border-border-weak-base [&_.shiki]:bg-background-base [&_.shiki]:p-3 [&_.shiki]:font-mono [&_.shiki]:!text-[calc(var(--font-size-base)*0.8)] [&_.shiki]:!leading-5"
           data-testid="session-background-shell-output"
-        >
-          {output()}
-        </pre>
+        />
       </div>
     </Dialog>
   )
