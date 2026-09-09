@@ -7,6 +7,7 @@ export type SessionUserMessageEntry = {
   id: string
   text: string
   created: number
+  meta: string[]
 }
 
 function formatMessageTime(value: number, locale: string): string | undefined {
@@ -98,7 +99,7 @@ export function SessionUserMessageRail(props: {
                       <span
                         aria-hidden="true"
                         classList={{
-                          "block h-0.5 rounded-full transition-[width,background-color,opacity] duration-150 ease-out motion-reduce:transition-none":
+                          "block h-[3px] rounded-full transition-[width,background-color,opacity] duration-150 ease-out motion-reduce:transition-none":
                             true,
                           "bg-text-strong opacity-100": hovered() === index(),
                           "bg-text-weak opacity-70": hovered() !== index() && hovered() !== undefined,
@@ -132,6 +133,20 @@ export function SessionUserMessageRail(props: {
                 <div class="line-clamp-4 whitespace-pre-wrap break-words text-13-regular leading-5 text-text-strong">
                   {value().entry.text}
                 </div>
+                <Show when={value().entry.meta.length > 0}>
+                  <div class="mt-2.5 flex min-w-0 items-center gap-1.5 border-t border-border-weak-base pt-2 text-11-regular text-text-weak">
+                    <For each={value().entry.meta}>
+                      {(item, index) => (
+                        <>
+                          <Show when={index() > 0}>
+                            <span aria-hidden="true">·</span>
+                          </Show>
+                          <span class="min-w-0 truncate">{item}</span>
+                        </>
+                      )}
+                    </For>
+                  </div>
+                </Show>
               </div>
             </Portal>
           )}

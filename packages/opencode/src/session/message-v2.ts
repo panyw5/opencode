@@ -570,12 +570,26 @@ export const UserIndexItem = Schema.Struct({
   ...messageBase,
   time: Schema.Struct({ created: NonNegativeInt }),
   preview: Schema.String,
+  agent: Schema.optional(Schema.String),
+  model: Schema.optional(
+    Schema.Struct({
+      providerID: ProviderID,
+      modelID: ModelID,
+      variant: Schema.optional(Schema.String),
+    }),
+  ),
 }).annotate({ identifier: "UserMessageIndexItem" })
 export type UserIndexItem = {
   id: MessageID
   sessionID: SessionID
   time: { created: number }
   preview: string
+  agent?: string
+  model?: {
+    providerID: ProviderID
+    modelID: ModelID
+    variant?: string
+  }
 }
 
 const Cursor = Schema.Struct({
@@ -1134,7 +1148,15 @@ export function stripInlineMediaAttachments(items: WithParts[]): {
 export const userIndex = Effect.fn("MessageV2.userIndex")(function* (sessionID: SessionID) {
   const rows = Database.use((db) =>
     db
-      .select({ id: MessageTable.id, sessionID: MessageTable.session_id, created: MessageTable.time_created })
+      .select({
+        id: MessageTable.id,
+        sessionID: MessageTable.session_id,
+        created: MessageTable.time_created,
+        agent: sql<string | null>`json_extract(${MessageTable.data}, '$.agent')`,
+        providerID: sql<string | null>`json_extract(${MessageTable.data}, '$.model.providerID')`,
+        modelID: sql<string | null>`json_extract(${MessageTable.data}, '$.model.modelID')`,
+        variant: sql<string | null>`json_extract(${MessageTable.data}, '$.model.variant')`,
+      })
       .from(MessageTable)
       .where(and(eq(MessageTable.session_id, sessionID), sql`json_extract(${MessageTable.data}, '$.role') = 'user'`))
       .orderBy(asc(MessageTable.time_created), asc(MessageTable.id))
@@ -1228,6 +1250,15 @@ export const userIndex = Effect.fn("MessageV2.userIndex")(function* (sessionID: 
       sessionID: row.sessionID,
       time: { created: row.created },
       preview: previewByMessage.get(row.id) ?? "[attachment]",
+      agent: row.agent ?? undefined,
+      model:
+        row.providerID && row.modelID
+          ? {
+              providerID: ProviderID.make(row.providerID),
+              modelID: ModelID.make(row.modelID),
+              variant: row.variant ?? undefined,
+            }
+          : undefined,
     }))
   yield* log.info("loaded user message index", { sessionID, candidates: rows.length, count: items.length })
   return items

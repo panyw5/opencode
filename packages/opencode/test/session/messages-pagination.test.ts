@@ -144,6 +144,11 @@ describe("MessageV2.userIndex", () => {
 
         expect(result.map((item) => item.id)).toEqual([first, second])
         expect(result.map((item) => item.preview)).toEqual(["first", "second"])
+        expect(result.map((item) => item.agent)).toEqual(["test", "test"])
+        expect(result.map((item) => item.model)).toEqual([
+          { providerID: "test", modelID: "test", variant: undefined },
+          { providerID: "test", modelID: "test", variant: undefined },
+        ])
       }),
     ),
   )

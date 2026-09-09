@@ -1965,6 +1965,12 @@ export type UserMessageIndexItem = {
     created: number
   }
   preview: string
+  agent?: string
+  model?: {
+    providerID: string
+    modelID: string
+    variant?: string
+  }
 }
 
 export type PluginHookControl = {

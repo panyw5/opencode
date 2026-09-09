@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { userMessageRailHeight, userMessageRailMarkWidth } from "./session-user-message-rail-model"
+import {
+  USER_MESSAGE_RAIL_PREVIEW_LIMIT,
+  userMessageRailHeight,
+  userMessageRailMarkWidth,
+  userMessageRailPreview,
+} from "./session-user-message-rail-model"
 
 describe("userMessageRailMarkWidth", () => {
   test("keeps a compact barcode when idle", () => {
@@ -22,5 +27,17 @@ describe("userMessageRailHeight", () => {
     expect(userMessageRailHeight(4)).toBe(80)
     expect(userMessageRailHeight(6)).toBe(120)
     expect(userMessageRailHeight(100)).toBe(520)
+  })
+})
+
+describe("userMessageRailPreview", () => {
+  test("leaves short messages unchanged", () => {
+    expect(userMessageRailPreview("short prompt")).toBe("short prompt")
+  })
+
+  test("bounds long prompts before rendering", () => {
+    const preview = userMessageRailPreview("x".repeat(1_000))
+    expect(preview).toHaveLength(USER_MESSAGE_RAIL_PREVIEW_LIMIT)
+    expect(preview.endsWith("...")).toBe(true)
   })
 })

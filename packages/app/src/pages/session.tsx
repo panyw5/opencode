@@ -92,6 +92,7 @@ import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { SessionUserMessageRail, type SessionUserMessageEntry } from "@/pages/session/session-user-message-rail"
+import { userMessageRailPreview } from "@/pages/session/session-user-message-rail-model"
 import { working } from "@/pages/session/session-working"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
@@ -2828,6 +2829,22 @@ export default function Page() {
     if (!id) return undefined
     return sync.session.userMessageIndex.get(id)
   })
+  const userMessageMeta = (input: {
+    agent?: string
+    model?: { providerID: string; modelID: string; variant?: string }
+  }) => {
+    const provider = input.model
+      ? globalSync.data.provider.all.find((item) => item.id === input.model?.providerID)
+      : undefined
+    const model = input.model ? provider?.models[input.model.modelID] : undefined
+    const agent = input.agent ? input.agent[0]?.toUpperCase() + input.agent.slice(1) : undefined
+    return [
+      agent,
+      input.model ? (provider?.name ?? input.model.providerID) : undefined,
+      input.model ? (model?.name ?? input.model.modelID) : undefined,
+      input.model?.variant,
+    ].filter((item): item is string => !!item)
+  }
   const userMessageEntries = createMemo(() => {
     const indexed = indexedUserMessages()
     if (indexed) {
@@ -2840,20 +2857,27 @@ export default function Page() {
         .filter((entry) => !revert || (boundary ? compareMessages(entry, boundary) < 0 : entry.id < revert))
         .map((entry) => ({
           id: entry.id,
-          text: entry.preview,
+          text: userMessageRailPreview(entry.preview),
           created: entry.time.created,
+          meta: userMessageMeta(entry),
         }))
       const known = new Set(entries.map((entry) => entry.id))
       for (const message of visibleUserMessages()) {
         if (known.has(message.id)) continue
-        entries.push({ id: message.id, text: line(message.id), created: message.time.created })
+        entries.push({
+          id: message.id,
+          text: userMessageRailPreview(line(message.id)),
+          created: message.time.created,
+          meta: userMessageMeta(message),
+        })
       }
       return entries.sort((a, b) => a.created - b.created || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     }
     return visibleUserMessages().map((message) => ({
       id: message.id,
-      text: line(message.id),
+      text: userMessageRailPreview(line(message.id)),
       created: message.time.created,
+      meta: userMessageMeta(message),
     }))
   })
 
