@@ -348,7 +348,6 @@ export const ConfigChannelsDetail: Component<{
   const rows = useChannelRows(() => props.platform)
   const [form, setForm] = createStore({
     name: "",
-    enabled: true,
     appId: "",
     appSecret: "",
     domain: "feishu" as FeishuDomain,
@@ -388,7 +387,6 @@ export const ConfigChannelsDetail: Component<{
         stopQr()
         setForm({
           name: "",
-          enabled: true,
           appId: "",
           appSecret: "",
           domain: "feishu",
@@ -528,7 +526,7 @@ export const ConfigChannelsDetail: Component<{
           type: "feishu",
           appId: form.appId.trim(),
           appSecret: form.appSecret.trim(),
-          enabled: form.enabled,
+          enabled: true,
           domain: form.domain,
           directory,
         }
@@ -541,7 +539,7 @@ export const ConfigChannelsDetail: Component<{
         const discord: ChannelDiscordConfig = {
           type: "discord",
           botToken: form.botToken.trim(),
-          enabled: form.enabled,
+          enabled: true,
           directory,
         }
         const users = parseUserList(form.allowedUsers)
@@ -556,7 +554,7 @@ export const ConfigChannelsDetail: Component<{
           appId: form.appId.trim(),
           clientSecret: form.appSecret.trim(),
           apiBaseUrl: form.apiBaseUrl.trim() || undefined,
-          enabled: form.enabled,
+          enabled: true,
           directory,
         }
         const users = parseUserList(form.allowedUsers)
@@ -1160,13 +1158,6 @@ export const ConfigChannelsDetail: Component<{
               multiline
               rows={2}
             />
-
-            <div class="flex items-center justify-between">
-              <span class="text-12-medium text-text-base">{language.t("config.channels.field.enabled")}</span>
-              <Toggle checked={form.enabled} onChange={(v) => setForm("enabled", v)} hideLabel>
-                enabled
-              </Toggle>
-            </div>
 
             <div class="flex justify-end">
               <Button variant="primary" onClick={() => void save()} disabled={saving() || !canSave()}>
