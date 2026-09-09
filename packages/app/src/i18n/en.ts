@@ -921,10 +921,12 @@ export const dict = {
   "session.mathInitialize.description":
     "Define a problem-scoped project and a bounded worker roster. Existing durable workers are reconciled before anything new starts.",
   "session.mathInitialize.project": "Math project",
-  "session.mathInitialize.project.description": "Stored under .math/<project>; use letters, numbers, dots, underscores, or dashes.",
+  "session.mathInitialize.project.description":
+    "Stored under .math/<project>; use letters, numbers, dots, underscores, or dashes.",
   "session.mathInitialize.project.error": "Enter a valid problem-scoped project name.",
   "session.mathInitialize.problem": "Research problem",
-  "session.mathInitialize.problem.description": "State the question, assumptions, scope, and what would count as completion.",
+  "session.mathInitialize.problem.description":
+    "State the question, assumptions, scope, and what would count as completion.",
   "session.mathInitialize.model": "Worker model",
   "session.mathInitialize.model.description": "Provider/model used for newly created evidence workers.",
   "session.mathInitialize.verifierModel": "Verifier model",
@@ -939,7 +941,8 @@ export const dict = {
   "session.mathInitialize.workers.decrease": "Decrease",
   "session.mathInitialize.workers.increase": "Increase",
   "session.mathInitialize.controlBeat": "Create a 30-minute control beat",
-  "session.mathInitialize.controlBeat.description": "Periodically reconcile workers and verified facts in this session.",
+  "session.mathInitialize.controlBeat.description":
+    "Periodically reconcile workers and verified facts in this session.",
   "session.mathInitialize.review": "Review prompt",
   "session.mathInitialize.start": "Initialize",
   "session.mathInitialize.prepare": "Initialize Math Mode",
@@ -1629,7 +1632,8 @@ export const dict = {
   "config.agents.meta.permissions.invalid": "Invalid permission action",
   "config.agents.create.title": "New agent",
   "config.agents.create.action": "New agent",
-  "config.agents.create.structure": "A new markdown file will be created under the agents directory. Key frontmatter fields like model, mode, and permission are parsed live and shown below the editor. After saving, the agent appears in the list right away.",
+  "config.agents.create.structure":
+    "A new markdown file will be created under the agents directory. Key frontmatter fields like model, mode, and permission are parsed live and shown below the editor. After saving, the agent appears in the list right away.",
   "config.agents.create.error.required": "Enter a name for the agent.",
   "config.agents.create.error.reserved": "This name is reserved.",
   "config.agents.create.error.slash": "Name cannot contain path separators.",
@@ -1873,6 +1877,7 @@ export const dict = {
   "config.channels.field.directory": "Work folder",
   "config.channels.field.directory.hint":
     "Dedicated working directory for this channel's sessions and agent tools. Not an OpenCode project. Leave empty to use ~/.config/opencode/channels/{name} (same family as quick-assistant). Supports ~.",
+  "config.channels.field.directory.invalid": "Enter a valid path. ~ must be followed by / or \\.",
   "config.channels.field.allowedUsers": "Allowed users (optional)",
   "config.channels.field.allowedUsers.hint":
     "One ID per line or comma-separated. Leave empty or use * for unrestricted access.",

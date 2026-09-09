@@ -352,6 +352,13 @@ async function handleMessage(input: {
   })
 
   const model = parseModel(input.config.model)
+  log.info("feishu prompt starting", {
+    channel: input.name,
+    sessionId,
+    messageId,
+    providerID: model?.providerID,
+    modelID: model?.modelID,
+  })
   // IM has no desktop UI for interactive tools. `question` otherwise hangs the
   // prompt forever and Feishu never receives a reply (observed in production).
   // Do NOT abort here: abort-on-every-message + event redelivery caused multi-replies.
@@ -368,7 +375,14 @@ async function handleMessage(input: {
   } catch (err) {
     poll.stop()
     const detail = err instanceof Error ? err.message : String(err)
-    log.error("feishu prompt threw", { channel: input.name, sessionId, messageId, error: detail })
+    log.error("feishu prompt threw", {
+      channel: input.name,
+      sessionId,
+      messageId,
+      providerID: model?.providerID,
+      modelID: model?.modelID,
+      error: detail,
+    })
     await card.fail(`处理消息时出错了：${detail}`)
     return
   }
@@ -383,6 +397,8 @@ async function handleMessage(input: {
       channel: input.name,
       sessionId,
       messageId,
+      providerID: model?.providerID,
+      modelID: model?.modelID,
       error: detail,
     })
     await card.fail(`处理消息时出错了：${detail}`)

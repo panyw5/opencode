@@ -1583,7 +1583,8 @@ export const dict = {
   "config.agents.meta.permissions.invalid": "无效权限动作",
   "config.agents.create.title": "新建智能体",
   "config.agents.create.action": "新建智能体",
-  "config.agents.create.structure": "将在智能体目录下创建一个新的 markdown 文件。front-matter 中的 model、mode、permission 等关键字段会实时解析并显示在编辑器下方，保存后会立即出现在智能体列表中。",
+  "config.agents.create.structure":
+    "将在智能体目录下创建一个新的 markdown 文件。front-matter 中的 model、mode、permission 等关键字段会实时解析并显示在编辑器下方，保存后会立即出现在智能体列表中。",
   "config.agents.create.error.required": "请先输入智能体名称。",
   "config.agents.create.error.reserved": "这个名称不能使用。",
   "config.agents.create.error.slash": "名称不能包含路径分隔符。",
@@ -1822,8 +1823,8 @@ export const dict = {
   "config.channels.field.botToken": "Bot Token",
   "config.channels.field.proxy": "代理（可选）",
   "config.channels.field.directory": "工作文件夹",
-  "config.channels.field.directory.hint":
-    "该 IM 通道专用的工作目录，用于会话与 agent 工具，与 OpenCode 项目无关。留空则使用 ~/.config/opencode/channels/{name}（与 quick-assistant 同属 config 目录）。支持 ~。",
+  "config.channels.field.directory.hint": "本 IM 通道专用工作目录。留空则使用默认值 ~/.config/opencode/channels/{name}",
+  "config.channels.field.directory.invalid": "请输入有效路径。~ 后必须跟 / 或 \\。",
   "config.channels.field.allowedUsers": "允许的用户（可选）",
   "config.channels.field.allowedUsers.hint": "每行一个 ID，或用逗号分隔。留空或填写 * 表示不限制。",
   "config.channels.field.enabled": "启用",
@@ -1915,8 +1916,7 @@ export const dict = {
     "直接在这里编辑自定义提供商配置。这会在需要时更新 `provider`、`disabled_providers` 和 auth。",
   "config.custom.saveProvider": "保存提供商",
   "config.custom.savingProvider": "正在保存",
-  "config.custom.deleteStillConfigured":
-    "提供商 {{provider}} 仍由项目配置或外部配置文件定义，无法在此处删除。",
+  "config.custom.deleteStillConfigured": "提供商 {{provider}} 仍由项目配置或外部配置文件定义，无法在此处删除。",
   "config.custom.field.providerID": "提供商 ID",
   "config.custom.field.npm": "NPM 包",
   "config.custom.field.name": "名称",

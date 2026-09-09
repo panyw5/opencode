@@ -1,6 +1,7 @@
 import { Agent } from "@/agent/agent"
 import { Bus } from "@/bus"
 import { Command } from "@/command"
+import { Provider } from "@/provider/provider"
 import { Permission } from "@/permission"
 import { PermissionID } from "@/permission/schema"
 import { Plugin } from "@/plugin"
@@ -67,7 +68,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { PermissionNotFoundError } from "../errors"
+import { InvalidRequestError, PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
 const log = Log.create({ service: "session.http" })
@@ -933,7 +934,32 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           ...ctx.payload,
           sessionID: ctx.params.sessionID,
         })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        .pipe(
+          Effect.catchCause((cause) => {
+            const error = Cause.squash(cause)
+            if (!Provider.ModelNotFoundError.isInstance(error)) {
+              // Preserve the original failure; only the known model-selection defect is client-actionable.
+              return Effect.failCause(cause as unknown as Cause.Cause<InvalidRequestError>)
+            }
+            const hint = error.suggestions?.length ? ` Did you mean: ${error.suggestions.join(", ")}?` : ""
+            log.error("prompt model not found", {
+              sessionID: ctx.params.sessionID,
+              providerID: error.providerID,
+              modelID: error.modelID,
+              suggestions: error.suggestions,
+            })
+            return Effect.fail(
+              new InvalidRequestError({
+                message: `Model not found: ${error.providerID}/${error.modelID}.${hint}`,
+              }),
+            )
+          }),
+        )
+        .pipe(
+          Effect.mapError((error) =>
+            error instanceof InvalidRequestError ? error : new HttpApiError.BadRequest({}),
+          ),
+        )
       return HttpServerResponse.stream(Stream.make(JSON.stringify(message)).pipe(Stream.encodeText), {
         contentType: "application/json",
       })

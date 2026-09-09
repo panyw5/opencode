@@ -49,7 +49,13 @@ export function resolveChannelDirectory(
   home = os.homedir(),
 ): string {
   const explicit = directory?.trim()
-  if (explicit) return expandHomePath(explicit, home)
+  if (explicit) {
+    const base = expandHomePath(explicit, home)
+    const child = sanitizeChannelName(channelName)
+    // Existing configs may already store the final channel directory.
+    if (path.basename(base) === child) return base
+    return path.join(base, child)
+  }
   return defaultChannelDirectory(channelName, configDir)
 }
 

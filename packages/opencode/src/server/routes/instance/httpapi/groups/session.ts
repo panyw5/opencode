@@ -22,7 +22,7 @@ import {
   WorkspaceRoutingQuery,
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
-import { ApiNotFoundError, PermissionNotFoundError, SessionBusyError } from "../errors"
+import { ApiNotFoundError, InvalidRequestError, PermissionNotFoundError, SessionBusyError } from "../errors"
 import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 
@@ -650,7 +650,7 @@ export const SessionApi = HttpApi.make("session")
           query: WorkspaceRoutingQuery,
           payload: PromptPayload,
           success: described(MessageV2.WithParts, "Created message"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError],
+          error: [HttpApiError.BadRequest, InvalidRequestError, ApiNotFoundError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.prompt",

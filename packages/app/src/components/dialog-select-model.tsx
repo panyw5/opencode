@@ -73,10 +73,7 @@ export function parseModelRef(raw: string): ModelKey | undefined {
  * Reuses the session model picker (ModelSelectorPopover / DialogSelectModel)
  * without writing into the session-local selection.
  */
-export function useBoundModelState(input: {
-  value: () => string
-  onChange: (next: string) => void
-}): ModelState {
+export function useBoundModelState(input: { value: () => string; onChange: (next: string) => void }): ModelState {
   const models = useModels()
 
   const key = createMemo(() => parseModelRef(input.value()))
@@ -247,6 +244,9 @@ type ModelSelectorTriggerProps = Omit<ComponentProps<typeof Kobalte.Trigger>, "a
 export function ModelSelectorPopover(props: {
   provider?: string
   model?: ModelState
+  placement?: "top-start" | "bottom-start"
+  flip?: boolean
+  fitViewport?: boolean
   style?: JSX.CSSProperties
   children?: JSX.Element
   triggerAs?: ValidComponent
@@ -322,9 +322,7 @@ export function ModelSelectorPopover(props: {
         }
         if (trace && next) {
           const list = model.list().filter((item) => (props.provider ? item.provider.id === props.provider : true))
-          const visible = list.filter((item) =>
-            model.visible({ modelID: item.id, providerID: item.provider.id }),
-          )
+          const visible = list.filter((item) => model.visible({ modelID: item.id, providerID: item.provider.id }))
           logModelOpen("toggle", {
             open: next,
             total: list.length,
@@ -371,8 +369,12 @@ export function ModelSelectorPopover(props: {
               measures: measureCount,
               ms: Math.round(performance.now() - measureAt),
               nodes: el ? el.querySelectorAll("*").length : "none",
-              items: el ? el.querySelectorAll('[data-slot="list-item"], [data-slot="select-select-item"]').length : "none",
-              groups: el ? el.querySelectorAll('[data-slot="list-group"], [data-slot="select-section"]').length : "none",
+              items: el
+                ? el.querySelectorAll('[data-slot="list-item"], [data-slot="select-select-item"]').length
+                : "none",
+              groups: el
+                ? el.querySelectorAll('[data-slot="list-group"], [data-slot="select-section"]').length
+                : "none",
               width: box?.width ?? "none",
               height: box?.height ?? "none",
               top: box?.top ?? "none",
@@ -388,7 +390,9 @@ export function ModelSelectorPopover(props: {
               seq: id,
               ms: stageAt ? Math.round(performance.now() - stageAt) : "none",
               nodes: el ? el.querySelectorAll("*").length : "none",
-              items: el ? el.querySelectorAll('[data-slot="list-item"], [data-slot="select-select-item"]').length : "none",
+              items: el
+                ? el.querySelectorAll('[data-slot="list-item"], [data-slot="select-select-item"]').length
+                : "none",
               width: box?.width ?? "none",
               height: box?.height ?? "none",
               top: box?.top ?? "none",
@@ -405,8 +409,12 @@ export function ModelSelectorPopover(props: {
                 measures: measureCount,
                 ms: Math.round(performance.now() - measureAt),
                 nodes: nextEl ? nextEl.querySelectorAll("*").length : "none",
-                items: nextEl ? nextEl.querySelectorAll('[data-slot="list-item"], [data-slot="select-select-item"]').length : "none",
-                groups: nextEl ? nextEl.querySelectorAll('[data-slot="list-group"], [data-slot="select-section"]').length : "none",
+                items: nextEl
+                  ? nextEl.querySelectorAll('[data-slot="list-item"], [data-slot="select-select-item"]').length
+                  : "none",
+                groups: nextEl
+                  ? nextEl.querySelectorAll('[data-slot="list-group"], [data-slot="select-section"]').length
+                  : "none",
                 width: nextBox?.width ?? "none",
                 height: nextBox?.height ?? "none",
                 top: nextBox?.top ?? "none",
@@ -422,7 +430,9 @@ export function ModelSelectorPopover(props: {
                 seq: id,
                 ms: stageAt ? Math.round(performance.now() - stageAt) : "none",
                 nodes: nextEl ? nextEl.querySelectorAll("*").length : "none",
-                items: nextEl ? nextEl.querySelectorAll('[data-slot="list-item"], [data-slot="select-select-item"]').length : "none",
+                items: nextEl
+                  ? nextEl.querySelectorAll('[data-slot="list-item"], [data-slot="select-select-item"]').length
+                  : "none",
                 width: nextBox?.width ?? "none",
                 height: nextBox?.height ?? "none",
                 top: nextBox?.top ?? "none",
@@ -474,7 +484,9 @@ export function ModelSelectorPopover(props: {
         }
       }}
       modal={false}
-      placement="top-start"
+      placement={props.placement ?? "top-start"}
+      flip={props.flip}
+      fitViewport={props.fitViewport}
       gutter={4}
     >
       <Kobalte.Trigger
