@@ -1,7 +1,7 @@
 import { Select } from "@opencode-ai/ui/select"
 import { showToast } from "@opencode-ai/ui/toast"
 import type { Component } from "solid-js"
-import { createMemo, createSignal } from "solid-js"
+import { createMemo, createSignal, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useSettings } from "@/context/settings"
@@ -11,6 +11,7 @@ import { SettingsList } from "./settings-list"
 type ModelRef = { providerID: string; modelID: string }
 type AssistantModelValue = ModelRef | "auto" | "disabled"
 type SmallModelValue = ModelRef | undefined
+const unsetSmallModel = Symbol("unset-small-model")
 
 type Option<T> = {
   value: T
@@ -23,6 +24,8 @@ export const SettingsAssistant: Component = () => {
   const settings = useSettings()
   const globalSync = useGlobalSync()
   const [savingSmall, setSavingSmall] = createSignal(false)
+  const [pendingSmall, setPendingSmall] = createSignal<SmallModelValue | typeof unsetSmallModel>(unsetSmallModel)
+  let smallSaveInFlight = false
 
   const modelOptions = createMemo(() =>
     models
@@ -67,6 +70,9 @@ export const SettingsAssistant: Component = () => {
   }
 
   const smallConfigured = createMemo((): ModelRef | undefined => {
+    const pending = pendingSmall()
+    if (pending !== unsetSmallModel) return pending
+
     const raw = globalSync.data.config.small_model
     if (typeof raw !== "string" || !raw.trim()) return undefined
     const slash = raw.indexOf("/")
@@ -113,16 +119,25 @@ export const SettingsAssistant: Component = () => {
   })
 
   const saveSmallModel = async (value: SmallModelValue) => {
-    if (savingSmall()) return
+    if (smallSaveInFlight || savingSmall()) {
+      console.debug("[settings-assistant] small model selection ignored while saving")
+      return
+    }
     const next = value && typeof value === "object" ? `${value.providerID}/${value.modelID}` : ""
     const current =
       typeof globalSync.data.config.small_model === "string" ? globalSync.data.config.small_model : ""
+    console.debug(`[settings-assistant] small model selected next=${next || "auto"} current=${current || "auto"}`)
     if (next === current) return
 
+    setPendingSmall(value)
+    smallSaveInFlight = true
     setSavingSmall(true)
+    console.debug(`[settings-assistant] small model save started value=${next || "auto"}`)
     try {
       // Empty string clears the override (backend maps "" → undefined for small_model).
       await globalSync.updateConfig({ small_model: next }, { refreshProviders: false })
+      setPendingSmall(unsetSmallModel)
+      console.debug(`[settings-assistant] small model save succeeded value=${next || "auto"}`)
 
       showToast({
         variant: "success",
@@ -131,12 +146,16 @@ export const SettingsAssistant: Component = () => {
         description: next || language.t("settings.assistant.smallModel.option.auto"),
       })
     } catch (err: unknown) {
+      setPendingSmall(unsetSmallModel)
+      console.debug("[settings-assistant] small model save failed; reverted optimistic selection", err)
       showToast({
         title: language.t("settings.assistant.smallModel.toast.failed"),
         description: err instanceof Error ? err.message : String(err),
       })
     } finally {
+      smallSaveInFlight = false
       setSavingSmall(false)
+      console.debug("[settings-assistant] small model save finished")
     }
   }
 
@@ -183,7 +202,10 @@ export const SettingsAssistant: Component = () => {
                 {language.t("settings.assistant.smallModel.description")}
               </span>
             </div>
-            <div class="flex w-full justify-end sm:w-auto sm:shrink-0">
+            <div class="flex w-full items-center justify-end gap-2 sm:w-auto sm:shrink-0">
+              <Show when={savingSmall()}>
+                <span class="text-12-regular text-text-weak">{language.t("common.saving")}</span>
+              </Show>
               <Select
                 data-action="settings-assistant-small-model"
                 options={smallOptions()}
@@ -197,6 +219,8 @@ export const SettingsAssistant: Component = () => {
                 size="small"
                 triggerVariant="settings"
                 triggerStyle={{ "min-width": "260px" }}
+                disabled={savingSmall()}
+                allowDuplicateSelectionEvents={false}
               />
             </div>
           </div>
