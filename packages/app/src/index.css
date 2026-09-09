@@ -423,9 +423,6 @@
 
   [data-component="sidebar-session"] {
     --sidebar-session-accent: light-dark(#2f2f2f, #c98a6d);
-    --sidebar-session-actions-width: 112px;
-    --sidebar-session-count-right: 0.75rem;
-    --sidebar-session-title-padding-right: 6rem;
     --sidebar-session-hover-bg: light-dark(#f1f1f1, #2c2924);
     --sidebar-session-hover-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.14));
     --sidebar-session-hover-fg: light-dark(#2f2f2f, var(--text-strong));
@@ -434,41 +431,6 @@
     --sidebar-session-active-bg-bottom: light-dark(#eeeeee, #292622);
     --sidebar-session-active-border: light-dark(rgba(0, 0, 0, 0.03), rgba(201, 138, 109, 0.2));
     --sidebar-session-active-shadow: light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.34));
-  }
-
-  [data-component="sidebar-session"][data-has-shortcut="true"] {
-    --sidebar-session-count-right: 4rem;
-    --sidebar-session-title-padding-right: 4rem;
-  }
-
-  [data-component="sidebar-session"] [data-slot="session-link"] {
-    padding-inline-end: var(--sidebar-session-title-padding-right);
-  }
-
-  [data-component="sidebar-session"] [data-slot="session-message-count"] {
-    right: var(--sidebar-session-count-right);
-  }
-
-  [data-component="sidebar-session"] [data-slot="sidebar-session-actions"] {
-    background-color: transparent;
-  }
-
-  [data-component="sidebar-session"]:is(:hover, :has(:focus-visible)) [data-slot="sidebar-session-actions"] {
-    background-color: var(--sidebar-session-hover-bg);
-  }
-
-  [data-component="sidebar-session"] [data-slot="sidebar-session-actions-panel"] {
-    width: 0;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  [data-component="sidebar-session"] [data-slot="sidebar-session-actions-panel"][data-visible="true"],
-  [data-component="sidebar-session"]:is(:hover, :has(:focus-visible))
-    [data-slot="sidebar-session-actions-panel"][data-hoverable="true"] {
-    width: var(--sidebar-session-actions-width);
-    opacity: 1;
-    pointer-events: auto;
   }
 
   /* Segmented toolbar for the sidebar action row: buttons sit on a shared inset

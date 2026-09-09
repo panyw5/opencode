@@ -41,8 +41,8 @@ const projectActivityPulseDuration = 1_000
 /** Module-level so title shimmer survives SessionItem remount after title update. */
 const titleShimmerTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const [titleShimmerById, setTitleShimmerById] = createSignal<Record<string, boolean>>({})
-const userMessageCountCache = new Map<string, number>()
-const userMessageCountInflight = new Map<string, Promise<number>>()
+const [userMessageCountByKey, setUserMessageCountByKey] = createSignal<Record<string, number>>({})
+const userMessageCountInflight = new Set<string>()
 
 const userMessageCountKey = (directory: string, sessionID: string) => `${directory}\n${sessionID}`
 
@@ -353,7 +353,6 @@ const SessionRow = (props: {
     <A
       href={`/${base64Encode(props.session.directory)}/session/${props.session.id}`}
       class={`flex items-center gap-1 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
-      data-slot="session-link"
       onPointerDown={(event) => {
         if (isPlainPrimaryPointer(event)) {
           startSessionProfile(props.session.id, "pointerdown")
@@ -456,9 +455,8 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
   const unseenCount = createMemo(() => notification.session.unseenCount(props.session.id))
   const hasError = createMemo(() => notification.session.unseenHasError(props.session.id))
   const [sessionStore] = globalSync.child(props.session.directory, { bootstrap: false })
-  const [indexedUserMessageCount, setIndexedUserMessageCount] = createSignal<number | undefined>(
-    userMessageCountCache.get(userMessageCountKey(props.session.directory, props.session.id)),
-  )
+  const countKey = createMemo(() => userMessageCountKey(props.session.directory, props.session.id))
+  const indexedUserMessageCount = createMemo(() => userMessageCountByKey()[countKey()])
   const loadedUserMessageCount = createMemo(
     () => sessionStore.message[props.session.id]?.filter((message) => message.role === "user").length ?? 0,
   )
@@ -468,36 +466,34 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     if (indexed === undefined && loaded === 0) return undefined
     return Math.max(indexed ?? 0, loaded)
   })
+  const messageCountLabel = createMemo(() => {
+    const count = messageCount()
+    if (count === undefined) return ""
+    return language.t(count === 1 ? "sidebar.session.messageCount.one" : "sidebar.session.messageCount.other", {
+      count,
+    })
+  })
   createEffect(() => {
     const directory = props.session.directory
     const sessionID = props.session.id
     const key = userMessageCountKey(directory, sessionID)
-    const cached = userMessageCountCache.get(key)
-    if (cached !== undefined) {
-      setIndexedUserMessageCount(cached)
-      return
-    }
-    if (userMessageCountInflight.has(key)) return
+    if (userMessageCountByKey()[key] !== undefined || userMessageCountInflight.has(key)) return
 
     console.debug(`[sidebar-session] user-message-count load-start directory=${directory} sid=${sessionID}`)
-    const pending = globalSDK.client.session
+    userMessageCountInflight.add(key)
+    void globalSDK.client.session
       .userMessageIndex({ sessionID, directory })
       .then((response) => {
         const count = (response.data ?? []).length
-        userMessageCountCache.set(key, count)
-        setIndexedUserMessageCount(count)
+        setUserMessageCountByKey((current) => ({ ...current, [key]: count }))
         console.debug(`[sidebar-session] user-message-count load-end directory=${directory} sid=${sessionID} count=${count}`)
-        return count
       })
       .catch((error: unknown) => {
         console.debug(
           `[sidebar-session] user-message-count load-error directory=${directory} sid=${sessionID} error=${error instanceof Error ? error.message : String(error)}`,
         )
-        throw error
       })
       .finally(() => userMessageCountInflight.delete(key))
-    userMessageCountInflight.set(key, pending)
-    void pending.catch(() => undefined)
   })
   const hasPermissions = createMemo(() => {
     return !!sessionPermissionRequest(sessionStore.session, sessionStore.permission, props.session.id, (item) => {
@@ -820,128 +816,70 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
         data-session-id={props.session.id}
         data-component="sidebar-session"
         data-active={isSelected() ? "true" : "false"}
-        data-has-shortcut={jumpKeybind() ? "true" : "false"}
         classList={{
           "group/session relative flex items-center w-full min-w-0 rounded-[22px] cursor-default pl-4 pr-3 border border-transparent":
             true,
           "transition-[background-color,border-color,box-shadow]": !props.reduced,
         }}
       >
-      <div class="min-w-0 grow">
-        <Show
-          when={!tooltip()}
-          fallback={
-            <Tooltip
-              placement={props.mobile ? "bottom" : "right"}
-              value={stripScheduledSessionTitle(props.session.title)}
-              gutter={10}
-            >
-              {item}
-            </Tooltip>
-          }
-        >
-          {item}
-        </Show>
-      </div>
-
-      <Show when={messageCount() !== undefined}>
-        <span
-          data-slot="session-message-count"
-          class="pointer-events-none absolute top-1/2 z-0 -translate-y-1/2 whitespace-nowrap text-12-regular text-text-weak tabular-nums"
-        >
-          {language.t(
-            messageCount() === 1 ? "sidebar.session.messageCount.one" : "sidebar.session.messageCount.other",
-            { count: messageCount() ?? 0 },
-          )}
-        </span>
-      </Show>
-
-      <div
-        data-slot="sidebar-session-actions"
-        class="relative z-10 shrink-0 flex items-center gap-1"
-      >
-        <div
-          data-slot="sidebar-session-actions-panel"
-          data-visible={props.mobile || (!props.mobile && !props.reduced && !!jumpKeybind()) ? "true" : "false"}
-          data-hoverable={!props.reduced ? "true" : "false"}
-          class="relative flex items-center gap-1 overflow-hidden transition-[width,opacity]"
-        >
-          <Show when={!props.mobile && !props.reduced && jumpKeybind()}>
-            {(keybind) => (
-              <Keybind class="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 h-5 rounded-md border border-border-base/60 bg-surface-base/70 px-1.5 text-[11px] text-text-weak shadow-none transition-opacity duration-150 group-hover/session:opacity-0 group-focus-within/session:opacity-0">
-                {keybind()}
-              </Keybind>
-            )}
-          </Show>
+        <div class="min-w-0 grow">
           <Show
-            when={!props.reduced}
+            when={!tooltip()}
             fallback={
-              <>
-                <IconButton
-                  data-action="session-favorite"
-                  data-session={base64Encode(props.session.id)}
-                  icon={isFavorited() ? "star-active" : "star"}
-                  variant="ghost"
-                  class="size-6 rounded-md shrink-0"
-                  classList={{ "text-icon-warning-base": isFavorited() }}
-                  aria-label={favoriteLabel()}
-                  aria-pressed={isFavorited()}
-                  disabled={menu.favoritePending}
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    toggleFavorite()
-                  }}
-                />
-                <IconButton
-                  icon="refresh"
-                  variant="ghost"
-                  class="size-6 rounded-md shrink-0"
-                  aria-label={language.t("session.generateTitle")}
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    generateTitle()
-                  }}
-                />
-                <IconButton
-                  icon={menu.copied ? "check" : "copy"}
-                  variant="ghost"
-                  class="size-6 rounded-md shrink-0"
-                  aria-label={language.t("session.copyInfo")}
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    copy()
-                  }}
-                />
-                <IconButton
-                  icon="archive"
-                  variant="ghost"
-                  class="size-6 rounded-md shrink-0"
-                  aria-label={language.t("common.archive")}
-                  onClick={(event) => {
-                    event.preventDefault()
-                    event.stopPropagation()
-                    void props.archiveSession(props.session)
-                  }}
-                />
-              </>
+              <Tooltip
+                placement={props.mobile ? "bottom" : "right"}
+                value={stripScheduledSessionTitle(props.session.title)}
+                gutter={10}
+              >
+                {item}
+              </Tooltip>
             }
           >
-            <>
+            {item}
+          </Show>
+        </div>
+
+        <Show when={!props.reduced}>
+          <div data-slot="session-trailing" class="relative ml-2 h-6 w-28 shrink-0">
+            <div
+              data-slot="session-meta"
+              class="absolute inset-0 flex items-center justify-end gap-2 transition-opacity duration-150"
+              classList={{
+                "opacity-0": !!props.mobile,
+                "opacity-100 group-hover/session:opacity-0": !props.mobile,
+              }}
+            >
+              <Show when={messageCount() !== undefined}>
+                <span class="pointer-events-none whitespace-nowrap text-12-regular text-text-weak tabular-nums">
+                  {messageCountLabel()}
+                </span>
+              </Show>
+              <Show when={!props.mobile && jumpKeybind()}>
+                {(keybind) => (
+                  <Keybind class="pointer-events-none h-5 shrink-0 rounded-md border border-border-base/60 bg-surface-base/70 px-1.5 text-[11px] text-text-weak shadow-none">
+                    {keybind()}
+                  </Keybind>
+                )}
+              </Show>
+            </div>
+
+            <div
+              data-slot="session-actions"
+              class="absolute inset-0 flex items-center justify-end gap-1 bg-[var(--sidebar-session-hover-bg)] transition-opacity duration-150"
+              classList={{
+                "opacity-100 pointer-events-auto": !!props.mobile,
+                "opacity-0 pointer-events-none group-hover/session:opacity-100 group-hover/session:pointer-events-auto":
+                  !props.mobile,
+              }}
+            >
               <Tooltip value={favoriteLabel()} placement="top">
                 <IconButton
                   data-action="session-favorite"
                   data-session={base64Encode(props.session.id)}
                   icon={isFavorited() ? "star-active" : "star"}
                   variant="ghost"
-                  class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
-                  classList={{
-                    "text-icon-warning-base": isFavorited(),
-                    "opacity-0 pointer-events-none group-hover/session:pointer-events-auto group-focus-within/session:pointer-events-auto":
-                      !isFavorited() && !props.mobile && !!jumpKeybind(),
-                  }}
+                  class="size-6 shrink-0 rounded-md"
+                  classList={{ "text-icon-warning-base": isFavorited() }}
                   aria-label={favoriteLabel()}
                   aria-pressed={isFavorited()}
                   disabled={menu.favoritePending}
@@ -956,11 +894,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                 <IconButton
                   icon="refresh"
                   variant="ghost"
-                  class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
-                  classList={{
-                    "opacity-0 pointer-events-none group-hover/session:pointer-events-auto group-focus-within/session:pointer-events-auto":
-                      !props.mobile && !!jumpKeybind(),
-                  }}
+                  class="size-6 shrink-0 rounded-md"
                   aria-label={language.t("session.generateTitle")}
                   onClick={(event) => {
                     event.preventDefault()
@@ -973,11 +907,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                 <IconButton
                   icon={menu.copied ? "check" : "copy"}
                   variant="ghost"
-                  class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
-                  classList={{
-                    "opacity-0 pointer-events-none group-hover/session:pointer-events-auto group-focus-within/session:pointer-events-auto":
-                      !props.mobile && !!jumpKeybind(),
-                  }}
+                  class="size-6 shrink-0 rounded-md"
                   aria-label={language.t("session.copyInfo")}
                   onClick={(event) => {
                     event.preventDefault()
@@ -990,11 +920,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                 <IconButton
                   icon="archive"
                   variant="ghost"
-                  class="size-6 rounded-md shrink-0 transition-opacity duration-150 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
-                  classList={{
-                    "opacity-0 pointer-events-none group-hover/session:pointer-events-auto group-focus-within/session:pointer-events-auto":
-                      !props.mobile && !!jumpKeybind(),
-                  }}
+                  class="size-6 shrink-0 rounded-md"
                   aria-label={language.t("common.archive")}
                   onClick={(event) => {
                     event.preventDefault()
@@ -1003,15 +929,14 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
                   }}
                 />
               </Tooltip>
-            </>
-          </Show>
-        </div>
+            </div>
+          </div>
+        </Show>
         <Show when={detail()}>
-          <div class="shrink-0 size-6 flex items-center justify-center">
+          <div class="flex size-6 shrink-0 items-center justify-center">
             <Icon name="branch" size="normal" class="text-icon-success-base" />
           </div>
         </Show>
-      </div>
       </ContextMenu.Trigger>
       <ContextMenu.Portal>
         <ContextMenu.Content
