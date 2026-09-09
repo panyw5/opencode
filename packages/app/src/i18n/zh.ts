@@ -27,6 +27,7 @@ export const dict = {
   "projectTask.sessions.title": "关联会话",
   "projectTask.sessions.empty": "还没有会话关联此任务。",
   "projectTask.sessions.count": "{{count}} 个会话",
+  "projectTask.sessions.new": "新建任务会话",
   "projectTask.error.titleRequired": "标题不能为空",
   "projectTask.mount.tooltip": "关联项目任务",
   "projectTask.mount.menuTitle": "关联项目任务",

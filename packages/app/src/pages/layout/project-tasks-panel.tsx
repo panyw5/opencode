@@ -28,6 +28,8 @@ import { OpenInApp } from "@/components/open-in-app"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useLanguage } from "@/context/language"
+import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
+import { setPendingProjectTaskMount } from "@/components/session/pending-project-task-mount"
 import { errorMessage } from "./helpers"
 import { directoriesFromSessions, groupProjectTasksByWorktree, taskNeedsDirectoryHydrate } from "./project-task-groups"
 import { projectTaskEventMatchesScope, sameProjectTaskPanelScope } from "./project-tasks-panel-scope"
@@ -169,12 +171,13 @@ function projectTaskStatusLabel(status: ProjectTaskStatus, t: ReturnType<typeof 
 
 function ProjectTaskCard(props: {
   task: ProjectTask
+  directory: string
   onOpen: (task: ProjectTask) => void
   onArchive: (task: ProjectTask) => void | Promise<void>
-  onSetInProgress: (task: ProjectTask) => void | Promise<void>
+  onNewSession: (task: ProjectTask, directory: string) => void
 }): JSX.Element {
   const language = useLanguage()
-  const [pending, setPending] = createSignal<"status" | "archive" | undefined>()
+  const [pending, setPending] = createSignal<"archive" | undefined>()
   const canAct = createMemo(() => pending() === undefined)
   const progressKind = createMemo(() =>
     progressKindForStatus(props.task.status, {
@@ -190,9 +193,6 @@ function ProjectTaskCard(props: {
     }
     return items
   })
-  // "In progress" is only meaningful for open tasks — hide when already in_progress/done/archived.
-  const canSetInProgress = createMemo(() => props.task.status === "open" && canAct())
-
   return (
     <TaskCardShell
       data-component="project-task-item"
@@ -203,17 +203,12 @@ function ProjectTaskCard(props: {
       onOpen={() => props.onOpen(props.task)}
       actions={
         <>
-          <Show when={canSetInProgress() || pending() === "status"}>
-            <TaskCardActionButton
-              disabled={!canSetInProgress()}
-              onClick={() => {
-                setPending("status")
-                Promise.resolve(props.onSetInProgress(props.task)).finally(() => setPending(undefined))
-              }}
-            >
-              {pending() === "status" ? language.t("common.loading") : language.t("projectTask.status.inProgress")}
-            </TaskCardActionButton>
-          </Show>
+          <TaskCardActionButton
+            icon="new-session"
+            onClick={() => props.onNewSession(props.task, props.directory)}
+          >
+            {language.t("projectTask.sessions.new")}
+          </TaskCardActionButton>
           <TaskCardActionButton
             danger
             icon="trash"
@@ -742,9 +737,10 @@ function sortProjectTasks(tasks: ProjectTask[]) {
 
 function ProjectTaskCards(props: {
   tasks: ProjectTask[]
+  directory: string
   onOpen: (task: ProjectTask) => void
   onArchive: (task: ProjectTask) => void | Promise<void>
-  onSetInProgress: (task: ProjectTask) => void | Promise<void>
+  onNewSession: (task: ProjectTask, directory: string) => void
 }): JSX.Element {
   const language = useLanguage()
   const tasks = createMemo(() => sortProjectTasks(props.tasks))
@@ -761,9 +757,10 @@ function ProjectTaskCards(props: {
           {(task) => (
             <ProjectTaskCard
               task={task}
+              directory={props.directory}
               onOpen={props.onOpen}
               onArchive={props.onArchive}
-              onSetInProgress={props.onSetInProgress}
+              onNewSession={props.onNewSession}
             />
           )}
         </For>
@@ -780,9 +777,10 @@ function ProjectTaskCards(props: {
                 {(task) => (
                   <ProjectTaskCard
                     task={task}
+                    directory={props.directory}
                     onOpen={props.onOpen}
                     onArchive={props.onArchive}
-                    onSetInProgress={props.onSetInProgress}
+                    onNewSession={props.onNewSession}
                   />
                 )}
               </For>
@@ -805,9 +803,10 @@ function ProjectTaskCards(props: {
                 {(task) => (
                   <ProjectTaskCard
                     task={task}
+                    directory={props.directory}
                     onOpen={props.onOpen}
                     onArchive={props.onArchive}
-                    onSetInProgress={props.onSetInProgress}
+                    onNewSession={props.onNewSession}
                   />
                 )}
               </For>
@@ -831,6 +830,8 @@ export function ProjectTasksPanel(props: {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
+  const navigate = useNavigate()
+  const sessionTabs = useSessionTabs()
   const scope = createMemo(
     () => ({ projectID: props.projectID(), directory: props.directory().replaceAll("\\", "/").replace(/\/+$/, "") }),
     { projectID: "", directory: "" },
@@ -918,16 +919,12 @@ export function ProjectTasksPanel(props: {
     }
   }
 
-  async function setInProgress(task: ProjectTask) {
-    try {
-      const result = await client().projectTask.update({
-        taskID: task.id,
-        projectTaskUpdateInput: { status: "in_progress" },
-      })
-      if (result.data) upsertTask(result.data)
-    } catch (error) {
-      setState("error", errorMessage(error, language.t("common.requestFailed")))
-    }
+  function newSession(task: ProjectTask, directory: string) {
+    if (!directory) return
+    setPendingProjectTaskMount(directory, { taskID: task.id, inject: true })
+    const draft = sessionTabs.createDraft(directory, "button")
+    console.debug(`[project-task] new-session taskID=${task.id} directory=${directory} draftID=${draft.id}`)
+    navigate(sessionTabsTargetHref({ type: "draft", ...draft }))
   }
 
   const createTask = async (name: string, content: string) => {
@@ -1022,9 +1019,10 @@ export function ProjectTasksPanel(props: {
                 fallback={
                   <ProjectTaskCards
                     tasks={state.tasks}
+                    directory={dir()}
                     onOpen={open}
                     onArchive={archive}
-                    onSetInProgress={setInProgress}
+                    onNewSession={newSession}
                   />
                 }
               >
@@ -1052,9 +1050,10 @@ export function ProjectTasksPanel(props: {
                           <div class="flex flex-col gap-2 pt-2 pl-2">
                             <ProjectTaskCards
                               tasks={group.tasks}
+                              directory={group.directory}
                               onOpen={open}
                               onArchive={archive}
-                              onSetInProgress={setInProgress}
+                              onNewSession={newSession}
                             />
                           </div>
                         </Collapsible.Content>

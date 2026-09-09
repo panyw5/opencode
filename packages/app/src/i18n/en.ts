@@ -43,6 +43,7 @@ export const dict = {
   "projectTask.sessions.title": "Linked sessions",
   "projectTask.sessions.empty": "No sessions have mounted this task yet.",
   "projectTask.sessions.count": "{{count}} sessions",
+  "projectTask.sessions.new": "New task session",
   "projectTask.error.titleRequired": "Title is required",
   "projectTask.mount.tooltip": "Mount project task",
   "projectTask.mount.menuTitle": "Mount project task",

@@ -22,6 +22,7 @@ export const dict = {
   "command.category.workspace": "工作區",
 
   "command.category.settings": "設定",
+  "projectTask.sessions.new": "新增任務工作階段",
   "theme.scheme.system": "系統",
   "theme.scheme.light": "淺色",
   "theme.scheme.dark": "深色",
