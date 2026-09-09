@@ -1162,6 +1162,19 @@ export type ChannelDiscordConfig = {
   model?: string
 }
 
+export type ChannelQQConfig = {
+  /** QQ bot via OneBot 11 WebSocket */
+  type: "qq"
+  /** OneBot 11 WebSocket endpoint */
+  endpoint: string
+  accessToken?: string
+  allowedUsers?: Array<string>
+  groupRequireMention?: boolean
+  directory?: string
+  enabled?: boolean
+  model?: string
+}
+
 /**
  * @deprecated Always uses stretch layout.
  */
@@ -1254,7 +1267,7 @@ export type Config = {
         }
   }
   channels?: {
-    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig
+    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQQConfig
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
@@ -2270,7 +2283,7 @@ export type Config7 = {
         }
   }
   channels?: {
-    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig
+    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQQConfig
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.

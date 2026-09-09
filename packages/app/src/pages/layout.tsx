@@ -2014,7 +2014,15 @@ export default function Layout(props: ParentProps) {
         actions: [
           {
             label: language.t("config.channels.title"),
-            onClick: () => openConfig("channels", entry?.type === "discord" ? "channels:discord" : "channels:feishu"),
+            onClick: () =>
+              openConfig(
+                "channels",
+                entry?.type === "discord"
+                  ? "channels:discord"
+                  : entry?.type === "qq"
+                    ? "channels:qq"
+                    : "channels:feishu",
+              ),
           },
         ],
       })

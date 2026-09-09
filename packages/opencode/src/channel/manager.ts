@@ -2,10 +2,12 @@ import path from "path"
 import * as Log from "@opencode-ai/core/util/log"
 import { Global } from "@opencode-ai/core/global"
 import { startFeishuChannel, type FeishuChannelConfig } from "./feishu"
+import { startQQChannel, type QQChannelConfig } from "./qq"
 import { ensureChannelDirectory, resolveChannelDirectory } from "./directory"
 
 export type ChannelConfig =
   | FeishuChannelConfig
+  | QQChannelConfig
   | {
       type: "discord"
       botToken: string
@@ -36,7 +38,7 @@ export type ChannelManagerStartOptions = {
 
 /**
  * Start (or restart) IM channel runtimes for enabled configs.
- * Currently supports Feishu websocket long-connection.
+ * Supports Feishu and OneBot 11 QQ websocket connections.
  * Each channel uses its own working directory (not OpenCode projects).
  */
 export async function startChannels(opts: ChannelManagerStartOptions): Promise<void> {
@@ -73,6 +75,19 @@ export async function startChannels(opts: ChannelManagerStartOptions): Promise<v
         name,
         directory: resolveChannelDirectory(name, config.directory ?? opts.directory),
       })
+    }
+    if (config.type === "qq") {
+      if (!config.endpoint) {
+        log.warn("qq channel missing endpoint", { name })
+        continue
+      }
+      try {
+        const directory = resolveChannelDirectory(name, config.directory ?? opts.directory)
+        await ensureChannelDirectory(directory)
+        handles.push(startQQChannel({ name, config, baseUrl, directory }))
+      } catch (err) {
+        log.error("failed to start qq channel", { name, error: err })
+      }
     }
   }
 

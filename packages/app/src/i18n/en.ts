@@ -1862,6 +1862,9 @@ export const dict = {
   "config.channels.platform.discord.note": "Paste bot token",
   "config.channels.platform.discord.detail":
     "Add a Discord bot token. Enable Message Content Intent in the Discord developer portal.",
+  "config.channels.platform.qq": "QQ",
+  "config.channels.platform.qq.note": "Connect through OneBot 11 WebSocket",
+  "config.channels.platform.qq.detail": "Connect a QQ bot through a OneBot 11 compatible client such as NapCat.",
   "config.channels.existing.title": "Configured channels",
   "config.channels.existing.count": "{{count}} saved",
   "config.channels.existing.empty":
@@ -1873,10 +1876,12 @@ export const dict = {
   "config.channels.field.appId": "App ID",
   "config.channels.field.appSecret": "App Secret",
   "config.channels.field.botToken": "Bot Token",
+  "config.channels.field.endpoint": "OneBot WebSocket endpoint",
+  "config.channels.field.accessToken": "Access token (optional)",
+  "config.channels.field.groupRequireMention": "Only respond when mentioned in groups",
   "config.channels.field.proxy": "Proxy (optional)",
   "config.channels.field.directory": "Work folder",
-  "config.channels.field.directory.hint":
-    "Dedicated working directory for this channel's sessions and agent tools. Not an OpenCode project. Leave empty to use ~/.config/opencode/channels/{name} (same family as quick-assistant). Supports ~.",
+  "config.channels.field.directory.hint": "Default: ~/.config/opencode/channels/{name}",
   "config.channels.field.directory.invalid": "Enter a valid path. ~ must be followed by / or \\.",
   "config.channels.field.allowedUsers": "Allowed users (optional)",
   "config.channels.field.allowedUsers.hint":
@@ -1915,6 +1920,8 @@ export const dict = {
     "Create an enterprise self-built app at open.feishu.cn, enable Bot capability, then paste credentials.",
   "config.channels.discord.hint":
     "Create a Discord application bot, enable Message Content Intent, then paste the bot token.",
+  "config.channels.qq.hint":
+    "Run a OneBot 11 compatible QQ client with a Forward WebSocket server, then configure its endpoint here.",
 
   "sidebar.im.title": "IM Channels",
   "sidebar.im.meta.feishu": "Feishu",

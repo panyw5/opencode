@@ -41,7 +41,21 @@ export const Discord = Schema.Struct({
 }).annotate({ identifier: "ChannelDiscordConfig" })
 export type Discord = Schema.Schema.Type<typeof Discord>
 
-export const Info = Schema.Union([Feishu, Discord]).annotate({ discriminator: "type" })
+export const QQ = Schema.Struct({
+  type: Schema.Literal("qq").annotate({ description: "QQ bot via OneBot 11 WebSocket" }),
+  endpoint: Schema.String.annotate({ description: "OneBot 11 WebSocket endpoint (ws:// or wss://)" }),
+  accessToken: Schema.optional(Schema.String).annotate({ description: "Optional OneBot access token" }),
+  allowedUsers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Allowed QQ user IDs. Empty or containing '*' means unrestricted.",
+  }),
+  groupRequireMention: Schema.optional(Schema.Boolean).annotate({
+    description: "Only respond to group messages mentioning the bot. Defaults to false.",
+  }),
+  ...ChannelCommon,
+}).annotate({ identifier: "ChannelQQConfig" })
+export type QQ = Schema.Schema.Type<typeof QQ>
+
+export const Info = Schema.Union([Feishu, Discord, QQ]).annotate({ discriminator: "type" })
 export type Info = Schema.Schema.Type<typeof Info>
 
 export * as ConfigChannels from "./channels"

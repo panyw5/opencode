@@ -20,7 +20,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Switch as Toggle } from "@opencode-ai/ui/switch"
 import { showToast } from "@opencode-ai/ui/toast"
-import type { ChannelDiscordConfig, ChannelFeishuConfig, Config } from "@opencode-ai/sdk/v2/client"
+import type { ChannelDiscordConfig, ChannelFeishuConfig, ChannelQQConfig, Config } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useGlobalSync } from "@/context/global-sync"
 import {
@@ -46,11 +46,11 @@ import {
 import { usePlatform } from "@/context/platform"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 
-export type ChannelPlatform = "feishu" | "discord"
+export type ChannelPlatform = "feishu" | "discord" | "qq"
 
 type ChannelConfig = NonNullable<Config["channels"]>[string]
 
-export const CHANNEL_PLATFORMS: ChannelPlatform[] = ["feishu"]
+export const CHANNEL_PLATFORMS: ChannelPlatform[] = ["feishu", "qq"]
 
 export function channelPick(platform: ChannelPlatform) {
   return `channels:${platform}` as const
@@ -59,6 +59,7 @@ export function channelPick(platform: ChannelPlatform) {
 export function parseChannelPick(pick: string): ChannelPlatform | undefined {
   if (pick === "channels:feishu") return "feishu"
   if (pick === "channels:discord") return "discord"
+  if (pick === "channels:qq") return "qq"
   return undefined
 }
 
@@ -249,9 +250,6 @@ const ChannelModelSelector: Component<{
   return (
     <ModelSelectorPopover
       model={model}
-      placement="bottom-start"
-      flip={false}
-      fitViewport
       triggerAs={Button}
       triggerProps={{
         type: "button",
@@ -314,10 +312,10 @@ export function useChannelMiddleItems(pick: () => string): () => ChannelMiddleIt
   return createMemo(() => {
     const cfg = globalSync.data.config.channels ?? {}
     let feishu = 0
-    let discord = 0
+    let qq = 0
     for (const entry of Object.values(cfg)) {
       if (entry?.type === "feishu") feishu++
-      if (entry?.type === "discord") discord++
+      if (entry?.type === "qq") qq++
     }
     const current = pick()
     return [
@@ -330,12 +328,12 @@ export function useChannelMiddleItems(pick: () => string): () => ChannelMiddleIt
         active: current === channelPick("feishu"),
       },
       {
-        platform: "discord" as const,
-        pick: channelPick("discord"),
-        title: language.t("config.channels.platform.discord"),
-        note: language.t("config.channels.platform.discord.note"),
-        count: discord,
-        active: current === channelPick("discord"),
+        platform: "qq" as const,
+        pick: channelPick("qq"),
+        title: language.t("config.channels.platform.qq"),
+        note: language.t("config.channels.platform.qq.note"),
+        count: qq,
+        active: current === channelPick("qq"),
       },
     ]
   })
@@ -355,6 +353,9 @@ export const ConfigChannelsDetail: Component<{
     domain: "feishu" as FeishuDomain,
     botToken: "",
     proxy: "",
+    endpoint: "",
+    accessToken: "",
+    groupRequireMention: false,
     allowedUsers: "",
     model: "" as string,
     /** Working folder for this channel (decoupled from OpenCode projects). */
@@ -394,6 +395,9 @@ export const ConfigChannelsDetail: Component<{
           domain: "feishu",
           botToken: "",
           proxy: "",
+          endpoint: "",
+          accessToken: "",
+          groupRequireMention: false,
           allowedUsers: "",
           model: "",
           directory: "",
@@ -469,7 +473,8 @@ export const ConfigChannelsDetail: Component<{
     if (!form.name.trim()) return false
     if (!isValidChannelDirectory(form.directory)) return false
     if (props.platform === "feishu") return !!form.appId.trim() && !!form.appSecret.trim()
-    return !!form.botToken.trim()
+    if (props.platform === "discord") return !!form.botToken.trim()
+    return !!form.endpoint.trim()
   })
 
   const formModelId = createMemo(() => modelIdFromConfig(form.model))
@@ -535,7 +540,7 @@ export const ConfigChannelsDetail: Component<{
         const model = modelConfigFromId(formModelId())
         if (model) feishu.model = model
         config = feishu
-      } else {
+      } else if (props.platform === "discord") {
         const discord: ChannelDiscordConfig = {
           type: "discord",
           botToken: form.botToken.trim(),
@@ -548,6 +553,20 @@ export const ConfigChannelsDetail: Component<{
         const model = modelConfigFromId(formModelId())
         if (model) discord.model = model
         config = discord
+      } else {
+        const qq: ChannelQQConfig = {
+          type: "qq",
+          endpoint: form.endpoint.trim(),
+          enabled: form.enabled,
+          directory,
+          groupRequireMention: form.groupRequireMention,
+        }
+        if (form.accessToken.trim()) qq.accessToken = form.accessToken.trim()
+        const users = parseUserList(form.allowedUsers)
+        if (users) qq.allowedUsers = users
+        const model = modelConfigFromId(formModelId())
+        if (model) qq.model = model
+        config = qq
       }
 
       const channels = { ...existing, [name]: config }
@@ -572,6 +591,8 @@ export const ConfigChannelsDetail: Component<{
       } else {
         setForm("botToken", "")
         setForm("proxy", "")
+        setForm("endpoint", "")
+        setForm("accessToken", "")
       }
       setExpanded(name)
     } catch (err: unknown) {
@@ -670,7 +691,9 @@ export const ConfigChannelsDetail: Component<{
   const title = () =>
     props.platform === "feishu"
       ? language.t("config.channels.platform.feishu")
-      : language.t("config.channels.platform.discord")
+      : props.platform === "qq"
+        ? language.t("config.channels.platform.qq")
+        : language.t("config.channels.platform.discord")
 
   return (
     <div class="flex h-full min-h-0 flex-col">
@@ -680,7 +703,9 @@ export const ConfigChannelsDetail: Component<{
           <p class="mt-1 text-12-regular text-text-weak">
             {props.platform === "feishu"
               ? language.t("config.channels.platform.feishu.detail")
-              : language.t("config.channels.platform.discord.detail")}
+              : props.platform === "qq"
+                ? language.t("config.channels.platform.qq.detail")
+                : language.t("config.channels.platform.discord.detail")}
           </p>
         </div>
       </div>
@@ -709,6 +734,7 @@ export const ConfigChannelsDetail: Component<{
                     const open = () => expanded() === row.name
                     const feishu = () => (row.config.type === "feishu" ? row.config : undefined)
                     const discord = () => (row.config.type === "discord" ? row.config : undefined)
+                    const qq = () => (row.config.type === "qq" ? row.config : undefined)
                     return (
                       <div
                         class="flex flex-col gap-3 rounded-[14px] border border-border-base bg-surface-base/55 px-4 py-3 transition-colors duration-150 hover:bg-surface-base-hover"
@@ -819,14 +845,39 @@ export const ConfigChannelsDetail: Component<{
                                 </>
                               )}
                             </Show>
+                            <Show when={qq()}>
+                              {(cfg) => (
+                                <>
+                                  <TextField
+                                    label={language.t("config.channels.field.endpoint")}
+                                    value={cfg().endpoint}
+                                    onChange={(v) =>
+                                      void patchChannel(row.name, { endpoint: v ?? "" } as Partial<ChannelQQConfig>)
+                                    }
+                                  />
+                                  <TextField
+                                    label={language.t("config.channels.field.accessToken")}
+                                    type="password"
+                                    value={cfg().accessToken ?? ""}
+                                    onChange={(v) =>
+                                      void patchChannel(row.name, {
+                                        accessToken: v?.trim() || undefined,
+                                      } as Partial<ChannelQQConfig>)
+                                    }
+                                  />
+                                </>
+                              )}
+                            </Show>
 
                             <div class="flex flex-col gap-1">
-                              <span class="text-12-medium text-text-base">
-                                {language.t("config.channels.field.directory")}
-                              </span>
-                              <p class="text-11-regular text-text-weaker">
-                                {language.t("config.channels.field.directory.hint")}
-                              </p>
+                              <div class="flex items-baseline gap-2">
+                                <span class="text-12-medium text-text-base">
+                                  {language.t("config.channels.field.directory")}
+                                </span>
+                                <span class="text-11-regular text-text-weaker">
+                                  {language.t("config.channels.field.directory.hint")}
+                                </span>
+                              </div>
                               <ChannelDirectoryInput
                                 value={channelDirectoryInputValue(
                                   row.name,
@@ -867,23 +918,31 @@ export const ConfigChannelsDetail: Component<{
             <div class="text-14-medium text-text-strong">{language.t("config.channels.add.title")}</div>
             <p class="text-11-regular text-text-weaker">{language.t("config.channels.note.runtime")}</p>
 
-            <TextField
-              label={language.t("config.channels.field.name")}
-              placeholder={props.platform === "feishu" ? "work-feishu" : "my-discord"}
-              value={form.name}
-              onChange={(v) => setForm("name", v ?? "")}
-            />
-
-            <div class="flex flex-col gap-1">
-              <span class="text-12-medium text-text-base">{language.t("config.channels.field.directory")}</span>
-              <p class="text-11-regular text-text-weaker">{language.t("config.channels.field.directory.hint")}</p>
-              <ChannelDirectoryInput
-                value={form.directory}
-                home={globalSync.data.path.home}
-                name={form.name.trim() || "channel-name"}
-                errorText={language.t("config.channels.field.directory.invalid")}
-                onChange={(value) => setForm("directory", value)}
+            <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(180px,0.65fr)_minmax(0,1.35fr)]">
+              <TextField
+                label={language.t("config.channels.field.name")}
+                placeholder={
+                  props.platform === "feishu" ? "work-feishu" : props.platform === "qq" ? "my-qq" : "my-discord"
+                }
+                value={form.name}
+                onChange={(v) => setForm("name", v ?? "")}
               />
+
+              <div class="flex flex-col gap-1">
+                <div class="flex items-baseline gap-2">
+                  <span class="text-12-medium text-text-base">{language.t("config.channels.field.directory")}</span>
+                  <span class="text-11-regular text-text-weaker">
+                    {language.t("config.channels.field.directory.hint")}
+                  </span>
+                </div>
+                <ChannelDirectoryInput
+                  value={form.directory}
+                  home={globalSync.data.path.home}
+                  name={form.name.trim() || "channel-name"}
+                  errorText={language.t("config.channels.field.directory.invalid")}
+                  onChange={(value) => setForm("directory", value)}
+                />
+              </div>
             </div>
 
             <Switch>
@@ -1049,6 +1108,30 @@ export const ConfigChannelsDetail: Component<{
                   value={form.proxy}
                   onChange={(v) => setForm("proxy", v ?? "")}
                 />
+              </Match>
+              <Match when={props.platform === "qq"}>
+                <p class="text-12-regular text-text-weak">{language.t("config.channels.qq.hint")}</p>
+                <TextField
+                  label={language.t("config.channels.field.endpoint")}
+                  placeholder="ws://127.0.0.1:6700"
+                  value={form.endpoint}
+                  onChange={(v) => setForm("endpoint", v ?? "")}
+                />
+                <TextField
+                  label={language.t("config.channels.field.accessToken")}
+                  type="password"
+                  placeholder="OneBot access token"
+                  value={form.accessToken}
+                  onChange={(v) => setForm("accessToken", v ?? "")}
+                />
+                <label class="flex items-center gap-2 text-12-regular text-text-weak">
+                  <input
+                    type="checkbox"
+                    checked={form.groupRequireMention}
+                    onChange={(event) => setForm("groupRequireMention", event.currentTarget.checked)}
+                  />
+                  {language.t("config.channels.field.groupRequireMention")}
+                </label>
               </Match>
             </Switch>
 

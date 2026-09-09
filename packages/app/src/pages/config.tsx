@@ -3438,7 +3438,13 @@ function CustomEditor(props: {
   const npmOptions = createMemo(() => customProviderNpmPackages(props.form.npm))
   const selectedNpm = createMemo(() => props.form.npm?.trim() || OPENAI_COMPATIBLE)
 
-  createEffect(on(() => `${props.form.mode}:${props.form.providerID}`, () => setConfirmDelete(false), { defer: true }))
+  createEffect(
+    on(
+      () => `${props.form.mode}:${props.form.providerID}`,
+      () => setConfirmDelete(false),
+      { defer: true },
+    ),
+  )
 
   const deleteProvider = () => {
     if (!confirmDelete()) {
@@ -3911,7 +3917,13 @@ export default function ConfigPage() {
               ? ((entry.url as string) ?? "")
               : ""
           : ""
-        return { id: mcpSelectionID({ scope: "global", directory: "", name: name_ }), name: name_, type, detail, status }
+        return {
+          id: mcpSelectionID({ scope: "global", directory: "", name: name_ }),
+          name: name_,
+          type,
+          detail,
+          status,
+        }
       })
       .sort((a, b) => a.name.localeCompare(b.name))
   })
@@ -4093,7 +4105,10 @@ export default function ConfigPage() {
         )
         console.info(`[config] project MCP save target=${target.file.path} name=${n} fields=mcp`)
         await writeConfigRecord(target.file.path, text)
-        await globalSDK.forDomain(mainDomain).client.instance.dispose({ directory: targetDirectory }).catch(() => undefined)
+        await globalSDK
+          .forDomain(mainDomain)
+          .client.instance.dispose({ directory: targetDirectory })
+          .catch(() => undefined)
         await client.mcp.add({ name: n, config: config as never })
         const result = await client.config.get()
         if (result.data) targetStore[1]("config", result.data)
@@ -4155,7 +4170,10 @@ export default function ConfigPage() {
         console.info(`[config] project MCP delete target=${target.file.path} name=${n} fields=mcp`)
         await writeConfigRecord(target.file.path, text)
       }
-      await globalSDK.forDomain(mainDomain).client.instance.dispose({ directory: targetDirectory }).catch(() => undefined)
+      await globalSDK
+        .forDomain(mainDomain)
+        .client.instance.dispose({ directory: targetDirectory })
+        .catch(() => undefined)
       const result = await client.config.get()
       if (result.data) targetStore[1]("config", result.data)
       await refetchProjectMcpRecords()
@@ -4173,7 +4191,10 @@ export default function ConfigPage() {
         await globalSync.refreshConfig(mainDomain)
         const directory = sync.data.path?.directory
         if (directory) {
-          await globalSDK.forDomain(mainDomain).client.instance.dispose({ directory }).catch(() => undefined)
+          await globalSDK
+            .forDomain(mainDomain)
+            .client.instance.dispose({ directory })
+            .catch(() => undefined)
           const client = globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
           const result = await client.config.get()
           if (result.data) globalSync.child(directory, { bootstrap: false })[1]("config", result.data)
@@ -4633,8 +4654,8 @@ export default function ConfigPage() {
       navigate(previous.href, { replace: true })
       return
     }
-    const target = previous ??
-      pickSessionTabsTarget({ tabs, drafts, directory: decode64(params.dir ?? "") ?? undefined })
+    const target =
+      previous ?? pickSessionTabsTarget({ tabs, drafts, directory: decode64(params.dir ?? "") ?? undefined })
     const href = sessionTabsTargetHref(target)
     console.debug(
       `[config-back] action=activate target=${href} replace=true reason=${previous ? "valid-origin" : location.state ? "origin-unavailable" : "missing-origin"} fallback=${target.type}`,
@@ -5021,7 +5042,13 @@ export default function ConfigPage() {
 
   const agents = createMemo<DocItem[]>(() => {
     const seen = new Set<string>()
-    return [...(agentDraft() ? [agentDraft()!] : []), ...globalAgents(), ...(diskAgents.latest ?? []), ...(pluginAgents.latest ?? []), ...runtimeAgents()]
+    return [
+      ...(agentDraft() ? [agentDraft()!] : []),
+      ...globalAgents(),
+      ...(diskAgents.latest ?? []),
+      ...(pluginAgents.latest ?? []),
+      ...runtimeAgents(),
+    ]
       .filter((item) => {
         const key = norm(item.path)
         if (seen.has(key)) return false
@@ -7533,9 +7560,7 @@ export default function ConfigPage() {
       return
     }
     const updated = upsertAgentMarkdownModel(state.text, next || undefined)
-    console.info(
-      `[config] agent draft model from=${current} to=${next} changed=${String(updated !== state.text)}`,
-    )
+    console.info(`[config] agent draft model from=${current} to=${next} changed=${String(updated !== state.text)}`)
     if (updated === state.text) return
     setState("text", updated)
     setState("saved", updated)
@@ -7713,10 +7738,7 @@ export default function ConfigPage() {
         return globalSync.updateConfig(patch, { refreshProviders: false })
       })
       .then(async (synced) => {
-        const authRemovals = [
-          ...(prev && prev !== id ? [prev] : []),
-          ...(keyChanged ? [id] : []),
-        ]
+        const authRemovals = [...(prev && prev !== id ? [prev] : []), ...(keyChanged ? [id] : [])]
         await Promise.all(authRemovals.map((providerID) => globalSDK.client.auth.remove({ providerID })))
         batch(() => {
           setConfig(synced)
@@ -9345,6 +9367,9 @@ export default function ConfigPage() {
                   </Match>
                   <Match when={selectedChannelPlatform() === "discord"}>
                     <ConfigChannelsDetail platform="discord" />
+                  </Match>
+                  <Match when={selectedChannelPlatform() === "qq"}>
+                    <ConfigChannelsDetail platform="qq" />
                   </Match>
                 </Switch>
               </Match>
