@@ -42,14 +42,14 @@ export const Discord = Schema.Struct({
 export type Discord = Schema.Schema.Type<typeof Discord>
 
 export const QQ = Schema.Struct({
-  type: Schema.Literal("qq").annotate({ description: "QQ bot via OneBot 11 WebSocket" }),
-  endpoint: Schema.String.annotate({ description: "OneBot 11 WebSocket endpoint (ws:// or wss://)" }),
-  accessToken: Schema.optional(Schema.String).annotate({ description: "Optional OneBot access token" }),
-  allowedUsers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
-    description: "Allowed QQ user IDs. Empty or containing '*' means unrestricted.",
+  type: Schema.Literal("qq").annotate({ description: "QQ official bot via Open Platform Gateway" }),
+  appId: Schema.String.annotate({ description: "QQ Bot App ID" }),
+  clientSecret: Schema.String.annotate({ description: "QQ Bot Client Secret" }),
+  apiBaseUrl: Schema.optional(Schema.String).annotate({
+    description: "Optional QQ OpenAPI base URL. Defaults to https://api.bot.qq.com.",
   }),
-  groupRequireMention: Schema.optional(Schema.Boolean).annotate({
-    description: "Only respond to group messages mentioning the bot. Defaults to false.",
+  allowedUsers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description: "Allowed QQ OpenID values. Empty or containing '*' means unrestricted.",
   }),
   ...ChannelCommon,
 }).annotate({ identifier: "ChannelQQConfig" })

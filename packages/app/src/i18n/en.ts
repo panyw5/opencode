@@ -1863,8 +1863,8 @@ export const dict = {
   "config.channels.platform.discord.detail":
     "Add a Discord bot token. Enable Message Content Intent in the Discord developer portal.",
   "config.channels.platform.qq": "QQ",
-  "config.channels.platform.qq.note": "Connect through OneBot 11 WebSocket",
-  "config.channels.platform.qq.detail": "Connect a QQ bot through a OneBot 11 compatible client such as NapCat.",
+  "config.channels.platform.qq.note": "Connect through QQ Open Platform",
+  "config.channels.platform.qq.detail": "Connect an official QQ bot with its App ID and Client Secret.",
   "config.channels.existing.title": "Configured channels",
   "config.channels.existing.count": "{{count}} saved",
   "config.channels.existing.empty":
@@ -1876,8 +1876,10 @@ export const dict = {
   "config.channels.field.appId": "App ID",
   "config.channels.field.appSecret": "App Secret",
   "config.channels.field.botToken": "Bot Token",
-  "config.channels.field.endpoint": "OneBot WebSocket endpoint",
+  "config.channels.field.endpoint": "WebSocket endpoint",
   "config.channels.field.accessToken": "Access token (optional)",
+  "config.channels.field.clientSecret": "Client Secret",
+  "config.channels.field.apiBaseUrl": "QQ OpenAPI base URL",
   "config.channels.field.groupRequireMention": "Only respond when mentioned in groups",
   "config.channels.field.proxy": "Proxy (optional)",
   "config.channels.field.directory": "Work folder",
@@ -1898,9 +1900,9 @@ export const dict = {
   "config.channels.test.action": "Test connection",
   "config.channels.test.testing": "Testing…",
   "config.channels.test.success": "Connection successful",
-  "config.channels.test.failed": "Connection failed. Check the App ID and App Secret.",
+  "config.channels.test.failed": "Connection failed. Check the bot credentials and network settings.",
   "config.channels.test.botName": "Bot",
-  "config.channels.test.botOpenId": "Open ID",
+  "config.channels.test.botOpenId": "Gateway",
   "config.channels.error.duplicateName": "A channel with this name already exists",
   "config.channels.note.runtime": "Credentials are saved to config only. Real bot connection is not enabled yet.",
   "config.channels.feishu.setup": "Setup method",
@@ -1921,11 +1923,12 @@ export const dict = {
   "config.channels.discord.hint":
     "Create a Discord application bot, enable Message Content Intent, then paste the bot token.",
   "config.channels.qq.hint":
-    "Run a OneBot 11 compatible QQ client with a Forward WebSocket server, then configure its endpoint here.",
+    "Create a bot on QQ Open Platform and enter its App ID and Client Secret. OpenCode will discover and connect to the official Gateway automatically.",
 
   "sidebar.im.title": "IM Channels",
   "sidebar.im.meta.feishu": "Feishu",
   "sidebar.im.meta.discord": "Discord",
+  "sidebar.im.meta.qq": "QQ",
   "sidebar.im.empty": "No sessions in this channel yet. Message the bot on Feishu/Discord and they will appear here.",
   "sidebar.im.toast.unavailable": "Channel unavailable",
   "sidebar.im.toast.configure": "Enable or configure this channel in Config page → Channels.",

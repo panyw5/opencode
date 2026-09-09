@@ -45,6 +45,7 @@ import {
 } from "@/components/dialog-select-directory"
 import { usePlatform } from "@/context/platform"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
+import { probeQQ } from "@/lib/qq-official"
 
 export type ChannelPlatform = "feishu" | "discord" | "qq"
 
@@ -353,9 +354,7 @@ export const ConfigChannelsDetail: Component<{
     domain: "feishu" as FeishuDomain,
     botToken: "",
     proxy: "",
-    endpoint: "",
-    accessToken: "",
-    groupRequireMention: false,
+    apiBaseUrl: "https://api.bot.qq.com",
     allowedUsers: "",
     model: "" as string,
     /** Working folder for this channel (decoupled from OpenCode projects). */
@@ -395,9 +394,7 @@ export const ConfigChannelsDetail: Component<{
           domain: "feishu",
           botToken: "",
           proxy: "",
-          endpoint: "",
-          accessToken: "",
-          groupRequireMention: false,
+          apiBaseUrl: "https://api.bot.qq.com",
           allowedUsers: "",
           model: "",
           directory: "",
@@ -474,7 +471,7 @@ export const ConfigChannelsDetail: Component<{
     if (!isValidChannelDirectory(form.directory)) return false
     if (props.platform === "feishu") return !!form.appId.trim() && !!form.appSecret.trim()
     if (props.platform === "discord") return !!form.botToken.trim()
-    return !!form.endpoint.trim()
+    return !!form.appId.trim() && !!form.appSecret.trim()
   })
 
   const formModelId = createMemo(() => modelIdFromConfig(form.model))
@@ -556,12 +553,12 @@ export const ConfigChannelsDetail: Component<{
       } else {
         const qq: ChannelQQConfig = {
           type: "qq",
-          endpoint: form.endpoint.trim(),
+          appId: form.appId.trim(),
+          clientSecret: form.appSecret.trim(),
+          apiBaseUrl: form.apiBaseUrl.trim() || undefined,
           enabled: form.enabled,
           directory,
-          groupRequireMention: form.groupRequireMention,
         }
-        if (form.accessToken.trim()) qq.accessToken = form.accessToken.trim()
         const users = parseUserList(form.allowedUsers)
         if (users) qq.allowedUsers = users
         const model = modelConfigFromId(formModelId())
@@ -591,8 +588,7 @@ export const ConfigChannelsDetail: Component<{
       } else {
         setForm("botToken", "")
         setForm("proxy", "")
-        setForm("endpoint", "")
-        setForm("accessToken", "")
+        setForm("apiBaseUrl", "https://api.bot.qq.com")
       }
       setExpanded(name)
     } catch (err: unknown) {
@@ -640,22 +636,29 @@ export const ConfigChannelsDetail: Component<{
 
   const testChannel = async (name: string) => {
     const entry = globalSync.data.config.channels?.[name]
-    if (!entry || entry.type !== "feishu" || testingChannel()) return
+    if (!entry || (entry.type !== "feishu" && entry.type !== "qq") || testingChannel()) return
     setTestingChannel(name)
     try {
-      const bot = await probeBot(entry.appId, entry.appSecret, entry.domain ?? "feishu")
-      if (!bot) throw new Error(language.t("config.channels.test.failed"))
-      setChannelTests(name, {
-        status: "success",
-        botName: bot.botName,
-        botOpenId: bot.botOpenId,
-      })
-      showToast({
-        variant: "success",
-        icon: "circle-check",
-        title: language.t("config.channels.test.success"),
-        description: bot.botName ?? language.t("config.channels.test.success"),
-      })
+      if (entry.type === "feishu") {
+        const bot = await probeBot(entry.appId, entry.appSecret, entry.domain ?? "feishu")
+        if (!bot) throw new Error(language.t("config.channels.test.failed"))
+        setChannelTests(name, { status: "success", botName: bot.botName, botOpenId: bot.botOpenId })
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("config.channels.test.success"),
+          description: bot.botName ?? language.t("config.channels.test.success"),
+        })
+      } else {
+        const bot = await probeQQ(entry.appId, entry.clientSecret, entry.apiBaseUrl)
+        setChannelTests(name, { status: "success", botName: "QQ Gateway", botOpenId: bot.gatewayUrl })
+        showToast({
+          variant: "success",
+          icon: "circle-check",
+          title: language.t("config.channels.test.success"),
+          description: bot.gatewayUrl,
+        })
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)
       setChannelTests(name, { status: "error", message })
@@ -749,7 +752,7 @@ export const ConfigChannelsDetail: Component<{
                             <div class="truncate text-14-medium text-text-strong">{row.name}</div>
                           </button>
                           <div class="flex shrink-0 items-center gap-2">
-                            <Show when={feishu()}>
+                            <Show when={feishu() || qq()}>
                               <Button
                                 size="small"
                                 variant="ghost"
@@ -849,19 +852,28 @@ export const ConfigChannelsDetail: Component<{
                               {(cfg) => (
                                 <>
                                   <TextField
-                                    label={language.t("config.channels.field.endpoint")}
-                                    value={cfg().endpoint}
+                                    label={language.t("config.channels.field.appId")}
+                                    value={cfg().appId}
                                     onChange={(v) =>
-                                      void patchChannel(row.name, { endpoint: v ?? "" } as Partial<ChannelQQConfig>)
+                                      void patchChannel(row.name, { appId: v ?? "" } as Partial<ChannelQQConfig>)
                                     }
                                   />
                                   <TextField
-                                    label={language.t("config.channels.field.accessToken")}
+                                    label={language.t("config.channels.field.clientSecret")}
                                     type="password"
-                                    value={cfg().accessToken ?? ""}
+                                    value={cfg().clientSecret}
                                     onChange={(v) =>
                                       void patchChannel(row.name, {
-                                        accessToken: v?.trim() || undefined,
+                                        clientSecret: v ?? "",
+                                      } as Partial<ChannelQQConfig>)
+                                    }
+                                  />
+                                  <TextField
+                                    label={language.t("config.channels.field.apiBaseUrl")}
+                                    value={cfg().apiBaseUrl ?? "https://api.bot.qq.com"}
+                                    onChange={(v) =>
+                                      void patchChannel(row.name, {
+                                        apiBaseUrl: v?.trim() || undefined,
                                       } as Partial<ChannelQQConfig>)
                                     }
                                   />
@@ -1112,26 +1124,24 @@ export const ConfigChannelsDetail: Component<{
               <Match when={props.platform === "qq"}>
                 <p class="text-12-regular text-text-weak">{language.t("config.channels.qq.hint")}</p>
                 <TextField
-                  label={language.t("config.channels.field.endpoint")}
-                  placeholder="ws://127.0.0.1:6700"
-                  value={form.endpoint}
-                  onChange={(v) => setForm("endpoint", v ?? "")}
+                  label={language.t("config.channels.field.appId")}
+                  placeholder="QQ Bot App ID"
+                  value={form.appId}
+                  onChange={(v) => setForm("appId", v ?? "")}
                 />
                 <TextField
-                  label={language.t("config.channels.field.accessToken")}
+                  label={language.t("config.channels.field.clientSecret")}
                   type="password"
-                  placeholder="OneBot access token"
-                  value={form.accessToken}
-                  onChange={(v) => setForm("accessToken", v ?? "")}
+                  placeholder="QQ Bot Client Secret"
+                  value={form.appSecret}
+                  onChange={(v) => setForm("appSecret", v ?? "")}
                 />
-                <label class="flex items-center gap-2 text-12-regular text-text-weak">
-                  <input
-                    type="checkbox"
-                    checked={form.groupRequireMention}
-                    onChange={(event) => setForm("groupRequireMention", event.currentTarget.checked)}
-                  />
-                  {language.t("config.channels.field.groupRequireMention")}
-                </label>
+                <TextField
+                  label={language.t("config.channels.field.apiBaseUrl")}
+                  placeholder="https://api.bot.qq.com"
+                  value={form.apiBaseUrl}
+                  onChange={(v) => setForm("apiBaseUrl", v ?? "")}
+                />
               </Match>
             </Switch>
 

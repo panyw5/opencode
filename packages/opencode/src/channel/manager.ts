@@ -77,8 +77,8 @@ export async function startChannels(opts: ChannelManagerStartOptions): Promise<v
       })
     }
     if (config.type === "qq") {
-      if (!config.endpoint) {
-        log.warn("qq channel missing endpoint", { name })
+      if (!config.appId || !config.clientSecret) {
+        log.warn("qq channel missing official bot credentials", { name })
         continue
       }
       try {

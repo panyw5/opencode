@@ -4218,6 +4218,7 @@ export default function Layout(props: ParentProps) {
               channel={() => match().name}
               channelMeta={() => {
                 if (match().type === "discord") return language.t("sidebar.im.meta.discord")
+                if (match().type === "qq") return language.t("sidebar.im.meta.qq")
                 return language.t("sidebar.im.meta.feishu")
               }}
               directory={() => match().directory}
@@ -4327,7 +4328,11 @@ export default function Layout(props: ParentProps) {
           .map(([name, entry]) => {
             const dir = resolveChannelDirectory(name, entry.directory, configDir, home)
             const platform =
-              entry.type === "feishu" ? language.t("sidebar.im.meta.feishu") : language.t("sidebar.im.meta.discord")
+              entry.type === "feishu"
+                ? language.t("sidebar.im.meta.feishu")
+                : entry.type === "qq"
+                  ? language.t("sidebar.im.meta.qq")
+                  : language.t("sidebar.im.meta.discord")
             return {
               id: name,
               // Platform first, then channel name: e.g. "飞书 | cc"

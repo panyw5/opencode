@@ -1163,13 +1163,14 @@ export type ChannelDiscordConfig = {
 }
 
 export type ChannelQQConfig = {
-  /** QQ bot via OneBot 11 WebSocket */
+  /** QQ official bot via Open Platform Gateway */
   type: "qq"
-  /** OneBot 11 WebSocket endpoint */
-  endpoint: string
-  accessToken?: string
+  /** QQ Bot App ID */
+  appId: string
+  /** QQ Bot Client Secret */
+  clientSecret: string
+  apiBaseUrl?: string
   allowedUsers?: Array<string>
-  groupRequireMention?: boolean
   directory?: string
   enabled?: boolean
   model?: string

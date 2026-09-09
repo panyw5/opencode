@@ -1,31 +1,33 @@
 import { describe, expect, test } from "bun:test"
 import { __test } from "./qq"
 
-describe("qq OneBot helpers", () => {
-  test("extracts text and removes CQ segments", () => {
+describe("qq official bot helpers", () => {
+  test("maps official private and group events", () => {
     expect(
-      __test.messageText({
-        post_type: "message",
-        message_type: "group",
-        raw_message: "[CQ:at,qq=10001] 你好",
+      __test.messageInfo("C2C_MESSAGE_CREATE", {
+        id: "private-message",
+        author: { user_openid: "user-openid" },
       }),
-    ).toBe("你好")
+    ).toEqual({
+      openid: "user-openid",
+      chatId: "private:user-openid",
+      path: "/v2/users/user-openid/messages",
+    })
+    expect(
+      __test.messageInfo("GROUP_AT_MESSAGE_CREATE", {
+        id: "group-message",
+        group_openid: "group-openid",
+        author: { member_openid: "member-openid" },
+      }),
+    ).toEqual({
+      openid: "member-openid",
+      chatId: "group:group-openid",
+      path: "/v2/groups/group-openid/messages",
+    })
   })
 
-  test("supports structured OneBot messages", () => {
-    expect(
-      __test.messageText({
-        message: [
-          { type: "at", data: { qq: "10001" } },
-          { type: "text", data: { text: "请总结" } },
-        ],
-      }),
-    ).toBe("请总结")
-  })
-
-  test("enforces group mention when configured", () => {
-    expect(__test.mentionsBot({ self_id: 10001, raw_message: "[CQ:at,qq=10001] hi" })).toBe(true)
-    expect(__test.mentionsBot({ self_id: 10001, raw_message: "hi" })).toBe(false)
+  test("removes official mention markup from content", () => {
+    expect(__test.textFromMessage("<@!123456> 请总结")).toBe("请总结")
   })
 
   test("deduplicates message ids", () => {

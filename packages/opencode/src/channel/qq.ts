@@ -6,38 +6,37 @@ import { loadMap, mappedEntry, resolveMappedSession, saveMap, sessionKey, titleP
 
 export type QQChannelConfig = {
   type: "qq"
-  endpoint: string
-  accessToken?: string
+  appId: string
+  clientSecret: string
+  apiBaseUrl?: string
   allowedUsers?: string[]
-  groupRequireMention?: boolean
   enabled?: boolean
   model?: string
   directory?: string
 }
 
-export type QQRuntimeOptions = {
-  name: string
-  config: QQChannelConfig
-  baseUrl: string
-  directory: string
-}
-
+export type QQRuntimeOptions = { name: string; config: QQChannelConfig; baseUrl: string; directory: string }
 type StopHandle = { stop: () => void }
-type QQEvent = {
-  post_type?: string
-  message_type?: "private" | "group"
-  message_id?: number | string
-  user_id?: number | string
-  group_id?: number | string
-  self_id?: number | string
-  raw_message?: string
-  message?: string | Array<{ type?: string; data?: { text?: string; qq?: string } }>
+type GatewayFrame = { op?: number; d?: any; s?: number | null; t?: string }
+type QQMessageEvent = {
+  id?: string
+  content?: string
+  timestamp?: string
+  author?: { user_openid?: string; member_openid?: string; id?: string }
+  group_openid?: string
+  guild_id?: string
+  channel_id?: string
 }
 
 const log = Log.create({ service: "channel.qq" })
+const TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken"
+const DEFAULT_API_BASE = "https://api.bot.qq.com"
+const INTENT_C2C = 1 << 25
+const INTENT_GROUP_AT = 1 << 26
+const INTENT_GUILD_AT = 1 << 30
 
-function allowed(userId: string | undefined, users: string[] | undefined) {
-  return !users?.length || users.includes("*") || (!!userId && users.includes(userId))
+function allowed(openid: string | undefined, users: string[] | undefined) {
+  return !users?.length || users.includes("*") || (!!openid && users.includes(openid))
 }
 
 function parseModel(model: string | undefined): { providerID: string; modelID: string } | undefined {
@@ -45,31 +44,6 @@ function parseModel(model: string | undefined): { providerID: string; modelID: s
   const slash = model.indexOf("/")
   if (slash <= 0 || slash === model.length - 1) return undefined
   return { providerID: model.slice(0, slash), modelID: model.slice(slash + 1) }
-}
-
-function stripCQ(text: string) {
-  return text.replace(/\[CQ:[^\]]+\]/g, "").trim()
-}
-
-function messageText(event: QQEvent) {
-  if (typeof event.raw_message === "string") return stripCQ(event.raw_message)
-  if (typeof event.message === "string") return stripCQ(event.message)
-  if (!Array.isArray(event.message)) return ""
-  return event.message
-    .filter((part) => part.type === "text")
-    .map((part) => part.data?.text ?? "")
-    .join("")
-    .trim()
-}
-
-function mentionsBot(event: QQEvent) {
-  if (typeof event.raw_message === "string" && event.self_id != null) {
-    return event.raw_message.includes(`[CQ:at,qq=${String(event.self_id)}]`)
-  }
-  return (
-    Array.isArray(event.message) &&
-    event.message.some((part) => part.type === "at" && part.data?.qq === String(event.self_id))
-  )
 }
 
 function createDedupe(limit = 2000) {
@@ -99,7 +73,44 @@ function createQueue() {
   }
 }
 
+function messageInfo(type: string | undefined, event: QQMessageEvent) {
+  if (type === "C2C_MESSAGE_CREATE" && event.author?.user_openid) {
+    const openid = event.author.user_openid
+    return { openid, chatId: `private:${openid}`, path: `/v2/users/${openid}/messages` }
+  }
+  if (type === "GROUP_AT_MESSAGE_CREATE" && event.group_openid) {
+    return {
+      openid: event.author?.member_openid,
+      chatId: `group:${event.group_openid}`,
+      path: `/v2/groups/${event.group_openid}/messages`,
+    }
+  }
+  if (type === "AT_MESSAGE_CREATE" && event.guild_id && event.channel_id) {
+    return {
+      openid: event.author?.id,
+      chatId: `channel:${event.guild_id}:${event.channel_id}`,
+      path: `/channels/${event.channel_id}/messages`,
+    }
+  }
+  return undefined
+}
+
+function textFromMessage(content: string | undefined) {
+  return content?.replace(/<@!?(\d+)>/g, "").trim() ?? ""
+}
+
+function formatError(value: unknown) {
+  if (value instanceof Error) return value.message
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
 export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
+  const apiBase = (opts.config.apiBaseUrl || DEFAULT_API_BASE).replace(/\/$/, "")
   const authHeaders =
     ServerAuth.headers({
       username: process.env["OPENCODE_SERVER_USERNAME"] || "opencode",
@@ -115,66 +126,91 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
   let socket: WebSocket | undefined
   let stopped = false
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined
+  let token: string | undefined
+  let tokenExpiresAt = 0
+  let sequence: number | null = null
 
-  const send = async (action: string, params: Record<string, unknown>) => {
-    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error("QQ OneBot websocket is not connected")
-    socket.send(JSON.stringify({ action, params, echo: `${Date.now()}-${Math.random()}` }))
+  const requestJson = async (url: string, init: RequestInit) => {
+    const response = await fetch(url, init)
+    const body = (await response.json().catch(() => undefined)) as any
+    if (!response.ok || (body && body.code && body.code !== 0)) {
+      throw new Error(`QQ API ${response.status}: ${JSON.stringify(body)}`)
+    }
+    return body
   }
 
-  const reply = async (event: QQEvent, text: string) => {
-    const maxLen = 4000
-    const body = text.length > maxLen ? `${text.slice(0, maxLen - 20)}\n...(已截断)` : text
-    const params: Record<string, unknown> = { message: body, auto_escape: false }
-    if (event.message_type === "group" && event.group_id != null) params.group_id = event.group_id
-    else if (event.user_id != null) params.user_id = event.user_id
-    await send("send_msg", params)
-    log.info("qq reply sent", { channel: opts.name, messageId: event.message_id, replyLen: body.length })
+  const getToken = async () => {
+    if (token && Date.now() < tokenExpiresAt) return token
+    log.info("qq official token requesting", { channel: opts.name })
+    const body = await requestJson(TOKEN_URL, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ appId: opts.config.appId, clientSecret: opts.config.clientSecret }),
+    })
+    if (!body?.access_token) throw new Error("QQ API did not return access_token")
+    token = body.access_token
+    tokenExpiresAt = Date.now() + Math.max(60, Number(body.expires_in || 7200) - 300) * 1000
+    log.info("qq official token received", { channel: opts.name, expiresIn: body.expires_in })
+    return token
   }
 
-  const handle = async (event: QQEvent) => {
-    if (event.post_type !== "message" || !event.message_type || event.user_id == null) return
-    const messageId = event.message_id == null ? undefined : String(event.message_id)
-    if (messageId && !dedupe.claim(messageId)) {
-      log.info("qq duplicate message ignored", { channel: opts.name, messageId })
+  const sendReply = async (event: QQMessageEvent, type: string, text: string) => {
+    const info = messageInfo(type, event)
+    if (!info) return
+    const body: Record<string, unknown> = { content: text.slice(0, 4000), msg_type: 0, msg_seq: 1 }
+    if (event.id) body.msg_id = event.id
+    const accessToken = await getToken()
+    await requestJson(`${apiBase}${info.path}`, {
+      method: "POST",
+      headers: { authorization: `QQBot ${accessToken}`, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    })
+    log.info("qq official reply sent", {
+      channel: opts.name,
+      messageId: event.id,
+      chatId: info.chatId,
+      replyLen: text.length,
+    })
+  }
+
+  const handleMessage = async (type: string, event: QQMessageEvent) => {
+    const info = messageInfo(type, event)
+    if (!info || !event.id) return
+    if (!dedupe.claim(event.id)) {
+      log.info("qq duplicate message ignored", { channel: opts.name, messageId: event.id })
       return
     }
-    const userId = String(event.user_id)
-    if (!allowed(userId, opts.config.allowedUsers)) {
-      log.info("qq message ignored by ACL", { channel: opts.name, userId })
+    if (!allowed(info.openid, opts.config.allowedUsers)) {
+      log.info("qq message ignored by ACL", { channel: opts.name, openid: info.openid })
       return
     }
-    if (event.message_type === "group" && opts.config.groupRequireMention && !mentionsBot(event)) {
-      log.info("qq group message ignored without mention", { channel: opts.name, messageId })
-      return
-    }
-    const text = messageText(event)
+    const text = textFromMessage(event.content)
     if (!text) return
-    const chatId = event.group_id == null ? `private:${userId}` : `group:${event.group_id}`
-    const key = sessionKey({ channelName: opts.name, chatId })
-    log.info("qq message received", { channel: opts.name, messageId, userId, chatId, textLen: text.length })
+    log.info("qq official message received", {
+      channel: opts.name,
+      type,
+      messageId: event.id,
+      chatId: info.chatId,
+      textLen: text.length,
+    })
+    const key = sessionKey({ channelName: opts.name, chatId: info.chatId })
     const map = await loadMap()
     let sessionId = resolveMappedSession(map.sessions[key], opts.directory)
     if (!sessionId) {
-      const created = await sdk.session.create({ title: `${titlePrefix(opts.name)} ${chatId.slice(0, 24)}` })
+      const created = await sdk.session.create({ title: `${titlePrefix(opts.name)} ${info.chatId.slice(0, 24)}` })
       if (created.error || !created.data?.id) {
-        const error = String(created.error ?? "session creation failed")
-        log.error("qq session creation failed", { channel: opts.name, messageId, error })
-        await reply(event, `抱歉，创建会话失败：${error}`)
+        const error = formatError(created.error || "session creation failed")
+        log.error("qq session creation failed", { channel: opts.name, messageId: event.id, error })
+        await sendReply(event, type, `抱歉，创建会话失败：${error}`)
         return
       }
       sessionId = created.data.id
       map.sessions[key] = mappedEntry(sessionId, opts.directory)
       await saveMap(map)
-      log.info("qq session created", { channel: opts.name, sessionId, chatId })
+      log.info("qq session created", { channel: opts.name, sessionId, chatId: info.chatId })
     }
     const model = parseModel(opts.config.model)
-    log.info("qq prompt starting", {
-      channel: opts.name,
-      sessionId,
-      messageId,
-      providerID: model?.providerID,
-      modelID: model?.modelID,
-    })
     try {
       const result = await sdk.session.prompt({
         sessionID: sessionId,
@@ -182,7 +218,7 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
         tools: { question: false },
         ...(model ? { model } : {}),
       })
-      if ("error" in result && result.error) throw new Error(JSON.stringify(result.error))
+      if ("error" in result && result.error) throw new Error(formatError(result.error))
       const data = result.data as { parts?: Array<{ type?: string; text?: string }>; content?: string } | undefined
       const answer =
         data?.content ||
@@ -191,57 +227,113 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
           .map((part) => part.text ?? "")
           .join("\n") ||
         "（模型没有返回文本内容）"
-      await reply(event, answer.trim() || "（模型没有返回文本内容）")
-      log.info("qq prompt completed", { channel: opts.name, sessionId, messageId, replyLen: answer.length })
+      await sendReply(event, type, answer.trim() || "（模型没有返回文本内容）")
+      log.info("qq prompt completed", { channel: opts.name, sessionId, messageId: event.id, replyLen: answer.length })
     } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error)
-      log.error("qq prompt failed", { channel: opts.name, sessionId, messageId, error: detail })
-      await reply(event, `处理消息时出错了：${detail}`).catch((replyError) =>
-        log.error("qq error reply failed", { channel: opts.name, error: String(replyError) }),
+      const detail = formatError(error)
+      log.error("qq prompt failed", { channel: opts.name, sessionId, messageId: event.id, error: detail })
+      await sendReply(event, type, `处理消息时出错了：${detail}`).catch((replyError) =>
+        log.error("qq error reply failed", { channel: opts.name, error: formatError(replyError) }),
       )
     }
   }
 
-  const connect = () => {
+  const connect = async () => {
     if (stopped) return
-    log.info("qq websocket connecting", { channel: opts.name, endpoint: opts.config.endpoint })
-    socket = new WebSocket(
-      opts.config.endpoint,
-      opts.config.accessToken ? { headers: { Authorization: `Bearer ${opts.config.accessToken}` } } : undefined,
-    )
-    socket.on("open", () => log.info("qq websocket connected", { channel: opts.name }))
-    socket.on("message", (raw) => {
+    try {
+      const accessToken = await getToken()
+      let gateway: any
       try {
-        const event = JSON.parse(String(raw)) as QQEvent
-        if (event.post_type === "meta_event") return
-        const chatKey = event.group_id == null ? `private:${event.user_id ?? "unknown"}` : `group:${event.group_id}`
-        void queue
-          .enqueue(`${opts.name}::${chatKey}`, () => handle(event))
-          .catch((error) => log.error("qq event handler failed", { channel: opts.name, error: String(error) }))
+        gateway = await requestJson(`${apiBase}/gateway`, { headers: { authorization: `QQBot ${accessToken}` } })
       } catch (error) {
-        log.warn("qq websocket message parse failed", { channel: opts.name, error: String(error) })
+        log.warn("qq official gateway primary endpoint failed, trying legacy path", {
+          channel: opts.name,
+          error: formatError(error),
+        })
+        gateway = await requestJson(`${apiBase}/gateway/bot`, { headers: { authorization: `QQBot ${accessToken}` } })
       }
-    })
-    socket.on("error", (error) => log.error("qq websocket error", { channel: opts.name, error: String(error) }))
-    socket.on("close", (code, reason) => {
-      log.warn("qq websocket closed", { channel: opts.name, code, reason: String(reason) })
-      socket = undefined
-      if (!stopped) reconnectTimer = setTimeout(connect, 3000)
-    })
+      const gatewayUrl = gateway?.url
+      if (!gatewayUrl) throw new Error("QQ API did not return gateway url")
+      log.info("qq official gateway connecting", { channel: opts.name, gatewayUrl })
+      socket = new WebSocket(gatewayUrl)
+      socket.on("open", () => log.info("qq official gateway socket opened", { channel: opts.name }))
+      socket.on("message", (raw) => {
+        try {
+          const frame = JSON.parse(String(raw)) as GatewayFrame
+          if (typeof frame.s === "number") sequence = frame.s
+          if (frame.op === 10) {
+            const interval = Number(frame.d?.heartbeat_interval || 41250)
+            heartbeatTimer = setInterval(
+              () => socket?.send(JSON.stringify({ op: 1, d: sequence })),
+              Math.max(1000, interval),
+            )
+            socket?.send(
+              JSON.stringify({
+                op: 2,
+                d: {
+                  token: `QQBot ${accessToken}`,
+                  intents: INTENT_C2C | INTENT_GROUP_AT | INTENT_GUILD_AT,
+                  shard: [0, 1],
+                  properties: { $os: process.platform, $browser: "opencode", $device: "opencode" },
+                },
+              }),
+            )
+            log.info("qq official gateway identified", {
+              channel: opts.name,
+              intents: INTENT_C2C | INTENT_GROUP_AT | INTENT_GUILD_AT,
+            })
+            return
+          }
+          if (frame.op === 0 && frame.t) {
+            const event = frame.d as QQMessageEvent
+            const info = messageInfo(frame.t, event)
+            if (info) {
+              void queue
+                .enqueue(`${opts.name}::${info.chatId}`, () => handleMessage(frame.t!, event))
+                .catch((error) =>
+                  log.error("qq event handler failed", { channel: opts.name, error: formatError(error) }),
+                )
+            }
+          }
+          if (frame.op === 7 || frame.op === 9) socket?.close()
+        } catch (error) {
+          log.warn("qq gateway message parse failed", { channel: opts.name, error: formatError(error) })
+        }
+      })
+      socket.on("error", (error) =>
+        log.error("qq official gateway error", { channel: opts.name, error: formatError(error) }),
+      )
+      socket.on("close", (code, reason) => {
+        if (heartbeatTimer) clearInterval(heartbeatTimer)
+        heartbeatTimer = undefined
+        socket = undefined
+        log.warn("qq official gateway closed", { channel: opts.name, code, reason: String(reason) })
+        if (!stopped) reconnectTimer = setTimeout(() => void connect(), 3000)
+      })
+    } catch (error) {
+      log.error("qq official gateway connection failed", { channel: opts.name, error: formatError(error) })
+      if (!stopped) reconnectTimer = setTimeout(() => void connect(), 5000)
+    }
   }
-  connect()
-  log.info("qq channel started", { channel: opts.name, directory: opts.directory, baseUrl: opts.baseUrl })
+
+  void connect()
+  log.info("qq official channel started", {
+    channel: opts.name,
+    apiBase,
+    appId: opts.config.appId,
+    directory: opts.directory,
+  })
   return {
     stop: () => {
       stopped = true
       if (reconnectTimer) clearTimeout(reconnectTimer)
+      if (heartbeatTimer) clearInterval(heartbeatTimer)
       socket?.close()
       socket = undefined
-      log.info("qq channel stopped", { channel: opts.name })
+      log.info("qq official channel stopped", { channel: opts.name })
     },
   }
 }
 
-export const __test = { allowed, parseModel, stripCQ, messageText, mentionsBot, createDedupe, createQueue }
-
+export const __test = { allowed, parseModel, messageInfo, textFromMessage, createDedupe, createQueue }
 export * as QQChannel from "./qq"
