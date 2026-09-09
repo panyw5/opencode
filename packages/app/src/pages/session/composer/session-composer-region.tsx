@@ -32,7 +32,6 @@ import type { SessionComposerState } from "@/pages/session/composer/session-comp
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { FollowupDraft } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
-import { canShowUserMessageMenuItems } from "@/pages/session/composer/session-user-message-menu"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 
 function ComposerDockExit(props: {
@@ -237,12 +236,6 @@ function SessionBackgroundShellMenu(props: {
   )
 }
 
-type SessionUserMessageEntry = {
-  id: string
-  text: string
-  created: number
-}
-
 function shellOutputMarkdown(output: string) {
   const maxRun = (character: "`" | "~") => {
     const matches = output.match(new RegExp(`${character === "`" ? "`" : "~"}+`, "g")) ?? []
@@ -252,91 +245,6 @@ function shellOutputMarkdown(output: string) {
   const character = maxRun("`") <= maxRun("~") ? "`" : "~"
   const fence = character.repeat(Math.max(3, maxRun(character) + 1))
   return `${fence}bash\n${output}\n${fence}`
-}
-
-function SessionUserMessageMenu(props: {
-  entries: SessionUserMessageEntry[]
-  loading: boolean
-  complete: boolean
-  count: number
-  onOpen: (entry: SessionUserMessageEntry) => void
-}) {
-  const language = useLanguage()
-  const [open, setOpen] = createSignal(false)
-  const showItems = createMemo(() => canShowUserMessageMenuItems({ loading: props.loading, complete: props.complete }))
-
-  createEffect(() => {
-    if (!open()) return
-    console.debug(
-      `[user-message-menu] open count=${String(props.count)} entries=${String(props.entries.length)} loading=${String(props.loading)} complete=${String(props.complete)} showItems=${String(showItems())}`,
-    )
-  })
-
-  return (
-    <DropdownMenu open={open()} onOpenChange={setOpen} gutter={6} placement="top-start">
-      <DropdownMenu.Trigger
-        as={Button}
-        variant="ghost"
-        size="small"
-        icon="speech-bubble"
-        class="h-7 rounded-md px-2 text-text-weak hover:text-text-strong data-[expanded]:bg-surface-base-active"
-        aria-label={language.t("session.userMessages.open")}
-        data-testid="session-user-message-menu-trigger"
-      >
-        <span>{language.t("session.userMessages.button")}</span>
-        <span class="text-11-medium text-text-weak">({props.count})</span>
-        <Icon name="chevron-down" size="small" class="text-icon-weak" />
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content
-          class="session-child-agent-scrollbar w-[420px] max-w-[calc(100vw-32px)]"
-          style={{
-            "max-height": "min(520px, calc(100dvh - 160px))",
-            "overflow-y": "auto",
-            "overscroll-behavior": "contain",
-            "scrollbar-gutter": "stable",
-          }}
-        >
-          <DropdownMenu.Group>
-            <DropdownMenu.GroupLabel class="text-11-medium uppercase tracking-[0.08em] text-text-weak">
-              <span>{language.t("session.userMessages.menuLabel")}</span>
-            </DropdownMenu.GroupLabel>
-            <Show
-              when={showItems()}
-              fallback={
-                <DropdownMenu.Item disabled data-testid="session-user-message-menu-loading">
-                  <DropdownMenu.ItemLabel class="text-13-regular text-text-weak">
-                    {language.t("session.userMessages.loading")}
-                  </DropdownMenu.ItemLabel>
-                </DropdownMenu.Item>
-              }
-            >
-              <For each={props.entries}>
-                {(entry, index) => (
-                  <DropdownMenu.Item
-                    class="min-w-0"
-                    onSelect={() => props.onOpen(entry)}
-                    data-testid="session-user-message-menu-item"
-                  >
-                    <div class="min-w-0 flex flex-col gap-1">
-                      <DropdownMenu.ItemLabel class="truncate text-13-medium text-text-strong">
-                        {entry.text}
-                      </DropdownMenu.ItemLabel>
-                      <DropdownMenu.ItemDescription class="text-11-regular text-text-weak">
-                        <span>{language.t("session.userMessages.index", { index: index() + 1 })}</span>
-                        <span> - </span>
-                        <span>{formatChildAgentTime(entry.created, language.intl())}</span>
-                      </DropdownMenu.ItemDescription>
-                    </div>
-                  </DropdownMenu.Item>
-                )}
-              </For>
-            </Show>
-          </DropdownMenu.Group>
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu>
-  )
 }
 
 function SessionBackgroundShellDialog(props: {
@@ -685,11 +593,6 @@ export function SessionComposerRegion(props: {
   }
   childAgents?: SessionChildAgentEntry[]
   onOpenChildAgent?: (entry: SessionChildAgentEntry) => void
-  userMessages?: SessionUserMessageEntry[]
-  userMessagesLoading?: boolean
-  userMessagesComplete?: boolean
-  userMessageCount?: number
-  onOpenUserMessage?: (entry: SessionUserMessageEntry) => void
   subagentNavigation?: {
     parentID: string
     previous?: string
@@ -809,20 +712,6 @@ export function SessionComposerRegion(props: {
     if (!onOpen) return undefined
     return { entries: props.childAgents ?? [], onOpen }
   })
-  const userMessageMenu = createMemo(() => {
-    if (platform.platform !== "desktop") return undefined
-    const onOpen = props.onOpenUserMessage
-    const entries = props.userMessages ?? []
-    const count = props.userMessageCount ?? entries.length
-    if (!onOpen || count === 0) return undefined
-    return {
-      entries,
-      count,
-      loading: !!props.userMessagesLoading,
-      complete: props.userMessagesComplete ?? true,
-      onOpen,
-    }
-  })
   const visibleSubagentNavigation = createMemo(() => {
     if (platform.platform !== "desktop") return undefined
     return props.subagentNavigation
@@ -835,7 +724,6 @@ export function SessionComposerRegion(props: {
       !!props.subagentTitle ||
       (childAgentMenu()?.entries.length ?? 0) > 0 ||
       (platform.platform === "desktop" && backgroundShells().length > 0) ||
-      !!userMessageMenu() ||
       !!visibleSubagentNavigation() ||
       skippedQuestionCount() > 0 ||
       jumpToLatestVisible(),
@@ -1128,24 +1016,13 @@ export function SessionComposerRegion(props: {
                     </div>
                   )}
                 </Show>
-                <Show when={!!visibleSubagentNavigation() || !!userMessageMenu() || skippedQuestionCount() > 0}>
+                <Show when={!!visibleSubagentNavigation() || skippedQuestionCount() > 0}>
                   <div
                     classList={{
                       "min-w-0 flex items-center justify-end gap-2": true,
                       "flex-1": !visibleSubagentNavigation(),
                     }}
                   >
-                    <Show when={userMessageMenu()}>
-                      {(menu) => (
-                        <SessionUserMessageMenu
-                          entries={menu().entries}
-                          count={menu().count}
-                          loading={menu().loading}
-                          complete={menu().complete}
-                          onOpen={menu().onOpen}
-                        />
-                      )}
-                    </Show>
                     <Show when={skippedQuestionCount() > 0}>
                       <Button
                         variant="ghost"

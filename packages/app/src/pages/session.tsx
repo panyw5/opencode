@@ -91,6 +91,7 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
+import { SessionUserMessageRail, type SessionUserMessageEntry } from "@/pages/session/session-user-message-rail"
 import { working } from "@/pages/session/session-working"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
@@ -795,7 +796,7 @@ export default function Page() {
         (error) => {
           if (generation !== userMessageIndexGeneration || params.id !== id) return
           console.debug(
-            `[user-message-menu] index-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
+            `[user-message-rail] index-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`,
           )
           markSessionProfile(id, "user-message-index-error")
         },
@@ -2827,7 +2828,7 @@ export default function Page() {
     if (!id) return undefined
     return sync.session.userMessageIndex.get(id)
   })
-  const userMessageMenu = createMemo(() => {
+  const userMessageEntries = createMemo(() => {
     const indexed = indexedUserMessages()
     if (indexed) {
       const revert = revertMessageID()
@@ -2855,6 +2856,21 @@ export default function Page() {
       created: message.time.created,
     }))
   })
+
+  const openUserMessage = (entry: SessionUserMessageEntry) => {
+    const loaded = visibleUserMessages().find((item) => item.id === entry.id)
+    const indexed = indexedUserMessages()?.find((item) => item.id === entry.id)
+    console.debug(
+      `[user-message-rail] open sid=${params.id ?? "none"} id=${entry.id} found=${String(!!loaded || !!indexed)} loaded=${String(!!loaded)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)}`,
+    )
+    if (loaded) {
+      scrollToMessage(loaded, "auto")
+      return
+    }
+    if (!indexed) return
+    setUi("pendingMessage", indexed.id)
+    prepareFindNavigation()
+  }
 
   const fail = (err: unknown) => {
     showToast({
@@ -3500,6 +3516,17 @@ export default function Page() {
                           dispatchSessionRender({ type: "content-ready", sessionID: id })
                         }}
                       />
+                      <Show when={isDesktop() && userMessageEntries().length > 0}>
+                        <SessionUserMessageRail
+                          entries={userMessageEntries()}
+                          loading={params.id ? sync.session.userMessageIndex.loading(params.id) : false}
+                          complete={
+                            indexedUserMessages() !== undefined ||
+                            !!(params.id && sync.session.userMessageIndex.failed(params.id))
+                          }
+                          onOpen={openUserMessage}
+                        />
+                      </Show>
                     </Show>
                   </Show>
                 </Match>
@@ -3633,26 +3660,6 @@ export default function Page() {
             }
             childAgents={childAgentEntries()}
             onOpenChildAgent={openChildAgent}
-            userMessages={userMessageMenu()}
-            userMessagesLoading={params.id ? sync.session.userMessageIndex.loading(params.id) : false}
-            userMessagesComplete={
-              indexedUserMessages() !== undefined || !!(params.id && sync.session.userMessageIndex.failed(params.id))
-            }
-            userMessageCount={userMessageMenu().length}
-            onOpenUserMessage={(entry) => {
-              const loaded = visibleUserMessages().find((item) => item.id === entry.id)
-              const indexed = indexedUserMessages()?.find((item) => item.id === entry.id)
-              console.debug(
-                `[user-message-menu] select sid=${params.id ?? "none"} id=${entry.id} found=${String(!!loaded || !!indexed)} loaded=${String(!!loaded)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)}`,
-              )
-              if (loaded) {
-                scrollToMessage(loaded, "auto")
-                return
-              }
-              if (!indexed) return
-              setUi("pendingMessage", indexed.id)
-              prepareFindNavigation()
-            }}
             subagentNavigation={subagentNavigation()}
             subagentTitle={subagentPromptTitle()}
             mathModeActive={mathModeAgentLocked() && !mathDisabled()}
