@@ -137,6 +137,11 @@ export const dict = {
   "command.project.openInFinder": "Open in Finder",
   "command.project.openInFileExplorer": "Open in File Explorer",
   "command.project.openInFileManager": "Open in File Manager",
+  "command.project.openInVscode": "Open in VSCode",
+  "command.project.openInCursor": "Open in Cursor",
+  "command.project.openInSublime": "Open in Sublime Text",
+  "command.project.openInZed": "Open in Zed",
+  "command.project.openInEditor": "Open in Editor",
   "command.provider.connect": "Connect provider",
   "command.server.switch": "Switch server",
   "command.server.reloadBackend": "Reload backend",
@@ -162,6 +167,11 @@ export const dict = {
   "command.sessionTabs.showInSidebar": "Show in sidebar",
   "command.sessionTabs.previous": "Previous session tab",
   "command.sessionTabs.next": "Next session tab",
+  "command.session.content.search": "Search session content",
+  "command.session.content.search.description": "Search across all session messages",
+
+  "command.assistant.quick.toggle": "Quick Assistant",
+  "command.assistant.quick.toggle.description": "Open the floating project helper",
 
   "trellis.tasks.taskId": "Task ID",
   "trellis.tasks.copyId": "Copy task ID",

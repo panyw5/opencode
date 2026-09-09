@@ -551,8 +551,9 @@ export function QuickAssistant() {
   command.register("quick-assistant", () => [
     {
       id: "assistant.quick.toggle",
-      title: "Quick Assistant",
-      description: "Open the floating project helper",
+      title: language.t("command.assistant.quick.toggle"),
+      description: language.t("command.assistant.quick.toggle.description"),
+      keywords: `${language.t("command.assistant.quick.toggle")} ${language.t("command.assistant.quick.toggle.description")}`,
       category: language.t("command.category.session"),
       keybind: "mod+shift+j",
       disabled: !enabled(),

@@ -24,6 +24,91 @@ type KeybindMeta = {
 
 type KeybindMap = Record<string, string | undefined>
 type CommandContext = ReturnType<typeof useCommand>
+type Translate = (key: string) => string
+
+type BuiltinCommand = {
+  id: string
+  titleKey: string
+  keybind?: string
+}
+
+const BUILTIN_COMMANDS: BuiltinCommand[] = [
+  { id: PALETTE_ID, titleKey: "command.palette", keybind: DEFAULT_PALETTE_KEYBIND },
+  { id: "common.goBack", titleKey: "common.goBack", keybind: "mod+[" },
+  { id: "common.goForward", titleKey: "common.goForward", keybind: "mod+]" },
+  { id: "sidebar.toggle", titleKey: "command.sidebar.toggle", keybind: "mod+b" },
+  { id: "projectTask.open", titleKey: "command.projectTask.open" },
+  { id: "page.find", titleKey: "command.page.find", keybind: "mod+f" },
+  { id: "session.content.search", titleKey: "command.session.content.search", keybind: "mod+shift+f" },
+  { id: "project.open", titleKey: "command.project.open", keybind: "mod+o" },
+  { id: "project.switch", titleKey: "command.project.switch", keybind: "mod+t" },
+  { id: "project.previous", titleKey: "command.project.previous", keybind: "mod+alt+arrowup" },
+  { id: "project.next", titleKey: "command.project.next", keybind: "mod+alt+arrowdown" },
+  { id: "provider.connect", titleKey: "command.provider.connect" },
+  { id: "server.switch", titleKey: "command.server.switch" },
+  { id: "server.reloadBackend", titleKey: "command.server.reloadBackend" },
+  { id: "app.reloadFrontend", titleKey: "command.app.reloadFrontend" },
+  { id: "settings.open", titleKey: "command.settings.open", keybind: "mod+comma" },
+  { id: "config.open", titleKey: "command.config.open", keybind: "mod+shift+comma" },
+  { id: "project.openInFinder", titleKey: "command.project.openInFinder" },
+  { id: "project.openInVscode", titleKey: "command.project.openInVscode" },
+  { id: "project.openInCursor", titleKey: "command.project.openInCursor" },
+  { id: "project.openInSublime", titleKey: "command.project.openInSublime" },
+  { id: "project.openInZed", titleKey: "command.project.openInZed" },
+  { id: "project.openInEditor", titleKey: "command.project.openInEditor" },
+  { id: "session.recent", titleKey: "command.session.recent" },
+  { id: "session.previous", titleKey: "command.session.previous", keybind: "alt+arrowup" },
+  { id: "session.next", titleKey: "command.session.next", keybind: "alt+arrowdown" },
+  { id: "session.previous.unseen", titleKey: "command.session.previous.unseen", keybind: "shift+alt+arrowup" },
+  { id: "session.next.unseen", titleKey: "command.session.next.unseen", keybind: "shift+alt+arrowdown" },
+  { id: "session.archive", titleKey: "command.session.archive", keybind: "mod+shift+backspace" },
+  { id: "workspace.new", titleKey: "workspace.new", keybind: "mod+shift+w" },
+  { id: "workspace.toggle", titleKey: "command.workspace.toggle" },
+  { id: "theme.cycle", titleKey: "command.theme.cycle", keybind: "mod+shift+t" },
+  { id: "theme.select", titleKey: "command.theme.select" },
+  { id: "theme.scheme.cycle", titleKey: "command.theme.scheme.cycle" },
+  { id: "language.cycle", titleKey: "command.language.cycle" },
+  { id: "assistant.quick.toggle", titleKey: "command.assistant.quick.toggle", keybind: "mod+shift+j" },
+  { id: "sessionTabs.close", titleKey: "command.sessionTabs.close" },
+  { id: "sessionTabs.previous", titleKey: "command.sessionTabs.previous", keybind: "mod+shift+[" },
+  { id: "sessionTabs.next", titleKey: "command.sessionTabs.next", keybind: "mod+shift+]" },
+  { id: "session.share", titleKey: "command.session.share" },
+  { id: "session.unshare", titleKey: "command.session.unshare" },
+  { id: "session.new", titleKey: "command.session.new", keybind: "mod+shift+s" },
+  { id: "file.open", titleKey: "command.file.open", keybind: "mod+p" },
+  { id: "project.copyPath", titleKey: "command.project.copyPath" },
+  { id: "tab.close", titleKey: "command.tab.close", keybind: "mod+w" },
+  { id: "context.addSelection", titleKey: "command.context.addSelection", keybind: "mod+shift+l" },
+  { id: "terminal.toggle", titleKey: "command.terminal.toggle", keybind: "ctrl+`" },
+  { id: "review.toggle", titleKey: "command.review.toggle", keybind: "mod+shift+r" },
+  { id: "filePreview.toggle", titleKey: "command.filePreview.toggle" },
+  { id: "fileTree.toggle", titleKey: "command.fileTree.toggle", keybind: "mod+\\" },
+  { id: "input.focus", titleKey: "command.input.focus", keybind: "ctrl+l" },
+  { id: "terminal.new", titleKey: "command.terminal.new", keybind: "ctrl+alt+t" },
+  { id: "terminal.openGhostty", titleKey: "command.terminal.openGhostty" },
+  { id: "terminal.openWezTerm", titleKey: "command.terminal.openWezTerm" },
+  { id: "message.previous", titleKey: "command.message.previous", keybind: "mod+arrowup" },
+  { id: "message.next", titleKey: "command.message.next", keybind: "mod+arrowdown" },
+  { id: "model.choose", titleKey: "command.model.choose", keybind: "mod+'" },
+  { id: "mcp.toggle", titleKey: "command.mcp.toggle", keybind: "mod+;" },
+  { id: "skill.list", titleKey: "command.skill.list", keybind: "mod+shift+;" },
+  { id: "agent.cycle", titleKey: "command.agent.cycle", keybind: "mod+." },
+  { id: "agent.cycle.reverse", titleKey: "command.agent.cycle.reverse", keybind: "shift+mod+." },
+  { id: "model.variant.cycle", titleKey: "command.model.variant.cycle", keybind: "shift+mod+d" },
+  { id: "permissions.autoaccept", titleKey: "command.permissions.autoaccept.enable", keybind: "mod+shift+a" },
+  { id: "session.hooks.disable", titleKey: "command.session.hooks.disable" },
+  { id: "session.hooks.enable", titleKey: "command.session.hooks.enable" },
+  { id: "session.undo", titleKey: "command.session.undo" },
+  { id: "session.redo", titleKey: "command.session.redo" },
+  { id: "session.compact", titleKey: "command.session.compact" },
+  { id: "session.fork", titleKey: "command.session.fork" },
+  { id: "file.attach", titleKey: "prompt.action.attachFile", keybind: "mod+u" },
+  { id: "file.attachMarkdown", titleKey: "prompt.action.markdownAttachment" },
+  { id: "prompt.mode.shell", titleKey: "command.prompt.mode.shell", keybind: "mod+shift+x" },
+  { id: "prompt.mode.normal", titleKey: "command.prompt.mode.normal", keybind: "mod+shift+e" },
+]
+
+const BUILTIN_BY_ID = new Map(BUILTIN_COMMANDS.map((item) => [item.id, item]))
 
 const GROUPS: KeybindGroup[] = ["General", "Session", "Navigation", "Model and agent", "Terminal", "Prompt"]
 
@@ -110,24 +195,37 @@ function keybinds(value: unknown): KeybindMap {
   return value as KeybindMap
 }
 
-function listFor(command: CommandContext, map: KeybindMap, palette: string) {
+function listFor(command: CommandContext, map: KeybindMap, palette: string, translate: Translate) {
   const out = new Map<string, KeybindMeta>()
-  out.set(PALETTE_ID, { title: palette, group: "General" })
+
+  const titleFor = (id: string, fallback: string) => {
+    const key = id.startsWith("command.") ? id : `command.${id}`
+    const translated = translate(key)
+    return typeof translated === "string" && translated.length > 0 && translated !== key ? translated : fallback
+  }
 
   for (const opt of command.catalog) {
     if (opt.id.startsWith("suggested.")) continue
-    out.set(opt.id, { title: opt.title, group: groupFor(opt.id) })
+    out.set(opt.id, { title: titleFor(opt.id, opt.title), group: groupFor(opt.id) })
+  }
+
+  for (const item of BUILTIN_COMMANDS) {
+    const fallback = out.get(item.id)?.title ?? item.id
+    const translated = translate(item.titleKey)
+    const title =
+      typeof translated === "string" && translated.length > 0 && translated !== item.titleKey ? translated : fallback
+    out.set(item.id, { title, group: groupFor(item.id) })
   }
 
   for (const opt of command.options) {
     if (opt.id.startsWith("suggested.")) continue
-    out.set(opt.id, { title: opt.title, group: groupFor(opt.id) })
+    out.set(opt.id, { title: titleFor(opt.id, opt.title), group: groupFor(opt.id) })
   }
 
   for (const [id, value] of Object.entries(map)) {
     if (typeof value !== "string") continue
     if (out.has(id)) continue
-    out.set(id, { title: id, group: groupFor(id) })
+    out.set(id, { title: titleFor(id, id), group: groupFor(id) })
   }
 
   return out
@@ -292,16 +390,29 @@ export const SettingsKeybinds: Component = () => {
 
   const list = createMemo(() => {
     language.locale()
-    return listFor(command, map(), language.t("command.palette"))
+    return listFor(command, map(), language.t("command.palette"), language.t as Translate)
   })
 
   const title = (id: string) => list().get(id)?.title ?? ""
 
   const grouped = createMemo(() => groupedFor(list()))
 
-  const filtered = createMemo(() => {
-    return filteredFor(store.filter, list(), grouped(), (id) => command.keybind(id) || "")
-  })
+  const configFor = (id: string) => {
+    if (id === PALETTE_ID) return settings.keybinds.get(PALETTE_ID) ?? DEFAULT_PALETTE_KEYBIND
+
+    const custom = settings.keybinds.get(id)
+    if (typeof custom === "string") return custom
+
+    const live = command.options.find((x) => x.id === id)
+    if (live?.keybind) return live.keybind
+
+    const meta = command.catalog.find((x) => x.id === id)
+    return meta?.keybind ?? BUILTIN_BY_ID.get(id)?.keybind
+  }
+
+  const keybindFor = (id: string) => formatKeybind(configFor(id) ?? "", language.t)
+
+  const filtered = createMemo(() => filteredFor(store.filter, list(), grouped(), keybindFor))
 
   const hasResults = createMemo(() => {
     for (const group of GROUPS) {
@@ -323,25 +434,13 @@ export const SettingsKeybinds: Component = () => {
       list.push(value)
     }
 
-    const palette = settings.keybinds.get(PALETTE_ID) ?? DEFAULT_PALETTE_KEYBIND
-    for (const sig of signatures(palette)) {
+    for (const sig of signatures(configFor(PALETTE_ID))) {
       add(sig, { id: PALETTE_ID, title: title(PALETTE_ID) })
-    }
-
-    const valueFor = (id: string) => {
-      const custom = settings.keybinds.get(id)
-      if (typeof custom === "string") return custom
-
-      const live = command.options.find((x) => x.id === id)
-      if (live?.keybind) return live.keybind
-
-      const meta = command.catalog.find((x) => x.id === id)
-      return meta?.keybind
     }
 
     for (const id of list().keys()) {
       if (id === PALETTE_ID) continue
-      for (const sig of signatures(valueFor(id))) {
+      for (const sig of signatures(configFor(id))) {
         add(sig, { id, title: title(id) })
       }
     }
@@ -419,7 +518,7 @@ export const SettingsKeybinds: Component = () => {
                         >
                           <Show
                             when={store.active === id}
-                            fallback={command.keybind(id) || language.t("settings.shortcuts.unassigned")}
+                            fallback={keybindFor(id) || language.t("settings.shortcuts.unassigned")}
                           >
                             {language.t("settings.shortcuts.pressKeys")}
                           </Show>

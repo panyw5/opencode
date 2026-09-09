@@ -133,9 +133,16 @@ export const dict = {
   "command.project.switch": "切换项目",
   "command.project.copyPath": "复制工作区路径",
   "command.project.copyPath.description": "复制当前工作区的绝对路径到剪贴板",
+  "command.project.previous": "上一个项目",
+  "command.project.next": "下一个项目",
   "command.project.openInFinder": "在 Finder 打开",
   "command.project.openInFileExplorer": "在文件资源管理器打开",
   "command.project.openInFileManager": "在文件管理器打开",
+  "command.project.openInVscode": "在 VSCode 中打开",
+  "command.project.openInCursor": "在 Cursor 中打开",
+  "command.project.openInSublime": "在 Sublime Text 中打开",
+  "command.project.openInZed": "在 Zed 中打开",
+  "command.project.openInEditor": "在编辑器中打开",
 
   "command.provider.connect": "连接提供商",
 
@@ -165,6 +172,11 @@ export const dict = {
   "command.sessionTabs.showInSidebar": "在侧边栏显示",
   "command.sessionTabs.previous": "上一个会话标签页",
   "command.sessionTabs.next": "下一个会话标签页",
+  "command.session.content.search": "搜索会话内容",
+  "command.session.content.search.description": "搜索所有会话消息",
+
+  "command.assistant.quick.toggle": "快速助手",
+  "command.assistant.quick.toggle.description": "打开浮动项目助手",
 
   "trellis.tasks.taskId": "任务 ID",
   "trellis.tasks.copyId": "复制任务 ID",

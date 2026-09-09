@@ -1517,8 +1517,9 @@ export default function Layout(props: ParentProps) {
       },
       {
         id: "session.content.search",
-        title: "Search session content",
-        description: "Search across all session messages",
+        title: language.t("command.session.content.search"),
+        description: language.t("command.session.content.search.description"),
+        keywords: kw("command.session.content.search", "command.session.content.search.description"),
         category: language.t("command.category.session"),
         keybind: "mod+shift+f",
         onSelect: () => {
@@ -1644,7 +1645,8 @@ export default function Layout(props: ParentProps) {
       },
       {
         id: "project.openInVscode",
-        title: "Open in VSCode",
+        title: language.t("command.project.openInVscode"),
+        keywords: kw("command.project.openInVscode"),
         category: language.t("command.category.project"),
         disabled: !params.dir || (platform.os === "windows" ? !platform.openPath : !platform.openInVscode),
         onSelect: async () => {
@@ -1659,7 +1661,8 @@ export default function Layout(props: ParentProps) {
       },
       {
         id: "project.openInCursor",
-        title: "Open in Cursor",
+        title: language.t("command.project.openInCursor"),
+        keywords: kw("command.project.openInCursor"),
         category: language.t("command.category.project"),
         disabled: !params.dir || !platform.openInEditor,
         onSelect: async () => {
@@ -1669,7 +1672,8 @@ export default function Layout(props: ParentProps) {
       },
       {
         id: "project.openInSublime",
-        title: "Open in Sublime Text",
+        title: language.t("command.project.openInSublime"),
+        keywords: kw("command.project.openInSublime"),
         category: language.t("command.category.project"),
         disabled: !params.dir || !platform.openInEditor,
         onSelect: async () => {
@@ -1679,7 +1683,8 @@ export default function Layout(props: ParentProps) {
       },
       {
         id: "project.openInZed",
-        title: "Open in Zed",
+        title: language.t("command.project.openInZed"),
+        keywords: kw("command.project.openInZed"),
         category: language.t("command.category.project"),
         disabled: !params.dir || !platform.openInEditor,
         onSelect: async () => {
@@ -1689,7 +1694,8 @@ export default function Layout(props: ParentProps) {
       },
       {
         id: "project.openInEditor",
-        title: "Open in Editor",
+        title: language.t("command.project.openInEditor"),
+        keywords: kw("command.project.openInEditor"),
         category: language.t("command.category.project"),
         disabled: !params.dir || !platform.openInEditor,
         onSelect: async () => {
