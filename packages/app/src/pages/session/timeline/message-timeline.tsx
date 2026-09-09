@@ -52,7 +52,13 @@ import type {
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { normalize } from "@opencode-ai/ui/session-diff"
-import { normalizeWheelDelta, shouldMarkBoundaryGesture } from "@/pages/session/message-gesture"
+import {
+  accumulateSmoothWheelTarget,
+  normalizeWheelDelta,
+  shouldMarkBoundaryGesture,
+  shouldSmoothDiscreteWheel,
+  smoothWheelFramePosition,
+} from "@/pages/session/message-gesture"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
@@ -312,6 +318,79 @@ export function MessageTimeline(props: {
     const line = `[lag] timeline-${kind} sid=${sessionID() ?? "none"} ${fields}`
     recordTimelineDebug(line)
     console.debug(line)
+  }
+  const macOS = typeof navigator !== "undefined" && /Macintosh|Mac OS X/.test(navigator.userAgent)
+  let smoothWheelFrame: number | undefined
+  let smoothWheelTarget: number | undefined
+  let smoothWheelLastTop: number | undefined
+  let smoothWheelLastFrame = 0
+  const stopSmoothWheel = (source: string) => {
+    const active = smoothWheelTarget !== undefined
+    if (smoothWheelFrame !== undefined) cancelAnimationFrame(smoothWheelFrame)
+    smoothWheelFrame = undefined
+    smoothWheelTarget = undefined
+    smoothWheelLastTop = undefined
+    smoothWheelLastFrame = 0
+    if (active && lagging()) timelineLag("wheel-smooth-stop", `source=${source}`)
+  }
+  const animateSmoothWheel = (now: number) => {
+    smoothWheelFrame = undefined
+    const root = listRoot()
+    if (!root || smoothWheelTarget === undefined || smoothWheelLastTop === undefined) {
+      stopSmoothWheel("missing-root")
+      return
+    }
+
+    const max = Math.max(0, virtualizer.getTotalSize() - listSize().height)
+    const externalDelta = root.scrollTop - smoothWheelLastTop
+    if (Math.abs(externalDelta) > 0.5) {
+      smoothWheelTarget = Math.max(0, Math.min(max, smoothWheelTarget + externalDelta))
+      if (lagging()) {
+        timelineLag(
+          "wheel-smooth-anchor",
+          `external=${Math.round(externalDelta)} target=${Math.round(smoothWheelTarget)} top=${Math.round(root.scrollTop)}`,
+        )
+      }
+    }
+    smoothWheelTarget = Math.max(0, Math.min(max, smoothWheelTarget))
+    const next = smoothWheelFramePosition({
+      current: root.scrollTop,
+      target: smoothWheelTarget,
+      elapsed: smoothWheelLastFrame ? now - smoothWheelLastFrame : 16,
+    })
+    root.scrollTop = Math.abs(smoothWheelTarget - next) < 0.5 ? smoothWheelTarget : next
+    smoothWheelLastTop = root.scrollTop
+    smoothWheelLastFrame = now
+    markToolHydrationScrollActivity(now)
+    if (lagging()) {
+      timelineLag(
+        "wheel-smooth-frame",
+        `top=${Math.round(root.scrollTop)} target=${Math.round(smoothWheelTarget)} remaining=${Math.round(smoothWheelTarget - root.scrollTop)}`,
+      )
+    }
+    if (Math.abs(smoothWheelTarget - root.scrollTop) < 0.5) {
+      stopSmoothWheel("finish")
+      return
+    }
+    smoothWheelFrame = requestAnimationFrame(animateSmoothWheel)
+  }
+  const enqueueSmoothWheel = (root: HTMLDivElement, delta: number) => {
+    const max = Math.max(0, virtualizer.getTotalSize() - listSize().height)
+    smoothWheelTarget = accumulateSmoothWheelTarget({
+      current: root.scrollTop,
+      target: smoothWheelTarget,
+      delta,
+      max,
+    })
+    smoothWheelLastTop ??= root.scrollTop
+    smoothWheelLastFrame ||= performance.now()
+    if (lagging()) {
+      timelineLag(
+        "wheel-smooth-input",
+        `delta=${Math.round(delta)} top=${Math.round(root.scrollTop)} target=${Math.round(smoothWheelTarget)} max=${Math.round(max)}`,
+      )
+    }
+    if (smoothWheelFrame === undefined) smoothWheelFrame = requestAnimationFrame(animateSmoothWheel)
   }
   createEffect(
     on(
@@ -1046,6 +1125,7 @@ export function MessageTimeline(props: {
   }
 
   const clearNavigationAnchors = (source: "message" | "find") => {
+    stopSmoothWheel(`navigation-${source}`)
     navigationResetAt = performance.now()
     console.debug(
       `[timeline] navigation-reset sid=${sessionID() ?? "none"} source=${source} top=${String(Math.round(listRoot()?.scrollTop ?? 0))} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"} prepend=${String(prependLoading)} bottom=${String(props.shouldAnchorBottom())}`,
@@ -1157,6 +1237,7 @@ export function MessageTimeline(props: {
   })
 
   onCleanup(() => {
+    stopSmoothWheel("unmount")
     mounted = false
     console.debug(
       `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
@@ -1895,15 +1976,33 @@ export function MessageTimeline(props: {
             deltaMode: event.deltaMode,
             rootHeight: listSize().height,
           })
+          const legacyDelta = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY
+          const smooth =
+            boundaryTarget(event.currentTarget, event.target) === event.currentTarget &&
+            event.cancelable &&
+            shouldSmoothDiscreteWheel({
+              deltaX: event.deltaX,
+              deltaY: event.deltaY,
+              deltaMode: event.deltaMode,
+              wheelDeltaY: legacyDelta,
+              macOS,
+            })
+          if (smooth) {
+            event.preventDefault()
+            enqueueSmoothWheel(event.currentTarget, delta)
+          } else {
+            stopSmoothWheel("native-wheel")
+          }
           if (lagging()) {
             timelineLag(
               "wheel-input",
-              `trusted=${String(event.isTrusted)} delta=${Math.round(delta)} top=${Math.round(event.currentTarget.scrollTop)} height=${Math.round(event.currentTarget.scrollHeight)} client=${Math.round(event.currentTarget.clientHeight)}`,
+              `trusted=${String(event.isTrusted)} delta=${Math.round(delta)} legacy=${Math.round(legacyDelta ?? 0)} smooth=${String(smooth)} prevented=${String(event.defaultPrevented)} top=${Math.round(event.currentTarget.scrollTop)} height=${Math.round(event.currentTarget.scrollHeight)} client=${Math.round(event.currentTarget.clientHeight)}`,
             )
           }
           if (delta) markBoundaryGesture(event.currentTarget, event.target, delta)
         }}
         onTouchStart={(event) => {
+          stopSmoothWheel("touch")
           programmaticScrollAt = 0
           touchGesture = event.touches[0]?.clientY
           if (!prependLoading) clearPrependAnchor()
@@ -1917,10 +2016,12 @@ export function MessageTimeline(props: {
         }}
         onTouchEnd={() => (touchGesture = undefined)}
         onTouchCancel={() => (touchGesture = undefined)}
-        onPointerDown={(event) =>
-          event.target === event.currentTarget && props.onMarkScrollGesture(event.currentTarget)
-        }
+        onPointerDown={(event) => {
+          stopSmoothWheel("pointer")
+          if (event.target === event.currentTarget) props.onMarkScrollGesture(event.currentTarget)
+        }}
         onScrollInput={(root) => {
+          stopSmoothWheel("scroll-input")
           programmaticScrollAt = 0
           props.onMarkScrollGesture(root)
         }}

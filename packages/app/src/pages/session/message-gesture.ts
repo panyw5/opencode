@@ -4,6 +4,45 @@ export const normalizeWheelDelta = (input: { deltaY: number; deltaMode: number; 
   return input.deltaY
 }
 
+export const shouldSmoothDiscreteWheel = (input: {
+  deltaX: number
+  deltaY: number
+  deltaMode: number
+  wheelDeltaY?: number
+  macOS: boolean
+}) => {
+  if (!input.macOS) return false
+  if (!input.deltaY || Math.abs(input.deltaX) > Math.abs(input.deltaY)) return false
+  if (input.deltaMode !== 0) return true
+
+  // Chromium exposes traditional wheel notches as multiples of 120 through
+  // the legacy field even when deltaMode has already been converted to pixels.
+  // Trackpad deltas are high-frequency and almost never land on this cadence.
+  const legacy = Math.abs(input.wheelDeltaY ?? 0)
+  if (legacy >= 120 && Math.abs(legacy % 120) < 0.01) return true
+
+  // Fallback for mice/drivers that omit wheelDeltaY but emit coarse pixel steps.
+  return Math.abs(input.deltaY) >= 80 && Number.isInteger(input.deltaY)
+}
+
+export const accumulateSmoothWheelTarget = (input: {
+  current: number
+  target?: number
+  delta: number
+  max: number
+}) => Math.max(0, Math.min(input.max, (input.target ?? input.current) + input.delta))
+
+export const smoothWheelFramePosition = (input: {
+  current: number
+  target: number
+  elapsed: number
+  timeConstant?: number
+}) => {
+  const elapsed = Math.max(0, Math.min(input.elapsed, 32))
+  const factor = 1 - Math.exp(-elapsed / (input.timeConstant ?? 70))
+  return input.current + (input.target - input.current) * factor
+}
+
 export const shouldMarkBoundaryGesture = (input: {
   delta: number
   scrollTop: number

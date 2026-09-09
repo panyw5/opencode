@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { normalizeWheelDelta, shouldMarkBoundaryGesture } from "./message-gesture"
+import {
+  accumulateSmoothWheelTarget,
+  normalizeWheelDelta,
+  shouldMarkBoundaryGesture,
+  shouldSmoothDiscreteWheel,
+  smoothWheelFramePosition,
+} from "./message-gesture"
 
 describe("normalizeWheelDelta", () => {
   test("converts line mode to px", () => {
@@ -58,5 +64,51 @@ describe("shouldMarkBoundaryGesture", () => {
         clientHeight: 400,
       }),
     ).toBe(false)
+  })
+})
+
+describe("smooth discrete wheel", () => {
+  test("smooths a traditional macOS wheel notch", () => {
+    expect(
+      shouldSmoothDiscreteWheel({
+        deltaX: 0,
+        deltaY: 100,
+        deltaMode: 0,
+        wheelDeltaY: -120,
+        macOS: true,
+      }),
+    ).toBe(true)
+  })
+
+  test("leaves precise trackpad input native", () => {
+    expect(
+      shouldSmoothDiscreteWheel({
+        deltaX: 0.4,
+        deltaY: 6.25,
+        deltaMode: 0,
+        wheelDeltaY: -7.5,
+        macOS: true,
+      }),
+    ).toBe(false)
+  })
+
+  test("leaves non-macOS platforms native", () => {
+    const base = { deltaX: 0, deltaY: 3, deltaMode: 1, wheelDeltaY: -120 }
+    expect(shouldSmoothDiscreteWheel({ ...base, macOS: false })).toBe(false)
+  })
+
+  test("accumulates and clamps the target", () => {
+    expect(accumulateSmoothWheelTarget({ current: 200, delta: 120, max: 1000 })).toBe(320)
+    expect(accumulateSmoothWheelTarget({ current: 200, target: 500, delta: 700, max: 1000 })).toBe(1000)
+    expect(accumulateSmoothWheelTarget({ current: 200, target: 100, delta: -500, max: 1000 })).toBe(0)
+  })
+
+  test("eases toward the target without overshooting after a long frame", () => {
+    const normal = smoothWheelFramePosition({ current: 0, target: 100, elapsed: 16 })
+    const stalled = smoothWheelFramePosition({ current: 0, target: 100, elapsed: 200 })
+    expect(normal).toBeGreaterThan(0)
+    expect(normal).toBeLessThan(100)
+    expect(stalled).toBeGreaterThan(normal)
+    expect(stalled).toBeLessThan(100)
   })
 })
