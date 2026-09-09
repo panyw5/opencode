@@ -78,6 +78,13 @@ type ChannelRow = {
   config: ChannelConfig
 }
 
+type ChannelTestResult = {
+  status: "success" | "error"
+  botName?: string
+  botOpenId?: string
+  message?: string
+}
+
 const MODEL_AUTO = "auto"
 
 /** Last channels write from this page — used to win races against global.config.updated. */
@@ -355,6 +362,8 @@ export const ConfigChannelsDetail: Component<{
     mode: "manual" as "qr" | "manual",
   })
   const [saving, setSaving] = createSignal(false)
+  const [testingChannel, setTestingChannel] = createSignal<string | null>(null)
+  const [channelTests, setChannelTests] = createStore<Record<string, ChannelTestResult>>({})
   const [qrStatus, setQrStatus] = createSignal<"idle" | "loading" | "waiting" | "success" | "error">("idle")
   const [qrSession, setQrSession] = createSignal<FeishuRegistrationSession | null>(null)
   const [qrError, setQrError] = createSignal("")
@@ -608,6 +617,36 @@ export const ConfigChannelsDetail: Component<{
     }
   }
 
+  const testChannel = async (name: string) => {
+    const entry = globalSync.data.config.channels?.[name]
+    if (!entry || entry.type !== "feishu" || testingChannel()) return
+    setTestingChannel(name)
+    try {
+      const bot = await probeBot(entry.appId, entry.appSecret, entry.domain ?? "feishu")
+      if (!bot) throw new Error(language.t("config.channels.test.failed"))
+      setChannelTests(name, {
+        status: "success",
+        botName: bot.botName,
+        botOpenId: bot.botOpenId,
+      })
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("config.channels.test.success"),
+        description: bot.botName ?? language.t("config.channels.test.success"),
+      })
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err)
+      setChannelTests(name, { status: "error", message })
+      showToast({
+        title: language.t("config.channels.test.failed"),
+        description: message,
+      })
+    } finally {
+      setTestingChannel(null)
+    }
+  }
+
   const remove = async (name: string) => {
     try {
       const current = globalSync.data.config.channels ?? {}
@@ -684,6 +723,37 @@ export const ConfigChannelsDetail: Component<{
                             <div class="truncate text-14-medium text-text-strong">{row.name}</div>
                           </button>
                           <div class="flex shrink-0 items-center gap-2">
+                            <Show when={feishu()}>
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                icon="link"
+                                disabled={testingChannel() !== null}
+                                onClick={() => void testChannel(row.name)}
+                              >
+                                {testingChannel() === row.name
+                                  ? language.t("config.channels.test.testing")
+                                  : language.t("config.channels.test.action")}
+                              </Button>
+                            </Show>
+                            <Show when={channelTests[row.name]}>
+                              {(result) => (
+                                <div
+                                  class={`max-w-[280px] truncate text-11-regular ${
+                                    result().status === "success" ? "text-text-success" : "text-text-danger"
+                                  }`}
+                                  title={
+                                    result().status === "success"
+                                      ? `${result().botName ?? ""} ${result().botOpenId ?? ""}`.trim()
+                                      : result().message
+                                  }
+                                >
+                                  {result().status === "success"
+                                    ? `${language.t("config.channels.test.botName")}: ${result().botName ?? "-"} · ${language.t("config.channels.test.botOpenId")}: ${result().botOpenId ?? "-"}`
+                                    : result().message}
+                                </div>
+                              )}
+                            </Show>
                             <Toggle
                               checked={row.enabled}
                               onChange={(v) => void patchChannel(row.name, { enabled: v })}
