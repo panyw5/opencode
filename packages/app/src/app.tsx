@@ -278,6 +278,7 @@ const ProjectIndexRoute = () => {
       tabs: layout.sessionBar.all(),
       drafts: layout.sessionBar.drafts(),
       directory,
+      fallback: "home",
     })
     console.debug(
       `[project-index] fallback start run=${run} directory=${directory || "none"} target=${target.type} tabs=${layout.sessionBar.all().length} drafts=${layout.sessionBar.drafts().length}`,

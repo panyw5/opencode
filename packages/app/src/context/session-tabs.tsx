@@ -27,6 +27,7 @@ export function pickSessionTabsTarget(input: {
   tabs: SessionBarTab[]
   drafts: SessionBarDraft[]
   directory?: string
+  fallback?: "global" | "home"
 }): SessionTabsTarget {
   if (input.directory) {
     const preferred = workspaceKey(input.directory)
@@ -41,6 +42,7 @@ export function pickSessionTabsTarget(input: {
       if (workspaceKey(draft.directory) === preferred)
         return { type: "draft", directory: draft.directory, id: draft.id }
     }
+    if (input.fallback === "home") return { type: "home" }
   }
 
   const tab = input.tabs.at(-1)
@@ -106,6 +108,7 @@ export type SessionTabsCoordinator = {
     source: "button" | "keybind" | "menu" | "slash" | "palette" | "deep-link",
   ): SessionBarDraft
   activate(target: SessionTabsTarget, options?: { replace?: boolean }): Promise<SessionTabsActivationResult>
+  cancelNavigation(reason: string): void
   updateMeta(
     directory: string,
     id: string,
@@ -461,6 +464,14 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
         console.debug(`[session-tabs] activation failed target=${target.type} error=${String(error)}`)
         return "failed"
       }
+    },
+    cancelNavigation(reason) {
+      const intent = navigationIntent
+      if (!intent) {
+        console.debug(`[session-tabs] navigation intent cancel skipped reason=${reason} pending=false`)
+        return
+      }
+      clearNavigation(intent, reason)
     },
     updateMeta(directory, id, info) {
       const key = sessionBarKey({ directory, id })

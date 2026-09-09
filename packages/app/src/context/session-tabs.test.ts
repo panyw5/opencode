@@ -38,6 +38,17 @@ describe("session tab fallback", () => {
     })
   })
 
+  test("can keep project-index fallback inside the requested directory", () => {
+    expect(
+      pickSessionTabsTarget({
+        tabs: [tab("channel", "/channels/cc")],
+        drafts: [],
+        directory: "/repo",
+        fallback: "home",
+      }),
+    ).toEqual({ type: "home" })
+  })
+
   test("uses home only when no session or draft tab exists", () => {
     expect(pickSessionTabsTarget({ tabs: [], drafts: [], directory: "/repo" })).toEqual({ type: "home" })
     expect(sessionTabsTargetHref({ type: "home" })).toBe("/")
@@ -488,6 +499,23 @@ describe("session tabs coordinator", () => {
     release()
     expect(await first).toBe("superseded")
     expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "two" }])
+    h.dispose()
+  })
+
+  test("a domain selection cancels an activation before it can navigate", async () => {
+    const h = harness({
+      tabs: [tab("channel", "/channels/cc")],
+      route: { directory: "/repo", id: "current", session: true },
+    })
+    let release!: () => void
+    h.queuePrepare(new Promise<void>((resolve) => (release = resolve)))
+    const activation = h.coordinator.activate({ type: "session", directory: "/channels/cc", id: "channel" })
+
+    h.coordinator.cancelNavigation("project-selected")
+    release()
+
+    expect(await activation).toBe("superseded")
+    expect(h.targets).toEqual([])
     h.dispose()
   })
 

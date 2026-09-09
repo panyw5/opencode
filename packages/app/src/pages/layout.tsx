@@ -17,7 +17,6 @@ import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useLayout, type LocalProject } from "@/context/layout"
 import {
   createSessionTabsCoordinator,
-  pickSessionTabsTarget,
   SessionTabsProvider,
   sessionTabsTargetHref,
   type SessionTabsRoute,
@@ -1996,13 +1995,16 @@ export default function Layout(props: ParentProps) {
     return sortedRootSessions(child, Date.now())
   }
 
+  let sidebarDomainRequest = 0
+
   /**
    * Open an IM channel as its own session-list domain (same pattern as
    * GenericAgent / extra agents). Does not nest under any OpenCode project.
    */
-  function openImChannel(name: string) {
+  async function openImChannel(name: string) {
+    const request = ++sidebarDomainRequest
     const current = activeImChannel()?.name
-    console.debug(`[layout] openImChannel name=${name} current=${current ?? "none"}`)
+    console.debug(`[layout] openImChannel request=${request} name=${name} current=${current ?? "none"}`)
     const entry = globalSync.data.config.channels?.[name]
     if (!entry || entry.enabled === false) {
       console.debug(`[layout] openImChannel unavailable name=${name} enabled=${entry?.enabled}`)
@@ -2023,20 +2025,50 @@ export default function Layout(props: ParentProps) {
     // Already on this channel domain — no-op (like openExtraAgent).
     if (workspaceKey(routeDir()) === workspaceKey(dir) && onSessionRoute()) {
       console.debug(`[layout] openImChannel already active name=${name} directory=${dir}`)
+      setSidebarProjectRoot(dir)
       setStore("sidebarPanel", "project")
       layout.sidebar.open()
       return
     }
 
+    console.debug(`[layout] openImChannel workdir=${dir}`)
+    sessionTabs.cancelNavigation("im-channel-selected")
+    setSidebarProjectRoot(dir)
+    console.debug(`[sidebar-project] select-im-domain directory=${dir}`)
+    // Enter the channel domain before loading its sessions. Otherwise the
+    // sidebar keeps the previously selected OpenCode project while the first
+    // channel request is in flight, which makes the first click show the
+    // wrong session list.
     batch(() => {
       setStore("sidebarPanel", "project")
       layout.sidebar.open()
     })
+    console.debug(`[layout] openImChannel navigate-domain name=${name} directory=${dir}`)
+    navigateWithSidebarReset(`/${base64Encode(dir)}`)
 
-    console.debug(`[layout] openImChannel workdir=${dir}`)
-    void globalSync.project.loadSessions(dir, { silent: true })
+    const loadStartedAt = performance.now()
+    console.debug(`[layout] openImChannel load-start name=${name} directory=${dir}`)
+    try {
+      await globalSync.project.loadSessions(dir, { silent: true })
+      console.debug(
+        `[layout] openImChannel load-end name=${name} directory=${dir} elapsed=${(performance.now() - loadStartedAt).toFixed(1)}ms`,
+      )
+    } catch (error) {
+      console.error(
+        `[layout] openImChannel load-error name=${name} directory=${dir} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    if (request !== sidebarDomainRequest) {
+      console.debug(
+        `[layout] openImChannel stale request=${request} current-request=${sidebarDomainRequest} name=${name} directory=${dir}`,
+      )
+      return
+    }
 
     const imSessions = collectImChannelSessions(dir)
+    console.debug(
+      `[layout] openImChannel sessions-ready name=${name} directory=${dir} count=${imSessions.length} route=${routeDir() || "none"}`,
+    )
     const viewingIm = imSessions.some((session) => sessionRouteMatches(session.directory, session.id))
     if (viewingIm) {
       console.debug(`[layout] openImChannel already viewing im session name=${name}`)
@@ -2044,26 +2076,16 @@ export default function Layout(props: ParentProps) {
       console.debug(`[layout] openImChannel navigate latest id=${imSessions[0].id} dir=${imSessions[0].directory}`)
       navigateToSession(imSessions[0])
     } else {
-      const target = pickSessionTabsTarget({
-        tabs: layout.sessionBar.all(),
-        drafts: layout.sessionBar.drafts(),
-        directory: dir,
-      })
-      console.debug(`[layout] openImChannel no-session dir=${dir} fallback=${target.type}`)
-      void sessionTabs.activate(target).then((result) => {
-        console.debug(`[layout] openImChannel fallback complete target=${target.type} result=${result}`)
-        if (result !== "failed" || target.type === "home") return
-        console.warn(`[layout] openImChannel fallback failed target=${target.type}; navigating home`)
-        return sessionTabs.activate({ type: "home" })
-      })
+      console.debug(`[layout] openImChannel no-session name=${name} directory=${dir} stay-on-domain=true`)
     }
 
     console.debug(`[layout] openImChannel opened name=${name} type=${entry.type} imCount=${imSessions.length}`)
   }
 
   function openExtraAgent(id: Parameters<typeof extraAgentDir>[0]) {
+    const request = ++sidebarDomainRequest
     console.debug(
-      `[layout] open extra agent id=${id} current=${server.current?.integration ?? "none"} directory=${routeDir() || "none"}`,
+      `[layout] open extra agent request=${request} id=${id} current=${server.current?.integration ?? "none"} directory=${routeDir() || "none"}`,
     )
     const conn = server.list.find((item) => item.integration === id)
     if (!conn) {
@@ -2082,6 +2104,12 @@ export default function Layout(props: ParentProps) {
       })
       return
     }
+    const directory = extraAgentDir(id)
+    sessionTabs.cancelNavigation("extra-agent-selected")
+    setSidebarProjectRoot(directory)
+    setStore("sidebarPanel", "project")
+    layout.sidebar.open()
+    console.debug(`[sidebar-project] select-extra-domain request=${request} id=${id} directory=${directory}`)
     if (
       extraAgentActive(id, {
         directory: routeDir(),
@@ -2094,8 +2122,8 @@ export default function Layout(props: ParentProps) {
       )
       return
     }
-    console.debug(`[layout] navigate to extra agent id=${id} directory=${extraAgentDir(id)}`)
-    void navigateToProject(extraAgentDir(id))
+    console.debug(`[layout] navigate to extra agent request=${request} id=${id} directory=${directory}`)
+    void navigateToProject(directory, { sidebarDomainRequest: request })
   }
 
   function projectRoot(directory: string) {
@@ -2314,7 +2342,7 @@ export default function Layout(props: ParentProps) {
     sessionTabs.dispose()
   })
 
-  async function navigateToProject(directory: string | undefined) {
+  async function navigateToProject(directory: string | undefined, options?: { sidebarDomainRequest?: number }) {
     if (!directory) return
     console.debug(`[project-switch] request directory=${directory} navigated=true`)
     const extra = extraAgentByDirectory(directory)
@@ -2327,6 +2355,15 @@ export default function Layout(props: ParentProps) {
         server.setActive(key)
         await waitServer(key)
       }
+      if (
+        options?.sidebarDomainRequest !== undefined &&
+        options.sidebarDomainRequest !== sidebarDomainRequest
+      ) {
+        console.debug(
+          `[project-switch] stale extra-agent request=${options.sidebarDomainRequest} current-request=${sidebarDomainRequest} directory=${extra.directory}`,
+        )
+        return
+      }
       navigateWithSidebarReset(`/${base64Encode(extra.directory)}`)
       return
     }
@@ -2337,6 +2374,15 @@ export default function Layout(props: ParentProps) {
         server.setActive(key)
         await waitServer(key)
       }
+    }
+    if (
+      options?.sidebarDomainRequest !== undefined &&
+      options.sidebarDomainRequest !== sidebarDomainRequest
+    ) {
+      console.debug(
+        `[project-switch] stale project request=${options.sidebarDomainRequest} current-request=${sidebarDomainRequest} directory=${directory}`,
+      )
+      return
     }
 
     const root = projectRoot(directory)
@@ -3260,8 +3306,15 @@ export default function Layout(props: ParentProps) {
       () => [currentProjectRoot(), layout.projects.list()] as const,
       ([root, projects]) => {
         if (!pendingSidebarRoute || !root) return
-        const project = root ? projects.find((item) => workspaceKey(item.worktree) === workspaceKey(root)) : undefined
-        const next = project?.worktree
+        const extra = extraAgentByDirectory(root)
+        const im = findImChannelByDirectory(
+          root,
+          globalSync.data.config.channels,
+          globalSync.data.path.config || "",
+          globalSync.data.path.home || "",
+        )
+        const project = projects.find((item) => workspaceKey(item.worktree) === workspaceKey(root))
+        const next = extra?.directory ?? im?.directory ?? project?.worktree
         if (workspaceKey(sidebarProjectRoot() ?? "") !== workspaceKey(next ?? "")) {
           console.debug(
             `[sidebar-project] route-sync root=${next ?? "none"} route-directory=${routeDir() || "none"} navigated=true`,
@@ -3281,6 +3334,16 @@ export default function Layout(props: ParentProps) {
       ([selected, projects, routeRoot]) => {
         if (!selected) return
         if (projects.some((item) => workspaceKey(item.worktree) === workspaceKey(selected))) return
+        if (extraAgentByDirectory(selected)) return
+        if (
+          findImChannelByDirectory(
+            selected,
+            globalSync.data.config.channels,
+            globalSync.data.path.config || "",
+            globalSync.data.path.home || "",
+          )
+        )
+          return
 
         const fallback = routeRoot
           ? projects.find((item) => workspaceKey(item.worktree) === workspaceKey(routeRoot))?.worktree
@@ -3438,12 +3501,39 @@ export default function Layout(props: ParentProps) {
   }
 
   // Keep one shared source of truth so controls outside this page (for example
-  // session tabs in the title bar) can select the project shown in the sidebar.
+  // session tabs in the title bar) can select the domain shown in the sidebar.
+  // Both OpenCode projects and IM channels store their directory here.
   const sidebarProjectRoot = layout.sidebar.project
   const setSidebarProjectRoot = layout.sidebar.setProject
 
   const sidebarProject = createMemo(() => {
     const selected = sidebarProjectRoot()
+    if (selected) {
+      const extra = extraAgentByDirectory(selected)
+      if (extra) {
+        const project = extraAgentProject(extra.id)
+        return {
+          ...project,
+          root: project.worktree,
+          entry: project.worktree,
+        } satisfies CurrentProject
+      }
+      const im = findImChannelByDirectory(
+        selected,
+        globalSync.data.config.channels,
+        globalSync.data.path.config || "",
+        globalSync.data.path.home || "",
+      )
+      if (im) {
+        const project = imChannelProject(im.name, im.directory)
+        return {
+          ...project,
+          root: project.worktree,
+          entry: project.worktree,
+        } satisfies CurrentProject
+      }
+    }
+
     const project = selected
       ? layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(selected))
       : undefined
@@ -3456,6 +3546,15 @@ export default function Layout(props: ParentProps) {
     }
     return currentProject()
   })
+
+  const sidebarImChannel = createMemo(() =>
+    findImChannelByDirectory(
+      sidebarProject()?.root,
+      globalSync.data.config.channels,
+      globalSync.data.path.config || "",
+      globalSync.data.path.home || "",
+    ),
+  )
 
   const sessionCurrentProject = createMemo(() => (onConfigRoute() ? undefined : currentProject()?.root))
 
@@ -3504,6 +3603,8 @@ export default function Layout(props: ParentProps) {
   })
 
   function selectSidebarProject(directory: string, options?: { navigateWhenNoSession?: boolean }) {
+    const request = ++sidebarDomainRequest
+    sessionTabs.cancelNavigation("project-selected")
     const project = layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(directory))
     if (!project) {
       console.debug(
@@ -3513,19 +3614,25 @@ export default function Layout(props: ParentProps) {
     }
 
     const hasCurrentSession = onSessionRoute() && !!params.id
-    // When viewing an IM channel, the route directory is the channel's work
-    // folder, not an OpenCode project. We must navigate away so activeImChannel()
-    // clears and the sidebar switches back to the project session list.
-    const viewingImChannel = !!activeImChannel()
+    // Domain rail selections own both the sidebar list and the backing server.
+    // Leaving IM or an external agent must therefore navigate through the
+    // project switcher instead of only replacing the selected sidebar root.
+    const viewingExternalDomain = !!activeImChannel() || !!extraAgentByDirectory(routeDir())
     // Default false: rail click switches project context / opens sidebar without
     // forcing a new-session route when nothing is currently displayed.
     const navigateWhenNoSession = options?.navigateWhenNoSession ?? false
     console.debug(
-      `[sidebar-project] select root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} viewing-im=${viewingImChannel} navigated=${viewingImChannel || (!hasCurrentSession && navigateWhenNoSession)}`,
+      `[sidebar-project] select request=${request} root=${project.worktree} route-directory=${routeDir() || "none"} current-session=${hasCurrentSession} viewing-external=${viewingExternalDomain} navigated=${viewingExternalDomain || (!hasCurrentSession && navigateWhenNoSession)}`,
     )
     setSidebarProjectRoot(project.worktree)
     warmProjectSessions(project.worktree)
-    if (viewingImChannel || (!hasCurrentSession && navigateWhenNoSession)) {
+    if (viewingExternalDomain) {
+      setSwitching(undefined)
+      void navigateToProject(project.worktree, { sidebarDomainRequest: request })
+      layout.sidebar.open()
+      return
+    }
+    if (!hasCurrentSession && navigateWhenNoSession) {
       setSwitching(undefined)
       navigateWithSidebarReset(`/${base64Encode(project.worktree)}`)
     }
@@ -3808,7 +3915,7 @@ export default function Layout(props: ParentProps) {
         }}
       >
         <Show
-          when={activeImChannel()}
+          when={sidebarImChannel()}
           fallback={
             <Show
               when={project()}
@@ -4097,7 +4204,8 @@ export default function Layout(props: ParentProps) {
           {(match) => (
             <ImChannelSidebar
               ctx={workspaceSidebarCtx}
-              // Use Show's keyed match accessor — never re-read activeImChannel()
+              // Use Show's keyed match accessor so all sidebar content reads
+              // the same selected domain.
               // with `!`, which throws when the memo goes undefined mid-update.
               channel={() => match().name}
               channelMeta={() => {
@@ -4115,7 +4223,7 @@ export default function Layout(props: ParentProps) {
           class="shrink-0 px-3 py-3"
           classList={{
             hidden:
-              !!activeImChannel() ||
+              !!sidebarImChannel() ||
               store.gettingStartedDismissed ||
               !(providers.all().length > 0 && providers.paid().length === 0),
           }}
@@ -4168,6 +4276,8 @@ export default function Layout(props: ParentProps) {
         const started = performance.now()
         ;(window as Window & { __homeNavClickAt?: number }).__homeNavClickAt = started
         console.debug(`[home-perf] nav-click at=${started.toFixed(1)}ms pathname=${location.pathname}`)
+        sidebarDomainRequest++
+        setSidebarProjectRoot(undefined)
         setStore("sidebarPanel", "project")
         layout.sidebar.close()
         layout.mobileSidebar.hide()
@@ -4192,7 +4302,7 @@ export default function Layout(props: ParentProps) {
           return {
             id: agent.id,
             label: () => language.t(agent.labelKey),
-            active: () => routeDir() === agent.directory,
+            active: () => workspaceKey(sidebarProjectRoot() ?? "") === workspaceKey(agent.directory),
             available: () => enabled,
             healthy: enabled ? () => server.healthyFor(`extra-agent/${agent.id}`) : undefined,
             icon: agent.icon,
@@ -4215,7 +4325,7 @@ export default function Layout(props: ParentProps) {
               // Platform first, then channel name: e.g. "飞书 | cc"
               label: () => `${platform} | ${name}`,
               // Active when route is this channel's work directory (independent domain).
-              active: () => workspaceKey(routeDir()) === workspaceKey(dir),
+              active: () => workspaceKey(sidebarProjectRoot() ?? "") === workspaceKey(dir),
               available: () => true,
               icon: "speech-bubble" as IconName,
               onOpen: () => openImChannel(name),
