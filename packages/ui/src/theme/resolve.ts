@@ -440,27 +440,49 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     tokens[key] = value
   }
 
-  if (!("button-primary-hover" in overrides)) {
-    const base = tokens["button-primary-base"]
-    tokens["button-primary-hover"] = !base.startsWith("#")
-      ? tokens["icon-strong-hover"]
-      : isDark
-        ? shift(base as HexColor, { l: 0.04 })
-        : lum(base) < 0.25
-          ? // Near-black primary (e.g. claude light): darkening is invisible, lighten instead
-            shift(base as HexColor, { l: 0.12 })
-          : shift(base as HexColor, { l: -0.08 })
-  }
-  if (!("button-primary-active" in overrides)) {
-    const base = tokens["button-primary-base"]
-    tokens["button-primary-active"] = !base.startsWith("#")
-      ? tokens["icon-strong-active"]
-      : isDark
-        ? // Pressed darkens the light-on-dark primary for a clear state change
-          shift(base as HexColor, { l: -0.07 })
-        : lum(base) < 0.25
-          ? shift(base as HexColor, { l: 0.2 })
-          : shift(base as HexColor, { l: -0.14 })
+  const primaryBase = tokens["button-primary-base"]
+  const primaryText = tokens["button-primary-text"]
+  if (
+    (!("button-primary-hover" in overrides) || !("button-primary-active" in overrides)) &&
+    primaryBase.startsWith("#") &&
+    primaryText.startsWith("#")
+  ) {
+    const base = primaryBase as HexColor
+    const text = primaryText as HexColor
+    const baseLightness = hexToOklch(base).l
+    const towardText = lum(base) < lum(text) ? 1 : -1
+    const option = (direction: number) => {
+      let amount = 0.24
+      let color = shift(base, { l: direction * amount })
+
+      if (hit(color, text) < 4.5) {
+        let low = 0
+        let high = amount
+        for (let i = 0; i < 20; i++) {
+          const next = (low + high) / 2
+          if (hit(shift(base, { l: direction * next }), text) >= 4.5) low = next
+          else high = next
+        }
+        amount = low
+        color = shift(base, { l: direction * amount })
+      }
+
+      return { direction, amount, color, delta: Math.abs(hexToOklch(color).l - baseLightness) }
+    }
+
+    const preferred = option(towardText)
+    const alternate = option(-towardText)
+    // Prefer the conventional hover direction unless the other direction is materially clearer.
+    const state = preferred.delta + 0.03 >= alternate.delta ? preferred : alternate
+    if (!("button-primary-hover" in overrides)) {
+      tokens["button-primary-hover"] = shift(base, { l: state.direction * state.amount * (2 / 3) })
+    }
+    if (!("button-primary-active" in overrides)) {
+      tokens["button-primary-active"] = state.color
+    }
+  } else {
+    if (!("button-primary-hover" in overrides)) tokens["button-primary-hover"] = tokens["icon-strong-hover"]
+    if (!("button-primary-active" in overrides)) tokens["button-primary-active"] = tokens["icon-strong-active"]
   }
   if (!("button-secondary-active" in overrides)) {
     tokens["button-secondary-active"] = tokens["surface-base-active"]

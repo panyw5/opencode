@@ -14,7 +14,8 @@
     background-color 120ms ease,
     color 120ms ease,
     box-shadow 120ms ease,
-    border-color 120ms ease;
+    border-color 120ms ease,
+    transform 120ms ease;
 
   &[data-variant="primary"] {
     background-color: var(--button-primary-base);
@@ -25,14 +26,20 @@
       color: var(--button-primary-text);
     }
 
+    &:focus-visible:not(:disabled) {
+      box-shadow: var(--shadow-xs-border-focus);
+    }
     &:hover:not(:disabled) {
       background-color: var(--button-primary-hover);
-    }
-    &:focus:not(:disabled) {
-      background-color: var(--button-primary-base);
+      border-color: var(--border-strong-hover);
+      box-shadow: 0 3px 10px color-mix(in srgb, var(--button-primary-base) 32%, transparent);
+      transform: translateY(-1px);
     }
     &:active:not(:disabled) {
       background-color: var(--button-primary-active);
+      border-color: var(--border-strong-active);
+      box-shadow: none;
+      transform: translateY(0) scale(0.98);
     }
     &:disabled {
       background-color: var(--icon-strong-disabled);
@@ -83,15 +90,11 @@
     color: var(--text-strong);
     box-shadow: var(--shadow-xs-border-base);
 
+    &:focus-visible:not(:active) {
+      box-shadow: var(--shadow-xs-border-focus);
+    }
     &:hover:not(:disabled) {
       background-color: var(--button-secondary-hover);
-    }
-    &:focus:not(:disabled) {
-      background-color: var(--button-secondary-base);
-    }
-    &:focus-visible:not(:active) {
-      background-color: var(--button-secondary-base);
-      box-shadow: var(--shadow-xs-border-focus);
     }
     &:focus-visible:active {
       box-shadow: none;
