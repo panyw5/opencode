@@ -4,7 +4,6 @@ import type {
   ScheduledTaskRun,
   ScheduledTaskSchedule,
 } from "@opencode-ai/sdk/v2/client"
-import { base64Encode } from "@opencode-ai/core/util/encode"
 import { Button } from "@opencode-ai/ui/button"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -15,7 +14,6 @@ import { Select } from "@opencode-ai/ui/select"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, For, onCleanup, onMount, Show, untrack, type Accessor, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { CronExpressionField } from "@/components/cron-expression-field"
@@ -26,6 +24,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
+import { useSessionTabs } from "@/context/session-tabs"
 import {
   sameScheduledTaskPanelScope,
   scheduledTaskEventMatchesScope,
@@ -98,14 +97,11 @@ function ScheduledTaskCard(props: {
   )
 }
 
-function ScheduledTaskDetailDialog(props: {
-  task: ScheduledTask
-  onChanged: () => void | Promise<void>
-}): JSX.Element {
+function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () => void | Promise<void> }): JSX.Element {
   const sdk = useGlobalSDK()
   const language = useLanguage()
   const dialog = useDialog()
-  const navigate = useNavigate()
+  const sessionTabs = useSessionTabs()
   const [state, setState] = createStore({
     task: props.task,
     runs: [] as ScheduledTaskRun[],
@@ -168,10 +164,75 @@ function ScheduledTaskDetailDialog(props: {
     ))
   }
 
-  function openSession(sessionID?: string) {
-    if (!sessionID) return
-    dialog.close()
-    navigate(`/${base64Encode(state.task.directory)}/session/${sessionID}`)
+  let openingSessionID: string | undefined
+
+  async function openSession(sessionID?: string) {
+    if (!sessionID) {
+      console.debug(`[scheduled-panel] open-session ignored task=${state.task.id} reason=missing-session-id`)
+      return
+    }
+    if (openingSessionID) {
+      console.debug(
+        `[scheduled-panel] open-session ignored task=${state.task.id} id=${sessionID} reason=pending pendingID=${openingSessionID}`,
+      )
+      return
+    }
+    openingSessionID = sessionID
+    const directory = state.task.directory
+    console.debug(
+      `[scheduled-panel] open-session requested task=${state.task.id} directory=${directory} id=${sessionID}`,
+    )
+    setState("error", "")
+    try {
+      console.debug(
+        `[scheduled-panel] open-session probe-start task=${state.task.id} directory=${directory} id=${sessionID}`,
+      )
+      const session = await sdk.client.session.get({ directory, sessionID }).then((result) => result.data)
+      if (!session) throw new Error(`Session not found: ${sessionID}`)
+      console.debug(
+        `[scheduled-panel] open-session probe-success task=${state.task.id} directory=${session.directory} id=${sessionID} archived=${String(!!session.time.archived)}`,
+      )
+
+      const restored = session.time.archived
+        ? await (async () => {
+            console.debug(
+              `[scheduled-panel] open-session restore-start task=${state.task.id} directory=${session.directory} id=${sessionID}`,
+            )
+            const value = await sdk.client.session
+              .update({ directory: session.directory, sessionID, time: { archived: null } })
+              .then((result) => result.data)
+            if (!value) throw new Error(`Failed to restore session: ${sessionID}`)
+            console.debug(
+              `[scheduled-panel] open-session restore-success task=${state.task.id} directory=${value.directory} id=${sessionID}`,
+            )
+            return value
+          })()
+        : session
+
+      sessionTabs.restore({
+        directory: restored.directory,
+        id: restored.id,
+        title: restored.title,
+        parentID: restored.parentID,
+      })
+      console.debug(
+        `[scheduled-panel] open-session tab-restored task=${state.task.id} directory=${restored.directory} id=${sessionID}`,
+      )
+      console.debug(
+        `[scheduled-panel] open-session activation-start task=${state.task.id} directory=${restored.directory} id=${sessionID}`,
+      )
+      const result = await sessionTabs.activate({ type: "session", directory: restored.directory, id: sessionID })
+      console.debug(`[scheduled-panel] open-session completed task=${state.task.id} id=${sessionID} result=${result}`)
+      if (result !== "navigated") throw new Error(`Failed to open session: ${result}`)
+      dialog.close()
+      console.debug(`[scheduled-panel] open-session dialog-closed task=${state.task.id} id=${sessionID}`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[scheduled-panel] open-session failed task=${state.task.id} id=${sessionID} error=${message}`)
+      setState("error", message)
+    } finally {
+      openingSessionID = undefined
+    }
   }
 
   onMount(() => void load())
@@ -193,13 +254,7 @@ function ScheduledTaskDetailDialog(props: {
       action={
         <div class="flex items-center gap-2">
           <Tooltip value={language.t("scheduled.edit")}>
-            <Button
-              icon="edit"
-              size="large"
-              variant="ghost"
-              onClick={edit}
-              aria-label={language.t("scheduled.edit")}
-            >
+            <Button icon="edit" size="large" variant="ghost" onClick={edit} aria-label={language.t("scheduled.edit")}>
               {language.t("common.edit")}
             </Button>
           </Tooltip>
@@ -286,10 +341,7 @@ function ScheduledTaskDetailDialog(props: {
               <div class="mb-2 text-12-medium text-text-weak">{language.t("scheduled.prompt")}</div>
               {/* Explicit height: MarkdownEditorField uses h-full and collapses when parent has no height. */}
               <div class="max-h-80 min-h-40 overflow-y-auto rounded-xl border border-border-weak-base bg-background-base px-3 py-3 shadow-xs-border-base">
-                <Show
-                  when={state.task.prompt.trim()}
-                  fallback={<div class="text-12-regular text-text-weak">—</div>}
-                >
+                <Show when={state.task.prompt.trim()} fallback={<div class="text-12-regular text-text-weak">—</div>}>
                   <Markdown text={state.task.prompt} class="text-13-regular text-text-strong" />
                 </Show>
               </div>
@@ -317,7 +369,7 @@ function ScheduledTaskDetailDialog(props: {
                               {formatDate(run.scheduledAt)}
                             </span>
                             <Show when={sessionID()}>
-                              <Button size="small" variant="ghost" onClick={() => openSession(sessionID())}>
+                              <Button size="small" variant="ghost" onClick={() => void openSession(sessionID())}>
                                 {language.t("scheduled.openSession")}
                               </Button>
                             </Show>
@@ -360,7 +412,7 @@ function ScheduledTaskDetailDialog(props: {
             </Button>
             <Show when={state.runs.find((run) => run.sessionID)?.sessionID ?? state.task.sessionID}>
               {(sessionID) => (
-                <Button icon="speech-bubble" variant="ghost" onClick={() => openSession(sessionID())}>
+                <Button icon="speech-bubble" variant="ghost" onClick={() => void openSession(sessionID())}>
                   {language.t("scheduled.openLatestSession")}
                 </Button>
               )}
@@ -432,11 +484,7 @@ function ScheduledTaskFormDialog(props: {
 
   const agentOptions = createMemo(() => {
     const dir = directory()
-    const names = (
-      dir
-        ? globalSync.child(dir)[0].agent
-        : []
-    )
+    const names = (dir ? globalSync.child(dir)[0].agent : [])
       .filter((item) => item.mode !== "subagent" && !item.hidden)
       .map((item) => item.name)
     if (state.agent && !names.includes(state.agent)) names.unshift(state.agent)
@@ -833,11 +881,7 @@ export function ScheduledTasksPanel(props: {
     const directory = props.directory()
     if (!projectID || !directory) return
     dialog.show(() => (
-      <ScheduledTaskFormDialog
-        projectID={projectID}
-        directory={directory}
-        onSaved={() => load({ silent: true })}
-      />
+      <ScheduledTaskFormDialog projectID={projectID} directory={directory} onSaved={() => load({ silent: true })} />
     ))
   }
 

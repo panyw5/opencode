@@ -502,6 +502,38 @@ describe("session tabs coordinator", () => {
     h.dispose()
   })
 
+  test("successful activation opens a missing session tab without waiting for a route observation", async () => {
+    const h = harness({ route: { directory: "/repo", id: "current", session: true } })
+
+    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "scheduled" })).toBe(
+      "navigated",
+    )
+    expect(h.targets).toEqual([{ type: "session", directory: "/repo", id: "scheduled" }])
+    expect(h.tabs()).toEqual([{ directory: "/repo", id: "scheduled" }])
+    h.dispose()
+  })
+
+  test("failed activation does not open a missing session tab", async () => {
+    const h = harness({ route: { directory: "/repo", id: "current", session: true } })
+    h.setFailPrepare(true)
+
+    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: "scheduled" })).toBe("failed")
+    expect(h.targets).toEqual([])
+    expect(h.tabs()).toEqual([])
+    h.dispose()
+  })
+
+  test("a confirmed restore lets activation reopen an archived session tab", async () => {
+    const archived = tab("scheduled-archived")
+    const h = harness({ route: { directory: "/repo", session: true } })
+    await h.coordinator.remove(archived, "archived")
+
+    h.coordinator.restore(archived)
+    expect(await h.coordinator.activate({ type: "session", directory: "/repo", id: archived.id })).toBe("navigated")
+    expect(h.tabs()).toEqual([archived])
+    h.dispose()
+  })
+
   test("a domain selection cancels an activation before it can navigate", async () => {
     const h = harness({
       tabs: [tab("channel", "/channels/cc")],

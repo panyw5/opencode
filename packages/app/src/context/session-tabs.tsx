@@ -455,8 +455,10 @@ export function createSessionTabsCoordinator(ports: SessionTabsPorts): SessionTa
           return "superseded"
         }
         ports.navigate(target, options)
+        const opened =
+          target.type === "session" ? ensureOpen({ directory: target.directory, id: target.id }) : undefined
         console.debug(
-          `[session-tabs] navigation intent navigated token=${intent.token} source=${intent.source} target=${targetKey(target)}`,
+          `[session-tabs] navigation intent navigated token=${intent.token} source=${intent.source} target=${targetKey(target)} tab=${opened === undefined ? "n/a" : opened ? "open" : "blocked"}`,
         )
         return "navigated"
       } catch (error) {
