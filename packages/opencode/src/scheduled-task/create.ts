@@ -14,7 +14,7 @@ export const create = Effect.fn("ScheduledTask.create")(function* (input: Create
     directory: input.directory,
     name: input.name,
     scheduleKind: input.schedule.kind,
-    executionMode: input.executionMode ?? "existing_session",
+    executionMode: input.executionMode ?? "automatic_session",
     enabled: input.enabled ?? true,
   })
   const task = yield* ScheduledTaskRepository.create({ ...input, locationID })

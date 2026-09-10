@@ -414,7 +414,7 @@ export type ScheduledTask = {
   name: string
   prompt: string
   schedule: ScheduledTaskSchedule
-  executionMode: "new_session" | "existing_session"
+  executionMode: "automatic_session" | "new_session" | "existing_session"
   sessionID?: string
   agent: string
   model: {
@@ -2049,7 +2049,7 @@ export type ScheduledTaskCreateInput = {
   name: string
   prompt: string
   schedule: ScheduledTaskSchedule
-  executionMode?: "new_session" | "existing_session"
+  executionMode?: "automatic_session" | "new_session" | "existing_session"
   sessionID?: string
   agent: string
   model: {
@@ -2065,7 +2065,7 @@ export type ScheduledTaskUpdateInput = {
   name?: string
   prompt?: string
   schedule?: ScheduledTaskSchedule
-  executionMode?: "new_session" | "existing_session"
+  executionMode?: "automatic_session" | "new_session" | "existing_session"
   sessionID?: string | null
   agent?: string
   model?: {

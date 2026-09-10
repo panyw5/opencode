@@ -31,6 +31,13 @@ import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
 import { filterActiveProjects, filterTasksForActiveProjects } from "@/pages/scheduled-utils"
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
+type ExecutionMode = ScheduledTask["executionMode"]
+
+function executionModeKey(mode: ExecutionMode) {
+  if (mode === "automatic_session") return "scheduled.execution.automatic" as const
+  if (mode === "new_session") return "scheduled.execution.new" as const
+  return "scheduled.execution.existing" as const
+}
 
 type ModelOption = {
   key: string
@@ -102,7 +109,7 @@ export default function Scheduled() {
     providerID: "",
     modelID: "",
     variant: "",
-    executionMode: "existing_session" as "new_session" | "existing_session",
+    executionMode: "automatic_session" as ExecutionMode,
     sessionID: "",
     scheduleKind: "every" as ScheduleKind,
     at: "",
@@ -286,7 +293,7 @@ export default function Scheduled() {
       providerID: task?.model.providerID ?? "",
       modelID: task?.model.modelID ?? "",
       variant: task?.model.variant ?? "",
-      executionMode: task?.executionMode ?? "existing_session",
+      executionMode: task?.executionMode ?? "automatic_session",
       sessionID: task?.sessionID ?? "",
       scheduleKind: task?.schedule.kind ?? "every",
       at: task?.schedule.kind === "at" ? new Date(task.schedule.at).toISOString().slice(0, 16) : "",
@@ -359,9 +366,8 @@ export default function Scheduled() {
       modelID: state.modelID.trim(),
       variant: state.variant.trim() || undefined,
     }
-    // existing_session binds a session on first run; keep any already-bound id when editing.
-    const sessionID =
-      state.executionMode === "existing_session" ? state.sessionID.trim() || undefined : null
+    // Automatic and existing modes retain a stable source session; unrelated runs clear it.
+    const sessionID = state.executionMode !== "new_session" ? state.sessionID.trim() || undefined : null
     try {
       if (state.editing && state.selectedID) {
         await sdk.client.scheduledTask.update({
@@ -654,13 +660,9 @@ export default function Scheduled() {
                     <div class="grid gap-4">
                       <FieldLabel label={language.t("scheduled.execution")}>
                         <Select
-                          options={["existing_session", "new_session"] as const}
+                          options={["automatic_session", "existing_session", "new_session"] as const}
                           current={state.executionMode}
-                          label={(item) =>
-                            language.t(
-                              item === "new_session" ? "scheduled.execution.new" : "scheduled.execution.existing",
-                            )
-                          }
+                          label={(item) => language.t(executionModeKey(item))}
                           onSelect={(item) => item && setState("executionMode", item)}
                           class="max-w-full"
                         />
@@ -728,9 +730,7 @@ export default function Scheduled() {
               </div>
 
               <div class="mt-4 flex shrink-0 items-center justify-between gap-2 border-t border-border-weak-base pt-4">
-                <span class="text-12-regular text-text-weak">
-                  {dirty() ? "" : language.t("scheduled.saved")}
-                </span>
+                <span class="text-12-regular text-text-weak">{dirty() ? "" : language.t("scheduled.saved")}</span>
                 <div class="flex justify-end gap-2">
                   <Button
                     type="button"

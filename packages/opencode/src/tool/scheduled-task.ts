@@ -57,9 +57,9 @@ export const Parameters = Schema.Struct({
   name: Text.annotate({ description: "Short name shown in the scheduled tasks UI" }),
   prompt: Text.annotate({ description: "Prompt the agent should execute when the task runs" }),
   schedule: Schedule,
-  executionMode: Schema.optional(Schema.Literals(["existing_session", "new_session"])).annotate({
+  executionMode: Schema.optional(Schema.Literals(["automatic_session", "existing_session", "new_session"])).annotate({
     description:
-      "existing_session continues this session on every run (default); new_session creates a separate session for each run",
+      "automatic_session reuses one session until 30 runs or 1000000 tokens, then rotates and references the previous session (default); existing_session never rotates; new_session creates unrelated sessions",
   }),
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Whether the task should start enabled. Defaults to true.",
@@ -88,7 +88,7 @@ export const ScheduledTaskCreateTool = Tool.define<typeof Parameters, Metadata, 
           agent: ctx.agent,
           name: params.name,
           scheduleKind: params.schedule.kind,
-          executionMode: params.executionMode ?? "existing_session",
+          executionMode: params.executionMode ?? "automatic_session",
         })
         yield* ctx.ask({
           permission: "scheduled_task_create",
@@ -97,14 +97,14 @@ export const ScheduledTaskCreateTool = Tool.define<typeof Parameters, Metadata, 
           metadata: {
             name: params.name,
             schedule: params.schedule,
-            executionMode: params.executionMode ?? "existing_session",
+            executionMode: params.executionMode ?? "automatic_session",
           },
         })
         log.info("scheduled task tool permission granted", { sessionID: ctx.sessionID, name: params.name })
 
         const instance = yield* InstanceState.context
         const selectedModel = model(ctx)
-        const executionMode = params.executionMode ?? "existing_session"
+        const executionMode = params.executionMode ?? "automatic_session"
         log.info("scheduled task tool context resolved", {
           sessionID: ctx.sessionID,
           projectID: instance.project.id,
@@ -122,7 +122,7 @@ export const ScheduledTaskCreateTool = Tool.define<typeof Parameters, Metadata, 
             prompt: params.prompt,
             schedule: params.schedule,
             executionMode,
-            sessionID: executionMode === "existing_session" ? ctx.sessionID : undefined,
+            sessionID: executionMode === "new_session" ? undefined : ctx.sessionID,
             agent: ctx.agent,
             model: selectedModel,
             enabled: params.enabled,
@@ -226,9 +226,9 @@ const UpdateParameters = Schema.Struct({
     description: "New prompt the agent should execute when the task runs",
   }),
   schedule: Schema.optional(Schedule),
-  executionMode: Schema.optional(Schema.Literals(["existing_session", "new_session"])).annotate({
+  executionMode: Schema.optional(Schema.Literals(["automatic_session", "existing_session", "new_session"])).annotate({
     description:
-      "existing_session continues this session on every run (default); new_session creates a separate session for each run",
+      "automatic_session reuses one session until 30 runs or 1000000 tokens, then rotates and references the previous session (default); existing_session never rotates; new_session creates unrelated sessions",
   }),
   model: Schema.optional(Model).annotate({
     description: "New model and optional reasoning or thinking intensity used when the task runs",
@@ -290,7 +290,7 @@ export const ScheduledTaskUpdateTool = Tool.define<typeof UpdateParameters, { ta
         const existing = yield* ScheduledTaskRepository.get(taskID)
         if (!existing) return notFoundOutput(params.taskID, { task: null })
         const sessionID =
-          params.executionMode === "existing_session"
+          params.executionMode === "existing_session" || params.executionMode === "automatic_session"
             ? ctx.sessionID
             : params.executionMode === "new_session"
               ? null

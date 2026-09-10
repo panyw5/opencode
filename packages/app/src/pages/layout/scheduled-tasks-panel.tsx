@@ -258,11 +258,7 @@ function ScheduledTaskDetailDialog(props: {
                 />
                 <Detail
                   label={language.t("scheduled.execution")}
-                  value={language.t(
-                    state.task.executionMode === "new_session"
-                      ? "scheduled.execution.new"
-                      : "scheduled.execution.existing",
-                  )}
+                  value={language.t(executionModeKey(state.task.executionMode))}
                 />
                 <Detail
                   label={language.t("scheduled.lastStatus")}
@@ -381,6 +377,13 @@ function ScheduledTaskDetailDialog(props: {
 }
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
+type ExecutionMode = ScheduledTask["executionMode"]
+
+function executionModeKey(mode: ExecutionMode) {
+  if (mode === "automatic_session") return "scheduled.execution.automatic" as const
+  if (mode === "new_session") return "scheduled.execution.new" as const
+  return "scheduled.execution.existing" as const
+}
 
 type ModelOption = {
   key: string
@@ -410,7 +413,7 @@ function ScheduledTaskFormDialog(props: {
     providerID: task?.model.providerID ?? "",
     modelID: task?.model.modelID ?? "",
     variant: task?.model.variant ?? "",
-    executionMode: task?.executionMode ?? ("existing_session" as "new_session" | "existing_session"),
+    executionMode: task?.executionMode ?? ("automatic_session" as ExecutionMode),
     sessionID: task?.sessionID ?? "",
     scheduleKind: task?.schedule.kind ?? ("every" as ScheduleKind),
     at: task?.schedule.kind === "at" ? new Date(task.schedule.at).toISOString().slice(0, 16) : "",
@@ -537,9 +540,8 @@ function ScheduledTaskFormDialog(props: {
       modelID: state.modelID.trim(),
       variant: state.variant.trim() || undefined,
     }
-    // existing_session binds a session on first run; keep any already-bound id when editing.
-    const sessionID =
-      state.executionMode === "existing_session" ? state.sessionID.trim() || undefined : null
+    // Automatic and existing modes retain a stable source session; unrelated runs clear it.
+    const sessionID = state.executionMode !== "new_session" ? state.sessionID.trim() || undefined : null
     try {
       if (task) {
         await sdk.client.scheduledTask.update({
@@ -669,11 +671,9 @@ function ScheduledTaskFormDialog(props: {
               <div class="grid gap-4">
                 <FieldLabel label={language.t("scheduled.execution")}>
                   <Select
-                    options={["existing_session", "new_session"] as const}
+                    options={["automatic_session", "existing_session", "new_session"] as const}
                     current={state.executionMode}
-                    label={(item) =>
-                      language.t(item === "new_session" ? "scheduled.execution.new" : "scheduled.execution.existing")
-                    }
+                    label={(item) => language.t(executionModeKey(item))}
                     onSelect={(item) => item && setState("executionMode", item)}
                     class="max-w-full"
                   />

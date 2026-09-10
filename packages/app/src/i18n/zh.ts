@@ -69,6 +69,7 @@ export const dict = {
   "scheduled.modelID": "Model ID",
   "scheduled.variant": "Variant",
   "scheduled.execution": "会话模式",
+  "scheduled.execution.automatic": "复用并自动轮换（30 轮或 100 万 token，推荐）",
   "scheduled.execution.new": "每次运行创建新会话",
   "scheduled.execution.existing": "始终复用同一会话",
   "scheduled.sessionID": "Session ID",

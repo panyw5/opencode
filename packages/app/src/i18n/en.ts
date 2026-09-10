@@ -86,6 +86,7 @@ export const dict = {
   "scheduled.modelID": "Model ID",
   "scheduled.variant": "Variant",
   "scheduled.execution": "Session mode",
+  "scheduled.execution.automatic": "Reuse; rotate at 30 runs or 1M tokens (recommended)",
   "scheduled.execution.new": "New session for each run",
   "scheduled.execution.existing": "Reuse one session for all runs",
   "scheduled.sessionID": "Session ID",

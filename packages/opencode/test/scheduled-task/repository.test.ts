@@ -402,6 +402,7 @@ describe("ScheduledTaskRepository", () => {
     )
     await Effect.runPromise(ScheduledTaskRepository.advance(recurring, now + 1_000, now + 3_500))
     const advanced = await Effect.runPromise(ScheduledTaskRepository.get(recurring.id))
+    expect(advanced?.executionMode).toBe("automatic_session")
     expect(advanced?.nextRunAt).toBe(now + 4_000)
   })
 

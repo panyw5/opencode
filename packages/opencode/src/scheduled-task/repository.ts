@@ -1,4 +1,4 @@
-import { Database, and, asc, desc, eq, gt, inArray, isNull, lt, or } from "@/storage/db"
+import { Database, and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "@/storage/db"
 import { Effect, Schema } from "effect"
 import { ProjectID, type LocationID } from "@/project/schema"
 import type { SessionID } from "@/session/schema"
@@ -38,7 +38,7 @@ export function create(input: CreateInput & { locationID?: LocationID }, now = D
       name: input.name,
       prompt: input.prompt,
       ...scheduleToRow(input.schedule),
-      execution_mode: input.executionMode ?? "existing_session",
+      execution_mode: input.executionMode ?? "automatic_session",
       session_id: input.sessionID,
       agent: input.agent,
       model: input.model,
@@ -146,6 +146,28 @@ export function listRuns(id: ScheduledTaskID, limit = 100): Effect.Effect<Run[]>
         .limit(limit)
         .all(),
     ).map(runFromRow),
+  )
+}
+
+export function getRun(id: ScheduledTaskRunID): Effect.Effect<Run | undefined> {
+  return Effect.sync(() => {
+    const row = Database.use((db) =>
+      db.select().from(ScheduledTaskRunTable).where(eq(ScheduledTaskRunTable.id, id)).get(),
+    )
+    return row ? runFromRow(row) : undefined
+  })
+}
+
+export function countRunsBySession(taskID: ScheduledTaskID, sessionID: SessionID): Effect.Effect<number> {
+  return Effect.sync(() =>
+    Database.use(
+      (db) =>
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(ScheduledTaskRunTable)
+          .where(and(eq(ScheduledTaskRunTable.task_id, taskID), eq(ScheduledTaskRunTable.session_id, sessionID)))
+          .get()?.count ?? 0,
+    ),
   )
 }
 

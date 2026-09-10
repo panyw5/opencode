@@ -66,7 +66,7 @@ const context = Effect.fn("ScheduledTaskToolTest.context")(function* (ask: Tool.
 })
 
 describe("tool.scheduled_task_create", () => {
-  it.instance("creates a task from the active project, session, agent, and model", () =>
+  it.instance("creates an automatic task from the active project, session, agent, and model by default", () =>
     Effect.gen(function* () {
       const info = yield* ScheduledTaskCreateTool
       const tool = yield* info.init()
@@ -82,7 +82,6 @@ describe("tool.scheduled_task_create", () => {
           name: "Hourly review",
           prompt: "Review the current project",
           schedule: { kind: "every", interval: 3_600_000 },
-          executionMode: "existing_session",
         },
         ctx,
       )
@@ -96,6 +95,7 @@ describe("tool.scheduled_task_create", () => {
       expect(requests[0]?.permission).toBe("scheduled_task_create")
       expect(task.directory).toBe(session.directory)
       expect(task.projectID).toBe(session.projectID)
+      expect(task.executionMode).toBe("automatic_session")
       expect(task.sessionID).toBe(session.id)
       expect(task.agent).toBe("build")
       expect(task.model).toEqual({ providerID: "test", modelID: "test-model", variant: "fast" })

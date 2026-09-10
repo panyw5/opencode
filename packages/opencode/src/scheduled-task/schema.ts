@@ -37,7 +37,7 @@ export const Schedule = Schema.Union([
 ]).annotate({ identifier: "ScheduledTaskSchedule" })
 export type Schedule = Types.DeepMutable<Schema.Schema.Type<typeof Schedule>>
 
-export const ExecutionMode = Schema.Literals(["new_session", "existing_session"])
+export const ExecutionMode = Schema.Literals(["automatic_session", "new_session", "existing_session"])
 export type ExecutionMode = Schema.Schema.Type<typeof ExecutionMode>
 
 export const Status = Schema.Literals(["pending", "retrying", "running", "ok", "error", "skipped", "missed"])

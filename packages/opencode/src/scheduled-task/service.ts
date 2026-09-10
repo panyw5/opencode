@@ -20,6 +20,8 @@ import { ScheduledTaskCreate } from "./create"
 import { Event } from "./event"
 import { markScheduledSessionTitle } from "./title"
 import { ScheduledTaskUnattended } from "./unattended"
+import { ScheduledTaskPrompt } from "./prompt"
+import { ScheduledTaskRotation } from "./rotation"
 
 const log = Log.create({ service: "scheduled-task" })
 
@@ -148,26 +150,95 @@ export const layer = Layer.effect(
             if (projectMismatch || locationMismatch) log.warn("scheduled task identity mismatch", identity)
             else log.info("scheduled task project identity resolved", identity)
             return yield* Effect.gen(function* () {
-              let sessionID = task.executionMode === "existing_session" ? task.sessionID : run.sessionID
+              let previousSessionID: SessionID | undefined
+              let sessionID = run.sessionID
+              let reusedSession = sessionID !== undefined
+
               if (task.executionMode === "existing_session") {
-                // Bind a durable session on first run so the user never types a session ID.
-                if (!sessionID) {
-                  if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
-                  const session = yield* sessions.create({
-                    title: markScheduledSessionTitle(task.name),
-                    agent: task.agent,
-                    model: {
-                      id: ModelID.make(task.model.modelID),
-                      providerID: ProviderID.make(task.model.providerID),
-                      variant: task.model.variant,
-                    },
-                  })
-                  sessionID = session.id
-                  yield* ScheduledTaskRepository.update(task.id, { sessionID })
-                  log.info("scheduled task durable session created", { taskID: task.id, runID: run.id, sessionID })
+                sessionID = task.sessionID
+                reusedSession = sessionID !== undefined
+              }
+
+              if (task.executionMode === "automatic_session" && !sessionID && task.sessionID) {
+                const current = yield* sessions.get(task.sessionID).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                const runs = yield* ScheduledTaskRepository.countRunsBySession(task.id, task.sessionID)
+                const rotation = ScheduledTaskRotation.evaluate({ runs, tokens: current?.tokens })
+                log.info("scheduled task automatic rotation evaluated", {
+                  taskID: task.id,
+                  runID: run.id,
+                  sessionID: task.sessionID,
+                  sessionFound: current !== undefined,
+                  runs: rotation.runs,
+                  tokens: rotation.tokens,
+                  maxRuns: ScheduledTaskRotation.MAX_RUNS_PER_SESSION,
+                  maxTokens: ScheduledTaskRotation.MAX_TOKENS_PER_SESSION,
+                  rotate: rotation.rotate,
+                  reason: rotation.reason,
+                })
+                if (current && !rotation.rotate) {
+                  sessionID = task.sessionID
+                  reusedSession = true
+                } else if (current) {
+                  previousSessionID = task.sessionID
                 }
+              } else if (
+                task.executionMode === "automatic_session" &&
+                sessionID &&
+                task.sessionID &&
+                sessionID !== task.sessionID
+              ) {
+                // A recovered rotation keeps the old task pointer until the new
+                // session finishes, so the previous reference remains available.
+                previousSessionID = task.sessionID
+              }
+
+              if (!sessionID) {
+                if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
+                const title =
+                  task.executionMode === "existing_session"
+                    ? task.name
+                    : `${task.name} · ${new Date(run.scheduledAt).toLocaleString()}`
+                const session = yield* sessions.create({
+                  title: markScheduledSessionTitle(title),
+                  agent: task.agent,
+                  model: {
+                    id: ModelID.make(task.model.modelID),
+                    providerID: ProviderID.make(task.model.providerID),
+                    variant: task.model.variant,
+                  },
+                })
+                sessionID = session.id
+                log.info("scheduled task execution session created", {
+                  taskID: task.id,
+                  runID: run.id,
+                  executionMode: task.executionMode,
+                  sessionID,
+                  previousSessionID,
+                })
+                if (task.executionMode === "existing_session") {
+                  yield* ScheduledTaskRepository.update(task.id, { sessionID })
+                  log.info("scheduled task durable session bound", { taskID: task.id, runID: run.id, sessionID })
+                }
+              } else {
+                log.info("scheduled task execution session selected", {
+                  taskID: task.id,
+                  runID: run.id,
+                  executionMode: task.executionMode,
+                  sessionID,
+                  recovered: run.sessionID !== undefined,
+                })
+              }
+
+              if (reusedSession && task.executionMode !== "new_session") {
                 for (let attempt = run.attempt; attempt <= MAX_BUSY_RETRIES; attempt++) {
                   const current = yield* statuses.get(sessionID)
+                  log.info("scheduled task reusable session status checked", {
+                    taskID: task.id,
+                    runID: run.id,
+                    sessionID,
+                    attempt,
+                    status: current.type,
+                  })
                   if (current.type === "idle") break
                   if (attempt === MAX_BUSY_RETRIES) return { status: "skipped" as const, sessionID }
                   yield* ScheduledTaskRepository.retry({
@@ -183,21 +254,6 @@ export const layer = Layer.effect(
                     leaseUntil: Date.now() + LEASE_MS,
                   })
                 }
-              } else if (!sessionID) {
-                if (!(yield* agents.get(task.agent))) throw new Error(`Agent not found: ${task.agent}`)
-                const session = yield* sessions.create({
-                  title: markScheduledSessionTitle(`${task.name} · ${new Date(run.scheduledAt).toLocaleString()}`),
-                  agent: task.agent,
-                  model: {
-                    id: ModelID.make(task.model.modelID),
-                    providerID: ProviderID.make(task.model.providerID),
-                    variant: task.model.variant,
-                  },
-                })
-                sessionID = session.id
-                log.info("scheduled task occurrence session created", { taskID: task.id, runID: run.id, sessionID })
-              } else {
-                log.info("scheduled task occurrence session recovered", { taskID: task.id, runID: run.id, sessionID })
               }
 
               if (run.sessionID !== sessionID) {
@@ -216,7 +272,14 @@ export const layer = Layer.effect(
 
               // Collapsible "计划任务注入提示词" via shared InjectedPrompt UI
               // (synthetic + metadata.kind = scheduled-injection).
-              log.info("scheduled task prompt dispatch started", { taskID: task.id, runID: run.id, sessionID })
+              const prompt = ScheduledTaskPrompt.injectedPrompt({ prompt: task.prompt, previousSessionID })
+              log.info("scheduled task prompt dispatch started", {
+                taskID: task.id,
+                runID: run.id,
+                sessionID,
+                previousSessionID,
+                promptLength: prompt.length,
+              })
               yield* prompts.prompt({
                 sessionID,
                 agent: task.agent,
@@ -228,17 +291,27 @@ export const layer = Layer.effect(
                 parts: [
                   {
                     type: "text" as const,
-                    text: task.prompt,
+                    text: prompt,
                     synthetic: true,
                     metadata: {
                       kind: "scheduled-injection",
                       taskID: task.id,
                       taskName: task.name,
+                      previousSessionID,
                     },
                   },
                 ],
               })
               log.info("scheduled task prompt dispatch completed", { taskID: task.id, runID: run.id, sessionID })
+              if (task.executionMode === "automatic_session" && task.sessionID !== sessionID) {
+                yield* ScheduledTaskRepository.update(task.id, { sessionID })
+                log.info("scheduled task automatic session pointer advanced", {
+                  taskID: task.id,
+                  runID: run.id,
+                  previousSessionID: task.sessionID,
+                  sessionID,
+                })
+              }
               return { status: "ok" as const, sessionID }
             }).pipe(Effect.provideService(ScheduledTaskUnattended.ContextRef, true))
           }),
@@ -283,9 +356,20 @@ export const layer = Layer.effect(
         return
       }
       const error = formatCause(exit.cause)
-      log.error("scheduled task execution failed", { taskID: task.id, runID: run.id, error })
-      // Keep any session already bound to the task so the UI can still open it.
-      yield* complete(task, run.id, "error", { error, sessionID: task.sessionID })
+      const persistedRun = yield* ScheduledTaskRepository.getRun(run.id)
+      const sessionID = persistedRun?.sessionID ?? task.sessionID
+      log.error("scheduled task execution failed", { taskID: task.id, runID: run.id, sessionID, error })
+      if (task.executionMode === "automatic_session" && sessionID && task.sessionID !== sessionID) {
+        yield* ScheduledTaskRepository.update(task.id, { sessionID })
+        log.info("scheduled task automatic session pointer advanced after failure", {
+          taskID: task.id,
+          runID: run.id,
+          previousSessionID: task.sessionID,
+          sessionID,
+        })
+      }
+      // Keep the run-bound session so the UI can inspect partial output and errors.
+      yield* complete(task, run.id, "error", { error, sessionID })
     })
 
     const startOccurrence = Effect.fn("ScheduledTask.startOccurrence")(function* (
