@@ -104,6 +104,36 @@ export function captureVirtualViewportAnchor(
   }
 }
 
+/**
+ * Capture the first visible row after a row whose measured height may grow.
+ * Anchoring inside the growing row cannot protect following content because
+ * its top stays fixed while its bottom moves; a visible successor can.
+ */
+export function captureVisibleSuccessorAnchor(
+  root: Pick<HTMLElement, "scrollTop" | "clientHeight">,
+  items: ReadonlyArray<VirtualAnchorItem>,
+  afterKey: string,
+  programmaticDelta = 0,
+): ViewportAnchor | undefined {
+  const top = root.scrollTop
+  const bottom = top + root.clientHeight
+  let after = false
+  for (const item of items) {
+    if (!after) {
+      if (String(item.key) === afterKey) after = true
+      continue
+    }
+    if (item.start >= bottom) return
+    if (item.start + item.size <= top) continue
+    return {
+      key: String(item.key),
+      offset: item.start - top,
+      scrollTop: top,
+      programmaticDelta,
+    }
+  }
+}
+
 /** Fraction of the viewport height treated as the user's reading line. */
 export const READING_LINE_RATIO = 0.5
 
@@ -316,20 +346,9 @@ export function shouldCommitVirtualRowHeight(input: {
   return input.next + 0.5 >= input.previous
 }
 
-/** Non-live overscan rows can keep their cached size until native fast scrolling settles. */
-export function shouldDeferFastRowMeasurement(input: {
-  fast: boolean
-  animated?: boolean
-  live: boolean
-  next: number
-  previous: number
-}) {
-  // Smooth-wheel scrolling spans many synthetic scroll frames. Deferring a
-  // growth until that animation ends loses the reading anchor captured when
-  // the real height first arrived, so a later commit can push the following
-  // message offscreen. Shrinks keep the existing fast-scroll protection.
-  const animatedGrowth = input.animated && input.next > input.previous + 0.5
-  return input.fast && !animatedGrowth && !input.live && Math.abs(input.next - input.previous) > 0.5
+/** Non-live overscan rows can keep their cached size until fast scrolling settles. */
+export function shouldDeferFastRowMeasurement(input: { fast: boolean; live: boolean; next: number; previous: number }) {
+  return input.fast && !input.live && Math.abs(input.next - input.previous) > 0.5
 }
 
 /** Text and reasoning rows share the deferred Markdown renderer. */

@@ -67,6 +67,7 @@ import { markSessionProfile } from "@/utils/session-profile"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
 import {
   captureVirtualViewportAnchor,
+  captureVisibleSuccessorAnchor,
   heightFromResizeObserverEntry,
   markdownMeasurementPending,
   READING_LINE_RATIO,
@@ -485,7 +486,7 @@ export function MessageTimeline(props: {
   const elementRowKey = new WeakMap<HTMLElement, string>()
   let mounted = true
   const pendingNearBottomShrinks = new Map<number, { key: string; size: number }>()
-  const deferredFastMeasurements = new Map<number, { key: string; size: number }>()
+  const deferredFastMeasurements = new Map<number, { key: string; size: number; anchor?: ViewportAnchor }>()
   let deferredFastMeasurementTimer: number | undefined
   const observerMeasurements = new Map<string, { element: HTMLElement; size: number }>()
   let observerMeasurementFrame: number | undefined
@@ -1024,6 +1025,24 @@ export function MessageTimeline(props: {
     if (!currentRow) return
     timelineRowCache.setMeasured(rowKey, size, rowContentVersion(currentRow, getMessagePart), estimatorWidth())
   }
+  const captureDeferredGrowthAnchors = (root: HTMLDivElement, source: "scroll" | "flush") => {
+    if (deferredFastMeasurements.size === 0) return
+    const items = snapshotVirtualItems(virtualizer.measurementsCache)
+    for (const [index, pending] of deferredFastMeasurements) {
+      if (pending.anchor) continue
+      const current = virtualizer.measurementsCache[index]
+      if (!current || String(current.key) !== pending.key || pending.size <= current.size + 0.5) continue
+      const anchor = captureVisibleSuccessorAnchor(root, items.items, pending.key, programmaticScrollDelta)
+      if (!anchor) continue
+      deferredFastMeasurements.set(index, { ...pending, anchor })
+      if (lagging()) {
+        timelineLag(
+          "deferred-growth-anchor",
+          `phase=late-capture source=${source} index=${index} row=${pending.key} key=${anchor.key} offset=${Math.round(anchor.offset)} top=${Math.round(root.scrollTop)}`,
+        )
+      }
+    }
+  }
   const scheduleDeferredFastMeasurementFlush = () => {
     if (deferredFastMeasurementTimer !== undefined) window.clearTimeout(deferredFastMeasurementTimer)
     deferredFastMeasurementTimer = window.setTimeout(() => {
@@ -1032,7 +1051,23 @@ export function MessageTimeline(props: {
         scheduleDeferredFastMeasurementFlush()
         return
       }
-      for (const [index, pending] of deferredFastMeasurements) {
+      const root = listRoot()
+      if (root) captureDeferredGrowthAnchors(root, "flush")
+      const pendingEntries = [...deferredFastMeasurements.entries()]
+      const knownItems = snapshotVirtualItems(virtualizer.measurementsCache).byKey
+      const savedAnchor = pendingEntries
+        .map(([, pending]) => pending.anchor)
+        .find((anchor) => anchor && knownItems.has(anchor.key))
+      if (savedAnchor) {
+        readingAnchor = savedAnchor
+        if (lagging()) {
+          timelineLag(
+            "deferred-growth-anchor",
+            `phase=restore key=${savedAnchor.key} offset=${Math.round(savedAnchor.offset)} capturedTop=${Math.round(savedAnchor.scrollTop)} currentTop=${Math.round(listRoot()?.scrollTop ?? 0)}`,
+          )
+        }
+      }
+      for (const [index, pending] of pendingEntries) {
         const current = virtualizer.measurementsCache[index]
         deferredFastMeasurements.delete(index)
         if (!current || String(current.key) !== pending.key) continue
@@ -1395,6 +1430,7 @@ export function MessageTimeline(props: {
     // user scroll event arrives.
     if (isProgrammaticScrollActive()) return
     refreshUserScrollAnchors(root, geometry.scrollTop)
+    captureDeferredGrowthAnchors(root, "scroll")
     if (!props.hasScrollGesture()) {
       props.onHistoryScroll(geometry.scrollTop)
       return
@@ -1826,21 +1862,40 @@ export function MessageTimeline(props: {
       // A fresh valid observation supersedes either deferred queue. Without
       // this, reopening a row after a deferred collapse can leave the old
       // shrink armed and apply it later when the user scrolls.
+      const previousDeferred = deferredFastMeasurements.get(item().index)
       deferredFastMeasurements.delete(item().index)
       pendingNearBottomShrinks.delete(item().index)
-      const animatedWheel = smoothWheelTarget !== undefined
       const fast = fastScrolling()
-      if (lagging() && animatedWheel && fast && !live && raw > virtual + 0.5) {
-        timelineLag(
-          "wheel-smooth-measure-commit",
-          `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} top=${Math.round(root?.scrollTop ?? 0)} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"}`,
-        )
-      }
-      if (shouldDeferFastRowMeasurement({ fast, animated: animatedWheel, live, next: raw, previous: virtual })) {
-        deferredFastMeasurements.set(item().index, { key: input.rowKey, size: raw })
+      const growthAnchor =
+        root && raw > virtual + 0.5
+          ? captureVisibleSuccessorAnchor(
+              root,
+              snapshotVirtualItems(virtualizer.measurementsCache).items,
+              input.rowKey,
+              programmaticScrollDelta,
+            )
+          : undefined
+      if (shouldDeferFastRowMeasurement({ fast, live, next: raw, previous: virtual })) {
+        const anchor = previousDeferred?.anchor ?? growthAnchor
+        deferredFastMeasurements.set(item().index, { key: input.rowKey, size: raw, anchor })
+        if (lagging() && anchor) {
+          timelineLag(
+            "deferred-growth-anchor",
+            `phase=capture index=${item().index} row=${input.rowKey} key=${anchor.key} offset=${Math.round(anchor.offset)} top=${Math.round(root?.scrollTop ?? 0)}`,
+          )
+        }
         setContentHeight(Math.min(raw, virtual))
         scheduleDeferredFastMeasurementFlush()
         return virtual
+      }
+      if (growthAnchor) {
+        readingAnchor = growthAnchor
+        if (lagging()) {
+          timelineLag(
+            "growth-anchor",
+            `index=${item().index} row=${input.rowKey} key=${growthAnchor.key} offset=${Math.round(growthAnchor.offset)} top=${Math.round(root?.scrollTop ?? 0)}`,
+          )
+        }
       }
       const totalSize = virtualizer.getTotalSize()
       const wouldClampScroll =

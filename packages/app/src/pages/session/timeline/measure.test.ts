@@ -3,6 +3,7 @@ import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
 import {
   captureReadingAnchor,
   captureVirtualViewportAnchor,
+  captureVisibleSuccessorAnchor,
   captureViewportAnchor,
   heightFromResizeObserverEntry,
   partMeasurementKey,
@@ -158,6 +159,34 @@ test("returns no reading anchor when every mounted row sits above the line", () 
   above.getBoundingClientRect = rectOf(0, 300)
 
   expect(captureReadingAnchor(root, [above])).toBeUndefined()
+})
+
+test("captures a visible successor so growth cannot push it down", () => {
+  const root = { scrollTop: 1000, clientHeight: 800 }
+  const anchor = captureVisibleSuccessorAnchor(
+    root,
+    [
+      { key: "growing", start: 700, size: 500 },
+      { key: "gap", start: 1200, size: 24 },
+      { key: "message", start: 1224, size: 112 },
+    ],
+    "growing",
+    42,
+  )
+  expect(anchor).toEqual({ key: "gap", offset: 200, scrollTop: 1000, programmaticDelta: 42 })
+})
+
+test("does not anchor a successor below the viewport", () => {
+  expect(
+    captureVisibleSuccessorAnchor(
+      { scrollTop: 1000, clientHeight: 800 },
+      [
+        { key: "growing", start: 700, size: 1100 },
+        { key: "message", start: 1800, size: 112 },
+      ],
+      "growing",
+    ),
+  ).toBeUndefined()
 })
 
 test("refreshes a scroll anchor from current virtual geometry without layout reads", () => {
@@ -457,13 +486,6 @@ test("defers non-live row measurements only during fast scrolling", () => {
   expect(shouldDeferFastRowMeasurement({ fast: false, live: false, next: 400, previous: 200 })).toBe(false)
   expect(shouldDeferFastRowMeasurement({ fast: true, live: true, next: 400, previous: 200 })).toBe(false)
   expect(shouldDeferFastRowMeasurement({ fast: true, live: false, next: 200.2, previous: 200 })).toBe(false)
-  expect(
-    shouldDeferFastRowMeasurement({ fast: true, animated: true, live: false, next: 7_696, previous: 2_502 }),
-  ).toBe(false)
-  expect(
-    shouldDeferFastRowMeasurement({ fast: true, animated: true, live: false, next: 2_502, previous: 7_696 }),
-  ).toBe(true)
-
   // A completed row may remain visible as the last row so Markdown can paint;
   // its measured height must still be allowed to shrink to the real content.
   expect(shouldCommitVirtualRowHeight({ next: 1774, previous: 2502, live: false, markdownPending: false })).toBe(true)
