@@ -2,7 +2,7 @@
 
 > A customized desktop edition based on [OpenCode](https://github.com/anomalyco/opencode)
 
-[简体中文](README.md) | English
+[简体中文](../README.md) | English
 
 This is a personal fork of **OpenCode Desktop** with significant UI polish and quality-of-life improvements. It keeps OpenCode's core capabilities intact while focusing on a better desktop interaction model and a more efficient day-to-day workflow. The `opencode` core itself is mostly unchanged due to the scope of this fork.
 
@@ -22,9 +22,9 @@ This is a personal fork of **OpenCode Desktop** with significant UI polish and q
 ### 🎨 UI Improvements
 
 <p align="center">
-  <img src="image/README/1770281547328.png" width="32%" />
-  <img src="image/README/1770281509446.png" width="32%" />
-  <img src="image/README/1770281479127.png" width="32%" />
+  <img src="../image/README/1770281547328.png" width="32%" />
+  <img src="../image/README/1770281509446.png" width="32%" />
+  <img src="../image/README/1770281479127.png" width="32%" />
 </p>
 
 #### Enhanced theming
@@ -100,9 +100,9 @@ The new configuration panel lets you edit the following directly in the GUI:
 - searchable configuration sections listing skills, plugins, and agents across all projects (v1.17.0, v1.13.20)
 
 <p align="center">
-  <img src="image/README/1774018220930.png" width="32%" />
-  <img src="image/README/1774018327446.png" width="32%" />
-  <img src="image/README/1774018439717.png" width="32%" />
+  <img src="../image/README/1774018220930.png" width="32%" />
+  <img src="../image/README/1774018327446.png" width="32%" />
+  <img src="../image/README/1774018439717.png" width="32%" />
 </p>
 
 ### ⌨️ Added shortcuts
@@ -138,7 +138,7 @@ Download the latest OpenCode Desktop build from the [releases page](https://gith
 If macOS shows an "app is damaged" warning when opening the app,
 
 <p align="center">
-  <img src="image/README/1773199311694.png" width="32%" />
+  <img src="../image/README/1773199311694.png" width="32%" />
 </p>
 
 open `Terminal` and run:
@@ -172,7 +172,7 @@ bun run --cwd packages/desktop package:mac && \
 open packages/desktop/dist
 ```
 
-> **Note**: The desktop build automatically builds and packages the CLI sidecar. See the [build notes](packages/desktop/AGENTS.md) for details.
+> **Note**: The desktop build automatically builds and packages the CLI sidecar. See the [build notes](../packages/desktop/AGENTS.md) for details.
 
 ### Development mode
 
