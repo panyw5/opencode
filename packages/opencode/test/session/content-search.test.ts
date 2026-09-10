@@ -36,6 +36,50 @@ function insertTextPart(input: { sessionID: string; messageID: string; partID: s
 
 describe("session content search index management", () => {
   it.instance(
+    "inserts fresh searchable parts without using replacement semantics",
+    () =>
+      Effect.gen(function* () {
+        yield* TestInstance
+        const session = yield* Session.use.create({ title: "fresh content search insert" })
+        insertTextPart({
+          sessionID: session.id,
+          messageID: "msg_fresh",
+          partID: "part_fresh",
+          text: "fresh searchable text",
+        })
+        Database.transaction((db) => SessionContentSearch.enable(db))
+
+        Database.transaction((db) =>
+          SessionContentSearch.insertNew(db, {
+            id: "part_fresh" as never,
+            messageID: "msg_fresh" as never,
+            sessionID: session.id,
+            type: "text",
+            text: "fresh searchable text",
+          }),
+        )
+        Database.transaction((db) =>
+          SessionContentSearch.insertNew(db, {
+            id: "part_fresh_hidden" as never,
+            messageID: "msg_fresh" as never,
+            sessionID: session.id,
+            type: "text",
+            text: "hidden text",
+            synthetic: true,
+          }),
+        )
+
+        expect(Database.use((db) => db.all(sql`SELECT part_id FROM session_content_fts`))).toEqual([
+          { part_id: "part_fresh" },
+        ])
+        expect(Database.use((db) => SessionContentSearch.progress(db))).toMatchObject({ indexed: 1, total: 1 })
+        yield* Session.use.remove(session.id)
+        Database.transaction((db) => SessionContentSearch.clear(db))
+      }),
+    { git: true },
+  )
+
+  it.instance(
     "is disabled by default and only indexes live text after enablement",
     () =>
       Effect.gen(function* () {

@@ -149,6 +149,24 @@ export function upsert(db: TxOrDb, part: MessageV2.Part) {
   }
 }
 
+// Fresh part IDs cannot have FTS rows, so do not scan the UNINDEXED part_id column.
+export function insertNew(db: TxOrDb, part: MessageV2.Part) {
+  const row = readProgressRow(db)
+  if (!row || row.enabled !== 1) return
+  const text = searchableText(part)
+  if (!text) return
+
+  db.run(sql`
+    INSERT INTO session_content_fts (part_id, message_id, session_id, text)
+    VALUES (${part.id}, ${part.messageID}, ${part.sessionID}, ${text})
+  `)
+  db.run(sql`
+    UPDATE session_content_search_progress
+    SET indexed = indexed + 1
+    WHERE id = 1 AND enabled = 1
+  `)
+}
+
 export function remove(db: TxOrDb, partID: PartID) {
   const existed =
     (db.all(sql`SELECT 1 AS ok FROM session_content_fts WHERE part_id = ${partID} LIMIT 1`)[0] as

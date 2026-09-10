@@ -875,7 +875,12 @@ export const layer: Layer.Layer<
     })
 
     const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
+      const startedAt = Date.now()
       const ctx = yield* InstanceState.context
+      log.info("fork started", {
+        sourceSessionID: input.sessionID,
+        messageID: input.messageID,
+      })
       const original = yield* get(input.sessionID)
       const title = getForkedTitle(original.title)
       const session = yield* createNext({
@@ -885,7 +890,16 @@ export const layer: Layer.Layer<
         title,
       })
       const msgs = yield* messages({ sessionID: input.sessionID })
+      log.info("fork history loaded", {
+        sourceSessionID: input.sessionID,
+        targetSessionID: session.id,
+        messages: msgs.length,
+        parts: msgs.reduce((total, msg) => total + msg.parts.length, 0),
+        duration: Date.now() - startedAt,
+      })
       const idMap = new Map<string, MessageID>()
+      let messageCount = 0
+      let partCount = 0
 
       for (const msg of msgs) {
         if (input.messageID && msg.info.id >= input.messageID) break
@@ -899,6 +913,7 @@ export const layer: Layer.Layer<
           id: newID,
           ...(parentID && { parentID }),
         })
+        messageCount++
 
         for (const part of msg.parts) {
           const p: MessageV2.Part = {
@@ -911,8 +926,16 @@ export const layer: Layer.Layer<
             p.tail_start_id = idMap.get(p.tail_start_id)
           }
           yield* updatePart(p)
+          partCount++
         }
       }
+      log.info("fork completed", {
+        sourceSessionID: input.sessionID,
+        targetSessionID: session.id,
+        messages: messageCount,
+        parts: partCount,
+        duration: Date.now() - startedAt,
+      })
       return session
     })
 
