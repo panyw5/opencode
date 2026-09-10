@@ -1,7 +1,10 @@
 Create a NEW persisting project-level task for the current workspace.
 
-A project task can be mounted onto one or more sessions.
-A project task is different from session-local checklists `todowrite`.
+A project task can be **mounted** onto one or more sessions.
+A project task is different from per-session checklists `todowrite`.
+
+## Before creating
+Think carefully: IS THE TASK A COMPLICATED, LONG-HORIZON TASK? Proceed ONLY if the answer is yes.
 
 ## File structure
 Task description in `.project-tasks/<taskID>/prd.md`
@@ -14,6 +17,7 @@ Put other task-related files in `.project-tasks/<taskID>/`
 - You work on a spin-off task that should separate from the current project task
 
 ## When NOT to use
+- NEVER create a project-task for simple, short-horizon task
 - Update/Edit/Record progress for/End currently mounted task for the session → use `project_task_update` / `todowrite`
 - Simple, short-horizon task, short todo checklist (3-5 coding steps) → use `todowrite`
 - NEVER create a duplicate project-task with near identical goal
