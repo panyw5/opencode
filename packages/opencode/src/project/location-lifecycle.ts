@@ -26,8 +26,8 @@ export class LocationDeleting extends Schema.TaggedErrorClass<LocationDeleting>(
 ) {}
 
 export class LocationDeleted extends Schema.TaggedErrorClass<LocationDeleted>()("LocationLifecycle.LocationDeleted", {
-  directory: Schema.String },
-) {}
+  directory: Schema.String,
+}) {}
 
 export class LocationBusy extends Schema.TaggedErrorClass<LocationBusy>()("LocationLifecycle.LocationBusy", {
   directory: Schema.String,
@@ -83,6 +83,7 @@ export interface Interface {
     input: {
       directory: string
       purpose: AdmissionPurpose
+      registration?: InstanceStore.LoadInput["registration"]
     },
     effect: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | AdmissionError, R>
@@ -145,18 +146,25 @@ export const lease = <A, E, R>(
  * one-shot resolution (workspace metadata, CLI bootstrap), not long-running
  * operations — use `lease` for those.
  */
-export const load = (
-  input: { directory: string; purpose: AdmissionPurpose },
-): Effect.Effect<InstanceContext, AdmissionError, InstanceStore.Service> =>
+export const load = (input: {
+  directory: string
+  purpose: AdmissionPurpose
+  registration?: InstanceStore.LoadInput["registration"]
+}): Effect.Effect<InstanceContext, AdmissionError, InstanceStore.Service> =>
   Effect.serviceOption(Service).pipe(
     Effect.flatMap((service) =>
       service._tag === "None"
-        ? InstanceStore.Service.pipe(Effect.flatMap((store) => store.load({ directory: input.directory })))
-        : service.value.provide(input, Effect.gen(function* () {
-            const ctx = yield* InstanceRef
-            if (!ctx) return yield* Effect.die(new Error("InstanceRef not provided by lifecycle provide"))
-            return ctx
-          })),
+        ? InstanceStore.Service.pipe(
+            Effect.flatMap((store) => store.load({ directory: input.directory, registration: input.registration })),
+          )
+        : service.value.provide(
+            input,
+            Effect.gen(function* () {
+              const ctx = yield* InstanceRef
+              if (!ctx) return yield* Effect.die(new Error("InstanceRef not provided by lifecycle provide"))
+              return ctx
+            }),
+          ),
     ),
   )
 
@@ -250,7 +258,11 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
       })
 
     const provide = <A, E, R>(
-      input: { directory: string; purpose: AdmissionPurpose },
+      input: {
+        directory: string
+        purpose: AdmissionPurpose
+        registration?: InstanceStore.LoadInput["registration"]
+      },
       effect: Effect.Effect<A, E, R>,
     ): Effect.Effect<A, E | AdmissionError, R> => {
       const directory = AppFileSystem.resolve(input.directory)
@@ -263,26 +275,20 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
           // recovery). Always check and update if they differ.
           const dbRow = ProjectLocation.getByDirectory(directory)
           if (dbRow) {
-            yield* SynchronizedRef.modify(
-              entry.ref,
-              (state): readonly [void, EntryState] => {
-                if (
-                  state.lifecycle === dbRow.lifecycle.state &&
-                  state.generation === dbRow.lifecycle.generation
-                ) {
-                  return [undefined, state]
-                }
-                return [
-                  undefined,
-                  {
-                    ...state,
-                    lifecycle: dbRow.lifecycle.state,
-                    generation: dbRow.lifecycle.generation,
-                    locationID: dbRow.id,
-                  },
-                ]
-              },
-            )
+            yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => {
+              if (state.lifecycle === dbRow.lifecycle.state && state.generation === dbRow.lifecycle.generation) {
+                return [undefined, state]
+              }
+              return [
+                undefined,
+                {
+                  ...state,
+                  lifecycle: dbRow.lifecycle.state,
+                  generation: dbRow.lifecycle.generation,
+                  locationID: dbRow.id,
+                },
+              ]
+            })
           }
 
           const current = yield* SynchronizedRef.get(entry.ref)
@@ -292,7 +298,9 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
 
           const admission = yield* SynchronizedRef.modify(
             entry.ref,
-            (state): readonly [
+            (
+              state,
+            ): readonly [
               { ok: true; generation: number; leases: number } | { ok: false; error: AdmissionError },
               EntryState,
             ] => {
@@ -338,9 +346,11 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
               // A failed start with no remaining leases resets to stopped so a
               // later admission may retry. A running runtime stays up when it
               // goes idle; idle disposal is scheduled below.
-              const next: RuntimeState =
-                leases === 0 && runtime.tag === "starting" ? stopped : { ...runtime, leases }
-              return [{ leases, runtimeTag: next.tag }, { ...state, runtime: next }]
+              const next: RuntimeState = leases === 0 && runtime.tag === "starting" ? stopped : { ...runtime, leases }
+              return [
+                { leases, runtimeTag: next.tag },
+                { ...state, runtime: next },
+              ]
             },
           )
 
@@ -348,7 +358,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
             if (!(yield* fs.existsSafe(directory))) {
               return yield* new LocationUnavailable({ directory })
             }
-            const ctx = yield* store.load({ directory })
+            const ctx = yield* store.load({ directory, registration: input.registration })
 
             type Mark = "started" | "already" | { readonly tag: "stale"; readonly actual: number }
             const started = yield* SynchronizedRef.modify(entry.ref, (state): readonly [Mark, EntryState] => {

@@ -74,6 +74,7 @@ export const MathMigrateCommand = cmd({
 export const MathVerifyCommand = effectCmd({
   command: "verify",
   describe: false,
+  instanceRegistration: { visibility: "internal", kind: "math" },
   directory: (args: { dir?: string }) => (args.dir ? path.resolve(process.cwd(), args.dir) : process.cwd()),
   builder: (yargs: Argv) =>
     yargs
@@ -172,6 +173,7 @@ export const MathMcpCommand = cmd({
 export const MathWorkerCommand = effectCmd({
   command: "worker",
   describe: "run a detached math-worker prompt loop (does not follow sidecar lifetime)",
+  instanceRegistration: { visibility: "internal", kind: "math" },
   directory: (args: { dir?: string }) => (args.dir ? path.resolve(process.cwd(), args.dir) : process.cwd()),
   builder: (yargs: Argv) =>
     yargs

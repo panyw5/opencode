@@ -87,6 +87,36 @@ describe("InstanceStore", () => {
     }),
   )
 
+  it.live("promotes a cached internal instance when the user explicitly opens it", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped()
+      const store = yield* InstanceStore.Service
+      let initialized = 0
+
+      yield* setBootstrap(
+        Effect.sync(() => {
+          initialized++
+        }),
+      )
+      const internal = yield* store.load({
+        directory: dir,
+        registration: { visibility: "internal", kind: "math" },
+      })
+      const visible = yield* store.load({ directory: dir })
+      const visibleAgain = yield* store.load({ directory: dir })
+      const internalAgain = yield* store.load({
+        directory: dir,
+        registration: { visibility: "internal", kind: "math" },
+      })
+
+      expect(internal.project.visibility).toBe("internal")
+      expect(visible.project.visibility).toBe("user")
+      expect(visibleAgain.project.visibility).toBe("user")
+      expect(internalAgain.project.visibility).toBe("user")
+      expect(initialized).toBe(1)
+    }),
+  )
+
   it.live("dedupes Windows slash, drive-case, and trailing-slash aliases", () =>
     Effect.gen(function* () {
       if (localPathContext.platform !== "win32") return

@@ -10,6 +10,10 @@ export const ProjectTable = sqliteTable("project", {
   icon_url: text(),
   icon_url_override: text(),
   icon_color: text(),
+  visibility: text({ enum: ["user", "internal"] })
+    .notNull()
+    .default("user"),
+  project_kind: text({ enum: ["math"] }),
   ...Timestamps,
   time_initialized: integer(),
   sandboxes: text({ mode: "json" }).notNull().$type<string[]>(),

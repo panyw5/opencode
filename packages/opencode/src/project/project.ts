@@ -32,6 +32,13 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 const log = Log.create({ service: "project" })
 
 const ProjectVcs = Schema.Literal("git")
+const ProjectVisibility = Schema.Literals(["user", "internal"])
+const ProjectKind = Schema.Literal("math")
+
+export type Registration = {
+  visibility?: "user" | "internal"
+  kind?: "math"
+}
 
 const ProjectIcon = Schema.Struct({
   url: optionalOmitUndefined(Schema.String),
@@ -58,6 +65,8 @@ export const Info = Schema.Struct({
   name: optionalOmitUndefined(Schema.String),
   icon: optionalOmitUndefined(ProjectIcon),
   commands: optionalOmitUndefined(ProjectCommands),
+  visibility: ProjectVisibility,
+  kind: optionalOmitUndefined(ProjectKind),
   time: ProjectTime,
   sandboxes: Schema.Array(Schema.String),
 }).annotate({ identifier: "Project" })
@@ -107,12 +116,7 @@ export function claimLegacyDirectory(input: {
           location_id: input.locationID,
           time_updated: SessionTable.time_updated,
         })
-        .where(
-          and(
-            directorySqlEq(SessionTable.directory, input.directory),
-            sessionOwner,
-          ),
-        )
+        .where(and(directorySqlEq(SessionTable.directory, input.directory), sessionOwner))
         .returning({ id: SessionTable.id })
         .all().length,
       scheduledTasks: db
@@ -122,23 +126,13 @@ export function claimLegacyDirectory(input: {
           location_id: input.locationID,
           time_updated: ScheduledTaskTable.time_updated,
         })
-        .where(
-          and(
-            directorySqlEq(ScheduledTaskTable.directory, input.directory),
-            scheduledTaskOwner,
-          ),
-        )
+        .where(and(directorySqlEq(ScheduledTaskTable.directory, input.directory), scheduledTaskOwner))
         .returning({ id: ScheduledTaskTable.id })
         .all().length,
       workspaces: db
         .update(WorkspaceTable)
         .set({ project_id: input.projectID, location_id: input.locationID })
-        .where(
-          and(
-            directorySqlEq(WorkspaceTable.directory, input.directory),
-            workspaceOwner,
-          ),
-        )
+        .where(and(directorySqlEq(WorkspaceTable.directory, input.directory), workspaceOwner))
         .returning({ id: WorkspaceTable.id })
         .all().length,
     }),
@@ -150,6 +144,7 @@ export function fromRow(row: Row): Info {
   const result: Info = {
     id: row.id,
     worktree: row.worktree,
+    visibility: row.visibility,
     time: {
       created: row.time_created,
       updated: row.time_updated,
@@ -158,6 +153,7 @@ export function fromRow(row: Row): Info {
   }
 
   if (row.vcs) result.vcs = Schema.decodeUnknownSync(ProjectVcs)(row.vcs)
+  if (row.project_kind !== null) result.kind = Schema.decodeUnknownSync(ProjectKind)(row.project_kind)
   if (row.name !== null) result.name = row.name
   if (row.commands !== null) result.commands = row.commands
   if (row.time_initialized !== null) result.time.initialized = row.time_initialized
@@ -204,7 +200,9 @@ export interface Interface {
   readonly init: () => Effect.Effect<void>
   readonly fromDirectory: (
     directory: string,
+    registration?: Registration,
   ) => Effect.Effect<{ project: Info; sandbox: string; location: ProjectLocation.Info }>
+  readonly ensureUserVisible: (id: ProjectID) => Effect.Effect<Info | undefined>
   readonly claimLegacy: () => Effect.Effect<LegacyClaimCounts>
   readonly discover: (input: Info) => Effect.Effect<void>
   readonly list: () => Effect.Effect<Info[]>
@@ -264,13 +262,15 @@ export const layer: Layer.Layer<
       Effect.sync(() => Database.use(fn))
 
     const emitUpdated = (data: Info) =>
-      Effect.sync(() =>
-        GlobalBus.emit("event", {
-          directory: "global",
-          project: data.id,
-          payload: { type: Event.Updated.type, properties: data },
-        }),
-      )
+      data.visibility === "internal"
+        ? Effect.sync(() => log.info("internal project update hidden", { projectID: data.id, kind: data.kind }))
+        : Effect.sync(() =>
+            GlobalBus.emit("event", {
+              directory: "global",
+              project: data.id,
+              payload: { type: Event.Updated.type, properties: data },
+            }),
+          )
 
     const fakeVcs = Schema.decodeUnknownSync(Schema.optional(ProjectVcs))(Flag.OPENCODE_FAKE_VCS)
 
@@ -310,10 +310,20 @@ export const layer: Layer.Layer<
       return { gitDir, commonDir, cachedID }
     })
 
-    const fromDirectory = Effect.fn("Project.fromDirectory")(function* (directory: string) {
+    const fromDirectory = Effect.fn("Project.fromDirectory")(function* (
+      directory: string,
+      registration: Registration = {},
+    ) {
       const canonicalDirectory = toLogicalPath(AppFileSystem.resolve(directory))
       const fallbackID = ProjectID.make(`dir:${Hash.fast(canonicalDirectory)}`)
-      log.info("project resolution started", { inputDirectory: directory, canonicalDirectory, fallbackID })
+      const requestedVisibility = registration.visibility ?? "user"
+      log.info("project resolution started", {
+        inputDirectory: directory,
+        canonicalDirectory,
+        fallbackID,
+        requestedVisibility,
+        requestedKind: registration.kind,
+      })
 
       // Phase 1: discover git info
       type DiscoveryResult = {
@@ -557,11 +567,13 @@ export const layer: Layer.Layer<
 
       // Phase 2: upsert
       const row = yield* db((d) => d.select().from(ProjectTable).where(eq(ProjectTable.id, data.id)).get())
-      const existing = row
+      const existing: Info = row
         ? fromRow(row)
         : {
             id: data.id,
             worktree: data.worktree,
+            visibility: requestedVisibility,
+            ...(registration.kind ? { kind: registration.kind } : {}),
             sandboxes: [] as string[],
             time: { created: Date.now(), updated: Date.now() },
           }
@@ -571,9 +583,20 @@ export const layer: Layer.Layer<
 
       const result: Info = {
         ...existing,
-        worktree: row && data.sandbox === data.worktree && row.worktree !== data.worktree ? row.worktree : data.worktree,
+        worktree:
+          row && data.sandbox === data.worktree && row.worktree !== data.worktree ? row.worktree : data.worktree,
+        // Internal runtimes may never demote a directory the user explicitly opened.
+        visibility: existing.visibility === "user" || requestedVisibility === "user" ? "user" : "internal",
+        kind: existing.kind ?? registration.kind,
         time: { ...existing.time, updated: Date.now() },
       }
+      log.info("project visibility resolved", {
+        projectID: result.id,
+        previousVisibility: row?.visibility,
+        requestedVisibility,
+        resolvedVisibility: result.visibility,
+        kind: result.kind,
+      })
       if (data.vcs) result.vcs = data.vcs
       else delete result.vcs
       if (data.sandbox !== result.worktree && !result.sandboxes.includes(data.sandbox))
@@ -599,6 +622,8 @@ export const layer: Layer.Layer<
             icon_url: result.icon?.url,
             icon_url_override: result.icon?.override,
             icon_color: result.icon?.color,
+            visibility: result.visibility,
+            project_kind: result.kind,
             time_created: result.time.created,
             time_updated: result.time.updated,
             time_initialized: result.time.initialized,
@@ -614,6 +639,8 @@ export const layer: Layer.Layer<
               icon_url: result.icon?.url,
               icon_url_override: result.icon?.override,
               icon_color: result.icon?.color,
+              visibility: result.visibility,
+              project_kind: result.kind,
               time_updated: result.time.updated,
               time_initialized: result.time.initialized,
               sandboxes: result.sandboxes,
@@ -829,8 +856,7 @@ export const layer: Layer.Layer<
       "OneDrive",
       "Google Drive",
     ]
-    const isNetworkMount = (directory: string) =>
-      NETWORK_MOUNT_MARKERS.some((marker) => directory.includes(marker))
+    const isNetworkMount = (directory: string) => NETWORK_MOUNT_MARKERS.some((marker) => directory.includes(marker))
 
     const worktreeMissing = Effect.fn("Project.worktreeMissing")(function* (directory: string) {
       const cached = missingWorktree.get(directory)
@@ -841,7 +867,9 @@ export const layer: Layer.Layer<
     })
 
     const list = Effect.fn("Project.list")(function* () {
-      const rows = yield* db((d) => d.select().from(ProjectTable).all().map(fromRow))
+      const rows = yield* db((d) =>
+        d.select().from(ProjectTable).where(eq(ProjectTable.visibility, "user")).all().map(fromRow),
+      )
       const checked = yield* Effect.forEach(
         rows,
         (info) =>
@@ -856,6 +884,25 @@ export const layer: Layer.Layer<
         { concurrency: "unbounded" },
       )
       return checked.filter((info) => info !== undefined)
+    })
+
+    const ensureUserVisible = Effect.fn("Project.ensureUserVisible")(function* (id: ProjectID) {
+      const row = yield* db((d) => d.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get())
+      if (!row) return undefined
+      if (row.visibility === "user") return fromRow(row)
+      const updated = yield* db((d) =>
+        d
+          .update(ProjectTable)
+          .set({ visibility: "user", time_updated: Date.now() })
+          .where(eq(ProjectTable.id, id))
+          .returning()
+          .get(),
+      )
+      if (!updated) return undefined
+      const info = fromRow(updated)
+      log.info("internal project promoted", { projectID: id, kind: info.kind, worktree: info.worktree })
+      yield* emitUpdated(info)
+      return info
     })
 
     const get = Effect.fn("Project.get")(function* (id: ProjectID) {
@@ -992,6 +1039,7 @@ export const layer: Layer.Layer<
     return Service.of({
       init,
       fromDirectory,
+      ensureUserVisible,
       claimLegacy,
       discover,
       list,

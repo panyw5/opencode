@@ -2,6 +2,7 @@ import type { Argv } from "yargs"
 import { Effect, Schema } from "effect"
 import { AppRuntime, NoInstanceRuntime, type AppServices, type NoInstanceServices } from "@/effect/app-runtime"
 import { LocationLifecycle } from "@/project/location-lifecycle"
+import type { InstanceStore } from "@/project/instance-store"
 import { cmd, type WithDoubleDash } from "./cmd/cmd"
 
 /**
@@ -46,6 +47,8 @@ interface EffectCmdBase<Args> {
   instance?: boolean | ((args: Args) => boolean)
   /** Defaults to process.cwd(). Override for commands that take a directory positional. */
   directory?: (args: Args) => string
+  /** Register the command's directory as an internal runtime instead of a user-facing project. */
+  instanceRegistration?: InstanceStore.LoadInput["registration"]
 }
 
 type EffectCmdOpts<Args, A, R> = EffectCmdBase<Args> & {
@@ -77,16 +80,11 @@ export function effectCmd<Args, A>(
 export function effectCmd<Args, A>(
   opts: EffectCmdBase<Args> & {
     instance?: true | ((args: Args) => boolean)
-    handler: (
-      args: WithDoubleDash<Args>,
-    ) => Effect.Effect<A, CliError, AppServices | NoInstanceServices>
+    handler: (args: WithDoubleDash<Args>) => Effect.Effect<A, CliError, AppServices | NoInstanceServices>
   },
 ): ReturnType<typeof cmd<{}, Args>>
-export function effectCmd<Args, A>(
-  opts: EffectCmdOpts<Args, A, AppServices | NoInstanceServices>,
-) {
-  return (
-  cmd<{}, Args>({
+export function effectCmd<Args, A>(opts: EffectCmdOpts<Args, A, AppServices | NoInstanceServices>) {
+  return cmd<{}, Args>({
     command: opts.command,
     aliases: opts.aliases,
     describe: opts.describe,
@@ -103,12 +101,11 @@ export function effectCmd<Args, A>(
       await AppRuntime.runPromise(
         LocationLifecycle.Service.use((lifecycle) =>
           lifecycle.provide(
-            { directory, purpose: "http-request" },
+            { directory, purpose: "http-request", registration: opts.instanceRegistration },
             opts.handler(args),
           ),
         ),
       )
     },
   })
-  )
 }

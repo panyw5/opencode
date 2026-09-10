@@ -16,6 +16,7 @@ export interface LoadInput {
   worktree?: string
   project?: Project.Info
   location?: ProjectLocation.Info
+  registration?: Project.Registration
 }
 
 export interface Interface {
@@ -73,7 +74,7 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
                 project: input.project,
                 location: input.location,
               }
-            : yield* project.fromDirectory(input.directory.native).pipe(
+            : yield* project.fromDirectory(input.directory.native, input.registration).pipe(
                 Effect.map((result) => ({
                   directory: input.directory.logical,
                   directoryKey: input.directory.identity,
@@ -93,6 +94,23 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
         cache.delete(directoryKey)
         return true
       })
+
+    const applyRegistration = Effect.fn("InstanceStore.applyRegistration")(function* (
+      ctx: InstanceContext,
+      registration?: Project.Registration,
+    ) {
+      if (registration?.visibility === "internal") {
+        const current = yield* project.get(ctx.project.id)
+        return current && current.visibility !== ctx.project.visibility ? { ...ctx, project: current } : ctx
+      }
+      if (ctx.project.visibility === "user") return ctx
+      const visible = yield* project.ensureUserVisible(ctx.project.id)
+      if (!visible) return ctx
+      yield* Effect.logInfo("instance project visibility refreshed").pipe(
+        Effect.annotateLogs({ directory: ctx.directory, projectID: ctx.project.id, kind: visible.kind }),
+      )
+      return { ...ctx, project: visible }
+    })
 
     const completeLoad = (directoryKey: PathIdentity, input: LoadInput, entry: Entry, directory: NormalizedDirectory) =>
       Effect.gen(function* () {
@@ -162,7 +180,8 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
                 workspaceKind: localPathContext.kind,
               }),
             )
-            return yield* restore(Deferred.await(existing.deferred))
+            const ctx = yield* restore(Deferred.await(existing.deferred))
+            return yield* applyRegistration(ctx, input.registration)
           }
 
           const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
@@ -181,7 +200,8 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
             )
             yield* completeLoad(directoryKey, input, entry, directory)
           }).pipe(Effect.forkIn(scope, { startImmediately: true }))
-          return yield* restore(Deferred.await(entry.deferred))
+          const ctx = yield* restore(Deferred.await(entry.deferred))
+          return yield* applyRegistration(ctx, input.registration)
         }),
       ).pipe(Effect.withSpan("InstanceStore.load"))
     }

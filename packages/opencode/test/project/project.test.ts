@@ -121,6 +121,8 @@ describe("Project.fromDirectory", () => {
       icon_url: null,
       icon_url_override: null,
       icon_color: null,
+      visibility: "user",
+      project_kind: null,
       time_created: 1,
       time_updated: 2,
       time_initialized: null,
@@ -833,6 +835,32 @@ describe("Project.update", () => {
 })
 
 describe("Project.list and Project.list with reconciliation", () => {
+  it.live("hides internal math projects and promotes them when explicitly opened", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const events: any[] = []
+      const on = (event: any) => events.push(event)
+      GlobalBus.on("event", on)
+      yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", on)))
+      const internal = yield* run((svc) => svc.fromDirectory(tmp, { visibility: "internal", kind: "math" }))
+      expect(internal.project.visibility).toBe("internal")
+      expect(internal.project.kind).toBe("math")
+      expect((yield* run((svc) => svc.list())).some((project) => project.id === internal.project.id)).toBe(false)
+      expect(events.some((event) => event.project === internal.project.id)).toBe(false)
+
+      const stillInternal = yield* run((svc) => svc.fromDirectory(tmp, { visibility: "internal", kind: "math" }))
+      expect(stillInternal.project.visibility).toBe("internal")
+
+      const visible = yield* run((svc) => svc.fromDirectory(tmp))
+      expect(visible.project.visibility).toBe("user")
+      expect((yield* run((svc) => svc.list())).some((project) => project.id === visible.project.id)).toBe(true)
+      expect(events.some((event) => event.project === visible.project.id)).toBe(true)
+
+      const cannotDemote = yield* run((svc) => svc.fromDirectory(tmp, { visibility: "internal", kind: "math" }))
+      expect(cannotDemote.project.visibility).toBe("user")
+    }),
+  )
+
   it.live("list returns all projects", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
@@ -853,7 +881,13 @@ describe("Project.list and Project.list with reconciliation", () => {
       Database.use((db) =>
         db
           .insert(ProjectTable)
-          .values({ id: ProjectID.make("dir:deleted"), worktree: gone, sandboxes: [], time_created: now, time_updated: now })
+          .values({
+            id: ProjectID.make("dir:deleted"),
+            worktree: gone,
+            sandboxes: [],
+            time_created: now,
+            time_updated: now,
+          })
           .run(),
       )
 
@@ -874,7 +908,13 @@ describe("Project.list and Project.list with reconciliation", () => {
       Database.use((db) =>
         db
           .insert(ProjectTable)
-          .values({ id: ProjectID.make("dir:offline"), worktree: offline, sandboxes: [], time_created: now, time_updated: now })
+          .values({
+            id: ProjectID.make("dir:offline"),
+            worktree: offline,
+            sandboxes: [],
+            time_created: now,
+            time_updated: now,
+          })
           .run(),
       )
 
