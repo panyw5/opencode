@@ -8,8 +8,13 @@ on:
         description: "Version to release (e.g., v1.2.1-test). Leave empty to skip release creation."
         required: false
         type: string
+      windows_run_id:
+        description: "Matching Windows workflow run ID used by the serial draft release job."
+        required: true
+        type: string
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -61,37 +66,25 @@ jobs:
           done
           test -n "$APP_PATH"
           APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          SOURCE_VERSION="$(cat ../../VERSION)"
           SIDECAR_PATH="$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}"
+          UPDATER_CONFIG="$APP_PATH/Contents/Resources/app-update.yml"
+          test -x "$SIDECAR_PATH"
+          test -f "$UPDATER_CONFIG"
           SIDECAR_VERSION="$("$SIDECAR_PATH" --version)"
-          printf 'expected version=%s\napp version=%s\nsidecar path=%s\nsidecar version=%s\nRUST_TARGET=%s\n' "$OPENCODE_VERSION" "$APP_VERSION" "$SIDECAR_PATH" "$SIDECAR_VERSION" "$RUST_TARGET"
+          printf 'expected version=%s\nsource version=%s\napp version=%s\nsidecar path=%s\nsidecar version=%s\nRUST_TARGET=%s\nupdater config=%s\n' "$OPENCODE_VERSION" "$SOURCE_VERSION" "$APP_VERSION" "$SIDECAR_PATH" "$SIDECAR_VERSION" "$RUST_TARGET" "$UPDATER_CONFIG"
+          test "$SOURCE_VERSION" = "$OPENCODE_VERSION"
           test "$APP_VERSION" = "$OPENCODE_VERSION"
           test "$SIDECAR_VERSION" = "$OPENCODE_VERSION"
+          grep -Eq '^owner:[[:space:]]*panyw5[[:space:]]*$' "$UPDATER_CONFIG"
+          grep -Eq '^repo:[[:space:]]*opencode[[:space:]]*$' "$UPDATER_CONFIG"
+          ! grep -q 'anomalyco' "$UPDATER_CONFIG"
 
       - name: Upload macOS x64 DMG
         uses: actions/upload-artifact@v4
         with:
           name: opencode-desktop-macos-x64
           path: packages/desktop/dist/OpenCode_*_x64.dmg
-
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
-        run: |
-          TAG="${APP_VERSION}"
-          ASSET="packages/desktop/dist/OpenCode_${TAG#v}_x64.dmg"
-          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" >/dev/null 2>&1 || true
-          found=0
-          for _ in $(seq 1 24); do
-            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              found=1
-              break
-            fi
-            sleep 5
-          done
-          [ "$found" = "1" ] || { echo "release $TAG was not created (waited 120 seconds)"; exit 1; }
-          gh release upload "$TAG" "$ASSET" -R "$GITHUB_REPOSITORY" --clobber
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build-macos-arm64:
     needs: build-macos-x64
@@ -143,11 +136,19 @@ jobs:
           done
           test -n "$APP_PATH"
           APP_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+          SOURCE_VERSION="$(cat ../../VERSION)"
           SIDECAR_PATH="$APP_PATH/Contents/Resources/sidecars/opencode-cli-${RUST_TARGET}"
+          UPDATER_CONFIG="$APP_PATH/Contents/Resources/app-update.yml"
+          test -x "$SIDECAR_PATH"
+          test -f "$UPDATER_CONFIG"
           SIDECAR_VERSION="$("$SIDECAR_PATH" --version)"
-          printf 'expected version=%s\napp version=%s\nsidecar path=%s\nsidecar version=%s\nRUST_TARGET=%s\n' "$OPENCODE_VERSION" "$APP_VERSION" "$SIDECAR_PATH" "$SIDECAR_VERSION" "$RUST_TARGET"
+          printf 'expected version=%s\nsource version=%s\napp version=%s\nsidecar path=%s\nsidecar version=%s\nRUST_TARGET=%s\nupdater config=%s\n' "$OPENCODE_VERSION" "$SOURCE_VERSION" "$APP_VERSION" "$SIDECAR_PATH" "$SIDECAR_VERSION" "$RUST_TARGET" "$UPDATER_CONFIG"
+          test "$SOURCE_VERSION" = "$OPENCODE_VERSION"
           test "$APP_VERSION" = "$OPENCODE_VERSION"
           test "$SIDECAR_VERSION" = "$OPENCODE_VERSION"
+          grep -Eq '^owner:[[:space:]]*panyw5[[:space:]]*$' "$UPDATER_CONFIG"
+          grep -Eq '^repo:[[:space:]]*opencode[[:space:]]*$' "$UPDATER_CONFIG"
+          ! grep -q 'anomalyco' "$UPDATER_CONFIG"
 
       - name: Upload macOS arm64 DMG
         uses: actions/upload-artifact@v4
@@ -155,22 +156,58 @@ jobs:
           name: opencode-desktop-macos-arm64
           path: packages/desktop/dist/OpenCode_*_aarch64.dmg
 
-      - name: Create Release
+  create-draft-release:
+    needs: [build-macos-x64, build-macos-arm64]
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION: ${{ inputs.version != '' && inputs.version || github.ref_name }}
+      WINDOWS_RUN_ID: ${{ inputs.windows_run_id }}
+    steps:
+      - name: Download macOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: opencode-desktop-macos-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Download matching Windows artifact
+        run: |
+          for _ in $(seq 1 120); do
+            RUN="$(gh run view "$WINDOWS_RUN_ID" -R "$GITHUB_REPOSITORY" --json event,headSha,status,conclusion,workflowName)"
+            WINDOWS_SHA="$(printf '%s' "$RUN" | jq -r '.headSha')"
+            WINDOWS_EVENT="$(printf '%s' "$RUN" | jq -r '.event')"
+            WINDOWS_WORKFLOW="$(printf '%s' "$RUN" | jq -r '.workflowName')"
+            WINDOWS_STATUS="$(printf '%s' "$RUN" | jq -r '.status')"
+            WINDOWS_CONCLUSION="$(printf '%s' "$RUN" | jq -r '.conclusion // empty')"
+            [ "$WINDOWS_SHA" = "$GITHUB_SHA" ] || { echo "Windows run head SHA mismatch: $WINDOWS_SHA != $GITHUB_SHA"; exit 1; }
+            [ "$WINDOWS_EVENT" = "workflow_dispatch" ] || { echo "Windows run event mismatch: $WINDOWS_EVENT"; exit 1; }
+            [ "$WINDOWS_WORKFLOW" = "Build Windows Desktop" ] || { echo "Windows workflow mismatch: $WINDOWS_WORKFLOW"; exit 1; }
+            if [ "$WINDOWS_STATUS" = "completed" ]; then
+              [ "$WINDOWS_CONCLUSION" = "success" ] || { echo "matching Windows run $WINDOWS_RUN_ID failed: $WINDOWS_CONCLUSION"; exit 1; }
+              break
+            fi
+            sleep 30
+          done
+          [ "$WINDOWS_STATUS" = "completed" ] && [ "$WINDOWS_CONCLUSION" = "success" ] || { echo "matching successful Windows run did not complete in time"; exit 1; }
+          printf 'windows run id=%s\nwindows head sha=%s\n' "$WINDOWS_RUN_ID" "$WINDOWS_SHA"
+          mkdir -p release-assets/windows
+          gh run download "$WINDOWS_RUN_ID" -R "$GITHUB_REPOSITORY" -n opencode-desktop-windows-x64 -D release-assets/windows
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create draft release
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
         run: |
           TAG="${APP_VERSION}"
-          ASSET="packages/desktop/dist/OpenCode_${TAG#v}_aarch64.dmg"
-          gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" >/dev/null 2>&1 || true
-          found=0
-          for _ in $(seq 1 24); do
-            if gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              found=1
-              break
-            fi
-            sleep 5
-          done
-          [ "$found" = "1" ] || { echo "release $TAG was not created (waited 120 seconds)"; exit 1; }
-          gh release upload "$TAG" "$ASSET" -R "$GITHUB_REPOSITORY" --clobber
+          VERSION="${TAG#v}"
+          X64="release-assets/OpenCode_${VERSION}_x64.dmg"
+          ARM64="release-assets/OpenCode_${VERSION}_aarch64.dmg"
+          WINDOWS="release-assets/windows/OpenCode_${VERSION}_x64-setup.exe"
+          test -f "$X64"
+          test -f "$ARM64"
+          test -f "$WINDOWS"
+          printf 'release target=%s\nx64 asset=%s\narm64 asset=%s\nwindows asset=%s\n' "$GITHUB_SHA" "$X64" "$ARM64" "$WINDOWS"
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" "$X64" "$ARM64" "$WINDOWS"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

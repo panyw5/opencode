@@ -147,6 +147,7 @@ jobs:
       - name: Verify installed sidecar version
         run: |
           $version = $env:APP_VERSION -replace '^v', ''
+          $sourceVersion = (Get-Content VERSION).Trim()
           $installer = Join-Path $PWD "packages/desktop/dist/OpenCode_${version}_x64-setup.exe"
           if (-not (Test-Path -LiteralPath $installer)) { throw "Installer for sidecar verification was not found at $installer." }
           $verifyRoot = Join-Path $env:RUNNER_TEMP "OpenCode Sidecar Verify"
@@ -160,6 +161,8 @@ jobs:
 
           $sidecar = Join-Path $installRoot "resources/sidecars/opencode-cli-$($env:RUST_TARGET).exe"
           if (-not (Test-Path -LiteralPath $sidecar)) { throw "Installed sidecar was not found at $sidecar." }
+          $updateConfig = Join-Path $installRoot "resources/app-update.yml"
+          if (-not (Test-Path -LiteralPath $updateConfig)) { throw "Installed updater config was not found at $updateConfig." }
 
           # Capture the full output without piping through Select-Object: an
           # early-stopping pipeline can kill the process before it exits and
@@ -172,40 +175,24 @@ jobs:
           $sidecarVersion = "$sidecarVersion".Trim()
 
           Write-Host "expected version=$version"
+          Write-Host "source version=$sourceVersion"
           Write-Host "sidecar path=$sidecar"
           Write-Host "sidecar version=$sidecarVersion"
           Write-Host "RUST_TARGET=$($env:RUST_TARGET)"
+          Write-Host "updater config=$updateConfig"
 
+          if ($sourceVersion -ne $version) { throw "Source version mismatch: got '$sourceVersion', expected '$version'." }
           if ($sidecarVersion -ne $version) { throw "Installed sidecar version mismatch: got '$sidecarVersion', expected '$version' (RUST_TARGET=$($env:RUST_TARGET))." }
+
+          $updater = Get-Content -LiteralPath $updateConfig -Raw
+          if ($updater -notmatch '(?m)^owner:\s*panyw5\s*$' -or $updater -notmatch '(?m)^repo:\s*opencode\s*$') {
+            throw "Installed updater config must target panyw5/opencode."
+          }
+          if ($updater -match 'anomalyco') { throw "Installed updater config must not target anomalyco." }
         shell: pwsh
 
       - name: Upload Windows Installer
-        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: opencode-desktop-windows-x64
           path: packages/desktop/dist/OpenCode_*_x64-setup.exe
-
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
-        run: |
-          $tag = $env:APP_VERSION
-          $version = $tag -replace '^v', ''
-          $asset = "packages/desktop/dist/OpenCode_${version}_x64-setup.exe"
-          gh release view $tag -R $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -ne 0) {
-            # Another workflow may create the same release concurrently; a
-            # failure here is retried via the wait loop below.
-            gh release create $tag -R $env:GITHUB_REPOSITORY --draft --title $tag --target $env:GITHUB_SHA *> $null
-          }
-          $found = $false
-          for ($i = 0; $i -lt 24; $i++) {
-            gh release view $tag -R $env:GITHUB_REPOSITORY *> $null
-            if ($LASTEXITCODE -eq 0) { $found = $true; break }
-            Start-Sleep -Seconds 5
-          }
-          if (-not $found) { throw "Release $tag was not created (waited 120 seconds)." }
-          gh release upload $tag $asset -R $env:GITHUB_REPOSITORY --clobber
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
