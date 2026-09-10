@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "@solidjs/router"
 import { createEffect, createMemo, onCleanup, onMount } from "solid-js"
 import { messageIdFromHash } from "./message-id-from-hash"
 import { collectSessionLayoutMetrics, logSessionLayout, type SessionLayoutMetrics } from "./session-layout-debug"
-import { targetTop } from "./use-session-scroll-utils"
+import { reachableTargetTop, targetTop } from "./use-session-scroll-utils"
 
 export const useSessionHashScroll = (input: {
   sessionKey: () => string
@@ -141,23 +141,23 @@ export const useSessionHashScroll = (input: {
       id,
       `behavior=${behavior} targetTop=${Math.round(top)} itemTop=${Math.round(a.top - b.top)} itemBottom=${Math.round(a.bottom - b.top)} itemHeight=${Math.round(a.height)} inset=${Math.round(inset)} beforeTop=${before?.top ?? "none"} beforeHeight=${before?.height ?? "none"}`,
     )
-    traceLayout(
-      "scroll-before",
-      id,
-      {
-        behavior,
-        targetTop: Math.round(top),
-        itemTop: Math.round(a.top - b.top),
-        itemBottom: Math.round(a.bottom - b.top),
-        itemHeight: Math.round(a.height),
-        inset: Math.round(inset),
-        beforeTop: before?.top,
-        beforeHeight: before?.height,
-      },
-    )
+    traceLayout("scroll-before", id, {
+      behavior,
+      targetTop: Math.round(top),
+      itemTop: Math.round(a.top - b.top),
+      itemBottom: Math.round(a.bottom - b.top),
+      itemHeight: Math.round(a.height),
+      inset: Math.round(inset),
+      beforeTop: before?.top,
+      beforeHeight: before?.height,
+    })
     root.scrollTo({ top, behavior })
     const after = snap(root)
-    trace("scroll-after", id, `behavior=${behavior} afterTop=${after?.top ?? "none"} afterHeight=${after?.height ?? "none"}`)
+    trace(
+      "scroll-after",
+      id,
+      `behavior=${behavior} afterTop=${after?.top ?? "none"} afterHeight=${after?.height ?? "none"}`,
+    )
     traceLayout("scroll-after", id, { behavior, afterTop: after?.top, afterHeight: after?.height })
     queue(() => traceLayout("scroll-after-raf", id, { behavior }))
     return true
@@ -172,8 +172,16 @@ export const useSessionHashScroll = (input: {
     const rect = el.getBoundingClientRect()
     const raw = getComputedStyle(root).getPropertyValue("--session-title-inset").trim()
     const inset = Number.parseFloat(raw) || 0
-    const delta = Math.round(rect.top - box.top - inset)
-    trace("align-check", id, `delta=${delta} inset=${Math.round(inset)}`)
+    const expected = reachableTargetTop({
+      itemTop: rect.top,
+      rootTop: box.top,
+      scrollTop: root.scrollTop,
+      inset,
+      scrollHeight: root.scrollHeight,
+      clientHeight: root.clientHeight,
+    })
+    const delta = Math.round(root.scrollTop - expected)
+    trace("align-check", id, `delta=${delta} expected=${Math.round(expected)} inset=${Math.round(inset)}`)
     return Math.abs(delta) <= 2
   }
 
@@ -259,6 +267,19 @@ export const useSessionHashScroll = (input: {
     }
 
     updateHash(message.id)
+  }
+
+  const primeMessageNavigation = (id: string) => {
+    trace("message-prime", id)
+    cancel()
+    input.prepareNavigation?.()
+    input.setPendingMessage(id)
+    input.setSeekingMessage(id)
+    input.enterAnchored()
+    input.autoScroll.pause()
+    // Commit the target before history pages arrive. Otherwise a stale hash can
+    // re-run after a prepend and pull the viewport back to the previous message.
+    updateHash(id)
   }
 
   const applyHash = (behavior: ScrollBehavior) => {
@@ -384,6 +405,7 @@ export const useSessionHashScroll = (input: {
 
   return {
     clearMessageHash,
+    primeMessageNavigation,
     scrollToMessage,
     applyHash,
   }

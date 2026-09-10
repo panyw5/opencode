@@ -2892,8 +2892,8 @@ export default function Page() {
       return
     }
     if (!indexed) return
-    setUi("pendingMessage", indexed.id)
     prepareFindNavigation()
+    primeMessageNavigation(indexed.id)
   }
 
   const fail = (err: unknown) => {
@@ -3360,7 +3360,7 @@ export default function Page() {
     },
   )
 
-  const { clearMessageHash, scrollToMessage } = useSessionHashScroll({
+  const { clearMessageHash, primeMessageNavigation, scrollToMessage } = useSessionHashScroll({
     sessionKey,
     sessionID: () => params.id,
     directory: () => sdk.directory,

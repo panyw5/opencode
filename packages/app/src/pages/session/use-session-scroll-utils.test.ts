@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { targetTop } from "./use-session-scroll-utils"
+import { reachableTargetTop, targetTop } from "./use-session-scroll-utils"
 
 describe("targetTop", () => {
   test("accounts for sticky inset while preserving scroll offset", () => {
@@ -22,5 +22,33 @@ describe("targetTop", () => {
         inset: 48,
       }),
     ).toBe(0)
+  })
+})
+
+describe("reachableTargetTop", () => {
+  test("keeps an ordinary message target unchanged", () => {
+    expect(
+      reachableTargetTop({
+        itemTop: 500,
+        rootTop: 100,
+        scrollTop: 200,
+        inset: 40,
+        scrollHeight: 2_000,
+        clientHeight: 800,
+      }),
+    ).toBe(560)
+  })
+
+  test("clamps a target near the end to the maximum scroll position", () => {
+    expect(
+      reachableTargetTop({
+        itemTop: 900,
+        rootTop: 100,
+        scrollTop: 1_000,
+        inset: 0,
+        scrollHeight: 2_000,
+        clientHeight: 800,
+      }),
+    ).toBe(1_200)
   })
 })
