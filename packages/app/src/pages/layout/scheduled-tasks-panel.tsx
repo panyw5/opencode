@@ -244,21 +244,21 @@ function ScheduledTaskDetailDialog(props: {
             <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
               <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
                 <Icon name="clock" size="small" class="text-icon-base" />
-                {language.t("scheduled.schedule")}
+                {language.t("scheduled.parameters")}
               </div>
-              <div class="grid gap-3 sm:grid-cols-2">
+              <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                 <Detail
                   label={language.t("scheduled.schedule")}
                   value={scheduleLabel(state.task.schedule, language.t)}
                 />
                 <Detail label={language.t("scheduled.nextRun")} value={formatDate(state.task.nextRunAt)} />
                 <Detail
-                  label={language.t("scheduled.model")}
-                  value={`${state.task.model.providerID}/${state.task.model.modelID}`}
-                />
-                <Detail
                   label={language.t("scheduled.execution")}
                   value={language.t(executionModeKey(state.task.executionMode))}
+                />
+                <Detail
+                  label={language.t("scheduled.model")}
+                  value={`${state.task.model.providerID}/${state.task.model.modelID}`}
                 />
                 <Detail
                   label={language.t("scheduled.lastStatus")}
