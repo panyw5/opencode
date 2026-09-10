@@ -316,9 +316,20 @@ export function shouldCommitVirtualRowHeight(input: {
   return input.next + 0.5 >= input.previous
 }
 
-/** Non-live overscan rows can keep their cached size until fast scrolling settles. */
-export function shouldDeferFastRowMeasurement(input: { fast: boolean; live: boolean; next: number; previous: number }) {
-  return input.fast && !input.live && Math.abs(input.next - input.previous) > 0.5
+/** Non-live overscan rows can keep their cached size until native fast scrolling settles. */
+export function shouldDeferFastRowMeasurement(input: {
+  fast: boolean
+  animated?: boolean
+  live: boolean
+  next: number
+  previous: number
+}) {
+  // Smooth-wheel scrolling spans many synthetic scroll frames. Deferring a
+  // growth until that animation ends loses the reading anchor captured when
+  // the real height first arrived, so a later commit can push the following
+  // message offscreen. Shrinks keep the existing fast-scroll protection.
+  const animatedGrowth = input.animated && input.next > input.previous + 0.5
+  return input.fast && !animatedGrowth && !input.live && Math.abs(input.next - input.previous) > 0.5
 }
 
 /** Text and reasoning rows share the deferred Markdown renderer. */

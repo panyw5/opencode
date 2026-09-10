@@ -457,6 +457,12 @@ test("defers non-live row measurements only during fast scrolling", () => {
   expect(shouldDeferFastRowMeasurement({ fast: false, live: false, next: 400, previous: 200 })).toBe(false)
   expect(shouldDeferFastRowMeasurement({ fast: true, live: true, next: 400, previous: 200 })).toBe(false)
   expect(shouldDeferFastRowMeasurement({ fast: true, live: false, next: 200.2, previous: 200 })).toBe(false)
+  expect(
+    shouldDeferFastRowMeasurement({ fast: true, animated: true, live: false, next: 7_696, previous: 2_502 }),
+  ).toBe(false)
+  expect(
+    shouldDeferFastRowMeasurement({ fast: true, animated: true, live: false, next: 2_502, previous: 7_696 }),
+  ).toBe(true)
 
   // A completed row may remain visible as the last row so Markdown can paint;
   // its measured height must still be allowed to shrink to the real content.

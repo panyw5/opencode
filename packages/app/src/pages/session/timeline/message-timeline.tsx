@@ -1828,7 +1828,15 @@ export function MessageTimeline(props: {
       // shrink armed and apply it later when the user scrolls.
       deferredFastMeasurements.delete(item().index)
       pendingNearBottomShrinks.delete(item().index)
-      if (shouldDeferFastRowMeasurement({ fast: fastScrolling(), live, next: raw, previous: virtual })) {
+      const animatedWheel = smoothWheelTarget !== undefined
+      const fast = fastScrolling()
+      if (lagging() && animatedWheel && fast && !live && raw > virtual + 0.5) {
+        timelineLag(
+          "wheel-smooth-measure-commit",
+          `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} top=${Math.round(root?.scrollTop ?? 0)} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"}`,
+        )
+      }
+      if (shouldDeferFastRowMeasurement({ fast, animated: animatedWheel, live, next: raw, previous: virtual })) {
         deferredFastMeasurements.set(item().index, { key: input.rowKey, size: raw })
         setContentHeight(Math.min(raw, virtual))
         scheduleDeferredFastMeasurementFlush()
