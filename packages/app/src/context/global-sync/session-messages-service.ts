@@ -105,6 +105,7 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     limit: number
     before?: string
     mode?: "replace" | "prepend"
+    authoritative?: boolean
   }): Promise<LoadResult> => {
     const directory = input.directory
     const key = keyFor(directory, input.sessionID)
@@ -136,15 +137,34 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
         for (const messageID of next.confirmed) clearOptimistic(directory, input.sessionID, messageID)
         const eventChanged = rev(directory, input.sessionID) !== eventRevision
         const cached = child[0].message[input.sessionID] ?? []
-        const messages = input.mode === "prepend" || eventChanged ? mergeSessionItems(next.session, cached) : next.session
+        const messages =
+          input.authoritative || (input.mode !== "replace" && eventChanged)
+            ? input.authoritative
+              ? next.session
+              : mergeSessionItems(next.session, cached)
+            : next.session
         batch(() => {
           child[1]("message", input.sessionID, reconcile(messages, { key: "id" }))
+          if (input.authoritative) {
+            const keep = new Set(next.session.map((message) => message.id))
+            child[1](
+              produce((draft) => {
+                for (const [messageID, parts] of Object.entries(draft.part)) {
+                  if (parts?.some((part) => part?.sessionID === input.sessionID) && !keep.has(messageID)) {
+                    delete draft.part[messageID]
+                  }
+                }
+              }),
+            )
+          }
           for (const item of next.part) {
             const fetched = item.part.filter((part) => !SESSION_MESSAGE_SKIP_PARTS.has(part.type))
             const current = child[0].part[item.id]
-            const parts = eventChanged
-              ? mergeSessionItems(fetched, current ?? [])
-              : mergeFetchedSessionParts(fetched, current)
+            const parts = input.authoritative
+              ? fetched
+              : eventChanged
+                ? mergeSessionItems(fetched, current ?? [])
+                : mergeFetchedSessionParts(fetched, current)
             if (parts.length) child[1]("part", item.id, reconcileFetchedSessionParts(parts))
           }
           child[1]("session_history", input.sessionID, {

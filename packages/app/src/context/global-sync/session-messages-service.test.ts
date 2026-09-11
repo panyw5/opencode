@@ -95,6 +95,33 @@ describe("session messages controller", () => {
     expect(service.get("/project", "session")).toEqual([])
   })
 
+  test("authoritative refresh replaces stale messages after a revert update", async () => {
+    const first = deferred<ReturnType<typeof response>>()
+    const second = deferred<ReturnType<typeof response>>()
+    let calls = 0
+    const harness = createSessionControllerHarness({
+      messages: async () => (++calls === 1 ? first.promise : second.promise),
+    })
+    const service = createSessionMessagesService(harness.deps)
+
+    const initial = service.load({ directory: "/project", sessionID: "session", limit: 80 })
+    first.resolve(response([message("stale")]))
+    await initial
+
+    service.event("/project", "session", "discard")
+    const refresh = service.load({
+      directory: "/project",
+      sessionID: "session",
+      limit: 80,
+      mode: "replace",
+      authoritative: true,
+    })
+    second.resolve(response([message("fresh")]))
+    await refresh
+
+    expect(service.get("/project", "session")?.map((item) => item.id)).toEqual(["fresh"])
+  })
+
   test("clears a confirmed optimistic item before the next snapshot", async () => {
     const first = deferred<ReturnType<typeof response>>()
     const second = deferred<ReturnType<typeof response>>()

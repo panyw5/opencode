@@ -436,10 +436,15 @@ function createGlobalSync() {
     })
   clearSessionControllers = sessionService.clearDirectory
 
-  const reconcileSessionMessages = async (directory: string, sessionIDs: string[], reason: string) => {
+  const reconcileSessionMessages = async (
+    directory: string,
+    sessionIDs: string[],
+    reason: string,
+    options?: { authoritative?: boolean },
+  ) => {
     if (sessionIDs.length === 0) return
     console.info(
-      `[global-sync] session message reconcile start directory=${directory} reason=${reason} sessions=${sessionIDs.join(",")}`,
+      `[global-sync] session message reconcile start directory=${directory} reason=${reason} authoritative=${String(!!options?.authoritative)} sessions=${sessionIDs.join(",")}`,
     )
     const results = await Promise.allSettled(
       sessionIDs.map(async (sessionID) => {
@@ -447,10 +452,11 @@ function createGlobalSync() {
           directory,
           sessionID,
           limit: 80,
-          mode: "prepend",
+          mode: options?.authoritative ? "replace" : "prepend",
+          authoritative: options?.authoritative,
         })
         console.info(
-          `[global-sync] session message reconcile session directory=${directory} reason=${reason} session=${sessionID} committed=${String(result.committed)} count=${String(result.count)}`,
+          `[global-sync] session message reconcile session directory=${directory} reason=${reason} authoritative=${String(!!options?.authoritative)} session=${sessionID} committed=${String(result.committed)} count=${String(result.count)}`,
         )
       }),
     )
@@ -920,6 +926,15 @@ function createGlobalSync() {
           cachedMessages: store.message[revertTrace.sessionID]?.length ?? 0,
           cachedRevertMessageID: current?.revert?.messageID,
         })
+        if (event.type === "session.updated") {
+          void reconcileSessionMessages(logical, [revertTrace.sessionID], "session-revert", {
+            authoritative: true,
+          }).catch((error) => {
+            console.warn(
+              `[global-sync] revert message reconcile failed directory=${key} session=${revertTrace.sessionID} error=${error instanceof Error ? error.message : String(error)}`,
+            )
+          })
+        }
       }
     } catch (err) {
       const props = (event as { properties?: unknown }).properties as
