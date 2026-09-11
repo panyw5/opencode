@@ -3,8 +3,8 @@ Create a NEW persisting project-level task for the current workspace.
 A project task can be **mounted** onto one or more sessions.
 A project task is different from per-session checklists `todowrite`.
 
-## Before creating
-Think carefully: IS THE TASK A COMPLICATED, LONG-HORIZON TASK? Proceed ONLY if the answer is yes.
+## [MANDATORY] Before creating
+Use question tool to ask user if creation of project task is needed.
 
 ## File structure
 Task description in `.project-tasks/<taskID>/prd.md`
