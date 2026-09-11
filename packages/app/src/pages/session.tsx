@@ -325,6 +325,11 @@ export default function Page() {
     if (!view().reviewPanel.opened()) view().reviewPanel.open()
   }
 
+  const openSessionChangesReview = () => {
+    setStore("changes", "session")
+    openReviewPanel()
+  }
+
   const info = createMemo(() => (params.id ? sync.session.get(params.id) : undefined))
 
   // Track visited opencode sessions in a global history list so the
@@ -3583,6 +3588,7 @@ export default function Page() {
                 skills={activeSkills()}
                 diffs={diffs()}
                 childSessionIDs={currentApiChildSessions().map((session) => session.id)}
+                onViewAllChanges={openSessionChangesReview}
               />
             </Show>
             {/* Always show on desktop session routes (including new session) so users can

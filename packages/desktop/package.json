@@ -22,7 +22,7 @@
     "preview": "electron-vite preview",
     "package": "bun run build && electron-builder --config electron-builder.config.ts",
     "package:mac": "bun run build && electron-builder --mac --publish never --config electron-builder.config.ts",
-    "package:win": "bun run build && electron-builder --win --config electron-builder.config.ts",
+    "package:win": "bun run build && electron-builder --win --publish never --config electron-builder.config.ts",
     "package:linux": "bun run build && electron-builder --linux --config electron-builder.config.ts",
     "native:build": "bun install --cwd native"
   },

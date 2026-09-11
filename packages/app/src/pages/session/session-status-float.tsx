@@ -27,7 +27,7 @@ import { useComponentMountProfile } from "@/utils/component-mount-profile"
 const historyPageSize = 100
 // Cap rendered rows per file-change list; sessions touching thousands of files
 // otherwise flood the panel with tooltips and freeze the UI.
-const fileChangeDisplayLimit = 50
+const fileChangeDisplayLimit = 10
 
 const baseName = (file: string) => file.slice(file.lastIndexOf("/") + 1) || file
 
@@ -36,6 +36,7 @@ export function SessionStatusFloat(props: {
   skills: string[]
   diffs: SnapshotFileDiff[]
   childSessionIDs: string[]
+  onViewAllChanges: () => void
 }) {
   const language = useLanguage()
   const globalSync = useGlobalSync()
@@ -293,6 +294,24 @@ export function SessionStatusFloat(props: {
                     limit={fileChangeDisplayLimit}
                     onOpen={openChangedFile}
                   />
+                  <button
+                    type="button"
+                    data-action="session-status-view-all-changes"
+                    class="w-full rounded-md px-2.5 py-1.5 text-left text-12-medium text-text-weak transition-colors hover:bg-surface-raised-base-hover hover:text-text-strong"
+                    onClick={() => {
+                      console.info("[session-status] opening session changes review", {
+                        sessionID: props.sessionID,
+                        directory: sdk.directory,
+                        added: fileChanges().added.length,
+                        modified: fileChanges().modified.length,
+                        deleted: fileChanges().deleted.length,
+                      })
+                      setShown(false)
+                      props.onViewAllChanges()
+                    }}
+                  >
+                    {language.t("session.status.files.viewAll")}
+                  </button>
                 </div>
               </div>
             </Show>
@@ -326,11 +345,8 @@ function FileChangeList(props: {
   limit: number
   onOpen: (file: string) => void
 }) {
-  const language = useLanguage()
   const [open, setOpen] = createSignal(false)
-  const [expanded, setExpanded] = createSignal(false)
-  const truncated = () => !expanded() && props.files.length > props.limit
-  const visible = () => (truncated() ? props.files.slice(0, props.limit) : props.files)
+  const visible = () => props.files.slice(0, props.limit)
 
   return (
     <Show when={props.files.length > 0}>
@@ -382,18 +398,6 @@ function FileChangeList(props: {
               )}
             </For>
           </ul>
-          <Show when={props.files.length > props.limit}>
-            <button
-              type="button"
-              data-action="session-status-files-toggle-more"
-              class="mt-1 w-full rounded-md px-2.5 py-1.5 text-left text-12-regular text-text-weak transition-colors hover:text-text-strong"
-              onClick={() => setExpanded((value) => !value)}
-            >
-              {expanded()
-                ? language.t("session.status.files.less")
-                : language.t("session.status.files.more", { count: props.files.length - props.limit })}
-            </button>
-          </Show>
         </Collapsible.Content>
       </Collapsible>
     </Show>
