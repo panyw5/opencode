@@ -13,10 +13,7 @@ import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-se
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
 import { useFile } from "@/context/file"
 import { useLanguage } from "@/context/language"
-import {
-  type MathInitializationConfig,
-  createMathProblemID,
-} from "@/pages/session/math-initialize"
+import { type MathInitializationConfig, createMathProblemID } from "@/pages/session/math-initialize"
 
 export function SessionMathInitializeDialog(props: {
   defaultModel: string
@@ -34,6 +31,7 @@ export function SessionMathInitializeDialog(props: {
     xhighWorkers: "1",
     controlBeat: false,
     maximized: false,
+    instructionsOpen: false,
   })
   const workerModel = useBoundModelState({
     value: () => store.workerModel,
@@ -60,23 +58,38 @@ export function SessionMathInitializeDialog(props: {
   const submit = () => {
     if (!valid()) return
     const problem = store.problem.trim()
-    props.onConfirm(
-      {
-        project: createMathProblemID(problem),
-        problem,
-        workerModel: store.workerModel.trim(),
-        verifierModel: store.verifierModel.trim(),
-        highWorkers: Number(store.highWorkers),
-        xhighWorkers: Number(store.xhighWorkers),
-        controlBeat: store.controlBeat,
-      },
-    )
+    props.onConfirm({
+      project: createMathProblemID(problem),
+      problem,
+      workerModel: store.workerModel.trim(),
+      verifierModel: store.verifierModel.trim(),
+      highWorkers: Number(store.highWorkers),
+      xhighWorkers: Number(store.xhighWorkers),
+      controlBeat: store.controlBeat,
+    })
     dialog.close()
   }
 
   return (
     <Dialog
       title={language.t("session.mathInitialize.title")}
+      titleAction={
+        <Button
+          type="button"
+          size="small"
+          variant="ghost"
+          icon="book"
+          aria-expanded={store.instructionsOpen}
+          aria-controls="math-initialize-instructions"
+          onClick={() => {
+            const open = !store.instructionsOpen
+            console.debug(`[math-initialize] instructions ${open ? "open" : "close"}`)
+            setStore("instructionsOpen", open)
+          }}
+        >
+          {language.t("session.mathInitialize.instructions")}
+        </Button>
+      }
       size={store.maximized ? "x-large" : "large"}
       transition
       class="mx-auto h-full"
@@ -121,6 +134,35 @@ export function SessionMathInitializeDialog(props: {
           submit()
         }}
       >
+        <Show when={store.instructionsOpen}>
+          <section
+            id="math-initialize-instructions"
+            aria-label={language.t("session.mathInitialize.instructions")}
+            class="shrink-0 rounded-xl border border-border-weak-base bg-surface-raised-base px-4 py-3 text-12-regular text-text-strong shadow-xs-border-base"
+          >
+            <div class="flex flex-col gap-3">
+              <div>
+                <h3 class="text-12-medium text-text-strong">
+                  {language.t("session.mathInitialize.instructions.framework.title")}
+                </h3>
+                <p class="mt-1 leading-5 text-text-weak">
+                  {language.t("session.mathInitialize.instructions.framework.description")}
+                </p>
+              </div>
+              <div>
+                <h3 class="text-12-medium text-text-strong">
+                  {language.t("session.mathInitialize.instructions.usage.title")}
+                </h3>
+                <ol class="mt-1 list-decimal space-y-1 pl-4 leading-5 text-text-weak">
+                  <li>{language.t("session.mathInitialize.instructions.usage.problem")}</li>
+                  <li>{language.t("session.mathInitialize.instructions.usage.models")}</li>
+                  <li>{language.t("session.mathInitialize.instructions.usage.workers")}</li>
+                  <li>{language.t("session.mathInitialize.instructions.usage.initialize")}</li>
+                </ol>
+              </div>
+            </div>
+          </section>
+        </Show>
         <div class="grid shrink-0 gap-4 md:grid-cols-2">
           <div class="flex min-w-0 flex-col gap-2">
             <div class="flex items-center gap-1.5">
@@ -154,9 +196,7 @@ export function SessionMathInitializeDialog(props: {
           </div>
           <div class="flex min-w-0 flex-col gap-2">
             <div class="flex items-center gap-1.5">
-              <label class="text-12-medium text-text-weak">
-                {language.t("session.mathInitialize.verifierModel")}
-              </label>
+              <label class="text-12-medium text-text-weak">{language.t("session.mathInitialize.verifierModel")}</label>
               <Tooltip placement="top" value={language.t("session.mathInitialize.verifierModel.description")}>
                 <Icon name="circle-exclamation" size="small" class="text-icon-info-base" aria-hidden="true" />
               </Tooltip>
@@ -185,11 +225,23 @@ export function SessionMathInitializeDialog(props: {
             </ModelSelectorPopover>
           </div>
         </div>
-        <div class="flex min-h-0 flex-1 flex-col gap-2">
+        <div
+          class="flex min-h-0 flex-col gap-2"
+          classList={{
+            "flex-1": !store.instructionsOpen,
+            "shrink-0": store.instructionsOpen,
+          }}
+        >
           <label class="relative z-10 w-fit shrink-0 translate-y-8 text-12-medium text-text-weak">
             {language.t("session.mathInitialize.problem")}
           </label>
-          <div class="min-h-56 flex-1 overflow-hidden">
+          <div
+            class="overflow-hidden"
+            classList={{
+              "min-h-56 flex-1": !store.instructionsOpen,
+              "min-h-56 shrink-0": store.instructionsOpen,
+            }}
+          >
             <MarkdownEditorField
               text={store.problem}
               autofocus

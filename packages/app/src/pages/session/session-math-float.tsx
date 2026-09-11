@@ -176,6 +176,10 @@ function SessionMathDialog(props: SessionMathFloatProps) {
       setFactGraph({ loading: false, error: error instanceof Error ? error.message : String(error) })
     }
   }
+  const ensureFactGraph = () => {
+    if (factGraph.graph || factGraph.loading) return
+    void loadFactGraph()
+  }
   createEffect(() => {
     const project = projectSummary()?.project
     if (project !== details.project) {
@@ -183,7 +187,10 @@ function SessionMathDialog(props: SessionMathFloatProps) {
       setDetails({ project, selected: undefined, page: undefined, loading: false, error: undefined })
       factGraphRequest += 1
       setFactGraph({ graph: undefined, loading: false, error: undefined })
-      if (project) void loadDetails("facts", 0)
+      if (project) {
+        void loadDetails("facts", 0)
+        ensureFactGraph()
+      }
       return
     }
     const selected = details.selected
@@ -211,6 +218,7 @@ function SessionMathDialog(props: SessionMathFloatProps) {
       return
     }
     void loadDetails(kind, 0)
+    if (kind === "facts") ensureFactGraph()
   }
   const [verifier, setVerifier] = createStore({ model: "", persistedModel: "", saving: false })
   const verifierModel = useBoundModelState({
@@ -435,7 +443,7 @@ function SessionMathDialog(props: SessionMathFloatProps) {
               </Show>
             </div>
             <section class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-              <div class="flex shrink-0 items-center justify-between gap-2">
+              <div class="flex shrink-0 items-center gap-1.5">
                 <div class="text-12-medium text-text-base">{language.t("session.mathSwarm.label")}</div>
                 <span class="font-mono text-11-regular text-text-weak">{props.workers.length}</span>
               </div>
@@ -471,79 +479,79 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                 <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
                   <For each={props.workers}>
                     {(entry) => (
-                      <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 rounded-xl border border-border-weak-base bg-surface-raised-base p-3 shadow-xs-border-base">
-                        <button class="min-w-0 text-left" onClick={() => openWorker(entry)}>
-                          <div class="flex min-w-0 items-center gap-2 text-13-medium text-text-strong">
-                            <span class={`shrink-0 text-10-medium ${stateClass(entry)}`} aria-hidden="true">
-                              ●
-                            </span>
-                            <span class="truncate">{entry.title}</span>
-                            <span class={`shrink-0 text-11-medium ${stateClass(entry)}`}>{stateLabel(entry)}</span>
-                          </div>
-                          <div class="mt-1 truncate font-mono text-11-regular text-text-weak">{detail(entry)}</div>
-                          <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-11-regular text-text-weak">
-                            <Show when={compact(entry.tokens)}>
-                              {(tokens) => <span>{language.t("session.mathSwarm.tokens", { tokens: tokens() })}</span>}
-                            </Show>
-                            <Show when={entry.cost !== undefined}>
-                              <span>
-                                {language.t("session.mathSwarm.cost", { cost: (entry.cost ?? 0).toFixed(4) })}
+                      <div class="rounded-xl border border-border-weak-base bg-surface-raised-base p-3 shadow-xs-border-base">
+                        <div class="flex min-w-0 items-center justify-between gap-3">
+                          <button class="min-w-0 flex-1 text-left" onClick={() => openWorker(entry)}>
+                            <div class="flex min-w-0 items-center gap-2 text-13-medium text-text-strong">
+                              <span class={`shrink-0 text-10-medium ${stateClass(entry)}`} aria-hidden="true">
+                                ●
                               </span>
+                              <span class="truncate">{entry.title}</span>
+                              <span class={`shrink-0 text-11-medium ${stateClass(entry)}`}>{stateLabel(entry)}</span>
+                            </div>
+                          </button>
+                          <div class="flex shrink-0 items-center gap-1">
+                            <Show when={entry.restartable && !entry.stopRequested}>
+                              <Button
+                                size="small"
+                                variant="secondary"
+                                disabled={busy(entry)}
+                                onClick={() => props.onEnsure(entry)}
+                              >
+                                {language.t("session.mathSwarm.restart")}
+                              </Button>
                             </Show>
-                            <Show when={entry.last_rc !== undefined && entry.last_rc !== null}>
-                              <span>rc {entry.last_rc}</span>
+                            <Show when={entry.stopRequested && !entry.alive}>
+                              <Button
+                                size="small"
+                                variant="secondary"
+                                disabled={busy(entry)}
+                                onClick={() => props.onReEnable(entry)}
+                              >
+                                {language.t("session.mathSwarm.reEnable.short")}
+                              </Button>
                             </Show>
+                            <Show when={entry.alive && entry.state !== "stopping"}>
+                              <Button
+                                size="small"
+                                variant="ghost"
+                                class="text-text-critical-base"
+                                disabled={busy(entry)}
+                                onClick={() => props.onStop(entry)}
+                              >
+                                {language.t("session.mathSwarm.stop.short")}
+                              </Button>
+                            </Show>
+                            <Button
+                              size="small"
+                              variant="secondary"
+                              disabled={busy(entry)}
+                              onClick={() => props.onTask(entry)}
+                            >
+                              {language.t("session.mathSwarm.task")}
+                            </Button>
                           </div>
-                        </button>
-                        <div class="flex shrink-0 items-center gap-1">
-                          <Show when={entry.restartable && !entry.stopRequested}>
-                            <Button
-                              size="small"
-                              variant="secondary"
-                              disabled={busy(entry)}
-                              onClick={() => props.onEnsure(entry)}
-                            >
-                              {language.t("session.mathSwarm.restart")}
-                            </Button>
-                          </Show>
-                          <Show when={entry.stopRequested && !entry.alive}>
-                            <Button
-                              size="small"
-                              variant="secondary"
-                              disabled={busy(entry)}
-                              onClick={() => props.onReEnable(entry)}
-                            >
-                              {language.t("session.mathSwarm.reEnable.short")}
-                            </Button>
-                          </Show>
-                          <Show when={entry.alive && entry.state !== "stopping"}>
-                            <Button
-                              size="small"
-                              variant="ghost"
-                              class="text-text-critical-base"
-                              disabled={busy(entry)}
-                              onClick={() => props.onStop(entry)}
-                            >
-                              {language.t("session.mathSwarm.stop.short")}
-                            </Button>
-                          </Show>
-                          <Button
-                            size="small"
-                            variant="ghost"
-                            disabled={busy(entry)}
-                            onClick={() => props.onTask(entry)}
-                          >
-                            {language.t("session.mathSwarm.task")}
-                          </Button>
                         </div>
                         <Show when={entry.taskPreview}>
                           <button
-                            class="col-span-2 min-w-0 text-left text-12-regular leading-5 text-text-weak"
+                            class="mt-2 block min-w-0 text-left text-12-regular leading-5 text-text-weak"
                             onClick={() => openWorker(entry)}
                           >
                             <span class="line-clamp-2">{entry.taskPreview}</span>
                           </button>
                         </Show>
+                        <div class="mt-2 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-11-regular text-text-weak">
+                          <span class="min-w-0 truncate font-mono">{detail(entry)}</span>
+                          <Show when={compact(entry.tokens)}>
+                            {(tokens) => <span>{language.t("session.mathSwarm.tokens", { tokens: tokens() })}</span>}
+                          </Show>
+                          <Show when={entry.cost !== undefined}>
+                            <span>{language.t("session.mathSwarm.cost", { cost: (entry.cost ?? 0).toFixed(4) })}</span>
+                          </Show>
+                          <Show when={entry.last_rc !== undefined && entry.last_rc !== null}>
+                            <span>rc {entry.last_rc}</span>
+                          </Show>
+                        </div>
                       </div>
                     )}
                   </For>

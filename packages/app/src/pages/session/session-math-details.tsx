@@ -1,5 +1,6 @@
 import { Button } from "@opencode-ai/ui/button"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
+import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js"
@@ -110,8 +111,6 @@ function MathDetailCard(props: {
   label: string
   count: number
   selected: boolean
-  loading: boolean
-  loadingLabel: string
   onSelect: () => void
 }) {
   return (
@@ -119,28 +118,20 @@ function MathDetailCard(props: {
       type="button"
       data-slot={`math-detail-card-${props.kind}`}
       aria-pressed={props.selected}
-      class="relative overflow-hidden rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left transition-[background-color,border-color,box-shadow] duration-150 hover:border-border-strong-base hover:bg-surface-interactive-weak focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-base"
+      class="relative inline-flex shrink-0 items-center justify-between gap-2 overflow-hidden rounded-full border border-border-weak-base bg-background-base px-3 py-1.5 text-left transition-[background-color,border-color,box-shadow] duration-150 hover:border-border-strong-base hover:bg-surface-interactive-weak focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-base"
       classList={{
         "border-[color-mix(in_srgb,var(--surface-brand-base)_58%,var(--border-base))] bg-[linear-gradient(110deg,color-mix(in_srgb,var(--surface-brand-base)_20%,var(--background-base)),color-mix(in_srgb,var(--surface-brand-base)_7%,var(--background-base)))] shadow-[inset_0_1px_0_color-mix(in_srgb,var(--surface-brand-base)_22%,transparent)]":
           props.selected,
       }}
       onClick={props.onSelect}
     >
-      <div class="flex items-center justify-between gap-2">
-        <div
-          class="text-11-regular"
-          classList={{ "text-text-strong": props.selected, "text-text-weak": !props.selected }}
-        >
-          {props.label}
-        </div>
-        <Show when={props.selected && props.loading}>
-          <span role="status" aria-live="polite" class="inline-flex items-center">
-            <Spinner class="size-3 text-icon-weak" />
-            <span class="sr-only">{props.loadingLabel}</span>
-          </span>
-        </Show>
-      </div>
-      <div class={`mt-0.5 font-mono text-16-medium ${titleClass(props.kind)}`}>{props.count}</div>
+      <span
+        class="text-12-medium"
+        classList={{ "text-text-strong": props.selected, "text-text-weak": !props.selected }}
+      >
+        {props.label}
+      </span>
+      <span class={`font-mono text-13-medium ${titleClass(props.kind)}`}>{props.count}</span>
     </button>
   )
 }
@@ -307,6 +298,7 @@ function VerifiedFactGraph(props: {
   graph: MathFactGraph
   selectedFactID?: string
   onSelect: (fact: MathFactDetail) => void
+  onClose: () => void
 }) {
   const language = useLanguage()
   const graph = createMemo(() => layoutFactGraph(props.graph))
@@ -520,10 +512,7 @@ function VerifiedFactGraph(props: {
                     props.onSelect(node)
                   }}
                 >
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-10-medium text-text-weak">
-                      {language.t("session.mathSwarm.details.factNode")}
-                    </span>
+                  <div class="flex items-center justify-end gap-2">
                     <span class="font-mono text-10-regular text-text-weak">{node.factId.slice(0, 8)}</span>
                   </div>
                   <div class="mt-1 line-clamp-4 text-12-regular leading-4 text-text-strong">{node.statement}</div>
@@ -538,10 +527,17 @@ function VerifiedFactGraph(props: {
               class="max-h-[42%] shrink-0 overflow-y-auto rounded-lg border border-border-weak-base bg-surface-raised-base"
               style={{ animation: "math-fact-preview-in 180ms cubic-bezier(0.16, 1, 0.3, 1)" }}
             >
-              <section class="px-3 pt-3">
-                <div class="mb-1 text-11-medium text-text-weak">
-                  {language.t("session.mathSwarm.details.statement")}
-                </div>
+              <div class="flex items-center justify-between gap-2 px-3 pt-2.5">
+                <div class="text-11-medium text-text-weak">{language.t("session.mathSwarm.details.statement")}</div>
+                <IconButton
+                  icon="close"
+                  size="small"
+                  variant="ghost"
+                  aria-label={language.t("common.close")}
+                  onClick={props.onClose}
+                />
+              </div>
+              <section class="px-3 pb-3">
                 <Markdown text={fact().statement} math="defer" class="text-12-regular leading-5 text-text-strong" />
               </section>
               <FactBody item={fact()} />
@@ -568,7 +564,7 @@ export function SessionMathDetails(props: {
   onGraph: () => void
 }) {
   const language = useLanguage()
-  const [factView, setFactView] = createSignal<"list" | "graph">("list")
+  const [factView, setFactView] = createSignal<"list" | "graph">("graph")
   const [selectedFactID, setSelectedFactID] = createSignal<string>()
   const label = (kind: MathDetailKind) => {
     if (kind === "facts") return language.t("session.mathSwarm.facts")
@@ -580,7 +576,7 @@ export function SessionMathDetails(props: {
 
   return (
     <div class="flex h-full min-h-0 flex-col p-4">
-      <div class="grid shrink-0 grid-cols-4 gap-2">
+      <div class="flex shrink-0 items-center gap-2 overflow-x-auto">
         <For each={["facts", "correct", "wrong", "error"] as const}>
           {(kind) => (
             <MathDetailCard
@@ -588,8 +584,6 @@ export function SessionMathDetails(props: {
               label={label(kind)}
               count={count(props.summary, kind)}
               selected={props.selected === kind}
-              loading={props.loading && props.selected === kind}
-              loadingLabel={language.t("session.mathSwarm.details.loading")}
               onSelect={() => props.onSelect(kind)}
             />
           )}
@@ -646,6 +640,7 @@ export function SessionMathDetails(props: {
                   graph={graph()}
                   selectedFactID={selectedFactID()}
                   onSelect={(fact) => setSelectedFactID(fact.factId)}
+                  onClose={() => setSelectedFactID(undefined)}
                 />
               )}
             </Show>

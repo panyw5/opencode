@@ -906,7 +906,7 @@ export const dict = {
   "session.mathSwarm.errors": "Errors",
   "session.mathSwarm.latestVerification": "Latest verification",
   "session.mathSwarm.details.records": "{{count}} records",
-  "session.mathSwarm.details.loading": "Loading details...",
+  "session.mathSwarm.details.loading": "Loading...",
   "session.mathSwarm.details.empty": "No records in this category.",
   "session.mathSwarm.details.loadError": "Could not load Math Mode details.",
   "session.mathSwarm.details.statement": "Statement",
@@ -925,7 +925,6 @@ export const dict = {
   "session.mathSwarm.details.factView": "Fact view",
   "session.mathSwarm.details.listView": "List",
   "session.mathSwarm.details.graphView": "Graph",
-  "session.mathSwarm.details.factNode": "Verified fact",
   "session.mathSwarm.details.zoomOut": "Zoom out",
   "session.mathSwarm.details.zoomIn": "Zoom in",
   "session.mathSwarm.details.fitGraph": "Fit",
@@ -938,6 +937,19 @@ export const dict = {
   "session.mathInitialize.expand": "Open Math Mode details",
   "session.mathInitialize.collapse": "Close Math Mode details",
   "session.mathInitialize.title": "Initialize Math Mode",
+  "session.mathInitialize.instructions": "How it works",
+  "session.mathInitialize.instructions.framework.title": "Design framework",
+  "session.mathInitialize.instructions.framework.description":
+    "Math Mode combines the current-session coordinator, durable evidence workers, and an independent verifier. Workers explore non-overlapping proof routes in parallel; only verifier-accepted fact_id values become reliable proof foundations, while the control beat periodically reconciles worker state and verified facts.",
+  "session.mathInitialize.instructions.usage.title": "How to use",
+  "session.mathInitialize.instructions.usage.problem":
+    "Describe the question, definitions, assumptions, scope, and completion criteria; workers read only this problem context.",
+  "session.mathInitialize.instructions.usage.models":
+    "Choose the worker and verifier models. The verifier independently checks every submitted proof.",
+  "session.mathInitialize.instructions.usage.workers":
+    "Set the high-effort and extra-high-effort worker counts. More workers provide more parallel exploration but use more model capacity.",
+  "session.mathInitialize.instructions.usage.initialize":
+    "Click Initialize Math Mode, then monitor workers, verified facts, and proof details in the Math Mode panel and reassign tasks as needed.",
   "session.mathInitialize.description":
     "Define a problem-scoped project and a bounded worker roster. Existing durable workers are reconciled before anything new starts.",
   "session.mathInitialize.project": "Math project",

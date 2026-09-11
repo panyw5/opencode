@@ -852,7 +852,7 @@ export const dict = {
   "session.mathSwarm.errors": "系统错误",
   "session.mathSwarm.latestVerification": "最近验证",
   "session.mathSwarm.details.records": "共 {{count}} 条记录",
-  "session.mathSwarm.details.loading": "正在加载明细...",
+  "session.mathSwarm.details.loading": "正在加载...",
   "session.mathSwarm.details.empty": "此分类暂无记录。",
   "session.mathSwarm.details.loadError": "无法加载数学模式明细。",
   "session.mathSwarm.details.statement": "命题",
@@ -871,7 +871,6 @@ export const dict = {
   "session.mathSwarm.details.factView": "事实视图",
   "session.mathSwarm.details.listView": "列表",
   "session.mathSwarm.details.graphView": "图谱",
-  "session.mathSwarm.details.factNode": "已验证事实",
   "session.mathSwarm.details.zoomOut": "缩小",
   "session.mathSwarm.details.zoomIn": "放大",
   "session.mathSwarm.details.fitGraph": "适配",
@@ -884,6 +883,18 @@ export const dict = {
   "session.mathInitialize.expand": "打开数学模式详情",
   "session.mathInitialize.collapse": "关闭数学模式详情",
   "session.mathInitialize.title": "初始化数学模式",
+  "session.mathInitialize.instructions": "使用说明",
+  "session.mathInitialize.instructions.framework.title": "设计框架",
+  "session.mathInitialize.instructions.framework.description":
+    "数学模式由当前会话协调器、多个持久化证据工人和独立验证器组成。工人并行拆解互不重叠的证明路线，只有验证器接受的 fact_id 才会成为可靠的证明基础；控制心跳负责定期同步工人状态和已验证事实。",
+  "session.mathInitialize.instructions.usage.title": "使用方式",
+  "session.mathInitialize.instructions.usage.problem":
+    "在研究问题中写清问题、定义、假设、范围和完成判据；工人只会读取这份问题上下文。",
+  "session.mathInitialize.instructions.usage.models": "选择工人模型和验证器模型，验证器会独立检查每条提交的证明。",
+  "session.mathInitialize.instructions.usage.workers":
+    "设置高强度和超高强度工人数量；数量越多并行探索越充分，但会增加模型用量。",
+  "session.mathInitialize.instructions.usage.initialize":
+    "点击“初始化数学模式”后，在数学模式面板中查看工人、验证事实和证明详情，并按需调整任务。",
   "session.mathInitialize.description": "创建问题级项目和有界证明群；启动新工人前会先重连已有 durable worker。",
   "session.mathInitialize.project": "数学项目",
   "session.mathInitialize.project.description": "存储在 .math/<project>；仅使用字母、数字、点、下划线或连字符。",
