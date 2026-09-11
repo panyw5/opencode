@@ -44,7 +44,7 @@ function ProviderSdkChip(props: { badge: ProviderSdkBadge }) {
     <span
       class="inline-flex h-7 w-fit items-center gap-1.5 rounded-full border px-2.5 text-12-medium shadow-[0_8px_20px_-16px_rgba(0,0,0,0.65)]"
       classList={{
-        "border-[#74d6ca]/45 bg-[#2f8179] text-white": props.badge.tone === "codex",
+        "border-[#74d6ca]/45 bg-[#2f8179] text-[#ffffff]": props.badge.tone === "codex",
         "border-[#d16b27]/30 bg-[#fff0d8] text-[#a33f0a]": props.badge.tone === "claude",
         "border-[#7daeff]/50 bg-[#dceaff] text-[#1856c9]": props.badge.tone === "deepseek",
         "border-border-strong-base bg-surface-base text-text-base": props.badge.tone === "openai",
