@@ -6,8 +6,7 @@ import { createSessionControllerHarness, deferred } from "./session-service-test
 const message = (id: string, completed = 1) =>
   ({ id, sessionID: "session", role: "assistant", time: { created: 1, completed } }) as Message
 
-const part = (text: string) =>
-  ({ id: "part", sessionID: "session", messageID: "message", type: "text", text }) as Part
+const part = (text: string) => ({ id: "part", sessionID: "session", messageID: "message", type: "text", text }) as Part
 
 const response = (messages: Message[], parts: Part[] = []) => ({
   data: messages.map((info) => ({ info, parts: info.id === "message" ? parts : [] })),

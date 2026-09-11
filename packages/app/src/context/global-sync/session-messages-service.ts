@@ -40,8 +40,9 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
     revision.set(key, (revision.get(key) ?? 0) + 1)
   }
 
-  const optimisticItems = (directory: string, sessionID: string) =>
-    [...(optimistic.get(keyFor(directory, sessionID))?.values() ?? [])]
+  const optimisticItems = (directory: string, sessionID: string) => [
+    ...(optimistic.get(keyFor(directory, sessionID))?.values() ?? []),
+  ]
 
   const clearOptimistic = (directory: string, sessionID: string, messageID?: string) => {
     const key = keyFor(directory, sessionID)
@@ -268,7 +269,12 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
         setStore("part", input.messageID, (parts: Part[]) =>
           parts.filter(
             (part) =>
-              !(part.type === "text" && part.synthetic && part.metadata?.kind === "command-injection" && part.metadata.pending === true),
+              !(
+                part.type === "text" &&
+                part.synthetic &&
+                part.metadata?.kind === "command-injection" &&
+                part.metadata.pending === true
+              ),
           ),
         )
       },

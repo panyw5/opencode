@@ -8,15 +8,7 @@ import type {
 } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
-import {
-  getOwner,
-  createEffect,
-  createSignal,
-  onCleanup,
-  on,
-  type ParentProps,
-  untrack,
-} from "solid-js"
+import { getOwner, createEffect, createSignal, onCleanup, on, type ParentProps, untrack } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { Persist, persisted } from "@/utils/persist"
@@ -27,11 +19,7 @@ import { bootstrapDirectory, bootstrapGlobal, isMissingDirectoryError } from "./
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent, cleanupDroppedSessionCaches } from "./global-sync/event-reducer"
 import { createRefreshQueue } from "./global-sync/queue"
-import {
-  clearSessionPrefetch,
-  clearSessionPrefetchDirectory,
-  markSessionCold,
-} from "./global-sync/session-prefetch"
+import { clearSessionPrefetch, clearSessionPrefetchDirectory, markSessionCold } from "./global-sync/session-prefetch"
 import { canCoolSessionCache, coolSessionCaches } from "./global-sync/session-cache"
 import { loadRootSessions } from "./global-sync/session-load"
 import { sessionDataMutation } from "./global-sync/session-data-event"
@@ -61,12 +49,7 @@ export type GlobalStore = {
   ready: boolean
   error?: InitError
   path: Path
-  rootByDomain: Partial<
-    Record<
-      DomainId,
-      Omit<GlobalStore, "projectByDomain" | "project" | "rootByDomain">
-    >
-  >
+  rootByDomain: Partial<Record<DomainId, Omit<GlobalStore, "projectByDomain" | "project" | "rootByDomain">>>
   projectByDomain: Partial<Record<DomainId, Project[]>>
   project: Project[]
   provider: ProviderListResponse
@@ -236,19 +219,19 @@ function createGlobalSync() {
 
   const bootStoreFor = (domain: DomainId) =>
     ((...input: unknown[]) => {
-    if (input[0] === "project" && Array.isArray(input[1])) {
-      setProjectsFor(domain, input[1] as Project[])
-      return input[1]
-    }
-    if (
-      typeof input[0] === "string" &&
-      ["ready", "error", "path", "provider", "provider_auth", "config", "reload"].includes(input[0])
-    ) {
-      setRoot(domain, input[0] as keyof ReturnType<typeof blankRoot>, input[1])
-      return input[1]
-    }
-    return (setGlobalStore as (...args: unknown[]) => unknown)(...input)
-  }) as typeof setGlobalStore
+      if (input[0] === "project" && Array.isArray(input[1])) {
+        setProjectsFor(domain, input[1] as Project[])
+        return input[1]
+      }
+      if (
+        typeof input[0] === "string" &&
+        ["ready", "error", "path", "provider", "provider_auth", "config", "reload"].includes(input[0])
+      ) {
+        setRoot(domain, input[0] as keyof ReturnType<typeof blankRoot>, input[1])
+        return input[1]
+      }
+      return (setGlobalStore as (...args: unknown[]) => unknown)(...input)
+    }) as typeof setGlobalStore
 
   const set = ((...input: unknown[]) => {
     if (input[0] === "project" && (Array.isArray(input[1]) || typeof input[1] === "function")) {
@@ -389,7 +372,8 @@ function createGlobalSync() {
     mark: (directory: string) => managerOf(directory).mark(storeKey(directory)),
     disposeDirectory: (directory: string) => managerOf(directory).disposeDirectory(storeKey(directory)),
     resetDirectory: (directory: string) => managerOf(directory).resetDirectory(storeKey(directory)),
-    projectMeta: (directory: string, patch: ProjectMeta) => managerOf(directory).projectMeta(storeKey(directory), patch),
+    projectMeta: (directory: string, patch: ProjectMeta) =>
+      managerOf(directory).projectMeta(storeKey(directory), patch),
     projectIcon: (directory: string, value: string | undefined) =>
       managerOf(directory).projectIcon(storeKey(directory), value),
     lookup: (directory: string) => managerOf(directory).children[storeKey(directory)],
@@ -424,16 +408,16 @@ function createGlobalSync() {
   }
 
   const sessionService = createSessionService({
-      key: storeKey,
-      isolated,
-      sdk: sdkFor,
-      child: (directory) => children.peek(directory, { bootstrap: false }) as SessionChildStore,
-      current: (directory, child, revision) =>
-        rev(directory) === revision && managerOf(directory).children[storeKey(directory)] === child,
-      revision: rev,
-      pin: children.pin,
-      unpin: children.unpin,
-    })
+    key: storeKey,
+    isolated,
+    sdk: sdkFor,
+    child: (directory) => children.peek(directory, { bootstrap: false }) as SessionChildStore,
+    current: (directory, child, revision) =>
+      rev(directory) === revision && managerOf(directory).children[storeKey(directory)] === child,
+    revision: rev,
+    pin: children.pin,
+    unpin: children.unpin,
+  })
   clearSessionControllers = sessionService.clearDirectory
 
   const reconcileSessionMessages = async (
@@ -580,10 +564,7 @@ function createGlobalSync() {
     onCleanup(() => document.removeEventListener("visibilitychange", onVisibility))
   }
 
-  async function loadSessions(
-    directory: string,
-    opts?: { silent?: boolean; force?: boolean },
-  ): Promise<void> {
+  async function loadSessions(directory: string, opts?: { silent?: boolean; force?: boolean }): Promise<void> {
     const logical = logicalDirectory(directory)
     const directoryKey = storeKey(directory)
     if (isolated(directory)) {
@@ -605,7 +586,7 @@ function createGlobalSync() {
     const setStore = ((...input: unknown[]) => {
       if (rev(directoryKey) !== mark || managerOf(logical).children[directoryKey] !== child) return input[0]
       return raw(...input)
-    }) as typeof child[1]
+    }) as (typeof child)[1]
     if (!opts?.force && sessionLoaded.has(directoryKey)) {
       setStore("sessions", "ready")
       setStore("session_error", undefined)
@@ -624,7 +605,9 @@ function createGlobalSync() {
     const promise = loadRootSessions({
       directory: logical,
       list: (query) => {
-        console.debug(`[global-sync] loadSessions list query directory=${logical} identity=${directoryKey} roots=${query.roots}`)
+        console.debug(
+          `[global-sync] loadSessions list query directory=${logical} identity=${directoryKey} roots=${query.roots}`,
+        )
         const sdk = sdkFor(logical)
         return sdk.session.list(query)
       },
@@ -677,7 +660,9 @@ function createGlobalSync() {
 
     sessionLoads.set(directoryKey, promise)
     promise.finally(() => {
-      console.debug(`[global-sync] load sessions done directory=${logical} identity=${directoryKey} elapsed=${Date.now() - startedAt}ms`)
+      console.debug(
+        `[global-sync] load sessions done directory=${logical} identity=${directoryKey} elapsed=${Date.now() - startedAt}ms`,
+      )
       sessionLoads.delete(directoryKey)
       children.unpin(directoryKey)
     })
@@ -751,7 +736,7 @@ function createGlobalSync() {
       const setStore = ((...input: unknown[]) => {
         if (rev(directoryKey) !== mark || managerOf(logical).children[directoryKey] !== child) return input[0]
         return raw(...input)
-      }) as typeof child[1]
+      }) as (typeof child)[1]
       const cache = children.vcsCache.get(directoryKey)
       if (!cache) return
       const sdk = sdkFor(logical)
@@ -814,7 +799,9 @@ function createGlobalSync() {
       })
       if (event.type === "global.config.updated") {
         void refreshProviders(emittingDomain).catch((err) => {
-          console.error(`[global-sync] provider refresh failed error=${err instanceof Error ? err.message : String(err)}`)
+          console.error(
+            `[global-sync] provider refresh failed error=${err instanceof Error ? err.message : String(err)}`,
+          )
         })
         return
       }
@@ -1031,7 +1018,9 @@ function createGlobalSync() {
     loadSessions,
     warm(directory: string) {
       void bootstrapInstance(directory).catch((err) => {
-        console.warn(`[global-sync] warm failed directory=${directory} err=${err instanceof Error ? err.message : String(err)}`)
+        console.warn(
+          `[global-sync] warm failed directory=${directory} err=${err instanceof Error ? err.message : String(err)}`,
+        )
       })
     },
     meta(directory: string, patch: ProjectMeta) {
