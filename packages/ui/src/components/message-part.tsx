@@ -256,6 +256,7 @@ function DiagnosticsDisplay(props: { diagnostics: Diagnostic[] }): JSX.Element {
 export interface MessageProps {
   message: MessageType
   parts: PartType[]
+  animate?: boolean
   queued?: boolean
   onSendQueued?: () => void
   actions?: UserActions
@@ -985,6 +986,7 @@ export function Message(props: MessageProps) {
           <UserMessageDisplay
             message={userMessage() as UserMessage}
             parts={props.parts}
+            animate={props.animate}
             queued={props.queued}
             onSendQueued={props.onSendQueued}
             actions={props.actions}
@@ -1229,6 +1231,7 @@ function LazyAction(props: { children: JSX.Element; size?: "small" | "normal" })
 export function UserMessageDisplay(props: {
   message: UserMessage
   parts: PartType[]
+  animate?: boolean
   queued?: boolean
   onSendQueued?: () => void
   actions?: UserActions
@@ -1396,7 +1399,7 @@ export function UserMessageDisplay(props: {
       <Show when={text()}>
         <>
           <div data-slot="user-message-body">
-            <div data-slot="user-message-text">
+            <div data-slot="user-message-text" data-animate={props.animate ? "" : undefined}>
               <Show when={props.queued}>
                 <span data-slot="user-message-queued-badge" aria-hidden="true">
                   <Icon name="clock" size="small" />

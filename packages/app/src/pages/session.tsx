@@ -1191,6 +1191,16 @@ export default function Page() {
   let dockHeight = 0
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
+  // Virtualized rows can mount repeatedly; only a submitted message may consume this marker once.
+  const userMessagesToAnimate = new Set<string>()
+  const markUserMessageForAnimation = (messageID: string) => {
+    userMessagesToAnimate.add(messageID)
+  }
+  const consumeUserMessageAnimation = (messageID: string) => {
+    if (!userMessagesToAnimate.has(messageID)) return false
+    userMessagesToAnimate.delete(messageID)
+    return true
+  }
   let revealMessage = (_id: string) => {}
   let prepareMessageNavigation = () => {}
   let scrollToEnd = () => {}
@@ -3509,6 +3519,7 @@ export default function Page() {
                         shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled() && !findBarOpen}
                         isInitialScrollSettling={settling}
                         centered={centered()}
+                        shouldAnimateMessage={consumeUserMessageAnimation}
                         setContentRef={(el) => {
                           content = el
                           autoScroll.contentRef(el)
@@ -3657,6 +3668,7 @@ export default function Page() {
               console.debug(`[math-initialize] clear pending session=${sessionID} reason=send-failed`)
               setMathMode({ prepared: false, initializingSessionID: undefined })
             }}
+            onUserMessageCreated={markUserMessageForAnimation}
             onSubmitted={() => {
               resumeScroll()
             }}

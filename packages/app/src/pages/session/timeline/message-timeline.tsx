@@ -264,6 +264,7 @@ export function MessageTimeline(props: {
   centered: boolean
   setContentRef: (el: HTMLDivElement) => void
   userMessages: UserMessage[]
+  shouldAnimateMessage?: (id: string) => boolean
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string) => void) => void
   setPrepareNavigation?: (fn: () => void) => void
@@ -1552,6 +1553,7 @@ export function MessageTimeline(props: {
                   <Message
                     message={value()}
                     parts={getMessageParts(value().id)}
+                    animate={props.shouldAnimateMessage?.(value().id)}
                     queued={queuedMessageIDs().has(value().id)}
                     onSendQueued={props.onSendQueued}
                     actions={props.actions}

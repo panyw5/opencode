@@ -569,6 +569,7 @@ export function SessionComposerRegion(props: {
   onNewSessionWorktreeReset: () => void
   onSubmit: (sessionID: string) => void
   onSubmitFailed?: (sessionID: string) => void
+  onUserMessageCreated?: (messageID: string) => void
   onSubmitted?: () => void
   onAbort?: () => void | Promise<void>
   onResponseSubmit: () => void
@@ -1129,6 +1130,7 @@ export function SessionComposerRegion(props: {
                 }}
                 onSubmit={props.onSubmit}
                 onSubmitFailed={props.onSubmitFailed}
+                onUserMessageCreated={props.onUserMessageCreated}
                 onSubmitted={props.onSubmitted}
                 onScrollToBottom={props.onScrollToBottom}
                 scrollState={props.scrollState}

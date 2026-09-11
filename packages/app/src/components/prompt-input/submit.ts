@@ -381,6 +381,7 @@ type PromptSubmitInput = {
   shouldQueue?: Accessor<boolean>
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void | Promise<void>
+  onUserMessageCreated?: (messageID: string) => void
   onSubmit?: (sessionID: string) => void
   onSubmitFailed?: (sessionID: string) => void
   onSubmitted?: () => void
@@ -922,6 +923,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const customCommand = sync.data.command.find((c) => c.name === commandName)
       if (customCommand) {
         const messageID = Identifier.ascending("message")
+        input.onUserMessageCreated?.(messageID)
         addOptimisticCommandMessage({
           sync,
           directory: sessionDirectory,
@@ -973,6 +975,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const messageID = Identifier.ascending("message")
+    input.onUserMessageCreated?.(messageID)
 
     const removeOptimisticMessage = () => {
       sync.session.optimistic.remove({

@@ -107,6 +107,7 @@ interface PromptInputProps {
   shouldQueue?: () => boolean
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void | Promise<void>
+  onUserMessageCreated?: (messageID: string) => void
   /** False while the composer is blocked on a permission/question ask — hides the intervention button. */
   canIntervene?: () => boolean
   onSubmit?: (sessionID: string) => void
@@ -1890,6 +1891,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     shouldQueue: props.shouldQueue,
     onQueue: props.onQueue,
     onAbort: props.onAbort,
+    onUserMessageCreated: props.onUserMessageCreated,
     onSubmit: (sessionID) => {
       console.debug("[prompt-submit]", { stage: "submitting-set" })
       setStore("submitting", true)
