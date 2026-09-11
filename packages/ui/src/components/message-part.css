@@ -197,6 +197,14 @@
     padding: 8px 12px;
     border-radius: 6px;
     color: light-dark(var(--text-base), #cdef62);
+    transition:
+      opacity 360ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 360ms cubic-bezier(0.22, 1, 0.36, 1);
+
+    @starting-style {
+      opacity: 0;
+      transform: translateY(20px);
+    }
 
     [data-highlight="file"] {
       color: var(--syntax-property);
