@@ -5,6 +5,7 @@ import { IconButton } from "./icon-button"
 
 export interface DialogProps extends ParentProps {
   title?: JSXElement
+  titleAction?: JSXElement
   description?: JSXElement
   action?: JSXElement
   size?: "normal" | "large" | "x-large"
@@ -18,6 +19,7 @@ export interface DialogProps extends ParentProps {
 const DIALOG_LOCAL_KEYS = [
   "children",
   "title",
+  "titleAction",
   "description",
   "action",
   "size",
@@ -59,7 +61,10 @@ export function Dialog(props: DialogProps) {
           <Show when={local.title || local.action}>
             <div data-slot="dialog-header">
               <Show when={local.title}>
-                <Kobalte.Title data-slot="dialog-title">{local.title}</Kobalte.Title>
+                <div data-slot="dialog-title-group">
+                  <Kobalte.Title data-slot="dialog-title">{local.title}</Kobalte.Title>
+                  <Show when={local.titleAction}>{local.titleAction}</Show>
+                </div>
               </Show>
               <Switch>
                 <Match when={local.action}>{local.action}</Match>

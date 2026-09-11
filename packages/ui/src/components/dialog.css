@@ -5,7 +5,11 @@
   inset: 0;
   z-index: 50;
   background:
-    radial-gradient(circle at top, color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 18%, transparent), transparent 46%),
+    radial-gradient(
+      circle at top,
+      color-mix(in srgb, var(--surface-raised-stronger-non-alpha) 18%, transparent),
+      transparent 46%
+    ),
     hsl(from var(--background-base) h s l / 0.46);
 }
 
@@ -75,6 +79,13 @@
         align-items: center;
         flex-shrink: 0;
         align-self: stretch;
+
+        [data-slot="dialog-title-group"] {
+          display: flex;
+          min-width: 0;
+          align-items: center;
+          gap: 8px;
+        }
 
         [data-slot="dialog-title"] {
           color: var(--text-strong);
