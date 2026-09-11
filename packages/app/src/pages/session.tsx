@@ -111,6 +111,7 @@ import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/
 import { collectSessionActiveSkills } from "@/pages/session/session-active-skills"
 import {
   ensureMathWorker as ensureMathWorkerApi,
+  getMathFactGraph,
   getMathWorkerTask,
   listMathDetails,
   listMathWorkers,
@@ -3605,6 +3606,18 @@ export default function Page() {
                     kind,
                     offset,
                     limit: 20,
+                  })
+                }}
+                onFactGraph={() => {
+                  const parentSessionID = params.id
+                  const project = mathSwarm.workers[0]?.project
+                  if (!parentSessionID || !project) return Promise.reject(new Error("Math Mode project is unavailable"))
+                  return getMathFactGraph({
+                    sdk,
+                    platform,
+                    auth: server.currentFor(domainFromDirectory(sdk.directory))?.http,
+                    parentSessionID,
+                    project,
                   })
                 }}
                 onEnsure={(entry) => void ensureMathWorker(entry)}

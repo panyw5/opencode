@@ -6,11 +6,12 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
-import { For, Show, createEffect, createMemo } from "solid-js"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import { useLanguage } from "@/context/language"
-import type { MathDetailKind, MathDetailPage, MathWorkerStatus } from "@/pages/session/math-worker-api"
+import type { MathDetailKind, MathDetailPage, MathFactGraph, MathWorkerStatus } from "@/pages/session/math-worker-api"
 import { SessionMathDetails } from "@/pages/session/session-math-details"
 import { leaveMathDetailsForWorker } from "@/pages/session/session-math-navigation"
 import { reconcileVerifierModelDraft } from "@/pages/session/math-verifier-model"
@@ -30,6 +31,7 @@ type SessionMathFloatProps = {
   onTask: (entry: SessionMathWorkerEntry) => void
   onOpenWorkerSession: (sessionID: string) => void
   onDetails: (kind: MathDetailKind, offset: number) => Promise<MathDetailPage>
+  onFactGraph: () => Promise<MathFactGraph>
   defaultVerifierModel: string
   onVerifierModelChange: (entry: SessionMathWorkerEntry, model: string) => Promise<void>
 }
@@ -96,6 +98,7 @@ export function SessionMathFloat(props: SessionMathFloatProps) {
 function SessionMathDialog(props: SessionMathFloatProps) {
   const language = useLanguage()
   const dialog = useDialog()
+  const [maximized, setMaximized] = createSignal(true)
   const running = createMemo(() => props.workers.filter((worker) => worker.alive && worker.state === "running").length)
   const busy = (entry: SessionMathWorkerEntry) => props.busy.includes(entry.sessionID)
   const projectSummary = createMemo(() => props.workers[0])
@@ -145,11 +148,41 @@ function SessionMathDialog(props: SessionMathFloatProps) {
       setDetails({ loading: false, error: error instanceof Error ? error.message : String(error) })
     }
   }
+  const [factGraph, setFactGraph] = createStore({
+    graph: undefined as MathFactGraph | undefined,
+    loading: false,
+    error: undefined as string | undefined,
+  })
+  let factGraphRequest = 0
+  const loadFactGraph = async () => {
+    const request = ++factGraphRequest
+    console.debug(`[math-fact-graph] load start request=${request} project=${details.project ?? "none"}`)
+    setFactGraph({ loading: true, error: undefined })
+    try {
+      const graph = await props.onFactGraph()
+      if (request !== factGraphRequest) {
+        console.debug(`[math-fact-graph] load stale request=${request} current=${factGraphRequest}`)
+        return
+      }
+      console.debug(
+        `[math-fact-graph] load finish request=${request} nodes=${graph.nodes.length} edges=${graph.edges.length}`,
+      )
+      setFactGraph({ graph, loading: false, error: undefined })
+    } catch (error) {
+      if (request !== factGraphRequest) return
+      console.warn(
+        `[math-fact-graph] load failed request=${request} project=${details.project ?? "none"} error=${error instanceof Error ? error.message : String(error)}`,
+      )
+      setFactGraph({ loading: false, error: error instanceof Error ? error.message : String(error) })
+    }
+  }
   createEffect(() => {
     const project = projectSummary()?.project
     if (project !== details.project) {
       detailsRequest += 1
       setDetails({ project, selected: undefined, page: undefined, loading: false, error: undefined })
+      factGraphRequest += 1
+      setFactGraph({ graph: undefined, loading: false, error: undefined })
       if (project) void loadDetails("facts", 0)
       return
     }
@@ -253,6 +286,22 @@ function SessionMathDialog(props: SessionMathFloatProps) {
       .filter(Boolean)
       .join(" · ")
   }
+  const dialogContainerStyle = createMemo(() =>
+    maximized()
+      ? {
+          width: "90vw",
+          "max-width": "90vw",
+          height: "95vh",
+          "max-height": "95vh",
+          transition: "width 180ms cubic-bezier(0.16, 1, 0.3, 1), height 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+        }
+      : {
+          width: "min(calc(100vw - 32px), 1180px)",
+          height: "min(calc(100vh - 32px), 88vh)",
+          "max-height": "min(calc(100vh - 32px), 88vh)",
+          transition: "width 180ms cubic-bezier(0.16, 1, 0.3, 1), height 180ms cubic-bezier(0.16, 1, 0.3, 1)",
+        },
+  )
 
   return (
     <>
@@ -289,20 +338,35 @@ function SessionMathDialog(props: SessionMathFloatProps) {
         }
         size="x-large"
         transition
-        containerStyle={{
-          width: "min(calc(100vw - 32px), 1180px)",
-          height: "min(calc(100vh - 32px), 88vh)",
-          "max-height": "min(calc(100vh - 32px), 88vh)",
-        }}
+        containerStyle={dialogContainerStyle()}
+        data-maximized={maximized() ? "" : undefined}
         data-math-mode-dialog
         action={
-          <IconButton
-            icon="close"
-            size="large"
-            variant="ghost"
-            aria-label={language.t("session.mathInitialize.collapse")}
-            onClick={() => dialog.close()}
-          />
+          <div class="flex items-center gap-2">
+            <Tooltip
+              placement="bottom"
+              value={language.t(maximized() ? "prompt.editor.restore" : "prompt.editor.maximize")}
+            >
+              <IconButton
+                icon={maximized() ? "collapse" : "expand"}
+                variant="ghost"
+                size="large"
+                aria-label={language.t(maximized() ? "prompt.editor.restore" : "prompt.editor.maximize")}
+                onClick={() => {
+                  const next = !maximized()
+                  console.debug(`[math-swarm] maximize=${String(next)}`)
+                  setMaximized(next)
+                }}
+              />
+            </Tooltip>
+            <IconButton
+              icon="close"
+              size="large"
+              variant="ghost"
+              aria-label={language.t("session.mathInitialize.collapse")}
+              onClick={() => dialog.close()}
+            />
+          </div>
         }
       >
         <div
@@ -419,9 +483,7 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                           <div class="mt-1 truncate font-mono text-11-regular text-text-weak">{detail(entry)}</div>
                           <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-11-regular text-text-weak">
                             <Show when={compact(entry.tokens)}>
-                              {(tokens) => (
-                                <span>{language.t("session.mathSwarm.tokens", { tokens: tokens() })}</span>
-                              )}
+                              {(tokens) => <span>{language.t("session.mathSwarm.tokens", { tokens: tokens() })}</span>}
                             </Show>
                             <Show when={entry.cost !== undefined}>
                               <span>
@@ -505,6 +567,9 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                   page={details.page}
                   loading={details.loading}
                   error={details.error}
+                  factGraph={factGraph.graph}
+                  graphLoading={factGraph.loading}
+                  graphError={factGraph.error}
                   onSelect={selectDetails}
                   onOffset={(offset) => {
                     const kind = details.selected
@@ -512,6 +577,7 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                     void loadDetails(kind, offset)
                   }}
                   onOpenWorker={openWorkerSession}
+                  onGraph={() => void loadFactGraph()}
                 />
               )}
             </Show>

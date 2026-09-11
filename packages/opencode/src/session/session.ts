@@ -111,18 +111,18 @@ export function fromRow(row: SessionRow): Info {
     },
   }
 
-  if (row.workspace_id !== null) result.workspaceID = row.workspace_id
-  if (row.path !== null) result.path = row.path
-  if (row.parent_id !== null) result.parentID = row.parent_id
-  if (row.agent !== null) result.agent = row.agent
+  if (row.workspace_id != null) result.workspaceID = row.workspace_id
+  if (row.path != null) result.path = row.path
+  if (row.parent_id != null) result.parentID = row.parent_id
+  if (row.agent != null) result.agent = row.agent
   if (row.share_url) result.share = { url: row.share_url }
-  if (row.revert !== null) result.revert = row.revert
-  if (row.permission !== null) result.permission = [...row.permission]
-  if (row.time_compacting !== null) result.time.compacting = row.time_compacting
-  if (row.time_archived !== null) result.time.archived = row.time_archived
-  if (row.time_favorited !== null && row.time_favorited !== undefined) result.time.favorited = row.time_favorited
+  if (row.revert != null) result.revert = row.revert
+  if (row.permission != null) result.permission = [...row.permission]
+  if (row.time_compacting != null) result.time.compacting = row.time_compacting
+  if (row.time_archived != null) result.time.archived = row.time_archived
+  if (row.time_favorited != null) result.time.favorited = row.time_favorited
 
-  if (row.model !== null) {
+  if (row.model != null) {
     result.model = {
       id: ModelID.make(row.model.id),
       providerID: ProviderID.make(row.model.providerID),
@@ -130,16 +130,16 @@ export function fromRow(row: SessionRow): Info {
     if (row.model.variant !== undefined) result.model.variant = row.model.variant
   }
 
-  if (row.summary_additions !== null || row.summary_deletions !== null || row.summary_files !== null) {
+  if (row.summary_additions != null || row.summary_deletions != null || row.summary_files != null) {
     result.summary = {
       additions: row.summary_additions ?? 0,
       deletions: row.summary_deletions ?? 0,
       files: row.summary_files ?? 0,
     }
-    if (row.summary_diffs !== null) result.summary.diffs = row.summary_diffs
+    if (row.summary_diffs != null) result.summary.diffs = row.summary_diffs
   }
 
-  if (row.mounted_task_id !== null) result.mountedTaskID = row.mounted_task_id
+  if (row.mounted_task_id != null) result.mountedTaskID = row.mounted_task_id
   // Always include so clients can clear a previously-true value on reconcile.
   result.injectTaskContext = !!row.inject_task_context
 

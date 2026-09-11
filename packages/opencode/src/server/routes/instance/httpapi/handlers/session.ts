@@ -25,7 +25,7 @@ import {
 } from "@/math/worker"
 import { legacyMathRoot, mathProblemsRoot, mathRoot } from "@/math/layout"
 import { MathWorkerEvent } from "@/math/event"
-import { attachVerificationProofs, readMathDetailPage, verificationAttempts } from "@/math/details"
+import { attachVerificationProofs, readMathDetailPage, readMathFactGraph, verificationAttempts } from "@/math/details"
 import { readSwarm } from "@/math/swarm"
 import { taskPath } from "@/math/layout"
 import { MessageID, PartID, SessionID } from "@/session/schema"
@@ -180,10 +180,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         favorited: ctx.query.favorited,
       })
       try {
-        Schema.decodeUnknownSync(Schema.Array(Session.Info))(result)
+        // Handler results are schema type values; validate them in the response encoding direction.
         Schema.encodeUnknownSync(Schema.Array(Session.Info))(result)
       } catch (error) {
-        log.error("session.list response schema failed", {
+        log.error("session.list response encoding failed", {
           query: ctx.query,
           count: result.length,
           first: sessionSummary(result[0]),
@@ -387,6 +387,28 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         attempts: attempts.flat().length,
       })
       return result
+    })
+
+    const mathFactGraph = Effect.fn("SessionHttpApi.mathFactGraph")(function* (ctx: {
+      params: { sessionID: SessionID }
+      query: typeof MathWorkerQuery.Type
+    }) {
+      log.info("math fact graph request start", {
+        parentSessionID: ctx.params.sessionID,
+        project: ctx.query.project,
+      })
+      const parent = yield* requireSession(ctx.params.sessionID)
+      const dirs = mathProjectDirs(parent, ctx.query.project)
+      const projectDir = dirs.find((dir) => existsSync(dir)) ?? dirs[0]
+      if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      const graph = yield* Effect.promise(() => readMathFactGraph(projectDir))
+      log.info("math fact graph request finish", {
+        parentSessionID: parent.id,
+        projectDir,
+        nodes: graph.nodes.length,
+        edges: graph.edges.length,
+      })
+      return graph
     })
 
     const mathWorkerEnsure = Effect.fn("SessionHttpApi.mathWorkerEnsure")(function* (ctx: {
@@ -956,9 +978,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           }),
         )
         .pipe(
-          Effect.mapError((error) =>
-            error instanceof InvalidRequestError ? error : new HttpApiError.BadRequest({}),
-          ),
+          Effect.mapError((error) => (error instanceof InvalidRequestError ? error : new HttpApiError.BadRequest({}))),
         )
       return HttpServerResponse.stream(Stream.make(JSON.stringify(message)).pipe(Stream.encodeText), {
         contentType: "application/json",
@@ -1142,6 +1162,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("children", children)
       .handle("mathWorkers", mathWorkers)
       .handle("mathDetails", mathDetails)
+      .handle("mathFactGraph", mathFactGraph)
       .handle("mathWorkerEnsure", mathWorkerEnsure)
       .handle("mathWorkerStop", mathWorkerStop)
       .handle("mathWorkerEvent", mathWorkerEvent)

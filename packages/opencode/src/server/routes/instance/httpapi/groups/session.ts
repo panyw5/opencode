@@ -106,6 +106,15 @@ export const MathDetailPage = Schema.Struct({
   limit: Schema.Number,
   items: Schema.Array(MathDetailItem),
 })
+export const MathFactGraph = Schema.Struct({
+  nodes: Schema.Array(MathFactDetail),
+  edges: Schema.Array(
+    Schema.Struct({
+      from: Schema.String,
+      to: Schema.String,
+    }),
+  ),
+})
 export const MathWorkerStatus = Schema.Struct({
   sessionID: Schema.String,
   project: Schema.optional(Schema.String),
@@ -220,6 +229,7 @@ export const SessionPaths = {
   children: `${root}/:sessionID/children`,
   mathWorkers: `${root}/:sessionID/math-workers`,
   mathDetails: `${root}/:sessionID/math-details`,
+  mathFactGraph: `${root}/:sessionID/math-fact-graph`,
   mathWorkerEnsure: `${root}/:sessionID/math-workers/:workerID/ensure`,
   mathWorkerStop: `${root}/:sessionID/math-workers/:workerID/stop`,
   mathWorkerEvent: `${root}/:sessionID/math-workers/:workerID/event`,
@@ -327,6 +337,18 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.mathDetails",
             summary: "Get Math Mode details",
             description: "List accepted facts or proof verification records for a Math Mode project.",
+          }),
+        ),
+        HttpApiEndpoint.get("mathFactGraph", SessionPaths.mathFactGraph, {
+          params: { sessionID: SessionID },
+          query: MathWorkerQuery,
+          success: described(MathFactGraph, "Math Mode verified fact graph"),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.mathFactGraph",
+            summary: "Get Math Mode fact graph",
+            description: "Return all active verifier-accepted facts and their predecessor edges.",
           }),
         ),
         HttpApiEndpoint.post("mathWorkerEnsure", SessionPaths.mathWorkerEnsure, {

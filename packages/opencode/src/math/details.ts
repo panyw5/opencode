@@ -47,6 +47,11 @@ export type MathDetailPage = {
   items: MathDetailItem[]
 }
 
+export type MathFactGraph = {
+  nodes: MathFactDetail[]
+  edges: Array<{ from: string; to: string }>
+}
+
 export type MathVerificationAttempt = {
   workerSessionID: string
   statement: string
@@ -122,10 +127,7 @@ function verificationKind(entry: GlobalEntry): MathVerificationDetail["kind"] {
   return "error"
 }
 
-async function verificationDetail(
-  factGraph: FactGraph,
-  entry: GlobalEntry,
-): Promise<MathVerificationDetail> {
+async function verificationDetail(factGraph: FactGraph, entry: GlobalEntry): Promise<MathVerificationDetail> {
   const kind = verificationKind(entry)
   const factId = typeof entry.fact_id === "string" ? entry.fact_id : undefined
   const rawFact = factId ? await factGraph.getRaw(factId) : undefined
@@ -167,6 +169,21 @@ export async function readMathDetailPage(input: {
   const selected = verification.slice(input.offset, input.offset + input.limit)
   const items = await Promise.all(selected.map((entry) => verificationDetail(factGraph, entry)))
   return { kind: input.kind, total: verification.length, offset: input.offset, limit: input.limit, items }
+}
+
+export async function readMathFactGraph(projectDir: string): Promise<MathFactGraph> {
+  const factGraph = new FactGraph(projectDir)
+  const factIDs = await factGraph.list()
+  const nodes = await Promise.all(
+    factIDs.map(async (factId) => parseFactDetail(factId, (await factGraph.getRaw(factId)) ?? "")),
+  )
+  const known = new Set(factIDs)
+  const edges = nodes.flatMap((node) =>
+    node.predecessors
+      .filter((predecessor) => known.has(predecessor))
+      .map((predecessor) => ({ from: predecessor, to: node.factId })),
+  )
+  return { nodes, edges }
 }
 
 function attemptVerdict(output: unknown): MathVerificationAttempt["verdict"] | undefined {
@@ -213,10 +230,7 @@ export function verificationAttempts(
   return result
 }
 
-export function attachVerificationProofs(
-  page: MathDetailPage,
-  attempts: MathVerificationAttempt[],
-): MathDetailPage {
+export function attachVerificationProofs(page: MathDetailPage, attempts: MathVerificationAttempt[]): MathDetailPage {
   const byKey = new Map<string, MathVerificationAttempt[]>()
   for (const attempt of attempts) {
     const key = `${attempt.workerSessionID}\u0000${attempt.verdict}\u0000${attempt.statement}`

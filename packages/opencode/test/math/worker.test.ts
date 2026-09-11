@@ -175,6 +175,9 @@ describe("math.worker", () => {
       expect(prompt).toContain("Prove lemma L")
       expect(prompt).toContain("fact_submit")
       expect(prompt).toContain("MATH_WORKER_TASK_COMPLETE")
+      expect(prompt).toContain("Markdown `$...$` for inline math")
+      expect(prompt).toContain("Never use `\\(...\\)` or `\\[...\\]` delimiters")
+      expect(prompt).toContain("\\mathbb{C}")
       expect(prompt).not.toContain("# Problem statement")
 
       const withProblem = buildWorkerKickoff({

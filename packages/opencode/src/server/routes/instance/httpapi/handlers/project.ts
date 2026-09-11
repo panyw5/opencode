@@ -42,10 +42,10 @@ export const projectHandlers = HttpApiBuilder.group(InstanceHttpApi, "project", 
     const list = Effect.fn("ProjectHttpApi.list")(function* () {
       const result = yield* svc.list()
       try {
-        Schema.decodeUnknownSync(Schema.Array(Project.Info))(result)
+        // Handler results are schema type values; validate them in the response encoding direction.
         Schema.encodeUnknownSync(Schema.Array(Project.Info))(result)
       } catch (error) {
-        log.error("project.list response schema failed", {
+        log.error("project.list response encoding failed", {
           count: result.length,
           first: projectSummary(result[0]),
           error: errorDetails(error),
@@ -58,10 +58,10 @@ export const projectHandlers = HttpApiBuilder.group(InstanceHttpApi, "project", 
     const current = Effect.fn("ProjectHttpApi.current")(function* () {
       const result = (yield* InstanceState.context).project
       try {
-        Schema.decodeUnknownSync(Project.Info)(result)
+        // Decoding here would validate the wire-input side and reject valid explicit undefined values.
         Schema.encodeUnknownSync(Project.Info)(result)
       } catch (error) {
-        log.error("project.current response schema failed", {
+        log.error("project.current response encoding failed", {
           project: projectSummary(result),
           error: errorDetails(error),
         })

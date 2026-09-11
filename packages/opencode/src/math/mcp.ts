@@ -54,7 +54,7 @@ const TOOL_META: Record<
   },
   fact_submit: {
     description:
-      "The only way to write a fact. Calls the verifier and writes the node IFF verdict=correct. Always traces the verdict to global memory (kind=verification). Orchestrator must never see this tool.",
+      "The only way to write a fact. Calls the verifier and writes the node IFF verdict=correct. Always traces the verdict to global memory (kind=verification). Orchestrator must never see this tool. Use Markdown math with $...$ inline and $$...$$ on standalone lines; do not use \\(...\\) or \\[...\\] delimiters or leave LaTeX commands in prose.",
     inputSchema: {
       statement: z.string(),
       proof: z.string(),

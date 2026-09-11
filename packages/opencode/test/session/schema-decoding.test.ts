@@ -135,8 +135,9 @@ describe("Session.Info", () => {
     expect("model" in info).toBe(false)
     expect("permission" in info).toBe(false)
     expect("revert" in info).toBe(false)
+    expect("mountedTaskID" in info).toBe(false)
     expect("compacting" in info.time).toBe(false)
-    expect(decode(info)).toEqual(info)
+    expect(Schema.encodeUnknownSync(Session.Info)(info)).toEqual(info)
   })
 
   test("rejects unbranded session id", () => {

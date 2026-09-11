@@ -89,6 +89,11 @@ export type MathDetailPage = {
   items: MathDetailItem[]
 }
 
+export type MathFactGraph = {
+  nodes: MathFactDetail[]
+  edges: Array<{ from: string; to: string }>
+}
+
 export type MathWorkerTaskInfo = {
   sessionID: string
   project: string
@@ -173,6 +178,20 @@ export function listMathDetails(input: {
   return request({
     ...input,
     path: `/session/${encodeURIComponent(input.parentSessionID)}/math-details?${query.toString()}`,
+  })
+}
+
+export function getMathFactGraph(input: {
+  sdk: SDK
+  platform: Platform
+  auth?: Auth
+  parentSessionID: string
+  project: string
+}): Promise<MathFactGraph> {
+  console.debug(`[math-fact-graph] api request parent=${input.parentSessionID} project=${input.project}`)
+  return request({
+    ...input,
+    path: `/session/${encodeURIComponent(input.parentSessionID)}/math-fact-graph?project=${encodeURIComponent(input.project)}`,
   })
 }
 

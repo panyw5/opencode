@@ -153,16 +153,16 @@ export function fromRow(row: Row): Info {
   }
 
   if (row.vcs) result.vcs = Schema.decodeUnknownSync(ProjectVcs)(row.vcs)
-  if (row.project_kind !== null) result.kind = Schema.decodeUnknownSync(ProjectKind)(row.project_kind)
-  if (row.name !== null) result.name = row.name
-  if (row.commands !== null) result.commands = row.commands
-  if (row.time_initialized !== null) result.time.initialized = row.time_initialized
+  if (row.project_kind != null) result.kind = Schema.decodeUnknownSync(ProjectKind)(row.project_kind)
+  if (row.name != null) result.name = row.name
+  if (row.commands != null) result.commands = row.commands
+  if (row.time_initialized != null) result.time.initialized = row.time_initialized
 
   if (row.icon_url || row.icon_url_override || row.icon_color) {
     result.icon = {}
-    if (row.icon_url !== null) result.icon.url = row.icon_url
-    if (row.icon_url_override !== null) result.icon.override = row.icon_url_override
-    if (row.icon_color !== null) result.icon.color = row.icon_color
+    if (row.icon_url != null) result.icon.url = row.icon_url
+    if (row.icon_url_override != null) result.icon.override = row.icon_url_override
+    if (row.icon_color != null) result.icon.color = row.icon_color
   }
 
   return result
@@ -581,21 +581,30 @@ export const layer: Layer.Layer<
 
       if (flags.experimentalIconDiscovery) yield* discover(existing).pipe(Effect.ignore, Effect.forkIn(scope))
 
+      const kind = existing.kind ?? registration.kind
       const result: Info = {
         ...existing,
         worktree:
           row && data.sandbox === data.worktree && row.worktree !== data.worktree ? row.worktree : data.worktree,
         // Internal runtimes may never demote a directory the user explicitly opened.
         visibility: existing.visibility === "user" || requestedVisibility === "user" ? "user" : "internal",
-        kind: existing.kind ?? registration.kind,
+        ...(kind ? { kind } : {}),
         time: { ...existing.time, updated: Date.now() },
+      }
+      if (kind === undefined) {
+        delete result.kind
+        log.info("project optional kind omitted", {
+          projectID: result.id,
+          source: row ? "database" : "new",
+          keys: Object.keys(result),
+        })
       }
       log.info("project visibility resolved", {
         projectID: result.id,
         previousVisibility: row?.visibility,
         requestedVisibility,
         resolvedVisibility: result.visibility,
-        kind: result.kind,
+        kind,
       })
       if (data.vcs) result.vcs = data.vcs
       else delete result.vcs

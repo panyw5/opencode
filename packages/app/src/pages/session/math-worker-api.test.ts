@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   ensureMathWorker,
+  getMathFactGraph,
   getMathWorkerTask,
   listMathDetails,
   listMathWorkers,
@@ -90,5 +91,19 @@ describe("math-worker-api", () => {
     expect(input.requests[1]?.init?.body).toBe('{"force":false}')
     expect(input.requests[2]?.url).toContain("/math-workers/worker/task?project=custom-swarm&directory=")
     expect(input.requests[3]?.init?.body).toBe('{"task":"# redirected"}')
+  })
+
+  test("loads the complete verified fact graph", async () => {
+    const input = fixture({ nodes: [], edges: [] })
+    const result = await getMathFactGraph({
+      sdk: input.sdk as never,
+      platform: input.platform as never,
+      parentSessionID: "parent/id",
+      project: "proof swarm",
+    })
+    expect(result.nodes).toEqual([])
+    expect(input.requests[0]?.url).toBe(
+      "http://127.0.0.1:4096/session/parent%2Fid/math-fact-graph?project=proof+swarm&directory=%2Ftmp%2Fmath+project",
+    )
   })
 })

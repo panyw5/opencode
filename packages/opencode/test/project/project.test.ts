@@ -135,7 +135,7 @@ describe("Project.fromDirectory", () => {
     expect("icon" in project).toBe(false)
     expect("commands" in project).toBe(false)
     expect("initialized" in project.time).toBe(false)
-    expect(Schema.decodeUnknownSync(Project.Info)(project)).toEqual(project)
+    expect(Schema.encodeUnknownSync(Project.Info)(project)).toEqual(project)
   })
 
   it.live("should handle git repository with no commits", () =>
@@ -186,6 +186,7 @@ describe("Project.fromDirectory", () => {
       expect(firstLocation.projectID).toBe(a.id)
       expect(firstLocation.kind).toBe("directory")
       expect(firstLocation.vcsState).toBe("none")
+      expect("kind" in a).toBe(false)
       expect(Schema.encodeUnknownSync(Project.Info)(a)).toEqual(a)
     }),
   )

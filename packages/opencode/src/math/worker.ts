@@ -20,7 +20,12 @@ import { MCP } from "@/mcp"
 import { SessionID, MessageID, PartID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { layout, mathRoot, taskPath } from "./layout"
-import { assertNoPointerReferences, ensureProblemStatementReady, stageReferences, writeProblemStatement } from "./problem"
+import {
+  assertNoPointerReferences,
+  ensureProblemStatementReady,
+  stageReferences,
+  writeProblemStatement,
+} from "./problem"
 import { killProcessGroup, pidAlive, selfArgv, spawnDetached } from "./spawn"
 import { clearStop, patchWorker, readSwarm, setVerifierModel, stopPath, upsertWorker, type SwarmWorker } from "./swarm"
 import { FactGraph } from "./fact-graph"
@@ -929,6 +934,9 @@ export function buildWorkerKickoff(input: {
     "Read and execute the assigned TASK below. Continue from shared math-truth memory rather than restarting from scratch.",
     "Search verified facts before relying on prior work. Global memory and prior reports are hypotheses, never proof bricks.",
     "Record useful plans, obstacles, dead ends, and partial findings with math-truth memory tools while working.",
+    "Mathematical notation contract: use Markdown `$...$` for inline math and `$$...$$` on standalone lines for display math. Never use `\\(...\\)` or `\\[...\\]` delimiters, and never leave LaTeX commands outside math delimiters.",
+    "Use standard KaTeX/LaTeX commands with braces, such as `\\mathbb{C}`, `\\operatorname{Spec}(A)`, `\\frac{a}{b}`, `\\subseteq`, and `\\text{...}` for short text inside formulas. Balance braces, delimiters, `\\left/\\right`, and `\\begin/\\end` environments.",
+    "Keep prose outside formulas, use `aligned` inside display math for multi-line derivations, do not invent macros, and scan statement/proof/intuition for malformed delimiters before fact_submit.",
     "Submit a self-contained statement and proof through math-truth fact_submit only when every step is justified. Cite only verified fact_id values as predecessors.",
     "When the entire assigned TASK is discharged by an accepted fact chain, put the exact standalone line MATH_WORKER_TASK_COMPLETE in your final response. Never emit it for partial progress, a rejected submission, or an open gap.",
     "Do not run code or spawn subagents. If the problem remains open, preserve progress in shared memory and finish the round normally.",
@@ -1214,8 +1222,7 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
     round += 1
     const startedAt = Date.now()
     log.info("math worker round start", { sessionID, round, pid: process.pid, markerPresent: false })
-    if (input.heartbeatOnly)
-      yield* writeHeartbeat({ sessionID, round, projectDir: input.projectDir, generation })
+    if (input.heartbeatOnly) yield* writeHeartbeat({ sessionID, round, projectDir: input.projectDir, generation })
     else {
       const exit = yield* runWorkerRound({
         sessionID,
@@ -1369,7 +1376,8 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
     yield* Effect.sleep(Duration.millis(input.intervalMs))
   }
   const final = readSwarm(input.projectDir).workers[sessionID]
-  if (!blockedReason && final?.generation === generation) patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })
+  if (!blockedReason && final?.generation === generation)
+    patchWorker(input.projectDir, sessionID, { state: "dead", lastRc: 0 })
   log.info("math worker loop stop", {
     sessionID,
     round,
