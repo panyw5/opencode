@@ -440,6 +440,17 @@ export function resolveThemeVariant(variant: ThemeVariant, isDark: boolean): Res
     tokens[key] = value
   }
 
+  // Brand foreground tokens must follow overridden brand surfaces.
+  const resolvedBrandBase = getHex(tokens["surface-brand-base"]) ?? brandb
+  const resolvedBrandHover = getHex(tokens["surface-brand-hover"]) ?? brandh
+  if (!("text-on-brand-base" in overrides)) tokens["text-on-brand-base"] = on(resolvedBrandBase)
+  if (!("text-on-brand-weak" in overrides)) tokens["text-on-brand-weak"] = on(resolvedBrandBase)
+  if (!("text-on-brand-weaker" in overrides)) tokens["text-on-brand-weaker"] = on(resolvedBrandBase)
+  if (!("text-on-brand-strong" in overrides)) tokens["text-on-brand-strong"] = on(resolvedBrandHover)
+  if (!("icon-on-brand-base" in overrides)) tokens["icon-on-brand-base"] = on(resolvedBrandBase)
+  if (!("icon-on-brand-hover" in overrides)) tokens["icon-on-brand-hover"] = on(resolvedBrandHover)
+  if (!("icon-on-brand-selected" in overrides)) tokens["icon-on-brand-selected"] = on(resolvedBrandHover)
+
   const primaryBase = tokens["button-primary-base"]
   const primaryText = tokens["button-primary-text"]
   if (

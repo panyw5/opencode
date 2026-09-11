@@ -21,6 +21,14 @@ function delta(a: HexColor, b: HexColor) {
 }
 
 describe("primary button interaction colors", () => {
+  test("brand foreground colors follow overridden brand surfaces", () => {
+    const tokens = resolveThemeVariant(DEFAULT_THEMES.claude.light, false)
+
+    expect(tokens["surface-brand-hover"]).toBe("#b85a39")
+    expect(tokens["icon-on-brand-hover"]).toBe("#ffffff")
+    expect(tokens["text-on-brand-strong"]).toBe("#ffffff")
+  })
+
   test("Claude light has a clearly visible hover state", () => {
     const theme = DEFAULT_THEMES.claude
     const tokens = resolveThemeVariant(theme.light, false)
