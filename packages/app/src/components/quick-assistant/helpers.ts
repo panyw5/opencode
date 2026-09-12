@@ -1,5 +1,48 @@
 import type { Message, Part, Session } from "@opencode-ai/sdk/v2/client"
 
+export function removeQuickRequest<T extends { id: string }>(items: T[] | undefined, id: string): T[] {
+  return (items ?? []).filter((item) => item.id !== id)
+}
+
+export function patchAgentQuestionDeny(input: unknown) {
+  const agent = input && typeof input === "object" && !Array.isArray(input) ? input : {}
+  const permission =
+    (agent as Record<string, unknown>).permission &&
+    typeof (agent as Record<string, unknown>).permission === "object" &&
+    !Array.isArray((agent as Record<string, unknown>).permission)
+      ? (agent as Record<string, unknown>).permission
+      : {}
+  const nextPermission = { ...(permission as Record<string, unknown>) }
+  if (nextPermission.question !== undefined && nextPermission.question !== "deny") return input
+  nextPermission.question = "allow"
+  return {
+    ...(agent as Record<string, unknown>),
+    permission: nextPermission,
+  }
+}
+
+export function quickQuestionAnswers(
+  questions: Array<{ multiple?: boolean; custom?: boolean }>,
+  selected: Record<number, string[]>,
+  custom: Record<number, string>,
+) {
+  return questions.map((question, index) => {
+    const values = selected[index] ?? []
+    const text = question.custom === false ? "" : (custom[index] ?? "").trim()
+    if (!text) return values
+    return question.multiple ? [...values.filter((item) => item !== text), text] : [text]
+  })
+}
+
+export function quickRequestNotFound(error: unknown, seen = new Set<unknown>()): boolean {
+  if (!error || typeof error !== "object" || seen.has(error)) return false
+  seen.add(error)
+  const value = error as Record<string, unknown>
+  if (value.status === 404 || value.statusCode === 404) return true
+  if (["QuestionNotFoundError", "PermissionNotFoundError"].includes(String(value.name))) return true
+  return [value.cause, value.body, value.data].some((item) => quickRequestNotFound(item, seen))
+}
+
 export function render(parts: Part[] | undefined) {
   if (!parts?.length) return ""
   return parts
@@ -18,10 +61,7 @@ export function render(parts: Part[] | undefined) {
 
 export function mergeMessages(a: Message[] | undefined, b: Message[]) {
   return Array.from(
-    [...(a ?? []), ...b].reduce(
-      (map, item) => map.set(item.id, item),
-      new Map<string, Message>(),
-    ).values(),
+    [...(a ?? []), ...b].reduce((map, item) => map.set(item.id, item), new Map<string, Message>()).values(),
   ).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 

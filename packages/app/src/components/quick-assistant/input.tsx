@@ -46,8 +46,8 @@ export function QuickAssistantInput(props: Props) {
           type="button"
           class="flex size-10 items-center justify-center rounded-full border border-border-weak-base bg-background-base text-text-strong shadow-xs-border transition-colors hover:border-border-strong-base hover:bg-surface-base-hover active:bg-surface-base-active"
           onClick={props.onReset}
-          aria-label={props.clear ? "Clear assistant" : "New assistant"}
-          title={props.clear ? "Clear" : "New"}
+          aria-label="新建对话"
+          title="新建对话"
         >
           <Icon name="new-session" class="size-4.5" />
         </button>

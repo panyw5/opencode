@@ -1,4 +1,11 @@
-import type { Message, Part, ProviderListResponse, Session } from "@opencode-ai/sdk/v2/client"
+import type {
+  Message,
+  Part,
+  PermissionRequest,
+  ProviderListResponse,
+  QuestionRequest,
+  Session,
+} from "@opencode-ai/sdk/v2/client"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
@@ -19,9 +26,17 @@ import { Persist, persisted } from "@/utils/persist"
 import { working } from "@/pages/session/session-working"
 import { domainFromDirectory, extraAgentCapabilities, type ExtraAgentCapabilities } from "@/pages/layout/extra-agents"
 import { formatServerError } from "@/utils/server-errors"
-import { context, isSessionNotFoundError, mergeMessages, prompt } from "./helpers"
+import {
+  context,
+  isSessionNotFoundError,
+  mergeMessages,
+  patchAgentQuestionDeny,
+  prompt,
+  removeQuickRequest,
+} from "./helpers"
 import { QuickAssistantInput } from "./input"
 import { QuickAssistantMessages } from "./messages"
+import { QuickAssistantRequests } from "./requests"
 
 function errorName(err: unknown) {
   if (!err || typeof err !== "object") return undefined
@@ -65,16 +80,8 @@ function quickAssistantConfig() {
       urls: [],
     },
     agent: {
-      build: {
-        permission: {
-          question: "deny",
-        },
-      },
-      plan: {
-        permission: {
-          question: "deny",
-        },
-      },
+      build: { permission: { question: "allow" } },
+      plan: { permission: { question: "allow" } },
     },
   }
 }
@@ -100,23 +107,6 @@ function patchQuickAssistantConfig(existing: string | null) {
   }
   const text = JSON.stringify(next, null, 2)
   return text === existing ? undefined : text
-}
-
-function patchAgentQuestionDeny(input: unknown) {
-  const agent = input && typeof input === "object" && !Array.isArray(input) ? input : {}
-  const permission =
-    (agent as Record<string, unknown>).permission &&
-    typeof (agent as Record<string, unknown>).permission === "object" &&
-    !Array.isArray((agent as Record<string, unknown>).permission)
-      ? (agent as Record<string, unknown>).permission
-      : {}
-  return {
-    ...(agent as Record<string, unknown>),
-    permission: {
-      ...(permission as Record<string, unknown>),
-      question: "deny",
-    },
-  }
 }
 
 function validModel(store: State, model: { providerID: string; modelID: string } | undefined) {
@@ -297,6 +287,16 @@ export function QuickAssistant() {
     if (!id) return false
     return working(data()?.session_status[id], list())
   })
+  const permissions = createMemo(() => {
+    const id = sessionID()
+    return id ? (data()?.permission[id] ?? []) : []
+  })
+  const questions = createMemo(() => {
+    const id = sessionID()
+    return id ? (data()?.question[id] ?? []) : []
+  })
+  const waiting = createMemo(() => permissions().length > 0 || questions().length > 0)
+  const interacting = createMemo(() => busy() || waiting())
   const enabled = createMemo(() => settings.assistant.model() !== "disabled")
   const chosen = createMemo(() => {
     const store = data()
@@ -334,7 +334,11 @@ export function QuickAssistant() {
     platform.readLocalFile(file).then((existing) => {
       const patched = patchQuickAssistantConfig(existing)
       if (!patched) return
-      return platform.writeLocalFile!(file, patched)
+      return platform.writeLocalFile!(file, patched).then(async () => {
+        console.info(`[quick-assistant] config migrated directory=${next}`)
+        await globalSDK.createClient({ directory: next, throwOnError: true }).instance.dispose({ directory: next })
+        console.info(`[quick-assistant] config runtime disposed directory=${next}`)
+      })
     })
   })
 
@@ -357,6 +361,8 @@ export function QuickAssistant() {
         delete next[id]
         return next
       })
+      setStore("permission", (items) => ({ ...items, [id]: [] }))
+      setStore("question", (items) => ({ ...items, [id]: [] }))
     })
   }
 
@@ -372,9 +378,11 @@ export function QuickAssistant() {
     id: string,
     setStore: SetStoreFunction<State>,
   ) => {
-    const [statusResult, messageResult] = await Promise.allSettled([
+    const [statusResult, messageResult, permissionResult, questionResult] = await Promise.allSettled([
       client.session.status(),
       globalSync.session.messages.page({ directory: root(), sessionID: id, limit: QUICK_ASSISTANT_MESSAGE_LIMIT }),
+      client.permission.list(),
+      client.question.list(),
     ])
     if (statusResult.status === "rejected" && isSessionNotFoundError(statusResult.reason)) throw statusResult.reason
     if (messageResult.status === "rejected" && isSessionNotFoundError(messageResult.reason)) throw messageResult.reason
@@ -392,6 +400,12 @@ export function QuickAssistant() {
         for (const item of messageResult.value.part) {
           setStore("part", item.id, item.part)
         }
+      }
+      if (permissionResult.status === "fulfilled") {
+        setStore("permission", id, permissionResult.value.data?.filter((item) => item.sessionID === id) ?? [])
+      }
+      if (questionResult.status === "fulfilled") {
+        setStore("question", id, questionResult.value.data?.filter((item) => item.sessionID === id) ?? [])
       }
     })
   }
@@ -425,7 +439,7 @@ export function QuickAssistant() {
     if (sessionID() !== id) return
     if (completedReplyOnly && !lastCompletedAssistant(id)) return
     const current = data()
-    if (working(current?.session_status[id], current?.message[id])) return
+    if (working(current?.session_status[id], current?.message[id]) || waiting()) return
     clearTimers()
     setState("loading", false)
   }
@@ -440,7 +454,7 @@ export function QuickAssistant() {
       if (sessionID() !== id) return
       refreshSession(client, id, setStore)
         .then(() => {
-          if (data()?.session_status[id]?.type === "idle") markIdle(id, setStore)
+          if (data()?.session_status[id]?.type === "idle" && !waiting()) markIdle(id, setStore)
           finishIfSettled(id)
         })
         .catch((err: unknown) => {
@@ -460,7 +474,7 @@ export function QuickAssistant() {
         .finally(() => {
           if (sessionID() !== id) return
           const current = data()
-          if (!working(current?.session_status[id], current?.message[id])) {
+          if (!working(current?.session_status[id], current?.message[id]) || waiting()) {
             setState("loading", false)
             return
           }
@@ -530,16 +544,19 @@ export function QuickAssistant() {
     console.debug(
       `[quick-assistant] reset busy=${busy() ? 1 : 0} session=${id ?? ""} messages=${list().length} context=${saved.context ? 1 : 0}`,
     )
-    if (current && id && busy()) {
-      await globalSDK
+    if (current && id && interacting()) {
+      const aborted = await globalSDK
         .createClient({ directory: current, throwOnError: true })
         .session.abort({ sessionID: id })
+        .then(() => true)
         .catch((err: unknown) => {
           showToast({
             title: "Quick Assistant",
             description: formatServerError(err, language.t, language.t("common.requestFailed")),
           })
+          return false
         })
+      if (!aborted) return
       if (setStore) markIdle(id, setStore)
     }
     clearTimers()
@@ -572,7 +589,8 @@ export function QuickAssistant() {
     const store = data()
     const setStore = setData()
     if (!current || !id || !store || !setStore) return
-    if (store.message[id] !== undefined) return
+    if (store.message[id] !== undefined && store.permission[id] !== undefined && store.question[id] !== undefined)
+      return
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     refreshSession(client, id, setStore).catch((err: unknown) => {
       if (isSessionNotFoundError(err)) {
@@ -594,7 +612,7 @@ export function QuickAssistant() {
       if (event.type === "session.status") {
         if (event.properties.sessionID !== id) return
         setStore("session_status", id, event.properties.status)
-        if (event.properties.status.type === "idle") {
+        if (event.properties.status.type === "idle" && !waiting()) {
           completePendingAssistant(id, setStore)
           clearTimers()
           setState("loading", false)
@@ -604,9 +622,9 @@ export function QuickAssistant() {
 
       if (event.type === "session.idle") {
         if (event.properties.sessionID !== id) return
-        markIdle(id, setStore)
+        if (!waiting()) markIdle(id, setStore)
         clearTimers()
-        setState("loading", false)
+        if (!waiting()) setState("loading", false)
         return
       }
 
@@ -625,6 +643,10 @@ export function QuickAssistant() {
   })
 
   async function submit() {
+    if (waiting()) {
+      console.debug(`[quick-assistant] prompt blocked waiting-request session=${sessionID() ?? ""}`)
+      return
+    }
     const current = root()
     const text = state.text.trim()
     const store = data()
@@ -649,9 +671,7 @@ export function QuickAssistant() {
     }
 
     setState("loading", true)
-    console.debug(
-      `[quick-assistant] submit context=${saved.context ? 1 : 0} text=${text.length} body=${body.length}`,
-    )
+    console.debug(`[quick-assistant] submit context=${saved.context ? 1 : 0} text=${text.length} body=${body.length}`)
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
       showToast({
@@ -708,9 +728,7 @@ export function QuickAssistant() {
         agent: pick.agent,
         model: pick.model,
         messageID,
-        tools: {
-          question: false,
-        },
+        tools: { question: true },
         parts: [
           {
             id: part.id,
@@ -755,6 +773,20 @@ export function QuickAssistant() {
 
   const dock = createMemo(() => enabled() && !!activeDir())
 
+  const removePermission = (request: PermissionRequest) => {
+    const setStore = setData()
+    if (!setStore) return
+    console.debug(`[quick-assistant] permission cleanup request=${request.id} session=${request.sessionID}`)
+    setStore("permission", request.sessionID, (items) => removeQuickRequest(items, request.id))
+  }
+
+  const removeQuestion = (request: QuestionRequest) => {
+    const setStore = setData()
+    if (!setStore) return
+    console.debug(`[quick-assistant] question cleanup request=${request.id} session=${request.sessionID}`)
+    setStore("question", request.sessionID, (items) => removeQuickRequest(items, request.id))
+  }
+
   return (
     <>
       <Show when={!saved.open && dock()}>
@@ -798,22 +830,31 @@ export function QuickAssistant() {
         >
           <div class="flex flex-col">
             <QuickAssistantMessages list={list()} parts={data()?.part} busy={busy()} />
-            <QuickAssistantInput
-              setRef={(next) => {
-                input = next
-              }}
-              text={state.text}
-              busy={busy()}
-              loading={state.loading}
-              ready={!!root()}
-              clear={!!sessionID() || list().length > 0}
-              context={saved.context}
-              onText={(next) => setState("text", next)}
-              onClose={close}
-              onReset={() => void reset()}
-              onContext={toggleContext}
-              onSend={() => void submit()}
+            <QuickAssistantRequests
+              client={globalSDK.createClient({ directory: root(), throwOnError: true })}
+              permissions={permissions()}
+              questions={questions()}
+              onPermissionDone={removePermission}
+              onQuestionDone={removeQuestion}
             />
+            <Show when={!waiting()}>
+              <QuickAssistantInput
+                setRef={(next) => {
+                  input = next
+                }}
+                text={state.text}
+                busy={interacting()}
+                loading={state.loading}
+                ready={!!root()}
+                clear={!!sessionID() || list().length > 0}
+                context={saved.context}
+                onText={(next) => setState("text", next)}
+                onClose={close}
+                onReset={() => void reset()}
+                onContext={toggleContext}
+                onSend={() => void submit()}
+              />
+            </Show>
           </div>
         </div>
       </Show>

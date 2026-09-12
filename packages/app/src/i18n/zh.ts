@@ -758,6 +758,7 @@ export const dict = {
   "error.chain.configInvalid": "配置文件 {{path}} 无效",
   "error.chain.configInvalidWithMessage": "配置文件 {{path}} 无效：{{message}}",
 
+  "quickAssistant.waiting.permission": "等待权限确认",
   "notification.permission.title": "需要权限",
   "notification.permission.description": "{{sessionTitle}}（{{projectName}}）需要权限",
   "notification.question.title": "问题",

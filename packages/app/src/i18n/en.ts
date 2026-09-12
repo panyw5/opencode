@@ -799,6 +799,7 @@ export const dict = {
   "error.chain.configInvalid": "Config file at {{path}} is invalid",
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
+  "quickAssistant.waiting.permission": "Waiting for permission confirmation",
   "notification.permission.title": "Permission required",
   "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
   "notification.question.title": "Question",

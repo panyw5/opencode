@@ -4,6 +4,7 @@ import { Markdown } from "@opencode-ai/ui/markdown"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
 import { render } from "./helpers"
+import { createBottomFollow } from "./bottom-follow"
 
 type Props = {
   list: Message[]
@@ -11,14 +12,8 @@ type Props = {
   busy: boolean
 }
 
-const BOTTOM_GAP = 8
-
 export function quickAssistantMessageText(parts: Part[] | undefined) {
   return render(parts)
-}
-
-function isAtBottom(node: HTMLDivElement) {
-  return node.scrollHeight - node.scrollTop - node.clientHeight <= BOTTOM_GAP
 }
 
 function CopyMessageButton(props: { text: string }) {
@@ -70,8 +65,10 @@ function CopyMessageButton(props: { text: string }) {
 
 export function QuickAssistantMessages(props: Props) {
   let viewport: HTMLDivElement | undefined
-  let followBottom = true
+  const follow = createBottomFollow()
   let frame: number | undefined
+  let observer: ResizeObserver | undefined
+  let content: HTMLDivElement | undefined
 
   const scrollKey = createMemo(() =>
     props.list
@@ -84,19 +81,17 @@ export function QuickAssistantMessages(props: Props) {
   )
 
   const scheduleBottomFollow = () => {
-    if (!followBottom) return
-    if (frame !== undefined) cancelAnimationFrame(frame)
+    if (!follow.following() || frame !== undefined) return
     frame = requestAnimationFrame(() => {
-      frame = requestAnimationFrame(() => {
-        frame = undefined
-        if (!followBottom || !viewport) return
-        viewport.scrollTop = viewport.scrollHeight
-      })
+      frame = undefined
+      if (!follow.following() || !viewport) return
+      viewport.scrollTop = viewport.scrollHeight
+      follow.written(viewport)
     })
   }
 
   createEffect(() => {
-    if (props.list.length === 0) followBottom = true
+    if (props.list.length === 0) follow.reset()
     scrollKey()
     props.busy
     scheduleBottomFollow()
@@ -104,6 +99,7 @@ export function QuickAssistantMessages(props: Props) {
 
   onCleanup(() => {
     if (frame !== undefined) cancelAnimationFrame(frame)
+    observer?.disconnect()
   })
 
   return (
@@ -111,14 +107,39 @@ export function QuickAssistantMessages(props: Props) {
       <div
         ref={(node) => {
           viewport = node
+          follow.reset()
+          observer?.disconnect()
+          observer = new ResizeObserver(() => {
+            scheduleBottomFollow()
+          })
+          observer.observe(node)
+          if (content) observer.observe(content)
+          console.debug("[quick-assistant] bottom-follow mounted")
           scheduleBottomFollow()
         }}
+        data-component="quick-assistant-viewport"
+        style={{ "overflow-anchor": "none" }}
         class="max-h-[48vh] overflow-y-auto border-b border-border-weak-base bg-background-base/20 px-4 py-4"
         onScroll={(event) => {
-          followBottom = isAtBottom(event.currentTarget)
+          const before = follow.following()
+          follow.scrolled(event.currentTarget)
+          if (before !== follow.following()) {
+            console.debug(`[quick-assistant] bottom-follow ${follow.following() ? "resumed" : "paused"}`)
+          }
+        }}
+        onWheel={(event) => {
+          if (event.deltaY >= 0) return
+          follow.pause()
+          console.debug("[quick-assistant] bottom-follow paused wheel-up")
         }}
       >
-        <div class="flex flex-col gap-3">
+        <div
+          ref={(node) => {
+            content = node
+            observer?.observe(node)
+          }}
+          class="flex flex-col gap-3"
+        >
           <For each={props.list}>
             {(item) => {
               const text = createMemo(() => quickAssistantMessageText(props.parts?.[item.id]))
@@ -136,9 +157,7 @@ export function QuickAssistantMessages(props: Props) {
                   <Show
                     when={item.role === "assistant"}
                     fallback={
-                      <div class="whitespace-pre-wrap break-words text-[15px] leading-7 text-text-strong">
-                        {text()}
-                      </div>
+                      <div class="whitespace-pre-wrap break-words text-[15px] leading-7 text-text-strong">{text()}</div>
                     }
                   >
                     <div class="quick-assistant-markdown text-[15px] leading-7 text-text-base">

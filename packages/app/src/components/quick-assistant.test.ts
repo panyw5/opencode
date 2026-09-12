@@ -1,6 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
-import { context, isSessionNotFoundError, mergeMessages, prompt } from "./quick-assistant/helpers"
+import {
+  context,
+  isSessionNotFoundError,
+  mergeMessages,
+  patchAgentQuestionDeny,
+  prompt,
+  quickQuestionAnswers,
+  quickRequestNotFound,
+  removeQuickRequest,
+} from "./quick-assistant/helpers"
 import { quickAssistantMessageText } from "./quick-assistant/messages"
 
 const msg = (id: string, role: "user" | "assistant") =>
@@ -93,5 +102,61 @@ describe("quick assistant session error handling", () => {
   test("does not treat unrelated errors as missing sessions", () => {
     expect(isSessionNotFoundError(new Error("network failed"))).toBe(false)
     expect(isSessionNotFoundError({ name: "ProviderModelNotFoundError" })).toBe(false)
+  })
+})
+
+describe("quick assistant config migration", () => {
+  test("removes only the legacy forced question deny", () => {
+    expect(patchAgentQuestionDeny({ permission: { question: "deny", bash: "ask" } })).toEqual({
+      permission: { question: "allow", bash: "ask" },
+    })
+  })
+
+  test("preserves explicit non-deny question policies", () => {
+    expect(patchAgentQuestionDeny({ permission: { question: "ask" } })).toEqual({
+      permission: { question: "ask" },
+    })
+  })
+})
+
+describe("quick assistant question answers", () => {
+  test("ignores forbidden custom text and trims empty custom input", () => {
+    expect(quickQuestionAnswers([{ custom: false }, {}], { 0: ["A"] }, { 0: "forbidden", 1: "  " })).toEqual([
+      ["A"],
+      [],
+    ])
+  })
+
+  test("deduplicates custom multi-choice answers", () => {
+    expect(quickQuestionAnswers([{ multiple: true }], { 0: ["A", "B"] }, { 0: " B " })).toEqual([["A", "B"]])
+  })
+
+  test("does not mutate selected answers", () => {
+    const selected = { 0: ["A"] }
+    quickQuestionAnswers([{ multiple: true }], selected, { 0: "B" })
+    expect(selected).toEqual({ 0: ["A"] })
+  })
+  test("appends custom text for multiple choice and replaces single choice", () => {
+    expect(
+      quickQuestionAnswers([{ multiple: true }, { multiple: false }], { 0: ["A", "B"], 1: ["X"] }, { 0: "C", 1: "Y" }),
+    ).toEqual([["A", "B", "C"], ["Y"]])
+  })
+})
+
+describe("quick assistant expired requests", () => {
+  test("cleanup tolerates a list already removed by the backend event", () => {
+    expect(removeQuickRequest(undefined, "old")).toEqual([])
+    expect(removeQuickRequest([{ id: "next" }, { id: "old" }], "old")).toEqual([{ id: "next" }])
+    expect(removeQuickRequest([], "old")).toEqual([])
+  })
+  test("recognizes nested SDK not-found responses", () => {
+    expect(quickRequestNotFound(new Error("gone", { cause: { status: 404 } }))).toBe(true)
+    expect(quickRequestNotFound({ body: { name: "QuestionNotFoundError" } })).toBe(true)
+  })
+
+  test("keeps retryable failures and handles cycles", () => {
+    const error: { cause?: unknown; status: number } = { status: 500 }
+    error.cause = error
+    expect(quickRequestNotFound(error)).toBe(false)
   })
 })
