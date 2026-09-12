@@ -164,6 +164,8 @@ export const dict = {
   "command.session.recent.description": "Open the 20 most recently active sessions across projects",
   "session.recent.placeholder": "Search recent sessions...",
   "session.recent.empty": "No recent sessions",
+  "session.favorite.placeholder": "Search favorite sessions...",
+  "session.favorite.empty": "No favorite sessions",
   "command.sessionTabs.close": "Close session tab",
   "command.sessionTabs.closeDescendants": "Close all subagent sessions",
   "command.sessionTabs.showInSidebar": "Show in sidebar",

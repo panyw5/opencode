@@ -21,6 +21,7 @@ import {
   untrack,
 } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
+import { DialogFavoriteSessions } from "@/components/dialog-favorite-sessions"
 import { DialogRecentSessions } from "@/components/dialog-recent-sessions"
 import {
   latestUserMessageText,
@@ -120,6 +121,16 @@ export default function Home() {
       favorited: true,
     })
     return mergeRecentSessions([result.data ?? []])
+  }
+  const loadAllFavoriteSessions = async () => {
+    const result = await sdk.client.experimental.session.list({ roots: true, favorited: true })
+    return (result.data ?? [])
+      .filter((session) => !session.parentID && !session.time.archived)
+      .sort(
+        (a, b) =>
+          (b.time.favorited ?? b.time.updated ?? b.time.created) -
+          (a.time.favorited ?? a.time.updated ?? a.time.created),
+      )
   }
   const [dashboard, setDashboard] = createStore({
     sessions: [] as GlobalSession[],
@@ -464,6 +475,13 @@ export default function Home() {
     })
   }
 
+  function showFavoriteSessions() {
+    dialog.show(() => <DialogFavoriteSessions load={loadAllFavoriteSessions} onSelect={openSession} />, undefined, {
+      modal: false,
+      preventScroll: false,
+    })
+  }
+
   async function chooseProject() {
     function resolve(result: string | string[] | null) {
       if (Array.isArray(result)) {
@@ -567,7 +585,7 @@ export default function Home() {
                 id="home-favorite-sessions"
                 title={language.t("home.favoriteSessions")}
                 action={language.t("home.favoriteSessions.viewAll")}
-                onAction={showRecentSessions}
+                onAction={showFavoriteSessions}
               />
               <Show
                 when={!dashboard.favoritesLoading}

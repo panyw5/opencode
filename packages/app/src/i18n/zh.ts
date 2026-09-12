@@ -169,6 +169,8 @@ export const dict = {
   "command.session.recent.description": "打开所有项目中最近活跃的 20 个会话",
   "session.recent.placeholder": "搜索最近会话...",
   "session.recent.empty": "暂无最近会话",
+  "session.favorite.placeholder": "搜索收藏会话...",
+  "session.favorite.empty": "暂无收藏会话",
   "command.sessionTabs.close": "关闭会话标签页",
   "command.sessionTabs.closeDescendants": "关闭所有子智能体会话",
   "command.sessionTabs.showInSidebar": "在侧边栏显示",
