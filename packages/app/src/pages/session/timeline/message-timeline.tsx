@@ -2146,16 +2146,6 @@ export function MessageTimeline(props: {
       data-owner-session-key={ownerSessionKey}
       class="relative w-full h-full min-w-0"
     >
-      <Show when={props.scroll.overflow && !props.scroll.bottom}>
-        <button
-          type="button"
-          aria-label={language.t("session.messages.jumpToLatest")}
-          class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60]"
-          onClick={props.onResumeScroll}
-        >
-          {language.t("session.messages.jumpToLatest")}
-        </button>
-      </Show>
       <ScrollView
         viewportRef={bindListRoot}
         scrollContentHeight={virtualizer.getTotalSize()}
