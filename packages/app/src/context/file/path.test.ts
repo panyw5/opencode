@@ -15,10 +15,13 @@ describe("file path helpers", () => {
 
   test("normalizes Windows absolute paths with mixed separators", () => {
     const path = createPathHelpers(() => "C:\\repo")
-    expect(path.normalize("C:\\repo\\src\\app.ts")).toBe("src\\app.ts")
+    // New logical contract: normalize() resolves to workspace-relative logical
+    // paths with forward slashes. Native separators are only reconstructed at
+    // filesystem/shell boundaries (Path.native), never in panel state.
+    expect(path.normalize("C:\\repo\\src\\app.ts")).toBe("src/app.ts")
     expect(path.normalize("C:/repo/src/app.ts")).toBe("src/app.ts")
     expect(path.normalize("file://C:/repo/src/app.ts")).toBe("src/app.ts")
-    expect(path.normalize("c:\\repo\\src\\app.ts")).toBe("src\\app.ts")
+    expect(path.normalize("c:\\repo\\src\\app.ts")).toBe("src/app.ts")
   })
 
   test("keeps query/hash stripping behavior stable", () => {
@@ -31,6 +34,75 @@ describe("file path helpers", () => {
     expect(unquoteGitPath('"a/\\303\\251.txt"')).toBe("a/\u00e9.txt")
     expect(unquoteGitPath('"plain\\nname"')).toBe("plain\nname")
     expect(unquoteGitPath("a/b/c.ts")).toBe("a/b/c.ts")
+    // Direct multi-byte characters inside a quoted body are literal
+    // characters, not bytes to charCode into a Uint8Array.
+    expect(unquoteGitPath('"中文.txt"')).toBe("中文.txt")
+    // Invalid escapes keep their backslash instead of naming another file.
+    expect(unquoteGitPath('"a\\q.txt"')).toBe("a\\q.txt")
+  })
+})
+
+describe("explicit source parsers (path contract)", () => {
+  test("raw POSIX filenames keep #, ? and %20 verbatim", () => {
+    const path = createPathHelpers(() => "/repo")
+    expect(path.fromRaw("src/a#b.ts")).toBe("src/a#b.ts")
+    expect(path.fromRaw("src/a?b.ts")).toBe("src/a?b.ts")
+    expect(path.fromRaw("src/a%20b.ts")).toBe("src/a%20b.ts")
+    expect(path.fromRaw('src/a"b.ts')).toBe('src/a"b.ts')
+    expect(path.normalize("src/a#b.ts")).toBe("src/a#b.ts")
+    expect(path.normalize("src/a%20b.ts")).toBe("src/a%20b.ts")
+  })
+
+  test("standard Windows file URL resolves to workspace-relative logical path", () => {
+    const path = createPathHelpers(() => "C:\\repo")
+    expect(path.fromFileUrl("file:///C:/repo/src/App.ts")).toBe("src/App.ts")
+    expect(path.normalize("file:///C:/repo/src/App.ts")).toBe("src/App.ts")
+    // Outside the workspace the absolute logical path is preserved verbatim.
+    expect(path.fromFileUrl("file:///C:/repo2/src/App.ts")).toBe("C:/repo2/src/App.ts")
+  })
+
+  test("POSIX backslash filename round-trips through the internal tab", () => {
+    const path = createPathHelpers(() => "/repo", () => ({ platform: "darwin", kind: "local-filesystem" }))
+    const encoded = path.tab("src/a\\b.ts")
+    expect(encoded).toBe(`file://src/${encodeURIComponent("a\\b.ts")}`)
+    expect(path.pathFromTab(encoded)).toBe("src/a\\b.ts")
+    // legacy default (no context) folds backslashes like the old encoder
+    const legacy = createPathHelpers(() => "/repo")
+    expect(legacy.tab("src/a\\b.ts")).toBe("file://src/a/b.ts")
+  })
+
+  test("tab decode happens once per segment and never re-decodes", () => {
+    const path = createPathHelpers(() => "/repo")
+    // A literal %20 in the filename encodes to %2520 and survives one decode.
+    const encoded = path.tab("src/a%20b.ts")
+    expect(encoded).toBe("file://src/a%2520b.ts")
+    expect(path.pathFromTab(encoded)).toBe("src/a%20b.ts")
+    // A literal %2F in the filename encodes to %252F (a real slash can never
+    // be part of a filename, so an encoded one only comes from literal text).
+    expect(path.pathFromTab("file://src/a%252Fb.ts")).toBe("src/a%2Fb.ts")
+    // Query and hash belong to the tab, not the filename.
+    expect(path.pathFromTab("file://src/app.ts?start=10&end=20")).toBe("src/app.ts")
+  })
+
+  test("git output is unquoted exactly once at the git boundary", () => {
+    const path = createPathHelpers(() => "/repo")
+    expect(path.fromGit('"a/\\303\\251.txt"')).toBe("a/é.txt")
+    // Already-decoded paths are not quoted input and pass through unchanged.
+    expect(path.fromGit("a/é.txt")).toBe("a/é.txt")
+  })
+
+  test("standard UNC file URLs keep the server/share root", () => {
+    const path = createPathHelpers(() => "//server/share/repo")
+    expect(path.fromFileUrl("file://server/share/repo/src/App.ts")).toBe("src/App.ts")
+    // Internal tab form keeps the authority-looking first segment relative.
+    expect(path.fromTab("file://server/share/repo/src/App.ts")).toBe("server/share/repo/src/App.ts")
+  })
+
+  test("POSIX absolute paths outside the workspace are not mangled", () => {
+    const path = createPathHelpers(() => "/repo")
+    expect(path.fromRaw("/repo2/file.ts")).toBe("/repo2/file.ts")
+    expect(path.fromRaw("/repo/src/app.ts")).toBe("src/app.ts")
+    expect(path.fromRaw("/repo/src/../outside.ts")).toBe("src/../outside.ts")
   })
 })
 
