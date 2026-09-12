@@ -241,8 +241,8 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
     <Dialog
       title={
         <div class="flex min-w-0 flex-col pl-1">
-          <span class="truncate">{state.task.name}</span>
-          <span class="mt-0.5 truncate text-12-regular text-text-weak">{state.task.directory}</span>
+          <span class="truncate leading-6">{state.task.name}</span>
+          <span class="mt-0.5 truncate text-12-regular leading-4 text-text-weak">{state.task.directory}</span>
         </div>
       }
       size="x-large"
@@ -289,14 +289,14 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
             </div>
           }
         >
-          <div class="config-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+          <div class="config-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
             <Show when={state.error}>
               <div class="rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
                 {state.error}
               </div>
             </Show>
 
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
               <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
                 <Icon name="clock" size="small" class="text-icon-base" />
                 {language.t("scheduled.parameters")}
@@ -337,17 +337,17 @@ function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () =
               </Show>
             </section>
 
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
               <div class="mb-2 text-12-medium text-text-weak">{language.t("scheduled.prompt")}</div>
               {/* Explicit height: MarkdownEditorField uses h-full and collapses when parent has no height. */}
-              <div class="max-h-80 min-h-40 overflow-y-auto rounded-xl border border-border-weak-base bg-background-base px-3 py-3 shadow-xs-border-base">
+              <div class="max-h-80 min-h-40 overflow-y-auto rounded-xl border border-border-weak-base bg-background-base px-3 py-3">
                 <Show when={state.task.prompt.trim()} fallback={<div class="text-12-regular text-text-weak">—</div>}>
                   <Markdown text={state.task.prompt} class="text-13-regular text-text-strong" />
                 </Show>
               </div>
             </section>
 
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
               <div class="mb-3 text-12-medium text-text-weak">{language.t("scheduled.history")}</div>
               <Show
                 when={state.runs.length > 0}
@@ -633,8 +633,8 @@ function ScheduledTaskFormDialog(props: {
     <Dialog
       title={
         <div class="flex min-w-0 flex-col pl-1">
-          <span>{task ? language.t("scheduled.edit") : language.t("scheduled.create")}</span>
-          <span class="mt-0.5 truncate text-12-regular text-text-weak">
+          <span class="leading-6">{task ? language.t("scheduled.edit") : language.t("scheduled.create")}</span>
+          <span class="mt-0.5 truncate text-12-regular leading-4 text-text-weak">
             {task?.directory ?? props.directory ?? language.t("scheduled.subtitle")}
           </span>
         </div>
@@ -656,8 +656,8 @@ function ScheduledTaskFormDialog(props: {
             class="min-h-[320px] h-full min-w-0 bg-background-base lg:min-h-0"
           />
 
-          <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto pr-1">
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+          <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto px-1">
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
               <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
                 <Icon name="settings-gear" size="small" class="text-icon-base" />
                 {language.t("scheduled.section.basics")}
@@ -711,7 +711,7 @@ function ScheduledTaskFormDialog(props: {
               </div>
             </section>
 
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
               <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
                 <Icon name="clock" size="small" class="text-icon-base" />
                 {language.t("scheduled.section.timing")}
@@ -770,7 +770,7 @@ function ScheduledTaskFormDialog(props: {
               </div>
             </section>
 
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
               <Checkbox
                 checked={state.unattended}
                 onChange={(value) => setState("unattended", value)}

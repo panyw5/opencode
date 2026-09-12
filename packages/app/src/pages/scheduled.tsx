@@ -578,8 +578,8 @@ export default function Scheduled() {
                   class="min-h-[320px] min-w-0 bg-background-base lg:min-h-0"
                 />
 
-                <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto pr-1">
-                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+                <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto px-1">
+                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
                     <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
                       <Icon name="settings-gear" size="small" class="text-icon-base" />
                       {language.t("scheduled.section.basics")}
@@ -652,7 +652,7 @@ export default function Scheduled() {
                     </div>
                   </section>
 
-                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
                     <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
                       <Icon name="clock" size="small" class="text-icon-base" />
                       {language.t("scheduled.section.timing")}
@@ -711,7 +711,7 @@ export default function Scheduled() {
                     </div>
                   </section>
 
-                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4 shadow-xs-border-base">
+                  <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
                     <Checkbox
                       checked={state.unattended}
                       onChange={(value) => setState("unattended", value)}
