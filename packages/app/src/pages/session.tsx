@@ -90,6 +90,7 @@ import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
+import { createReviewDataService } from "@/pages/session/review-data-service"
 import { SessionSidePanel } from "@/pages/session/session-side-panel"
 import { SessionUserMessageRail, type SessionUserMessageEntry } from "@/pages/session/session-user-message-rail"
 import { userMessageRailPreview } from "@/pages/session/session-user-message-rail-model"
@@ -929,16 +930,18 @@ export default function Page() {
     newSessionPicked: false,
   })
 
-  const [vcs, setVcs] = createStore({
-    diff: {
-      git: [] as FileDiff[],
-      branch: [] as FileDiff[],
-    },
-    ready: {
-      git: false,
-      branch: false,
-    },
+  // Review data (git/branch VCS lists) lives in a service bound to the
+  // connection+workspace, not to the review DOM: file events coalesce into a
+  // single serial refresh, refreshes reconcile by file so untouched records
+  // keep identity, and responses only land for the epoch they requested.
+  const reviewData = createReviewDataService({
+    directory: () => sdk.directory,
+    enabled: () => sync.project?.vcs === "git",
+    visible: () => wantsReview(),
+    active: () => vcsMode(),
+    fetch: (mode) => sdk.client.vcs.diff({ mode }).then((result) => result.data ?? []),
   })
+  onCleanup(() => reviewData.dispose())
 
   const [followup, setFollowup] = createStore({
     items: {} as Record<string, (FollowupDraft & { id: string })[] | undefined>,
@@ -956,68 +959,6 @@ export default function Page() {
   let refreshRun = 0
   let diffFrame: number | undefined
   let diffTimer: number | undefined
-  const vcsTask = new Map<VcsMode, Promise<void>>()
-  const vcsRun = new Map<VcsMode, number>()
-
-  const bumpVcs = (mode: VcsMode) => {
-    const next = (vcsRun.get(mode) ?? 0) + 1
-    vcsRun.set(mode, next)
-    return next
-  }
-
-  const resetVcs = (mode?: VcsMode) => {
-    const list = mode ? [mode] : (["git", "branch"] as const)
-    list.forEach((item) => {
-      bumpVcs(item)
-      vcsTask.delete(item)
-      setVcs("diff", item, [])
-      setVcs("ready", item, false)
-    })
-  }
-
-  const loadVcs = (mode: VcsMode, force = false) => {
-    if (sync.project?.vcs !== "git") return Promise.resolve()
-    if (!force && vcs.ready[mode]) return Promise.resolve()
-
-    if (force) {
-      if (vcsTask.has(mode)) bumpVcs(mode)
-      vcsTask.delete(mode)
-      setVcs("ready", mode, false)
-    }
-
-    const current = vcsTask.get(mode)
-    if (current) return current
-
-    const run = bumpVcs(mode)
-
-    const task = sdk.client.vcs
-      .diff({ mode })
-      .then((result) => {
-        if (vcsRun.get(mode) !== run) return
-        setVcs("diff", mode, result.data ?? [])
-        setVcs("ready", mode, true)
-      })
-      .catch((error) => {
-        if (vcsRun.get(mode) !== run) return
-        setVcs("diff", mode, [])
-        setVcs("ready", mode, true)
-      })
-      .finally(() => {
-        if (vcsTask.get(mode) === task) vcsTask.delete(mode)
-      })
-
-    vcsTask.set(mode, task)
-    return task
-  }
-
-  const refreshVcs = () => {
-    resetVcs()
-    const mode = untrack(vcsMode)
-    if (!mode) return
-    if (!untrack(wantsReview)) return
-    void loadVcs(mode, true)
-  }
-
   // Warm the review data in the background shortly after a session opens so
   // the review panel renders its list instantly on first open instead of
   // showing a loading state while the request round-trips. The git diff covers
@@ -1036,7 +977,7 @@ export default function Page() {
           if ((info()?.summary?.files ?? 0) > 0 && globalSync.session.diff.get(sdk.directory, id) === undefined) {
             void sync.session.diff(id)
           }
-          if (sync.project?.vcs === "git") void loadVcs("git")
+          if (sync.project?.vcs === "git") reviewData.ensure("git", "warmup")
         }, sessionReviewDelayMs)
         onCleanup(() => window.clearTimeout(timer))
       },
@@ -1062,21 +1003,21 @@ export default function Page() {
     if (store.changes === "git" || store.changes === "branch") return store.changes
   })
   const reviewDiffs = createMemo(() => {
-    if (store.changes === "git") return vcs.diff.git
-    if (store.changes === "branch") return vcs.diff.branch
+    if (store.changes === "git") return reviewData.state.git.data
+    if (store.changes === "branch") return reviewData.state.branch.data
     if (store.changes === "session") return diffs()
     return turnDiffs()
   })
   const reviewCount = createMemo(() => {
-    if (store.changes === "git") return vcs.diff.git.length
-    if (store.changes === "branch") return vcs.diff.branch.length
+    if (store.changes === "git") return reviewData.state.git.data.length
+    if (store.changes === "branch") return reviewData.state.branch.data.length
     if (store.changes === "session") return sessionCount()
     return turnDiffs().length
   })
   const hasReview = createMemo(() => reviewCount() > 0)
   const reviewReady = createMemo(() => {
-    if (store.changes === "git") return vcs.ready.git
-    if (store.changes === "branch") return vcs.ready.branch
+    if (store.changes === "git") return !reviewData.state.git.initialLoading
+    if (store.changes === "branch") return !reviewData.state.branch.initialLoading
     if (store.changes === "session") return !hasSessionReview() || diffsReady()
     return true
   })
@@ -1494,7 +1435,7 @@ export default function Page() {
     on(
       () => sdk.directory,
       () => {
-        resetVcs()
+        reviewData.reset("workspace")
       },
       { defer: true },
     ),
@@ -1505,7 +1446,7 @@ export default function Page() {
       () => [sync.data.vcs?.branch, sync.data.vcs?.default_branch] as const,
       (next, prev) => {
         if (prev === undefined || same(next, prev)) return
-        refreshVcs()
+        reviewData.refresh(undefined, "branch")
       },
       { defer: true },
     ),
@@ -1519,7 +1460,9 @@ export default function Page() {
         : undefined
     const file = typeof props?.file === "string" ? props.file : undefined
     if (!file || file.startsWith(".git/")) return
-    refreshVcs()
+    // Events only mark the workspace dirty; the service coalesces them into a
+    // single serial refresh instead of resetting the whole list per event.
+    reviewData.notifyEvents()
   })
   onCleanup(stopVcs)
 
@@ -1671,7 +1614,11 @@ export default function Page() {
     const mode = vcsMode()
     if (!mode) return
     if (!wantsReview()) return
-    void loadVcs(mode)
+    // Read the vcs capability so the effect re-runs once the project (and its
+    // vcs flag) finishes loading after the panel is already open; otherwise an
+    // ensure() that ran before project data arrived would never be retried.
+    sync.project?.vcs
+    reviewData.ensure(mode, "open")
   })
 
   createEffect(
@@ -1682,7 +1629,7 @@ export default function Page() {
         if (!mode) return
         if (!wantsReview()) return
         if (next !== "idle" || prev === undefined || prev === "idle") return
-        void loadVcs(mode, true)
+        reviewData.refresh(mode, "turn-idle")
       },
       { defer: true },
     ),
