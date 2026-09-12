@@ -97,6 +97,13 @@ import { working } from "@/pages/session/session-working"
 import { TerminalPanel } from "@/pages/session/terminal-panel"
 import { useSessionCommands } from "@/pages/session/use-session-commands"
 import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
+import { createHistoryEdgeController, type HistoryInput } from "@/pages/session/history-edge"
+import type {
+  FindNavigationTarget,
+  FindPositionResult,
+  MessageNavigationTarget,
+} from "@/pages/session/message-navigation"
+import type { ScrollOrigin, ScrollRuntime } from "@/pages/session/timeline/scroll-ledger"
 import { historyPageResult } from "@/pages/session/session-history-pagination"
 import { useServer } from "@/context/server"
 import { domainFromDirectory } from "@/pages/layout/extra-agents"
@@ -1207,16 +1214,25 @@ export default function Page() {
     return true
   }
   let revealMessage = (_id: string, _behavior?: ScrollBehavior) => {}
-  let prepareMessageNavigation = () => {}
+  let prepareMessageNavigation = (_target: MessageNavigationTarget) => {}
+  let positionFind = (_target: FindNavigationTarget): FindPositionResult => ({
+    available: false,
+    aligned: false,
+    geometry: "unmounted",
+  })
+  let timelineScrollRuntime: ScrollRuntime | undefined
+  const writeSessionScroll = (root: HTMLDivElement, origin: ScrollOrigin, write: () => void) => {
+    if (timelineScrollRuntime) timelineScrollRuntime.write(root, origin, write)
+    else write()
+  }
   let scrollToEnd = () => {}
-  let historyAnchor = { capture: () => {}, restore: (_done: boolean) => {} }
+  let historyAnchor = { capture: () => {}, restore: (_done: boolean) => Promise.resolve() }
   let scrollMark = 0
   let messageMark = 0
-  let findNavigationUntil = 0
 
   const scrollGestureWindowMs = 250
 
-  const markScrollGesture = (target?: EventTarget | null) => {
+  const markScrollGesture = (target?: EventTarget | null, input?: HistoryInput) => {
     const root = scroller
     if (!root) return
 
@@ -1224,9 +1240,9 @@ export default function Page() {
     const nested = el?.closest("[data-scrollable]")
     if (nested && nested !== root) return
 
-    if (navigationTargetId()) clearMessageHash()
-    findNavigationUntil = 0
+    if (viewportIntent()?.kind !== "reading") takeoverReading()
     setUi("scrollGesture", Date.now())
+    if (input) noteHistoryInput(root, input)
   }
 
   const hasScrollGesture = () => Date.now() - ui.scrollGesture < scrollGestureWindowMs
@@ -1590,6 +1606,7 @@ export default function Page() {
   }
 
   const handleKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented) return
     const path = event.composedPath()
     const target = path.find((item): item is HTMLElement => item instanceof HTMLElement)
     const activeElement = deepActiveElement()
@@ -1618,8 +1635,14 @@ export default function Page() {
     }
 
     // Only treat explicit scroll keys as potential "user scroll" gestures.
-    if (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End") {
-      markScrollGesture()
+    if (
+      !(event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) &&
+      (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End")
+    ) {
+      markScrollGesture(event.target, {
+        delta: event.key === "PageUp" || event.key === "Home" ? -1 : 1,
+        kind: "keyboard",
+      })
       return
     }
 
@@ -2285,7 +2308,14 @@ export default function Page() {
   }
 
   const handleTimelineAutoScroll = (geometry: { scrollTop: number; scrollHeight: number; clientHeight: number }) => {
-    autoScroll.handleScroll(geometry)
+    const root = scroller
+    if (root) writeSessionScroll(root, "bottom", () => autoScroll.handleScroll(geometry))
+    else autoScroll.handleScroll(geometry)
+  }
+  const resumeAutoScroll = () => {
+    const root = scroller
+    if (root) writeSessionScroll(root, "bottom", () => autoScroll.resume())
+    else autoScroll.resume()
   }
 
   // Streaming stability depends on locking the outer timeline directly to the
@@ -2300,12 +2330,14 @@ export default function Page() {
     }
     const ease =
       mode === "smooth" && shouldEaseLiveBottom(dist, { min: smoothBottomMinDistance, max: smoothBottomSnapDistance })
-    if (ease) {
-      const step = Math.sign(dist) * Math.min(Math.max(Math.abs(dist) * smoothBottomEase, 1), smoothBottomMaxStep)
-      el.scrollTop += step
-    } else {
-      el.scrollTop = next
-    }
+    writeSessionScroll(el, source.startsWith("initial") ? "initial" : "bottom", () => {
+      if (ease) {
+        const step = Math.sign(dist) * Math.min(Math.max(Math.abs(dist) * smoothBottomEase, 1), smoothBottomMaxStep)
+        el.scrollTop += step
+      } else {
+        el.scrollTop = next
+      }
+    })
     const gap = el.scrollHeight - el.clientHeight - el.scrollTop
     console.debug(
       `[session] lock-bottom source=${source} mode=${mode} ease=${String(ease)} dist=${String(Math.round(dist))} gap=${String(Math.round(gap))} live=${String(live())}`,
@@ -2316,6 +2348,7 @@ export default function Page() {
   let scrollStateFrame: number | undefined
   let scrollStateTarget: HTMLDivElement | undefined
   let scrollStateGeometry: { scrollTop: number; scrollHeight: number; clientHeight: number } | undefined
+  let scrollResumeIntent: MessageNavigationTarget | undefined
   let contentResizeFrame: number | undefined
   let contentResizeTarget: HTMLDivElement | undefined
   let fillFrame: number | undefined
@@ -2327,16 +2360,17 @@ export default function Page() {
   let until = 0
 
   const hasScrollTarget = () => !!location.hash || !!ui.pendingMessage || !!ui.seekingMessageId || !!store.messageId
-  // While the find bar is open the viewport is anchored to the active match;
-  // bottom-follow would fight it and yank the view back to the tail.
-  let findBarOpen = false
-  const settling = () => !!initialScrollKey && performance.now() < until && !hasScrollGesture()
+  const viewportWantsBottom = () => {
+    const intent = viewportIntent()
+    return !intent || intent.kind === "live"
+  }
+  const settling = () => !!initialScrollKey && performance.now() < until && !hasScrollGesture() && viewportWantsBottom()
   const shouldPinBottom = () =>
     (followBottom || running() || settling() || live()) &&
     !autoScroll.userScrolled() &&
     !hasScrollGesture() &&
     !hasScrollTarget() &&
-    !findBarOpen
+    viewportWantsBottom()
 
   const clearInitialScrollDeadline = () => {
     if (initialScrollDeadlineTimer !== undefined) window.clearTimeout(initialScrollDeadlineTimer)
@@ -2367,7 +2401,7 @@ export default function Page() {
       clearInitialScrollDeadline()
       return
     }
-    if (hasScrollTarget() || hasScrollGesture()) {
+    if (hasScrollTarget() || hasScrollGesture() || !viewportWantsBottom()) {
       initialScrollKey = undefined
       clearInitialScrollDeadline()
       return
@@ -2415,7 +2449,7 @@ export default function Page() {
     const max = Math.max(0, el.scrollHeight - el.clientHeight)
     const top = Math.max(0, Math.min(el.scrollTop, max))
     if (Math.abs(el.scrollTop - top) <= 1) return top
-    el.scrollTop = top
+    writeSessionScroll(el, "layout", () => (el.scrollTop = top))
     return top
   }
 
@@ -2454,6 +2488,7 @@ export default function Page() {
   const updateScrollState = (
     el: HTMLDivElement,
     geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
+    resumeIntent?: MessageNavigationTarget,
   ) => {
     const clientHeight = geometry?.clientHeight ?? el.clientHeight
     const scrollHeight = geometry?.scrollHeight ?? el.scrollHeight
@@ -2480,6 +2515,11 @@ export default function Page() {
     const overflow = max > 1
     const gap = max - top
     const bottom = !overflow || gap <= scrollBottomThreshold
+    if (resumeIntent && resumeIntent === viewportIntent() && running() && !viewportTarget()) {
+      console.debug(`[session] bottom-takeover sid=${params.id ?? "none"} source=user-scroll gap=${Math.round(gap)}`)
+      resumeLive()
+      resumeAutoScroll()
+    }
 
     if ((live() || followBottom) && overflow && !bottom) {
       console.debug(
@@ -2501,9 +2541,18 @@ export default function Page() {
   const scheduleScrollState = (
     el: HTMLDivElement,
     geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
+    userDelta?: number,
   ) => {
     scrollStateTarget = el
     scrollStateGeometry = geometry
+    if (userDelta !== undefined) {
+      scrollResumeIntent =
+        userDelta > 0 &&
+        geometry &&
+        geometry.scrollHeight - geometry.clientHeight - geometry.scrollTop <= scrollBottomThreshold
+          ? viewportIntent()
+          : undefined
+    }
     if (scrollStateFrame !== undefined) return
 
     scrollStateFrame = requestAnimationFrame(() => {
@@ -2511,11 +2560,13 @@ export default function Page() {
 
       const target = scrollStateTarget
       const geometry = scrollStateGeometry
+      const resumeIntent = scrollResumeIntent
       scrollStateTarget = undefined
       scrollStateGeometry = undefined
+      scrollResumeIntent = undefined
       if (!target) return
 
-      updateScrollState(target, geometry)
+      updateScrollState(target, geometry, resumeIntent)
     })
   }
 
@@ -2544,10 +2595,9 @@ export default function Page() {
   const resumeScroll = () => {
     setStore("messageId", undefined)
     setUi("seekingMessageId", undefined)
-    clearMessageHash()
-    enterLive()
     armFollowBottom("resume")
-    autoScroll.resume()
+    resumeLive()
+    resumeAutoScroll()
     scrollToEnd()
     const el = scroller
     if (el) {
@@ -2577,7 +2627,7 @@ export default function Page() {
 
         // Seed the scroll position synchronously, but never hide readable
         // content while virtual measurements continue in later frames.
-        if (!hasScrollTarget() && scroller) {
+        if (!hasScrollTarget() && viewportWantsBottom() && scroller) {
           lockBottom(scroller, "initial-scroll:immediate")
         }
 
@@ -2591,7 +2641,7 @@ export default function Page() {
               clearInitialScrollDeadline()
               return
             }
-            if (hasScrollTarget()) {
+            if (hasScrollTarget() || !viewportWantsBottom()) {
               console.debug(
                 `[session] initial bottom skipped: key=${key} hash=${location.hash || "none"} pending=${ui.pendingMessage || "none"} seeking=${ui.seekingMessageId || "none"} current=${store.messageId || "none"}`,
               )
@@ -2629,10 +2679,10 @@ export default function Page() {
           if (running()) enterAnchored()
           return
         }
-        if (!running()) return
+        if (!running() || !viewportWantsBottom()) return
         enterLive()
         setStore("messageId", undefined)
-        clearMessageHash()
+        if (viewportIntent()?.kind !== "live") resumeLive()
       },
       { defer: true },
     ),
@@ -2643,39 +2693,15 @@ export default function Page() {
       running,
       (run) => {
         if (!run) return
-        if (ui.seekingMessageId || store.messageId) return
+        if (ui.seekingMessageId || store.messageId || !viewportWantsBottom()) return
         if (autoScroll.userScrolled()) {
           console.debug("[session] streaming follow skipped user-scrolled")
           return
         }
         console.debug("[session] streaming bottom follow enabled")
         armFollowBottom("running")
-        enterLive()
-        autoScroll.resume()
-      },
-      { defer: true },
-    ),
-  )
-
-  createEffect(
-    on(
-      () => ui.scroll.bottom,
-      (bottom, prev) => {
-        debug("bottom:change", scroller, { prev, bottom })
-        if (!bottom) return
-        if (prev === undefined || prev === bottom) return
-        if (ui.seekingMessageId) return
-        if (!running()) {
-          console.debug("[session] skip idle bottom resume")
-          return
-        }
-        if (ui.mode !== "live") {
-          enterLive()
-          setStore("messageId", undefined)
-          clearMessageHash()
-        }
-        if (!autoScroll.userScrolled()) return
-        autoScroll.resume()
+        resumeLive()
+        resumeAutoScroll()
       },
       { defer: true },
     ),
@@ -2700,7 +2726,7 @@ export default function Page() {
       initialScrollHeight = undefined
       armInitialScrollDeadline(key)
       if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
-      if (!hasScrollTarget()) {
+      if (!hasScrollTarget() && viewportWantsBottom()) {
         lockBottom(el, "initial-scroll:ref-late")
       }
       initialScrollFrame = requestAnimationFrame(() => settle(key))
@@ -2712,29 +2738,43 @@ export default function Page() {
     debug("user-scroll", scroller, { mark: scrollMark })
   }
 
-  // One history page per "arrive at top" gesture. Re-arm only after the user leaves the edge,
-  // so a failed scroll pin cannot chain-load the entire session while stuck at scrollTop≈0.
   const historyEdgePx = 200
   // Reactive so navigation-driven loaders (pending message jump) observe the full
   // loadEarlier window — the underlying fetch flag clears at commit, before the
   // anchor restore/finally finishes, and a non-reactive flag would silently
   // swallow the retry that keeps the jump alive.
   const [historyInFlight, setHistoryInFlight] = createSignal(false)
-  let historyEdgeArmed = true
-  const prepareFindNavigation = () => {
-    findNavigationUntil = performance.now() + 1_500
-    historyEdgeArmed = false
-    autoScroll.pause()
+  let historyRequestSequence = 0
+  let activeHistoryRequest: number | undefined
+  const historyCursor = () => {
+    const id = params.id
+    if (!id || !historyMore()) return null
+    return `${messages()[0]?.id ?? "empty"}:${sync.session.history.limit(id) ?? 0}`
+  }
+  const historyEdge = createHistoryEdgeController({
+    topThreshold: historyEdgePx,
+    debug: (stage, details) => {
+      console.debug(
+        `[history-edge] sid=${params.id ?? "none"} stage=${stage} ${Object.entries(details)
+          .map(([key, value]) => `${key}=${String(value).replaceAll("\u0000", ":")}`)
+          .join(" ")}`,
+      )
+    },
+  })
+  const prepareHistoryNavigation = () => historyEdge.reset({ navigation: true, cursor: historyCursor() })
+  const noteHistoryInput = (root: HTMLDivElement, input: HistoryInput) => {
+    const decision = historyEdge.noteUserInput({ ...input, top: root.scrollTop, cursor: historyCursor() })
+    if (decision.shouldRequest && !historyInFlight() && !historyLoading() && historyMore()) {
+      void loadEarlier().catch(fail)
+    }
   }
 
   createEffect(
-    on(
-      () => params.id,
-      () => {
-        setHistoryInFlight(false)
-        historyEdgeArmed = true
-      },
-    ),
+    on(sessionKey, () => {
+      activeHistoryRequest = undefined
+      setHistoryInFlight(false)
+      historyEdge.reset({ cursor: historyCursor() })
+    }),
   )
 
   const loadEarlier = async () => {
@@ -2747,18 +2787,26 @@ export default function Page() {
       return
     }
 
+    const key = sessionKey()
+    const request = ++historyRequestSequence
+    activeHistoryRequest = request
+    const current = () => sessionKey() === key && activeHistoryRequest === request
+    const anchor = historyAnchor
     setHistoryInFlight(true)
-    historyEdgeArmed = false
+    historyEdge.beginLoad()
     console.debug(
       `[session] history-start sid=${id} loaded=${String(messages().length)} visible=${String(visibleUserMessages().length)} more=${String(historyMore())}`,
     )
     const visibleBefore = visibleUserMessages().length
-    historyAnchor.capture()
+    anchor.capture()
     try {
       while (true) {
         const loaded = messages().length
         await sync.session.history.loadMore(id)
-        if (params.id !== id) return
+        if (!current()) {
+          console.debug(`[session] history-superseded sid=${id} request=${request} key=${key}`)
+          return
+        }
         const nextLoaded = messages().length
         const visibleAfter = visibleUserMessages().length
         const result = historyPageResult({
@@ -2772,19 +2820,33 @@ export default function Page() {
           `[session] history-page sid=${id} loaded=${String(loaded)} nextLoaded=${String(nextLoaded)} visible=${String(visibleBefore)}->${String(visibleAfter)} more=${String(historyMore())} result=${result}`,
         )
         const finished = result !== "continue"
-        historyAnchor.restore(finished)
+        await anchor.restore(finished)
+        if (!current()) return
         if (finished) {
+          historyEdge.endLoad({
+            result: result === "stalled" ? "stalled" : historyMore() ? "success" : "complete",
+            cursor: historyCursor(),
+          })
           console.debug(`[session] history-end sid=${id} finished=true loaded=${String(nextLoaded)}`)
           return
         }
       }
     } catch (error) {
       console.debug(`[session] history-error sid=${id} error=${error instanceof Error ? error.message : String(error)}`)
-      historyAnchor.restore(true)
+      if (current()) {
+        await anchor.restore(true)
+        if (!current()) throw error
+        historyEdge.endLoad({ result: "failed", cursor: historyCursor() })
+      }
       throw error
     } finally {
-      setHistoryInFlight(false)
-      console.debug(`[session] history-finally sid=${id} inFlight=false loaded=${String(messages().length)}`)
+      if (current()) {
+        activeHistoryRequest = undefined
+        setHistoryInFlight(false)
+        console.debug(
+          `[session] history-finally sid=${id} request=${request} inFlight=false loaded=${String(messages().length)}`,
+        )
+      }
     }
   }
 
@@ -2905,7 +2967,7 @@ export default function Page() {
       `[user-message-rail] open sid=${params.id ?? "none"} id=${entry.id} found=${String(!!loaded || !!indexed)} loaded=${String(!!loaded)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)}`,
     )
     if (!loaded && !indexed) return
-    prepareFindNavigation()
+    prepareHistoryNavigation()
     scrollToMessageId(entry.id)
   }
 
@@ -3353,17 +3415,18 @@ export default function Page() {
       const delta = next - dockHeight
       const gap = el ? el.scrollHeight - el.clientHeight - el.scrollTop : 0
       const stick =
-        el && !ui.seekingMessageId && running()
+        el && viewportWantsBottom() && !ui.seekingMessageId && running()
           ? !autoScroll.userScrolled() || gap <= scrollBottomThreshold + Math.max(0, delta)
           : false
 
       dockHeight = next
 
       if (el && stick) {
+        const key = sessionKey()
         requestAnimationFrame(() => {
-          if (scroller !== el) return
+          if (scroller !== el || sessionKey() !== key || !viewportWantsBottom()) return
           const top = el.scrollHeight - el.clientHeight - gap
-          el.scrollTop = top > 0 ? top : 0
+          writeSessionScroll(el, "layout", () => (el.scrollTop = top > 0 ? top : 0))
           clamp(el, "dock:resize:clamp")
         })
       }
@@ -3373,7 +3436,17 @@ export default function Page() {
     },
   )
 
-  const { clearMessageHash, navigationTargetId, scrollToMessageId, scrollToMessage } = useSessionHashScroll({
+  const {
+    clearMessageHash,
+    navigationTargetId,
+    viewportTarget,
+    viewportIntent,
+    takeoverReading,
+    scrollToFind,
+    resumeLive,
+    scrollToMessageId,
+    scrollToMessage,
+  } = useSessionHashScroll({
     sessionKey,
     sessionID: () => params.id,
     directory: () => sdk.directory,
@@ -3390,8 +3463,20 @@ export default function Page() {
     setActiveMessage,
     enterLive,
     enterAnchored,
-    autoScroll,
-    prepareNavigation: () => prepareMessageNavigation(),
+    autoScroll: {
+      pause: autoScroll.pause,
+      forceScrollToBottom: () => {
+        const root = scroller
+        if (root) writeSessionScroll(root, "bottom", () => autoScroll.forceScrollToBottom())
+        else autoScroll.forceScrollToBottom()
+      },
+    },
+    prepareNavigation: (target) => {
+      prepareHistoryNavigation()
+      prepareMessageNavigation(target)
+    },
+    positionFind: (target) => positionFind(target),
+    writeScroll: writeSessionScroll,
     scroller: () => scroller,
     anchor,
     revealMessage: (id, behavior) => revealMessage(id, behavior),
@@ -3503,24 +3588,25 @@ export default function Page() {
                         onMarkScrollGesture={markScrollGesture}
                         hasScrollGesture={hasScrollGesture}
                         onUserScroll={markUserScroll}
-                        onFindNavigate={prepareFindNavigation}
-                        onFindOpenChange={(open) => {
-                          findBarOpen = open
-                          if (open) prepareFindNavigation()
+                        onFindNavigate={scrollToFind}
+                        onFindRelease={(reason) => {
+                          if (reason === "open" || reason === "query" || viewportIntent()?.kind === "find") {
+                            takeoverReading()
+                          }
                         }}
                         onHistoryScroll={(scrollTop) => {
-                          if (!autoScroll.userScrolled() || !scroller) return
-                          if (performance.now() < findNavigationUntil) return
-                          if (scrollTop >= historyEdgePx) {
-                            historyEdgeArmed = true
-                            return
+                          if (!scroller || viewportIntent()?.kind !== "reading") return
+                          const decision = historyEdge.observePosition({ top: scrollTop, cursor: historyCursor() })
+                          if (decision.shouldRequest && !historyInFlight() && historyMore()) {
+                            void loadEarlier().catch(fail)
                           }
-                          if (!historyEdgeArmed || historyInFlight()) return
-                          void loadEarlier()
                         }}
                         onAutoScrollInteraction={autoScroll.handleInteraction}
-                        shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled() && !findBarOpen}
+                        shouldAnchorBottom={() =>
+                          viewportWantsBottom() && !hasScrollTarget() && !autoScroll.userScrolled()
+                        }
                         navigationTargetId={navigationTargetId}
+                        viewportTarget={viewportTarget}
                         isInitialScrollSettling={settling}
                         centered={centered()}
                         shouldAnimateMessage={consumeUserMessageAnimation}
@@ -3538,6 +3624,12 @@ export default function Page() {
                         }}
                         setPrepareNavigation={(fn) => {
                           prepareMessageNavigation = fn
+                        }}
+                        setPositionFind={(fn) => {
+                          positionFind = fn
+                        }}
+                        setScrollRuntime={(runtime) => {
+                          timelineScrollRuntime = runtime
                         }}
                         setScrollToEnd={(fn) => {
                           scrollToEnd = fn

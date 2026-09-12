@@ -172,4 +172,102 @@ describe("message navigation", () => {
       expect(value.state().phase).toBe("settled")
     }
   })
+
+  test("find targets expose stable viewport identity without becoming page-load targets", () => {
+    const value = controller()
+    const target = {
+      kind: "find" as const,
+      rowKey: "row-2",
+      messageID: "message-2",
+      partID: "part-3",
+      occurrence: 1,
+      query: "needle",
+      queryVersion: 4,
+    }
+    const token = value.requestFind(target)
+    expect(value.reconcile({ ...snapshot, loaded: false, more: true })).toEqual({ kind: "seek", token, target })
+    expect(value.state().viewportTarget).toEqual(target)
+    expect(value.state().positionTarget).toBeUndefined()
+    expect(value.finishSeek(token, true)).toBe(true)
+    expect(value.state().viewportTarget).toEqual(target)
+  })
+
+  test("reading takeover settles without loading and releases an old shared fetch", () => {
+    const value = controller()
+    const old = value.request(message("old"))
+    value.reconcile({ ...snapshot, loaded: false, more: true })
+    const reading = value.requestReading()
+    expect(value.current(old)).toBe(false)
+    expect(value.reconcile({ ...snapshot, loaded: false, more: true })).toBeUndefined()
+    expect(value.state().phase).toBe("settled")
+    expect(value.state().viewportTarget).toBeUndefined()
+    expect(value.state().historyPending).toBe(true)
+    expect(value.finishLoad(old)).toBe(true)
+    expect(value.state().historyPending).toBe(false)
+    expect(value.finishSeek(old, true)).toBe(false)
+    expect(value.finishSeek(reading, true)).toBe(true)
+  })
+
+  test("find no-match and close transitions cannot revive an old intent", () => {
+    const value = controller()
+    const find = value.requestFind({
+      kind: "find",
+      rowKey: "row-1",
+      messageID: "message-1",
+      partID: "part-1",
+      occurrence: 0,
+      query: "missing",
+      queryVersion: 1,
+    })
+    expect(value.reconcile(snapshot)).toEqual({ kind: "seek", token: find, target: value.state().target! })
+    expect(value.finishSeek(find, false)).toBe(true)
+    expect(value.state().phase).toBe("unavailable")
+    const reading = value.cancel()
+    expect(value.current(find)).toBe(false)
+    expect(value.reconcile(snapshot)).toBeUndefined()
+    expect(value.state().target).toBeUndefined()
+    expect(value.state().viewportTarget).toBeUndefined()
+    expect(value.finishSeek(find, true)).toBe(false)
+    expect(value.current(reading)).toBe(true)
+  })
+
+  test("session switching invalidates find and reading tokens", () => {
+    const value = controller()
+    const old = value.requestFind({
+      kind: "find",
+      rowKey: "row-1",
+      messageID: "message-1",
+      partID: "part-1",
+      occurrence: 0,
+      query: "needle",
+      queryVersion: 1,
+    })
+    value.reset("session-b", "")
+    const next = value.requestReading()
+    expect(value.current(old)).toBe(false)
+    expect(value.finishSeek(old, true)).toBe(false)
+    expect(value.current(next)).toBe(true)
+    expect(value.reconcile(snapshot)).toBeUndefined()
+  })
+
+  test("reading and find takeover reject delayed hashes from the prior intent", () => {
+    const value = controller()
+    value.requestFind(
+      {
+        kind: "find",
+        rowKey: "row-1",
+        messageID: "message-1",
+        partID: "part-1",
+        occurrence: 0,
+        query: "needle",
+        queryVersion: 1,
+      },
+      "",
+    )
+    expect(value.observeHash("#message-last")).toBe("superseded")
+    value.request({ kind: "reading" }, "")
+    expect(value.observeHash("#message-last")).toBe("superseded")
+    expect(value.state().target).toEqual({ kind: "reading" })
+    expect(value.observeHash("")).toBe("acknowledged")
+  })
 })

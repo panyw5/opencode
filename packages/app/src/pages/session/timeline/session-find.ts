@@ -1,4 +1,4 @@
-import { createMemo, onCleanup } from "solid-js"
+import { createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { Virtualizer } from "@tanstack/solid-virtual"
 import type { Part } from "@opencode-ai/sdk/v2"
@@ -9,7 +9,9 @@ import {
   setFindHighlights,
   type FindHost,
 } from "@opencode-ai/ui/pierre/file-find"
+import type { FindNavigationTarget, FindPositionResult } from "../message-navigation"
 import { TimelineRow } from "./rows"
+import type { ScrollOrigin } from "./scroll-ledger"
 
 export type FindMatch = {
   rowKey: string
@@ -35,6 +37,7 @@ export type SessionFindController = SessionFindState & {
   setInput: (el: HTMLInputElement) => void
   onInputKeyDown: (event: KeyboardEvent) => void
   refreshHighlights: () => void
+  positionMatch: (target: FindNavigationTarget) => FindPositionResult
 }
 
 export function createSessionFind(opts: {
@@ -44,14 +47,15 @@ export function createSessionFind(opts: {
   rowByKey: () => Map<string, TimelineRow.TimelineRow>
   getMessageParts: (messageID: string) => Part[]
   sessionID: () => string | undefined
-  onNavigate: () => void
+  onNavigate: (target: FindNavigationTarget) => void
+  onRelease?: (reason: "open" | "query" | "close" | "empty") => void
+  writeScroll?: (root: HTMLDivElement, origin: ScrollOrigin, callback: () => void) => void
 }): SessionFindController {
   let input: HTMLInputElement | undefined
-  let scrollFrame: number | undefined
   let highlightFrame: number | undefined
   let mountedRowsFrame: number | undefined
-  let scrollRetries = 0
-  const MAX_SCROLL_RETRIES = 60
+  let queryVersion = 0
+  let highlightedTarget = ""
 
   const debugFind = (message: string) => {
     const line = `[session-find] ${message}`
@@ -67,6 +71,7 @@ export function createSessionFind(opts: {
     open: false,
     query: "",
     index: 0,
+    selected: undefined as FindMatch | undefined,
     count: 0,
     pos: { top: 8, right: 8 },
   })
@@ -87,7 +92,7 @@ export function createSessionFind(opts: {
 
     rows.forEach((row, index) => {
       const rowKey = TimelineRow.key(row)
-      
+
       if (row._tag === "UserMessage") {
         const parts = opts.getMessageParts(row.userMessageID)
         for (const part of parts) {
@@ -199,7 +204,7 @@ export function createSessionFind(opts: {
 
     if (!supportsHighlightAPI()) return
 
-    const queryLower = state.query.toLowerCase()
+    const queryLower = state.query.trim().toLowerCase()
     if (!queryLower) {
       clearFindHighlights()
       return
@@ -214,20 +219,21 @@ export function createSessionFind(opts: {
       const rowKey = rowEl.dataset.timelineKey
       if (!rowKey) continue
 
-      const rowRanges = scanRowForRanges(rowEl, queryLower)
-      for (let i = 0; i < rowRanges.length; i++) {
-        const { range } = rowRanges[i]
-
-        // Determine if this range is the current match
-        if (
-          currentMatch &&
-          rowKey === currentMatch.rowKey &&
-          i === currentMatch.occurrence
-        ) {
-          currentIndex = allRanges.length
+      const partElements = [...rowEl.querySelectorAll<HTMLElement>("[data-part-id]")]
+      const scopes = partElements.length ? partElements : [rowEl]
+      for (const scope of scopes) {
+        const rowRanges = scanRowForRanges(scope, queryLower)
+        for (let i = 0; i < rowRanges.length; i++) {
+          const { range } = rowRanges[i]
+          if (
+            currentMatch &&
+            rowKey === currentMatch.rowKey &&
+            (!partElements.length || scope.dataset.partId === currentMatch.partID) &&
+            i === currentMatch.occurrence
+          )
+            currentIndex = allRanges.length
+          allRanges.push(range)
         }
-
-        allRanges.push(range)
       }
     }
 
@@ -242,79 +248,25 @@ export function createSessionFind(opts: {
   // --- Scroll to match ---
 
   function scrollToMatch(match: FindMatch) {
-    const listRoot = opts.listRoot()
-    if (!listRoot) return
-
-    const resolveRowIndex = () => opts.timelineRows().findIndex((row) => TimelineRow.key(row) === match.rowKey)
-    const currentRowIndex = resolveRowIndex()
-    const beforeItems = opts.virtualizer.getVirtualItems()
-    debugFind(
-      `scroll-start key=${match.rowKey} storedIndex=${String(match.rowIndex)} currentIndex=${String(currentRowIndex)} rowKnown=${String(opts.rowByKey().has(match.rowKey))} mounted=${String(!!listRoot.querySelector(`[data-timeline-key="${CSS.escape(match.rowKey)}"]`))} virtual=${String(beforeItems[0]?.index ?? "none")}-${String(beforeItems.at(-1)?.index ?? "none")} scrollTop=${String(Math.round(listRoot.scrollTop))} total=${String(Math.round(opts.virtualizer.getTotalSize()))}`,
-    )
-
-    if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
-    scrollRetries = 0
-    if (currentRowIndex < 0) {
-      debugFind(`scroll-missing key=${match.rowKey}`)
-      return
-    }
-
-    // A find navigation intentionally leaves bottom-follow mode. Without this,
-    // measuring the newly mounted target can immediately pin the list back to
-    // the tail before its highlight is painted.
-    opts.onNavigate()
-    opts.virtualizer.scrollToIndex(currentRowIndex, { align: "center" })
-
-    // After scroll, wait for mount then apply highlights.
-    const tryApply = () => {
-      scrollFrame = undefined
-
-      // Check if the row is mounted
-      const rowEl = listRoot.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(match.rowKey)}"]`)
-      if (!rowEl) {
-        scrollRetries++
-        const items = opts.virtualizer.getVirtualItems()
-        const latestIndex = resolveRowIndex()
-        debugFind(
-          `scroll-wait retry=${String(scrollRetries)} key=${match.rowKey} storedIndex=${String(match.rowIndex)} currentIndex=${String(latestIndex)} virtual=${String(items[0]?.index ?? "none")}-${String(items.at(-1)?.index ?? "none")} scrollTop=${String(Math.round(listRoot.scrollTop))}`,
-        )
-        if (latestIndex >= 0 && scrollRetries < MAX_SCROLL_RETRIES) {
-          // Row estimates can shift as distant content mounts. Re-issue the
-          // key-resolved target instead of waiting on a stale one-shot offset.
-          opts.virtualizer.scrollToIndex(latestIndex, { align: "center" })
-          scrollFrame = requestAnimationFrame(tryApply)
-        }
-        return
-      }
-
-      // Apply highlights
-      applyHighlights(match)
-
-      // Virtual rows can be taller than the viewport, so row-level centering
-      // (scrollToIndex align:center / scrollIntoView) can leave the match text
-      // off-screen. Center the matched range itself and re-check for a few
-      // frames while measurements settle.
-      const delta = matchCenterDelta(listRoot, rowEl, match)
-      const settled = Math.abs(delta) <= 2
-      if (!settled) listRoot.scrollTop += delta
-      debugFind(
-        `scroll-mounted retry=${String(scrollRetries)} key=${match.rowKey} index=${String(match.rowIndex)} scrollTop=${String(Math.round(listRoot.scrollTop))} delta=${String(Math.round(delta))}`,
-      )
-      if (!settled && scrollRetries < MAX_SCROLL_RETRIES) {
-        scrollRetries++
-        scrollFrame = requestAnimationFrame(tryApply)
-      }
-    }
-
-    scrollFrame = requestAnimationFrame(tryApply)
+    setState("selected", match)
+    opts.onNavigate({
+      kind: "find",
+      rowKey: match.rowKey,
+      messageID: match.messageID,
+      partID: match.partID,
+      occurrence: match.occurrence,
+      query: state.query,
+      queryVersion,
+    })
   }
 
   function matchCenterDelta(scroller: HTMLElement, rowEl: HTMLElement, match: FindMatch): number {
     const bounds = scroller.getBoundingClientRect()
-    const queryLower = state.query.toLowerCase()
+    const queryLower = state.query.trim().toLowerCase()
     if (queryLower) {
-      const ranges = scanRowForRanges(rowEl, queryLower)
-      const hit = ranges[Math.min(match.occurrence, Math.max(0, ranges.length - 1))]
+      const partEl = rowEl.querySelector<HTMLElement>(`[data-part-id="${CSS.escape(match.partID)}"]`)
+      const ranges = scanRowForRanges(partEl ?? rowEl, queryLower)
+      const hit = ranges[match.occurrence]
       if (hit) {
         const rect = hit.range.getBoundingClientRect()
         if (rect.width > 0 || rect.height > 0) {
@@ -335,9 +287,38 @@ export function createSessionFind(opts: {
   })
 
   const currentMatch = createMemo(() => {
+    const selected = state.selected
+    if (!selected) return undefined
+    return allMatches().find(
+      (match) =>
+        match.rowKey === selected.rowKey &&
+        match.messageID === selected.messageID &&
+        match.partID === selected.partID &&
+        match.occurrence === selected.occurrence,
+    )
+  })
+  let previousMatch: FindMatch | undefined
+  let previousQuery = state.query
+  createEffect(() => {
     const matches = allMatches()
-    const idx = state.index
-    return matches[idx]
+    setState("count", matches.length)
+    const current = currentMatch()
+    if (current) setState("index", matches.indexOf(current))
+    if (
+      state.open &&
+      state.query === previousQuery &&
+      previousMatch &&
+      !matches.some(
+        (match) =>
+          match.rowKey === previousMatch!.rowKey &&
+          match.messageID === previousMatch!.messageID &&
+          match.partID === previousMatch!.partID &&
+          match.occurrence === previousMatch!.occurrence,
+      )
+    )
+      opts.onRelease?.("empty")
+    previousQuery = state.query
+    previousMatch = current
   })
 
   // Re-apply highlights when virtualizer items change (scrolling causes mount/unmount)
@@ -349,6 +330,10 @@ export function createSessionFind(opts: {
       applyHighlights(currentMatch())
     })
   }
+  createEffect(() => {
+    currentMatch()
+    if (state.open) scheduleMountedRowsHighlight()
+  })
 
   // --- Open / close ---
 
@@ -365,9 +350,11 @@ export function createSessionFind(opts: {
   }
 
   const focus = (query?: string) => {
+    opts.onRelease?.("open")
     if (!state.open) setState("open", true)
 
     if (query !== undefined) {
+      queryVersion++
       setState("query", query)
       setState("index", 0)
       setState("count", allMatches().length)
@@ -375,6 +362,8 @@ export function createSessionFind(opts: {
       const matches = allMatches()
       if (matches.length > 0) {
         scrollToMatch(matches[0])
+      } else {
+        opts.onRelease?.("empty")
       }
     }
 
@@ -390,10 +379,11 @@ export function createSessionFind(opts: {
     setState("query", "")
     setState("count", 0)
     setState("index", 0)
+    setState("selected", undefined)
     clearFindHighlights()
-    if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
     if (highlightFrame !== undefined) cancelAnimationFrame(highlightFrame)
     if (mountedRowsFrame !== undefined) cancelAnimationFrame(mountedRowsFrame)
+    opts.onRelease?.("close")
   }
 
   const next = (dir: 1 | -1) => {
@@ -409,6 +399,8 @@ export function createSessionFind(opts: {
   }
 
   const setQuery = (value: string) => {
+    opts.onRelease?.("query")
+    queryVersion++
     setState("query", value)
     setState("index", 0)
     const matches = allMatches()
@@ -418,6 +410,7 @@ export function createSessionFind(opts: {
       scrollToMatch(matches[0])
     } else {
       clearFindHighlights()
+      opts.onRelease?.("empty")
     }
   }
 
@@ -437,7 +430,6 @@ export function createSessionFind(opts: {
   // Cleanup on dispose
   onCleanup(() => {
     unregister()
-    if (scrollFrame !== undefined) cancelAnimationFrame(scrollFrame)
     if (highlightFrame !== undefined) cancelAnimationFrame(highlightFrame)
     if (mountedRowsFrame !== undefined) cancelAnimationFrame(mountedRowsFrame)
     clearFindHighlights()
@@ -471,5 +463,57 @@ export function createSessionFind(opts: {
       next(event.shiftKey ? -1 : 1)
     },
     refreshHighlights: scheduleMountedRowsHighlight,
+    positionMatch: (target: FindNavigationTarget): FindPositionResult => {
+      const listRoot = opts.listRoot()
+      if (!state.open || target.query !== state.query || target.queryVersion !== queryVersion) {
+        debugFind(
+          `position-stale key=${target.rowKey} targetVersion=${String(target.queryVersion)} currentVersion=${String(queryVersion)}`,
+        )
+        return { available: false, aligned: false, geometry: "stale" }
+      }
+      const expected = currentMatch()
+      if (
+        expected &&
+        (expected.rowKey !== target.rowKey ||
+          expected.messageID !== target.messageID ||
+          expected.partID !== target.partID ||
+          expected.occurrence !== target.occurrence)
+      ) {
+        return { available: false, aligned: false, geometry: "superseded-match" }
+      }
+      if (!expected) return { available: false, aligned: false, geometry: "missing" }
+      const row = listRoot?.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(target.rowKey)}"]`)
+      if (!listRoot || !row) {
+        const index = opts.timelineRows().findIndex((item) => TimelineRow.key(item) === target.rowKey)
+        if (index >= 0) opts.virtualizer.scrollToIndex(index, { align: "center" })
+        return { available: false, aligned: false, geometry: "unmounted" }
+      }
+      const match: FindMatch = {
+        ...target,
+        rowIndex: opts.timelineRows().findIndex((item) => TimelineRow.key(item) === target.rowKey),
+      }
+      const highlightKey = `${queryVersion}:${target.rowKey}:${target.partID}:${target.occurrence}`
+      if (highlightedTarget !== highlightKey) {
+        applyHighlights(expected)
+        highlightedTarget = highlightKey
+      }
+      const delta = matchCenterDelta(listRoot, row, match)
+      const top = Math.max(
+        0,
+        Math.min(listRoot.scrollTop + delta, Math.max(0, opts.virtualizer.getTotalSize() - listRoot.clientHeight)),
+      )
+      const adjustment = top - listRoot.scrollTop
+      if (Math.abs(adjustment) > 2) {
+        const write = () => (listRoot.scrollTop = top)
+        if (opts.writeScroll) opts.writeScroll(listRoot, "navigation", write)
+        else write()
+        debugFind(`position-write key=${target.rowKey} targetTop=${Math.round(top)} delta=${Math.round(adjustment)}`)
+      }
+      return {
+        available: true,
+        aligned: Math.abs(adjustment) <= 2,
+        geometry: `${Math.round(top)}:${Math.round(row.getBoundingClientRect().height)}:${listRoot.clientHeight}`,
+      }
+    },
   }
 }

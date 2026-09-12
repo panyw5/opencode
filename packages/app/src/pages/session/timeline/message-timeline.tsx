@@ -101,6 +101,9 @@ import { DEFAULT_TIMELINE_OVERSCAN, timelineOverscan } from "./windows-performan
 import { createSessionFind } from "./session-find"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
 import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
+import type { FindNavigationTarget, FindPositionResult, MessageNavigationTarget } from "../message-navigation"
+import { createScrollLedger, type ScrollOrigin, type ScrollRuntime } from "./scroll-ledger"
+import type { HistoryInput } from "../history-edge"
 
 const emptyMessages: MessageType[] = []
 const emptyParts: PartType[] = []
@@ -251,12 +254,14 @@ export function MessageTimeline(props: {
   onScheduleScrollState: (
     el: HTMLDivElement,
     geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
+    userDelta?: number,
   ) => void
   onAutoScrollHandleScroll: (geometry: { scrollTop: number; scrollHeight: number; clientHeight: number }) => void
-  onMarkScrollGesture: (target?: EventTarget | null) => void
+  onMarkScrollGesture: (target?: EventTarget | null, input?: HistoryInput) => void
   hasScrollGesture: () => boolean
   onUserScroll: () => void
-  onFindNavigate: () => void
+  onFindNavigate: (target: FindNavigationTarget) => void
+  onFindRelease?: (reason: "open" | "query" | "close" | "empty") => void
   onFindOpenChange?: (open: boolean) => void
   onHistoryScroll: (scrollTop: number) => void
   onAutoScrollInteraction: (event: MouseEvent) => void
@@ -269,9 +274,12 @@ export function MessageTimeline(props: {
   shouldAnimateMessage?: (id: string) => boolean
   anchor: (id: string) => string
   setRevealMessage?: (fn: (id: string, behavior?: ScrollBehavior) => void) => void
-  setPrepareNavigation?: (fn: () => void) => void
+  setPrepareNavigation?: (fn: (target: MessageNavigationTarget) => void) => void
+  setPositionFind?: (fn: (target: FindNavigationTarget) => FindPositionResult) => void
+  setScrollRuntime?: (runtime: ScrollRuntime | undefined) => void
+  viewportTarget?: () => Extract<MessageNavigationTarget, { kind: "message" | "anchor" | "find" }> | undefined
   setScrollToEnd?: (fn: () => void) => void
-  setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => void }) => void
+  setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => Promise<void> }) => void
   onContentReady?: (detail: { rows: number; cached: boolean }) => void
 }) {
   const sync = useSync()
@@ -362,7 +370,9 @@ export function MessageTimeline(props: {
       target: smoothWheelTarget,
       elapsed: smoothWheelLastFrame ? now - smoothWheelLastFrame : 16,
     })
-    root.scrollTop = Math.abs(smoothWheelTarget - next) < 0.5 ? smoothWheelTarget : next
+    scrollRuntime.write(root, "user", () => {
+      root.scrollTop = Math.abs(smoothWheelTarget! - next) < 0.5 ? smoothWheelTarget! : next
+    })
     smoothWheelLastTop = root.scrollTop
     smoothWheelLastFrame = now
     markToolHydrationScrollActivity(now)
@@ -517,38 +527,37 @@ export function MessageTimeline(props: {
     })
   }
 
-  // Programmatic scrolls (anchor restore, TanStack scroll adjustments,
-  // scrollToIndex/scrollToEnd) must not be mistaken for user scrolling: they
-  // neither mark the user as detached from the bottom nor arm history loads.
-  // Real wheel/touch input clears the marker immediately. The cumulative
-  // programmatic delta lets the post-batch anchor math separate user scrolling
-  // from compensation writes.
-  const programmaticScrollWindowMs = 160
-  let programmaticScrollAt = 0
+  const activeNavigation = () =>
+    props.viewportTarget?.() ??
+    (!props.viewportTarget && props.navigationTargetId?.()
+      ? { kind: "message" as const, id: props.navigationTargetId!()!, behavior: "auto" as const }
+      : undefined)
+  const scrollLedger = createScrollLedger({
+    initialTop: 0,
+    fastSpeed: FAST_SCROLL_SPEED,
+    fastWindowMs: FAST_SCROLL_WINDOW_MS,
+  })
   let programmaticScrollDelta = 0
-  const markProgrammaticScroll = (delta = 0) => {
-    programmaticScrollAt = performance.now()
-    programmaticScrollDelta += delta
+  const scrollRuntime: ScrollRuntime = {
+    write(root, origin: ScrollOrigin, callback) {
+      const before = root.scrollTop
+      callback()
+      const after = root.scrollTop
+      scrollLedger.recordWrite(before, after, origin)
+      programmaticScrollDelta = scrollLedger.snapshot().systemCompensation
+      if (Math.abs(after - before) > 0.5 && lagging()) {
+        timelineLag(
+          "scroll-write",
+          `source=${origin} before=${Math.round(before)} after=${Math.round(after)} actual=${Math.round(after - before)}`,
+        )
+      }
+    },
+    rebase: (top) => scrollLedger.rebase(top),
   }
-  const isProgrammaticScrollActive = () => performance.now() - programmaticScrollAt < programmaticScrollWindowMs
 
   // Scroll velocity (px/ms, exponentially smoothed) drives overscan: fast
   // flings shrink the prefetch window so mounting rows cannot overrun frames.
-  let velocityTrackedAt = 0
-  let velocityTrackedTop = 0
-  let scrollVelocity = 0
-  const trackScrollVelocity = (scrollTop: number) => {
-    const now = performance.now()
-    const dt = now - velocityTrackedAt
-    if (dt > 2 && dt < 300) {
-      const speed = Math.abs(scrollTop - velocityTrackedTop) / dt
-      scrollVelocity = scrollVelocity * 0.7 + speed * 0.3
-    }
-    velocityTrackedAt = now
-    velocityTrackedTop = scrollTop
-  }
-  const fastScrolling = () =>
-    scrollVelocity > FAST_SCROLL_SPEED && performance.now() - velocityTrackedAt < FAST_SCROLL_WINDOW_MS
+  const fastScrolling = () => scrollLedger.isFast()
 
   // Anchors captured after the previous measurement batch; restored right
   // after the next one (synchronously inside the ResizeObserver callback,
@@ -582,15 +591,24 @@ export function MessageTimeline(props: {
     const root = listRoot()
     if (!root) return
     const owner = timelineScrollOwner({
-      navigating: !!props.navigationTargetId?.(),
+      navigating: !!activeNavigation(),
       bottom: props.shouldAnchorBottom(),
       history: prependLoading,
     })
     if (owner === "navigation") {
       viewportAnchor = undefined
       readingAnchor = undefined
-      const id = props.navigationTargetId?.()
-      if (id) positionMessage(id, "measure")
+      const target = activeNavigation()
+      if (target?.kind === "find") {
+        const result = sessionFind.positionMatch(target)
+        if (lagging())
+          timelineLag("find-position", `available=${String(result.available)} aligned=${String(result.aligned)}`)
+      } else if (target?.kind === "message" || target?.kind === "anchor") {
+        positionMessage(target.id, "measure")
+      } else {
+        const id = props.navigationTargetId?.()
+        if (id) positionMessage(id, "measure")
+      }
       return
     }
     if (owner === "bottom") {
@@ -603,14 +621,16 @@ export function MessageTimeline(props: {
       if (!props.isInitialScrollSettling() && !props.hasScrollGesture()) {
         const gap = virtualizer.getTotalSize() - listSize().height - root.scrollTop
         if (gap > 0.5) {
-          markProgrammaticScroll(gap)
-          root.scrollTop += gap
+          scrollRuntime.write(root, "bottom", () => (root.scrollTop += gap))
           if (lagging()) timelineLag("batch-pin", `gap=${Math.round(gap)}`)
         }
       }
       return
     }
-    if (owner === "history") return
+    if (owner === "history") {
+      restorePrependAnchor(false)
+      return
+    }
     const items = virtualizer.measurementsCache
     // measurementsCache is sparse while virtual rows are being discovered;
     // snapshotVirtualItems removes empty slots before building the lookup.
@@ -620,11 +640,14 @@ export function MessageTimeline(props: {
       // programmatic writes; only height-commit displacement gets corrected.
       const userDelta =
         root.scrollTop - viewportAnchor.scrollTop - (programmaticScrollDelta - viewportAnchor.programmaticDelta)
-      const delta = restoreVirtualViewportAnchor({
-        root,
-        anchor: viewportAnchor,
-        itemByKey: (key) => byKey.get(key),
-        userScrollDelta: userDelta,
+      let delta = 0
+      scrollRuntime.write(root, "layout", () => {
+        delta = restoreVirtualViewportAnchor({
+          root,
+          anchor: viewportAnchor!,
+          itemByKey: (key) => anchorItem(key),
+          userScrollDelta: userDelta,
+        })
       })
       if (lagging()) {
         timelineLag(
@@ -635,7 +658,6 @@ export function MessageTimeline(props: {
           })()}`,
         )
       }
-      if (delta !== 0) markProgrammaticScroll(delta)
       if (navigationResetAt && performance.now() - navigationResetAt < 2_000 && Math.abs(delta) > 0.5) {
         console.debug(
           `[timeline] navigation-anchor-restore sid=${sessionID() ?? "none"} source=viewport key=${viewportAnchor.key} delta=${Math.round(delta)} top=${Math.round(root.scrollTop)}`,
@@ -653,11 +675,14 @@ export function MessageTimeline(props: {
         // then the reading line wins — that is the content being read.
         const readingUserDelta =
           root.scrollTop - readingAnchor.scrollTop - (programmaticScrollDelta - readingAnchor.programmaticDelta)
-        const readingDelta = restoreVirtualViewportAnchor({
-          root,
-          anchor: readingAnchor,
-          itemByKey: (key) => byKey.get(key),
-          userScrollDelta: readingUserDelta,
+        let readingDelta = 0
+        scrollRuntime.write(root, "layout", () => {
+          readingDelta = restoreVirtualViewportAnchor({
+            root,
+            anchor: readingAnchor!,
+            itemByKey: (key) => anchorItem(key),
+            userScrollDelta: readingUserDelta,
+          })
         })
         if (lagging()) {
           timelineLag(
@@ -668,7 +693,6 @@ export function MessageTimeline(props: {
             })()}`,
           )
         }
-        if (readingDelta !== 0) markProgrammaticScroll(readingDelta)
         if (navigationResetAt && performance.now() - navigationResetAt < 2_000 && Math.abs(readingDelta) > 0.5) {
           console.debug(
             `[timeline] navigation-anchor-restore sid=${sessionID() ?? "none"} source=reading key=${readingAnchor.key} delta=${Math.round(readingDelta)} top=${Math.round(root.scrollTop)}`,
@@ -701,6 +725,9 @@ export function MessageTimeline(props: {
     showCustomHookParts: settings.general.showCustomHookParts,
   })
   const timelineRows = projection.rows
+  const timelineIndexByKey = createMemo(
+    () => new Map(timelineRows().map((row, index) => [TimelineRow.key(row), index])),
+  )
   const timelineRowByKey = projection.rowByKey
   const messageRowIndex = projection.messageRowIndex
   const messageByID = projection.messageByID
@@ -789,19 +816,19 @@ export function MessageTimeline(props: {
     hasCachedMeasurements || coldBottomMount ? 6 : normalTimelineOverscan,
   )
 
-  type PrependAnchor = {
-    key: string
-    offset: number
-    scrollTop: number
-    contentHeight: number
-  }
+  type PrependAnchor = ViewportAnchor
   let prependAnchor: PrependAnchor | undefined
   let prependLoading = false
   let prependRestoreDone = false
   let prependAnchorFrame: number | undefined
+  let prependCompletion: Promise<void> | undefined
+  let finishPrepend: (() => void) | undefined
   // Prefer the virtual spacer height (full list) over the viewport scrollHeight.
-  const contentHeight = (root: HTMLDivElement) => virtualContent?.offsetHeight ?? root.scrollHeight
+  const contentHeight = (root = listRoot()) => (root ? (virtualContent?.offsetHeight ?? root.scrollHeight) : 0)
   const clearPrependAnchor = () => {
+    finishPrepend?.()
+    finishPrepend = undefined
+    prependCompletion = undefined
     prependAnchor = undefined
     prependLoading = false
     prependRestoreDone = false
@@ -809,7 +836,7 @@ export function MessageTimeline(props: {
     prependAnchorFrame = undefined
   }
   const capturePrependAnchor = () => {
-    if (props.navigationTargetId?.()) {
+    if (activeNavigation()) {
       clearPrependAnchor()
       return
     }
@@ -817,34 +844,16 @@ export function MessageTimeline(props: {
     prependRestoreDone = false
     const root = listRoot()
     if (!root) return
-    const view = root.getBoundingClientRect()
-    const height = contentHeight(root)
-    const anchor = [...root.querySelectorAll<HTMLElement>("[data-timeline-key]")]
-      .map((element) => ({ element, rect: element.getBoundingClientRect() }))
-      .filter((item) => item.rect.bottom > view.top && item.rect.top < view.bottom)
-      .sort((a, b) => a.rect.top - b.rect.top)[0]
-    const key = anchor?.element.dataset.timelineKey
-    if (anchor && key) {
-      prependAnchor = {
-        key,
-        offset: anchor.rect.top - view.top,
-        scrollTop: root.scrollTop,
-        contentHeight: height,
-      }
-      return
-    }
-    // No mounted row (rare) — still pin by content growth so prepend does not jump to top.
-    prependAnchor = {
-      key: "",
-      offset: 0,
-      scrollTop: root.scrollTop,
-      contentHeight: height,
-    }
+    const items = virtualizer.measurementsCache
+    prependAnchor = captureVirtualViewportAnchor(root, items, scrollLedger.snapshot().systemCompensation)
+    console.debug(
+      `[timeline] history-capture sid=${sessionID() ?? "none"} key=${prependAnchor?.key ?? "none"} top=${Math.round(root.scrollTop)}`,
+    )
   }
-  const restorePrependAnchor = (done: boolean) => {
-    if (props.navigationTargetId?.()) {
+  const restorePrependAnchor = (done: boolean): Promise<void> => {
+    if (activeNavigation()) {
       clearPrependAnchor()
-      return
+      return Promise.resolve()
     }
     // Keep prependLoading true until the pin loop settles, otherwise scroll events
     // re-trigger history loads and the anchor is cleared mid-restore.
@@ -853,56 +862,68 @@ export function MessageTimeline(props: {
     const saved = prependAnchor
     if (!root || !saved) {
       if (done) clearPrependAnchor()
-      return
+      return Promise.resolve()
     }
-    if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
+    if (prependCompletion) return prependCompletion
+    const completion = new Promise<void>((resolve) => (finishPrepend = resolve))
+    prependCompletion = completion
     let frames = 0
     let stable = 0
     const restore = () => {
       prependAnchorFrame = undefined
-      if (props.navigationTargetId?.()) {
+      if (activeNavigation()) {
         clearPrependAnchor()
         return
       }
       const anchor = prependAnchor
       if (!anchor) {
-        if (prependRestoreDone) prependLoading = false
+        clearPrependAnchor()
         return
       }
-      const height = contentHeight(root)
+      const total = virtualizer.getTotalSize()
+      if (virtualContent) virtualContent.style.height = `${total}px`
+      if (!anchorItem(anchor.key)) {
+        console.debug(
+          `[timeline] history-anchor-missing sid=${sessionID() ?? "none"} key=${anchor.key} index=${timelineIndexByKey().get(anchor.key) ?? "none"}`,
+        )
+        prependAnchor = captureVirtualViewportAnchor(root, virtualizer.measurementsCache, programmaticScrollDelta)
+        frames++
+        if (frames >= 12) clearPrependAnchor()
+        else prependAnchorFrame = requestAnimationFrame(restore)
+        return
+      }
+      const ledgerBefore = scrollLedger.snapshot().systemCompensation
+      const userDelta = root.scrollTop - anchor.scrollTop - (ledgerBefore - anchor.programmaticDelta)
       let delta = 0
-      if (anchor.key) {
-        const element = root.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(anchor.key)}"]`)
-        if (element) {
-          delta = element.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
-        } else {
-          // Anchor row not mounted yet (virtualizer range) — use total size growth.
-          delta = height - anchor.contentHeight
-        }
-      } else {
-        delta = height - anchor.contentHeight
-      }
-      if (Math.abs(delta) > 0.5) {
-        root.scrollTop += delta
-        anchor.scrollTop = root.scrollTop
-        anchor.contentHeight = height
-        stable = 0
-      } else {
-        anchor.contentHeight = height
-        stable += 1
-      }
+      scrollRuntime.write(root, "layout", () => {
+        delta = restoreVirtualViewportAnchor({
+          root,
+          anchor,
+          itemByKey: (key) => anchorItem(key),
+          userScrollDelta: userDelta,
+        })
+      })
+      console.debug(
+        `[timeline] history-restore sid=${sessionID() ?? "none"} key=${anchor.key} user=${Math.round(userDelta)} correction=${Math.round(delta)} top=${Math.round(root.scrollTop)}`,
+      )
+      if (Math.abs(delta) > 0.5) stable = 0
+      else stable += 1
+      prependAnchor = captureVirtualViewportAnchor(root, virtualizer.measurementsCache, programmaticScrollDelta)
+      refreshUserScrollAnchors(root, root.scrollTop)
       frames += 1
       if (stable >= 8 || frames >= 180) {
+        finishPrepend?.()
+        finishPrepend = undefined
+        prependCompletion = undefined
         if (prependRestoreDone) {
-          prependAnchor = undefined
-          prependLoading = false
-          prependRestoreDone = false
+          clearPrependAnchor()
         }
         return
       }
       prependAnchorFrame = requestAnimationFrame(restore)
     }
     prependAnchorFrame = requestAnimationFrame(restore)
+    return completion
   }
 
   let virtualContent: HTMLDivElement | undefined
@@ -995,9 +1016,21 @@ export function MessageTimeline(props: {
     },
     scrollToFn: (offset, options, instance) => {
       const root = listRoot()
-      if (root) markProgrammaticScroll(offset + (options.adjustments ?? 0) - root.scrollTop)
       if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
-      elementScroll(offset, options, instance)
+      const write = () => elementScroll(offset, { ...options, behavior: "auto" }, instance)
+      if (root)
+        scrollRuntime.write(
+          root,
+          options.adjustments !== undefined
+            ? "layout"
+            : activeNavigation()
+              ? "navigation"
+              : props.shouldAnchorBottom()
+                ? "bottom"
+                : "layout",
+          write,
+        )
+      else write()
     },
     get getItemKey() {
       const rows = timelineRows()
@@ -1053,7 +1086,7 @@ export function MessageTimeline(props: {
     timelineRowCache.setMeasured(rowKey, size, rowContentVersion(currentRow, getMessagePart), estimatorWidth())
   }
   const captureDeferredGrowthAnchors = (root: HTMLDivElement, source: "scroll" | "flush") => {
-    if (props.navigationTargetId?.()) return
+    if (activeNavigation()) return
     if (deferredFastMeasurements.size === 0) return
     const items = snapshotVirtualItems(virtualizer.measurementsCache)
     for (const [index, pending] of deferredFastMeasurements) {
@@ -1086,7 +1119,7 @@ export function MessageTimeline(props: {
       const savedAnchor = pendingEntries
         .map(([, pending]) => pending.anchor)
         .find((anchor) => anchor && knownItems.has(anchor.key))
-      if (savedAnchor && !props.navigationTargetId?.()) {
+      if (savedAnchor && !activeNavigation()) {
         readingAnchor = savedAnchor
         if (lagging()) {
           timelineLag(
@@ -1157,7 +1190,7 @@ export function MessageTimeline(props: {
     }
   }
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
-    if (props.navigationTargetId?.()) return false
+    if (activeNavigation()) return false
     const root = listRoot()
     const scrollOffset = instance.getLogicalScrollOffset()
     // While the user is actively wheeling/touching away from the bottom, the
@@ -1179,6 +1212,13 @@ export function MessageTimeline(props: {
     return adjust
   }
   const virtualSnapshot = createMemo(() => snapshotVirtualItems(virtualizer.getVirtualItems()))
+  const anchorItem = (key: string) => {
+    const index = timelineIndexByKey().get(key)
+    if (index === undefined) return undefined
+    // Sparse lazy caches materialize a row only when its numeric index is read.
+    const item = virtualizer.measurementsCache[index]
+    return item && String(item.key) === key ? item : undefined
+  }
   const virtualItemByKey = createMemo(() => virtualSnapshot().byKey)
   const virtualRowKeys = createMemo(() => virtualSnapshot().keys)
   const positionMessage = (id: string, source: "reveal" | "measure" | "layout", behavior: ScrollBehavior = "auto") => {
@@ -1220,7 +1260,7 @@ export function MessageTimeline(props: {
     readingAnchor = captureVirtualViewportAnchor(geometry, items, programmaticScrollDelta, READING_LINE_RATIO)
   }
 
-  const clearNavigationAnchors = (source: "message" | "find") => {
+  const clearNavigationAnchors = (source: MessageNavigationTarget["kind"]) => {
     stopSmoothWheel(`navigation-${source}`)
     navigationResetAt = performance.now()
     console.debug(
@@ -1231,17 +1271,16 @@ export function MessageTimeline(props: {
     // target row is measured, immediately undoing scrollToIndex.
     viewportAnchor = undefined
     readingAnchor = undefined
-    programmaticScrollDelta = 0
+    const root = listRoot()
+    if (root) scrollRuntime.rebase(root.scrollTop)
     for (const pending of deferredFastMeasurements.values()) pending.anchor = undefined
     clearPrependAnchor()
+    if (source === "reading" && root) refreshUserScrollAnchors(root, root.scrollTop)
   }
 
   // --- Session find ---
-  const prepareFindNavigation = () => {
-    clearNavigationAnchors("find")
-    props.onFindNavigate()
-  }
-  const prepareMessageNavigation = () => clearNavigationAnchors("message")
+  const prepareFindNavigation = (target: FindNavigationTarget) => props.onFindNavigate(target)
+  const prepareMessageNavigation = (target: MessageNavigationTarget) => clearNavigationAnchors(target.kind)
   const sessionFind = createSessionFind({
     virtualizer,
     listRoot,
@@ -1250,10 +1289,18 @@ export function MessageTimeline(props: {
     getMessageParts,
     sessionID,
     onNavigate: prepareFindNavigation,
+    onRelease: props.onFindRelease,
+    writeScroll: (root, origin, callback) => {
+      scrollRuntime.write(root, origin, callback)
+    },
   })
   createEffect(() => {
     virtualRowKeys()
     sessionFind.refreshHighlights()
+  })
+  createEffect(() => {
+    props.setPositionFind?.(sessionFind.positionMatch)
+    props.setScrollRuntime?.(scrollRuntime)
   })
   createEffect(() => {
     props.onFindOpenChange?.(sessionFind.open())
@@ -1365,8 +1412,10 @@ export function MessageTimeline(props: {
     restoreScrollTopDebug?.()
     props.setRevealMessage?.(() => {})
     props.setPrepareNavigation?.(() => {})
+    props.setPositionFind?.(() => ({ available: false, aligned: false, geometry: "unmounted" }))
+    props.setScrollRuntime?.(undefined)
     props.setScrollToEnd?.(() => {})
-    props.setHistoryAnchor?.({ capture: () => {}, restore: () => {} })
+    props.setHistoryAnchor?.({ capture: () => {}, restore: () => Promise.resolve() })
   })
 
   let restoreScrollTopDebug: (() => void) | undefined
@@ -1374,6 +1423,8 @@ export function MessageTimeline(props: {
     if (root === listRoot()) return
     restoreScrollTopDebug?.()
     setListRoot(root)
+    scrollLedger.rebase(root.scrollTop)
+    props.setScrollRuntime?.(scrollRuntime)
     props.setScrollRef(root)
     if (lagDebug) {
       const prototypeDescriptor = (() => {
@@ -1452,7 +1503,13 @@ export function MessageTimeline(props: {
     })
     if (!cachedWidthCompatible) virtualizer.measure()
   }
-  const markBoundaryGesture = (root: HTMLDivElement, target: EventTarget | null, delta: number) => {
+  let touchSequence = 0
+  const markBoundaryGesture = (
+    root: HTMLDivElement,
+    target: EventTarget | null,
+    delta: number,
+    kind: "wheel" | "touch" = "wheel",
+  ) => {
     const nested = boundaryTarget(root, target)
     if (
       nested === root ||
@@ -1463,7 +1520,12 @@ export function MessageTimeline(props: {
         clientHeight: nested.clientHeight,
       })
     ) {
-      props.onMarkScrollGesture(root)
+      props.onMarkScrollGesture(root, {
+        delta,
+        top: root.scrollTop,
+        kind,
+        gestureId: kind === "touch" ? `touch-${touchSequence}` : undefined,
+      })
     }
   }
   let touchGesture: number | undefined
@@ -1472,33 +1534,24 @@ export function MessageTimeline(props: {
     event: Event & { currentTarget: HTMLDivElement },
   ) => {
     const root = event.currentTarget
+    const user = props.hasScrollGesture() || smoothWheelTarget !== undefined || touchGesture !== undefined
+    const motion = scrollLedger.observe(geometry.scrollTop, { user: user && !activeNavigation() })
     if (lagging()) {
       timelineLag(
         "scroll",
-        `trusted=${String(event.isTrusted)} top=${Math.round(geometry.scrollTop)} height=${Math.round(geometry.scrollHeight)} client=${Math.round(geometry.clientHeight)} programmatic=${String(isProgrammaticScrollActive())} gesture=${String(props.hasScrollGesture())}`,
+        `trusted=${String(event.isTrusted)} top=${Math.round(geometry.scrollTop)} height=${Math.round(geometry.scrollHeight)} client=${Math.round(geometry.clientHeight)} userDelta=${Math.round(motion.userDisplacement)} systemDelta=${Math.round(motion.compensationDelta)} velocity=${motion.velocity.toFixed(3)} gesture=${String(user)}`,
       )
     }
-    props.onScheduleScrollState(root, geometry)
-    if (props.navigationTargetId?.()) return
-    trackScrollVelocity(geometry.scrollTop)
-    // While history is prepended we programmatically adjust scrollTop. Those events
-    // must not clear the pin or request another page (that chain-loads to the top).
-    if (prependLoading) return
-    // Height-batch anchor restores and virtualizer scroll adjustments are
-    // programmatic: they must not mark the user as scrolled-away nor arm
-    // history loading. A programmatic scroll event can still report
-    // isTrusted=true and inherit the gesture window of the wheel that caused
-    // the measurement, so the gesture flag cannot be used as the discriminator.
-    // Real wheel/touch handlers clear programmaticScrollAt before the matching
-    // user scroll event arrives.
-    if (isProgrammaticScrollActive()) return
+    props.onScheduleScrollState(
+      root,
+      geometry,
+      user && !activeNavigation() && Math.abs(motion.userDisplacement) >= 0.01 ? motion.userDisplacement : undefined,
+    )
+    sessionFind.refreshHighlights()
+    if (activeNavigation() || !user || Math.abs(motion.userDisplacement) < 0.01) return
     refreshUserScrollAnchors(root, geometry.scrollTop)
     captureDeferredGrowthAnchors(root, "scroll")
-    if (!props.hasScrollGesture()) {
-      props.onHistoryScroll(geometry.scrollTop)
-      return
-    }
-    clearPrependAnchor()
+    if (prependLoading) prependAnchor = viewportAnchor
     props.onAutoScrollHandleScroll(geometry)
     props.onUserScroll()
     props.onMarkScrollGesture(root)
@@ -1931,7 +1984,7 @@ export function MessageTimeline(props: {
       pendingNearBottomShrinks.delete(item().index)
       const fast = fastScrolling()
       const growthAnchor =
-        root && !props.navigationTargetId?.() && raw > virtual + 0.5
+        root && !activeNavigation() && raw > virtual + 0.5
           ? captureVisibleSuccessorAnchor(
               root,
               snapshotVirtualItems(virtualizer.measurementsCache).items,
@@ -2086,8 +2139,13 @@ export function MessageTimeline(props: {
       class="relative w-full h-full min-w-0"
     >
       <Show when={props.scroll.overflow && !props.scroll.bottom}>
-        <button class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60]" onClick={props.onResumeScroll}>
-          {language.t("session.messages.jumpToBottom")}
+        <button
+          type="button"
+          aria-label={language.t("session.messages.jumpToLatest")}
+          class="absolute left-1/2 -translate-x-1/2 bottom-6 z-[60]"
+          onClick={props.onResumeScroll}
+        >
+          {language.t("session.messages.jumpToLatest")}
         </button>
       </Show>
       <ScrollView
@@ -2096,7 +2154,6 @@ export function MessageTimeline(props: {
         scrollViewportHeight={listSize().height}
         onWheel={(event) => {
           // Real user input immediately revokes the programmatic-scroll marker.
-          programmaticScrollAt = 0
           markToolHydrationScrollActivity()
           const delta = normalizeWheelDelta({
             deltaY: event.deltaY,
@@ -2104,6 +2161,7 @@ export function MessageTimeline(props: {
             rootHeight: listSize().height,
           })
           const legacyDelta = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY
+          if (delta) markBoundaryGesture(event.currentTarget, event.target, delta)
           const smooth =
             boundaryTarget(event.currentTarget, event.target) === event.currentTarget &&
             event.cancelable &&
@@ -2126,31 +2184,31 @@ export function MessageTimeline(props: {
               `trusted=${String(event.isTrusted)} delta=${Math.round(delta)} legacy=${Math.round(legacyDelta ?? 0)} smooth=${String(smooth)} prevented=${String(event.defaultPrevented)} top=${Math.round(event.currentTarget.scrollTop)} height=${Math.round(event.currentTarget.scrollHeight)} client=${Math.round(event.currentTarget.clientHeight)}`,
             )
           }
-          if (delta) markBoundaryGesture(event.currentTarget, event.target, delta)
         }}
         onTouchStart={(event) => {
           stopSmoothWheel("touch")
-          programmaticScrollAt = 0
+          touchSequence += 1
           touchGesture = event.touches[0]?.clientY
-          if (!prependLoading) clearPrependAnchor()
+          markBoundaryGesture(event.currentTarget, event.target, 0, "touch")
         }}
         onTouchMove={(event) => {
           const next = event.touches[0]?.clientY
           if (touchGesture === undefined || next === undefined) return
           markToolHydrationScrollActivity()
-          markBoundaryGesture(event.currentTarget, event.target, touchGesture - next)
+          const delta = touchGesture - next
+          markBoundaryGesture(event.currentTarget, event.target, delta, "touch")
           touchGesture = next
         }}
         onTouchEnd={() => (touchGesture = undefined)}
         onTouchCancel={() => (touchGesture = undefined)}
         onPointerDown={(event) => {
           stopSmoothWheel("pointer")
-          if (event.target === event.currentTarget) props.onMarkScrollGesture(event.currentTarget)
+          if (event.target === event.currentTarget)
+            props.onMarkScrollGesture(event.currentTarget, { kind: "other", top: event.currentTarget.scrollTop })
         }}
-        onScrollInput={(root) => {
+        onScrollInput={(root, input) => {
           stopSmoothWheel("scroll-input")
-          programmaticScrollAt = 0
-          props.onMarkScrollGesture(root)
+          props.onMarkScrollGesture(root, input ?? { kind: "other", top: root.scrollTop })
         }}
         onScrollGeometry={handleScroll}
         onClick={props.onAutoScrollInteraction}

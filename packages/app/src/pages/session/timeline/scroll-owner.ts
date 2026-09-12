@@ -1,4 +1,4 @@
-/** A navigation intent owns positioning until settled or cancelled by a user gesture. */
+/** Settled navigation keeps positioning ownership until explicit takeover. */
 export function timelineScrollOwner(input: { navigating: boolean; bottom: boolean; history: boolean }) {
   if (input.navigating) return "navigation"
   if (input.bottom) return "bottom"

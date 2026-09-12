@@ -4,26 +4,46 @@ import { useI18n } from "../context/i18n"
 
 /**
  * ScrollView component with custom scrollbar thumb and keyboard navigation.
- * 
+ *
  * Features:
  * - Custom scrollbar thumb (4px wide, only visible on hover/drag)
  * - Hides native scrollbar completely
  * - Keyboard navigation (PageUp/Down, Home/End, Arrow keys)
  * - ResizeObserver for automatic thumb size/position updates
  * - Drag-to-scroll support
- * 
+ *
  * Use cases:
  * - When you need a custom-styled scrollbar (e.g., session-review diff panel)
  * - When native scrollbar doesn't fit the design
- * 
+ *
  * NOT for:
  * - Simple lists (use List component with native scrollbar instead)
  * - When native scrollbar is acceptable (lighter weight)
- * 
+ *
  * Architecture:
  * - Uses data-component/data-slot naming (not BEM classes)
  * - Independent from List component (different scroll strategies)
  */
+
+export type ScrollInput = {
+  delta: number
+  kind: "keyboard" | "other"
+  gestureId?: string
+}
+
+export function scrollDragMotion(input: {
+  top: number
+  previousY: number
+  nextY: number
+  scrollHeight: number
+  clientHeight: number
+  thumbHeight: number
+}) {
+  const track = input.clientHeight - input.thumbHeight
+  const extent = Math.max(0, input.scrollHeight - input.clientHeight)
+  const delta = track > 0 ? (input.nextY - input.previousY) * (extent / track) : 0
+  return { top: input.top + delta, delta }
+}
 
 export interface ScrollViewProps extends ComponentProps<"div"> {
   viewportRef?: (el: HTMLDivElement) => void
@@ -37,7 +57,7 @@ export interface ScrollViewProps extends ComponentProps<"div"> {
     event: Event & { currentTarget: HTMLDivElement },
   ) => void
   /** Called before ScrollView itself changes scrollTop via keyboard or thumb drag. */
-  onScrollInput?: (viewport: HTMLDivElement) => void
+  onScrollInput?: (viewport: HTMLDivElement, input?: ScrollInput) => void
 }
 
 export function scrollThumbGeometry(input: {
@@ -225,29 +245,32 @@ export function ScrollView(props: ScrollViewProps) {
     scheduleUpdateThumb()
   })
 
-  let startY = 0
-  let startScrollTop = 0
+  let thumbGesture = 0
 
   const onThumbPointerDown = (e: PointerEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    local.onScrollInput?.(viewportRef)
+    const gestureId = `thumb-${++thumbGesture}`
+    local.onScrollInput?.(viewportRef, { delta: 0, kind: "other", gestureId })
     setState("isDragging", true)
-    startY = e.clientY
-    startScrollTop = viewportRef.scrollTop
+    let previousY = e.clientY
 
     thumbRef.setPointerCapture(e.pointerId)
 
     const onPointerMove = (e: PointerEvent) => {
-      const deltaY = e.clientY - startY
       const { scrollHeight, clientHeight } = viewportRef
-      const maxScrollTop = scrollHeight - clientHeight
-      const maxThumbTop = clientHeight - thumbHeight()
-
-      if (maxThumbTop > 0) {
-        const scrollDelta = deltaY * (maxScrollTop / maxThumbTop)
-        viewportRef.scrollTop = startScrollTop + scrollDelta
-      }
+      // Integrate new pointer motion only; layout growth cannot rescale earlier motion.
+      const motion = scrollDragMotion({
+        top: viewportRef.scrollTop,
+        previousY,
+        nextY: e.clientY,
+        scrollHeight,
+        clientHeight,
+        thumbHeight: thumbHeight(),
+      })
+      previousY = e.clientY
+      local.onScrollInput?.(viewportRef, { delta: motion.delta, kind: "other", gestureId })
+      viewportRef.scrollTop = motion.top
     }
 
     const onPointerUp = (e: PointerEvent) => {
@@ -266,6 +289,7 @@ export function ScrollView(props: ScrollViewProps) {
   // We can also explicitly catch PageUp/Down if we want smooth scroll or specific behavior,
   // but native usually handles this perfectly. Let's explicitly ensure it behaves well.
   const onKeyDown = (e: KeyboardEvent) => {
+    if (e.defaultPrevented) return
     // If user is focused on an input inside the scroll view, don't hijack keys
     if (document.activeElement && ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName)) {
       return
@@ -273,7 +297,10 @@ export function ScrollView(props: ScrollViewProps) {
 
     const next = scrollKey(e)
     if (!next) return
-    local.onScrollInput?.(viewportRef)
+    local.onScrollInput?.(viewportRef, {
+      delta: next === "page-up" || next === "home" || next === "up" ? -1 : 1,
+      kind: "keyboard",
+    })
 
     const scrollAmount = viewportRef.clientHeight * 0.8
     const lineAmount = 40

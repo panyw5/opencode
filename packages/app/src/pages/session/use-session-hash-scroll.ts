@@ -6,9 +6,12 @@ import {
   createMessageNavigation,
   type MessageNavigationTarget,
   type MessageNavigationToken,
+  type FindNavigationTarget,
+  type FindPositionResult,
 } from "./message-navigation"
 import { collectSessionLayoutMetrics, logSessionLayout } from "./session-layout-debug"
 import { reachableTargetTop } from "./use-session-scroll-utils"
+import type { ScrollOrigin } from "./timeline/scroll-ledger"
 
 export const useSessionHashScroll = (input: {
   sessionKey: () => string
@@ -28,7 +31,9 @@ export const useSessionHashScroll = (input: {
   enterLive: () => void
   enterAnchored: () => void
   autoScroll: { pause: () => void; forceScrollToBottom: () => void }
-  prepareNavigation?: () => void
+  prepareNavigation?: (target: MessageNavigationTarget) => void
+  positionFind?: (target: FindNavigationTarget) => FindPositionResult
+  writeScroll?: (root: HTMLDivElement, origin: ScrollOrigin, callback: () => void) => void
   scroller: () => HTMLDivElement | undefined
   anchor: (id: string) => string
   revealMessage?: (id: string, behavior?: ScrollBehavior) => void
@@ -40,6 +45,9 @@ export const useSessionHashScroll = (input: {
   const navigate = useNavigate()
   const navigation = createMessageNavigation()
   const [navigationTargetId, setNavigationTargetId] = createSignal<string>()
+  const [viewportTarget, setViewportTarget] =
+    createSignal<Exclude<MessageNavigationTarget, { kind: "reading" | "live" }>>()
+  const [viewportIntent, setViewportIntent] = createSignal<MessageNavigationTarget>()
   const messageById = createMemo(() => new Map(input.visibleUserMessages().map((message) => [message.id, message])))
   let frame: number | undefined
 
@@ -88,8 +96,7 @@ export const useSessionHashScroll = (input: {
   }
   const fail = (token: MessageNavigationToken, id: string, reason: string) => {
     if (!navigation.current(token)) return
-    setNavigationTargetId(undefined)
-    clearPending()
+    request({ kind: "reading" }, true)
     trace("unavailable", id, `reason=${reason}`)
     input.onNavigationError?.(new Error(`Cannot navigate to message ${id}: ${reason}`))
   }
@@ -132,7 +139,11 @@ export const useSessionHashScroll = (input: {
         if (!aligned) {
           trace("seek-scroll", target.id, `targetTop=${Math.round(goal.top)} delta=${Math.round(delta)}`)
           if (input.revealMessage) input.revealMessage(target.id, first ? target.behavior : "auto")
-          else root.scrollTo({ top: goal.top, behavior: first ? target.behavior : "auto" })
+          else {
+            const write = () => root.scrollTo({ top: goal.top, behavior: "auto" })
+            if (input.writeScroll) input.writeScroll(root, "navigation", write)
+            else write()
+          }
         } else stableSince ??= performance.now()
         first = false
       } else {
@@ -205,6 +216,11 @@ export const useSessionHashScroll = (input: {
         return
       }
       const target = action.target
+      if (target.kind === "reading") {
+        clearPending()
+        navigation.finishSeek(action.token, true)
+        return
+      }
       if (target.kind === "live") {
         batch(() => {
           input.setActiveMessage(undefined)
@@ -212,20 +228,63 @@ export const useSessionHashScroll = (input: {
           input.enterLive()
         })
         input.autoScroll.forceScrollToBottom()
-        navigation.finishSeek(action.token, true)
+        const finish = () => {
+          if (!navigation.current(action.token)) return
+          if (navigation.state().historyPending || input.historyBusy()) queue(action.token, finish)
+          else navigation.finishSeek(action.token, true)
+        }
+        finish()
         const root = input.scroller()
         if (root) input.scheduleScrollState(root)
         return
       }
       // Seeking takes viewport ownership after history has been captured/merged;
       // no prepend anchor from an earlier loading phase may restore the old view.
-      input.prepareNavigation?.()
+      input.prepareNavigation?.(target)
       batch(() => {
         input.setPendingMessage(undefined)
-        input.setSeekingMessage(target.id)
+        input.setSeekingMessage(target.kind === "find" ? undefined : target.id)
         if (target.kind === "message") input.setActiveMessage(messageById().get(target.id))
       })
-      seek(action.token, target)
+      if (target.kind === "find" && input.positionFind) {
+        let layoutStarted = performance.now()
+        let stableSince: number | undefined
+        let geometry = ""
+        const step = () => {
+          frame = undefined
+          if (!navigation.current(action.token)) return
+          const result = input.positionFind?.(target)
+          if (result?.geometry !== geometry) {
+            geometry = result?.geometry ?? ""
+            stableSince = undefined
+          }
+          if (navigation.state().historyPending || input.historyBusy()) {
+            stableSince = undefined
+            layoutStarted = performance.now()
+            queue(action.token, step)
+            return
+          }
+          if (result?.available && result.aligned) stableSince ??= performance.now()
+          else stableSince = undefined
+          const elapsed = performance.now() - layoutStarted
+          if (stableSince !== undefined && performance.now() - stableSince >= 150) {
+            if (navigation.finishSeek(action.token, true)) {
+              trace("find-finish", target.messageID, `row=${target.rowKey} reason=stable`)
+              const root = input.scroller()
+              if (root) input.scheduleScrollState(root)
+              return
+            }
+          }
+          if (elapsed >= 2_000) {
+            navigation.finishSeek(action.token, false)
+            trace("find-unavailable", target.messageID, `row=${target.rowKey} geometry=${geometry}`)
+            request({ kind: "reading" }, true)
+            return
+          }
+          queue(action.token, step)
+        }
+        step()
+      } else if (target.kind === "message" || target.kind === "anchor") seek(action.token, target)
     })
 
   const request = (target: MessageNavigationTarget, writeHash: boolean) =>
@@ -234,17 +293,30 @@ export const useSessionHashScroll = (input: {
       const hash =
         target.kind === "message" ? `#${input.anchor(target.id)}` : target.kind === "anchor" ? `#${target.id}` : ""
       navigation.request(target, writeHash ? hash : undefined)
-      trace("request", target.kind === "live" ? undefined : target.id, `source=${writeHash ? "explicit" : "route"}`)
-      input.prepareNavigation?.()
+      trace(
+        "request",
+        target.kind === "live"
+          ? undefined
+          : target.kind === "message" || target.kind === "anchor"
+            ? target.id
+            : undefined,
+        `source=${writeHash ? "explicit" : "route"}`,
+      )
       batch(() => {
+        setViewportIntent(target)
+        setViewportTarget(
+          target.kind === "message" || target.kind === "anchor" || target.kind === "find" ? target : undefined,
+        )
         setNavigationTargetId(navigation.state().positionTarget)
         input.setPendingMessage(target.kind === "message" ? target.id : undefined)
-        input.setSeekingMessage(target.kind === "live" ? undefined : target.id)
+        input.setSeekingMessage(target.kind === "message" ? target.id : undefined)
+        if (target.kind !== "message") input.setActiveMessage(undefined)
         if (target.kind !== "live") {
           input.enterAnchored()
           input.autoScroll.pause()
         }
       })
+      input.prepareNavigation?.(target)
       if (writeHash && (location.hash !== hash || navigation.state().pendingHash !== undefined)) {
         navigate(location.pathname + location.search + hash, { replace: true })
       }
@@ -259,6 +331,8 @@ export const useSessionHashScroll = (input: {
     untrack(() => {
       cancelFrame()
       navigation.request(undefined, "")
+      setViewportIntent(undefined)
+      setViewportTarget(undefined)
       setNavigationTargetId(undefined)
       input.setActiveMessage(undefined)
       input.consumePendingMessage(input.sessionKey())
@@ -277,6 +351,8 @@ export const useSessionHashScroll = (input: {
           cancelFrame()
           navigation.reset(key, hash)
           setNavigationTargetId(undefined)
+          setViewportTarget(undefined)
+          setViewportIntent(undefined)
           if (!sessionID) return
           const pending = input.consumePendingMessage(key) ?? input.pendingMessage()
           request(
@@ -332,11 +408,18 @@ export const useSessionHashScroll = (input: {
   onCleanup(() => {
     navigation.reset("", "")
     setNavigationTargetId(undefined)
+    setViewportTarget(undefined)
+    setViewportIntent(undefined)
     cancelFrame()
   })
 
   return {
     navigationTargetId,
+    viewportTarget,
+    viewportIntent,
+    takeoverReading: () => request({ kind: "reading" }, true),
+    scrollToFind: (target: FindNavigationTarget) => request(target, true),
+    resumeLive: () => request({ kind: "live" }, true),
     clearMessageHash,
     scrollToMessageId: (id: string, behavior: ScrollBehavior = "auto") =>
       request({ kind: "message", id, behavior }, true),

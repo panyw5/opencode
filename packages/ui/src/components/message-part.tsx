@@ -1399,7 +1399,11 @@ export function UserMessageDisplay(props: {
       <Show when={text()}>
         <>
           <div data-slot="user-message-body">
-            <div data-slot="user-message-text" data-animate={props.animate ? "" : undefined}>
+            <div
+              data-slot="user-message-text"
+              data-part-id={textPart()?.id}
+              data-animate={props.animate ? "" : undefined}
+            >
               <Show when={props.queued}>
                 <span data-slot="user-message-queued-badge" aria-hidden="true">
                   <Icon name="clock" size="small" />
@@ -1981,7 +1985,7 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
   return (
     <Show when={body()}>
-      <div data-component="text-part">
+      <div data-component="text-part" data-part-id={part.id}>
         <div data-slot="text-part-body">
           <Show
             when={hasGenericAgentToolSegments()}

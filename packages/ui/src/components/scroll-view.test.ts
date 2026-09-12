@@ -1,5 +1,46 @@
 import { describe, expect, test } from "bun:test"
-import { scrollEventGeometry, scrollKey, scrollThumbGeometry } from "./scroll-view"
+import { scrollDragMotion, scrollEventGeometry, scrollKey, scrollThumbGeometry } from "./scroll-view"
+
+describe("scrollDragMotion", () => {
+  test("preserves compensation and scales only new motion after extent growth", () => {
+    const first = scrollDragMotion({
+      top: 100,
+      previousY: 0,
+      nextY: 10,
+      scrollHeight: 1000,
+      clientHeight: 500,
+      thumbHeight: 250,
+    })
+    expect(first.top).toBe(120)
+    const compensated = first.top + 1000
+    expect(
+      scrollDragMotion({
+        top: compensated,
+        previousY: 10,
+        nextY: 10,
+        scrollHeight: 2000,
+        clientHeight: 500,
+        thumbHeight: 125,
+      }).top,
+    ).toBe(compensated)
+    expect(
+      scrollDragMotion({
+        top: compensated,
+        previousY: 10,
+        nextY: 15,
+        scrollHeight: 2000,
+        clientHeight: 500,
+        thumbHeight: 125,
+      }).top,
+    ).toBe(compensated + 20)
+  })
+  test("keeps outward direction even when the viewport is already at the top", () => {
+    expect(
+      scrollDragMotion({ top: 0, previousY: 10, nextY: 5, scrollHeight: 1000, clientHeight: 500, thumbHeight: 250 })
+        .delta,
+    ).toBeLessThan(0)
+  })
+})
 
 describe("scrollKey", () => {
   test("maps plain navigation keys", () => {

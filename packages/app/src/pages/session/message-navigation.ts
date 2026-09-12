@@ -1,7 +1,25 @@
 export type MessageNavigationTarget =
   | { kind: "message"; id: string; behavior: ScrollBehavior }
   | { kind: "anchor"; id: string; behavior: ScrollBehavior }
+  | { kind: "reading" }
+  | FindNavigationTarget
   | { kind: "live" }
+
+export type FindNavigationTarget = {
+  kind: "find"
+  rowKey: string
+  messageID: string
+  partID: string
+  occurrence: number
+  query: string
+  queryVersion: number
+}
+
+export type FindPositionResult = {
+  available: boolean
+  aligned: boolean
+  geometry: string
+}
 
 export type MessageNavigationToken = { sessionKey: string; generation: number }
 export type MessageNavigationPhase = "idle" | "waiting" | "loading" | "seeking" | "settled" | "unavailable" | "failed"
@@ -23,6 +41,21 @@ export function createMessageNavigation() {
   let loadToken: MessageNavigationToken | undefined
   const token = (): MessageNavigationToken => ({ sessionKey, generation })
   const current = (value: MessageNavigationToken) => value.sessionKey === sessionKey && value.generation === generation
+  const request = (next: MessageNavigationTarget | undefined, hash?: string) => {
+    generation += 1
+    target = next
+    phase = next ? "waiting" : "idle"
+    if (hash !== undefined) {
+      supersededHashes.add(observedHash)
+      if (ownedHash !== undefined) supersededHashes.add(ownedHash)
+      supersededHashes.delete(hash)
+    } else supersededHashes.clear()
+    ownedHash = hash
+    // Router writes are asynchronous. Intermediate/old hashes are not new
+    // requests until the router acknowledges this intent's desired hash.
+    pendingHash = hash !== undefined && (hash !== observedHash || pendingHash !== undefined) ? hash : undefined
+    return token()
+  }
 
   return {
     state: () => ({
@@ -32,8 +65,21 @@ export function createMessageNavigation() {
       phase,
       pendingHash,
       historyPending: !!loadToken,
+      // positionTarget is retained for the existing message/anchor scroller.
       positionTarget:
-        target && target.kind !== "live" && !["idle", "unavailable", "failed"].includes(phase) ? target.id : undefined,
+        target &&
+        (target.kind === "message" || target.kind === "anchor") &&
+        !["idle", "unavailable", "failed"].includes(phase)
+          ? target.id
+          : undefined,
+      // viewportTarget carries every positioning intent, including virtual rows and find results.
+      viewportTarget:
+        target &&
+        target.kind !== "live" &&
+        target.kind !== "reading" &&
+        !["idle", "unavailable", "failed"].includes(phase)
+          ? target
+          : undefined,
     }),
     current,
     reset(key: string, hash: string) {
@@ -47,20 +93,15 @@ export function createMessageNavigation() {
       supersededHashes.clear()
       loadToken = undefined
     },
-    request(next: MessageNavigationTarget | undefined, hash?: string) {
-      generation += 1
-      target = next
-      phase = next ? "waiting" : "idle"
-      if (hash !== undefined) {
-        supersededHashes.add(observedHash)
-        if (ownedHash !== undefined) supersededHashes.add(ownedHash)
-        supersededHashes.delete(hash)
-      } else supersededHashes.clear()
-      ownedHash = hash
-      // Router writes are asynchronous. Intermediate/old hashes are not new
-      // requests until the router acknowledges this intent's desired hash.
-      pendingHash = hash !== undefined && (hash !== observedHash || pendingHash !== undefined) ? hash : undefined
-      return token()
+    request,
+    requestReading(next: Extract<MessageNavigationTarget, { kind: "reading" }> = { kind: "reading" }, hash?: string) {
+      return request(next, hash)
+    },
+    requestFind(next: Extract<MessageNavigationTarget, { kind: "find" }>, hash?: string) {
+      return request(next, hash)
+    },
+    cancel(hash = "") {
+      return request(undefined, hash)
     },
     observeHash(hash: string): "unchanged" | "acknowledged" | "superseded" | "external" {
       const changed = hash !== observedHash
@@ -95,6 +136,12 @@ export function createMessageNavigation() {
       if (!target || ["seeking", "settled", "unavailable", "failed"].includes(phase)) return
       if (!input.ready) {
         phase = "waiting"
+        return
+      }
+      // Reading mode takes over the viewport without asking history to load or
+      // issuing a DOM seek. Any fetch owned by the prior intent remains releasable.
+      if (target.kind === "reading") {
+        phase = "settled"
         return
       }
       if (target.kind !== "message" || input.loaded) {
