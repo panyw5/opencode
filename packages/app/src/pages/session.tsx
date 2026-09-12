@@ -1206,7 +1206,7 @@ export default function Page() {
     userMessagesToAnimate.delete(messageID)
     return true
   }
-  let revealMessage = (_id: string) => {}
+  let revealMessage = (_id: string, _behavior?: ScrollBehavior) => {}
   let prepareMessageNavigation = () => {}
   let scrollToEnd = () => {}
   let historyAnchor = { capture: () => {}, restore: (_done: boolean) => {} }
@@ -1224,6 +1224,7 @@ export default function Page() {
     const nested = el?.closest("[data-scrollable]")
     if (nested && nested !== root) return
 
+    if (navigationTargetId()) clearMessageHash()
     findNavigationUntil = 0
     setUi("scrollGesture", Date.now())
   }
@@ -2903,13 +2904,9 @@ export default function Page() {
     console.debug(
       `[user-message-rail] open sid=${params.id ?? "none"} id=${entry.id} found=${String(!!loaded || !!indexed)} loaded=${String(!!loaded)} shown=${String(messages().length)} users=${String(visibleUserMessages().length)}`,
     )
-    if (loaded) {
-      scrollToMessage(loaded, "auto")
-      return
-    }
-    if (!indexed) return
+    if (!loaded && !indexed) return
     prepareFindNavigation()
-    primeMessageNavigation(indexed.id)
+    scrollToMessageId(entry.id)
   }
 
   const fail = (err: unknown) => {
@@ -3376,7 +3373,7 @@ export default function Page() {
     },
   )
 
-  const { clearMessageHash, primeMessageNavigation, scrollToMessage } = useSessionHashScroll({
+  const { clearMessageHash, navigationTargetId, scrollToMessageId, scrollToMessage } = useSessionHashScroll({
     sessionKey,
     sessionID: () => params.id,
     directory: () => sdk.directory,
@@ -3397,9 +3394,10 @@ export default function Page() {
     prepareNavigation: () => prepareMessageNavigation(),
     scroller: () => scroller,
     anchor,
-    revealMessage: (id) => revealMessage(id),
+    revealMessage: (id, behavior) => revealMessage(id, behavior),
     scheduleScrollState,
     consumePendingMessage: layout.pendingMessage.consume,
+    onNavigationError: fail,
   })
 
   onMount(() => {
@@ -3522,6 +3520,7 @@ export default function Page() {
                         }}
                         onAutoScrollInteraction={autoScroll.handleInteraction}
                         shouldAnchorBottom={() => !hasScrollTarget() && !autoScroll.userScrolled() && !findBarOpen}
+                        navigationTargetId={navigationTargetId}
                         isInitialScrollSettling={settling}
                         centered={centered()}
                         shouldAnimateMessage={consumeUserMessageAnimation}

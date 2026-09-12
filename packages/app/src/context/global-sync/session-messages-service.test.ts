@@ -14,6 +14,46 @@ const response = (messages: Message[], parts: Part[] = []) => ({
 })
 
 describe("session messages controller", () => {
+  test("history prepend is additive with and without concurrent SSE events", async () => {
+    for (const concurrentEvent of [false, true]) {
+      const request = deferred<ReturnType<typeof response>>()
+      const harness = createSessionControllerHarness({ messages: async () => request.promise })
+      const service = createSessionMessagesService(harness.deps)
+      const recent = [message("recent-1"), message("recent-2")]
+      harness.child[1]("message", "session", recent)
+      const loading = service.load({
+        directory: "/project",
+        sessionID: "session",
+        limit: 40,
+        before: "cursor",
+        mode: "prepend",
+      })
+      if (concurrentEvent) service.event("/project", "session", "merge")
+      request.resolve(response([message("old-1"), message("old-2")]))
+      expect(await loading).toMatchObject({ committed: true, count: 4 })
+      expect(service.get("/project", "session")?.map((item) => item.id)).toEqual([
+        "old-1",
+        "old-2",
+        "recent-1",
+        "recent-2",
+      ])
+    }
+  })
+
+  test("overlapping and empty history pages never remove cached messages", async () => {
+    const pages = [response([message("overlap", 1), message("old")]), response([])]
+    const harness = createSessionControllerHarness({ messages: async () => pages.shift()! })
+    const service = createSessionMessagesService(harness.deps)
+    harness.child[1]("message", "session", [message("overlap", 2), message("recent")])
+    for (const before of ["cursor-1", "cursor-2"]) {
+      expect(
+        await service.load({ directory: "/project", sessionID: "session", limit: 40, before, mode: "prepend" }),
+      ).toMatchObject({ count: 3 })
+    }
+    expect(service.get("/project", "session")?.map((item) => item.id)).toEqual(["old", "overlap", "recent"])
+    expect(service.get("/project", "session")?.find((item) => item.id === "overlap")).toEqual(message("overlap", 2))
+  })
+
   test("dedupes concurrent loads", async () => {
     const request = deferred<ReturnType<typeof response>>()
     let calls = 0

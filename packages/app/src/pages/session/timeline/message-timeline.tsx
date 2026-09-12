@@ -65,6 +65,7 @@ import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { markSessionProfile } from "@/utils/session-profile"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
+import { timelineMessageScrollTop, timelineScrollOwner } from "./scroll-owner"
 import {
   captureVirtualViewportAnchor,
   captureVisibleSuccessorAnchor,
@@ -260,13 +261,14 @@ export function MessageTimeline(props: {
   onHistoryScroll: (scrollTop: number) => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
+  navigationTargetId?: () => string | undefined
   isInitialScrollSettling: () => boolean
   centered: boolean
   setContentRef: (el: HTMLDivElement) => void
   userMessages: UserMessage[]
   shouldAnimateMessage?: (id: string) => boolean
   anchor: (id: string) => string
-  setRevealMessage?: (fn: (id: string) => void) => void
+  setRevealMessage?: (fn: (id: string, behavior?: ScrollBehavior) => void) => void
   setPrepareNavigation?: (fn: () => void) => void
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => void }) => void
@@ -427,21 +429,21 @@ export function MessageTimeline(props: {
     }
     return ordered
   })
-    const partsCache = new Map<string, { source: PartType[]; result: PartType[] }>()
-    const getMessageParts = (messageID: string) => {
-      const source = sync.data.part[messageID]
-      if (!source) return emptyParts
-      // displayParts is linear and allocates when a message carries duplicate
-      // tool parts. Timeline rebuilds call this for every message repeatedly
-      // (projection memos, virtualizer, row renderers), so cache by array
-      // identity — the store hands back the same reference until a write
-      // replaces it, and Solid still tracks the keyed read above.
-      const cached = partsCache.get(messageID)
-      if (cached && cached.source === source) return cached.result
-      const result = displayParts(source)
-      partsCache.set(messageID, { source, result })
-      return result
-    }
+  const partsCache = new Map<string, { source: PartType[]; result: PartType[] }>()
+  const getMessageParts = (messageID: string) => {
+    const source = sync.data.part[messageID]
+    if (!source) return emptyParts
+    // displayParts is linear and allocates when a message carries duplicate
+    // tool parts. Timeline rebuilds call this for every message repeatedly
+    // (projection memos, virtualizer, row renderers), so cache by array
+    // identity — the store hands back the same reference until a write
+    // replaces it, and Solid still tracks the keyed read above.
+    const cached = partsCache.get(messageID)
+    if (cached && cached.source === source) return cached.result
+    const result = displayParts(source)
+    partsCache.set(messageID, { source, result })
+    return result
+  }
   const getMessagePart = (messageID: string, partID: string) =>
     getMessageParts(messageID).find((part) => part.id === partID)
   const userMessageText = (messageID: string) => {
@@ -579,7 +581,19 @@ export function MessageTimeline(props: {
   const afterMeasurementBatch = () => {
     const root = listRoot()
     if (!root) return
-    if (props.shouldAnchorBottom()) {
+    const owner = timelineScrollOwner({
+      navigating: !!props.navigationTargetId?.(),
+      bottom: props.shouldAnchorBottom(),
+      history: prependLoading,
+    })
+    if (owner === "navigation") {
+      viewportAnchor = undefined
+      readingAnchor = undefined
+      const id = props.navigationTargetId?.()
+      if (id) positionMessage(id, "measure")
+      return
+    }
+    if (owner === "bottom") {
       viewportAnchor = undefined
       readingAnchor = undefined
       // TanStack already adjusts by each committed delta while bottom-anchored;
@@ -596,7 +610,7 @@ export function MessageTimeline(props: {
       }
       return
     }
-    if (prependLoading) return
+    if (owner === "history") return
     const items = virtualizer.measurementsCache
     // measurementsCache is sparse while virtual rows are being discovered;
     // snapshotVirtualItems removes empty slots before building the lookup.
@@ -795,6 +809,10 @@ export function MessageTimeline(props: {
     prependAnchorFrame = undefined
   }
   const capturePrependAnchor = () => {
+    if (props.navigationTargetId?.()) {
+      clearPrependAnchor()
+      return
+    }
     prependLoading = true
     prependRestoreDone = false
     const root = listRoot()
@@ -824,6 +842,10 @@ export function MessageTimeline(props: {
     }
   }
   const restorePrependAnchor = (done: boolean) => {
+    if (props.navigationTargetId?.()) {
+      clearPrependAnchor()
+      return
+    }
     // Keep prependLoading true until the pin loop settles, otherwise scroll events
     // re-trigger history loads and the anchor is cleared mid-restore.
     if (done) prependRestoreDone = true
@@ -838,6 +860,10 @@ export function MessageTimeline(props: {
     let stable = 0
     const restore = () => {
       prependAnchorFrame = undefined
+      if (props.navigationTargetId?.()) {
+        clearPrependAnchor()
+        return
+      }
       const anchor = prependAnchor
       if (!anchor) {
         if (prependRestoreDone) prependLoading = false
@@ -1027,6 +1053,7 @@ export function MessageTimeline(props: {
     timelineRowCache.setMeasured(rowKey, size, rowContentVersion(currentRow, getMessagePart), estimatorWidth())
   }
   const captureDeferredGrowthAnchors = (root: HTMLDivElement, source: "scroll" | "flush") => {
+    if (props.navigationTargetId?.()) return
     if (deferredFastMeasurements.size === 0) return
     const items = snapshotVirtualItems(virtualizer.measurementsCache)
     for (const [index, pending] of deferredFastMeasurements) {
@@ -1059,7 +1086,7 @@ export function MessageTimeline(props: {
       const savedAnchor = pendingEntries
         .map(([, pending]) => pending.anchor)
         .find((anchor) => anchor && knownItems.has(anchor.key))
-      if (savedAnchor) {
+      if (savedAnchor && !props.navigationTargetId?.()) {
         readingAnchor = savedAnchor
         if (lagging()) {
           timelineLag(
@@ -1130,6 +1157,7 @@ export function MessageTimeline(props: {
     }
   }
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
+    if (props.navigationTargetId?.()) return false
     const root = listRoot()
     const scrollOffset = instance.getLogicalScrollOffset()
     // While the user is actively wheeling/touching away from the bottom, the
@@ -1153,6 +1181,38 @@ export function MessageTimeline(props: {
   const virtualSnapshot = createMemo(() => snapshotVirtualItems(virtualizer.getVirtualItems()))
   const virtualItemByKey = createMemo(() => virtualSnapshot().byKey)
   const virtualRowKeys = createMemo(() => virtualSnapshot().keys)
+  const positionMessage = (id: string, source: "reveal" | "measure" | "layout", behavior: ScrollBehavior = "auto") => {
+    const root = listRoot()
+    const index = messageRowIndex().get(id)
+    if (!root) return
+    const totalSize = virtualizer.getTotalSize()
+    const item = index === undefined ? undefined : virtualizer.measurementsCache[index]
+    const anchor = item ? undefined : document.getElementById(id)
+    if (!item && (!(anchor instanceof HTMLElement) || !root.contains(anchor))) return
+    const inset = Number.parseFloat(getComputedStyle(root).getPropertyValue("--session-title-inset")) || 0
+    if (virtualContent) virtualContent.style.height = `${totalSize}px`
+    const top = timelineMessageScrollTop({
+      rowStart: item?.start ?? anchor!.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop,
+      totalSize,
+      viewportHeight: listSize().height,
+      inset,
+    })
+    // Publish the new extent before scrolling so Chromium cannot clamp to the
+    // previous batch's maximum. This runs inside the height-commit transaction.
+    if (Math.abs(top - root.scrollTop) <= 0.5) return
+    console.debug(
+      `[timeline] message-position sid=${sessionID() ?? "none"} id=${id} source=${source} index=${index} targetTop=${Math.round(top)} delta=${Math.round(top - root.scrollTop)} total=${Math.round(totalSize)}`,
+    )
+    virtualizer.scrollToOffset(top, { align: "start", behavior })
+  }
+  createEffect(
+    on(
+      () => [props.navigationTargetId?.(), messageRowIndex(), listRoot()] as const,
+      ([id]) => {
+        if (id) positionMessage(id, "layout")
+      },
+    ),
+  )
   const refreshUserScrollAnchors = (root: HTMLDivElement, scrollTop: number) => {
     const items = virtualizer.measurementsCache
     const geometry = { scrollTop, clientHeight: listSize().height }
@@ -1172,6 +1232,7 @@ export function MessageTimeline(props: {
     viewportAnchor = undefined
     readingAnchor = undefined
     programmaticScrollDelta = 0
+    for (const pending of deferredFastMeasurements.values()) pending.anchor = undefined
     clearPrependAnchor()
   }
 
@@ -1230,13 +1291,13 @@ export function MessageTimeline(props: {
   }
 
   createEffect(() => {
-    props.setRevealMessage?.((id) => {
+    props.setRevealMessage?.((id, behavior) => {
       const index = messageRowIndex().get(id)
       const row = index === undefined ? undefined : timelineRows()[index]
       console.debug(
         `[timeline] reveal-message sid=${sessionID() ?? "none"} id=${id} index=${index === undefined ? "none" : String(index)} row=${row?._tag ?? "none"} anchor=${row?._tag === "UserMessage" ? String(row.anchor) : row?._tag === "CommentStrip" ? "true" : "none"} rows=${String(timelineRows().length)} mounted=${String(virtualizer.getVirtualItems().length)} total=${String(Math.round(virtualizer.getTotalSize()))}`,
       )
-      if (index !== undefined) virtualizer.scrollToIndex(index, { align: "center" })
+      positionMessage(id, "reveal", behavior)
     })
     props.setPrepareNavigation?.(prepareMessageNavigation)
     props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
@@ -1418,6 +1479,7 @@ export function MessageTimeline(props: {
       )
     }
     props.onScheduleScrollState(root, geometry)
+    if (props.navigationTargetId?.()) return
     trackScrollVelocity(geometry.scrollTop)
     // While history is prepended we programmatically adjust scrollTop. Those events
     // must not clear the pin or request another page (that chain-loads to the top).
@@ -1869,7 +1931,7 @@ export function MessageTimeline(props: {
       pendingNearBottomShrinks.delete(item().index)
       const fast = fastScrolling()
       const growthAnchor =
-        root && raw > virtual + 0.5
+        root && !props.navigationTargetId?.() && raw > virtual + 0.5
           ? captureVisibleSuccessorAnchor(
               root,
               snapshotVirtualItems(virtualizer.measurementsCache).items,

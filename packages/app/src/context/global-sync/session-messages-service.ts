@@ -138,12 +138,12 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
         for (const messageID of next.confirmed) clearOptimistic(directory, input.sessionID, messageID)
         const eventChanged = rev(directory, input.sessionID) !== eventRevision
         const cached = child[0].message[input.sessionID] ?? []
-        const messages =
-          input.authoritative || (input.mode !== "replace" && eventChanged)
-            ? input.authoritative
-              ? next.session
-              : mergeSessionItems(next.session, cached)
-            : next.session
+        const preserveCached =
+          !input.authoritative && (input.mode === "prepend" || (input.mode !== "replace" && eventChanged))
+        const messages = preserveCached ? mergeSessionItems(next.session, cached) : next.session
+        console.debug(
+          `[session-messages] commit sid=${input.sessionID} mode=${input.mode ?? "replace"} authoritative=${!!input.authoritative} eventChanged=${eventChanged} cached=${cached.length} fetched=${next.session.length} merged=${messages.length}`,
+        )
         batch(() => {
           child[1]("message", input.sessionID, reconcile(messages, { key: "id" }))
           if (input.authoritative) {
