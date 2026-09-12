@@ -174,44 +174,47 @@
     0 24px 50px -44px color-mix(in srgb, var(--home-brand) 58%, transparent);
 }
 
-.home-section-header {
-  position: relative;
-  border-color: transparent;
-}
-
-.home-section-header::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 1px;
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--home-brand) 44%, transparent),
-    color-mix(in srgb, var(--border-weak-base) 76%, transparent) 34%,
-    transparent 96%
-  );
-}
-
-.home-work-list {
-  border-color: color-mix(in srgb, var(--border-weak-base) 72%, transparent);
-}
-
 .home-work-row {
   position: relative;
-  margin-inline: -0.15rem;
-  width: calc(100% + 0.3rem);
-  transition: background-color 140ms ease;
+  border: 1px solid color-mix(in srgb, var(--border-weak-base) 88%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--background-base) 82%, transparent);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--background-base) 55%, transparent);
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .home-work-row:hover,
 .home-work-row:focus-visible {
-  background: color-mix(in srgb, var(--home-brand) 8%, var(--surface-base-hover));
+  border-color: color-mix(in srgb, var(--home-brand) 30%, var(--border-base));
+  background: color-mix(in srgb, var(--home-brand) 12%, var(--background-base));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--background-base) 62%, transparent),
+    0 12px 26px -16px color-mix(in srgb, black 55%, transparent);
 }
 
 .home-work-row:active {
-  background: color-mix(in srgb, var(--home-brand) 14%, var(--surface-base-active));
+  border-color: color-mix(in srgb, var(--home-brand) 42%, var(--border-base));
+  background: color-mix(in srgb, var(--home-brand) 16%, var(--background-base));
+}
+
+.home-work-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--home-brand) 58%, transparent);
+  outline-offset: 1px;
+}
+
+.home-work-icon {
+  background: color-mix(in srgb, var(--surface-secondary) 70%, transparent);
+  color: var(--text-base);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+.home-work-row:hover .home-work-icon,
+.home-work-row:focus-visible .home-work-icon {
+  background: var(--surface-secondary);
+  color: var(--text-strong);
 }
 
 .home-favorite-toggle {
@@ -325,7 +328,8 @@ html:is([data-theme="vercel"], [data-theme="github"], [data-theme="cursor"]) [da
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .home-work-row {
+  .home-work-row,
+  .home-work-icon {
     transition: none;
   }
 }

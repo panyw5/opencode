@@ -47,7 +47,7 @@ const HOME_TASK_LIMIT = 10
 
 function SectionHeader(props: { id: string; title: string; action?: string; onAction?: () => void }) {
   return (
-    <div class="home-section-header flex min-h-8 items-center justify-between gap-3 border-b border-border-weak-base pb-2">
+    <div class="home-section-header flex min-h-8 items-center justify-between gap-3 pb-2">
       <h2 id={props.id} class="text-13-medium text-text-strong">
         {props.title}
       </h2>
@@ -578,7 +578,7 @@ export default function Home() {
           <HomePathInput home={homedir()} onOpen={openProject} onBrowse={() => void chooseProject()} />
         </section>
 
-        <div class="mt-9 grid min-w-0 items-start gap-x-8 gap-y-9 lg:grid-cols-2">
+        <div class="mt-9 grid min-w-0 gap-x-8 gap-y-9 lg:grid-cols-2">
           <Show when={dashboard.favoritesLoading || dashboard.favoritesError || dashboard.favorites.length > 0}>
             <section class="home-section min-w-0" aria-labelledby="home-favorite-sessions">
               <SectionHeader
@@ -607,14 +607,14 @@ export default function Home() {
                     </button>
                   }
                 >
-                  <ul class="home-work-list divide-y divide-border-weak-base">
+                  <ul class="home-work-list flex flex-col gap-2">
                     <For each={homeFavorites()}>
                       {(session) => (
                         <li>
                           <div
                             role="button"
                             tabIndex={0}
-                            class="home-work-row group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2.5 text-left outline-none"
+                            class="home-work-row group flex w-full cursor-pointer items-center gap-3 px-3.5 py-3 text-left outline-none"
                             onClick={() => openSession(session)}
                             onKeyDown={(event) => {
                               if (event.key !== "Enter" && event.key !== " ") return
@@ -622,7 +622,7 @@ export default function Home() {
                               openSession(session)
                             }}
                           >
-                            <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-base text-icon-warning-base">
+                            <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-icon-warning-base/15 text-icon-warning-base transition-colors group-hover:bg-icon-warning-base/25">
                               <Icon name="star-active" size="small" />
                             </span>
                             <span class="min-w-0 flex-1">
@@ -658,7 +658,10 @@ export default function Home() {
             </section>
           </Show>
 
-          <section class="home-section home-section-primary min-w-0" aria-labelledby="home-recent-sessions">
+          <section
+            class="home-section home-section-primary min-w-0 lg:row-span-2"
+            aria-labelledby="home-recent-sessions"
+          >
             <SectionHeader
               id="home-recent-sessions"
               title={language.t("home.recentSessions")}
@@ -693,14 +696,14 @@ export default function Home() {
                     </div>
                   }
                 >
-                  <ul class="home-work-list divide-y divide-border-weak-base">
+                  <ul class="home-work-list flex flex-col gap-2">
                     <For each={homeSessions()}>
                       {(session) => (
                         <li>
                           <div
                             role="button"
                             tabIndex={0}
-                            class="home-work-row group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-3 text-left outline-none"
+                            class="home-work-row group flex w-full cursor-pointer items-center gap-3 px-3.5 py-3 text-left outline-none"
                             onClick={() => openSession(session)}
                             onKeyDown={(event) => {
                               if (event.key !== "Enter" && event.key !== " ") return
@@ -708,7 +711,7 @@ export default function Home() {
                               openSession(session)
                             }}
                           >
-                            <span class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-base text-icon-base">
+                            <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
                               <Icon name="speech-bubble" size="small" />
                             </span>
                             <span class="min-w-0 flex-1">
@@ -816,24 +819,29 @@ export default function Home() {
                     </div>
                   }
                 >
-                  <ul class="home-work-list divide-y divide-border-weak-base">
+                  <ul class="home-work-list flex flex-col gap-2">
                     <For each={dashboard.tasks}>
                       {(task) => (
                         <li>
                           <button
                             type="button"
-                            class="home-work-row group flex w-full items-start gap-3 rounded-lg px-2 py-2.5 text-left outline-none"
+                            class="home-work-row group flex w-full items-center gap-3 px-3.5 py-3 text-left outline-none"
                             onClick={() => navigate(`/scheduled?task=${encodeURIComponent(task.id)}`)}
                           >
-                            <span class={`mt-1.5 size-2 shrink-0 rounded-full ${taskTone(task)}`} aria-hidden="true" />
+                            <span class="home-work-icon flex size-8 shrink-0 items-center justify-center rounded-lg">
+                              <Icon name="clock" size="small" />
+                            </span>
                             <span class="min-w-0 flex-1">
                               <span class="block truncate text-12-medium text-text-strong">{task.name}</span>
                               <span class="mt-0.5 block truncate text-11-regular text-text-weak">
                                 {task.projectName || displayPath(task.directory)}
                               </span>
                             </span>
-                            <span class="shrink-0 text-right text-11-regular text-text-weaker">
-                              <span class="block text-text-weak">{taskStatus(task)}</span>
+                            <span class="flex shrink-0 flex-col items-end gap-0.5 text-11-regular text-text-weaker">
+                              <span class="flex items-center gap-1.5">
+                                <span class={`size-2 shrink-0 rounded-full ${taskTone(task)}`} aria-hidden="true" />
+                                <span class="text-text-weak">{taskStatus(task)}</span>
+                              </span>
                               <span
                                 class="mt-0.5 block"
                                 title={new Date(task.nextRunAt!).toLocaleString(language.intl())}
