@@ -250,7 +250,7 @@ describe("tool.scheduled_task_update", () => {
     }),
   )
 
-  it.instance("updates all user-facing fields and binds the current session", () =>
+  it.instance("updates all user-facing fields and preserves the bound session", () =>
     Effect.gen(function* () {
       const info = yield* ScheduledTaskUpdateTool
       const tool = yield* info.init()
@@ -260,6 +260,8 @@ describe("tool.scheduled_task_update", () => {
           requests.push(request)
         }),
       )
+      const sessions = yield* Session.Service
+      const bound = yield* sessions.create({ title: "Task run session" })
       const existing = yield* ScheduledTaskRepository.create({
         projectID: session.projectID,
         directory: session.directory,
@@ -267,6 +269,7 @@ describe("tool.scheduled_task_update", () => {
         prompt: "Old prompt",
         schedule: { kind: "every", interval: 3_600_000 },
         executionMode: "existing_session",
+        sessionID: bound.id,
         agent: "build",
         model: { providerID: "test", modelID: "test-model" },
         enabled: true,
@@ -304,7 +307,7 @@ describe("tool.scheduled_task_update", () => {
       expect(task.prompt).toBe("New prompt")
       expect(task.schedule).toEqual({ kind: "every", interval: 86_400_000 })
       expect(task.executionMode).toBe("existing_session")
-      expect(task.sessionID).toBe(session.id)
+      expect(task.sessionID).toBe(bound.id)
       expect(task.model).toEqual({ providerID: "new-provider", modelID: "new-model", variant: "high" })
       expect(task.enabled).toBe(false)
       expect(yield* ScheduledTaskRepository.get(existing.id)).toEqual(result.metadata.task)
@@ -333,6 +336,32 @@ describe("tool.scheduled_task_update", () => {
       const result = yield* tool.execute({ taskID: existing.id, executionMode: "new_session" }, ctx)
 
       expect(result.metadata.task?.executionMode).toBe("new_session")
+      expect(result.metadata.task?.sessionID).toBeUndefined()
+      expect((yield* ScheduledTaskRepository.get(existing.id))?.sessionID).toBeUndefined()
+    }),
+  )
+
+  it.instance("does not bind the calling session when switching to existing sessions", () =>
+    Effect.gen(function* () {
+      const info = yield* ScheduledTaskUpdateTool
+      const tool = yield* info.init()
+      const { session, ctx } = yield* context(() => Effect.void)
+      const existing = yield* ScheduledTaskRepository.create({
+        projectID: session.projectID,
+        directory: session.directory,
+        name: "Unbound task",
+        prompt: "Old prompt",
+        schedule: { kind: "every", interval: 3_600_000 },
+        executionMode: "new_session",
+        agent: "build",
+        model: { providerID: "test", modelID: "test-model" },
+        enabled: true,
+        unattended: true,
+      })
+
+      const result = yield* tool.execute({ taskID: existing.id, executionMode: "existing_session" }, ctx)
+
+      expect(result.metadata.task?.executionMode).toBe("existing_session")
       expect(result.metadata.task?.sessionID).toBeUndefined()
       expect((yield* ScheduledTaskRepository.get(existing.id))?.sessionID).toBeUndefined()
     }),

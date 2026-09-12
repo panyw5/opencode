@@ -289,17 +289,16 @@ export const ScheduledTaskUpdateTool = Tool.define<typeof UpdateParameters, { ta
         }
         const existing = yield* ScheduledTaskRepository.get(taskID)
         if (!existing) return notFoundOutput(params.taskID, { task: null })
-        const sessionID =
-          params.executionMode === "existing_session" || params.executionMode === "automatic_session"
-            ? ctx.sessionID
-            : params.executionMode === "new_session"
-              ? null
-              : undefined
+        // The task session binding belongs to the scheduler (bound on creation or first
+        // run, rotated in automatic_session). Mode switches must never rebind it to the
+        // updating session; only new_session clears it.
+        const sessionID = params.executionMode === "new_session" ? null : undefined
         log.info("scheduled task update resolved", {
           sessionID: ctx.sessionID,
           taskID,
           previousExecutionMode: existing.executionMode,
           nextExecutionMode: params.executionMode,
+          previousSessionID: existing.sessionID,
           boundSessionID: sessionID,
           previousModelProviderID: existing.model.providerID,
           previousModelID: existing.model.modelID,

@@ -1,5 +1,15 @@
-Update an existing scheduled task by ID.
+Update an existing scheduled task by ID (from scheduled_task_list, mandatory). Use this tool when the user asks to update:
+- rename
+- edit prompt
+- reschedule
+- change model
+- change session execution mode
+- enable/disable
 
-Use this tool when the user asks to change an existing scheduled task, such as renaming it, editing its prompt, rescheduling it, changing its model or reasoning/thinking intensity, changing its session execution mode, or enabling/disabling it. Obtain the task ID from scheduled_task_list.
+Provide (at least one) changed data: name/schedule/prompt/executionMode/model/enabled
 
-Provide at least one of name, prompt, schedule, executionMode, model, or enabled. Changing the schedule or enabled state recomputes the next run time. `automatic_session` reuses the current task session until 30 runs or 1000000 accumulated tokens, then rotates and references the previous session; `existing_session` never rotates; `new_session` clears the binding and creates unrelated sessions.
+Behavior:
+- Passing `schedule` or `enabled` (even unchanged) recomputes the next run time; `enabled: false` clears it (task stays dormant until re-enabled)
+- `executionMode === "automatic_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists); reuses one session until 30 runs or 1000000 accumulated tokens, then rotates and references the previous session
+- `executionMode === "existing_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists) and never rotates
+- `executionMode === "new_session"`: clears the binding and creates unrelated sessions on every future run
