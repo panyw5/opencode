@@ -266,6 +266,7 @@ export function MessageTimeline(props: {
   onHistoryScroll: (scrollTop: number) => void
   onAutoScrollInteraction: (event: MouseEvent) => void
   shouldAnchorBottom: () => boolean
+  onFollowBottom?: () => void
   navigationTargetId?: () => string | undefined
   isInitialScrollSettling: () => boolean
   centered: boolean
@@ -614,6 +615,10 @@ export function MessageTimeline(props: {
     if (owner === "bottom") {
       viewportAnchor = undefined
       readingAnchor = undefined
+      if (props.onFollowBottom) {
+        props.onFollowBottom()
+        return
+      }
       // TanStack already adjusts by each committed delta while bottom-anchored;
       // this only closes residual gaps (e.g. a guarded shrink committing late).
       // Never while the user is gesturing: writing scrollTop mid-gesture
@@ -1197,11 +1202,14 @@ export function MessageTimeline(props: {
     // bottom-anchored adjustment would fight the gesture; the first user
     // scroll event then latches user-scrolled and adjustments stop.
     const bottomAnchored = props.shouldAnchorBottom() && !props.hasScrollGesture()
+    // The page's animation owns all bottom-follow writes, including in-view
+    // streaming growth. TanStack's immediate compensation would bypass it.
     const adjust = shouldAdjustVirtualScroll({
       itemEnd: item.end,
       scrollOffset,
       bottomAnchored,
       initializing: props.isInitialScrollSettling(),
+      animatedBottom: !!props.onFollowBottom,
     })
     if (lagging() && Math.abs(delta) >= 1) {
       timelineLag(

@@ -460,11 +460,46 @@ test("does not skip a virtual row inside the visible range", () => {
   ).toBe("auto")
 })
 
-test("snaps small live bottom deltas and eases only mid-size jumps", () => {
+test("exports distance-gated bottom easing for existing page callers", () => {
+  console.debug("[timeline-measure-test] checking shouldEaseLiveBottom compatibility export")
   expect(shouldEaseLiveBottom(16, { min: 64, max: 900 })).toBe(false)
   expect(shouldEaseLiveBottom(64, { min: 64, max: 900 })).toBe(false)
   expect(shouldEaseLiveBottom(80, { min: 64, max: 900 })).toBe(true)
+  expect(shouldEaseLiveBottom(-80, { min: 64, max: 900 })).toBe(true)
+  expect(shouldEaseLiveBottom(900, { min: 64, max: 900 })).toBe(true)
   expect(shouldEaseLiveBottom(901, { min: 64, max: 900 })).toBe(false)
+})
+
+test("animated bottom follow owns streaming and above-viewport height changes", () => {
+  for (const itemEnd of [400, 500, 600]) {
+    expect(
+      shouldAdjustVirtualScroll({
+        itemEnd,
+        scrollOffset: 500,
+        bottomAnchored: true,
+        initializing: false,
+        animatedBottom: true,
+      }),
+    ).toBe(false)
+  }
+  expect(
+    shouldAdjustVirtualScroll({
+      itemEnd: 400,
+      scrollOffset: 500,
+      bottomAnchored: false,
+      initializing: false,
+      animatedBottom: true,
+    }),
+  ).toBe(true)
+  expect(
+    shouldAdjustVirtualScroll({
+      itemEnd: 400,
+      scrollOffset: 500,
+      bottomAnchored: true,
+      initializing: true,
+      animatedBottom: true,
+    }),
+  ).toBe(true)
 })
 
 test("does not shrink a live row from a transient short measure", () => {

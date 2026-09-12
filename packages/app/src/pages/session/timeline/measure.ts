@@ -275,7 +275,9 @@ export function shouldAdjustVirtualScroll(input: {
   scrollOffset: number
   bottomAnchored: boolean
   initializing: boolean
+  animatedBottom?: boolean
 }) {
+  if (input.bottomAnchored && input.animatedBottom && !input.initializing) return false
   return input.itemEnd <= input.scrollOffset || (input.bottomAnchored && !input.initializing)
 }
 
@@ -298,10 +300,7 @@ export function timelineRowContentVisibility(input: {
   return input.index >= input.visibleStartIndex && input.index <= input.visibleEndIndex ? "visible" : "auto"
 }
 
-/**
- * Ease only large live jumps. Small streaming deltas must snap, otherwise the
- * jump-to-bottom control stays visible while follow-scroll lags the true bottom.
- */
+/** Retained for page callers that still use distance-gated bottom easing. */
 export function shouldEaseLiveBottom(distance: number, input: { min: number; max: number }) {
   const abs = Math.abs(distance)
   return abs > input.min && abs <= input.max

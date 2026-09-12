@@ -85,7 +85,7 @@ import {
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
-import { shouldEaseLiveBottom } from "@/pages/session/timeline/measure"
+import { createLiveBottomFollow } from "@/pages/session/timeline/live-bottom"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
@@ -149,10 +149,6 @@ const sessionReviewDelayMs = typeof navigator === "undefined" ? 750 : sessionBac
 // also refresh it live while a turn runs).
 const reviewDiffFreshMs = 15_000
 const emptyFollowups: (FollowupDraft & { id: string })[] = []
-const smoothBottomSnapDistance = 900
-const smoothBottomMaxStep = 180
-const smoothBottomEase = 0.32
-const smoothBottomMinDistance = 64
 
 type ChangeMode = "git" | "branch" | "session" | "turn"
 type VcsMode = "git" | "branch"
@@ -959,6 +955,7 @@ export default function Page() {
   let refreshRun = 0
   let diffFrame: number | undefined
   let diffTimer: number | undefined
+
   // Warm the review data in the background shortly after a session opens so
   // the review panel renders its list instantly on first open instead of
   // showing a loading state while the request round-trips. The git diff covers
@@ -2265,29 +2262,36 @@ export default function Page() {
     else autoScroll.resume()
   }
 
-  // Streaming stability depends on locking the outer timeline directly to the
-  // physical bottom. This avoids relying on the auto-scroll state machine once
-  // content height is already changing every frame.
+  const bottomFollow = createLiveBottomFollow({
+    root: () => scroller,
+    enabled: () => !!scroller?.isConnected && shouldPinBottom() && !settling(),
+    // Follow-scroll stays smooth even when decorative system animations are reduced.
+    write: (root, top) => {
+      writeSessionScroll(root, "bottom", () => (root.scrollTop = top))
+      scheduleScrollState(root)
+    },
+    log: (message) => console.debug(`[session] live-bottom sid=${params.id ?? "none"} ${message}`),
+  })
+  onCleanup(() => bottomFollow.cancel("cleanup"))
+
   const lockBottom = (el: HTMLDivElement, source: string, mode: "auto" | "smooth" = "auto") => {
+    if (mode === "smooth" && !settling()) {
+      bottomFollow.follow()
+      return
+    }
+    bottomFollow.cancel(source)
     const next = Math.max(0, el.scrollHeight - el.clientHeight)
     const dist = next - el.scrollTop
     if (Math.abs(dist) <= 1) {
       debug("lock-bottom:skip", el, { source, dist: Math.round(dist) })
       return
     }
-    const ease =
-      mode === "smooth" && shouldEaseLiveBottom(dist, { min: smoothBottomMinDistance, max: smoothBottomSnapDistance })
     writeSessionScroll(el, source.startsWith("initial") ? "initial" : "bottom", () => {
-      if (ease) {
-        const step = Math.sign(dist) * Math.min(Math.max(Math.abs(dist) * smoothBottomEase, 1), smoothBottomMaxStep)
-        el.scrollTop += step
-      } else {
-        el.scrollTop = next
-      }
+      el.scrollTop = next
     })
     const gap = el.scrollHeight - el.clientHeight - el.scrollTop
     console.debug(
-      `[session] lock-bottom source=${source} mode=${mode} ease=${String(ease)} dist=${String(Math.round(dist))} gap=${String(Math.round(gap))} live=${String(live())}`,
+      `[session] lock-bottom source=${source} mode=${mode} dist=${String(Math.round(dist))} gap=${String(Math.round(gap))} live=${String(live())}`,
     )
     debug("lock-bottom:write", el, { source, dist: Math.round(dist) })
   }
@@ -2408,7 +2412,7 @@ export default function Page() {
     // Reconcile after those callbacks complete so this page-level follow logic
     // does not compete with the virtualizer in the same delivery cycle.
     if (shouldPinBottom()) {
-      lockBottom(root, "content:resize:lock-bottom")
+      lockBottom(root, "content:resize:lock-bottom", "smooth")
     }
     debug("content-resize:after", root)
     scheduleScrollState(root)
@@ -2443,7 +2447,7 @@ export default function Page() {
     debug("state:before", el)
     if (shouldPinBottom()) {
       lastPinSkip = ""
-      lockBottom(el, "state:live-lock")
+      lockBottom(el, "state:live-lock", "smooth")
     } else if (followBottom || running()) {
       const next = `running=${String(running())} follow=${String(followBottom)} live=${String(live())} userScrolled=${String(autoScroll.userScrolled())} gesture=${String(hasScrollGesture())} target=${String(hasScrollTarget())}`
       const now = performance.now()
@@ -2461,14 +2465,14 @@ export default function Page() {
     const top = geometry ? Math.max(0, Math.min(geometry.scrollTop, max)) : clamp(el)
     const overflow = max > 1
     const gap = max - top
-    const bottom = !overflow || gap <= scrollBottomThreshold
+    const bottom = !overflow || gap <= scrollBottomThreshold || (shouldPinBottom() && bottomFollow.active())
     if (resumeIntent && resumeIntent === viewportIntent() && running() && !viewportTarget()) {
       console.debug(`[session] bottom-takeover sid=${params.id ?? "none"} source=user-scroll gap=${Math.round(gap)}`)
       resumeLive()
       resumeAutoScroll()
     }
 
-    if ((live() || followBottom) && overflow && !bottom) {
+    if ((live() || followBottom) && overflow && !bottom && !bottomFollow.active()) {
       console.debug(
         `[session] scroll-state live-gap sid=${params.id ?? "none"} gap=${String(Math.round(gap))} overflow=${String(overflow)} bottom=${String(bottom)} follow=${String(followBottom)} running=${String(running())} virtual=${String(Math.round(content?.offsetHeight ?? 0))} scrollHeight=${String(Math.round(el.scrollHeight))}`,
       )
@@ -2622,6 +2626,7 @@ export default function Page() {
       (scrolled) => {
         debug("user-scrolled:change", scroller, { scrolled })
         if (scrolled) {
+          bottomFollow.cancel("user-scroll")
           clearFollowBottom("user-scrolled")
           if (running()) enterAnchored()
           return
@@ -2645,7 +2650,9 @@ export default function Page() {
           console.debug("[session] streaming follow skipped user-scrolled")
           return
         }
-        console.debug("[session] streaming bottom follow enabled")
+        console.debug(
+          `[session] streaming bottom follow enabled motion=smooth systemReduced=${String(window.matchMedia("(prefers-reduced-motion: reduce)").matches)}`,
+        )
         armFollowBottom("running")
         resumeLive()
         resumeAutoScroll()
@@ -3552,6 +3559,11 @@ export default function Page() {
                         shouldAnchorBottom={() =>
                           viewportWantsBottom() && !hasScrollTarget() && !autoScroll.userScrolled()
                         }
+                        onFollowBottom={() => {
+                          const root = scroller
+                          if (!root || hasScrollGesture()) return
+                          lockBottom(root, "timeline:measure", shouldPinBottom() ? "smooth" : "auto")
+                        }}
                         navigationTargetId={navigationTargetId}
                         viewportTarget={viewportTarget}
                         isInitialScrollSettling={settling}
