@@ -561,39 +561,32 @@ export default function Home() {
         </section>
 
         <div class="mt-9 grid min-w-0 items-start gap-x-8 gap-y-9 lg:grid-cols-2">
-          <section class="home-section min-w-0" aria-labelledby="home-favorite-sessions">
-            <SectionHeader
-              id="home-favorite-sessions"
-              title={language.t("home.favoriteSessions")}
-              action={language.t("home.favoriteSessions.viewAll")}
-              onAction={showRecentSessions}
-            />
-            <Show
-              when={!dashboard.favoritesLoading}
-              fallback={
-                <div class="flex min-h-28 items-center justify-center">
-                  <Spinner />
-                </div>
-              }
-            >
+          <Show when={dashboard.favoritesLoading || dashboard.favoritesError || dashboard.favorites.length > 0}>
+            <section class="home-section min-w-0" aria-labelledby="home-favorite-sessions">
+              <SectionHeader
+                id="home-favorite-sessions"
+                title={language.t("home.favoriteSessions")}
+                action={language.t("home.favoriteSessions.viewAll")}
+                onAction={showRecentSessions}
+              />
               <Show
-                when={!dashboard.favoritesError}
+                when={!dashboard.favoritesLoading}
                 fallback={
-                  <button
-                    type="button"
-                    class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
-                    onClick={() => void refreshFavorites()}
-                  >
-                    {language.t("home.section.loadError")}
-                  </button>
+                  <div class="flex min-h-28 items-center justify-center">
+                    <Spinner />
+                  </div>
                 }
               >
                 <Show
-                  when={dashboard.favorites.length > 0}
+                  when={!dashboard.favoritesError}
                   fallback={
-                    <div class="px-3 py-8 text-center text-12-regular text-text-weak">
-                      {language.t("home.favoriteSessions.empty")}
-                    </div>
+                    <button
+                      type="button"
+                      class="mt-3 w-full rounded-lg px-3 py-7 text-center text-12-regular text-text-danger outline-none transition-colors hover:bg-surface-base-hover active:bg-surface-base-active focus-visible:bg-surface-base-hover"
+                      onClick={() => void refreshFavorites()}
+                    >
+                      {language.t("home.section.loadError")}
+                    </button>
                   }
                 >
                   <ul class="home-work-list divide-y divide-border-weak-base">
@@ -644,8 +637,8 @@ export default function Home() {
                   </ul>
                 </Show>
               </Show>
-            </Show>
-          </section>
+            </section>
+          </Show>
 
           <section class="home-section home-section-primary min-w-0" aria-labelledby="home-recent-sessions">
             <SectionHeader

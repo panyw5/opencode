@@ -787,7 +787,6 @@ export const dict = {
   "home.recentSessions.status.unread": "已完成未读",
   "home.favoriteSessions": "收藏会话",
   "home.favoriteSessions.viewAll": "查看全部",
-  "home.favoriteSessions.empty": "暂无收藏会话",
   "home.favorite.add": "添加到收藏",
   "home.favorite.remove": "取消收藏",
   "home.upcomingTasks": "即将运行的定时任务",

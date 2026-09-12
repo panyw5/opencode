@@ -829,7 +829,6 @@ export const dict = {
   "home.recentSessions.status.unread": "Completed · unread",
   "home.favoriteSessions": "Favorite sessions",
   "home.favoriteSessions.viewAll": "View all",
-  "home.favoriteSessions.empty": "No favorite sessions yet",
   "home.favorite.add": "Add to favorites",
   "home.favorite.remove": "Remove from favorites",
   "home.upcomingTasks": "Upcoming scheduled tasks",
