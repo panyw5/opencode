@@ -13,6 +13,7 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 
 import FileTree from "@/components/file-tree"
+import ChangeTree from "@/components/change-tree"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { DialogSelectFile } from "@/components/dialog-select-file"
 import { SessionContextTab, SortableTab, FileVisual } from "@/components/session"
@@ -20,11 +21,13 @@ import { useCommand } from "@/context/command"
 import { useFile, type SelectedLineRange } from "@/context/file"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
+import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { extraAgentByIntegration } from "@/pages/layout/extra-agents"
 import { FileTabContent } from "@/pages/session/file-tabs"
+import type { ChangeTreeEntry } from "@/pages/session/change-tree-model"
 import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -45,6 +48,7 @@ export function SessionSidePanel(props: {
   const layout = useLayout()
   const file = useFile()
   const language = useLanguage()
+  const sdk = useSDK()
   const server = useServer()
   const command = useCommand()
   const dialog = useDialog()
@@ -97,6 +101,20 @@ export function SessionSidePanel(props: {
       .map((d) => d.file)
       .filter((f): f is string => !!f),
   )
+  // The changes tree is built purely from change paths (never the filesystem),
+  // keyed by workspace file identity so Windows spellings merge while the
+  // authoritative spelling is kept for display and requests.
+  const changeEntries = createMemo(() =>
+    props.diffs().flatMap((diff): ChangeTreeEntry[] => {
+      if (!diff.file) return []
+      const kind = diff.status === "added" ? "add" : diff.status === "deleted" ? "del" : "mix"
+      return [{ path: diff.file, kind }]
+    }),
+  )
+  const changeFoldCase = createMemo(() => {
+    const context = sdk.pathContext
+    return context.platform === "win32" && context.kind === "local-filesystem"
+  })
   const kinds = createMemo(() => {
     const merge = (a: "add" | "del" | "mix" | undefined, b: "add" | "del" | "mix") => {
       if (!a) return b
@@ -411,7 +429,13 @@ export function SessionSidePanel(props: {
           >
             <div
               class="h-full flex flex-col overflow-hidden group/filetree"
-              classList={{ "border-l border-border-weaker-base": reviewOpen() || filePreviewOpen() }}
+              classList={{
+                "border-l border-border-weaker-base": reviewOpen() || filePreviewOpen(),
+                // Skip rendering the whole tree while the panel is collapsed:
+                // thousands of rows stay in the DOM (state preserved) but cost
+                // zero layout/paint until the panel is opened again.
+                "[content-visibility:hidden]": !fileOpen(),
+              }}
             >
               <Tabs
                 variant="pill"
@@ -443,14 +467,12 @@ export function SessionSidePanel(props: {
                           </div>
                         }
                       >
-                        <FileTree
-                          path=""
+                        <ChangeTree
                           class="pt-3"
-                          allowed={diffFiles()}
-                          kinds={kinds()}
-                          draggable={false}
+                          entries={changeEntries()}
+                          foldCase={changeFoldCase()}
                           active={props.activeDiff}
-                          onFileClick={(node) => props.focusReviewDiff(node.path)}
+                          onFileClick={(path) => props.focusReviewDiff(path)}
                         />
                       </Show>
                     </Match>
