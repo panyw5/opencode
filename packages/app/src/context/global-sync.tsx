@@ -207,7 +207,12 @@ function createGlobalSync() {
       }),
     )
     if (domain !== currentDomain()) return
-    ;(setGlobalStore as (...args: unknown[]) => unknown)(key, value)
+    // Reconcile object values so keys removed upstream (e.g. a config field the server
+    // deleted) are dropped too — a plain set shallow-merges and keeps stale keys forever.
+    ;(setGlobalStore as (...args: unknown[]) => unknown)(
+      key,
+      value !== null && typeof value === "object" ? reconcile(value) : value,
+    )
   }
 
   const updateGlobalConfig = (domain: DomainId, config: Config) => {
