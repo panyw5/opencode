@@ -20,6 +20,7 @@ type Props = {
   onText: (text: string) => void
   onClose: () => void
   onReset: () => void
+  onNewSession: () => void
   onVariant: (variant: string | undefined) => void
   onSend: () => void
 }
@@ -113,6 +114,16 @@ export function QuickAssistantInput(props: Props) {
           }}
         />
         <div class="flex items-center gap-1.5 px-2 pb-2 pt-1">
+          <Tooltip placement="top" value={language.t("command.session.new")}>
+            <button
+              type="button"
+              class="flex size-8 shrink-0 items-center justify-center rounded-full text-icon-weak transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+              aria-label={language.t("command.session.new")}
+              onClick={props.onNewSession}
+            >
+              <Icon name="new-session" class="size-4.5" />
+            </button>
+          </Tooltip>
           <div class="min-w-0 flex-1" />
           <ModelSelectorPopover
             model={model}

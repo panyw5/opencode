@@ -876,6 +876,7 @@ export function QuickAssistant() {
                 onText={(next) => setState("text", next)}
                 onClose={close}
                 onReset={() => void reset()}
+                onNewSession={() => void reset()}
                 onVariant={setVariant}
                 onSend={() => void submit()}
               />
