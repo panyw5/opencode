@@ -486,7 +486,7 @@
   }
 
   [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:disabled {
-    color: var(--icon-weak-disabled);
+    color: var(--icon-disabled);
   }
 
   /* The svg carries its own color from icon-button.css, which would override
@@ -501,7 +501,7 @@
   }
 
   [data-component="icon-button"].sidebar-action-button[data-variant="ghost"]:disabled [data-slot="icon-svg"] {
-    color: var(--icon-weak-disabled);
+    color: var(--icon-disabled);
   }
 
   /* Primary action ("new session" / "new workspace") reads as a brand chip so
