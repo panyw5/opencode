@@ -382,9 +382,9 @@ type PromptSubmitInput = {
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void | Promise<void>
   onUserMessageCreated?: (messageID: string) => void
-  onSubmit?: (sessionID: string) => void
+  onSubmit?: (sessionID: string, options?: SubmitOptions) => void
   onSubmitFailed?: (sessionID: string) => void
-  onSubmitted?: () => void
+  onSubmitted?: (options?: SubmitOptions) => void
 }
 
 export type SubmitOptions = {
@@ -395,6 +395,12 @@ export type SubmitOptions = {
    * callers blocked on it (e.g. a parent task tool) keep waiting.
    */
   intervene?: boolean
+  /**
+   * Keep the current viewport: submit without scrolling to the bottom or
+   * following the streaming reply. The session page uses this to let the
+   * user keep reading where they are while the prompt runs.
+   */
+  keepViewport?: boolean
 }
 
 type CommentItem = {
@@ -895,7 +901,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    input.onSubmit?.(session.id)
+    input.onSubmit?.(session.id, options)
 
     if (mode === "shell") {
       clearInput()
@@ -998,7 +1004,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       performance.mark("submit:first-raf")
       performance.measure("submit:to-first-raf", "submit:start", "submit:first-raf")
       console.debug(`[perf:submit] first-raf breakdown ${submitMeasureSummary()}`)
-      input.onSubmitted?.()
+      input.onSubmitted?.(options)
     })
 
     const waitForWorktree = async () => {

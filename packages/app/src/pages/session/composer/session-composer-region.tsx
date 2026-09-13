@@ -30,7 +30,7 @@ import { SessionFollowupDock } from "@/pages/session/composer/session-followup-d
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
 import type { SessionComposerState } from "@/pages/session/composer/session-composer-state"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
-import type { FollowupDraft } from "@/components/prompt-input/submit"
+import type { FollowupDraft, SubmitOptions } from "@/components/prompt-input/submit"
 import type { SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2"
 
@@ -567,10 +567,10 @@ export function SessionComposerRegion(props: {
   inputRef: (el: HTMLDivElement) => void
   newSessionWorktree: string
   onNewSessionWorktreeReset: () => void
-  onSubmit: (sessionID: string) => void
+  onSubmit: (sessionID: string, options?: SubmitOptions) => void
   onSubmitFailed?: (sessionID: string) => void
   onUserMessageCreated?: (messageID: string) => void
-  onSubmitted?: () => void
+  onSubmitted?: (options?: SubmitOptions) => void
   onAbort?: () => void | Promise<void>
   onResponseSubmit: () => void
   onScrollToBottom: () => void

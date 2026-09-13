@@ -500,6 +500,7 @@ export const dict = {
   "prompt.session.empty": "暂无访问记录，先打开一个 OpenCode 会话再回来。",
   "prompt.attachment.remove": "移除附件",
   "prompt.action.send": "发送",
+  "prompt.action.sendKeepView": "发送并保持视野——不滚动到底部",
   "prompt.action.stop": "停止",
   "prompt.action.intervene": "发送干预——优雅停止当前步骤，并以该提示词继续引导",
   "prompt.action.stopAfterTool": "当前工具调用完成后停止",

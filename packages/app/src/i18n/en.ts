@@ -481,6 +481,7 @@ export const dict = {
   "prompt.session.empty": "No recent sessions yet. Open an OpenCode session and come back.",
   "prompt.attachment.remove": "Remove attachment",
   "prompt.action.send": "Send",
+  "prompt.action.sendKeepView": "Send and keep view — do not scroll to the bottom",
   "prompt.action.stop": "Stop",
   "prompt.action.intervene": "Send intervention — stop the current step gracefully and steer with this prompt",
   "prompt.action.stopAfterTool": "Stop after the current tool call",

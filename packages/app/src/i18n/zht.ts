@@ -337,6 +337,7 @@ export const dict = {
   "prompt.action.expand": "展開編輯器",
   "prompt.attachment.remove": "移除附件",
   "prompt.action.send": "傳送",
+  "prompt.action.sendKeepView": "傳送並保持視野——不捲動到底部",
   "prompt.action.stop": "停止",
   "prompt.action.intervene": "傳送干預——優雅停止目前步驟，並以該提示詞繼續引導",
   "prompt.editor.title": "編輯提示詞",

@@ -64,6 +64,7 @@ import { useTerminal } from "@/context/terminal"
 import {
   finalizeRunningAssistantLocally,
   type FollowupDraft,
+  type SubmitOptions,
   sendFollowupDraft,
 } from "@/components/prompt-input/submit"
 import {
@@ -2560,6 +2561,18 @@ export default function Page() {
     )
   }
 
+  // "Send and keep view": submit without pulling the viewport to the bottom.
+  // Marking the viewport as user-controlled (autoScroll.pause) suppresses every
+  // bottom pin at once — the submit jump, the streaming follow, and the
+  // bottom-anchored timeline adjustments. Scrolling back to the bottom re-arms
+  // live follow through the regular userScrolled effect.
+  const holdViewportForSend = (source: string) => {
+    console.debug(
+      `[session] hold-viewport source=${source} userScrolled=${String(autoScroll.userScrolled())} running=${String(running())}`,
+    )
+    autoScroll.pause()
+  }
+
   // When the user returns to the bottom, treat the active message as "latest".
   createEffect(
     on(
@@ -3711,12 +3724,16 @@ export default function Page() {
               setStore("newSessionWorktree", "main")
               setStore("newSessionPicked", false)
             }}
-            onSubmit={(sessionID) => {
+            onSubmit={(sessionID, options) => {
               if (mathMode.prepared) {
                 console.debug(`[math-initialize] submit dispatched session=${sessionID}`)
                 setMathMode("initializingSessionID", sessionID)
               }
               comments.clear()
+              if (options?.keepViewport) {
+                holdViewportForSend("submit")
+                return
+              }
               resumeScroll()
             }}
             onSubmitFailed={(sessionID) => {
@@ -3725,7 +3742,8 @@ export default function Page() {
               setMathMode({ prepared: false, initializingSessionID: undefined })
             }}
             onUserMessageCreated={markUserMessageForAnimation}
-            onSubmitted={() => {
+            onSubmitted={(options) => {
+              if (options?.keepViewport) return
               resumeScroll()
             }}
             onAbort={stopCurrentMathWorkerOnAbort}

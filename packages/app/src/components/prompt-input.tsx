@@ -67,7 +67,7 @@ import {
   promptLength,
 } from "./prompt-input/history"
 import { createPromptHistoryStorage, type PromptHistoryKind } from "./prompt-input/history-storage"
-import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
+import { createPromptSubmit, type FollowupDraft, type SubmitOptions } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
 import {
   filterAgentsForConsultMentions,
@@ -110,9 +110,9 @@ interface PromptInputProps {
   onUserMessageCreated?: (messageID: string) => void
   /** False while the composer is blocked on a permission/question ask — hides the intervention button. */
   canIntervene?: () => boolean
-  onSubmit?: (sessionID: string) => void
+  onSubmit?: (sessionID: string, options?: SubmitOptions) => void
   onSubmitFailed?: (sessionID: string) => void
-  onSubmitted?: () => void
+  onSubmitted?: (options?: SubmitOptions) => void
   onScrollToBottom?: () => void
   scrollState?: { overflow: boolean; bottom: boolean }
 }
@@ -1892,26 +1892,26 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onQueue: props.onQueue,
     onAbort: props.onAbort,
     onUserMessageCreated: props.onUserMessageCreated,
-    onSubmit: (sessionID) => {
-      console.debug("[prompt-submit]", { stage: "submitting-set" })
+    onSubmit: (sessionID, options) => {
+      console.debug("[prompt-submit]", { stage: "submitting-set", keepViewport: options?.keepViewport === true })
       setStore("submitting", true)
-      props.onSubmit?.(sessionID)
+      props.onSubmit?.(sessionID, options)
     },
     onSubmitFailed: (sessionID) => {
       props.onSubmitFailed?.(sessionID)
     },
-    onSubmitted: () => {
+    onSubmitted: (options) => {
       setSubmit(true)
-      props.onSubmitted?.()
+      props.onSubmitted?.(options)
     },
   })
 
-  const [stopHovered, setStopHovered] = createSignal(false)
+  const [actionsHovered, setActionsHovered] = createSignal(false)
   const [stopAfterTool, setStopAfterTool] = createSignal<
     { sessionID: string; messageID: string; parts: string[] } | undefined
   >()
   const stopAfterToolArmed = createMemo(() => !!stopAfterTool())
-  const stopAfterToolRevealed = createMemo(() => stopHovered() || stopAfterToolArmed())
+  const stopAfterToolRevealed = createMemo(() => actionsHovered() || stopAfterToolArmed())
 
   // 32px pause button + 10px gap to the stop button
   const STOP_REVEAL_WIDTH = 42
@@ -1934,6 +1934,36 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // open; the bounce carries it a few px past its resting spot before settling.
   const stopPauseMotion = createMemo(() => {
     const v = stopRevealSpring()
+    return {
+      transform: `translateX(${(1 - v) * 20}px) scale(${0.5 + 0.5 * v})`,
+    }
+  })
+
+  // "Send and keep view" secondary button — the idle-state mirror of the
+  // stop-after-tool reveal: same 32px circle + 10px gap, revealed on hover to
+  // the left of the send button.
+  const canSendKeepView = createMemo(
+    () => store.mode === "normal" && !store.submitting && (prompt.dirty() || commentCount() > 0),
+  )
+  const sendKeepViewRevealed = createMemo(() => !working() && canSendKeepView() && actionsHovered())
+  const SEND_KEEP_VIEW_REVEAL_WIDTH = 42
+  const sendKeepViewSpring = useSpring(() => (sendKeepViewRevealed() ? 1 : 0), {
+    visualDuration: 0.35,
+    bounce: 0.5,
+  })
+  const sendKeepViewRevealMotion = createMemo(() => {
+    const v = sendKeepViewSpring()
+    return {
+      width: `${Math.max(0, SEND_KEEP_VIEW_REVEAL_WIDTH * v)}px`,
+      opacity: `${Math.min(1, Math.max(0, v))}`,
+      // Clip only mid-flight (the reveal wipe); at rest the circle must render
+      // unclipped — anti-aliasing and the overshoot scale bleed past the box.
+      overflow: v > 0 && v < 1 ? ("hidden" as const) : ("visible" as const),
+      "pointer-events": v > 0.5 ? ("auto" as const) : ("none" as const),
+    }
+  })
+  const sendKeepViewMotion = createMemo(() => {
+    const v = sendKeepViewSpring()
     return {
       transform: `translateX(${(1 - v) * 20}px) scale(${0.5 + 0.5 * v})`,
     }
@@ -2800,8 +2830,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               </Show>
               <div
                 class="flex items-center shrink-0"
-                onMouseEnter={() => setStopHovered(true)}
-                onMouseLeave={() => setStopHovered(false)}
+                onMouseEnter={() => setActionsHovered(true)}
+                onMouseLeave={() => setActionsHovered(false)}
               >
                 <Show when={working()}>
                   <div class="flex justify-end overflow-hidden py-[3px] -my-[3px]" style={stopRevealMotion()}>
@@ -2840,6 +2870,30 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                               class="pointer-events-none absolute -inset-[2.5px] rounded-full border-2 border-transparent border-t-current text-icon-warning-base"
                             />
                           </Show>
+                        </div>
+                      </Tooltip>
+                    </div>
+                  </div>
+                </Show>
+                <Show when={!working()}>
+                  <div class="flex justify-end overflow-hidden py-[3px] -my-[3px]" style={sendKeepViewRevealMotion()}>
+                    <div class="flex w-[42px] shrink-0 items-center pr-2.5">
+                      <Tooltip {...hover} placement="top" value={language.t("prompt.action.sendKeepView")}>
+                        <div class="relative size-8 shrink-0" style={sendKeepViewMotion()}>
+                          <IconButton
+                            data-action="prompt-send-keep-view"
+                            icon="uturn"
+                            variant="secondary"
+                            iconSize="normal"
+                            tabIndex={sendKeepViewRevealed() ? undefined : -1}
+                            disabled={store.mode !== "normal" || store.submitting || !canSendKeepView()}
+                            onClick={(event) => {
+                              event.preventDefault()
+                              void handleSubmit(event, { keepViewport: true })
+                            }}
+                            class="size-8 shrink-0 rounded-full"
+                            aria-label={language.t("prompt.action.sendKeepView")}
+                          />
                         </div>
                       </Tooltip>
                     </div>
