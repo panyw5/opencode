@@ -81,18 +81,13 @@ html[data-theme="aether"] [data-dock-surface="shell"] {
     0 0 0 0.5px rgba(193, 95, 60, 0.06),
     0 2px 8px -2px rgba(193, 95, 60, 0.08),
     0 4px 16px -4px rgba(193, 95, 60, 0.06);
-  border-radius: var(--radius-4xl);
+  --dock-shell-radius: var(--radius-4xl);
 }
 
 html[data-theme="aether"] [data-dock-surface="tray"] {
   background-color: #FAF9F5;
   border: 1px solid #E8E2D8;
-  border-radius: var(--radius-4xl);
-}
-
-html[data-theme="aether"] [data-dock-surface="tray"][data-dock-attach="top"] {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  --dock-shell-radius: var(--radius-4xl);
 }
 
 /* Keep the dock-prompt wrapper concentric with its shell/tray */

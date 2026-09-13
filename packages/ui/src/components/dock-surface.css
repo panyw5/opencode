@@ -1,17 +1,15 @@
 [data-dock-surface="shell"] {
   background-color: light-dark(color-mix(in srgb, var(--background-stronger) 82%, transparent), rgb(12 12 14 / 0.34));
-  border: 1px solid color-mix(in oklch, var(--border-strong-base) 88%, transparent);
+  border: 1px solid var(--border-weak-base);
   backdrop-filter: blur(40px) saturate(150%);
   -webkit-backdrop-filter: blur(40px) saturate(150%);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--border-weak-base) 58%, transparent) inset,
-    0 1px 0 color-mix(in srgb, white 12%, transparent) inset,
-    0 24px 56px rgba(0, 0, 0, 0.16),
-    0 10px 24px rgba(0, 0, 0, 0.12),
-    0 4px 10px rgba(0, 0, 0, 0.08);
+  /* Single soft ambient elevation. The previous stacked treatment (inset ring +
+     inset highlight + three drop stops) read as double borders on the prompt
+     composer, especially at the shell/tray seam. */
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
   position: relative;
   z-index: 10;
-  border-radius: 12px;
+  border-radius: var(--dock-shell-radius, 12px);
   overflow: clip;
 }
 
@@ -26,12 +24,15 @@ html[data-platform="desktop"][data-os="windows"] [data-dock-surface="shell"] {
   border: 1px solid var(--border-weak-base);
   position: relative;
   z-index: 0;
-  border-radius: 12px;
+  border-radius: var(--dock-shell-radius, 12px);
   overflow: clip;
 }
 
+/* An attached tray tucks under the shell by exactly the shell radius, with its
+   top corners rounded to the same radius — the two arcs then coincide, so no
+   square corner of the tray can peek out beside the shell's curve. */
 [data-dock-surface="tray"][data-dock-attach="top"] {
-  margin-top: -0.875rem;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  margin-top: calc(-1 * var(--dock-shell-radius, 12px));
+  border-top-left-radius: var(--dock-shell-radius, 12px);
+  border-top-right-radius: var(--dock-shell-radius, 12px);
 }

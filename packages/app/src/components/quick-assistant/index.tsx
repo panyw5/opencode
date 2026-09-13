@@ -18,6 +18,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import type { State } from "@/context/global-sync/types"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useModels } from "@/context/models"
 import { useServer } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { decode64 } from "@/utils/base64"
@@ -62,6 +63,7 @@ type Saved = {
   open: boolean
   session: Record<string, string | undefined>
   context: boolean
+  variant?: string
 }
 
 const initial = {
@@ -304,6 +306,22 @@ export function QuickAssistant() {
     if (!store || model === "disabled") return
     return choose(store, model === "auto" ? undefined : model, agentChoose())
   })
+  const models = useModels()
+  const variantList = createMemo(() => {
+    const pick = chosen()?.model
+    if (!pick) return []
+    const item = models.find(pick)
+    return item?.variants ? Object.keys(item.variants) : []
+  })
+  const effectiveVariant = createMemo(() => {
+    const value = saved.variant
+    if (!value) return undefined
+    return variantList().includes(value) ? value : undefined
+  })
+  const setVariant = (value: string | undefined) => {
+    console.debug(`[quick-assistant] variant ${value ? `set ${value}` : "cleared"}`)
+    setSaved("variant", value)
+  }
   const currentChild = createMemo(() => {
     const current = activeDir()
     if (!current) return
@@ -531,12 +549,6 @@ export function QuickAssistant() {
     open()
   }
 
-  const toggleContext = () => {
-    const next = !saved.context
-    console.debug(`[quick-assistant] context ${next ? "enabled" : "disabled"}`)
-    setSaved("context", next)
-  }
-
   const reset = async () => {
     const current = root()
     const id = sessionID()
@@ -669,9 +681,12 @@ export function QuickAssistant() {
       })
       return
     }
+    const variant = effectiveVariant()
 
     setState("loading", true)
-    console.debug(`[quick-assistant] submit context=${saved.context ? 1 : 0} text=${text.length} body=${body.length}`)
+    console.debug(
+      `[quick-assistant] submit context=${saved.context ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
+    )
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
       showToast({
@@ -694,7 +709,7 @@ export function QuickAssistant() {
       role: "user",
       time: { created: now },
       agent: pick.agent,
-      model: pick.model,
+      model: { ...pick.model, variant },
     }
     const part: Part = {
       id: Identifier.ascending("part"),
@@ -728,6 +743,7 @@ export function QuickAssistant() {
         agent: pick.agent,
         model: pick.model,
         messageID,
+        variant,
         tools: { question: true },
         parts: [
           {
@@ -846,12 +862,12 @@ export function QuickAssistant() {
                 busy={interacting()}
                 loading={state.loading}
                 ready={!!root()}
-                clear={!!sessionID() || list().length > 0}
-                context={saved.context}
+                variants={variantList()}
+                variant={effectiveVariant()}
                 onText={(next) => setState("text", next)}
                 onClose={close}
                 onReset={() => void reset()}
-                onContext={toggleContext}
+                onVariant={setVariant}
                 onSend={() => void submit()}
               />
             </Show>

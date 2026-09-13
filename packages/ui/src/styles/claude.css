@@ -97,6 +97,12 @@ html[data-theme="claude"] [data-component="icon-button"] {
   border-radius: var(--claude-session-radius-sm);
 }
 
+/* Same specificity as the rule above, but later — keeps the quick assistant
+   send button circular, mirroring the session prompt submit button. */
+html[data-theme="claude"] [data-action="quick-assistant-submit"] {
+  border-radius: 50%;
+}
+
 html[data-theme="claude"] [data-component="icon"] [data-slot="icon-svg"] * {
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -194,6 +200,12 @@ html[data-theme="claude"] [data-component="user-message"] [data-slot="user-messa
 
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-dock-surface="shell"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-dock-surface="tray"] {
+  --dock-shell-radius: 24px;
+}
+
+/* Keep floating dialogs on the same 24px radius as the prompt dock so
+   large surfaces read as one family (the settings window especially). */
+html[data-theme="claude"] [data-slot="dialog-content"].settings-dialog {
   border-radius: 24px;
 }
 
@@ -201,13 +213,6 @@ html[data-theme="claude"] [data-component="session-prompt-dock"] [data-dock-surf
    background does not fill in their corners */
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-component="dock-prompt"] {
   border-radius: 24px;
-}
-
-html[data-theme="claude"]
-  [data-component="session-prompt-dock"]
-  [data-dock-surface="tray"][data-dock-attach="top"] {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
 }
 
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-slot="prompt-editor-scroll"] {

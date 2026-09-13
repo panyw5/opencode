@@ -248,6 +248,9 @@ export function ModelSelectorPopover(props: {
   flip?: boolean
   fitViewport?: boolean
   style?: JSX.CSSProperties
+  showSummary?: boolean
+  /** Rendered between the summary and the model list; `close` dismisses the popover for picks that bypass the list. */
+  header?: (ctx: { close: () => void }) => JSX.Element
   children?: JSX.Element
   triggerAs?: ValidComponent
   triggerProps?: ModelSelectorTriggerProps
@@ -614,7 +617,10 @@ export function ModelSelectorPopover(props: {
           }}
         >
           <Kobalte.Title class="sr-only">{language.t("dialog.model.select.title")}</Kobalte.Title>
-          <CurrentModelSummary model={model} />
+          <Show when={props.showSummary !== false}>
+            <CurrentModelSummary model={model} />
+          </Show>
+          {props.header?.({ close: () => setStore("open", false) })}
           <ModelList
             provider={props.provider}
             model={props.model}

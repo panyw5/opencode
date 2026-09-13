@@ -29,7 +29,7 @@ export const DialogSettings: Component<{ returnTarget?: ConfigReturnTarget }> = 
   }
 
   return (
-    <Dialog size="x-large" transition>
+    <Dialog size="x-large" transition class="settings-dialog">
       <Tabs orientation="vertical" variant="settings" defaultValue="general" class="h-full settings-dialog">
         <Tabs.List>
           <div class="flex flex-col justify-between h-full w-full">

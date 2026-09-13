@@ -1,11 +1,13 @@
-import { Select } from "@opencode-ai/ui/select"
+import { Button } from "@opencode-ai/ui/button"
+import { Icon } from "@opencode-ai/ui/icon"
+import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import type { Component } from "solid-js"
 import { createMemo, createSignal, Show } from "solid-js"
 import { useLanguage } from "@/context/language"
-import { useModels } from "@/context/models"
 import { useSettings } from "@/context/settings"
 import { useGlobalSync } from "@/context/global-sync"
+import { ModelSelectorPopover, parseModelRef, useBoundModelState } from "./dialog-select-model"
 import { SettingsList } from "./settings-list"
 
 type ModelRef = { providerID: string; modelID: string }
@@ -13,61 +15,163 @@ type AssistantModelValue = ModelRef | "auto" | "disabled"
 type SmallModelValue = ModelRef | undefined
 const unsetSmallModel = Symbol("unset-small-model")
 
-type Option<T> = {
-  value: T
+const PinnedOptionRow: Component<{
   label: string
+  active: boolean
+  dataAction: string
+  onSelect: () => void
+}> = (props) => (
+  <button
+    type="button"
+    data-action={props.dataAction}
+    onClick={props.onSelect}
+    class="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-13-regular text-text-strong transition-colors hover:bg-[var(--list-item-hover-bg)]"
+  >
+    <span class="truncate">{props.label}</span>
+    <Show when={props.active}>
+      <Icon name="check-small" size="small" class="shrink-0 text-icon-strong-base" />
+    </Show>
+  </button>
+)
+
+const AssistantModelSelector: Component<{
+  value: AssistantModelValue
+  onChange: (next: AssistantModelValue) => void
+}> = (props) => {
+  const language = useLanguage()
+  const model = useBoundModelState({
+    value: () => (typeof props.value === "object" ? `${props.value.providerID}/${props.value.modelID}` : ""),
+    onChange: (next) => {
+      const parsed = parseModelRef(next)
+      if (!parsed) return
+      props.onChange(parsed)
+    },
+  })
+  const current = () => model.current()
+
+  const label = () => {
+    const value = props.value
+    if (value === "disabled") return language.t("settings.assistant.model.option.disabled")
+    if (value === "auto") return language.t("settings.assistant.model.option.auto")
+    const item = current()
+    if (item) return `${item.provider.name} - ${item.name}`
+    return `${value.providerID}/${value.modelID}`
+  }
+
+  return (
+    <ModelSelectorPopover
+      model={model}
+      showSummary={typeof props.value === "object"}
+      header={({ close }) => (
+        <div class="mx-1 mb-2 flex flex-col gap-0.5">
+          <PinnedOptionRow
+            label={language.t("settings.assistant.model.option.disabled")}
+            active={props.value === "disabled"}
+            dataAction="settings-assistant-model-disabled"
+            onSelect={() => {
+              props.onChange("disabled")
+              close()
+            }}
+          />
+          <PinnedOptionRow
+            label={language.t("settings.assistant.model.option.auto")}
+            active={props.value === "auto"}
+            dataAction="settings-assistant-model-auto"
+            onSelect={() => {
+              props.onChange("auto")
+              close()
+            }}
+          />
+        </div>
+      )}
+      triggerAs={Button}
+      triggerProps={{
+        type: "button",
+        variant: "secondary",
+        size: "small",
+        "data-action": "settings-assistant-model",
+        class: "min-w-[260px] justify-between gap-2",
+      }}
+    >
+      <div class="flex min-w-0 items-center gap-2">
+        <Show when={current()?.provider.id}>
+          <ProviderIcon id={current()!.provider.id} class="size-4 shrink-0" />
+        </Show>
+        <span class="truncate">{label()}</span>
+      </div>
+      <Icon name="selector" size="small" class="shrink-0 text-text-weak" />
+    </ModelSelectorPopover>
+  )
+}
+
+const SmallModelSelector: Component<{
+  value: SmallModelValue
+  saving: boolean
+  onChange: (next: SmallModelValue) => void
+}> = (props) => {
+  const language = useLanguage()
+  const model = useBoundModelState({
+    value: () => (props.value ? `${props.value.providerID}/${props.value.modelID}` : ""),
+    onChange: (next) => {
+      // An empty next (cleared from the list) means falling back to auto.
+      props.onChange(parseModelRef(next))
+    },
+  })
+  const current = () => model.current()
+
+  const label = () => {
+    const value = props.value
+    if (!value) return language.t("settings.assistant.smallModel.option.auto")
+    const item = current()
+    if (item) return `${item.provider.name} - ${item.name}`
+    return `${value.providerID}/${value.modelID}`
+  }
+
+  return (
+    <ModelSelectorPopover
+      model={model}
+      showSummary={!!props.value}
+      header={({ close }) => (
+        <div class="mx-1 mb-2 flex flex-col gap-0.5">
+          <PinnedOptionRow
+            label={language.t("settings.assistant.smallModel.option.auto")}
+            active={!props.value}
+            dataAction="settings-assistant-small-model-auto"
+            onSelect={() => {
+              props.onChange(undefined)
+              close()
+            }}
+          />
+        </div>
+      )}
+      triggerAs={Button}
+      triggerProps={{
+        type: "button",
+        variant: "secondary",
+        size: "small",
+        "data-action": "settings-assistant-small-model",
+        class: "min-w-[260px] justify-between gap-2",
+        disabled: props.saving,
+      }}
+    >
+      <div class="flex min-w-0 items-center gap-2">
+        <Show when={current()?.provider.id}>
+          <ProviderIcon id={current()!.provider.id} class="size-4 shrink-0" />
+        </Show>
+        <span class="truncate">{label()}</span>
+      </div>
+      <Icon name="selector" size="small" class="shrink-0 text-text-weak" />
+    </ModelSelectorPopover>
+  )
 }
 
 export const SettingsAssistant: Component = () => {
   const language = useLanguage()
-  const models = useModels()
   const settings = useSettings()
   const globalSync = useGlobalSync()
   const [savingSmall, setSavingSmall] = createSignal(false)
   const [pendingSmall, setPendingSmall] = createSignal<SmallModelValue | typeof unsetSmallModel>(unsetSmallModel)
   let smallSaveInFlight = false
-
-  const modelOptions = createMemo(() =>
-    models
-      .list()
-      .map((item) => ({
-        value: { providerID: item.provider.id, modelID: item.id } satisfies ModelRef,
-        label: `${item.provider.name} - ${item.name}`,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
-  )
-
-  const assistantOff: Option<"disabled"> = {
-    value: "disabled",
-    label: language.t("settings.assistant.model.option.disabled"),
-  }
-  const assistantAuto: Option<"auto"> = {
-    value: "auto",
-    label: language.t("settings.assistant.model.option.auto"),
-  }
-  const assistantOptions = createMemo(() => [assistantOff, assistantAuto, ...modelOptions()])
-
-  const assistantCurrent = createMemo(() => {
-    const selected = settings.assistant.model()
-    if (selected === "disabled") return assistantOff
-    if (selected === "auto") return assistantAuto
-    return (
-      assistantOptions().find(
-        (item) =>
-          typeof item.value === "object" &&
-          item.value.providerID === selected.providerID &&
-          item.value.modelID === selected.modelID,
-      ) ?? {
-        value: selected,
-        label: `${selected.providerID}/${selected.modelID}`,
-      }
-    )
-  })
-
-  const smallAuto: Option<undefined> = {
-    value: undefined,
-    label: language.t("settings.assistant.smallModel.option.auto"),
-  }
 
   const smallConfigured = createMemo((): ModelRef | undefined => {
     const pending = pendingSmall()
@@ -81,41 +185,6 @@ export const SettingsAssistant: Component = () => {
       providerID: raw.slice(0, slash),
       modelID: raw.slice(slash + 1),
     }
-  })
-
-  const smallOptions = createMemo(() => {
-    const configured = smallConfigured()
-    const list = modelOptions()
-    if (
-      configured &&
-      !list.some((item) => item.value.providerID === configured.providerID && item.value.modelID === configured.modelID)
-    ) {
-      return [
-        smallAuto,
-        {
-          value: configured,
-          label: `${configured.providerID}/${configured.modelID}`,
-        },
-        ...list,
-      ]
-    }
-    return [smallAuto, ...list]
-  })
-
-  const smallCurrent = createMemo(() => {
-    const selected = smallConfigured()
-    if (!selected) return smallAuto
-    return (
-      smallOptions().find(
-        (item) =>
-          typeof item.value === "object" &&
-          item.value.providerID === selected.providerID &&
-          item.value.modelID === selected.modelID,
-      ) ?? {
-        value: selected,
-        label: `${selected.providerID}/${selected.modelID}`,
-      }
-    )
   })
 
   const saveSmallModel = async (value: SmallModelValue) => {
@@ -174,23 +243,9 @@ export const SettingsAssistant: Component = () => {
               <span class="text-12-regular text-text-weak">{language.t("settings.assistant.model.description")}</span>
             </div>
             <div class="flex w-full justify-end sm:w-auto sm:shrink-0">
-              <Select
-                data-action="settings-assistant-model"
-                options={assistantOptions()}
-                current={assistantCurrent()}
-                value={(item) =>
-                  item.value === "disabled"
-                    ? "disabled"
-                    : item.value !== "auto"
-                      ? `${item.value.providerID}/${item.value.modelID}`
-                      : "auto"
-                }
-                label={(item) => item.label}
-                onSelect={(item) => settings.assistant.setModel(item?.value as AssistantModelValue)}
-                variant="secondary"
-                size="small"
-                triggerVariant="settings"
-                triggerStyle={{ "min-width": "260px" }}
+              <AssistantModelSelector
+                value={settings.assistant.model()}
+                onChange={(next) => settings.assistant.setModel(next)}
               />
             </div>
           </div>
@@ -206,21 +261,10 @@ export const SettingsAssistant: Component = () => {
               <Show when={savingSmall()}>
                 <span class="text-12-regular text-text-weak">{language.t("common.saving")}</span>
               </Show>
-              <Select
-                data-action="settings-assistant-small-model"
-                options={smallOptions()}
-                current={smallCurrent()}
-                value={(item) => (item.value ? `${item.value.providerID}/${item.value.modelID}` : "auto")}
-                label={(item) => item.label}
-                onSelect={(item) => {
-                  void saveSmallModel(item?.value as SmallModelValue)
-                }}
-                variant="secondary"
-                size="small"
-                triggerVariant="settings"
-                triggerStyle={{ "min-width": "260px" }}
-                disabled={savingSmall()}
-                allowDuplicateSelectionEvents={false}
+              <SmallModelSelector
+                value={smallConfigured()}
+                saving={savingSmall()}
+                onChange={(next) => void saveSmallModel(next)}
               />
             </div>
           </div>

@@ -35,16 +35,11 @@ html[data-theme="chatgpt"] [data-component="user-message"] [data-slot="user-mess
 
 /* ─── Composer / input — ChatGPT signature pill shape ─── */
 html[data-theme="chatgpt"] [data-dock-surface="shell"] {
-  border-radius: var(--radius-4xl);
+  --dock-shell-radius: var(--radius-4xl);
 }
 
 html[data-theme="chatgpt"] [data-dock-surface="tray"] {
-  border-radius: var(--radius-4xl);
-}
-
-html[data-theme="chatgpt"] [data-dock-surface="tray"][data-dock-attach="top"] {
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  --dock-shell-radius: var(--radius-4xl);
 }
 
 /* Keep the dock-prompt wrapper concentric with its shell/tray */

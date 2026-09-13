@@ -545,19 +545,22 @@ html[data-theme="arc"][data-color-scheme="light"] [data-component="trellis-task-
 /* Dock-prompt: sync radius with cards + override hardcoded translucent dark
    background that becomes muddy grey on light canvases */
 html[data-theme="arc"] [data-dock-surface="shell"] {
-  border-radius: var(--radius-2xl);
+  --dock-shell-radius: var(--radius-2xl);
   background-color: var(--dock-shell-bg);
 }
 
 html[data-theme="arc"] [data-dock-surface="tray"] {
-  border-radius: var(--radius-2xl);
+  --dock-shell-radius: var(--radius-2xl);
 }
 
-/* Composer tray attaches to the 4xl prompt shell, so match its bottom corners */
+/* Composer tray attaches to the 4xl prompt shell, so match its radius */
 html[data-theme="arc"] [data-dock-surface="tray"][data-dock-attach="top"] {
-  border-radius: var(--radius-4xl);
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
+  --dock-shell-radius: var(--radius-4xl);
+}
+
+/* The followup dock tucks under the 4xl prompt shell as well */
+html[data-theme="arc"] [data-component="session-followup-dock"] {
+  --dock-shell-radius: var(--radius-4xl);
 }
 
 /* Keep the dock-prompt wrapper concentric with its shell/tray */

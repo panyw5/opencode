@@ -2361,7 +2361,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       </Show>
       <Show when={store.mode === "normal" || store.mode === "shell"}>
         <DockTray attach="top">
-          <div class="px-1.75 pt-5.5 pb-2 flex items-center gap-2 min-w-0">
+          <div class="px-1.75 pb-2 flex items-center gap-2 min-w-0 pt-[calc(8px+var(--dock-shell-radius,12px))]">
             <div class="flex items-center gap-1.5 min-w-0 flex-1 relative">
               <div
                 class="h-7 flex items-center gap-1.5 max-w-[160px] min-w-0 absolute inset-y-0 left-0"

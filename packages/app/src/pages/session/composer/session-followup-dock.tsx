@@ -29,13 +29,16 @@ export function SessionFollowupDock(props: {
     <DockTray
       data-component="session-followup-dock"
       style={{
-        "margin-bottom": "-0.875rem",
-        "border-bottom-left-radius": 0,
-        "border-bottom-right-radius": 0,
+        // Tuck under the shell below by exactly its radius, with matching
+        // bottom corners, so the two arcs coincide instead of exposing
+        // a square corner beside the shell's top curve.
+        "margin-bottom": "calc(-1 * var(--dock-shell-radius, 12px))",
+        "border-bottom-left-radius": "var(--dock-shell-radius, 12px)",
+        "border-bottom-right-radius": "var(--dock-shell-radius, 12px)",
       }}
     >
       <div
-        class="pl-3 pr-2 py-2 flex items-center gap-2"
+        class="pl-3 pr-2 pt-2 flex items-center gap-2 pb-[calc(8px+var(--dock-shell-radius,12px))]"
         role="button"
         tabIndex={0}
         onClick={toggle}

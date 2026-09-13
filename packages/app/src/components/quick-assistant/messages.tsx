@@ -119,7 +119,7 @@ export function QuickAssistantMessages(props: Props) {
         }}
         data-component="quick-assistant-viewport"
         style={{ "overflow-anchor": "none" }}
-        class="max-h-[48vh] overflow-y-auto border-b border-border-weak-base bg-background-base/20 px-4 py-4"
+        class="max-h-[48vh] overflow-y-auto bg-background-base/20 px-4 py-4"
         onScroll={(event) => {
           const before = follow.following()
           follow.scrolled(event.currentTarget)
