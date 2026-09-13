@@ -136,7 +136,7 @@ const CurrentModelSummary: Component<{ model: ModelState; class?: string }> = (p
 
   return (
     <div
-      class={`mx-1 mb-2 rounded-lg border px-3 py-2.5 ${props.class ?? ""}`}
+      class={`mb-2 rounded-lg border px-3 py-2.5 ${props.class ?? ""}`}
       style={{
         "background-color": "var(--apple-light-alpha-5)",
         "border-color": "var(--border-weak-base)",
@@ -618,7 +618,7 @@ export function ModelSelectorPopover(props: {
         >
           <Kobalte.Title class="sr-only">{language.t("dialog.model.select.title")}</Kobalte.Title>
           <Show when={props.showSummary !== false}>
-            <CurrentModelSummary model={model} />
+            <CurrentModelSummary model={model} class="mx-1" />
           </Show>
           {props.header?.({ close: () => setStore("open", false) })}
           <ModelList
@@ -678,7 +678,7 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
         </Button>
       }
     >
-      <CurrentModelSummary model={model} class="mx-0" />
+      <CurrentModelSummary model={model} class="mx-4" />
       <ModelList provider={props.provider} model={props.model} onSelect={() => dialog.close()} />
       <Button
         variant="ghost"
