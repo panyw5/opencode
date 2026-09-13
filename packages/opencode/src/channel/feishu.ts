@@ -269,6 +269,15 @@ function formatClientError(error: unknown): string {
   }
 }
 
+export function isSessionNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const value = error as { name?: unknown; _tag?: unknown; data?: unknown }
+  if (value.name === "NotFoundError" || value._tag === "SessionNotFoundError") return true
+  if (!value.data || typeof value.data !== "object") return false
+  const message = (value.data as { message?: unknown }).message
+  return typeof message === "string" && message.startsWith("Session not found:")
+}
+
 async function handleMessage(input: {
   name: string
   config: FeishuChannelConfig
@@ -311,9 +320,75 @@ async function handleMessage(input: {
 
   const map = await loadMap()
   let sessionId = resolveMappedSession(map.sessions[key], input.directory)
+  log.info("loaded feishu session mapping", {
+    channel: input.name,
+    messageId,
+    key,
+    hasEntry: !!map.sessions[key],
+    sessionId,
+    directory: input.directory,
+  })
+
+  if (sessionId) {
+    log.info("validating mapped feishu session", {
+      channel: input.name,
+      messageId,
+      sessionId,
+      directory: input.directory,
+    })
+    try {
+      const existing = await input.sdk.session.get({ sessionID: sessionId })
+      if (existing.error && isSessionNotFoundError(existing.error)) {
+        log.warn("discarding stale feishu session mapping", {
+          channel: input.name,
+          messageId,
+          sessionId,
+          directory: input.directory,
+          error: formatClientError(existing.error),
+        })
+        delete map.sessions[key]
+        await saveMap(map)
+        sessionId = undefined
+        log.info("discarded stale feishu session mapping", {
+          channel: input.name,
+          messageId,
+          key,
+        })
+      } else if (existing.error) {
+        log.warn("failed to validate mapped feishu session", {
+          channel: input.name,
+          messageId,
+          sessionId,
+          directory: input.directory,
+          error: formatClientError(existing.error),
+        })
+      } else {
+        log.info("validated mapped feishu session", {
+          channel: input.name,
+          messageId,
+          sessionId,
+          directory: input.directory,
+        })
+      }
+    } catch (err) {
+      log.warn("mapped feishu session validation threw", {
+        channel: input.name,
+        messageId,
+        sessionId,
+        directory: input.directory,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
 
   if (!sessionId) {
     const title = `${titlePrefix(input.name)} ${chatId.slice(0, 12)}`
+    log.info("creating session for feishu chat", {
+      channel: input.name,
+      messageId,
+      chatId,
+      directory: input.directory,
+    })
     const created = await input.sdk.session.create({ title })
     if (created.error || !created.data?.id) {
       const detail = formatClientError(created.error)
