@@ -395,7 +395,7 @@ const cliAgentConfigKeys: Record<CliAgentID, string> = {
 }
 
 export function getCliAgentConfig(id: CliAgentID): CliAgentConfig {
-  return parseStoreObject<CliAgentConfig>(cliAgentConfigKeys[id], { enabled: true })
+  return parseStoreObject<CliAgentConfig>(cliAgentConfigKeys[id], { enabled: false })
 }
 
 export function setCliAgentConfig(id: CliAgentID, config: CliAgentConfig) {

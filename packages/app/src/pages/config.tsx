@@ -1244,7 +1244,7 @@ function cliAgentCfg(
   },
 ) {
   return {
-    enabled: input?.enabled ?? true,
+    enabled: input?.enabled ?? false,
     binaryPath: input?.binaryPath ?? "",
     configHome: input?.configHome ?? "",
     provider: input?.provider ?? "deepseek-official",
@@ -5826,7 +5826,7 @@ export default function ConfigPage() {
     const form = state.cliAgents[id]
     if (!config || !form || state.section !== "claws") return false
     const baseDirty =
-      form.enabled !== (config.enabled ?? true) ||
+      form.enabled !== (config.enabled ?? false) ||
       form.binaryPath.trim() !== (config.binaryPath?.trim() ?? "") ||
       form.configHome.trim() !== (config.configHome?.trim() ?? "")
     if (id !== "dsh") return baseDirty
