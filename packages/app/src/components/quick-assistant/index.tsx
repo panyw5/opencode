@@ -831,7 +831,7 @@ export function QuickAssistant() {
 
       <Show when={saved.open}>
         <div
-          class="fixed right-5 bottom-5 z-40 w-[min(520px,calc(100vw-24px))] overflow-hidden rounded-xl border border-border-weak-base shadow-[var(--shadow-lg-border-base)]"
+          class="fixed right-5 bottom-5 z-40 w-[min(520px,calc(100vw-24px))] rounded-xl border border-border-weak-base shadow-[var(--shadow-lg-border-base)]"
           style={{
             "background-color":
               platform.platform === "desktop" && platform.os === "windows"
@@ -844,7 +844,16 @@ export function QuickAssistant() {
               platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
           }}
         >
-          <div class="flex flex-col">
+          <button
+            type="button"
+            class="absolute -right-3.5 -top-3.5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
+            aria-label={language.t("common.close")}
+            title={language.t("common.close")}
+            onClick={close}
+          >
+            <Icon name="close" size="small" class="text-icon-weak" />
+          </button>
+          <div class="flex flex-col overflow-hidden rounded-[inherit]">
             <QuickAssistantMessages list={list()} parts={data()?.part} busy={busy()} />
             <QuickAssistantRequests
               client={globalSDK.createClient({ directory: root(), throwOnError: true })}
