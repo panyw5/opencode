@@ -77,7 +77,7 @@ const getBase = (appId: string): Configuration => ({
     schemes: ["opencode"],
   },
   win: {
-    icon: "resources/icons/icon.ico",
+    icon: "resources/icons/windows.ico",
     target: ["nsis"],
     signtoolOptions: {
       sign: signWindows,
@@ -89,9 +89,9 @@ const getBase = (appId: string): Configuration => ({
   nsis: {
     oneClick: true,
     perMachine: false,
-    installerIcon: "resources/icons/icon.ico",
-    installerHeaderIcon: "resources/icons/icon.ico",
-    uninstallerIcon: "resources/icons/icon.ico",
+    installerIcon: "resources/icons/windows.ico",
+    installerHeaderIcon: "resources/icons/windows.ico",
+    uninstallerIcon: "resources/icons/windows.ico",
   },
   linux: {
     icon: "resources/icons",

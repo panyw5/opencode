@@ -49,7 +49,8 @@ images/
 # Desktop icon backups / generated folders
 packages/desktop/src-tauri/icons/*.backup.*/
 packages/desktop/resources/icons.backup.*/
-packages/desktop/icons/
+packages/desktop/icons/*
+!packages/desktop/icons/windows/
 
 # Desktop app icon design exports (track only selected finals)
 packages/desktop/app-icon-*.png
