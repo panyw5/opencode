@@ -87,6 +87,7 @@ import {
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
 import { createLiveBottomFollow } from "@/pages/session/timeline/live-bottom"
+import { returnedToLiveBottom } from "@/pages/session/use-session-scroll-utils"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
@@ -2467,7 +2468,22 @@ export default function Page() {
     const overflow = max > 1
     const gap = max - top
     const bottom = !overflow || gap <= scrollBottomThreshold || (shouldPinBottom() && bottomFollow.active())
-    if (resumeIntent && resumeIntent === viewportIntent() && running() && !viewportTarget()) {
+    // Virtual scroll compensation can consume the final wheel displacement.
+    // Reconcile the physical bottom with follow ownership even without a delta.
+    if (gap <= scrollBottomThreshold && hasScrollGesture() && viewportIntent()?.kind === "reading") {
+      console.debug(
+        `[session] bottom-reconcile sid=${params.id ?? "none"} gap=${Math.round(gap)} paused=${autoScroll.userScrolled()}`,
+      )
+      handleTimelineAutoScroll(geometry ?? { scrollTop: top, scrollHeight, clientHeight })
+    }
+    const returnedToBottom = returnedToLiveBottom({
+      gap,
+      threshold: scrollBottomThreshold,
+      gesture: hasScrollGesture(),
+      userScrolled: autoScroll.userScrolled(),
+      reading: viewportIntent()?.kind === "reading",
+    })
+    if ((returnedToBottom || (resumeIntent && resumeIntent === viewportIntent())) && running() && !viewportTarget()) {
       console.debug(`[session] bottom-takeover sid=${params.id ?? "none"} source=user-scroll gap=${Math.round(gap)}`)
       resumeLive()
       resumeAutoScroll()
