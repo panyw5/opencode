@@ -136,6 +136,8 @@ export const makeLayer = (options: Options = {}) =>
         const ids = [...new Set(config.allowedUsers?.filter((id) => id && id !== "*") ?? [])]
         return ids.length === 1 && !config.allowedUsers?.includes("*") ? ids[0] : undefined
       }
+      const permitted = (config: ConfigChannels.Info, senderID: string) =>
+        !config.allowedUsers?.length || config.allowedUsers.includes("*") || config.allowedUsers.includes(senderID)
       const persist = (
         channelName: string,
         config: ConfigChannels.Feishu | ConfigChannels.QQ,
@@ -146,8 +148,7 @@ export const makeLayer = (options: Options = {}) =>
         const row = Database.transaction(
           (db) => {
             const existing = db.select().from(IMOwnerTable).where(eq(IMOwnerTable.channel_name, channelName)).get()
-            if (existing && existing.app_identity === identity && (!pin(config) || existing.sender_id === pin(config)))
-              return existing
+            if (existing && existing.app_identity === identity && permitted(config, existing.sender_id)) return existing
             return db
               .insert(IMOwnerTable)
               .values({
@@ -198,7 +199,7 @@ export const makeLayer = (options: Options = {}) =>
             .where(and(eq(IMOwnerTable.channel_name, channelName), eq(IMOwnerTable.app_identity, identity)))
             .get(),
         )
-        if (saved && (!expectedSender || saved.sender_id === expectedSender)) {
+        if (saved && permitted(config, saved.sender_id)) {
           return new Target({
             platform: saved.platform,
             channelName,
@@ -233,7 +234,7 @@ export const makeLayer = (options: Options = {}) =>
         )
         const candidates = new Map<string, Candidate>()
         for (const row of rows) {
-          if (!row.sender_id || (expectedSender && row.sender_id !== expectedSender)) continue
+          if (!row.sender_id || !permitted(config, row.sender_id)) continue
           if (config.type === "feishu" ? row.metadata?.chatType !== "p2p" : row.scope !== "c2c") continue
           // New records carry app identity; historical verified records are imported once.
           if (row.metadata?.appIdentity && row.metadata.appIdentity !== identity) continue
@@ -270,8 +271,7 @@ export const makeLayer = (options: Options = {}) =>
             if (config.type === "qq") {
               if (!chat.startsWith("private:")) continue
               const senderID = chat.slice("private:".length)
-              if (senderID && (!expectedSender || expectedSender === senderID))
-                candidates.set(senderID, { conversationID: chat, senderID })
+              if (senderID && permitted(config, senderID)) candidates.set(senderID, { conversationID: chat, senderID })
             } else {
               const candidate = yield* Effect.tryPromise(() =>
                 (options.verifyFeishu ?? verifyFeishu)(config, chat),
@@ -281,8 +281,7 @@ export const makeLayer = (options: Options = {}) =>
                   return Effect.succeed(undefined)
                 }),
               )
-              if (candidate && (!expectedSender || candidate.senderID === expectedSender))
-                candidates.set(candidate.senderID, candidate)
+              if (candidate && permitted(config, candidate.senderID)) candidates.set(candidate.senderID, candidate)
             }
           }
         }
@@ -349,7 +348,7 @@ export const makeLayer = (options: Options = {}) =>
           return
         if (configuredChannel && message.metadata?.appIdentity !== appIdentity(config)) return
         if (config.type === "feishu" ? message.metadata?.chatType !== "p2p" : message.target.scope !== "c2c") return
-        if (pin(config) && pin(config) !== message.senderID) return
+        if (!permitted(config, message.senderID)) return
         // Discovery includes all durable historical candidates and never steals a sticky owner.
         yield* discover(message.channelName, config).pipe(
           Effect.catch((error) => {

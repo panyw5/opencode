@@ -1,8 +1,38 @@
 import { describe, expect, test } from "bun:test"
-import { __test, createQQTransport } from "./qq"
+import { __test, createQQTransport, requestQQJson } from "./qq"
+import { ProviderRejectedError } from "@/im/transport"
 import { Target } from "@/im/model"
 
 describe("qq official bot helpers", () => {
+  test("distinguishes HTTP and business rejection from uncertain network/server errors", async () => {
+    const original = globalThis.fetch
+    const respond = (status: number, code: number) =>
+      Object.assign(async () => Response.json({ code }, { status }), { preconnect: original.preconnect })
+    try {
+      for (const status of [400, 401, 403, 429]) {
+        globalThis.fetch = respond(status, 123)
+        await expect(requestQQJson("http://localhost/mock")).rejects.toBeInstanceOf(ProviderRejectedError)
+      }
+      globalThis.fetch = respond(200, 123)
+      await expect(requestQQJson("http://localhost/mock")).rejects.toBeInstanceOf(ProviderRejectedError)
+      globalThis.fetch = respond(503, 123)
+      const uncertain = await requestQQJson("http://localhost/mock").then(
+        () => undefined,
+        (error) => error,
+      )
+      expect(uncertain).toBeInstanceOf(Error)
+      expect(uncertain).not.toBeInstanceOf(ProviderRejectedError)
+      globalThis.fetch = Object.assign(
+        async () => {
+          throw new Error("network unavailable")
+        },
+        { preconnect: original.preconnect },
+      )
+      await expect(requestQQJson("http://localhost/mock")).rejects.toThrow("network unavailable")
+    } finally {
+      globalThis.fetch = original
+    }
+  })
   test("maps official private and group events", () => {
     expect(
       __test.messageInfo("C2C_MESSAGE_CREATE", {

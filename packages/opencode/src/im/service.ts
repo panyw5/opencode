@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gt, lt, or, sql } from "@/storage/db"
 import { Database } from "@/storage/db"
-import { Effect, Context, Layer, Exit, Schema, Cause } from "effect"
+import { Effect, Context, Layer, Exit, Schema, Cause, Clock } from "effect"
 import type { SQL } from "drizzle-orm"
 import {
   IMMessageTable,
@@ -22,13 +22,15 @@ import {
   type SendMode,
   type TransportSendResult,
 } from "./model"
-import { ProviderRejectedError, registry } from "./transport"
+import { ProviderRejectedError, SendValidationError, registry } from "./transport"
 import * as Log from "@opencode-ai/core/util/log"
 import { makeRuntime } from "@/effect/run-service"
 import type { ProjectID } from "@/project/schema"
 
 const log = Log.create({ service: "im.service" })
 const MAX_PAGE_SIZE = 100
+export const SEND_LEASE_MS = 60_000
+const LEASE_TICK_MS = 10_000
 
 export type MessageInfo = {
   id: string
@@ -48,12 +50,6 @@ export type MessageInfo = {
 }
 
 export type MessagePage = { items: MessageInfo[]; nextCursor?: string; checkpoint?: string }
-export type TargetMetadata = {
-  target: Target
-  messageCount: number
-  lastSeenAt: number
-  status: "registered" | "running"
-}
 export type IngestResult = { message: MessageInfo; inserted: boolean; expired?: boolean }
 export type OutboundInfo = {
   id: string
@@ -100,8 +96,7 @@ export type SendInput = {
 export interface Interface {
   readonly ingest: (input: IngestInput) => Effect.Effect<IngestResult>
   readonly list: (input: ListInput) => Effect.Effect<MessagePage, InvalidCursorError>
-  /** Trusted-management metadata only; never includes message bodies or credentials. */
-  readonly targets: () => Effect.Effect<ReadonlyArray<TargetMetadata>>
+  readonly recoverPendingSends: () => Effect.Effect<number>
   readonly sendText: (
     input: SendInput,
   ) => Effect.Effect<
@@ -146,15 +141,6 @@ export class TargetMismatchError extends Schema.TaggedErrorClass<TargetMismatchE
 }) {
   override get message() {
     return `IM target does not belong to channel ${this.channelName}`
-  }
-}
-
-export class AccessDeniedError extends Schema.TaggedErrorClass<AccessDeniedError>()("IM.AccessDeniedError", {
-  projectID: Schema.String,
-  action: Schema.String,
-}) {
-  override get message() {
-    return `Project ${this.projectID} is not authorized for IM ${this.action}`
   }
 }
 
@@ -307,6 +293,7 @@ function updateOutbound(
         status: patch.status,
         provider_message_id: patch.providerMessageID,
         last_error: patch.lastError,
+        lease_expires_at: null,
         time_updated: Date.now(),
       })
       .where(and(eq(IMOutboundTable.project_id, projectID), eq(IMOutboundTable.id, id)))
@@ -360,20 +347,44 @@ export const layer = Layer.effect(
     const repaired = repairIngestSequences()
     if (repaired > 0) log.warn("repaired non-monotonic IM ingest sequence", { count: repaired })
     ensureIngestCounter()
-    const recovered = Database.use(
+    const recoverPendingSends = Effect.fn("IM.recoverPendingSends")(function* () {
+      const now = yield* Clock.currentTimeMillis
+      const recovered = Database.use(
+        (db) =>
+          db
+            .update(IMOutboundTable)
+            .set({
+              status: "unknown",
+              last_error: "Send lease expired; provider acceptance could not be confirmed",
+              time_updated: Date.now(),
+            })
+            .where(and(eq(IMOutboundTable.status, "pending"), sql`${IMOutboundTable.lease_expires_at} <= ${now}`))
+            .returning({ id: IMOutboundTable.id })
+            .all().length,
+      )
+      if (recovered > 0) log.warn("recovered expired outbound sends as unknown", { count: recovered })
+      return recovered
+    })
+    // Older app versions do not own a lease. Their pending sends may still be
+    // live in another process, so do not guess their state from row age.
+    const untracked = Database.use(
       (db) =>
         db
-          .update(IMOutboundTable)
-          .set({
-            status: "unknown",
-            last_error: "Recovered pending send after process restart",
-            time_updated: Date.now(),
-          })
-          .where(eq(IMOutboundTable.status, "pending"))
-          .returning({ id: IMOutboundTable.id })
-          .all().length,
+          .select({ count: sql<number>`count(*)` })
+          .from(IMOutboundTable)
+          .where(and(eq(IMOutboundTable.status, "pending"), sql`${IMOutboundTable.lease_expires_at} is null`))
+          .get()?.count ?? 0,
     )
-    if (recovered > 0) log.warn("recovered pending outbound sends as unknown", { count: recovered })
+    if (untracked) log.warn("legacy pending sends retained without ownership evidence", { count: untracked })
+    yield* recoverPendingSends()
+    yield* Effect.forkScoped(
+      Effect.forever(
+        Effect.sleep(LEASE_TICK_MS).pipe(
+          Effect.andThen(recoverPendingSends()),
+          Effect.catchCause((cause) => Effect.sync(() => log.error("IM lease recovery failed", { cause }))),
+        ),
+      ),
+    )
 
     const ingest = Effect.fn("IM.ingest")(function* (input: IngestInput) {
       const message = input.message
@@ -545,46 +556,6 @@ export const layer = Layer.effect(
       }
     })
 
-    const targets: Interface["targets"] = Effect.fn("IM.targets")(function* () {
-      const rows = Database.use((db) =>
-        db
-          .select({
-            platform: IMMessageTable.platform,
-            channelName: IMMessageTable.channel_name,
-            scope: IMMessageTable.scope,
-            conversationID: IMMessageTable.conversation_id,
-            timeCreated: IMMessageTable.time_created,
-          })
-          .from(IMMessageTable)
-          .all(),
-      )
-      const grouped = new Map<string, TargetMetadata>()
-      for (const row of rows) {
-        const key = [row.platform, row.channelName, row.scope, row.conversationID].join("\0")
-        const current = grouped.get(key)
-        if (current) {
-          current.messageCount += 1
-          current.lastSeenAt = Math.max(current.lastSeenAt, row.timeCreated)
-          continue
-        }
-        const transport = registry.get(row.channelName)
-        grouped.set(key, {
-          target: new Target({
-            platform: row.platform,
-            channelName: row.channelName,
-            scope: row.scope,
-            conversationID: row.conversationID,
-          }),
-          messageCount: 1,
-          lastSeenAt: row.timeCreated,
-          status: transport?.platform === row.platform ? "running" : "registered",
-        })
-      }
-      const result = [...grouped.values()].sort((a, b) => b.lastSeenAt - a.lastSeenAt)
-      log.info("trusted IM target metadata queried", { count: result.length })
-      return result
-    })
-
     const sendTextCore = Effect.fn("IM.sendTextCore")(function* (input: SendInput) {
       if (input.target.channelName !== input.channelName || input.target.platform !== input.platform) {
         yield* new TargetMismatchError({ channelName: input.channelName })
@@ -667,6 +638,8 @@ export const layer = Layer.effect(
         })
         return fromOutboundRow(existing)
       }
+      const invalidText = input.text.length > 4000 ? "IM text exceeds 4000 characters" : undefined
+      const leaseExpiresAt = (yield* Clock.currentTimeMillis) + SEND_LEASE_MS
       const pendingResult = Database.transaction(
         (db) => {
           const raced = db
@@ -675,8 +648,8 @@ export const layer = Layer.effect(
             .where(and(eq(IMOutboundTable.project_id, input.projectID), eq(IMOutboundTable.id, input.id)))
             .get()
           if (raced) return { row: raced, inserted: false, exhausted: false as const }
-          const sequenceKey = providerSequenceKey(input)
-          const providerSequence = allocateProviderSequence(db, input)
+          const sequenceKey = invalidText ? undefined : providerSequenceKey(input)
+          const providerSequence = invalidText ? undefined : allocateProviderSequence(db, input)
           if (providerSequence !== undefined && providerSequence > 65535)
             return { row: undefined, inserted: false, exhausted: true as const }
           const values: typeof IMOutboundTable.$inferInsert = {
@@ -689,8 +662,10 @@ export const layer = Layer.effect(
             provider_sequence_key: sequenceKey,
             provider_sequence: providerSequence,
             text: input.text,
-            status: "pending",
-            attempt_count: 1,
+            status: invalidText ? "failed" : "pending",
+            attempt_count: invalidText ? 0 : 1,
+            last_error: invalidText,
+            lease_expires_at: invalidText ? null : leaseExpiresAt,
             time_created: Date.now(),
             time_updated: Date.now(),
           }
@@ -722,6 +697,13 @@ export const layer = Layer.effect(
           pending.text === input.text &&
           JSON.stringify(pending.target) === JSON.stringify(targetValue(input.target))
         if (!matches) return yield* new OutboundConflictError({ outboundID: input.id })
+        return fromOutboundRow(pending)
+      }
+      if (invalidText) {
+        log.warn("outbound validation failed before provider request", {
+          channelName: input.channelName,
+          outboundID: input.id,
+        })
         return fromOutboundRow(pending)
       }
       const transport = registry.get(input.channelName)
@@ -760,23 +742,60 @@ export const layer = Layer.effect(
         scope: input.target.scope,
         capability,
       })
-      const result = yield* Effect.exit(
-        Effect.tryPromise({
-          try: () =>
-            transport.sendText({
-              target: input.target,
-              text: input.text,
-              mode: input.mode,
-              ...(pending.provider_sequence !== null && pending.provider_sequence !== undefined
-                ? { providerSequence: pending.provider_sequence }
-                : {}),
+      const result = yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* Effect.forkScoped(
+            Effect.forever(
+              Effect.sleep(LEASE_TICK_MS).pipe(
+                Effect.andThen(
+                  Effect.gen(function* () {
+                    const expires = (yield* Clock.currentTimeMillis) + SEND_LEASE_MS
+                    Database.use((db) =>
+                      db
+                        .update(IMOutboundTable)
+                        .set({ lease_expires_at: expires })
+                        .where(
+                          and(
+                            eq(IMOutboundTable.project_id, input.projectID),
+                            eq(IMOutboundTable.id, input.id),
+                            eq(IMOutboundTable.status, "pending"),
+                          ),
+                        )
+                        .run(),
+                    )
+                    log.debug("outbound send lease renewed", { outboundID: input.id })
+                  }).pipe(
+                    Effect.catchCause((cause) =>
+                      Effect.sync(() =>
+                        log.error("outbound send lease renewal failed", { outboundID: input.id, cause }),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          )
+          return yield* Effect.exit(
+            Effect.tryPromise({
+              try: () =>
+                transport.sendText({
+                  target: input.target,
+                  text: input.text,
+                  mode: input.mode,
+                  ...(pending.provider_sequence !== null && pending.provider_sequence !== undefined
+                    ? { providerSequence: pending.provider_sequence }
+                    : {}),
+                }),
+              catch: (error) => error,
             }),
-          catch: (error) => error,
+          )
         }),
       )
       if (Exit.isFailure(result)) {
         const rejection = result.cause.reasons.find(
-          (reason) => Cause.isFailReason(reason) && reason.error instanceof ProviderRejectedError,
+          (reason) =>
+            Cause.isFailReason(reason) &&
+            (reason.error instanceof ProviderRejectedError || reason.error instanceof SendValidationError),
         )
         // A network failure does not prove the provider did not accept it.
         // Keep `unknown` and never retry implicitly.
@@ -892,7 +911,7 @@ export const layer = Layer.effect(
     return Service.of({
       ingest,
       list,
-      targets,
+      recoverPendingSends,
       sendText,
       markLegacyStatus,
       markLegacyCompleted,

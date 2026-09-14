@@ -8,6 +8,22 @@ project session, channel takeover, unified channel transcripts, and full project
 context continuation are deferred. Existing explicit watch infrastructure is
 not an automatic reply-routing or context-sharing mechanism.
 
+## Send safety
+
+Fixed-recipient discovery and cached recipients obey the complete channel
+allowed-users list, including lists with several users. A removed recipient is
+never reused just because it was cached.
+
+Text over 4000 characters is recorded as failed before a provider request, with
+zero attempts. Explicit Feishu/QQ HTTP 4xx or business rejections are failed;
+network/server outcomes without confirmed acceptance remain unknown.
+
+Pending sends carry a 60-second lease, renewed every 10 seconds while sending.
+Recovery runs at startup and periodically, and only expired leases become
+unknown. Untracked pending rows from older versions are retained unchanged:
+their age alone does not prove another instance has stopped sending them.
+Initial retention-cleanup failure is logged but does not disable later ticks.
+
 Ordinary OpenCode project agents can use already configured IM channels to send
 text to the channel's fixed user and watch that user's messages. Projects do not
 configure chat IDs, transport credentials, or per-chat read/send grants.

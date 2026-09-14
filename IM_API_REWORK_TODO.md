@@ -1,5 +1,25 @@
 # Channel-Only IM API Rework
 
+## Review Risk Follow-Up
+
+- [x] Full allowed-users filtering for cached and discovered recipients.
+- [x] Local text validation before requests; failed status with zero attempts.
+- [x] Typed QQ provider rejection; uncertain errors remain unknown.
+- [x] Renewing send leases and expired-only recovery; legacy untracked pending
+  rows are not classified by age or presumed process restart.
+- [x] Initial cleanup failure does not prevent later maintenance ticks.
+- [x] Removed obsolete targets aggregator, TargetMetadata and AccessDeniedError.
+- [x] QQ uses supplied durable provider sequences without updating fallback counters.
+- [x] 113 focused backend tests passed, zero failures, 454 assertions; backend,
+  app and SDK typechecks passed. Native environment acceptance recorded below.
+
+Normal native acceptance (2026-09-15): 49 migrations loaded into development
+Electron using original configuration/shared DB; lease column/index present.
+Real cc marker `IM_RISK_QA_1789401668082` sent once and exact body verified through
+Feishu API. Oversized API input returned failed with zero attempts, confirmed in
+the database and backend validation log. Original model snapshot unchanged;
+installed application not stopped.
+
 ## Agreed Delivery Boundary
 
 Deliver configured-bot sending for ordinary projects now. Research automatic

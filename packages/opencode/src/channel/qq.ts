@@ -4,7 +4,7 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import * as ServerAuth from "@/server/auth"
 import { runtime as imRuntime } from "@/im/service"
 import { messageRecordID, NormalizedMessage, Target, type IMTransport, type TransportSendInput } from "@/im/model"
-import { transportCapabilities } from "@/im/transport"
+import { ProviderRejectedError, SendValidationError, transportCapabilities } from "@/im/transport"
 import { AppRuntime } from "@/effect/app-runtime"
 import { dispatchMessage } from "@/im/dispatcher"
 import { IMOwner } from "@/im/owner"
@@ -118,6 +118,15 @@ function formatError(value: unknown) {
 
 type QQRequestJson = (url: string, init?: RequestInit) => Promise<any>
 
+export async function requestQQJson(url: string, init?: RequestInit) {
+  const response = await fetch(url, init)
+  const body = await response.json().catch(() => undefined)
+  if ((response.status >= 400 && response.status < 500) || (body?.code && body.code !== 0 && response.ok))
+    throw new ProviderRejectedError("qq", response.status, body?.code)
+  if (!response.ok) throw new Error(`QQ API HTTP ${response.status}`)
+  return body
+}
+
 export function createQQTransport(input: {
   name: string
   apiBase: string
@@ -133,7 +142,7 @@ export function createQQTransport(input: {
       const scope = message.target.scope
       if (scope === "guild" && message.mode === "proactive")
         throw new Error("QQ proactive guild messages are unsupported")
-      if (message.text.length > 4000) throw new Error("QQ text exceeds 4000 characters")
+      if (message.text.length > 4000) throw new SendValidationError("QQ text exceeds 4000 characters")
       let targetID = message.target.conversationID
       let endpoint: string
       if (scope === "c2c") {
@@ -150,9 +159,9 @@ export function createQQTransport(input: {
       if (message.mode === "reply" && !message.target.replyTo)
         throw new Error("QQ replies require an inbound message ID")
       const key = `${scope}:${targetID}:${message.mode === "reply" ? (message.target.replyTo ?? "") : "proactive"}`
-      const msgSeq = (sequences.get(key) ?? 0) + 1
+      const msgSeq = message.providerSequence ?? (sequences.get(key) ?? 0) + 1
       if (msgSeq > 65535) throw new Error("QQ message sequence exhausted")
-      sequences.set(key, msgSeq)
+      if (message.providerSequence === undefined) sequences.set(key, msgSeq)
       const body: Record<string, unknown> = {
         content: message.text,
         msg_type: 0,
@@ -160,7 +169,7 @@ export function createQQTransport(input: {
       }
       if (message.mode === "reply") body.msg_id = message.target.replyTo
       const token = await input.getToken()
-      if (!token) throw new Error("QQ access token unavailable")
+      if (!token) throw new SendValidationError("QQ access token unavailable")
       const response = await input.requestJson(`${input.apiBase}${endpoint}`, {
         method: "POST",
         headers: { authorization: `QQBot ${token}`, "content-type": "application/json" },
@@ -199,14 +208,7 @@ export function startQQChannel(opts: QQRuntimeOptions): QQChannelHandle {
   let tokenExpiresAt = 0
   let sequence: number | null = null
 
-  const requestJson = async (url: string, init?: RequestInit) => {
-    const response = await fetch(url, init)
-    const body = (await response.json().catch(() => undefined)) as any
-    if (!response.ok || (body && body.code && body.code !== 0)) {
-      throw new Error(`QQ API ${response.status}: ${JSON.stringify(body)}`)
-    }
-    return body
-  }
+  const requestJson = requestQQJson
 
   const getToken = async () => {
     if (token && Date.now() < tokenExpiresAt) return token

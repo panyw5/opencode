@@ -10,6 +10,8 @@ import { ProjectTable } from "../../src/project/project.sql"
 import { and, Database, eq } from "../../src/storage/db"
 import { IMOutboundTable } from "../../src/im/inbox.sql"
 import { createFeishuTransport } from "../../src/channel/feishu"
+import { createQQTransport } from "../../src/channel/qq"
+import { ProviderRejectedError } from "../../src/im/transport"
 
 function projectID() {
   const id = ProjectID.ascending()
@@ -41,6 +43,39 @@ function message(eventID: string, text: string, conversationID = "chat-1") {
 }
 
 describe("IM service", () => {
+  it.effect("records QQ explicit rejection as failed but preserves network uncertainty", () =>
+    Effect.gen(function* () {
+      const service = yield* Service
+      const channelName = `qq-reject-${crypto.randomUUID()}`
+      let rejection = true
+      registry.register(
+        createQQTransport({
+          name: channelName,
+          apiBase: "http://localhost/mock",
+          getToken: async () => "test",
+          requestJson: async () => {
+            if (rejection) throw new ProviderRejectedError("qq", 403, 123)
+            throw new Error("network unavailable")
+          },
+        }),
+      )
+      try {
+        const input = {
+          projectID: projectID(),
+          platform: "qq" as const,
+          channelName,
+          mode: "proactive" as const,
+          target: new Target({ platform: "qq", channelName, scope: "c2c", conversationID: "private:test" }),
+          text: "hello",
+        }
+        expect((yield* service.sendText({ ...input, id: "rejected" })).status).toBe("failed")
+        rejection = false
+        expect((yield* service.sendText({ ...input, id: "uncertain" })).status).toBe("unknown")
+      } finally {
+        registry.unregister(channelName)
+      }
+    }),
+  )
   it.effect("records explicit Feishu HTTP rejection as failed and ambiguous transport failure as unknown", () =>
     Effect.gen(function* () {
       const service = yield* Service
@@ -311,34 +346,35 @@ describe("IM service", () => {
     }),
   )
 
-  it.effect("exposes aggregate target metadata without message content", () =>
+  it.effect("rejects oversized text before making a provider request", () =>
     Effect.gen(function* () {
       const service = yield* Service
-      const channelName = `targets-${crypto.randomUUID()}`
+      const channelName = `validation-${crypto.randomUUID()}`
+      let calls = 0
       const transport: IMTransport = {
         platform: "feishu",
         channelName,
         capabilities: transportCapabilities("feishu"),
-        sendText: async () => ({ timeSent: Date.now() }),
+        sendText: async () => {
+          calls++
+          return { timeSent: Date.now() }
+        },
       }
       registry.register(transport)
       try {
-        const inbound = new NormalizedMessage({
-          id: messageRecordID("feishu", channelName, "observed-event"),
+        const result = yield* service.sendText({
+          projectID: projectID(),
+          id: "oversized",
           platform: "feishu",
           channelName,
-          eventID: "observed-event",
-          target: new Target({ platform: "feishu", channelName, scope: "chat", conversationID: "observed-chat" }),
-          senderID: "private-sender",
-          text: "private body",
+          target: new Target({ platform: "feishu", channelName, scope: "chat", conversationID: "chat" }),
+          mode: "proactive",
+          text: "x".repeat(4001),
         })
-        yield* service.ingest({ message: inbound })
-        const observed = (yield* service.targets()).find((item) => item.target.channelName === channelName)
-        expect(observed?.target.conversationID).toBe("observed-chat")
-        expect(observed?.target.senderID).toBeUndefined()
-        expect(observed?.messageCount).toBe(1)
-        expect(observed?.status).toBe("running")
-        expect(JSON.stringify(observed)).not.toContain("private body")
+        expect(result.status).toBe("failed")
+        expect(result.attemptCount).toBe(0)
+        expect(result.lastError).toContain("4000")
+        expect(calls).toBe(0)
       } finally {
         registry.unregister(channelName, transport)
       }

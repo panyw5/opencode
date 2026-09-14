@@ -4,7 +4,7 @@ import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2"
 import * as ServerAuth from "@/server/auth"
 import { runtime as imRuntime } from "@/im/service"
 import { messageRecordID, NormalizedMessage, Target, type IMTransport } from "@/im/model"
-import { ProviderRejectedError, transportCapabilities } from "@/im/transport"
+import { ProviderRejectedError, SendValidationError, transportCapabilities } from "@/im/transport"
 import { AppRuntime } from "@/effect/app-runtime"
 import { dispatchMessage } from "@/im/dispatcher"
 import { IMOwner } from "@/im/owner"
@@ -50,7 +50,7 @@ export function createFeishuTransport(input: { name: string; client: Lark.Client
       const maxLen = 4000
       if (message.mode === "reply" && !message.target.replyTo)
         throw new Error("Feishu replies require an inbound message ID")
-      if (message.text.length > maxLen) throw new Error(`Feishu text exceeds ${maxLen} characters`)
+      if (message.text.length > maxLen) throw new SendValidationError(`Feishu text exceeds ${maxLen} characters`)
       const content = JSON.stringify({ text: message.text })
       const response = await Promise.resolve()
         .then(() =>

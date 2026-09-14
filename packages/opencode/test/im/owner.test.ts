@@ -113,6 +113,19 @@ describe("IM fixed channel recipient", () => {
     expect(await env.run(IMOwner.resolve(channelName))).toMatchObject({ senderID: "owner", conversationID: "oc_owner" })
   })
 
+  test("does not reuse or rediscover a recipient excluded by a multi-user whitelist", async () => {
+    const channelName = `owner-${crypto.randomUUID()}`
+    record(channelName, feishu, "A", "oc_A")
+    const env = environment({ [channelName]: feishu })
+    expect((await env.run(IMOwner.resolve(channelName))).senderID).toBe("A")
+    env.set({ [channelName]: { ...feishu, allowedUsers: ["B", "C"] } })
+    await expect(env.run(IMOwner.resolve(channelName))).rejects.toThrow("no discovered private recipient")
+    record(channelName, feishu, "B", "oc_B")
+    expect((await env.run(IMOwner.resolve(channelName))).senderID).toBe("B")
+    record(channelName, feishu, "C", "oc_C")
+    expect((await env.run(IMOwner.resolve(channelName))).senderID).toBe("B")
+  })
+
   test("rejects ambiguous historical private recipients unless the channel pins one allowed user", async () => {
     const channelName = `owner-${crypto.randomUUID()}`
     record(channelName, feishu, "u1", "oc_one")

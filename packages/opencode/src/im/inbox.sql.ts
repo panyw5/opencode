@@ -64,11 +64,13 @@ export const IMOutboundTable = sqliteTable(
     provider_message_id: text(),
     attempt_count: integer().notNull().default(0),
     last_error: text(),
+    lease_expires_at: integer(),
     ...Timestamps,
   },
   (table) => [
     primaryKey({ columns: [table.project_id, table.id], name: "im_outbound_project_id_id_pk" }),
     index("im_outbound_channel_status_time_idx").on(table.channel_name, table.status, table.time_created),
+    index("im_outbound_status_lease_idx").on(table.status, table.lease_expires_at),
   ],
 )
 

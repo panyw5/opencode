@@ -1,5 +1,7 @@
 import { Capabilities, type IMTransport, type Platform } from "./model"
 
+export class SendValidationError extends Error {}
+
 /** Provider explicitly rejected a request; unlike a timeout, acceptance is known not to have happened. */
 export class ProviderRejectedError extends Error {
   constructor(
