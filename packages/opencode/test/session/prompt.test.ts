@@ -60,6 +60,9 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ProjectTask } from "@/project-task/service"
 import { InstanceState } from "@/effect/instance-state"
+import { IMOwner } from "@/im/owner"
+import { IM } from "@/im/service"
+import { IMSubscription } from "@/im/subscription"
 
 void Log.init({ print: false })
 
@@ -193,6 +196,9 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Plugin.defaultLayer,
     Config.defaultLayer,
     ProviderSvc.defaultLayer,
+    IMOwner.defaultLayer,
+    IM.defaultLayer,
+    IMSubscription.defaultLayer,
     lsp,
     mcp,
     AppFileSystem.defaultLayer,

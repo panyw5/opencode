@@ -21,6 +21,30 @@ const access = <A, E>(state: InstanceState.InstanceState<A, E>, dir: string) =>
 
 const logical = (directory: string) => String(Path.logical(directory, localPathContext))
 
+it.live("cancelled initialization is retried rather than cached", () =>
+  Effect.gen(function* () {
+    const dir = yield* tmpdirScoped()
+    const started = yield* Deferred.make<void>()
+    let attempts = 0
+    const state = yield* InstanceState.make(() =>
+      Effect.gen(function* () {
+        attempts++
+        if (attempts === 1) {
+          yield* Deferred.succeed(started, undefined)
+          return yield* Effect.never
+        }
+        return "recovered"
+      }),
+    )
+    const first = yield* access(state, dir).pipe(Effect.forkChild)
+    yield* Deferred.await(started)
+    yield* Fiber.interrupt(first)
+    expect(yield* access(state, dir)).toBe("recovered")
+    expect(yield* access(state, dir)).toBe("recovered")
+    expect(attempts).toBe(2)
+  }),
+)
+
 const tmpdirGitScoped = Effect.gen(function* () {
   const dir = yield* tmpdirScoped({ git: true })
   yield* Effect.promise(() => $`git commit --allow-empty --amend -m ${`root commit ${dir}`}`.cwd(dir).quiet())

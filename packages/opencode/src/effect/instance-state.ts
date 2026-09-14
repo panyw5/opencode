@@ -1,4 +1,4 @@
-import { Effect, ScopedCache, Scope } from "effect"
+import { Duration, Effect, Exit, ScopedCache, Scope } from "effect"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import type { PathIdentity } from "@opencode-ai/core/util/path"
 import type { InstanceContext } from "@/project/instance-context"
@@ -7,6 +7,7 @@ import { registerDisposer } from "./instance-registry"
 import { WorkspaceContext } from "@/control-plane/workspace-context"
 
 const TypeId = "~opencode/InstanceState"
+const elog = EffectLogger.create({ service: "instance-state" })
 
 export interface InstanceState<A, E = never, R = never> {
   readonly [TypeId]: typeof TypeId
@@ -30,11 +31,21 @@ export const make = <A, E = never, R = never>(
   init: (ctx: InstanceContext) => Effect.Effect<A, E, R | Scope.Scope>,
 ): Effect.Effect<InstanceState<A, E, Exclude<R, Scope.Scope>>, never, R | Scope.Scope> =>
   Effect.gen(function* () {
-    const cache = yield* ScopedCache.make<PathIdentity, A, E, R>({
+    const cache = yield* ScopedCache.makeWith<PathIdentity, A, E, R>({
       capacity: Number.POSITIVE_INFINITY,
+      // A cancelled initializer is not an initialized instance.
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
       lookup: () =>
         Effect.gen(function* () {
-          return yield* init(yield* context)
+          const ctx = yield* context
+          yield* elog.info("initialization start", { directory: ctx.directory })
+          const value = yield* init(ctx).pipe(
+            Effect.tapCause((cause) =>
+              elog.warn("initialization failed; entry expires immediately", { directory: ctx.directory, cause }),
+            ),
+          )
+          yield* elog.info("initialization complete", { directory: ctx.directory })
+          return value
         }),
     })
 

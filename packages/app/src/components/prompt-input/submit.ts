@@ -28,6 +28,8 @@ type PendingPrompt = {
 }
 
 const pending = new Map<string, PendingPrompt>()
+const dispatching = new Map<string, Promise<boolean>>()
+const stopping = new Map<string, Promise<void>>()
 
 export type FollowupDraft = {
   sessionID: string
@@ -435,11 +437,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     return language.t("common.requestFailed")
   }
 
-  const abort = async (overrideSessionID?: string) => {
+  const abortOnce = async (overrideSessionID?: string) => {
     const sessionID = overrideSessionID ?? params.id
     if (!sessionID) return Promise.resolve()
 
     const t0 = performance.now()
+    const dispatch = dispatching.get(sessionID)
     console.debug(`[abort] start sessionID=${sessionID} directory=${sdk.directory} t=${t0}`)
 
     const optimisticTarget = finalizeRunningAssistantLocally({ globalSync, directory: sdk.directory, sessionID })
@@ -463,6 +466,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       queued.cleanup()
       pending.delete(sessionID)
     }
+    // Order stop after the send acknowledgement, not against a second HTTP request.
+    await dispatch?.catch(() => false)
     console.debug(
       `[abort] POST /session/:id/abort sessionID=${sessionID} directory=${sdk.directory} queued=${!!queued}`,
     )
@@ -475,7 +480,20 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
       .catch((err) => {
         console.debug(`[abort] POST failed sessionID=${sessionID} err=${String(err)}`)
+        showToast({ title: language.t("common.requestFailed"), description: errorMessage(err) })
       })
+  }
+
+  const abort = (overrideSessionID?: string) => {
+    const sessionID = overrideSessionID ?? params.id
+    if (!sessionID) return Promise.resolve()
+    const existing = stopping.get(sessionID)
+    if (existing) return existing
+    const operation = abortOnce(sessionID).finally(() => {
+      if (stopping.get(sessionID) === operation) stopping.delete(sessionID)
+    })
+    stopping.set(sessionID, operation)
+    return operation
   }
 
   const restoreCommentItems = (items: CommentItem[]) => {
@@ -1008,6 +1026,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
 
     const waitForWorktree = async () => {
+      const stop = stopping.get(session.id)
+      if (stop) await stop
       const worktree = WorktreeState.get(sessionDirectory)
       if (!worktree || worktree.status !== "pending") {
         diagnose("worktree-ready", { directory: sessionDirectory, status: worktree?.status ?? "untracked" })
@@ -1073,7 +1093,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     diagnose("dispatch", { sessionID: session.id, directory: sessionDirectory })
-    void sendFollowupDraft({
+    const dispatch = sendFollowupDraft({
       client,
       sync,
       globalSync,
@@ -1082,12 +1102,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       optimisticBusy: sessionDirectory === currentDirectory,
       before: waitForWorktree,
     })
+    dispatching.set(session.id, dispatch)
+    void dispatch
+      .finally(() => {
+        if (dispatching.get(session.id) === dispatch) dispatching.delete(session.id)
+      })
       .then((sent) => {
         if (!sent) {
           input.onSubmitFailed?.(session.id)
           return
         }
-        if (intervene) {
+        if (intervene && !stopping.has(session.id)) {
           // Mirror flushQueued(): finalize the running assistant locally so the
           // timeline does not show the interrupted turn as active until events
           // land, then ask the server to gracefully interrupt the in-flight

@@ -1,5 +1,5 @@
 import path from "path"
-import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { Context, Duration, Effect, Exit, Layer, Option, Schedule, Schema, ScopedCache } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { Global } from "./global"
 import { Flag } from "./flag/flag"
@@ -221,9 +221,14 @@ export const layer = Layer.effect(
       )
     }).pipe(Effect.withSpan("ModelsDev.populate"), Effect.orDie)
 
-    const [cachedGet, invalidate] = yield* Effect.cachedInvalidateWithTTL(populate, Duration.infinity)
+    const cache = yield* ScopedCache.makeWith({
+      capacity: 1,
+      lookup: () => populate,
+      timeToLive: (exit) => (Exit.isSuccess(exit) ? Duration.infinity : Duration.zero),
+    })
+    const invalidate = ScopedCache.invalidate(cache, "catalog")
 
-    const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
+    const get = (): Effect.Effect<Record<string, Provider>> => ScopedCache.get(cache, "catalog")
 
     const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
       if (!force && (yield* fresh())) return

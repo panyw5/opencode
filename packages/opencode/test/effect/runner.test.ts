@@ -9,6 +9,95 @@ const waitForState = <A, E>(runner: Runner.Runner<A, E>, tag: Runner.State<A, E>
   }).pipe(Effect.timeout("1 second"))
 
 describe("Runner", () => {
+  it.live(
+    "restart survives its requesting caller disconnecting",
+    Effect.gen(function* () {
+      const scope = yield* Scope.Scope
+      const started = yield* Deferred.make<void>()
+      const finalizing = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const runner = Runner.make<string>(scope)
+      const first = yield* runner
+        .ensureRunning(
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Deferred.succeed(finalizing, undefined).pipe(Effect.andThen(Deferred.await(release)))),
+          ),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(started)
+      const caller = yield* runner.gracefulRestart(Effect.succeed("replacement")).pipe(Effect.forkChild)
+      yield* Deferred.await(finalizing)
+      yield* Fiber.interrupt(caller)
+      yield* Deferred.succeed(release, undefined)
+      expect(yield* Fiber.join(first)).toBe("replacement")
+      expect(runner.state._tag).toBe("Idle")
+    }),
+  )
+  it.live(
+    "user stop during restart prevents replacement from starting",
+    Effect.gen(function* () {
+      const scope = yield* Scope.Scope
+      const started = yield* Deferred.make<void>()
+      const finalizing = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const runner = Runner.make<string>(scope, { onInterrupt: Effect.succeed("cancelled") })
+      const first = yield* runner
+        .ensureRunning(
+          Deferred.succeed(started, undefined).pipe(
+            Effect.andThen(Effect.never),
+            Effect.ensuring(Deferred.succeed(finalizing, undefined).pipe(Effect.andThen(Deferred.await(release)))),
+          ),
+        )
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(started)
+      const restart = yield* runner.gracefulRestart(Effect.die("replacement started after stop")).pipe(Effect.forkChild)
+      yield* Deferred.await(finalizing)
+      const stop = yield* runner.cancel.pipe(Effect.forkChild({ startImmediately: true }))
+      yield* Deferred.succeed(release, undefined)
+      yield* Fiber.join(stop)
+      expect(yield* Fiber.join(first)).toBe("cancelled")
+      expect(yield* Fiber.join(restart)).toBe("cancelled")
+      expect(runner.state._tag).toBe("Idle")
+    }),
+  )
+
+  it.live(
+    "cleanup failure still releases stopping admission",
+    Effect.gen(function* () {
+      const scope = yield* Scope.Scope
+      const runner = Runner.make<string>(scope)
+      expect(Exit.isFailure(yield* runner.cancelWith(Effect.die("cleanup failed")).pipe(Effect.exit))).toBe(true)
+      expect(runner.state._tag).toBe("Idle")
+      expect(yield* runner.ensureRunning(Effect.succeed("recovered"))).toBe("recovered")
+    }),
+  )
+  it.live(
+    "stop fences preparation and blocks admission until business cleanup finishes",
+    Effect.gen(function* () {
+      const scope = yield* Scope.Scope
+      const cleanupStarted = yield* Deferred.make<void>()
+      const cleanupDone = yield* Deferred.make<void>()
+      const nextStarted = yield* Deferred.make<void>()
+      const runner = Runner.make<string>(scope, { onInterrupt: Effect.succeed("cancelled") })
+      const oldRevision = runner.revision
+      const stop = yield* runner
+        .cancelWith(Deferred.succeed(cleanupStarted, undefined).pipe(Effect.andThen(Deferred.await(cleanupDone))))
+        .pipe(Effect.forkChild)
+      yield* Deferred.await(cleanupStarted)
+      const duplicate = yield* runner.cancel.pipe(Effect.forkChild({ startImmediately: true }))
+      const next = yield* runner
+        .ensureRunning(Deferred.succeed(nextStarted, undefined).pipe(Effect.as("next")))
+        .pipe(Effect.forkChild)
+      expect(runner.state._tag).toBe("Stopping")
+      expect(yield* Deferred.isDone(nextStarted)).toBe(false)
+      expect(yield* runner.ensureRunning(Effect.die("stale work executed"), oldRevision)).toBe("cancelled")
+      yield* Deferred.succeed(cleanupDone, undefined)
+      yield* Fiber.join(stop)
+      yield* Fiber.join(duplicate)
+      expect(yield* Fiber.join(next)).toBe("next")
+    }),
+  )
   // --- ensureRunning semantics ---
 
   it.live(
@@ -204,7 +293,7 @@ describe("Runner", () => {
   )
 
   it.live(
-    "cancel does not deadlock when replacement work starts before interrupted run exits",
+    "replacement waits for interrupted work to exit without deadlocking",
     Effect.gen(function* () {
       const s = yield* Scope.Scope
       const hit = yield* Deferred.make<void>()
@@ -227,13 +316,13 @@ describe("Runner", () => {
 
         const b = yield* runner.ensureRunning(Deferred.await(done).pipe(Effect.as("second"))).pipe(Effect.forkChild)
         yield* Effect.yieldNow
-        expect(runner.busy).toBe(true)
+        expect(runner.state._tag).toBe("Stopping")
 
         yield* Deferred.succeed(hold, undefined)
         const stopExit = yield* Fiber.await(stop).pipe(Effect.timeout("250 millis"))
         expect(Exit.isSuccess(stopExit)).toBe(true)
 
-        expect(runner.busy).toBe(true)
+        yield* waitForState(runner, "Running")
         yield* Deferred.succeed(done, undefined)
         expect(yield* Fiber.join(b).pipe(Effect.timeout("250 millis"))).toBe("second")
         expect(runner.busy).toBe(false)
@@ -275,7 +364,10 @@ describe("Runner", () => {
         .ensureRunning(
           Effect.gen(function* () {
             yield* Deferred.succeed(firstStarted, undefined)
-            return yield* Effect.never.pipe(Effect.onInterrupt(() => Ref.set(interrupted, true)), Effect.as("first"))
+            return yield* Effect.never.pipe(
+              Effect.onInterrupt(() => Ref.set(interrupted, true)),
+              Effect.as("first"),
+            )
           }),
         )
         .pipe(Effect.forkChild)

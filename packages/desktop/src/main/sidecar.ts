@@ -67,7 +67,7 @@ async function start(command: StartCommand) {
     useEnvProxy()
     const { Database, Log, Server } = await import("virtual:opencode-server")
     console.error(`sidecar lifecycle bundle-ready pid=${String(process.pid)}`)
-    await Log.init({ level: "WARN" })
+    await Log.init({ level: "INFO" })
 
     if (command.needsMigration) {
       parentPort.postMessage({

@@ -13,11 +13,13 @@ const elog = EffectLogger.create({ service: "session.run-state" })
 
 export interface Interface {
   readonly assertNotBusy: (sessionID: SessionID) => Effect.Effect<void, Session.BusyError>
-  readonly cancel: (sessionID: SessionID) => Effect.Effect<void>
+  readonly cancel: (sessionID: SessionID, cleanup?: Effect.Effect<void>) => Effect.Effect<void>
+  readonly revision: (sessionID: SessionID, onInterrupt: Effect.Effect<MessageV2.WithParts>) => Effect.Effect<number>
   readonly ensureRunning: (
     sessionID: SessionID,
     onInterrupt: Effect.Effect<MessageV2.WithParts>,
     work: Effect.Effect<MessageV2.WithParts>,
+    revision?: number,
   ) => Effect.Effect<MessageV2.WithParts>
   /**
    * Interrupt the in-flight run and start replacement work while keeping
@@ -49,6 +51,7 @@ export const layer = Layer.effect(
       Effect.fn("SessionRunState.state")(function* () {
         const scope = yield* Scope.Scope
         const runners = new Map<SessionID, Runner.Runner<MessageV2.WithParts>>()
+        const interruptHandlers = new Map<SessionID, Effect.Effect<MessageV2.WithParts>>()
         yield* Effect.addFinalizer(
           Effect.fnUntraced(function* () {
             yield* Effect.forEach(runners.values(), (runner) => runner.cancel, {
@@ -56,22 +59,23 @@ export const layer = Layer.effect(
               discard: true,
             })
             runners.clear()
+            interruptHandlers.clear()
           }),
         )
-        return { runners, scope }
+        return { runners, interruptHandlers, scope }
       }),
     )
 
     const runner = Effect.fn("SessionRunState.runner")(function* (
       sessionID: SessionID,
-      onInterrupt: Effect.Effect<MessageV2.WithParts>,
+      onInterrupt?: Effect.Effect<MessageV2.WithParts>,
     ) {
       const data = yield* InstanceState.get(state)
+      if (onInterrupt) data.interruptHandlers.set(sessionID, onInterrupt)
       const existing = data.runners.get(sessionID)
       if (existing) return existing
       const next = Runner.make<MessageV2.WithParts>(data.scope, {
         onIdle: Effect.gen(function* () {
-          data.runners.delete(sessionID)
           yield* status.set(sessionID, { type: "idle" }).pipe(
             Effect.catchCause((cause) =>
               elog.error("runner idle status update failed", {
@@ -83,7 +87,7 @@ export const layer = Layer.effect(
           )
         }),
         onBusy: status.set(sessionID, { type: "busy" }),
-        onInterrupt,
+        onInterrupt: Effect.suspend(() => data.interruptHandlers.get(sessionID) ?? Effect.interrupt),
       })
       data.runners.set(sessionID, next)
       return next
@@ -95,25 +99,21 @@ export const layer = Layer.effect(
       if (existing?.busy) yield* busyError(sessionID)
     })
 
-    const cancel = Effect.fn("SessionRunState.cancel")(function* (sessionID: SessionID) {
+    const cancel = Effect.fn("SessionRunState.cancel")(function* (
+      sessionID: SessionID,
+      cleanup: Effect.Effect<void> = Effect.void,
+    ) {
       // Stop the session runner first so the agent loop cannot keep producing
       // turns while background-job teardown (or a re-entrant cancel) is in flight.
-      const data = yield* InstanceState.get(state)
-      const existing = data.runners.get(sessionID)
-      if (!existing || !existing.busy) {
-        yield* status.set(sessionID, { type: "idle" }).pipe(
-          Effect.catchCause((cause) =>
-            elog.error("cancel idle status update failed", {
-              sessionID,
-              source: "runner",
-              reason: cause,
-            }),
-          ),
-        )
-      } else {
-        yield* existing.cancel
-      }
-      yield* cancelBackgroundJobs(background, sessionID)
+      const existing = yield* runner(sessionID)
+      yield* existing.cancelWith(
+        Effect.gen(function* () {
+          yield* elog.info("cancel stopping background jobs", { sessionID })
+          yield* cancelBackgroundJobs(background, sessionID)
+          yield* elog.info("cancel finalizing messages", { sessionID })
+          yield* cleanup
+        }),
+      )
     })
 
     // Hold a location lease for the complete run, not only admission: the
@@ -131,8 +131,9 @@ export const layer = Layer.effect(
       sessionID: SessionID,
       onInterrupt: Effect.Effect<MessageV2.WithParts>,
       work: Effect.Effect<MessageV2.WithParts>,
+      revision?: number,
     ) {
-      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(leased(work))
+      return yield* (yield* runner(sessionID, onInterrupt)).ensureRunning(leased(work), revision)
     })
 
     const gracefulRestart = Effect.fn("SessionRunState.gracefulRestart")(function* (
@@ -154,7 +155,13 @@ export const layer = Layer.effect(
         .pipe(Effect.catchTag("RunnerBusy", () => Effect.fail(busyError(sessionID))))
     })
 
-    return Service.of({ assertNotBusy, cancel, ensureRunning, gracefulRestart, startShell })
+    const revision = Effect.fn("SessionRunState.revision")(function* (
+      sessionID: SessionID,
+      onInterrupt: Effect.Effect<MessageV2.WithParts>,
+    ) {
+      return (yield* runner(sessionID, onInterrupt)).revision
+    })
+    return Service.of({ assertNotBusy, cancel, revision, ensureRunning, gracefulRestart, startShell })
   }),
 )
 

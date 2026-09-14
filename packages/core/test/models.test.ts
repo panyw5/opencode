@@ -1,5 +1,5 @@
 import { describe, expect, beforeAll, beforeEach, afterAll } from "bun:test"
-import { Effect, Layer, Ref } from "effect"
+import { Deferred, Effect, Fiber, Layer, Ref } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Flag } from "@opencode-ai/core/flag/flag"
@@ -126,6 +126,41 @@ const initialState: MockState = {
 }
 
 describe("ModelsDev Service", () => {
+  it.live("get() retries cancelled catalog population", () =>
+    Effect.gen(function* () {
+      const started = yield* Deferred.make<void>()
+      const state = yield* Ref.make(initialState)
+      let attempts = 0
+      const filesystem = Layer.mock(AppFileSystem.Service, {
+        readJson: () =>
+          Effect.gen(function* () {
+            attempts++
+            if (attempts === 1) {
+              yield* Deferred.succeed(started, undefined)
+              return yield* Effect.never
+            }
+            return fixture
+          }),
+      })
+      yield* Effect.gen(function* () {
+        const svc = yield* ModelsDev.Service
+        const first = yield* svc.get().pipe(Effect.forkChild)
+        yield* Deferred.await(started)
+        yield* Fiber.interrupt(first)
+        expect(yield* svc.get()).toEqual(fixture)
+        expect(yield* svc.get()).toEqual(fixture)
+        expect(attempts).toBe(2)
+      }).pipe(
+        Effect.provide(
+          Layer.fresh(ModelsDev.layer).pipe(
+            Layer.provide(filesystem),
+            Layer.provide(Layer.succeed(HttpClient.HttpClient, makeMockClient(state))),
+            Layer.provide(EventV2.defaultLayer),
+          ),
+        ),
+      )
+    }),
+  )
   it.live("get() returns providers from disk when cache file exists", () =>
     Effect.gen(function* () {
       yield* writeCache(fixture)

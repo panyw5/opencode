@@ -38,6 +38,10 @@ let selected = "/repo/worktree-a"
 let variant: string | undefined
 let integration: string | undefined
 let sessionCreateGate: { promise: Promise<void>; resolve: () => void } | undefined
+let promptGate: Promise<void> | undefined
+let abortGate: Promise<void> | undefined
+let onPrompt: (() => void) | undefined
+let onAbort: (() => void) | undefined
 
 const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 
@@ -64,6 +68,8 @@ const clientFor = (directory: string, track = true) => {
       prompt: async () => ({ data: undefined }),
       promptAsync: async (input: { sessionID: string }) => {
         sentPrompts.push({ directory, sessionID: input.sessionID })
+        onPrompt?.()
+        await promptGate
         return { data: undefined }
       },
       flush: async (input: { sessionID: string }) => {
@@ -76,6 +82,8 @@ const clientFor = (directory: string, track = true) => {
       },
       abort: async (input: { sessionID: string }) => {
         abortedSessions.push({ directory, sessionID: input.sessionID })
+        onAbort?.()
+        await abortGate
         return { data: undefined }
       },
     },
@@ -677,6 +685,44 @@ describe("prompt submit worktree selection", () => {
 })
 
 describe("prompt submit intervene", () => {
+  test("rapid stop orders send acknowledgement, stop completion and next send", async () => {
+    params = { id: "session-9" }
+    const sent = Promise.withResolvers<void>()
+    const acknowledged = Promise.withResolvers<void>()
+    const abortStarted = Promise.withResolvers<void>()
+    const abortFinished = Promise.withResolvers<void>()
+    const nextSent = Promise.withResolvers<void>()
+    promptGate = acknowledged.promise
+    abortGate = abortFinished.promise
+    onPrompt = sent.resolve
+    onAbort = abortStarted.resolve
+    const submit = createPromptSubmit(baseInput({ working: () => false }))
+    try {
+      await submit.handleSubmit({ preventDefault() {} } as Event, { intervene: true })
+      await sent.promise
+      const firstStop = submit.abort()
+      expect(submit.abort()).toBe(firstStop)
+      onPrompt = nextSent.resolve
+      await submit.handleSubmit({ preventDefault() {} } as Event, { intervene: true })
+      expect(abortedSessions).toHaveLength(0)
+      expect(sentPrompts).toHaveLength(1)
+      acknowledged.resolve()
+      await abortStarted.promise
+      expect(sentPrompts).toHaveLength(1)
+      abortFinished.resolve()
+      await firstStop
+      await nextSent.promise
+      expect(abortedSessions).toHaveLength(1)
+      expect(sentPrompts).toHaveLength(2)
+    } finally {
+      acknowledged.resolve()
+      abortFinished.resolve()
+      promptGate = undefined
+      abortGate = undefined
+      onPrompt = undefined
+      onAbort = undefined
+    }
+  })
   const baseInput = (overrides?: Partial<Parameters<typeof createPromptSubmit>[0]>) => ({
     info: () => ({ id: "session-9" }),
     imageAttachments: () => [],
@@ -686,7 +732,8 @@ describe("prompt submit intervene", () => {
     working: () => true,
     editor: () => undefined,
     queueScroll: () => undefined,
-    promptLength: (value: Prompt) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+    promptLength: (value: Prompt) =>
+      value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
     addToHistory: () => undefined,
     resetHistoryNavigation: () => undefined,
     setMode: () => undefined,

@@ -187,10 +187,7 @@ export const layer = Layer.effect(
     let requestDrain: (sessionID: SessionID) => Effect.Effect<void> = () => Effect.void
 
     const sessionOwnerMatch = Effect.fn("SessionPrompt.sessionOwnerMatch")(function* (sessionID: SessionID) {
-      const [ctx, session] = yield* Effect.all([
-        InstanceState.context,
-        sessions.get(sessionID).pipe(Effect.orDie),
-      ])
+      const [ctx, session] = yield* Effect.all([InstanceState.context, sessions.get(sessionID).pipe(Effect.orDie)])
       const ambientDirectory = AppFileSystem.resolve(ctx.directory)
       const ownerDirectory = AppFileSystem.resolve(session.directory)
       return {
@@ -234,9 +231,7 @@ export const layer = Layer.effect(
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
       yield* elog.info("cancel start", { sessionID })
-      yield* state.cancel(sessionID)
-      yield* elog.info("cancel runner+jobs done", { sessionID })
-      yield* sessions.finalizeOrphanedAssistant(sessionID, { abortSource: "user-cancel" })
+      yield* state.cancel(sessionID, sessions.finalizeOrphanedAssistant(sessionID, { abortSource: "user-cancel" }))
       yield* elog.info("cancel finalize done", { sessionID })
       const match = yield* sessionOwnerMatch(sessionID)
       yield* elog.info("cancel ownership check", {
@@ -1180,6 +1175,10 @@ export const layer = Layer.effect(
     ) {
       const exit = yield* provider.getModel(providerID, modelID).pipe(Effect.exit)
       if (Exit.isSuccess(exit)) return exit.value
+      if (Cause.hasInterruptsOnly(exit.cause)) {
+        yield* elog.info("model lookup cancelled", { sessionID, providerID, modelID })
+        return yield* Effect.interrupt
+      }
       const err = Cause.squash(exit.cause)
       if (Provider.ModelNotFoundError.isInstance(err)) {
         const hint = err.suggestions?.length ? ` Did you mean: ${err.suggestions.join(", ")}?` : ""
@@ -2091,6 +2090,8 @@ export const layer = Layer.effect(
     const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, Image.Error> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
+      let revision = yield* state.revision(input.sessionID, lastAssistant(input.sessionID))
+      yield* elog.info("prompt preparation registered", { sessionID: input.sessionID, revision })
       yield* ensureBackgroundShellSubscription()
       yield* ensureInboxRecovery(input.sessionID)
       const { session } = yield* requireSessionOwner(input.sessionID, "prompt")
@@ -2118,7 +2119,12 @@ export const layer = Layer.effect(
         if (expired > 0) {
           yield* state.cancel(input.sessionID)
           yield* sessions.finalizeOrphanedAssistant(input.sessionID, {})
+          revision = yield* state.revision(input.sessionID, lastAssistant(input.sessionID))
         }
+      }
+      if (revision !== (yield* state.revision(input.sessionID, lastAssistant(input.sessionID)))) {
+        yield* elog.info("prompt preparation cancelled before message write", { sessionID: input.sessionID, revision })
+        return yield* lastAssistant(input.sessionID)
       }
       yield* revert.cleanup(session)
       // Materialize notifications before the real user message so the user
@@ -2171,7 +2177,8 @@ export const layer = Layer.effect(
       }
 
       if (input.noReply === true) return message
-      const response = yield* loop({ sessionID: input.sessionID })
+      yield* elog.info("prompt entering runner", { sessionID: input.sessionID, revision })
+      const response = yield* loop({ sessionID: input.sessionID }, revision)
       const responseParentID = response.info.role === "assistant" ? response.info.parentID : undefined
       yield* elog.info("prompt loop returned", {
         sessionID: input.sessionID,
@@ -2195,7 +2202,7 @@ export const layer = Layer.effect(
         messageID: message.info.id,
         responseID: response.info.id,
       })
-      return yield* loop({ sessionID: input.sessionID })
+      return yield* loop({ sessionID: input.sessionID }, revision)
     })
 
     const lastAssistant = Effect.fnUntraced(function* (sessionID: SessionID) {
@@ -2635,9 +2642,9 @@ export const layer = Layer.effect(
       },
     )
 
-    const loop: (input: LoopInput) => Effect.Effect<MessageV2.WithParts> = Effect.fn("SessionPrompt.loop")(function* (
-      input: LoopInput,
-    ) {
+    const loop: (input: LoopInput, revision?: number) => Effect.Effect<MessageV2.WithParts> = Effect.fn(
+      "SessionPrompt.loop",
+    )(function* (input: LoopInput, revision?: number) {
       yield* ensureBackgroundShellSubscription()
       yield* ensureInboxRecovery()
       const currentStatus = yield* status.get(input.sessionID)
@@ -2649,7 +2656,7 @@ export const layer = Layer.effect(
         .pipe(Effect.orDie)
       if (currentStatus.type === "idle" && Option.isNone(activeAssistant)) yield* promoteInbox(input.sessionID)
       return yield* state
-        .ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
+        .ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID), revision)
         .pipe(Effect.ensuring(requestDrain(input.sessionID)))
     })
 
