@@ -131,17 +131,24 @@ describe("ModelsDev Service", () => {
       const started = yield* Deferred.make<void>()
       const state = yield* Ref.make(initialState)
       let attempts = 0
-      const filesystem = Layer.mock(AppFileSystem.Service, {
-        readJson: () =>
-          Effect.gen(function* () {
-            attempts++
-            if (attempts === 1) {
-              yield* Deferred.succeed(started, undefined)
-              return yield* Effect.never
-            }
-            return fixture
-          }),
-      })
+      // Layer.mock cannot express a partial AppFileSystem.Service: the FileSystem
+      // brand, `sink` and `globMatch` are non-Effect members, so Layer.mock
+      // demands them. Override readJson on the real service instead.
+      const filesystem = Layer.effect(
+        AppFileSystem.Service,
+        Effect.map(AppFileSystem.Service, (fs) => ({
+          ...fs,
+          readJson: () =>
+            Effect.gen(function* () {
+              attempts++
+              if (attempts === 1) {
+                yield* Deferred.succeed(started, undefined)
+                return yield* Effect.never
+              }
+              return fixture
+            }),
+        })),
+      ).pipe(Layer.provide(AppFileSystem.defaultLayer))
       yield* Effect.gen(function* () {
         const svc = yield* ModelsDev.Service
         const first = yield* svc.get().pipe(Effect.forkChild)
