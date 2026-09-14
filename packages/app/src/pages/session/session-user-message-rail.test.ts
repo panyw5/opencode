@@ -19,6 +19,22 @@ describe("userMessageRailMarkWidth", () => {
     expect(userMessageRailMarkWidth(1, 4)).toBe(24)
     expect(userMessageRailMarkWidth(0, 4)).toBe(20)
   })
+
+  test("widens only the active mark when nothing is hovered", () => {
+    expect(userMessageRailMarkWidth(2, undefined, 2)).toBe(30)
+    expect(userMessageRailMarkWidth(1, undefined, 2)).toBe(20)
+    expect(userMessageRailMarkWidth(3, undefined, 2)).toBe(20)
+  })
+
+  test("hover magnification wins over the active mark", () => {
+    expect(userMessageRailMarkWidth(2, 2, 2)).toBe(48)
+    expect(userMessageRailMarkWidth(3, 2, 2)).toBe(38)
+    expect(userMessageRailMarkWidth(4, 2, 2)).toBe(30)
+  })
+
+  test("ignores an active mark outside the entries", () => {
+    expect(userMessageRailMarkWidth(2, undefined, -1)).toBe(20)
+  })
 })
 
 describe("userMessageRailHeight", () => {

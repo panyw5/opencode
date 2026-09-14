@@ -1,9 +1,11 @@
 const railWidths = [48, 38, 30, 24] as const
 export const USER_MESSAGE_RAIL_PREVIEW_LIMIT = 240
+export const USER_MESSAGE_RAIL_ACTIVE_WIDTH = 30
 
-export function userMessageRailMarkWidth(index: number, hovered: number | undefined) {
-  if (hovered === undefined) return 20
-  return railWidths[Math.abs(index - hovered)] ?? 20
+export function userMessageRailMarkWidth(index: number, hovered: number | undefined, active?: number) {
+  if (hovered !== undefined) return railWidths[Math.abs(index - hovered)] ?? 20
+  if (active !== undefined && index === active) return USER_MESSAGE_RAIL_ACTIVE_WIDTH
+  return 20
 }
 
 export function userMessageRailHeight(count: number) {

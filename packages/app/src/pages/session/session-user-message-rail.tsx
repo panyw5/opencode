@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useLanguage } from "@/context/language"
 import { userMessageRailHeight, userMessageRailMarkWidth } from "@/pages/session/session-user-message-rail-model"
@@ -20,6 +20,7 @@ function formatMessageTime(value: number, locale: string): string | undefined {
 
 export function SessionUserMessageRail(props: {
   entries: SessionUserMessageEntry[]
+  activeId?: string
   loading: boolean
   complete: boolean
   onOpen: (entry: SessionUserMessageEntry) => void
@@ -32,10 +33,23 @@ export function SessionUserMessageRail(props: {
     top: number
   }>()
   const hovered = () => preview()?.index
+  const active = createMemo(() => {
+    const id = props.activeId
+    if (id === undefined) return undefined
+    const index = props.entries.findIndex((entry) => entry.id === id)
+    return index === -1 ? undefined : index
+  })
 
   createEffect(() => {
     console.debug(
       `[user-message-rail] render count=${String(props.entries.length)} loading=${String(props.loading)} complete=${String(props.complete)}`,
+    )
+  })
+
+  createEffect(() => {
+    const index = active()
+    console.debug(
+      `[user-message-rail] active index=${index === undefined ? "none" : String(index)} id=${props.activeId ?? "none"}`,
     )
   })
 
@@ -84,6 +98,8 @@ export function SessionUserMessageRail(props: {
                       type="button"
                       data-testid="session-user-message-rail-item"
                       data-message-id={entry.id}
+                      data-active={active() === index() ? "true" : undefined}
+                      aria-current={active() === index() ? "true" : undefined}
                       aria-label={label()}
                       aria-describedby={hovered() === index() ? `user-message-preview-${entry.id}` : undefined}
                       class="group flex size-full items-center pl-3 outline-none"
@@ -102,10 +118,15 @@ export function SessionUserMessageRail(props: {
                           "block h-[3px] rounded-full transition-[width,background-color,opacity] duration-150 ease-out motion-reduce:transition-none":
                             true,
                           "bg-text-strong opacity-100": hovered() === index(),
-                          "bg-text-weak opacity-70": hovered() !== index() && hovered() !== undefined,
-                          "bg-border-strong-base opacity-75": hovered() === undefined,
+                          "bg-text-strong opacity-90":
+                            hovered() !== index() && active() === index(),
+                          "bg-text-weak opacity-70":
+                            hovered() !== index() && active() !== index() && hovered() !== undefined,
+                          "bg-border-strong-base opacity-75": hovered() === undefined && active() !== index(),
                         }}
-                        style={{ width: `${String(userMessageRailMarkWidth(index(), hovered()))}px` }}
+                        style={{
+                          width: `${String(userMessageRailMarkWidth(index(), hovered(), active()))}px`,
+                        }}
                       />
                     </button>
                   </div>

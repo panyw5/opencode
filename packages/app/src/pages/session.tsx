@@ -2954,6 +2954,10 @@ export default function Page() {
     scrollToMessageId(entry.id)
   }
 
+  // User-message turn the current viewport belongs to; reported by the timeline
+  // as the reader scrolls so the rail can keep that mark highlighted.
+  const [railActiveMessageId, setRailActiveMessageId] = createSignal<string | undefined>(undefined)
+
   const fail = (err: unknown) => {
     showToast({
       variant: "error",
@@ -3635,10 +3639,12 @@ export default function Page() {
                           )
                           dispatchSessionRender({ type: "content-ready", sessionID: id })
                         }}
+                        onViewportTurnChange={(id) => setRailActiveMessageId(() => id)}
                       />
                       <Show when={isDesktop() && userMessageEntries().length > 0}>
                         <SessionUserMessageRail
                           entries={userMessageEntries()}
+                          activeId={railActiveMessageId()}
                           loading={params.id ? sync.session.userMessageIndex.loading(params.id) : false}
                           complete={
                             indexedUserMessages() !== undefined ||
@@ -3837,7 +3843,7 @@ export default function Page() {
                 direction="horizontal"
                 size={layout.session.width()}
                 min={450}
-                max={typeof window === "undefined" ? 1000 : window.innerWidth * 0.45}
+                max={typeof window === "undefined" ? 1000 : Math.max(450, window.innerWidth - 400)}
                 onResize={(width) => {
                   size.touch()
                   layout.session.resize(width)

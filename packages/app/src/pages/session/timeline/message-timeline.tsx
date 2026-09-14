@@ -282,6 +282,7 @@ export function MessageTimeline(props: {
   setScrollToEnd?: (fn: () => void) => void
   setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => Promise<void> }) => void
   onContentReady?: (detail: { rows: number; cached: boolean }) => void
+  onViewportTurnChange?: (userMessageID: string | undefined) => void
 }) {
   const sync = useSync()
   const settings = useSettings()
@@ -1085,6 +1086,18 @@ export function MessageTimeline(props: {
     },
   })
   const resizeItem = virtualizer.resizeItem
+  // The turn owning the topmost visible row: every timeline row is tagged with
+  // its turn's userMessageID, so the visible range start names the turn the
+  // reader is currently in (the user-message rail highlights it).
+  const viewportTurnId = createMemo(() => {
+    const rows = timelineRows()
+    const start = visibleRange.start
+    if (start < 0 || rows.length === 0) return undefined
+    return rows[Math.min(start, rows.length - 1)].userMessageID
+  })
+  createEffect(() => {
+    props.onViewportTurnChange?.(viewportTurnId())
+  })
   const cacheCommittedRowHeight = (rowKey: string, size: number) => {
     const currentRow = timelineRowByKey().get(rowKey)
     if (!currentRow) return
