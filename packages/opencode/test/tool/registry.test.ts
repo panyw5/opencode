@@ -37,6 +37,9 @@ import { MessageID, SessionID } from "@/session/schema"
 import { SessionInput } from "@/session/input"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProjectTask } from "@/project-task/service"
+import { IM } from "@/im/service"
+import { IMOwner } from "@/im/owner"
+import { IMSubscription } from "@/im/subscription"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -65,6 +68,9 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
           BackgroundJob.defaultLayer,
           BackgroundShell.defaultLayer,
           SessionInput.defaultLayer,
+          IM.defaultLayer,
+          IMOwner.defaultLayer,
+          IMSubscription.defaultLayer,
         ),
       ),
       Layer.provide(Provider.defaultLayer),
@@ -136,6 +142,10 @@ describe("tool.registry", () => {
       expect(ids).toContain("scheduled_task_delete")
       expect(ids).toContain("scheduled_task_run_now")
       expect(ids).toContain("scheduled_task_runs")
+      expect(ids).toContain("im_list")
+      expect(ids).toContain("im_read")
+      expect(ids).toContain("im_send")
+      expect(ids).toContain("im_watch")
       expect(ids).toContain("math_worker_ensure")
       expect(ids).toContain("math_worker_task_update")
       expect(ids).toContain("math_gm_add")

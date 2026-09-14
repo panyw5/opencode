@@ -131,6 +131,7 @@ import {
   parseChannelPick,
   useChannelMiddleItems,
 } from "./config-channels"
+import { ConfigIM } from "./config-im"
 
 const CORE_SECTIONS = [
   "providers",
@@ -141,6 +142,7 @@ const CORE_SECTIONS = [
   "mcp",
   "commands",
   "channels",
+  "im",
   "claws",
 ] as const
 type CoreSection = (typeof CORE_SECTIONS)[number]
@@ -1304,6 +1306,7 @@ function sectionIcon(section: Section): IconProps["name"] {
   if (section === "mcp") return "mcp"
   if (section === "commands") return "terminal"
   if (section === "channels") return "speech-bubble"
+  if (section === "im") return "speech-bubble"
   const agent = extraAgents.find((item) => item.configSection === section)
   if (agent) return agent.icon
   return "openclaw"
@@ -6025,6 +6028,7 @@ export default function ConfigPage() {
     if (section === "channels") {
       return CHANNEL_PLATFORMS.map((p) => channelPick(p))
     }
+    if (section === "im") return []
     return (plugins() ?? []).map((item) => item.id)
   }
 
@@ -8080,6 +8084,13 @@ export default function ConfigPage() {
                   icon={sectionIcon("channels")}
                   onClick={() => void jump("channels")}
                 />
+                <SectionButton
+                  current={state.section === "im"}
+                  title={t("config.im.title")}
+                  description={t("config.nav.imDescription")}
+                  icon={sectionIcon("im")}
+                  onClick={() => void jump("im")}
+                />
                 {clawsSectionEnabled() && (
                   <SectionButton
                     current={state.section === "claws"}
@@ -8198,6 +8209,13 @@ export default function ConfigPage() {
                       title={t("config.channels.title")}
                       description={t("config.channels.header")}
                       icon={sectionIcon("channels")}
+                    />
+                  </Match>
+                  <Match when={state.section === "im"}>
+                    <ConfigPaneTitle
+                      title={t("config.im.title")}
+                      description={t("config.im.header")}
+                      icon={sectionIcon("im")}
                     />
                   </Match>
                   <Match when={state.section === "commands"}>
@@ -8642,6 +8660,10 @@ export default function ConfigPage() {
                           )}
                         </For>
                       </div>
+                    </Match>
+
+                    <Match when={state.section === "im"}>
+                      <div class="px-1 text-13-regular text-text-weak">{t("config.im.middle")}</div>
                     </Match>
 
                     <Match when={state.section === "commands"}>
@@ -9372,6 +9394,10 @@ export default function ConfigPage() {
                     <ConfigChannelsDetail platform="qq" />
                   </Match>
                 </Switch>
+              </Match>
+
+              <Match when={state.section === "im"}>
+                <ConfigIM />
               </Match>
 
               <Match when={state.section === "commands"}>

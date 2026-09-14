@@ -20,7 +20,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Switch as Toggle } from "@opencode-ai/ui/switch"
 import { showToast } from "@opencode-ai/ui/toast"
-import type { ChannelDiscordConfig, ChannelFeishuConfig, ChannelQQConfig, Config } from "@opencode-ai/sdk/v2/client"
+import type { ChannelDiscordConfig, ChannelFeishuConfig, ChannelQqConfig, Config } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useGlobalSync } from "@/context/global-sync"
 import {
@@ -46,10 +46,13 @@ import {
 import { usePlatform } from "@/context/platform"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import { probeQQ } from "@/lib/qq-official"
+import { parseRetentionDays, rebaseChannelMap } from "./config-channel-helpers"
 
 export type ChannelPlatform = "feishu" | "discord" | "qq"
 
 type ChannelConfig = NonNullable<Config["channels"]>[string]
+type ChannelRetentionConfig = ChannelConfig & { retentionDays?: number }
+type ChannelPatch = Partial<ChannelConfig> & { retentionDays?: number }
 
 export const CHANNEL_PLATFORMS: ChannelPlatform[] = ["feishu", "qq"]
 
@@ -73,6 +76,10 @@ function parseUserList(text: string): string[] | undefined {
   return items.length > 0 ? items : undefined
 }
 
+function retentionDaysOf(config: ChannelConfig): number | undefined {
+  return (config as ChannelRetentionConfig).retentionDays
+}
+
 type ChannelRow = {
   name: string
   enabled: boolean
@@ -91,6 +98,7 @@ const MODEL_AUTO = "auto"
 
 /** Last channels write from this page — used to win races against global.config.updated. */
 let pendingChannelWrite: Record<string, ChannelConfig> | undefined
+let channelWriteQueue: Promise<void> = Promise.resolve()
 
 function modelIdFromConfig(raw: string | undefined): string {
   return raw?.trim() ? raw.trim() : MODEL_AUTO
@@ -358,6 +366,8 @@ export const ConfigChannelsDetail: Component<{
     model: "" as string,
     /** Working folder for this channel (decoupled from OpenCode projects). */
     directory: "",
+    autoReply: true,
+    retentionDays: "",
     mode: "manual" as "qr" | "manual",
   })
   const [saving, setSaving] = createSignal(false)
@@ -396,6 +406,8 @@ export const ConfigChannelsDetail: Component<{
           allowedUsers: "",
           model: "",
           directory: "",
+          autoReply: true,
+          retentionDays: "",
           // Default to manual so existing credentials are easier to re-enter;
           // user can still switch to QR.
           mode: "manual",
@@ -467,6 +479,7 @@ export const ConfigChannelsDetail: Component<{
   const canSave = createMemo(() => {
     if (!form.name.trim()) return false
     if (!isValidChannelDirectory(form.directory)) return false
+    if (form.retentionDays.trim() && parseRetentionDays(form.retentionDays) === undefined) return false
     if (props.platform === "feishu") return !!form.appId.trim() && !!form.appSecret.trim()
     if (props.platform === "discord") return !!form.botToken.trim()
     return !!form.appId.trim() && !!form.appSecret.trim()
@@ -481,27 +494,42 @@ export const ConfigChannelsDetail: Component<{
   }
 
   const persistChannels = async (channels: Record<string, ChannelConfig>) => {
-    // Mark pending write so late global.config.updated events can be re-applied.
-    pendingChannelWrite = channels
-    try {
+    const base = { ...(globalSync.data.config.channels ?? {}) }
+    const run = async () => {
+      const latest = { ...(globalSync.data.config.channels ?? {}) }
+      const rebased = rebaseChannelMap(
+        base as Record<string, unknown>,
+        channels as Record<string, unknown>,
+        latest as Record<string, unknown>,
+      ) as Record<string, ChannelConfig>
+      // Mark pending write so late global.config.updated events can be re-applied.
+      pendingChannelWrite = rebased
       // updateConfig already merges writtenChannels into the response; re-apply
       // again so any later SSE event cannot leave the UI on a stale model.
-      await globalSync.updateConfig({ channels } as Config)
-      applyLocalChannels(channels)
+      try {
+        await globalSync.updateConfig({ channels: rebased } as Config)
+      } catch (error) {
+        if (pendingChannelWrite === rebased) pendingChannelWrite = undefined
+        throw error
+      }
+      applyLocalChannels(rebased)
       queueMicrotask(() => {
-        if (pendingChannelWrite === channels) applyLocalChannels(channels)
+        if (pendingChannelWrite === rebased) applyLocalChannels(rebased)
       })
       window.setTimeout(() => {
-        if (pendingChannelWrite === channels) {
-          applyLocalChannels(channels)
+        if (pendingChannelWrite === rebased) {
+          applyLocalChannels(rebased)
           pendingChannelWrite = undefined
         }
       }, 150)
       return globalSync.data.config
-    } catch (err) {
-      pendingChannelWrite = undefined
-      throw err
     }
+    const queued = channelWriteQueue.then(run, run)
+    channelWriteQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    )
+    return queued
   }
 
   const save = async () => {
@@ -522,26 +550,32 @@ export const ConfigChannelsDetail: Component<{
       const configDir = globalSync.data.path.config || "~/.config/opencode"
       const directory = form.directory.trim() || defaultChannelDirectory(name, configDir)
       if (props.platform === "feishu") {
-        const feishu: ChannelFeishuConfig = {
+        const feishu: ChannelFeishuConfig & { retentionDays?: number } = {
           type: "feishu",
           appId: form.appId.trim(),
           appSecret: form.appSecret.trim(),
           enabled: true,
           domain: form.domain,
           directory,
+          autoReply: form.autoReply,
         }
+        const retentionDays = parseRetentionDays(form.retentionDays)
+        if (retentionDays !== undefined) feishu.retentionDays = retentionDays
         const users = parseUserList(form.allowedUsers)
         if (users) feishu.allowedUsers = users
         const model = modelConfigFromId(formModelId())
         if (model) feishu.model = model
         config = feishu
       } else if (props.platform === "discord") {
-        const discord: ChannelDiscordConfig = {
+        const discord: ChannelDiscordConfig & { retentionDays?: number } = {
           type: "discord",
           botToken: form.botToken.trim(),
           enabled: true,
           directory,
+          autoReply: form.autoReply,
         }
+        const retentionDays = parseRetentionDays(form.retentionDays)
+        if (retentionDays !== undefined) discord.retentionDays = retentionDays
         const users = parseUserList(form.allowedUsers)
         if (users) discord.allowedUsers = users
         if (form.proxy.trim()) discord.proxy = form.proxy.trim()
@@ -549,14 +583,17 @@ export const ConfigChannelsDetail: Component<{
         if (model) discord.model = model
         config = discord
       } else {
-        const qq: ChannelQQConfig = {
+        const qq: ChannelQqConfig & { retentionDays?: number } = {
           type: "qq",
           appId: form.appId.trim(),
           clientSecret: form.appSecret.trim(),
           apiBaseUrl: form.apiBaseUrl.trim() || undefined,
           enabled: true,
           directory,
+          autoReply: form.autoReply,
         }
+        const retentionDays = parseRetentionDays(form.retentionDays)
+        if (retentionDays !== undefined) qq.retentionDays = retentionDays
         const users = parseUserList(form.allowedUsers)
         if (users) qq.allowedUsers = users
         const model = modelConfigFromId(formModelId())
@@ -578,6 +615,8 @@ export const ConfigChannelsDetail: Component<{
       setForm("model", "")
       setForm("allowedUsers", "")
       setForm("directory", "")
+      setForm("autoReply", true)
+      setForm("retentionDays", "")
       if (props.platform === "feishu") {
         setForm("appId", "")
         setForm("appSecret", "")
@@ -597,7 +636,7 @@ export const ConfigChannelsDetail: Component<{
     }
   }
 
-  const patchChannel = async (name: string, patch: Partial<ChannelConfig>) => {
+  const patchChannel = async (name: string, patch: ChannelPatch) => {
     const current = globalSync.data.config.channels ?? {}
     const entry = current[name]
     if (!entry) return
@@ -613,6 +652,16 @@ export const ConfigChannelsDetail: Component<{
       showToast({ title: language.t("config.channels.toast.error"), description: message })
       throw err
     }
+  }
+
+  const patchRetentionDays = (name: string, value: string) => {
+    const trimmed = value.trim()
+    if (!trimmed) {
+      void patchChannel(name, { retentionDays: undefined } as Partial<ChannelRetentionConfig>)
+      return
+    }
+    const days = parseRetentionDays(trimmed)
+    if (days !== undefined) void patchChannel(name, { retentionDays: days } as Partial<ChannelRetentionConfig>)
   }
 
   const setChannelModel = async (name: string, modelId: string) => {
@@ -853,7 +902,7 @@ export const ConfigChannelsDetail: Component<{
                                     label={language.t("config.channels.field.appId")}
                                     value={cfg().appId}
                                     onChange={(v) =>
-                                      void patchChannel(row.name, { appId: v ?? "" } as Partial<ChannelQQConfig>)
+                                      void patchChannel(row.name, { appId: v ?? "" } as Partial<ChannelQqConfig>)
                                     }
                                   />
                                   <TextField
@@ -863,7 +912,7 @@ export const ConfigChannelsDetail: Component<{
                                     onChange={(v) =>
                                       void patchChannel(row.name, {
                                         clientSecret: v ?? "",
-                                      } as Partial<ChannelQQConfig>)
+                                      } as Partial<ChannelQqConfig>)
                                     }
                                   />
                                   <TextField
@@ -872,7 +921,7 @@ export const ConfigChannelsDetail: Component<{
                                     onChange={(v) =>
                                       void patchChannel(row.name, {
                                         apiBaseUrl: v?.trim() || undefined,
-                                      } as Partial<ChannelQQConfig>)
+                                      } as Partial<ChannelQqConfig>)
                                     }
                                   />
                                 </>
@@ -911,6 +960,29 @@ export const ConfigChannelsDetail: Component<{
                               <ChannelModelSelector
                                 value={draftModels[row.name] ?? modelIdFromConfig(row.model)}
                                 onChange={(value) => void setChannelModel(row.name, value)}
+                              />
+                            </div>
+
+                            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                              <div class="flex flex-col gap-1">
+                                <Toggle
+                                  checked={row.config.autoReply !== false}
+                                  onChange={(value) => void patchChannel(row.name, { autoReply: value })}
+                                >
+                                  {language.t("config.channels.field.autoReply")}
+                                </Toggle>
+                                <span class="text-11-regular text-text-weaker">
+                                  {language.t("config.channels.field.autoReply.hint")}
+                                </span>
+                              </div>
+                              <TextField
+                                label={language.t("config.channels.field.retentionDays")}
+                                description={language.t("config.channels.field.retentionDays.hint")}
+                                type="number"
+                                min={1}
+                                max={3650}
+                                value={retentionDaysOf(row.config)?.toString() ?? ""}
+                                onChange={(value) => patchRetentionDays(row.name, value ?? "")}
                               />
                             </div>
                           </div>
@@ -1158,6 +1230,28 @@ export const ConfigChannelsDetail: Component<{
               multiline
               rows={2}
             />
+
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div class="flex flex-col gap-1">
+                <Toggle checked={form.autoReply} onChange={(value) => setForm("autoReply", value)}>
+                  {language.t("config.channels.field.autoReply")}
+                </Toggle>
+                <span class="text-11-regular text-text-weaker">
+                  {language.t("config.channels.field.autoReply.hint")}
+                </span>
+              </div>
+              <TextField
+                label={language.t("config.channels.field.retentionDays")}
+                description={language.t("config.channels.field.retentionDays.hint")}
+                type="number"
+                min={1}
+                max={3650}
+                value={form.retentionDays}
+                onChange={(value) => setForm("retentionDays", value ?? "")}
+                validationState={form.retentionDays.trim() && parseRetentionDays(form.retentionDays) === undefined ? "invalid" : undefined}
+                error={form.retentionDays.trim() && parseRetentionDays(form.retentionDays) === undefined ? language.t("config.channels.field.retentionDays.invalid") : undefined}
+              />
+            </div>
 
             <div class="flex justify-end">
               <Button variant="primary" onClick={() => void save()} disabled={saving() || !canSave()}>

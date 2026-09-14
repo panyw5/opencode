@@ -278,9 +278,13 @@ export function resolveChannelDirectory(
   const explicit = directory?.trim()
   if (explicit) {
     const resolved = expandHomePath(explicit, home)
-    // The server resolves Windows paths with node:path before storing a
-    // session. Keep the browser request byte-for-byte compatible with it.
-    return /^[A-Za-z]:[\\/]/.test(resolved) ? resolved.replace(/\//g, "\\") : resolved
+    const windows = /^[A-Za-z]:[\\/]/.test(resolved)
+    const base = (windows ? resolved.replace(/\//g, "\\") : resolved).replace(/[\\/]+$/, "")
+    const child = sanitizeChannelName(channelName)
+    // Match the backend: an explicit parent directory still gets a channel
+    // subfolder, but an already-final directory must not get it twice.
+    if (base.split(/[\\/]/).at(-1) === child) return base
+    return `${base}${windows ? "\\" : "/"}${child}`
   }
   return defaultChannelDirectory(channelName, configDir)
 }

@@ -158,6 +158,8 @@ export type Project = {
      */
     start?: string
   }
+  visibility: "user" | "internal"
+  kind?: "math"
   time: {
     created: number
     updated: number
@@ -937,6 +939,10 @@ export type PermissionConfig =
       scheduled_task_run_now?: PermissionActionConfig
       scheduled_task_runs?: PermissionActionConfig
       question?: PermissionActionConfig
+      im_list?: PermissionActionConfig
+      im_read?: PermissionActionConfig
+      im_send?: PermissionActionConfig
+      im_watch?: PermissionActionConfig
       webfetch?: PermissionActionConfig
       websearch?: PermissionActionConfig
       codex_consult?: PermissionActionConfig
@@ -1143,7 +1149,9 @@ export type ChannelFeishuConfig = {
   domain?: "feishu" | "lark"
   directory?: string
   enabled?: boolean
+  autoReply?: boolean
   model?: string
+  retentionDays?: number
 }
 
 export type ChannelDiscordConfig = {
@@ -1159,21 +1167,31 @@ export type ChannelDiscordConfig = {
   proxy?: string
   directory?: string
   enabled?: boolean
+  autoReply?: boolean
   model?: string
+  retentionDays?: number
 }
 
-export type ChannelQQConfig = {
-  /** QQ official bot via Open Platform Gateway */
+export type ChannelQqConfig = {
+  /**
+   * QQ official bot via Open Platform Gateway
+   */
   type: "qq"
-  /** QQ Bot App ID */
+  /**
+   * QQ Bot App ID
+   */
   appId: string
-  /** QQ Bot Client Secret */
+  /**
+   * QQ Bot Client Secret
+   */
   clientSecret: string
   apiBaseUrl?: string
   allowedUsers?: Array<string>
   directory?: string
   enabled?: boolean
+  autoReply?: boolean
   model?: string
+  retentionDays?: number
 }
 
 /**
@@ -1268,7 +1286,7 @@ export type Config = {
         }
   }
   channels?: {
-    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQQConfig
+    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQqConfig
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
@@ -1829,6 +1847,19 @@ export type FormatterStatus = {
   enabled: boolean
 }
 
+export type ConflictError = {
+  _tag: "ConflictError"
+  message: string
+  resource?: string
+}
+
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
+  }
+}
+
 export type McpStatusConnected = {
   status: "connected"
 }
@@ -1948,13 +1979,6 @@ export type ProviderAuthError1 = {
     field?: string
     message?: string
     kind?: string
-  }
-}
-
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
   }
 }
 
@@ -2290,7 +2314,7 @@ export type Config7 = {
         }
   }
   channels?: {
-    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQQConfig
+    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQqConfig
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
@@ -5911,6 +5935,429 @@ export type FormatterStatusResponses = {
 
 export type FormatterStatusResponse = FormatterStatusResponses[keyof FormatterStatusResponses]
 
+export type ImChannelsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/channels"
+}
+
+export type ImChannelsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ImChannelsError = ImChannelsErrors[keyof ImChannelsErrors]
+
+export type ImChannelsResponses = {
+  /**
+   * Configured IM channels with automatic fixed recipient discovery
+   */
+  200: Array<{
+    channelName: string
+    platform: "feishu" | "qq" | "discord"
+    enabled: boolean
+    running: boolean
+    recipientStatus: "ready" | "missing" | "ambiguous" | "unsupported"
+    recipient?: {
+      name?: string
+    }
+  }>
+}
+
+export type ImChannelsResponse = ImChannelsResponses[keyof ImChannelsResponses]
+
+export type ImMessagesListData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    channelName: string
+    limit?: string
+    cursor?: string
+    direction?: "before" | "after"
+    waitMs?: string
+  }
+  url: "/im/messages"
+}
+
+export type ImMessagesListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type ImMessagesListError = ImMessagesListErrors[keyof ImMessagesListErrors]
+
+export type ImMessagesListResponses = {
+  /**
+   * Messages from the channel's fixed user
+   */
+  200: {
+    items: Array<{
+      id: string
+      platform: "feishu" | "qq"
+      channelName: string
+      eventID: string
+      ingestSeq: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      direction: "inbound" | "outbound"
+      legacyStatus: "received" | "processing" | "completed" | "unknown"
+      target: {
+        platform: "feishu" | "qq"
+        channelName: string
+        scope: "chat" | "c2c" | "group" | "guild"
+        conversationID: string
+        senderID?: string
+        replyTo?: string
+      }
+      senderID?: string
+      senderName?: string
+      text: string
+      timeEvent?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      metadata?: {
+        [key: string]: unknown
+      }
+    }>
+    nextCursor?: string
+    checkpoint?: string
+  }
+}
+
+export type ImMessagesListResponse = ImMessagesListResponses[keyof ImMessagesListResponses]
+
+export type ImSendData = {
+  body?: {
+    id?: string
+    channelName: string
+    text: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/send"
+}
+
+export type ImSendErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * ConflictError
+   */
+  409: ConflictError
+}
+
+export type ImSendError = ImSendErrors[keyof ImSendErrors]
+
+export type ImSendResponses = {
+  /**
+   * IM send result
+   */
+  200: {
+    id: string
+    projectID: string
+    platform: "feishu" | "qq"
+    channelName: string
+    mode: "reply" | "proactive"
+    target: {
+      platform: "feishu" | "qq"
+      channelName: string
+      scope: "chat" | "c2c" | "group" | "guild"
+      conversationID: string
+      senderID?: string
+      replyTo?: string
+    }
+    text: string
+    status: "pending" | "sent" | "unknown" | "failed"
+    providerMessageID?: string
+    providerSequence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    attemptCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastError?: string
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type ImSendResponse = ImSendResponses[keyof ImSendResponses]
+
+export type ImSubscriptionListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/subscriptions"
+}
+
+export type ImSubscriptionListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ImSubscriptionListError = ImSubscriptionListErrors[keyof ImSubscriptionListErrors]
+
+export type ImSubscriptionListResponses = {
+  /**
+   * Project IM subscriptions
+   */
+  200: Array<{
+    id: string
+    projectID: string
+    sessionID: string
+    sessionDirectory: string
+    target: {
+      platform: "feishu" | "qq"
+      channelName: string
+      scope: "chat" | "c2c" | "group" | "guild"
+      conversationID: string
+      senderID?: string
+      replyTo?: string
+    }
+    senderID?: string
+    keyword?: string
+    status: "active" | "paused" | "stopped" | "failed"
+    failureReason?: string
+    startSeq: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    deliveryCursor: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type ImSubscriptionListResponse = ImSubscriptionListResponses[keyof ImSubscriptionListResponses]
+
+export type ImSubscriptionCreateData = {
+  body?: {
+    sessionID: string
+    channelName: string
+    keyword?: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/subscriptions"
+}
+
+export type ImSubscriptionCreateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type ImSubscriptionCreateError = ImSubscriptionCreateErrors[keyof ImSubscriptionCreateErrors]
+
+export type ImSubscriptionCreateResponses = {
+  /**
+   * Created IM subscription
+   */
+  200: {
+    id: string
+    projectID: string
+    sessionID: string
+    sessionDirectory: string
+    target: {
+      platform: "feishu" | "qq"
+      channelName: string
+      scope: "chat" | "c2c" | "group" | "guild"
+      conversationID: string
+      senderID?: string
+      replyTo?: string
+    }
+    senderID?: string
+    keyword?: string
+    status: "active" | "paused" | "stopped" | "failed"
+    failureReason?: string
+    startSeq: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    deliveryCursor: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type ImSubscriptionCreateResponse = ImSubscriptionCreateResponses[keyof ImSubscriptionCreateResponses]
+
+export type ImSubscriptionPauseData = {
+  body?: never
+  path: {
+    subscriptionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/subscriptions/{subscriptionID}/pause"
+}
+
+export type ImSubscriptionPauseErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type ImSubscriptionPauseError = ImSubscriptionPauseErrors[keyof ImSubscriptionPauseErrors]
+
+export type ImSubscriptionPauseResponses = {
+  /**
+   * Paused IM subscription
+   */
+  200: {
+    id: string
+    projectID: string
+    sessionID: string
+    sessionDirectory: string
+    target: {
+      platform: "feishu" | "qq"
+      channelName: string
+      scope: "chat" | "c2c" | "group" | "guild"
+      conversationID: string
+      senderID?: string
+      replyTo?: string
+    }
+    senderID?: string
+    keyword?: string
+    status: "active" | "paused" | "stopped" | "failed"
+    failureReason?: string
+    startSeq: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    deliveryCursor: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type ImSubscriptionPauseResponse = ImSubscriptionPauseResponses[keyof ImSubscriptionPauseResponses]
+
+export type ImSubscriptionResumeData = {
+  body?: never
+  path: {
+    subscriptionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/subscriptions/{subscriptionID}/resume"
+}
+
+export type ImSubscriptionResumeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type ImSubscriptionResumeError = ImSubscriptionResumeErrors[keyof ImSubscriptionResumeErrors]
+
+export type ImSubscriptionResumeResponses = {
+  /**
+   * Resumed IM subscription
+   */
+  200: {
+    id: string
+    projectID: string
+    sessionID: string
+    sessionDirectory: string
+    target: {
+      platform: "feishu" | "qq"
+      channelName: string
+      scope: "chat" | "c2c" | "group" | "guild"
+      conversationID: string
+      senderID?: string
+      replyTo?: string
+    }
+    senderID?: string
+    keyword?: string
+    status: "active" | "paused" | "stopped" | "failed"
+    failureReason?: string
+    startSeq: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    deliveryCursor: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type ImSubscriptionResumeResponse = ImSubscriptionResumeResponses[keyof ImSubscriptionResumeResponses]
+
+export type ImSubscriptionStopData = {
+  body?: never
+  path: {
+    subscriptionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/subscriptions/{subscriptionID}/stop"
+}
+
+export type ImSubscriptionStopErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type ImSubscriptionStopError = ImSubscriptionStopErrors[keyof ImSubscriptionStopErrors]
+
+export type ImSubscriptionStopResponses = {
+  /**
+   * Stopped IM subscription
+   */
+  200: {
+    id: string
+    projectID: string
+    sessionID: string
+    sessionDirectory: string
+    target: {
+      platform: "feishu" | "qq"
+      channelName: string
+      scope: "chat" | "c2c" | "group" | "guild"
+      conversationID: string
+      senderID?: string
+      replyTo?: string
+    }
+    senderID?: string
+    keyword?: string
+    status: "active" | "paused" | "stopped" | "failed"
+    failureReason?: string
+    startSeq: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    deliveryCursor: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type ImSubscriptionStopResponse = ImSubscriptionStopResponses[keyof ImSubscriptionStopResponses]
+
 export type McpStatusData = {
   body?: never
   path?: never
@@ -7298,6 +7745,60 @@ export type SessionMathDetailsResponses = {
 }
 
 export type SessionMathDetailsResponse = SessionMathDetailsResponses[keyof SessionMathDetailsResponses]
+
+export type SessionMathFactGraphData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    project?: string
+  }
+  url: "/session/{sessionID}/math-fact-graph"
+}
+
+export type SessionMathFactGraphErrors = {
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type SessionMathFactGraphError = SessionMathFactGraphErrors[keyof SessionMathFactGraphErrors]
+
+export type SessionMathFactGraphResponses = {
+  /**
+   * Math Mode verified fact graph
+   */
+  200: {
+    nodes: Array<{
+      kind: "fact"
+      id: string
+      factId: string
+      problemId: string
+      author: string
+      predecessors: Array<string>
+      statement: string
+      proof: string
+      intuition?: string
+      glossaryIntroduces: {
+        [key: string]: string
+      }
+    }>
+    edges: Array<{
+      from: string
+      to: string
+    }>
+  }
+}
+
+export type SessionMathFactGraphResponse = SessionMathFactGraphResponses[keyof SessionMathFactGraphResponses]
 
 export type SessionMathWorkerEnsureData = {
   body?: {

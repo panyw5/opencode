@@ -1,0 +1,1 @@
+ALTER TABLE `im_message` ADD `legacy_status` text DEFAULT 'received' NOT NULL;

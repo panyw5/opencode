@@ -28,6 +28,9 @@ import { LSP } from "@/lsp/lsp"
 import { MCP } from "@/mcp"
 import { Permission } from "@/permission"
 import { Installation } from "@/installation"
+import { IM } from "@/im/service"
+import { IMOwner } from "@/im/owner"
+import { IMSubscription } from "@/im/subscription"
 import { InstanceLayer } from "@/project/instance-layer"
 import { LocationLifecycle } from "@/project/location-lifecycle"
 import { Plugin } from "@/plugin"
@@ -74,6 +77,7 @@ import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
+import { imHandlers } from "./handlers/im"
 import { mcpHandlers } from "./handlers/mcp"
 import { permissionHandlers } from "./handlers/permission"
 import { projectHandlers } from "./handlers/project"
@@ -138,6 +142,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     experimentalHandlers,
     fileHandlers,
     instanceHandlers,
+    imHandlers,
     mcpHandlers,
     projectHandlers,
     ptyHandlers,
@@ -217,6 +222,9 @@ export function createRoutes(
       Format.defaultLayer,
       LSP.defaultLayer,
       Installation.defaultLayer,
+      IM.defaultLayer,
+      IMOwner.defaultLayer,
+      IMSubscription.defaultLayer,
       MCP.defaultLayer,
       ModelsDev.defaultLayer,
       Permission.defaultLayer,

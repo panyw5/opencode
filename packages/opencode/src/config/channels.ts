@@ -9,8 +9,14 @@ const ChannelCommon = {
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Whether this channel is intended to be enabled. Defaults to true.",
   }),
+  autoReply: Schema.optional(Schema.Boolean).annotate({
+    description: "Keep the legacy automatic channel reply when no project subscription matches. Defaults to true.",
+  }),
   model: Schema.optional(Schema.String).annotate({
     description: "Model for IM conversations on this channel, as provider/model (e.g. anthropic/claude-sonnet-4).",
+  }),
+  retentionDays: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 3650 }))).annotate({
+    description: "Optional IM retention period in days. Omitted disables automatic deletion.",
   }),
 }
 

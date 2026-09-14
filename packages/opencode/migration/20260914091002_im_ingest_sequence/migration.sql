@@ -1,0 +1,1 @@
+ALTER TABLE `im_message` ADD `ingest_seq` integer DEFAULT 0 NOT NULL;

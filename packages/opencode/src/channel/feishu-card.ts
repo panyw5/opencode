@@ -33,11 +33,7 @@ const FINAL_LIMIT = 12000
 const PATCH_MIN_INTERVAL_MS = 800
 
 /** Schema 2.0 interactive card JSON (stringified for Feishu API). */
-export function buildTaskCardJson(input: {
-  status: string
-  steps: CardStep[]
-  final?: string | null
-}): string {
+export function buildTaskCardJson(input: { status: string; steps: CardStep[]; final?: string | null }): string {
   const elements: unknown[] = [{ tag: "markdown", content: `**${input.status}**` }]
   input.steps.forEach((step, idx) => {
     elements.push(stepPanel(idx + 1, step.summary, step.detail))
@@ -84,6 +80,12 @@ function extractFeishuMessageId(res: unknown): string | undefined {
     message_id?: string
   }
   return r.data?.message_id || r.data?.data?.message_id || r.message_id
+}
+
+function assertFeishuSuccess(res: unknown) {
+  if (!res || typeof res !== "object") return
+  const code = (res as { code?: unknown }).code
+  if (typeof code === "number" && code !== 0) throw new Error(`Feishu API returned code ${code}`)
 }
 
 export function extractTextFromParts(parts: MessagePartLike[] | undefined): string {
@@ -137,7 +139,11 @@ export function stepFromAssistant(row: MessageRowLike): CardStep | null {
     const names = parts.filter((p) => p.type === "tool" && p.tool).map((p) => p.tool!)
     summary = names.length ? names.join(", ") : "工具调用"
   } else if (text) {
-    summary = text.split("\n").find((l) => l.trim())?.trim() ?? "回复"
+    summary =
+      text
+        .split("\n")
+        .find((l) => l.trim())
+        ?.trim() ?? "回复"
     summary = summary.replace(/^#+\s*/, "").slice(0, 60)
   } else {
     summary = "处理中"
@@ -234,6 +240,7 @@ export class FeishuTaskCard {
             msg_type: "interactive",
           },
         })
+        assertFeishuSuccess(res)
         const id = extractFeishuMessageId(res)
         if (id) return id
       }
@@ -245,6 +252,7 @@ export class FeishuTaskCard {
           msg_type: "interactive",
         },
       })
+      assertFeishuSuccess(res)
       return extractFeishuMessageId(res)
     } catch (err) {
       log.warn("feishu interactive send failed", {
@@ -257,10 +265,11 @@ export class FeishuTaskCard {
   private async patchInteractive(content: string): Promise<boolean> {
     if (!this.msgId) return false
     try {
-      await this.client.im.message.patch({
+      const res = await this.client.im.message.patch({
         path: { message_id: this.msgId },
         data: { content },
       })
+      assertFeishuSuccess(res)
       return true
     } catch (err) {
       log.warn("feishu interactive patch failed", {
@@ -282,13 +291,14 @@ export class FeishuTaskCard {
     const body = JSON.stringify({ text: text.slice(0, 4000) })
     try {
       if (this.replyTo) {
-        await this.client.im.message.reply({
+        const res = await this.client.im.message.reply({
           path: { message_id: this.replyTo },
           data: { content: body, msg_type: "text" },
         })
+        assertFeishuSuccess(res)
         return
       }
-      await this.client.im.message.create({
+      const res = await this.client.im.message.create({
         params: { receive_id_type: "chat_id" },
         data: {
           receive_id: this.chatId,
@@ -296,6 +306,7 @@ export class FeishuTaskCard {
           msg_type: "text",
         },
       })
+      assertFeishuSuccess(res)
     } catch (err) {
       log.warn("feishu text fallback failed", {
         error: err instanceof Error ? err.message : String(err),

@@ -96,6 +96,22 @@ import type {
   GlobalHealthResponses,
   GlobalUpgradeErrors,
   GlobalUpgradeResponses,
+  ImChannelsErrors,
+  ImChannelsResponses,
+  ImMessagesListErrors,
+  ImMessagesListResponses,
+  ImSendErrors,
+  ImSendResponses,
+  ImSubscriptionCreateErrors,
+  ImSubscriptionCreateResponses,
+  ImSubscriptionListErrors,
+  ImSubscriptionListResponses,
+  ImSubscriptionPauseErrors,
+  ImSubscriptionPauseResponses,
+  ImSubscriptionResumeErrors,
+  ImSubscriptionResumeResponses,
+  ImSubscriptionStopErrors,
+  ImSubscriptionStopResponses,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
   LspStatusErrors,
@@ -252,6 +268,8 @@ import type {
   SessionListResponses,
   SessionMathDetailsErrors,
   SessionMathDetailsResponses,
+  SessionMathFactGraphErrors,
+  SessionMathFactGraphResponses,
   SessionMathWorkerEnsureErrors,
   SessionMathWorkerEnsureResponses,
   SessionMathWorkerEventErrors,
@@ -2366,6 +2384,294 @@ export class Formatter extends HeyApiClient {
   }
 }
 
+export class Messages extends HeyApiClient {
+  /**
+   * Read a channel's fixed user messages
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      channelName: string
+      limit?: string
+      cursor?: string
+      direction?: "before" | "after"
+      waitMs?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "channelName" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "cursor" },
+            { in: "query", key: "direction" },
+            { in: "query", key: "waitMs" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ImMessagesListResponses, ImMessagesListErrors, ThrowOnError>({
+      url: "/im/messages",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Subscription extends HeyApiClient {
+  /**
+   * List IM subscriptions
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ImSubscriptionListResponses, ImSubscriptionListErrors, ThrowOnError>({
+      url: "/im/subscriptions",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Watch a channel's fixed user
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      sessionID?: string
+      channelName?: string
+      keyword?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "channelName" },
+            { in: "body", key: "keyword" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ImSubscriptionCreateResponses,
+      ImSubscriptionCreateErrors,
+      ThrowOnError
+    >({
+      url: "/im/subscriptions",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Pause an IM subscription
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      subscriptionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "subscriptionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ImSubscriptionPauseResponses, ImSubscriptionPauseErrors, ThrowOnError>(
+      {
+        url: "/im/subscriptions/{subscriptionID}/pause",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * Resume an IM subscription
+   */
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      subscriptionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "subscriptionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ImSubscriptionResumeResponses,
+      ImSubscriptionResumeErrors,
+      ThrowOnError
+    >({
+      url: "/im/subscriptions/{subscriptionID}/resume",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Stop an IM subscription
+   */
+  public stop<ThrowOnError extends boolean = false>(
+    parameters: {
+      subscriptionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "subscriptionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ImSubscriptionStopResponses, ImSubscriptionStopErrors, ThrowOnError>({
+      url: "/im/subscriptions/{subscriptionID}/stop",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Im extends HeyApiClient {
+  /**
+   * List configured IM channels
+   */
+  public channels<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ImChannelsResponses, ImChannelsErrors, ThrowOnError>({
+      url: "/im/channels",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Send an explicit IM message
+   */
+  public send<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      id?: string
+      channelName?: string
+      text?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "id" },
+            { in: "body", key: "channelName" },
+            { in: "body", key: "text" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ImSendResponses, ImSendErrors, ThrowOnError>({
+      url: "/im/send",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  private _messages?: Messages
+  get messages(): Messages {
+    return (this._messages ??= new Messages({ client: this.client }))
+  }
+
+  private _subscription?: Subscription
+  get subscription(): Subscription {
+    return (this._subscription ??= new Subscription({ client: this.client }))
+  }
+}
+
 export class Auth2 extends HeyApiClient {
   /**
    * Remove MCP OAuth
@@ -3819,6 +4125,44 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<SessionMathDetailsResponses, SessionMathDetailsErrors, ThrowOnError>({
       url: "/session/{sessionID}/math-details",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get Math Mode fact graph
+   *
+   * Return all active verifier-accepted facts and their predecessor edges.
+   */
+  public mathFactGraph<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      project?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "project" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionMathFactGraphResponses,
+      SessionMathFactGraphErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/math-fact-graph",
       ...options,
       ...params,
     })
@@ -6208,6 +6552,11 @@ export class OpencodeClient extends HeyApiClient {
   private _formatter?: Formatter
   get formatter(): Formatter {
     return (this._formatter ??= new Formatter({ client: this.client }))
+  }
+
+  private _im?: Im
+  get im(): Im {
+    return (this._im ??= new Im({ client: this.client }))
   }
 
   private _mcp?: Mcp

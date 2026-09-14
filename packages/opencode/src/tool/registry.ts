@@ -69,6 +69,10 @@ import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { SessionStatus } from "@/session/status"
 import { SessionInput } from "@/session/input"
+import { IM } from "@/im/service"
+import { IMOwner } from "@/im/owner"
+import { IMSubscription } from "@/im/subscription"
+import { IMListTool, IMReadTool, IMSendTool, IMWatchTool } from "./im"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import {
   ScheduledTaskCreateTool,
@@ -142,6 +146,9 @@ export const layer: Layer.Layer<
   | Truncate.Service
   | RuntimeFlags.Service
   | SessionInput.Service
+  | IM.Service
+  | IMOwner.Service
+  | IMSubscription.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -156,6 +163,10 @@ export const layer: Layer.Layer<
     const task = yield* TaskTool
     const taskList = yield* TaskListTool
     const taskTranscript = yield* TaskTranscriptTool
+    const imList = yield* IMListTool
+    const imRead = yield* IMReadTool
+    const imSend = yield* IMSendTool
+    const imWatch = yield* IMWatchTool
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
@@ -299,6 +310,10 @@ export const layer: Layer.Layer<
           task: Tool.init(task),
           task_list: Tool.init(taskList),
           task_transcript: Tool.init(taskTranscript),
+          im_list: Tool.init(imList),
+          im_read: Tool.init(imRead),
+          im_send: Tool.init(imSend),
+          im_watch: Tool.init(imWatch),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           project_task_create: Tool.init(projectTaskCreate),
@@ -349,6 +364,10 @@ export const layer: Layer.Layer<
           tool.task,
           tool.task_list,
           tool.task_transcript,
+          tool.im_list,
+          tool.im_read,
+          tool.im_send,
+          tool.im_watch,
           tool.fetch,
           tool.todo,
           tool.project_task_create,
@@ -511,6 +530,9 @@ export const defaultLayer = Layer.suspend(() =>
           BackgroundJob.defaultLayer,
           BackgroundShell.defaultLayer,
           SessionInput.defaultLayer,
+          IM.defaultLayer,
+          IMOwner.defaultLayer,
+          IMSubscription.defaultLayer,
         ),
       ),
       Layer.provide(Provider.defaultLayer),

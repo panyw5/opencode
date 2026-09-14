@@ -96,6 +96,7 @@ export async function listen(opts: ListenOptions): Promise<Listener> {
 
 async function startChannelRuntimes(url: URL) {
   const { startChannels } = await import("@/channel")
+  const { recoverMessagesWithRetry } = await import("@/im/dispatcher")
   const { Config } = await import("@/config/config")
   const cfg = await Effect.runPromise(
     Effect.gen(function* () {
@@ -104,7 +105,12 @@ async function startChannelRuntimes(url: URL) {
     }).pipe(Effect.provide(Config.defaultLayer)),
   )
   const channels = cfg.channels
-  if (!channels || Object.keys(channels).length === 0) return
+  if (!channels || Object.keys(channels).length === 0) {
+    await recoverMessagesWithRetry().catch((error) =>
+      log.warn("IM durable recovery failed without channels", { error: String(error) }),
+    )
+    return
+  }
   // Per-channel work directories come from config.directory
   // (default ~/.config/opencode/channels/{name}). Not process.cwd() / projects.
   await startChannels({

@@ -279,10 +279,16 @@ describe("layout workspace helpers", () => {
       "/Users/me/.config/opencode/channels/work-feishu",
     )
     expect(resolveChannelDirectory("work-feishu", "~/custom", configDir, "/Users/me")).toBe(
-      "/Users/me/custom",
+      "/Users/me/custom/work-feishu",
     )
     expect(resolveChannelDirectory("work-feishu", "/abs/path", configDir, "/Users/me")).toBe(
-      "/abs/path",
+      "/abs/path/work-feishu",
+    )
+    expect(resolveChannelDirectory("cc", "/Users/me/.config/opencode/channels", configDir, "/Users/me")).toBe(
+      "/Users/me/.config/opencode/channels/cc",
+    )
+    expect(resolveChannelDirectory("cc", "/Users/me/.config/opencode/channels/cc/", configDir, "/Users/me")).toBe(
+      "/Users/me/.config/opencode/channels/cc",
     )
   })
 
@@ -299,6 +305,7 @@ describe("layout workspace helpers", () => {
         "C:\\Users\\me",
       ),
     ).toBe("C:\\Users\\me\\.config\\opencode\\channels\\work-feishu")
+    expect(resolveChannelDirectory("cc", "C:\\bots\\", configDir, "C:\\Users\\me")).toBe("C:\\bots\\cc")
   })
 
   test("maps a work directory back to an IM channel (independent domain)", () => {
@@ -321,10 +328,10 @@ describe("layout workspace helpers", () => {
       type: "feishu",
       directory: "/Users/me/.config/opencode/channels/work-feishu",
     })
-    expect(findImChannelByDirectory("/Users/me/bots/discord", channels, configDir, home)).toEqual({
+    expect(findImChannelByDirectory("/Users/me/bots/discord/custom-bot", channels, configDir, home)).toEqual({
       name: "custom-bot",
       type: "discord",
-      directory: "/Users/me/bots/discord",
+      directory: "/Users/me/bots/discord/custom-bot",
     })
     expect(
       findImChannelByDirectory(

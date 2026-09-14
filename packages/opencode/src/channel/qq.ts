@@ -2,6 +2,12 @@ import WebSocket from "ws"
 import * as Log from "@opencode-ai/core/util/log"
 import { createOpencodeClient } from "@opencode-ai/sdk/v2"
 import * as ServerAuth from "@/server/auth"
+import { runtime as imRuntime } from "@/im/service"
+import { messageRecordID, NormalizedMessage, Target, type IMTransport, type TransportSendInput } from "@/im/model"
+import { transportCapabilities } from "@/im/transport"
+import { AppRuntime } from "@/effect/app-runtime"
+import { dispatchMessage } from "@/im/dispatcher"
+import { IMOwner } from "@/im/owner"
 import { loadMap, mappedEntry, resolveMappedSession, saveMap, sessionKey, titlePrefix } from "./mapping"
 
 export type QQChannelConfig = {
@@ -11,12 +17,13 @@ export type QQChannelConfig = {
   apiBaseUrl?: string
   allowedUsers?: string[]
   enabled?: boolean
+  autoReply?: boolean
   model?: string
   directory?: string
 }
 
 export type QQRuntimeOptions = { name: string; config: QQChannelConfig; baseUrl: string; directory: string }
-type StopHandle = { stop: () => void }
+export type QQChannelHandle = { stop: () => void; transport: IMTransport }
 type GatewayFrame = { op?: number; d?: any; s?: number | null; t?: string }
 type QQMessageEvent = {
   id?: string
@@ -109,7 +116,68 @@ function formatError(value: unknown) {
   }
 }
 
-export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
+type QQRequestJson = (url: string, init?: RequestInit) => Promise<any>
+
+export function createQQTransport(input: {
+  name: string
+  apiBase: string
+  getToken: () => Promise<string | undefined>
+  requestJson: QQRequestJson
+}): IMTransport {
+  const sequences = new Map<string, number>()
+  return {
+    platform: "qq",
+    channelName: input.name,
+    capabilities: transportCapabilities("qq"),
+    sendText: async (message) => {
+      const scope = message.target.scope
+      if (scope === "guild" && message.mode === "proactive")
+        throw new Error("QQ proactive guild messages are unsupported")
+      if (message.text.length > 4000) throw new Error("QQ text exceeds 4000 characters")
+      let targetID = message.target.conversationID
+      let endpoint: string
+      if (scope === "c2c") {
+        targetID = targetID.startsWith("private:") ? targetID.slice("private:".length) : targetID
+        endpoint = `/v2/users/${encodeURIComponent(targetID)}/messages`
+      } else if (scope === "group") {
+        targetID = targetID.startsWith("group:") ? targetID.slice("group:".length) : targetID
+        endpoint = `/v2/groups/${encodeURIComponent(targetID)}/messages`
+      } else {
+        targetID = targetID.split(":").at(-1) || targetID
+        endpoint = `/channels/${encodeURIComponent(targetID)}/messages`
+      }
+      if (!targetID) throw new Error("QQ target ID is empty")
+      if (message.mode === "reply" && !message.target.replyTo)
+        throw new Error("QQ replies require an inbound message ID")
+      const key = `${scope}:${targetID}:${message.mode === "reply" ? (message.target.replyTo ?? "") : "proactive"}`
+      const msgSeq = (sequences.get(key) ?? 0) + 1
+      if (msgSeq > 65535) throw new Error("QQ message sequence exhausted")
+      sequences.set(key, msgSeq)
+      const body: Record<string, unknown> = {
+        content: message.text,
+        msg_type: 0,
+        msg_seq: message.providerSequence ?? msgSeq,
+      }
+      if (message.mode === "reply") body.msg_id = message.target.replyTo
+      const token = await input.getToken()
+      if (!token) throw new Error("QQ access token unavailable")
+      const response = await input.requestJson(`${input.apiBase}${endpoint}`, {
+        method: "POST",
+        headers: { authorization: `QQBot ${token}`, "content-type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      log.info("qq transport text sent", {
+        channel: input.name,
+        mode: message.mode,
+        scope,
+        conversationID: message.target.conversationID,
+      })
+      return { providerMessageID: typeof response?.id === "string" ? response.id : undefined, timeSent: Date.now() }
+    },
+  }
+}
+
+export function startQQChannel(opts: QQRuntimeOptions): QQChannelHandle {
   const apiBase = (opts.config.apiBaseUrl || DEFAULT_API_BASE).replace(/\/$/, "")
   const authHeaders =
     ServerAuth.headers({
@@ -131,7 +199,7 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
   let tokenExpiresAt = 0
   let sequence: number | null = null
 
-  const requestJson = async (url: string, init: RequestInit) => {
+  const requestJson = async (url: string, init?: RequestInit) => {
     const response = await fetch(url, init)
     const body = (await response.json().catch(() => undefined)) as any
     if (!response.ok || (body && body.code && body.code !== 0)) {
@@ -155,17 +223,25 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
     return token
   }
 
+  const transport = createQQTransport({ name: opts.name, apiBase, getToken, requestJson })
+
   const sendReply = async (event: QQMessageEvent, type: string, text: string) => {
     const info = messageInfo(type, event)
-    if (!info) return
-    const body: Record<string, unknown> = { content: text.slice(0, 4000), msg_type: 0, msg_seq: 1 }
-    if (event.id) body.msg_id = event.id
-    const accessToken = await getToken()
-    await requestJson(`${apiBase}${info.path}`, {
-      method: "POST",
-      headers: { authorization: `QQBot ${accessToken}`, "content-type": "application/json" },
-      body: JSON.stringify(body),
+    if (!info || !event.id) return
+    const scope: "c2c" | "group" | "guild" =
+      type === "C2C_MESSAGE_CREATE" ? "c2c" : type === "GROUP_AT_MESSAGE_CREATE" ? "group" : "guild"
+    const target = new Target({
+      platform: "qq",
+      channelName: opts.name,
+      scope,
+      conversationID: info.chatId,
+      replyTo: event.id,
     })
+    const providerSequence = await imRuntime.runPromise((service) =>
+      service.reserveProviderSequence({ platform: "qq", channelName: opts.name, target, mode: "reply" }),
+    )
+    if (text.length > 4000) throw new Error("QQ legacy reply exceeds 4000 characters")
+    await transport.sendText({ target, text, mode: "reply", providerSequence })
     log.info("qq official reply sent", {
       channel: opts.name,
       messageId: event.id,
@@ -194,6 +270,104 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
       chatId: info.chatId,
       textLen: text.length,
     })
+    try {
+      const scope: "c2c" | "group" | "guild" =
+        type === "C2C_MESSAGE_CREATE" ? "c2c" : type === "GROUP_AT_MESSAGE_CREATE" ? "group" : "guild"
+      const stored = await imRuntime.runPromise((service) =>
+        service.ingest({
+          message: new NormalizedMessage({
+            id: messageRecordID("qq", opts.name, event.id!),
+            platform: "qq",
+            channelName: opts.name,
+            eventID: event.id!,
+            target: new Target({
+              platform: "qq",
+              channelName: opts.name,
+              scope,
+              conversationID: info.chatId,
+              ...(info.openid ? { senderID: info.openid } : {}),
+              replyTo: event.id,
+            }),
+            ...(info.openid ? { senderID: info.openid } : {}),
+            text,
+            ...(event.timestamp ? { timeEvent: Date.parse(event.timestamp) || undefined } : {}),
+            metadata: { eventType: type, appIdentity: IMOwner.appIdentity(opts.config) },
+          }),
+        }),
+      )
+      await IMOwner.runtime.runPromise((service) =>
+        service.observe(new NormalizedMessage({ ...stored.message }), opts.config),
+      )
+      if (stored.expired) {
+        log.info("qq expired message ignored", { channel: opts.name, messageId: event.id })
+        return
+      }
+      if (stored.inserted)
+        await imRuntime.runPromise((service) => service.markLegacyStatus(stored.message.id, "processing"))
+      let shouldDispatch = stored.inserted
+      if (!stored.inserted) {
+        shouldDispatch = false
+        log.info("qq durable duplicate message ignored", { channel: opts.name, messageId: event.id })
+        let matched = 0
+        try {
+          const routed = await dispatchMessage(stored.message)
+          matched = routed.matched
+          log.info("qq duplicate replay dispatched", {
+            channel: opts.name,
+            messageId: event.id,
+            matched: routed.matched,
+          })
+        } catch (error) {
+          log.error("qq duplicate replay dispatch failed", {
+            channel: opts.name,
+            messageId: event.id,
+            error: formatError(error),
+          })
+          await imRuntime.runPromise((service) => service.markLegacyStatus(stored.message.id, "unknown"))
+          return
+        }
+        if (matched > 0 || stored.message.legacyStatus === "completed") return
+        if (await imRuntime.runPromise((service) => service.hasSubscriptionDelivery(stored.message.id))) return
+        if (!(await imRuntime.runPromise((service) => service.claimLegacyProcessing(stored.message.id)))) return
+      }
+      if (shouldDispatch)
+        try {
+          const routed = await dispatchMessage(stored.message)
+          if (routed.matched > 0) {
+            log.info("qq message routed to project subscriptions", {
+              channel: opts.name,
+              messageId: event.id,
+              matched: routed.matched,
+              admitted: routed.admitted,
+            })
+            return
+          }
+        } catch (error) {
+          log.error("qq subscription dispatch failed; legacy reply suppressed", {
+            channel: opts.name,
+            messageId: event.id,
+            error: formatError(error),
+          })
+          await imRuntime.runPromise((service) => service.markLegacyStatus(stored.message.id, "unknown"))
+          return
+        }
+      if (opts.config.autoReply === false) {
+        log.info("qq legacy auto reply disabled", { channel: opts.name, messageId: event.id })
+        return
+      }
+    } catch (error) {
+      // Keep the established auto-reply path alive if the optional IM inbox is
+      // unavailable, while making the degraded persistence visible in logs.
+      log.error("qq inbound persistence failed", {
+        channel: opts.name,
+        messageId: event.id,
+        error: formatError(error),
+      })
+    }
+    if (opts.config.autoReply === false) {
+      log.info("qq legacy auto reply disabled after persistence path", { channel: opts.name, messageId: event.id })
+      return
+    }
     const key = sessionKey({ channelName: opts.name, chatId: info.chatId })
     const map = await loadMap()
     let sessionId = resolveMappedSession(map.sessions[key], opts.directory)
@@ -202,6 +376,9 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
       if (created.error || !created.data?.id) {
         const error = formatError(created.error || "session creation failed")
         log.error("qq session creation failed", { channel: opts.name, messageId: event.id, error })
+        await imRuntime.runPromise((service) =>
+          service.markLegacyStatus(messageRecordID("qq", opts.name, event.id!), "unknown"),
+        )
         await sendReply(event, type, `抱歉，创建会话失败：${error}`)
         return
       }
@@ -234,6 +411,9 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
       log.error("qq prompt failed", { channel: opts.name, sessionId, messageId: event.id, error: detail })
       await sendReply(event, type, `处理消息时出错了：${detail}`).catch((replyError) =>
         log.error("qq error reply failed", { channel: opts.name, error: formatError(replyError) }),
+      )
+      await imRuntime.runPromise((service) =>
+        service.markLegacyStatus(messageRecordID("qq", opts.name, event.id!), "unknown"),
       )
     }
   }
@@ -289,10 +469,23 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
             const info = messageInfo(frame.t, event)
             if (info) {
               void queue
-                .enqueue(`${opts.name}::${info.chatId}`, () => handleMessage(frame.t!, event))
-                .catch((error) =>
-                  log.error("qq event handler failed", { channel: opts.name, error: formatError(error) }),
-                )
+                .enqueue(`${opts.name}::${info.chatId}`, async () => {
+                  await handleMessage(frame.t!, event)
+                  if (event.id)
+                    await imRuntime.runPromise((service) =>
+                      service.markLegacyCompleted(messageRecordID("qq", opts.name, event.id!)),
+                    )
+                })
+                .catch((error) => {
+                  const status = event.id
+                    ? imRuntime.runPromise((service) =>
+                        service.markLegacyStatus(messageRecordID("qq", opts.name, event.id!), "unknown"),
+                      )
+                    : Promise.resolve()
+                  return status.then(() =>
+                    log.error("qq event handler failed", { channel: opts.name, error: formatError(error) }),
+                  )
+                })
             }
           }
           if (frame.op === 7 || frame.op === 9) socket?.close()
@@ -324,6 +517,7 @@ export function startQQChannel(opts: QQRuntimeOptions): StopHandle {
     directory: opts.directory,
   })
   return {
+    transport,
     stop: () => {
       stopped = true
       if (reconnectTimer) clearTimeout(reconnectTimer)

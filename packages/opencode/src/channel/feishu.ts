@@ -2,12 +2,13 @@ import * as Lark from "@larksuiteoapi/node-sdk"
 import * as Log from "@opencode-ai/core/util/log"
 import { createOpencodeClient, type OpencodeClient } from "@opencode-ai/sdk/v2"
 import * as ServerAuth from "@/server/auth"
-import {
-  FeishuTaskCard,
-  finalTextFromMessages,
-  stepsFromMessages,
-  type MessageRowLike,
-} from "./feishu-card"
+import { runtime as imRuntime } from "@/im/service"
+import { messageRecordID, NormalizedMessage, Target, type IMTransport } from "@/im/model"
+import { ProviderRejectedError, transportCapabilities } from "@/im/transport"
+import { AppRuntime } from "@/effect/app-runtime"
+import { dispatchMessage } from "@/im/dispatcher"
+import { IMOwner } from "@/im/owner"
+import { FeishuTaskCard, finalTextFromMessages, stepsFromMessages, type MessageRowLike } from "./feishu-card"
 import { loadMap, mappedEntry, resolveMappedSession, saveMap, sessionKey, titlePrefix } from "./mapping"
 
 export type FeishuChannelConfig = {
@@ -16,6 +17,7 @@ export type FeishuChannelConfig = {
   appSecret: string
   allowedUsers?: string[]
   enabled?: boolean
+  autoReply?: boolean
   domain?: "feishu" | "lark"
   model?: string
   /** Working directory for this channel's sessions (decoupled from projects). */
@@ -34,13 +36,66 @@ export type FeishuRuntimeOptions = {
   directory: string
 }
 
-type StopHandle = {
+export type FeishuChannelHandle = {
   stop: () => void
+  transport: IMTransport
+}
+
+export function createFeishuTransport(input: { name: string; client: Lark.Client }): IMTransport {
+  return {
+    platform: "feishu",
+    channelName: input.name,
+    capabilities: transportCapabilities("feishu"),
+    sendText: async (message) => {
+      const maxLen = 4000
+      if (message.mode === "reply" && !message.target.replyTo)
+        throw new Error("Feishu replies require an inbound message ID")
+      if (message.text.length > maxLen) throw new Error(`Feishu text exceeds ${maxLen} characters`)
+      const content = JSON.stringify({ text: message.text })
+      const response = await Promise.resolve()
+        .then(() =>
+          message.mode === "reply"
+            ? input.client.im.message.reply({
+                path: { message_id: message.target.replyTo! },
+                data: { content, msg_type: "text" },
+              })
+            : input.client.im.message.create({
+                params: { receive_id_type: "chat_id" },
+                data: { receive_id: message.target.conversationID, content, msg_type: "text" },
+              }),
+        )
+        .catch((error: unknown) => {
+          const status =
+            error && typeof error === "object"
+              ? (error as { response?: { status?: number } }).response?.status
+              : undefined
+          if (status && status >= 400 && status < 500) throw new ProviderRejectedError("feishu", status)
+          throw error
+        })
+      assertSuccess(response)
+      return { providerMessageID: extractMessageID(response), timeSent: Date.now() }
+    },
+  }
 }
 
 function resolveDomain(domain: FeishuChannelConfig["domain"]): Lark.Domain | string {
   if (domain === "lark") return Lark.Domain.Lark
   return Lark.Domain.Feishu
+}
+
+function extractMessageID(value: unknown): string | undefined {
+  if (!value || typeof value !== "object") return undefined
+  const item = value as { message_id?: unknown; data?: { message_id?: unknown; data?: { message_id?: unknown } } }
+  if (typeof item.message_id === "string") return item.message_id
+  if (typeof item.data?.message_id === "string") return item.data.message_id
+  if (typeof item.data?.data?.message_id === "string") return item.data.data.message_id
+  return undefined
+}
+
+function assertSuccess(value: unknown) {
+  if (!value || typeof value !== "object") return
+  const code = (value as { code?: unknown }).code
+  if (typeof code === "number" && code !== 0) throw new ProviderRejectedError("feishu", undefined, code)
 }
 
 function extractText(content: string, messageType: string): string | undefined {
@@ -137,7 +192,7 @@ function createChatQueue() {
   }
 }
 
-export function startFeishuChannel(opts: FeishuRuntimeOptions): StopHandle {
+export function startFeishuChannel(opts: FeishuRuntimeOptions): FeishuChannelHandle {
   const { name, config, baseUrl, directory } = opts
   const domain = resolveDomain(config.domain)
   let stopped = false
@@ -164,6 +219,8 @@ export function startFeishuChannel(opts: FeishuRuntimeOptions): StopHandle {
     directory,
     ...(authHeaders ? { headers: authHeaders } : {}),
   })
+
+  const transport = createFeishuTransport({ name, client })
 
   const dispatcher = new Lark.EventDispatcher({}).register({
     "im.message.receive_v1": async (data) => {
@@ -192,8 +249,17 @@ export function startFeishuChannel(opts: FeishuRuntimeOptions): StopHandle {
             directory,
             data: event,
           })
+          if (messageId) {
+            await imRuntime.runPromise((service) =>
+              service.markLegacyCompleted(messageRecordID("feishu", name, messageId)),
+            )
+          }
         })
       } catch (err) {
+        if (messageId)
+          await imRuntime.runPromise((service) =>
+            service.markLegacyStatus(messageRecordID("feishu", name, messageId), "unknown"),
+          )
         log.error("feishu message handler failed", {
           channel: name,
           messageId,
@@ -223,6 +289,7 @@ export function startFeishuChannel(opts: FeishuRuntimeOptions): StopHandle {
   })
 
   return {
+    transport,
     stop: () => {
       stopped = true
       try {
@@ -314,6 +381,109 @@ async function handleMessage(input: {
     directory: input.directory,
   })
 
+  if (!messageId) {
+    log.warn("feishu inbound persistence skipped without event id", { channel: input.name, chatId: msg.chat_id })
+  } else {
+    try {
+      const stored = await imRuntime.runPromise((service) =>
+        service.ingest({
+          message: new NormalizedMessage({
+            id: messageRecordID("feishu", input.name, messageId),
+            platform: "feishu",
+            channelName: input.name,
+            eventID: messageId,
+            target: new Target({
+              platform: "feishu",
+              channelName: input.name,
+              scope: "chat",
+              conversationID: msg.chat_id!,
+              ...(openId ? { senderID: openId } : {}),
+              ...(messageId ? { replyTo: messageId } : {}),
+            }),
+            ...(openId ? { senderID: openId } : {}),
+            text,
+            metadata: {
+              messageType: msg.message_type,
+              chatType: msg.chat_type,
+              threadID: msg.thread_id,
+              rootID: msg.root_id,
+              appIdentity: IMOwner.appIdentity(input.config),
+            },
+          }),
+        }),
+      )
+      await IMOwner.runtime.runPromise((service) =>
+        service.observe(new NormalizedMessage({ ...stored.message }), input.config),
+      )
+      if (stored.expired) {
+        log.info("feishu expired message ignored", { channel: input.name, messageId })
+        return
+      }
+      if (stored.inserted)
+        await imRuntime.runPromise((service) => service.markLegacyStatus(stored.message.id, "processing"))
+      let shouldDispatch = stored.inserted
+      if (!stored.inserted) {
+        shouldDispatch = false
+        log.info("feishu durable duplicate message ignored", { channel: input.name, messageId })
+        let matched = 0
+        try {
+          const routed = await dispatchMessage(stored.message)
+          matched = routed.matched
+          log.info("feishu duplicate replay dispatched", { channel: input.name, messageId, matched: routed.matched })
+        } catch (error) {
+          log.error("feishu duplicate replay dispatch failed", {
+            channel: input.name,
+            messageId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          await imRuntime.runPromise((service) => service.markLegacyStatus(stored.message.id, "unknown"))
+          return
+        }
+        if (matched > 0 || stored.message.legacyStatus === "completed") return
+        if (await imRuntime.runPromise((service) => service.hasSubscriptionDelivery(stored.message.id))) return
+        if (!(await imRuntime.runPromise((service) => service.claimLegacyProcessing(stored.message.id)))) return
+      }
+      if (shouldDispatch)
+        try {
+          const routed = await dispatchMessage(stored.message)
+          if (routed.matched > 0) {
+            log.info("feishu message routed to project subscriptions", {
+              channel: input.name,
+              messageId,
+              matched: routed.matched,
+              admitted: routed.admitted,
+            })
+            return
+          }
+        } catch (error) {
+          log.error("feishu subscription dispatch failed; legacy reply suppressed", {
+            channel: input.name,
+            messageId,
+            error: error instanceof Error ? error.message : String(error),
+          })
+          await imRuntime.runPromise((service) => service.markLegacyStatus(stored.message.id, "unknown"))
+          return
+        }
+      if (input.config.autoReply === false) {
+        log.info("feishu legacy auto reply disabled", { channel: input.name, messageId })
+        return
+      }
+    } catch (err) {
+      // Persistence must not disable the established channel reply path. The
+      // error is explicit so operators can detect a degraded inbox.
+      log.error("feishu inbound persistence failed", {
+        channel: input.name,
+        messageId,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  if (input.config.autoReply === false) {
+    log.info("feishu legacy auto reply disabled after persistence path", { channel: input.name, messageId })
+    return
+  }
+
   const chatId = msg.chat_id
   const threadId = msg.thread_id || msg.root_id
   const key = sessionKey({ channelName: input.name, chatId, threadId })
@@ -397,6 +567,10 @@ async function handleMessage(input: {
         messageId,
         error: detail,
       })
+      if (messageId)
+        await imRuntime.runPromise((service) =>
+          service.markLegacyStatus(messageRecordID("feishu", input.name, messageId), "unknown"),
+        )
       await replyText(input.client, chatId, `抱歉，创建会话失败：${detail}`, messageId)
       return
     }
@@ -459,6 +633,10 @@ async function handleMessage(input: {
       error: detail,
     })
     await card.fail(`处理消息时出错了：${detail}`)
+    if (messageId)
+      await imRuntime.runPromise((service) =>
+        service.markLegacyStatus(messageRecordID("feishu", input.name, messageId), "unknown"),
+      )
     return
   }
 
@@ -477,13 +655,16 @@ async function handleMessage(input: {
       error: detail,
     })
     await card.fail(`处理消息时出错了：${detail}`)
+    if (messageId)
+      await imRuntime.runPromise((service) =>
+        service.markLegacyStatus(messageRecordID("feishu", input.name, messageId), "unknown"),
+      )
     return
   }
 
   // session.prompt returns only the *final* assistant message. Aggregate all
   // assistant text parts in this turn for the card's final section.
-  const reply =
-    (await collectTurnAssistantText(input.sdk, sessionId)) || extractAssistantText(result.data)
+  const reply = (await collectTurnAssistantText(input.sdk, sessionId)) || extractAssistantText(result.data)
   if (reply.trim()) {
     await card.done(reply)
     log.info("feishu reply card done", {
@@ -504,12 +685,7 @@ async function handleMessage(input: {
 }
 
 /** Poll session messages while prompt runs; push new turns to the Feishu card. */
-function startStepPoller(input: {
-  sdk: OpencodeClient
-  sessionId: string
-  card: FeishuTaskCard
-  intervalMs?: number
-}) {
+function startStepPoller(input: { sdk: OpencodeClient; sessionId: string; card: FeishuTaskCard; intervalMs?: number }) {
   let stopped = false
   let inflight: Promise<void> | undefined
   const intervalMs = input.intervalMs ?? 1200

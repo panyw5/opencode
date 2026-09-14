@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { __test } from "./feishu"
+import { createFeishuTransport } from "./feishu"
+import { Target } from "@/im/model"
 
 const { createMessageDedupe, createChatQueue, extractAssistantText, extractText, parseModel } = __test
 
@@ -74,6 +76,20 @@ describe("feishu chat queue", () => {
 })
 
 describe("feishu helpers", () => {
+  test("transport rejects truncation and non-zero provider codes", async () => {
+    const client = {
+      im: {
+        message: {
+          create: async () => ({ code: 123 }),
+          reply: async () => ({ code: 0, data: { message_id: "sent" } }),
+        },
+      },
+    } as any
+    const transport = createFeishuTransport({ name: "test", client })
+    const target = new Target({ platform: "feishu", channelName: "test", scope: "chat", conversationID: "chat" })
+    await expect(transport.sendText({ target, mode: "proactive", text: "hello" })).rejects.toThrow("code 123")
+    await expect(transport.sendText({ target, mode: "proactive", text: "x".repeat(4001) })).rejects.toThrow("exceeds")
+  })
   test("extracts text message body", () => {
     expect(extractText(JSON.stringify({ text: "今天几号？" }), "text")).toBe("今天几号？")
   })
@@ -86,11 +102,7 @@ describe("feishu helpers", () => {
   test("extracts assistant text parts", () => {
     expect(
       extractAssistantText({
-        parts: [
-          { type: "step-start" },
-          { type: "text", text: "2026年7月14日" },
-          { type: "text", text: "星期二" },
-        ],
+        parts: [{ type: "step-start" }, { type: "text", text: "2026年7月14日" }, { type: "text", text: "星期二" }],
       }),
     ).toBe("2026年7月14日\n星期二")
   })
