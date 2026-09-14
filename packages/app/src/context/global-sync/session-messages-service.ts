@@ -262,6 +262,9 @@ export function createSessionMessagesService(deps: SessionControllerDeps) {
       if (history) child[1]("session_history", sessionID, { ...history, show })
     },
     optimistic: {
+      has(directory: string, sessionID: string, messageID: string) {
+        return optimistic.get(keyFor(directory, sessionID))?.has(messageID) ?? false
+      },
       add: addOptimistic,
       complete(directory: string, input: { sessionID: string; messageID: string }) {
         clearOptimistic(directory, input.sessionID, input.messageID)

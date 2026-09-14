@@ -3370,7 +3370,18 @@ export default function Page() {
     const boundary = resolveMessage(userMessages(), id) ?? resolveMessage(messages(), id)
     if (!boundary) return []
     return userMessages()
-      .filter((item) => compareMessages(item, boundary) >= 0)
+      .filter((item) => {
+        if (compareMessages(item, boundary) < 0) return false
+        const pending = globalSync.session.messages.optimistic.has(sdk.directory, item.sessionID, item.id)
+        if (pending) {
+          console.debug("[session-revert] exclude pending send", {
+            sessionID: item.sessionID,
+            messageID: item.id,
+            boundary: id,
+          })
+        }
+        return !pending
+      })
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 

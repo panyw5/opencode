@@ -14,6 +14,25 @@ const response = (messages: Message[], parts: Part[] = []) => ({
 })
 
 describe("session messages controller", () => {
+  test("distinguishes a new pending send from reverted user messages", () => {
+    const harness = createSessionControllerHarness({ messages: async () => response([]) })
+    const service = createSessionMessagesService(harness.deps)
+    const reverted = { ...message("message-1"), role: "user" } as Message
+    const pending = { ...message("message-2"), role: "user" } as Message
+    harness.child[1]("message", "session", [reverted])
+    const rolled = () =>
+      (service.get("/project", "session") ?? []).filter(
+        (item) => item.id >= reverted.id && !service.optimistic.has("/project", "session", item.id),
+      )
+    expect(rolled()).toEqual([reverted])
+    service.optimistic.add("/project", { sessionID: "session", message: pending, parts: [] })
+    expect(service.get("/project", "session")).toHaveLength(2)
+    expect(rolled()).toEqual([reverted])
+    service.optimistic.remove("/project", { sessionID: "session", messageID: pending.id })
+    expect(service.optimistic.has("/project", "session", pending.id)).toBe(false)
+    expect(rolled()).toEqual([reverted])
+  })
+
   test("history prepend is additive with and without concurrent SSE events", async () => {
     for (const concurrentEvent of [false, true]) {
       const request = deferred<ReturnType<typeof response>>()
@@ -171,10 +190,14 @@ describe("session messages controller", () => {
     })
     const service = createSessionMessagesService(harness.deps)
     service.optimistic.add("/project", { sessionID: "session", message: optimistic, parts: [] })
+    expect(service.optimistic.has("/project", "session", optimistic.id)).toBe(true)
+    expect(service.optimistic.has("/other", "session", optimistic.id)).toBe(false)
+    expect(service.optimistic.has("/project", "other", optimistic.id)).toBe(false)
     const confirm = service.load({ directory: "/project", sessionID: "session", limit: 80 })
     first.resolve(response([optimistic]))
     await confirm
     expect(service.get("/project", "session")).toEqual([optimistic])
+    expect(service.optimistic.has("/project", "session", optimistic.id)).toBe(false)
 
     const refresh = service.load({ directory: "/project", sessionID: "session", limit: 80 })
     second.resolve(response([]))
