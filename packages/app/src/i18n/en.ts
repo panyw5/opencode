@@ -427,13 +427,42 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Prompt",
   "prompt.mode.shell.exit": "esc to exit",
-  "prompt.suggestion.greeting.1": "What should we make steady today?",
-  "prompt.suggestion.greeting.2": "Describe the goal, constraints, and done condition.",
+  "prompt.suggestion.hint.sendKeepView":
+    "After entering a prompt, hover over Send to reveal Send and keep view.",
   "prompt.suggestion.hint.tempAttachment": "For long prompts, use Add temporary attachment to avoid truncation.",
-  "prompt.suggestion.hint.expandEditor": "Click Expand editor to enlarge the prompt editor and preview Markdown.",
+  "prompt.suggestion.hint.expandEditor": "Click Expand editor below to write prompts more comfortably.",
+  "prompt.suggestion.hint.sessionTabMenu": "Right-click a session tab to open its menu.",
+  "prompt.suggestion.hint.sessionListMenu": "Right-click any session title in the session list to open its menu.",
+  "prompt.suggestion.hint.newSessionProjectPicker":
+    "From Home, use the New session shortcut to choose any project and start a session there.",
+  "prompt.suggestion.hint.externalAgents":
+    "Enable external agents in Settings, then @mention one here to give it a task.",
   "prompt.suggestion.hint.dragDrop": "Drop images, PDFs, or text files here to attach context.",
   "prompt.suggestion.hint.mentions": "Type @ to mention files, advisors, or agents; / for commands and skills.",
-  "prompt.suggestion.hint.outputShape": "Tell me the output format you want, such as patch, review, plan, or tests.",
+  "prompt.suggestion.hint.stopAfterTool":
+    "While a task is running, hover over Stop to reveal Stop after the current tool.",
+  "prompt.suggestion.hint.customizeShortcuts": "View or change any keyboard shortcut in Settings.",
+  "prompt.suggestion.hint.backgroundTasks":
+    "Ask OpenCode to run shell commands or subagents in the background; their results return automatically.",
+  "prompt.suggestion.hint.scheduledTasks":
+    "Ask an agent to create a scheduled task, then find recent scheduled tasks on Home.",
+  "prompt.suggestion.hint.switchProject": "Use the Switch project shortcut to jump between projects quickly.",
+  "prompt.suggestion.hint.worktrees": "When starting a session, choose the main branch, an existing worktree, or a new one.",
+  "prompt.suggestion.hint.dropFolder": "Drop a folder onto the window to open it as a project.",
+  "prompt.suggestion.hint.reorderProjects": "Drag project icons in the sidebar to arrange them in your preferred order.",
+  "prompt.suggestion.hint.questionPanel":
+    "Question panels support keyboard controls, collapsing, and pasted images.",
+  "prompt.suggestion.hint.sessionStatus":
+    "Open Session status to inspect and copy the session's file changes and details.",
+  "prompt.suggestion.hint.projectTasks":
+    "Use Project tasks to track work across sessions and Session tasks for the current conversation.",
+  "prompt.suggestion.hint.search":
+    "Use Page find or Global find to search; enable indexing before using Global find.",
+  "prompt.suggestion.hint.filePaths":
+    "Click a file path to preview it, or Cmd/Ctrl-click to open it in your editor or file manager.",
+  "prompt.suggestion.hint.readingMode": "Turn on Reading mode for a distraction-free conversation view.",
+  "prompt.suggestion.hint.configHub":
+    "Configure providers, agents, skills, commands, plugins, and MCP servers together on the Config page.",
 
   "prompt.example.1": "Fix a TODO in the codebase",
   "prompt.example.2": "What is the tech stack of this project?",
