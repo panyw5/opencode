@@ -59,6 +59,7 @@ import { useCheckServerHealth } from "./utils/server-health"
 import { decode64 } from "@/utils/base64"
 import { workspaceKey } from "@/pages/layout/helpers"
 import { pickSessionTabsTarget, useSessionTabs } from "@/context/session-tabs"
+import { ConfigTitlebarActions } from "@/components/config-titlebar-actions"
 
 const HomeRoute = lazy(() => import("@/pages/home"))
 const Session = lazy(() => import("@/pages/session"))
@@ -159,7 +160,12 @@ function ConfigRouteFrame(props: ParentProps) {
     })
   })
 
-  return <>{props.children}</>
+  return (
+    <>
+      <ConfigTitlebarActions />
+      {props.children}
+    </>
+  )
 }
 
 // Skeleton shell shown while Config page lazy-loads.
