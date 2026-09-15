@@ -25,6 +25,8 @@ jobs:
       OPENCODE_CHANNEL: prod
       RUST_TARGET: x86_64-apple-darwin
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      CSC_NAME: "Yiwen Pan (8L95FJ9774)"
+      NOTARY_PROFILE: opencode-notary-ci
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +49,45 @@ jobs:
           bun ./script/sync-version.ts "$VERSION"
           echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      - name: Import Developer ID certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/opencode-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+          trap 'rm -f "$CERTIFICATE_PATH"' EXIT
+
+          test -n "$CERTIFICATE_BASE64"
+          test -n "$CERTIFICATE_PASSWORD"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Yiwen Pan (8L95FJ9774)'
+
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" \
+            --keychain "$KEYCHAIN_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID"
+
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "APPLE_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "APPLE_KEYCHAIN_PROFILE=$NOTARY_PROFILE" >> "$GITHUB_ENV"
+
       - name: Build Desktop App
         run: |
           cd packages/desktop
@@ -54,6 +95,21 @@ jobs:
           DMG="$(find dist -maxdepth 1 -name '*.dmg' -type f | head -n 1)"
           test -n "$DMG"
           mv "$DMG" "dist/OpenCode_${OPENCODE_VERSION}_x64.dmg"
+
+      - name: Notarize final DMG
+        run: |
+          set -euo pipefail
+          cd packages/desktop
+          DMG="dist/OpenCode_${OPENCODE_VERSION}_x64.dmg"
+          xcrun notarytool submit "$DMG" \
+            --keychain "$APPLE_KEYCHAIN" \
+            --keychain-profile "$APPLE_KEYCHAIN_PROFILE" \
+            --wait \
+            --timeout 12h
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          codesign --verify --strict --verbose=2 "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
       - name: Verify packaged versions
         run: |
           cd packages/desktop
@@ -79,12 +135,24 @@ jobs:
           grep -Eq '^owner:[[:space:]]*panyw5[[:space:]]*$' "$UPDATER_CONFIG"
           grep -Eq '^repo:[[:space:]]*opencode[[:space:]]*$' "$UPDATER_CONFIG"
           ! grep -q 'anomalyco' "$UPDATER_CONFIG"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          spctl --assess --type execute --verbose=4 "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
 
       - name: Upload macOS x64 DMG
         uses: actions/upload-artifact@v4
         with:
           name: opencode-desktop-macos-x64
           path: packages/desktop/dist/OpenCode_*_x64.dmg
+
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/opencode-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
 
   build-macos-arm64:
     needs: build-macos-x64
@@ -94,6 +162,8 @@ jobs:
       OPENCODE_CHANNEL: prod
       RUST_TARGET: aarch64-apple-darwin
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      CSC_NAME: "Yiwen Pan (8L95FJ9774)"
+      NOTARY_PROFILE: opencode-notary-ci
     steps:
       - uses: actions/checkout@v4
 
@@ -116,6 +186,45 @@ jobs:
           bun ./script/sync-version.ts "$VERSION"
           echo "OPENCODE_VERSION=$VERSION" >> "$GITHUB_ENV"
 
+      - name: Import Developer ID certificate
+        env:
+          CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/opencode-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -hex 32)"
+          CERTIFICATE_PATH="$RUNNER_TEMP/developer-id.p12"
+          trap 'rm -f "$CERTIFICATE_PATH"' EXIT
+
+          test -n "$CERTIFICATE_BASE64"
+          test -n "$CERTIFICATE_PASSWORD"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_APP_SPECIFIC_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+
+          printf '%s' "$CERTIFICATE_BASE64" | base64 --decode > "$CERTIFICATE_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERTIFICATE_PATH" -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" "$HOME/Library/Keychains/login.keychain-db"
+          security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -F 'Developer ID Application: Yiwen Pan (8L95FJ9774)'
+
+          xcrun notarytool store-credentials "$NOTARY_PROFILE" \
+            --keychain "$KEYCHAIN_PATH" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID"
+
+          echo "CSC_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "APPLE_KEYCHAIN=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          echo "APPLE_KEYCHAIN_PROFILE=$NOTARY_PROFILE" >> "$GITHUB_ENV"
+
       - name: Build Desktop App
         run: |
           cd packages/desktop
@@ -123,6 +232,21 @@ jobs:
           DMG="$(find dist -maxdepth 1 -name '*.dmg' -type f | head -n 1)"
           test -n "$DMG"
           mv "$DMG" "dist/OpenCode_${OPENCODE_VERSION}_aarch64.dmg"
+
+      - name: Notarize final DMG
+        run: |
+          set -euo pipefail
+          cd packages/desktop
+          DMG="dist/OpenCode_${OPENCODE_VERSION}_aarch64.dmg"
+          xcrun notarytool submit "$DMG" \
+            --keychain "$APPLE_KEYCHAIN" \
+            --keychain-profile "$APPLE_KEYCHAIN_PROFILE" \
+            --wait \
+            --timeout 12h
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          codesign --verify --strict --verbose=2 "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose=4 "$DMG"
 
       - name: Verify packaged versions
         run: |
@@ -149,12 +273,24 @@ jobs:
           grep -Eq '^owner:[[:space:]]*panyw5[[:space:]]*$' "$UPDATER_CONFIG"
           grep -Eq '^repo:[[:space:]]*opencode[[:space:]]*$' "$UPDATER_CONFIG"
           ! grep -q 'anomalyco' "$UPDATER_CONFIG"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          spctl --assess --type execute --verbose=4 "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
 
       - name: Upload macOS arm64 DMG
         uses: actions/upload-artifact@v4
         with:
           name: opencode-desktop-macos-arm64
           path: packages/desktop/dist/OpenCode_*_aarch64.dmg
+
+      - name: Remove signing keychain
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/developer-id.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/opencode-signing.keychain-db"
+          if [ -f "$KEYCHAIN_PATH" ]; then
+            security delete-keychain "$KEYCHAIN_PATH"
+          fi
 
   create-draft-release:
     needs: [build-macos-x64, build-macos-arm64]
