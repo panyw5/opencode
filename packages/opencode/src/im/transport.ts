@@ -37,6 +37,14 @@ class Registry {
 export const registry = new Registry()
 
 export function transportCapabilities(platform: Platform): Capabilities {
+  if (platform === "wechat") {
+    return new Capabilities({
+      passiveReply: true,
+      proactiveC2C: "limited",
+      proactiveGroup: "unsupported",
+      proactiveGuild: "unsupported",
+    })
+  }
   if (platform === "feishu") {
     return new Capabilities({
       passiveReply: true,

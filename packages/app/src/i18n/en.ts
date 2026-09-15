@@ -1927,7 +1927,30 @@ export const dict = {
   "config.channels.field.autoReply": "Legacy automatic replies",
   "config.channels.field.autoReply.hint": "Reply automatically only when no project subscription matches.",
   "config.channels.field.retentionDays": "Message retention (days)",
-  "config.channels.field.retentionDays.hint": "Optional. Leave empty to retain indefinitely. Pending and unknown sends are never cleaned up.",
+  "config.channels.platform.wechat": "WeChat",
+  "config.channels.platform.wechat.note": "Connect with official ClawBot QR authorization",
+  "config.channels.platform.wechat.detail":
+    "Bind a WeChat ClawBot for private text and inbound media. Group chats and outbound media are not supported yet.",
+  "config.channels.wechat.hint":
+    "Scan with WeChat to authorize this channel. Credentials are stored privately on this computer. Proactive messages may be restricted by the provider.",
+  "config.channels.wechat.createHint":
+    "Create this channel first, then expand it to scan and bind your WeChat account.",
+  "config.channels.wechat.account": "Bound account",
+  "config.channels.wechat.aclHint":
+    "Allowed sender IDs, one per line. Leave empty to permit only the scanning user by default.",
+  "config.channels.wechat.bind": "Scan to bind",
+  "config.channels.wechat.rebind": "Refresh QR / rebind",
+  "config.channels.wechat.check": "Check connection state",
+  "config.channels.wechat.qrAlt": "WeChat authorization QR code",
+  "config.channels.wechat.status": "Authorization state",
+  "config.channels.wechat.verify": "Verification code shown in WeChat",
+  "config.channels.wechat.alreadyBound":
+    "The provider reports this bot is already bound. Check the stored account or start a new authorization; this response alone does not confirm a connection.",
+  "config.channels.wechat.connection": "Connection state (not a message delivery test)",
+  "config.channels.wechat.networkError":
+    "Authorization request failed. Check the backend connection or refresh the QR code.",
+  "config.channels.field.retentionDays.hint":
+    "Optional. Leave empty to retain indefinitely. Pending and unknown sends are never cleaned up.",
   "config.channels.field.retentionDays.invalid": "Enter a whole number from 1 to 3650, or leave empty.",
   "config.channels.field.model": "Conversation model",
   "config.channels.field.model.hint": "Model used when replying on this IM channel. Auto uses the default model.",

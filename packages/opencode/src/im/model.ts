@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { createHash } from "node:crypto"
 
-export const Platform = Schema.Literals(["feishu", "qq"])
+export const Platform = Schema.Literals(["feishu", "qq", "wechat"])
 export type Platform = Schema.Schema.Type<typeof Platform>
 
 export const TargetScope = Schema.Literals(["chat", "c2c", "group", "guild"])
@@ -46,13 +46,30 @@ export class NormalizedMessage extends Schema.Class<NormalizedMessage>("IMNormal
   text: Schema.String,
   timeEvent: Schema.optional(Schema.Number),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  attachments: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        id: Schema.String,
+        kind: Schema.Literals(["image", "voice", "file", "video"]),
+        mime: Schema.String,
+        filename: Schema.optional(Schema.String),
+        size: Schema.Int,
+        sha256: Schema.optional(Schema.String),
+        status: Schema.Literals(["ready", "unavailable", "rejected"]),
+        reason: Schema.optional(Schema.String),
+        data: Schema.optional(Schema.Uint8Array),
+      }),
+    ),
+  ),
 }) {}
+export type Attachment = NonNullable<NormalizedMessage["attachments"]>[number]
 
 export type TransportSendInput = {
   target: Target
   text: string
   mode: SendMode
   providerSequence?: number
+  providerClientID?: string
   format?: MessageFormat
 }
 
@@ -75,6 +92,7 @@ export function proactiveCapability(capabilities: Capabilities, scope: TargetSco
 }
 
 export function isTargetScopeSupported(platform: Platform, scope: TargetScope): boolean {
+  if (platform === "wechat") return scope === "c2c"
   return platform === "feishu" ? scope === "chat" : scope === "c2c" || scope === "group" || scope === "guild"
 }
 

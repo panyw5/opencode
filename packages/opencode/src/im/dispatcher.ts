@@ -6,7 +6,7 @@ import { LocationLifecycle } from "@/project/location-lifecycle"
 import { IMSubscription } from "./subscription"
 import type { MessageInfo } from "./service"
 import { Database, and, asc, eq, gt, lte, sql } from "@/storage/db"
-import { IMMessageTable } from "./inbox.sql"
+import { IMAttachmentTable, IMMessageTable } from "./inbox.sql"
 import { SessionInputTable, SessionTable } from "@/session/session.sql"
 import type { SessionID } from "@/session/schema"
 import { Target } from "./model"
@@ -18,6 +18,14 @@ export type DispatchResult = { matched: number; admitted: number; failed: number
 const RECOVERY_MESSAGE_LIMIT = 100
 
 function messageFromRow(row: typeof IMMessageTable.$inferSelect): MessageInfo {
+  const attachments = Database.use((db) =>
+    db
+      .select()
+      .from(IMAttachmentTable)
+      .where(eq(IMAttachmentTable.message_id, row.id))
+      .orderBy(asc(IMAttachmentTable.ordinal))
+      .all(),
+  )
   return {
     id: row.id,
     platform: row.platform,
@@ -40,6 +48,21 @@ function messageFromRow(row: typeof IMMessageTable.$inferSelect): MessageInfo {
     timeEvent: row.time_event ?? undefined,
     timeCreated: row.time_created,
     metadata: row.metadata ?? undefined,
+    ...(attachments.length
+      ? {
+          attachments: attachments.map((item) => ({
+            id: item.id,
+            kind: item.kind,
+            mime: item.mime,
+            size: item.size,
+            status: item.status,
+            ...(item.filename ? { filename: item.filename } : {}),
+            ...(item.sha256 ? { sha256: item.sha256 } : {}),
+            ...(item.reason ? { reason: item.reason } : {}),
+            ...(item.data ? { data: new Uint8Array(item.data) } : {}),
+          })),
+        }
+      : {}),
   }
 }
 
@@ -59,6 +82,18 @@ function promptFor(message: MessageInfo, subscriptionID: string) {
       // Keep external text visibly delimited; it is data, not an instruction.
       externalContent: true,
     },
+    files: message.attachments?.flatMap((item) =>
+      item.status === "ready"
+        ? [
+            {
+              uri: `im-attachment:${item.id}`,
+              mime: item.mime,
+              ...(item.filename ? { name: item.filename } : {}),
+              description: `WeChat ${item.kind} attachment`,
+            },
+          ]
+        : [],
+    ),
   }
 }
 
@@ -154,11 +189,12 @@ export const recover = Effect.fn("IMDispatcher.recover")(function* () {
   for (const subscription of active) {
     // Bound each query and advance a local keyset cursor. The tail snapshot
     // prevents a busy channel from extending one recovery run indefinitely.
-    const tail = Database.use((db) =>
-      db
-        .select({ value: sql<number>`coalesce(max(${IMMessageTable.ingest_seq}), -1)` })
-        .from(IMMessageTable)
-        .get()?.value ?? -1,
+    const tail = Database.use(
+      (db) =>
+        db
+          .select({ value: sql<number>`coalesce(max(${IMMessageTable.ingest_seq}), -1)` })
+          .from(IMMessageTable)
+          .get()?.value ?? -1,
     )
     let cursor = subscription.startSeq
     while (cursor < tail) {
@@ -244,10 +280,7 @@ export const recoverWithRetry = Effect.fn("IMDispatcher.recoverWithRetry")(funct
   let last = { subscriptions: 0, scanned: 0, dispatched: 0, failed: 1 }
   for (let attempt = 1; attempt <= attempts; attempt++) {
     const result = yield* recover().pipe(Effect.exit)
-    last =
-      result._tag === "Success"
-        ? result.value
-        : { subscriptions: 0, scanned: 0, dispatched: 0, failed: 1 }
+    last = result._tag === "Success" ? result.value : { subscriptions: 0, scanned: 0, dispatched: 0, failed: 1 }
     if (result._tag === "Failure") log.error("IM durable recovery attempt failed", { attempt, cause: result.cause })
     if (last.failed === 0) return last
     if (attempt < attempts) {

@@ -1,4 +1,16 @@
 import { Schema } from "effect"
+import { validateBaseUrl } from "@/channel/wechat-api"
+
+const WechatOrigin = Schema.String.check(
+  Schema.makeFilter((value: string) => {
+    try {
+      validateBaseUrl(value)
+      return true
+    } catch {
+      return "Expected a trusted HTTPS WeChat API origin"
+    }
+  }),
+)
 
 /** Shared optional fields for every IM channel type. */
 const ChannelCommon = {
@@ -61,7 +73,24 @@ export const QQ = Schema.Struct({
 }).annotate({ identifier: "ChannelQQConfig" })
 export type QQ = Schema.Schema.Type<typeof QQ>
 
-export const Info = Schema.Union([Feishu, Discord, QQ]).annotate({ discriminator: "type" })
+export const Wechat = Schema.Struct({
+  type: Schema.Literal("wechat").annotate({ description: "WeChat ClawBot via Tencent iLink" }),
+  botId: Schema.optional(Schema.String).annotate({
+    description: "Authorized iLink bot account ID. Tokens are stored privately.",
+  }),
+  baseUrl: Schema.optional(WechatOrigin).annotate({ description: "Authorized Tencent iLink API origin." }),
+  scannerUserId: Schema.optional(Schema.String).annotate({
+    description: "Private user ID obtained during QR authorization.",
+  }),
+  allowedUsers: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
+    description:
+      "Allowed iLink user IDs. Defaults to the QR-authorized user; '*' explicitly allows any delivered sender.",
+  }),
+  ...ChannelCommon,
+}).annotate({ identifier: "ChannelWechatConfig" })
+export type Wechat = Schema.Schema.Type<typeof Wechat>
+
+export const Info = Schema.Union([Feishu, Discord, QQ, Wechat]).annotate({ discriminator: "type" })
 export type Info = Schema.Schema.Type<typeof Info>
 
 export * as ConfigChannels from "./channels"

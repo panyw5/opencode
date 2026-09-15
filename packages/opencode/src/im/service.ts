@@ -2,8 +2,10 @@ import { and, asc, desc, eq, gt, lt, or, sql } from "@/storage/db"
 import { Database } from "@/storage/db"
 import { Effect, Context, Layer, Exit, Schema, Cause, Clock } from "effect"
 import type { SQL } from "drizzle-orm"
+import { createHash } from "node:crypto"
 import {
   IMMessageTable,
+  IMAttachmentTable,
   IMOutboundTable,
   IMSequenceTable,
   type IMLegacyStatus,
@@ -24,6 +26,7 @@ import {
   type MessageFormat,
   TEXT_LIMIT,
   MARKDOWN_LIMIT,
+  type Attachment,
 } from "./model"
 import { ProviderRejectedError, SendValidationError, registry } from "./transport"
 import * as Log from "@opencode-ai/core/util/log"
@@ -50,6 +53,7 @@ export type MessageInfo = {
   timeEvent?: number
   timeCreated: number
   metadata?: Record<string, unknown>
+  attachments?: Attachment[]
 }
 
 export type MessagePage = { items: MessageInfo[]; nextCursor?: string; checkpoint?: string }
@@ -192,7 +196,49 @@ function targetFromMessage(row: MessageRow): Target {
   })
 }
 
-function fromMessageRow(row: MessageRow): MessageInfo {
+function attachmentsFor(messageID: string, includeData: boolean): Attachment[] {
+  const fields = {
+    id: IMAttachmentTable.id,
+    kind: IMAttachmentTable.kind,
+    mime: IMAttachmentTable.mime,
+    filename: IMAttachmentTable.filename,
+    size: IMAttachmentTable.size,
+    sha256: IMAttachmentTable.sha256,
+    status: IMAttachmentTable.status,
+    reason: IMAttachmentTable.reason,
+  }
+  const rows = Database.use((db) =>
+    includeData
+      ? db
+          .select()
+          .from(IMAttachmentTable)
+          .where(eq(IMAttachmentTable.message_id, messageID))
+          .orderBy(asc(IMAttachmentTable.ordinal))
+          .all()
+      : db
+          .select(fields)
+          .from(IMAttachmentTable)
+          .where(eq(IMAttachmentTable.message_id, messageID))
+          .orderBy(asc(IMAttachmentTable.ordinal))
+          .all(),
+  )
+  return rows.map(
+    (item): Attachment => ({
+      id: item.id,
+      kind: item.kind,
+      mime: item.mime,
+      ...(item.filename ? { filename: item.filename } : {}),
+      size: item.size,
+      ...(item.sha256 ? { sha256: item.sha256 } : {}),
+      status: item.status,
+      ...(item.reason ? { reason: item.reason } : {}),
+      ...(includeData && "data" in item && item.data instanceof Uint8Array ? { data: new Uint8Array(item.data) } : {}),
+    }),
+  )
+}
+
+function fromMessageRow(row: MessageRow, includeData = true): MessageInfo {
+  const attachments = attachmentsFor(row.id, includeData)
   return {
     id: row.id,
     platform: row.platform,
@@ -208,6 +254,7 @@ function fromMessageRow(row: MessageRow): MessageInfo {
     timeEvent: row.time_event ?? undefined,
     timeCreated: row.time_created,
     metadata: row.metadata ?? undefined,
+    ...(attachments.length ? { attachments } : {}),
   }
 }
 
@@ -490,6 +537,24 @@ export const layer = Layer.effect(
             })
             .returning()
             .get()
+          for (const [ordinal, attachment] of (message.attachments ?? []).entries())
+            db.insert(IMAttachmentTable)
+              .values({
+                id: attachment.id,
+                message_id: row.id,
+                ordinal,
+                kind: attachment.kind,
+                mime: attachment.mime,
+                filename: attachment.filename,
+                size: attachment.size,
+                sha256: attachment.sha256,
+                status: attachment.status,
+                reason: attachment.reason,
+                data: attachment.data ? Buffer.from(attachment.data) : undefined,
+                time_created: now,
+                time_updated: now,
+              })
+              .run()
           return { row, inserted: true }
         },
         { behavior: "immediate" },
@@ -556,7 +621,13 @@ export const layer = Layer.effect(
               : encodeCursor({ ingestSeq: -1, direction })
           : undefined
       return {
-        items: pageRows.map(fromMessageRow),
+        items: pageRows.map((row) => {
+          const message = fromMessageRow(row, false)
+          return {
+            ...message,
+            attachments: message.attachments?.map(({ data: _, ...attachment }) => attachment),
+          }
+        }),
         ...(rows.length > limit && last ? { nextCursor: encodeCursor({ ingestSeq: last.ingest_seq, direction }) } : {}),
         ...(checkpoint ? { checkpoint } : {}),
       }
@@ -799,9 +870,12 @@ export const layer = Layer.effect(
               try: () =>
                 transport.sendText({
                   target: input.target,
-              text: input.text,
-              format,
+                  text: input.text,
+                  format,
                   mode: input.mode,
+                  providerClientID: createHash("sha256")
+                    .update(JSON.stringify([input.projectID, input.id]))
+                    .digest("hex"),
                   ...(pending.provider_sequence !== null && pending.provider_sequence !== undefined
                     ? { providerSequence: pending.provider_sequence }
                     : {}),

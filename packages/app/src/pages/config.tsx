@@ -8005,7 +8005,7 @@ export default function ConfigPage() {
     <div class="size-full overflow-hidden bg-background-base">
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_5%_0%,color-mix(in_srgb,var(--surface-brand-base)_7%,transparent),transparent_32%),linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)),var(--background-base)_45%)] xl:flex-row">
         <aside
-          class="shrink-0 border-b border-border-weak-base bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-brand-base)_7%,var(--surface-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base))_46%,var(--background-base))] transition-shadow duration-150 xl:w-[236px] xl:border-r xl:border-b-0"
+          class="h-[200px] shrink-0 border-b border-border-weak-base bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-brand-base)_7%,var(--surface-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base))_46%,var(--background-base))] transition-shadow duration-150 xl:h-auto xl:w-[236px] xl:border-r xl:border-b-0"
           classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "left" }}
           data-config-pane="left"
           data-focused={state.focusVisible && state.focusPane === "left" ? "true" : undefined}
@@ -8107,7 +8107,7 @@ export default function ConfigPage() {
 
         <div class="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row">
           <section
-            class="shrink-0 border-b border-border-weak-base bg-[color-mix(in_srgb,var(--surface-brand-base)_3%,var(--surface-base))] backdrop-blur transition-shadow duration-150 xl:w-[400px] xl:border-r xl:border-b-0"
+            class="h-[200px] shrink-0 border-b border-border-weak-base bg-[color-mix(in_srgb,var(--surface-brand-base)_3%,var(--surface-base))] backdrop-blur transition-shadow duration-150 xl:h-auto xl:w-[400px] xl:border-r xl:border-b-0"
             classList={{ [CONFIG_PANE_FOCUS_CLASS]: state.focusVisible && state.focusPane === "middle" }}
             data-config-pane="middle"
             data-focused={state.focusVisible && state.focusPane === "middle" ? "true" : undefined}
@@ -9392,6 +9392,9 @@ export default function ConfigPage() {
                   </Match>
                   <Match when={selectedChannelPlatform() === "qq"}>
                     <ConfigChannelsDetail platform="qq" />
+                  </Match>
+                  <Match when={selectedChannelPlatform() === "wechat"}>
+                    <ConfigChannelsDetail platform="wechat" />
                   </Match>
                 </Switch>
               </Match>

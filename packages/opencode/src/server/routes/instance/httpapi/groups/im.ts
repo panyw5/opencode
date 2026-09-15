@@ -26,7 +26,7 @@ export const TargetPayload = Schema.Struct({
 
 export const ChannelInfoSchema = Schema.Struct({
   channelName: Schema.String,
-  platform: Schema.Literals(["feishu", "qq", "discord"]),
+  platform: Schema.Literals(["feishu", "qq", "discord", "wechat"]),
   enabled: Schema.Boolean,
   running: Schema.Boolean,
   recipientStatus: Schema.Literals(["ready", "missing", "ambiguous", "unsupported"]),
@@ -48,6 +48,16 @@ export const MessageSchema = Schema.Struct({
   timeEvent: Schema.optional(Schema.Number),
   timeCreated: Schema.Number,
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  attachments: Schema.optional(Schema.Array(Schema.Struct({
+    id: Schema.String,
+    kind: Schema.Literals(["image", "voice", "file", "video"]),
+    mime: Schema.String,
+    filename: Schema.optional(Schema.String),
+    size: Schema.Int,
+    sha256: Schema.optional(Schema.String),
+    status: Schema.Literals(["ready", "unavailable", "rejected"]),
+    reason: Schema.optional(Schema.String),
+  }))),
 })
 
 export const MessagePageSchema = Schema.Struct({
@@ -122,9 +132,84 @@ export const IMPaths = {
   subscriptionAction: `${root}/subscriptions/:subscriptionID`,
 } as const
 
+export const WechatLoginPayload = Schema.Struct({ channelName: Schema.String })
+export const WechatPollPayload = Schema.Struct({
+  channelName: Schema.String,
+  attemptID: Schema.String,
+  verifyCode: Schema.optional(Schema.String),
+})
+export const WechatCancelPayload = Schema.Struct({ channelName: Schema.String, attemptID: Schema.String })
+export const WechatLoginSchema = Schema.Struct({
+  attemptID: Schema.String,
+  status: Schema.Literals([
+    "starting",
+    "wait",
+    "scaned",
+    "confirmed",
+    "expired",
+    "need_verifycode",
+    "verify_code_blocked",
+    "scaned_but_redirect",
+    "binded_redirect",
+    "cancelled",
+  ]),
+  qrContent: Schema.optional(Schema.String),
+  expiresAt: Schema.Number,
+  account: Schema.optional(
+    Schema.Struct({ botId: Schema.String, baseUrl: Schema.String, scannerUserId: Schema.String }),
+  ),
+})
+export const WechatStatusSchema = Schema.Struct({
+  channelName: Schema.String,
+  status: Schema.Literals([
+    "unconfigured",
+    "awaiting_login",
+    "connected",
+    "reconnecting",
+    "auth_expired",
+    "stopped",
+    "account_busy",
+  ]),
+  botId: Schema.optional(Schema.String),
+  lastReceivedAt: Schema.optional(Schema.Number),
+  lastSentAt: Schema.optional(Schema.Number),
+  error: Schema.optional(Schema.String),
+})
+
 export const ImApi = HttpApi.make("im").add(
   HttpApiGroup.make("im")
     .add(
+      HttpApiEndpoint.post("wechatLoginStart", `${root}/wechat/login/start`, {
+        query: WorkspaceRoutingQuery,
+        payload: WechatLoginPayload,
+        success: described(WechatLoginSchema, "WeChat authorization attempt; contains no account credentials"),
+        error: InvalidRequestError,
+      }).annotateMerge(
+        OpenApi.annotations({ identifier: "im.wechat.login.start", summary: "Start WeChat QR authorization" }),
+      ),
+      HttpApiEndpoint.post("wechatLoginPoll", `${root}/wechat/login/poll`, {
+        query: WorkspaceRoutingQuery,
+        payload: WechatPollPayload,
+        success: WechatLoginSchema,
+        error: InvalidRequestError,
+      }).annotateMerge(
+        OpenApi.annotations({ identifier: "im.wechat.login.poll", summary: "Poll and complete WeChat authorization" }),
+      ),
+      HttpApiEndpoint.post("wechatLoginCancel", `${root}/wechat/login/cancel`, {
+        query: WorkspaceRoutingQuery,
+        payload: WechatCancelPayload,
+        success: WechatLoginSchema,
+        error: InvalidRequestError,
+      }).annotateMerge(
+        OpenApi.annotations({ identifier: "im.wechat.login.cancel", summary: "Cancel WeChat authorization" }),
+      ),
+      HttpApiEndpoint.get("wechatStatus", `${root}/wechat/status`, {
+        query: Schema.Struct({ ...WorkspaceRoutingQueryFields, channelName: Schema.String }),
+        success: WechatStatusSchema,
+        error: InvalidRequestError,
+      }).annotateMerge(
+        OpenApi.annotations({ identifier: "im.wechat.status", summary: "Get WeChat channel connection state" }),
+      ),
       HttpApiEndpoint.get("channels", IMPaths.channels, {
         query: WorkspaceRoutingQuery,
         success: described(

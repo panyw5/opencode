@@ -2027,7 +2027,9 @@ export default function Layout(props: ParentProps) {
                   ? "channels:discord"
                   : entry?.type === "qq"
                     ? "channels:qq"
-                    : "channels:feishu",
+                    : entry?.type === "wechat"
+                      ? "channels:wechat"
+                      : "channels:feishu",
               ),
           },
         ],
@@ -2369,10 +2371,7 @@ export default function Layout(props: ParentProps) {
         server.setActive(key)
         await waitServer(key)
       }
-      if (
-        options?.sidebarDomainRequest !== undefined &&
-        options.sidebarDomainRequest !== sidebarDomainRequest
-      ) {
+      if (options?.sidebarDomainRequest !== undefined && options.sidebarDomainRequest !== sidebarDomainRequest) {
         console.debug(
           `[project-switch] stale extra-agent request=${options.sidebarDomainRequest} current-request=${sidebarDomainRequest} directory=${extra.directory}`,
         )
@@ -2389,10 +2388,7 @@ export default function Layout(props: ParentProps) {
         await waitServer(key)
       }
     }
-    if (
-      options?.sidebarDomainRequest !== undefined &&
-      options.sidebarDomainRequest !== sidebarDomainRequest
-    ) {
+    if (options?.sidebarDomainRequest !== undefined && options.sidebarDomainRequest !== sidebarDomainRequest) {
       console.debug(
         `[project-switch] stale project request=${options.sidebarDomainRequest} current-request=${sidebarDomainRequest} directory=${directory}`,
       )

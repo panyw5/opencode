@@ -9,6 +9,20 @@ import { Global } from "@opencode-ai/core/global"
 import path from "path"
 
 describe("channels-file", () => {
+  test("accepts unbound WeChat but rejects unsafe configured provider origins", () => {
+    expect(parseChannelsText('{"wx":{"type":"wechat"}}', "test").wx?.type).toBe("wechat")
+    expect(
+      parseChannelsText('{"wx":{"type":"wechat","baseUrl":"https://ilinkai.weixin.qq.com/"}}', "test").wx?.type,
+    ).toBe("wechat")
+    for (const baseUrl of [
+      "http://ilinkai.weixin.qq.com",
+      "https://evil.test",
+      "https://u@ilinkai.weixin.qq.com",
+      "https://ilinkai.weixin.qq.com/path",
+      "not-a-url",
+    ])
+      expect(() => parseChannelsText(JSON.stringify({ wx: { type: "wechat", baseUrl } }), "test")).toThrow()
+  })
   test("channelsFilePath uses config dir", () => {
     expect(channelsFilePath("/tmp/cfg")).toBe(path.join("/tmp/cfg", "channels.json"))
     expect(channelsFilePath()).toBe(path.join(Global.Path.config, "channels.json"))

@@ -47,14 +47,15 @@ import { usePlatform } from "@/context/platform"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import { probeQQ } from "@/lib/qq-official"
 import { parseRetentionDays, rebaseChannelMap } from "./config-channel-helpers"
+import { WechatChannelAuth } from "@/components/wechat-channel-auth"
 
-export type ChannelPlatform = "feishu" | "discord" | "qq"
+export type ChannelPlatform = "feishu" | "discord" | "qq" | "wechat"
 
 type ChannelConfig = NonNullable<Config["channels"]>[string]
 type ChannelRetentionConfig = ChannelConfig & { retentionDays?: number }
 type ChannelPatch = Partial<ChannelConfig> & { retentionDays?: number }
 
-export const CHANNEL_PLATFORMS: ChannelPlatform[] = ["feishu", "qq"]
+export const CHANNEL_PLATFORMS: ChannelPlatform[] = ["feishu", "qq", "wechat"]
 
 export function channelPick(platform: ChannelPlatform) {
   return `channels:${platform}` as const
@@ -64,6 +65,7 @@ export function parseChannelPick(pick: string): ChannelPlatform | undefined {
   if (pick === "channels:feishu") return "feishu"
   if (pick === "channels:discord") return "discord"
   if (pick === "channels:qq") return "qq"
+  if (pick === "channels:wechat") return "wechat"
   return undefined
 }
 
@@ -322,9 +324,11 @@ export function useChannelMiddleItems(pick: () => string): () => ChannelMiddleIt
     const cfg = globalSync.data.config.channels ?? {}
     let feishu = 0
     let qq = 0
+    let wechat = 0
     for (const entry of Object.values(cfg)) {
       if (entry?.type === "feishu") feishu++
       if (entry?.type === "qq") qq++
+      if (entry?.type === "wechat") wechat++
     }
     const current = pick()
     return [
@@ -343,6 +347,14 @@ export function useChannelMiddleItems(pick: () => string): () => ChannelMiddleIt
         note: language.t("config.channels.platform.qq.note"),
         count: qq,
         active: current === channelPick("qq"),
+      },
+      {
+        platform: "wechat" as const,
+        pick: channelPick("wechat"),
+        title: language.t("config.channels.platform.wechat"),
+        note: language.t("config.channels.platform.wechat.note"),
+        count: wechat,
+        active: current === channelPick("wechat"),
       },
     ]
   })
@@ -482,6 +494,7 @@ export const ConfigChannelsDetail: Component<{
     if (form.retentionDays.trim() && parseRetentionDays(form.retentionDays) === undefined) return false
     if (props.platform === "feishu") return !!form.appId.trim() && !!form.appSecret.trim()
     if (props.platform === "discord") return !!form.botToken.trim()
+    if (props.platform === "wechat") return true
     return !!form.appId.trim() && !!form.appSecret.trim()
   })
 
@@ -582,6 +595,16 @@ export const ConfigChannelsDetail: Component<{
         const model = modelConfigFromId(formModelId())
         if (model) discord.model = model
         config = discord
+      } else if (props.platform === "wechat") {
+        config = {
+          type: "wechat",
+          enabled: true,
+          directory,
+          autoReply: form.autoReply,
+          retentionDays: parseRetentionDays(form.retentionDays),
+          allowedUsers: parseUserList(form.allowedUsers),
+          model: modelConfigFromId(formModelId()),
+        }
       } else {
         const qq: ChannelQqConfig & { retentionDays?: number } = {
           type: "qq",
@@ -743,7 +766,9 @@ export const ConfigChannelsDetail: Component<{
       ? language.t("config.channels.platform.feishu")
       : props.platform === "qq"
         ? language.t("config.channels.platform.qq")
-        : language.t("config.channels.platform.discord")
+        : props.platform === "wechat"
+          ? language.t("config.channels.platform.wechat")
+          : language.t("config.channels.platform.discord")
 
   return (
     <div class="flex h-full min-h-0 flex-col">
@@ -755,7 +780,9 @@ export const ConfigChannelsDetail: Component<{
               ? language.t("config.channels.platform.feishu.detail")
               : props.platform === "qq"
                 ? language.t("config.channels.platform.qq.detail")
-                : language.t("config.channels.platform.discord.detail")}
+                : props.platform === "wechat"
+                  ? language.t("config.channels.platform.wechat.detail")
+                  : language.t("config.channels.platform.discord.detail")}
           </p>
         </div>
       </div>
@@ -845,6 +872,27 @@ export const ConfigChannelsDetail: Component<{
 
                         <Show when={open()}>
                           <div class="flex flex-col gap-3 border-t border-border-weak-base pt-3">
+                            <Show when={row.config.type === "wechat" ? row.config : undefined}>
+                              {(cfg) => (
+                                <>
+                                  <WechatChannelAuth
+                                    channelName={row.name}
+                                    botId={cfg().botId}
+                                    scannerUserId={cfg().scannerUserId}
+                                  />
+                                  <TextField
+                                    label={language.t("config.channels.field.allowedUsers")}
+                                    description={language.t("config.channels.wechat.aclHint")}
+                                    value={cfg().allowedUsers?.join("\n") ?? ""}
+                                    onChange={(value) =>
+                                      void patchChannel(row.name, { allowedUsers: parseUserList(value ?? "") })
+                                    }
+                                    multiline
+                                    rows={2}
+                                  />
+                                </>
+                              )}
+                            </Show>
                             <Show when={feishu()}>
                               {(cfg) => (
                                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -1004,7 +1052,13 @@ export const ConfigChannelsDetail: Component<{
               <TextField
                 label={language.t("config.channels.field.name")}
                 placeholder={
-                  props.platform === "feishu" ? "work-feishu" : props.platform === "qq" ? "my-qq" : "my-discord"
+                  props.platform === "feishu"
+                    ? "work-feishu"
+                    : props.platform === "qq"
+                      ? "my-qq"
+                      : props.platform === "wechat"
+                        ? "my-wechat"
+                        : "my-discord"
                 }
                 value={form.name}
                 onChange={(v) => setForm("name", v ?? "")}
@@ -1191,6 +1245,9 @@ export const ConfigChannelsDetail: Component<{
                   onChange={(v) => setForm("proxy", v ?? "")}
                 />
               </Match>
+              <Match when={props.platform === "wechat"}>
+                <p class="text-12-regular text-text-weak">{language.t("config.channels.wechat.createHint")}</p>
+              </Match>
               <Match when={props.platform === "qq"}>
                 <p class="text-12-regular text-text-weak">{language.t("config.channels.qq.hint")}</p>
                 <TextField
@@ -1223,8 +1280,12 @@ export const ConfigChannelsDetail: Component<{
 
             <TextField
               label={language.t("config.channels.field.allowedUsers")}
-              description={language.t("config.channels.field.allowedUsers.hint")}
-              placeholder={props.platform === "feishu" ? "ou_xxx" : "123456789"}
+              description={language.t(
+                props.platform === "wechat"
+                  ? "config.channels.wechat.aclHint"
+                  : "config.channels.field.allowedUsers.hint",
+              )}
+              placeholder={props.platform === "feishu" ? "ou_xxx" : props.platform === "wechat" ? "" : "123456789"}
               value={form.allowedUsers}
               onChange={(v) => setForm("allowedUsers", v ?? "")}
               multiline
@@ -1248,8 +1309,16 @@ export const ConfigChannelsDetail: Component<{
                 max={3650}
                 value={form.retentionDays}
                 onChange={(value) => setForm("retentionDays", value ?? "")}
-                validationState={form.retentionDays.trim() && parseRetentionDays(form.retentionDays) === undefined ? "invalid" : undefined}
-                error={form.retentionDays.trim() && parseRetentionDays(form.retentionDays) === undefined ? language.t("config.channels.field.retentionDays.invalid") : undefined}
+                validationState={
+                  form.retentionDays.trim() && parseRetentionDays(form.retentionDays) === undefined
+                    ? "invalid"
+                    : undefined
+                }
+                error={
+                  form.retentionDays.trim() && parseRetentionDays(form.retentionDays) === undefined
+                    ? language.t("config.channels.field.retentionDays.invalid")
+                    : undefined
+                }
               />
             </div>
 

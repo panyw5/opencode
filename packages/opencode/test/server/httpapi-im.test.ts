@@ -19,6 +19,7 @@ import {
   WorkspaceRoutingMiddleware,
 } from "../../src/server/routes/instance/httpapi/middleware/workspace-routing"
 import { it } from "../lib/effect"
+import { Config } from "../../src/config/config"
 
 const TestApi = HttpApi.make("opencode-instance").addHttpApi(ImApi)
 const target = new Target({
@@ -41,6 +42,12 @@ describe("IM channel HTTP handlers", () => {
         Layer.provide(imHandlers),
         Layer.provide([
           schemaErrorLayer,
+          Layer.mock(Config.Service, {
+            getGlobal: () =>
+              Effect.succeed({
+                channels: { cc: { type: "feishu", appId: "test", appSecret: "unused" }, wx: { type: "wechat" } },
+              }),
+          }),
           Layer.mock(IMOwner.Service, {
             resolve: (channelName) =>
               channelName === "cc"
@@ -130,6 +137,13 @@ describe("IM channel HTTP handlers", () => {
           ),
         )
       const channels = yield* request("/im/channels")
+      const wxStatus = yield* request("/im/wechat/status?channelName=wx")
+      expect(wxStatus.status).toBe(200)
+      expect(yield* Effect.promise(() => wxStatus.json())).toEqual({ channelName: "wx", status: "awaiting_login" })
+      const wrongPlatform = yield* request("/im/wechat/login/start", { channelName: "cc" })
+      expect(wrongPlatform.status).toBe(400)
+      const invalidName = yield* request("/im/wechat/login/start", { channelName: "../unsafe" })
+      expect(invalidName.status).toBe(400)
       expect(channels.status).toBe(200)
       expect(yield* Effect.promise(() => channels.json())).toEqual([
         {

@@ -1,5 +1,12 @@
 # Project IM API
 
+WeChat ClawBot private-text integration is described in [WeChat channel](./wechat-channel.md).
+It reuses the channel-only tools and subscriptions below. Proactive delivery
+requires private reply context and remains limited; markdown remains Feishu-only.
+Inbound WeChat attachments appear as safe descriptors on message reads; their
+bytes are delivered directly to automatic replies and project subscription
+sessions, not embedded in the IM JSON response.
+
 ## Delivery scope
 
 This delivery supports ordinary projects sending as the configured bot to its
@@ -68,7 +75,11 @@ The tool call is simply:
 For rich text, use the existing Feishu Markdown card renderer:
 
 ```json
-{ "channelName": "cc", "format": "markdown", "text": "**Deployment complete**\n\n- Version: `1.2.3`\n- [Details](https://example.com)" }
+{
+  "channelName": "cc",
+  "format": "markdown",
+  "text": "**Deployment complete**\n\n- Version: `1.2.3`\n- [Details](https://example.com)"
+}
 ```
 
 Omitted `format` defaults to plain `text`. Markdown uses a one-shot interactive

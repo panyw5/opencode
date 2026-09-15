@@ -71,6 +71,7 @@ import { Reference } from "@/reference/reference"
 import * as DateTime from "effect/DateTime"
 import { eq } from "@/storage/db"
 import * as Database from "@/storage/db"
+import { IMAttachmentTable } from "@/im/inbox.sql"
 import { SessionTable } from "./session.sql"
 import { SessionInput } from "./input"
 import { referencePromptMetadata, referenceTextPart } from "./prompt/reference"
@@ -1918,6 +1919,37 @@ export const layer = Layer.effect(
             sessionInputSeq: input.admittedSeq,
             sessionInputCreatedAt: input.timeCreated,
           },
+        })
+      }
+      for (const [index, file] of (input.prompt.files ?? []).entries()) {
+        const filePartID = PartID.ascending(`prt_inbox_${input.id}_file_${index}`)
+        if (
+          (yield* MessageV2.get({ sessionID: input.sessionID, messageID }).pipe(Effect.orDie)).parts.some(
+            (part) => part.id === filePartID,
+          )
+        )
+          continue
+        let url = file.uri
+        if (url.startsWith("im-attachment:")) {
+          const attachmentID = url.slice("im-attachment:".length)
+          const attachment = Database.use((db) =>
+            db
+              .select({ data: IMAttachmentTable.data })
+              .from(IMAttachmentTable)
+              .where(eq(IMAttachmentTable.id, attachmentID))
+              .get(),
+          )
+          if (!attachment?.data) continue
+          url = `data:${file.mime};base64,${attachment.data.toString("base64")}`
+        }
+        yield* sessions.updatePart({
+          id: filePartID,
+          messageID,
+          sessionID: input.sessionID,
+          type: "file",
+          mime: file.mime,
+          filename: file.name,
+          url,
         })
       }
       yield* elog.info("inbox message committed", {

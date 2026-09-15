@@ -1,7 +1,7 @@
 import { IM } from "@/im/service"
 import { IMOwner } from "@/im/owner"
 import { IMSubscription } from "@/im/subscription"
-import { Effect } from "effect"
+import { Effect, Semaphore } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ListQuery, SendPayload, SubscriptionPayload } from "../groups/im"
@@ -9,6 +9,13 @@ import { InstanceState } from "@/effect/instance-state"
 import { SessionID } from "@/session/schema"
 import { ApiNotFoundError, ConflictError, InvalidRequestError } from "../errors"
 import * as Log from "@opencode-ai/core/util/log"
+import { Config } from "@/config/config"
+import * as WechatLogin from "@/channel/wechat-login"
+import { channelStatus } from "@/channel/wechat"
+import { WechatStorage } from "@/channel/wechat-storage"
+import { GlobalBus } from "@/bus/global"
+import { Event } from "@/server/event"
+import { refreshWechatChannel } from "@/channel/manager"
 
 const log = Log.create({ service: "httpapi.im" })
 
@@ -17,6 +24,101 @@ export const imHandlers = HttpApiBuilder.group(InstanceHttpApi, "im", (handlers)
     const im = yield* IM.Service
     const owner = yield* IMOwner.Service
     const subscriptions = yield* IMSubscription.Service
+    const config = yield* Config.Service
+    const authLocks = new Map<string, ReturnType<typeof Semaphore.makeUnsafe>>()
+    const bindingLock = Semaphore.makeUnsafe(1)
+    const committedAttempts = new Set<string>()
+    const authLock = (name: string) => {
+      let lock = authLocks.get(name)
+      if (!lock) {
+        lock = Semaphore.makeUnsafe(1)
+        authLocks.set(name, lock)
+      }
+      return lock
+    }
+    const validateWechatName = Effect.fn("IMHttpApi.wechat.validate")(function* (channelName: string) {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(channelName))
+        return yield* new InvalidRequestError({
+          message: "Channel name must contain 1-128 letters, digits, dots, underscores or hyphens",
+        })
+      const existing = (yield* config.getGlobal()).channels?.[channelName]
+      if (existing && existing.type !== "wechat")
+        return yield* new InvalidRequestError({ message: "This channel name belongs to another platform" })
+    })
+    const wechatRequest = <A>(operation: () => Promise<A>) =>
+      Effect.tryPromise({
+        try: operation,
+        catch: () =>
+          new InvalidRequestError({
+            message: "WeChat authorization request failed or expired; retry or refresh the QR code",
+          }),
+      })
+    const wechatStart = Effect.fn("IMHttpApi.wechat.start")(function* (ctx: { payload: { channelName: string } }) {
+      yield* validateWechatName(ctx.payload.channelName)
+      log.info("WeChat QR authorization started", { channelName: ctx.payload.channelName })
+      return yield* wechatRequest(() => WechatLogin.startLogin(ctx.payload))
+    })
+    const wechatPoll = Effect.fn("IMHttpApi.wechat.poll")(function* (ctx: {
+      payload: { channelName: string; attemptID: string; verifyCode?: string }
+    }) {
+      yield* validateWechatName(ctx.payload.channelName)
+      const result = yield* wechatRequest(() => WechatLogin.pollLogin(ctx.payload))
+      if (result.status === "confirmed" && result.account) {
+        const account = result.account
+        yield* authLock(ctx.payload.channelName).withPermits(1)(
+          Effect.gen(function* () {
+            if (committedAttempts.has(result.attemptID)) return
+            const current = yield* wechatRequest(() => WechatLogin.status(ctx.payload))
+            const credentials = yield* wechatRequest(() => new WechatStorage().loadCredentials(ctx.payload.channelName))
+            if (
+              !("attemptID" in current) ||
+              current.attemptID !== result.attemptID ||
+              current.status !== "confirmed" ||
+              credentials?.botId !== account.botId ||
+              credentials.baseUrl !== account.baseUrl ||
+              credentials.scannerUserId !== account.scannerUserId
+            )
+              return yield* new InvalidRequestError({
+                message: "WeChat authorization was replaced; use the latest QR code",
+              })
+            const all = yield* config.getGlobal()
+            const existing = all.channels?.[ctx.payload.channelName]
+            if (existing && existing.type !== "wechat")
+              return yield* new InvalidRequestError({ message: "Channel platform changed during authorization" })
+            const channel = { ...(existing ?? {}), type: "wechat" as const, ...account }
+            const updated = yield* config.updateGlobal({
+              channels: { ...all.channels, [ctx.payload.channelName]: channel },
+            })
+            if (!updated.changed) yield* wechatRequest(() => refreshWechatChannel(ctx.payload.channelName, channel))
+            if (updated.changed)
+              GlobalBus.emit("event", {
+                directory: "global",
+                payload: { type: Event.ConfigUpdated.type, properties: updated.info },
+              })
+            log.info("WeChat account binding committed", { channelName: ctx.payload.channelName })
+            committedAttempts.add(result.attemptID)
+            if (committedAttempts.size > 128) committedAttempts.delete(committedAttempts.values().next().value!)
+          }).pipe(bindingLock.withPermits(1)),
+        )
+      }
+      return result
+    })
+    const wechatCancel = Effect.fn("IMHttpApi.wechat.cancel")(function* (ctx: {
+      payload: { channelName: string; attemptID: string }
+    }) {
+      yield* validateWechatName(ctx.payload.channelName)
+      return yield* wechatRequest(() => WechatLogin.cancelLogin(ctx.payload))
+    })
+    const wechatStatus = Effect.fn("IMHttpApi.wechat.status")(function* (ctx: { query: { channelName: string } }) {
+      yield* validateWechatName(ctx.query.channelName)
+      const existing = (yield* config.getGlobal()).channels?.[ctx.query.channelName]
+      if (!existing) return { channelName: ctx.query.channelName, status: "unconfigured" as const }
+      if (existing.type !== "wechat") return yield* new InvalidRequestError({ message: "Not a WeChat channel" })
+      if (existing.enabled === false)
+        return { channelName: ctx.query.channelName, status: "stopped" as const, botId: existing.botId }
+      if (!existing.botId) return { channelName: ctx.query.channelName, status: "awaiting_login" as const }
+      return channelStatus(ctx.query.channelName)
+    })
     const resolve = (channelName: string) =>
       owner.resolve(channelName).pipe(Effect.mapError((error) => new InvalidRequestError({ message: error.message })))
 
@@ -159,6 +261,10 @@ export const imHandlers = HttpApiBuilder.group(InstanceHttpApi, "im", (handlers)
       })
 
     return handlers
+      .handle("wechatLoginStart", (ctx) => authLock(ctx.payload.channelName).withPermits(1)(wechatStart(ctx)))
+      .handle("wechatLoginPoll", wechatPoll)
+      .handle("wechatLoginCancel", (ctx) => authLock(ctx.payload.channelName).withPermits(1)(wechatCancel(ctx)))
+      .handle("wechatStatus", wechatStatus)
       .handle("channels", channels)
       .handle("messages", messages)
       .handle("send", send)

@@ -112,6 +112,14 @@ import type {
   ImSubscriptionResumeResponses,
   ImSubscriptionStopErrors,
   ImSubscriptionStopResponses,
+  ImWechatLoginCancelErrors,
+  ImWechatLoginCancelResponses,
+  ImWechatLoginPollErrors,
+  ImWechatLoginPollResponses,
+  ImWechatLoginStartErrors,
+  ImWechatLoginStartResponses,
+  ImWechatStatusErrors,
+  ImWechatStatusResponses,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
   LspStatusErrors,
@@ -1430,7 +1438,6 @@ export class Workspace extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      format?: "text" | "markdown"
       id?: string
       type?: string
       branch?: string | null
@@ -1445,7 +1452,6 @@ export class Workspace extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
-            { in: "body", key: "format" },
             { in: "body", key: "id" },
             { in: "body", key: "type" },
             { in: "body", key: "branch" },
@@ -2386,6 +2392,158 @@ export class Formatter extends HeyApiClient {
   }
 }
 
+export class Login extends HeyApiClient {
+  /**
+   * Start WeChat QR authorization
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      channelName?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "channelName" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ImWechatLoginStartResponses, ImWechatLoginStartErrors, ThrowOnError>({
+      url: "/im/wechat/login/start",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Poll and complete WeChat authorization
+   */
+  public poll<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      channelName?: string
+      attemptID?: string
+      verifyCode?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "channelName" },
+            { in: "body", key: "attemptID" },
+            { in: "body", key: "verifyCode" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ImWechatLoginPollResponses, ImWechatLoginPollErrors, ThrowOnError>({
+      url: "/im/wechat/login/poll",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel WeChat authorization
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      channelName?: string
+      attemptID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "channelName" },
+            { in: "body", key: "attemptID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ImWechatLoginCancelResponses, ImWechatLoginCancelErrors, ThrowOnError>(
+      {
+        url: "/im/wechat/login/cancel",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
+  }
+}
+
+export class Wechat extends HeyApiClient {
+  /**
+   * Get WeChat channel connection state
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      channelName: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "channelName" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ImWechatStatusResponses, ImWechatStatusErrors, ThrowOnError>({
+      url: "/im/wechat/status",
+      ...options,
+      ...params,
+    })
+  }
+
+  private _login?: Login
+  get login(): Login {
+    return (this._login ??= new Login({ client: this.client }))
+  }
+}
+
 export class Messages extends HeyApiClient {
   /**
    * Read a channel's fixed user messages
@@ -2631,6 +2789,7 @@ export class Im extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
+      format?: "text" | "markdown"
       id?: string
       channelName?: string
       text?: string
@@ -2644,6 +2803,7 @@ export class Im extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "format" },
             { in: "body", key: "id" },
             { in: "body", key: "channelName" },
             { in: "body", key: "text" },
@@ -2661,6 +2821,11 @@ export class Im extends HeyApiClient {
         ...params.headers,
       },
     })
+  }
+
+  private _wechat?: Wechat
+  get wechat(): Wechat {
+    return (this._wechat ??= new Wechat({ client: this.client }))
   }
 
   private _messages?: Messages

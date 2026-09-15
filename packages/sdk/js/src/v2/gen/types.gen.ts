@@ -1194,6 +1194,22 @@ export type ChannelQqConfig = {
   retentionDays?: number
 }
 
+export type ChannelWechatConfig = {
+  /**
+   * WeChat ClawBot via Tencent iLink
+   */
+  type: "wechat"
+  botId?: string
+  baseUrl?: string
+  scannerUserId?: string
+  allowedUsers?: Array<string>
+  directory?: string
+  enabled?: boolean
+  autoReply?: boolean
+  model?: string
+  retentionDays?: number
+}
+
 /**
  * @deprecated Always uses stretch layout.
  */
@@ -1286,7 +1302,7 @@ export type Config = {
         }
   }
   channels?: {
-    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQqConfig
+    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQqConfig | ChannelWechatConfig
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
@@ -2314,7 +2330,7 @@ export type Config7 = {
         }
   }
   channels?: {
-    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQqConfig
+    [key: string]: ChannelFeishuConfig | ChannelDiscordConfig | ChannelQqConfig | ChannelWechatConfig
   }
   /**
    * Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.
@@ -5935,6 +5951,202 @@ export type FormatterStatusResponses = {
 
 export type FormatterStatusResponse = FormatterStatusResponses[keyof FormatterStatusResponses]
 
+export type ImWechatLoginStartData = {
+  body?: {
+    channelName: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/wechat/login/start"
+}
+
+export type ImWechatLoginStartErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type ImWechatLoginStartError = ImWechatLoginStartErrors[keyof ImWechatLoginStartErrors]
+
+export type ImWechatLoginStartResponses = {
+  /**
+   * WeChat authorization attempt; contains no account credentials
+   */
+  200: {
+    attemptID: string
+    status:
+      | "starting"
+      | "wait"
+      | "scaned"
+      | "confirmed"
+      | "expired"
+      | "need_verifycode"
+      | "verify_code_blocked"
+      | "scaned_but_redirect"
+      | "binded_redirect"
+      | "cancelled"
+    qrContent?: string
+    expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    account?: {
+      botId: string
+      baseUrl: string
+      scannerUserId: string
+    }
+  }
+}
+
+export type ImWechatLoginStartResponse = ImWechatLoginStartResponses[keyof ImWechatLoginStartResponses]
+
+export type ImWechatLoginPollData = {
+  body?: {
+    channelName: string
+    attemptID: string
+    verifyCode?: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/wechat/login/poll"
+}
+
+export type ImWechatLoginPollErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type ImWechatLoginPollError = ImWechatLoginPollErrors[keyof ImWechatLoginPollErrors]
+
+export type ImWechatLoginPollResponses = {
+  /**
+   * Success
+   */
+  200: {
+    attemptID: string
+    status:
+      | "starting"
+      | "wait"
+      | "scaned"
+      | "confirmed"
+      | "expired"
+      | "need_verifycode"
+      | "verify_code_blocked"
+      | "scaned_but_redirect"
+      | "binded_redirect"
+      | "cancelled"
+    qrContent?: string
+    expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    account?: {
+      botId: string
+      baseUrl: string
+      scannerUserId: string
+    }
+  }
+}
+
+export type ImWechatLoginPollResponse = ImWechatLoginPollResponses[keyof ImWechatLoginPollResponses]
+
+export type ImWechatLoginCancelData = {
+  body?: {
+    channelName: string
+    attemptID: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/im/wechat/login/cancel"
+}
+
+export type ImWechatLoginCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type ImWechatLoginCancelError = ImWechatLoginCancelErrors[keyof ImWechatLoginCancelErrors]
+
+export type ImWechatLoginCancelResponses = {
+  /**
+   * Success
+   */
+  200: {
+    attemptID: string
+    status:
+      | "starting"
+      | "wait"
+      | "scaned"
+      | "confirmed"
+      | "expired"
+      | "need_verifycode"
+      | "verify_code_blocked"
+      | "scaned_but_redirect"
+      | "binded_redirect"
+      | "cancelled"
+    qrContent?: string
+    expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    account?: {
+      botId: string
+      baseUrl: string
+      scannerUserId: string
+    }
+  }
+}
+
+export type ImWechatLoginCancelResponse = ImWechatLoginCancelResponses[keyof ImWechatLoginCancelResponses]
+
+export type ImWechatStatusData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    channelName: string
+  }
+  url: "/im/wechat/status"
+}
+
+export type ImWechatStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type ImWechatStatusError = ImWechatStatusErrors[keyof ImWechatStatusErrors]
+
+export type ImWechatStatusResponses = {
+  /**
+   * Success
+   */
+  200: {
+    channelName: string
+    status:
+      | "unconfigured"
+      | "awaiting_login"
+      | "connected"
+      | "reconnecting"
+      | "auth_expired"
+      | "stopped"
+      | "account_busy"
+    botId?: string
+    lastReceivedAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    lastSentAt?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    error?: string
+  }
+}
+
+export type ImWechatStatusResponse = ImWechatStatusResponses[keyof ImWechatStatusResponses]
+
 export type ImChannelsData = {
   body?: never
   path?: never
@@ -5960,7 +6172,7 @@ export type ImChannelsResponses = {
    */
   200: Array<{
     channelName: string
-    platform: "feishu" | "qq" | "discord"
+    platform: "feishu" | "qq" | "discord" | "wechat"
     enabled: boolean
     running: boolean
     recipientStatus: "ready" | "missing" | "ambiguous" | "unsupported"
@@ -6003,14 +6215,14 @@ export type ImMessagesListResponses = {
   200: {
     items: Array<{
       id: string
-      platform: "feishu" | "qq"
+      platform: "feishu" | "qq" | "wechat"
       channelName: string
       eventID: string
       ingestSeq: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
       direction: "inbound" | "outbound"
       legacyStatus: "received" | "processing" | "completed" | "unknown"
       target: {
-        platform: "feishu" | "qq"
+        platform: "feishu" | "qq" | "wechat"
         channelName: string
         scope: "chat" | "c2c" | "group" | "guild"
         conversationID: string
@@ -6025,6 +6237,16 @@ export type ImMessagesListResponses = {
       metadata?: {
         [key: string]: unknown
       }
+      attachments?: Array<{
+        id: string
+        kind: "image" | "voice" | "file" | "video"
+        mime: string
+        filename?: string
+        size: number
+        sha256?: string
+        status: "ready" | "unavailable" | "rejected"
+        reason?: string
+      }>
     }>
     nextCursor?: string
     checkpoint?: string
@@ -6069,11 +6291,11 @@ export type ImSendResponses = {
     format?: "text" | "markdown"
     id: string
     projectID: string
-    platform: "feishu" | "qq"
+    platform: "feishu" | "qq" | "wechat"
     channelName: string
     mode: "reply" | "proactive"
     target: {
-      platform: "feishu" | "qq"
+      platform: "feishu" | "qq" | "wechat"
       channelName: string
       scope: "chat" | "c2c" | "group" | "guild"
       conversationID: string
@@ -6122,7 +6344,7 @@ export type ImSubscriptionListResponses = {
     sessionID: string
     sessionDirectory: string
     target: {
-      platform: "feishu" | "qq"
+      platform: "feishu" | "qq" | "wechat"
       channelName: string
       scope: "chat" | "c2c" | "group" | "guild"
       conversationID: string
@@ -6175,7 +6397,7 @@ export type ImSubscriptionCreateResponses = {
     sessionID: string
     sessionDirectory: string
     target: {
-      platform: "feishu" | "qq"
+      platform: "feishu" | "qq" | "wechat"
       channelName: string
       scope: "chat" | "c2c" | "group" | "guild"
       conversationID: string
@@ -6230,7 +6452,7 @@ export type ImSubscriptionPauseResponses = {
     sessionID: string
     sessionDirectory: string
     target: {
-      platform: "feishu" | "qq"
+      platform: "feishu" | "qq" | "wechat"
       channelName: string
       scope: "chat" | "c2c" | "group" | "guild"
       conversationID: string
@@ -6285,7 +6507,7 @@ export type ImSubscriptionResumeResponses = {
     sessionID: string
     sessionDirectory: string
     target: {
-      platform: "feishu" | "qq"
+      platform: "feishu" | "qq" | "wechat"
       channelName: string
       scope: "chat" | "c2c" | "group" | "guild"
       conversationID: string
@@ -6340,7 +6562,7 @@ export type ImSubscriptionStopResponses = {
     sessionID: string
     sessionDirectory: string
     target: {
-      platform: "feishu" | "qq"
+      platform: "feishu" | "qq" | "wechat"
       channelName: string
       scope: "chat" | "c2c" | "group" | "guild"
       conversationID: string

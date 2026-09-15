@@ -1,4 +1,4 @@
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
+import { blob, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
 import type { IMModel } from "./model"
 import type { ProjectID } from "@/project/schema"
 import { ProjectTable } from "@/project/project.sql"
@@ -43,6 +43,27 @@ export const IMMessageTable = sqliteTable(
     ),
     index("im_message_time_created_id_idx").on(table.time_created, table.id),
   ],
+)
+
+export const IMAttachmentTable = sqliteTable(
+  "im_attachment",
+  {
+    id: text().primaryKey(),
+    message_id: text()
+      .notNull()
+      .references(() => IMMessageTable.id, { onDelete: "cascade" }),
+    ordinal: integer().notNull(),
+    kind: text().$type<"image" | "voice" | "file" | "video">().notNull(),
+    mime: text().notNull(),
+    filename: text(),
+    size: integer().notNull(),
+    sha256: text(),
+    status: text().$type<"ready" | "unavailable" | "rejected">().notNull(),
+    reason: text(),
+    data: blob({ mode: "buffer" }).$type<Buffer>(),
+    ...Timestamps,
+  },
+  (table) => [uniqueIndex("im_attachment_message_ordinal_idx").on(table.message_id, table.ordinal)],
 )
 
 export const IMOutboundTable = sqliteTable(

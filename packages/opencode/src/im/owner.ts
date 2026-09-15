@@ -13,11 +13,12 @@ import { IMMessageTable } from "./inbox.sql"
 import { IMOwnerTable } from "./owner.sql"
 import { Target, type NormalizedMessage } from "./model"
 import { registry } from "./transport"
+import { validateBaseUrl } from "@/channel/wechat-api"
 
 const log = Log.create({ service: "im.owner" })
 export type ChannelInfo = {
   channelName: string
-  platform: "feishu" | "qq" | "discord"
+  platform: "feishu" | "qq" | "discord" | "wechat"
   enabled: boolean
   running: boolean
   recipientStatus: "ready" | "missing" | "ambiguous" | "unsupported"
@@ -73,11 +74,15 @@ export function appIdentity(config: ConfigChannels.Info) {
       JSON.stringify(
         config.type === "discord"
           ? [config.type, createHash("sha256").update(config.botToken).digest("hex")]
-          : [
-              config.type,
-              config.appId,
-              config.type === "feishu" ? (config.domain ?? "feishu") : (config.apiBaseUrl ?? "https://api.bot.qq.com"),
-            ],
+          : config.type === "wechat"
+            ? [config.type, config.botId ?? "", validateBaseUrl(config.baseUrl ?? "https://ilinkai.weixin.qq.com")]
+            : [
+                config.type,
+                config.appId,
+                config.type === "feishu"
+                  ? (config.domain ?? "feishu")
+                  : (config.apiBaseUrl ?? "https://api.bot.qq.com"),
+              ],
       ),
     )
     .digest("hex")
@@ -136,11 +141,15 @@ export const makeLayer = (options: Options = {}) =>
         const ids = [...new Set(config.allowedUsers?.filter((id) => id && id !== "*") ?? [])]
         return ids.length === 1 && !config.allowedUsers?.includes("*") ? ids[0] : undefined
       }
-      const permitted = (config: ConfigChannels.Info, senderID: string) =>
-        !config.allowedUsers?.length || config.allowedUsers.includes("*") || config.allowedUsers.includes(senderID)
+      const permitted = (config: ConfigChannels.Info, senderID: string) => {
+        if (config.type === "wechat" && !config.allowedUsers?.length) return senderID === config.scannerUserId
+        return (
+          !config.allowedUsers?.length || config.allowedUsers.includes("*") || config.allowedUsers.includes(senderID)
+        )
+      }
       const persist = (
         channelName: string,
-        config: ConfigChannels.Feishu | ConfigChannels.QQ,
+        config: ConfigChannels.Feishu | ConfigChannels.QQ | ConfigChannels.Wechat,
         candidate: Candidate,
       ) => {
         const identity = appIdentity(config)
@@ -188,8 +197,9 @@ export const makeLayer = (options: Options = {}) =>
       }
       const discover = Effect.fn("IMOwner.discover")(function* (
         channelName: string,
-        config: ConfigChannels.Feishu | ConfigChannels.QQ,
+        config: ConfigChannels.Feishu | ConfigChannels.QQ | ConfigChannels.Wechat,
       ) {
+        if (config.type === "wechat" && !config.botId) return yield* new OwnerNotReadyError({ channelName })
         const identity = appIdentity(config)
         const expectedSender = pin(config)
         const saved = Database.use((db) =>
@@ -207,6 +217,9 @@ export const makeLayer = (options: Options = {}) =>
             conversationID: saved.conversation_id,
             senderID: saved.sender_id,
           })
+        }
+        if (config.type === "wechat" && config.scannerUserId && permitted(config, config.scannerUserId)) {
+          return persist(channelName, config, { conversationID: config.scannerUserId, senderID: config.scannerUserId })
         }
         log.info("IM fixed recipient discovery started", {
           channelName,
@@ -250,6 +263,7 @@ export const makeLayer = (options: Options = {}) =>
           })
         }
         if (
+          config.type !== "wechat" &&
           candidates.size === 0 &&
           !(
             config.type === "qq" &&
