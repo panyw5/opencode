@@ -1927,6 +1927,28 @@ export const dict = {
   "config.channels.platform.discord.detail":
     "Add a Discord bot token. Enable Message Content Intent in the Discord developer portal.",
   "config.channels.platform.qq": "QQ",
+  "config.channels.platform.wechat": "WeChat",
+  "config.channels.platform.wechat.note": "Connect with official ClawBot QR authorization",
+  "config.channels.platform.wechat.detail":
+    "Bind a WeChat ClawBot for private text and inbound media. Group chats and outbound media are not supported yet.",
+  "config.channels.wechat.hint":
+    "Scan with WeChat to authorize this channel. Credentials are stored privately on this computer. Proactive messages may be restricted by the provider.",
+  "config.channels.wechat.createHint":
+    "Create this channel first, then expand it to scan and bind your WeChat account.",
+  "config.channels.wechat.account": "Bound account",
+  "config.channels.wechat.aclHint":
+    "Allowed sender IDs, one per line. Leave empty to permit only the scanning user by default.",
+  "config.channels.wechat.bind": "Scan to bind",
+  "config.channels.wechat.rebind": "Refresh QR / rebind",
+  "config.channels.wechat.check": "Check connection state",
+  "config.channels.wechat.qrAlt": "WeChat authorization QR code",
+  "config.channels.wechat.status": "Authorization state",
+  "config.channels.wechat.verify": "Verification code shown in WeChat",
+  "config.channels.wechat.alreadyBound":
+    "The provider reports this bot is already bound. Check the stored account or start a new authorization; this response alone does not confirm a connection.",
+  "config.channels.wechat.connection": "Connection state (not a message delivery test)",
+  "config.channels.wechat.networkError":
+    "Authorization request failed. Check the backend connection or refresh the QR code.",
   "config.channels.platform.qq.note": "Connect through QQ Open Platform",
   "config.channels.platform.qq.detail": "Connect an official QQ bot with its App ID and Client Secret.",
   "config.channels.existing.title": "Configured channels",
@@ -1956,28 +1978,6 @@ export const dict = {
   "config.channels.field.autoReply": "Legacy automatic replies",
   "config.channels.field.autoReply.hint": "Reply automatically only when no project subscription matches.",
   "config.channels.field.retentionDays": "Message retention (days)",
-  "config.channels.platform.wechat": "WeChat",
-  "config.channels.platform.wechat.note": "Connect with official ClawBot QR authorization",
-  "config.channels.platform.wechat.detail":
-    "Bind a WeChat ClawBot for private text and inbound media. Group chats and outbound media are not supported yet.",
-  "config.channels.wechat.hint":
-    "Scan with WeChat to authorize this channel. Credentials are stored privately on this computer. Proactive messages may be restricted by the provider.",
-  "config.channels.wechat.createHint":
-    "Create this channel first, then expand it to scan and bind your WeChat account.",
-  "config.channels.wechat.account": "Bound account",
-  "config.channels.wechat.aclHint":
-    "Allowed sender IDs, one per line. Leave empty to permit only the scanning user by default.",
-  "config.channels.wechat.bind": "Scan to bind",
-  "config.channels.wechat.rebind": "Refresh QR / rebind",
-  "config.channels.wechat.check": "Check connection state",
-  "config.channels.wechat.qrAlt": "WeChat authorization QR code",
-  "config.channels.wechat.status": "Authorization state",
-  "config.channels.wechat.verify": "Verification code shown in WeChat",
-  "config.channels.wechat.alreadyBound":
-    "The provider reports this bot is already bound. Check the stored account or start a new authorization; this response alone does not confirm a connection.",
-  "config.channels.wechat.connection": "Connection state (not a message delivery test)",
-  "config.channels.wechat.networkError":
-    "Authorization request failed. Check the backend connection or refresh the QR code.",
   "config.channels.field.retentionDays.hint":
     "Optional. Leave empty to retain indefinitely. Pending and unknown sends are never cleaned up.",
   "config.channels.field.retentionDays.invalid": "Enter a whole number from 1 to 3650, or leave empty.",
@@ -1996,28 +1996,34 @@ export const dict = {
   "config.channels.test.botName": "Bot",
   "config.channels.test.botOpenId": "Gateway",
   "config.channels.error.duplicateName": "A channel with this name already exists",
-  "config.channels.note.runtime": "Enabled channels are registered by the server at startup. Use the channel status and logs to confirm runtime state.",
+  "config.channels.note.runtime":
+    "Enabled channels are registered by the server at startup. Use the channel status and logs to confirm runtime state.",
   "config.im.title": "Project IM service",
-  "config.im.header": "Projects send through configured channels to their fixed users. Private chats are discovered automatically; no chat IDs or separate grants are required.",
+  "config.im.header":
+    "Projects send through configured channels to their fixed users. Private chats are discovered automatically; no chat IDs or separate grants are required.",
   "config.im.middle": "View channel recipients and manage project session watches.",
   "config.im.refresh": "Refresh status",
   "config.im.channels": "Configured channels",
   "config.im.channels.empty": "No channels configured. Configure a bot in Channels first.",
-  "config.im.channelHelp": "Agents only specify a channel name and text. Existing private chats are reused; for a new channel, message the bot privately and refresh.",
+  "config.im.channelHelp":
+    "Agents only specify a channel name and text. Existing private chats are reused; for a new channel, message the bot privately and refresh.",
   "config.im.channel.running": "Running",
   "config.im.channel.offline": "Disconnected",
   "config.im.channel.disabled": "Disabled",
   "config.im.recipient.ready": "Fixed recipient identified",
   "config.im.recipient.missing": "No fixed user identified. Send a private message to the bot from your account.",
-  "config.im.recipient.ambiguous": "Multiple private users found; the service cannot safely select a fixed recipient and will not send arbitrarily.",
+  "config.im.recipient.ambiguous":
+    "Multiple private users found; the service cannot safely select a fixed recipient and will not send arbitrarily.",
   "config.im.recipient.unsupported": "Project IM service is not supported on this platform yet.",
-  "config.im.projectHelp": "Only selects which watches to manage, not send permission. Your selection is saved automatically.",
+  "config.im.projectHelp":
+    "Only selects which watches to manage, not send permission. Your selection is saved automatically.",
   "config.im.project": "Project directory",
   "config.im.project.empty": "Select a project",
   "config.im.loading": "Loading IM targets and subscriptions…",
   "config.im.error": "Could not update IM settings",
   "config.im.subscriptions": "Subscriptions",
-  "config.im.subscription.emptyCreate": "A ready channel and a project session are required to create a watch. No separate grant is needed.",
+  "config.im.subscription.emptyCreate":
+    "A ready channel and a project session are required to create a watch. No separate grant is needed.",
   "config.im.subscription.session": "Project session",
   "config.im.subscription.keyword": "Keyword substring (optional)",
   "config.im.subscription.keywordFilter": "keyword",
