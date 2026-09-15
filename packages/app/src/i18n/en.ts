@@ -830,6 +830,8 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "Config file at {{path}} is invalid: {{message}}",
 
   "quickAssistant.waiting.permission": "Waiting for permission confirmation",
+  "quickAssistant.context.enable": "Include current session context",
+  "quickAssistant.context.disable": "Stop including current session context",
   "notification.permission.title": "Permission required",
   "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
   "notification.question.title": "Question",

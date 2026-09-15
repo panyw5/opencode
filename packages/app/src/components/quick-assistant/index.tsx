@@ -25,7 +25,12 @@ import { decode64 } from "@/utils/base64"
 import { Identifier } from "@/utils/id"
 import { Persist, persisted } from "@/utils/persist"
 import { working } from "@/pages/session/session-working"
-import { domainFromDirectory, extraAgentCapabilities, type ExtraAgentCapabilities } from "@/pages/layout/extra-agents"
+import {
+  domainFromDirectory,
+  extraAgentCapabilities,
+  mainDomain,
+  type ExtraAgentCapabilities,
+} from "@/pages/layout/extra-agents"
 import { formatServerError } from "@/utils/server-errors"
 import {
   context,
@@ -34,6 +39,7 @@ import {
   patchAgentQuestionDeny,
   prompt,
   removeQuickRequest,
+  sessionContextMessages,
 } from "./helpers"
 import { QuickAssistantInput } from "./input"
 import { QuickAssistantMessages } from "./messages"
@@ -334,14 +340,47 @@ export function QuickAssistant() {
     return currentData()?.session.find((item) => item.id === id)
   })
 
+  const currentContextMessages = createMemo(() => {
+    const id = params.id
+    if (!id) return []
+    const current = currentData()
+    if (!current) return []
+    return sessionContextMessages(current.message[id] ?? [], current.part)
+  })
+
+  const currentMessagesURL = createMemo(() => {
+    const current = activeDir()
+    const id = params.id
+    const conn = server.currentFor(mainDomain)
+    if (!current || !id || conn?.type !== "sidecar" || conn.variant !== "base") return
+    const base = conn.http.url.replace(/\/$/, "")
+    return `${base}/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(current)}&limit=20`
+  })
+
   const currentContext = createMemo(() => {
     const current = activeDir()
     const id = params.id
     if (!current || !id) return ""
     const session = currentSession()
     const messages = currentData()?.message[id] ?? []
-    return context(current, id, session, messages.length)
+    return context(current, id, session, messages.length, {
+      messages: currentContextMessages(),
+      messagesURL: currentMessagesURL(),
+    })
   })
+
+  const toggleContext = () => {
+    const available = !!currentContext()
+    if (!available) {
+      console.debug("[quick-assistant] context toggle blocked reason=no-current-session")
+      return
+    }
+    const next = !saved.context
+    console.debug(
+      `[quick-assistant] context ${next ? "enabled" : "disabled"} source_session=${params.id ?? ""} source_directory=${activeDir()}`,
+    )
+    setSaved("context", next)
+  }
 
   createEffect(() => {
     const next = root()
@@ -685,7 +724,7 @@ export function QuickAssistant() {
 
     setState("loading", true)
     console.debug(
-      `[quick-assistant] submit context=${saved.context ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
+      `[quick-assistant] submit context=${saved.context ? 1 : 0} context_messages=${currentContextMessages().length} context_url=${currentMessagesURL() ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
     )
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
@@ -871,12 +910,15 @@ export function QuickAssistant() {
                 busy={interacting()}
                 loading={state.loading}
                 ready={!!root()}
+                context={saved.context}
+                contextAvailable={!!currentContext()}
                 variants={variantList()}
                 variant={effectiveVariant()}
                 onText={(next) => setState("text", next)}
                 onClose={close}
                 onReset={() => void reset()}
                 onNewSession={() => void reset()}
+                onContext={toggleContext}
                 onVariant={setVariant}
                 onSend={() => void submit()}
               />

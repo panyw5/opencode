@@ -65,16 +65,73 @@ export function mergeMessages(a: Message[] | undefined, b: Message[]) {
   ).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 
-export function context(dir: string, id: string, session: Session | undefined, count: number) {
+export type SessionContextMessage = {
+  role: "user" | "assistant"
+  text: string
+}
+
+const CONTEXT_MESSAGE_LIMIT = 6
+const CONTEXT_MESSAGE_CHARS = 1_200
+const CONTEXT_TOTAL_CHARS = 4_800
+
+export function sessionContextMessages(messages: Message[], parts: Record<string, Part[] | undefined>) {
+  const candidates = messages
+    .map((message) => ({
+      role: message.role,
+      text: (parts[message.id] ?? [])
+        .filter((part): part is Extract<Part, { type: "text" }> => part.type === "text" && !part.synthetic)
+        .map((part) => part.text)
+        .join("\n")
+        .trim(),
+    }))
+    .filter((message): message is SessionContextMessage => !!message.text)
+    .slice(-CONTEXT_MESSAGE_LIMIT)
+
+  let remaining = CONTEXT_TOTAL_CHARS
+  const result: SessionContextMessage[] = []
+  for (const message of [...candidates].reverse()) {
+    if (remaining <= 0) break
+    const limit = Math.min(CONTEXT_MESSAGE_CHARS, remaining)
+    const clipped =
+      message.text.length <= limit
+        ? message.text
+        : message.role === "assistant"
+          ? `...${message.text.slice(-(limit - 3))}`
+          : `${message.text.slice(0, limit - 3)}...`
+    remaining -= clipped.length
+    result.unshift({ role: message.role, text: clipped })
+  }
+  return result
+}
+
+export function context(
+  dir: string,
+  id: string,
+  session: Session | undefined,
+  count: number,
+  options?: {
+    messages?: SessionContextMessage[]
+    messagesURL?: string
+  },
+) {
   if (!dir || !id) return ""
-  return [
+  const recent = options?.messages ?? []
+  const metadata = [
     "<current-opencode-session>",
     `directory: ${dir}`,
     `session_id: ${id}`,
     `title: ${session?.title || "Untitled"}`,
     `message_count: ${count}`,
-    "</current-opencode-session>",
-  ].join("\n")
+    ...(options?.messagesURL ? [`messages_url: ${options.messagesURL}`] : []),
+  ]
+  if (recent.length > 0) {
+    metadata.push(
+      "<recent-messages>",
+      ...recent.flatMap((message) => [`<message role=\"${message.role}\">`, message.text, "</message>"]),
+      "</recent-messages>",
+    )
+  }
+  return [...metadata, "</current-opencode-session>"].join("\n")
 }
 
 export function prompt(text: string, extra: string, on: boolean) {

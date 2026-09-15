@@ -781,6 +781,8 @@ export const dict = {
   "error.chain.configInvalidWithMessage": "配置文件 {{path}} 无效：{{message}}",
 
   "quickAssistant.waiting.permission": "等待权限确认",
+  "quickAssistant.context.enable": "注入当前主会话信息",
+  "quickAssistant.context.disable": "停止注入当前主会话信息",
   "notification.permission.title": "需要权限",
   "notification.permission.description": "{{sessionTitle}}（{{projectName}}）需要权限",
   "notification.question.title": "问题",

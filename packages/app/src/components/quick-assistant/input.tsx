@@ -15,12 +15,15 @@ type Props = {
   busy: boolean
   loading: boolean
   ready: boolean
+  context: boolean
+  contextAvailable: boolean
   variants: string[]
   variant: string | undefined
   onText: (text: string) => void
   onClose: () => void
   onReset: () => void
   onNewSession: () => void
+  onContext: () => void
   onVariant: (variant: string | undefined) => void
   onSend: () => void
 }
@@ -122,6 +125,32 @@ export function QuickAssistantInput(props: Props) {
               onClick={props.onNewSession}
             >
               <Icon name="new-session" class="size-4.5" />
+            </button>
+          </Tooltip>
+          <Tooltip
+            placement="top"
+            value={language.t(props.context ? "quickAssistant.context.disable" : "quickAssistant.context.enable")}
+          >
+            <button
+              type="button"
+              data-action="quick-assistant-context"
+              class="flex size-8 shrink-0 items-center justify-center rounded-full text-icon-weak transition-colors hover:bg-surface-base-hover hover:text-icon-base disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label={language.t(
+                props.context ? "quickAssistant.context.disable" : "quickAssistant.context.enable",
+              )}
+              aria-pressed={props.context}
+              disabled={!props.contextAvailable}
+              onClick={props.onContext}
+            >
+              <Icon
+                name={props.context ? "link" : "link-off"}
+                class="size-4.5"
+                style={{
+                  color: props.context
+                    ? "color-mix(in oklch, var(--icon-success-base) 62%, var(--icon-weak-base))"
+                    : undefined,
+                }}
+              />
             </button>
           </Tooltip>
           <div class="min-w-0 flex-1" />

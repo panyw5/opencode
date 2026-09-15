@@ -9,6 +9,7 @@ import {
   quickQuestionAnswers,
   quickRequestNotFound,
   removeQuickRequest,
+  sessionContextMessages,
 } from "./quick-assistant/helpers"
 import { quickAssistantMessageText } from "./quick-assistant/messages"
 
@@ -56,6 +57,48 @@ describe("quick assistant prompt", () => {
         "</current-opencode-session>",
       ].join("\n"),
     )
+  })
+
+  test("includes recent messages and a direct retrieval URL", () => {
+    expect(
+      context("/repo", "ses_1", { title: "Demo" } as any, 7, {
+        messages: [
+          { role: "user", text: "What changed?" },
+          { role: "assistant", text: "Updated the parser." },
+        ],
+        messagesURL: "http://127.0.0.1:1234/session/ses_1/message?directory=%2Frepo&limit=20",
+      }),
+    ).toContain(
+      [
+        "messages_url: http://127.0.0.1:1234/session/ses_1/message?directory=%2Frepo&limit=20",
+        "<recent-messages>",
+        '<message role="user">',
+        "What changed?",
+        "</message>",
+        '<message role="assistant">',
+        "Updated the parser.",
+      ].join("\n"),
+    )
+  })
+
+  test("builds a bounded recent-message snapshot and ignores synthetic text", () => {
+    const messages = Array.from({ length: 8 }, (_, index) => msg(`msg_${index}`, index % 2 ? "assistant" : "user"))
+    const parts = Object.fromEntries(
+      messages.map((message, index) => [
+        message.id,
+        [
+          { type: "text", text: `${index}:` + "x".repeat(1_400) },
+          { type: "text", text: "hidden", synthetic: true },
+        ] as Part[],
+      ]),
+    )
+    const result = sessionContextMessages(messages, parts)
+
+    expect(result).toHaveLength(4)
+    expect(result[0]?.text.startsWith("4:")).toBe(true)
+    expect(result.at(-1)?.text.startsWith("...")).toBe(true)
+    expect(result.reduce((total, item) => total + item.text.length, 0)).toBeLessThanOrEqual(4_800)
+    expect(result.some((item) => item.text.includes("hidden"))).toBe(false)
   })
 })
 
