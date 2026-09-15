@@ -153,8 +153,14 @@ describe("IM channel HTTP handlers", () => {
         target: { conversationID: target.conversationID, senderID: target.senderID },
         mode: "proactive",
       })
-      const explicit = yield* request("/im/send", { channelName: "cc", text: "hello", id: "stable-notice" })
+      const explicit = yield* request("/im/send", {
+        channelName: "cc",
+        text: "**hello**",
+        id: "stable-notice",
+        format: "markdown",
+      })
       expect(explicit.status).toBe(200)
+      expect(sends.at(-1)?.format).toBe("markdown")
       expect(sends[2]?.id).toBe("stable-notice")
       const read = yield* request("/im/messages?channelName=cc")
       expect(read.status).toBe(200)

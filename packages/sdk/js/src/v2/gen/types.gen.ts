@@ -6035,6 +6035,7 @@ export type ImMessagesListResponse = ImMessagesListResponses[keyof ImMessagesLis
 
 export type ImSendData = {
   body?: {
+    format?: "text" | "markdown"
     id?: string
     channelName: string
     text: string
@@ -6065,6 +6066,7 @@ export type ImSendResponses = {
    * IM send result
    */
   200: {
+    format?: "text" | "markdown"
     id: string
     projectID: string
     platform: "feishu" | "qq"

@@ -21,6 +21,9 @@ import {
   type IMTransport,
   type SendMode,
   type TransportSendResult,
+  type MessageFormat,
+  TEXT_LIMIT,
+  MARKDOWN_LIMIT,
 } from "./model"
 import { ProviderRejectedError, SendValidationError, registry } from "./transport"
 import * as Log from "@opencode-ai/core/util/log"
@@ -52,6 +55,7 @@ export type MessageInfo = {
 export type MessagePage = { items: MessageInfo[]; nextCursor?: string; checkpoint?: string }
 export type IngestResult = { message: MessageInfo; inserted: boolean; expired?: boolean }
 export type OutboundInfo = {
+  format: MessageFormat
   id: string
   projectID: ProjectID
   platform: IMModel.Platform
@@ -84,6 +88,7 @@ export type ListInput = {
 }
 
 export type SendInput = {
+  format?: MessageFormat
   id: string
   projectID: ProjectID
   channelName: string
@@ -268,6 +273,7 @@ function fromOutboundRow(row: OutboundRow): OutboundInfo {
     target: row.target,
     text: row.text,
     status: row.status,
+    format: row.format,
     providerMessageID: row.provider_message_id ?? undefined,
     providerSequence: row.provider_sequence ?? undefined,
     attemptCount: row.attempt_count,
@@ -557,6 +563,7 @@ export const layer = Layer.effect(
     })
 
     const sendTextCore = Effect.fn("IM.sendTextCore")(function* (input: SendInput) {
+      const format = input.format ?? "text"
       if (input.target.channelName !== input.channelName || input.target.platform !== input.platform) {
         yield* new TargetMismatchError({ channelName: input.channelName })
       }
@@ -605,6 +612,7 @@ export const layer = Layer.effect(
           mode: input.mode,
           target: input.target,
           text: input.text,
+          format,
         })
         if (hash !== receipt.payload_hash) yield* new OutboundConflictError({ outboundID: input.id })
         return {
@@ -616,6 +624,7 @@ export const layer = Layer.effect(
           target: input.target,
           text: input.text,
           status: receipt.status as IMOutboundStatus,
+          format,
           ...(receipt.provider_message_id ? { providerMessageID: receipt.provider_message_id } : {}),
           attemptCount: 0,
           timeCreated: receipt.time_created,
@@ -629,6 +638,7 @@ export const layer = Layer.effect(
           existing.channel_name === input.channelName &&
           existing.mode === input.mode &&
           existing.text === input.text &&
+          existing.format === format &&
           JSON.stringify(existing.target) === JSON.stringify(input.target)
         if (!samePayload) yield* new OutboundConflictError({ outboundID: input.id })
         log.info("outbound idempotency hit", {
@@ -638,7 +648,13 @@ export const layer = Layer.effect(
         })
         return fromOutboundRow(existing)
       }
-      const invalidText = input.text.length > 4000 ? "IM text exceeds 4000 characters" : undefined
+      const limit = format === "markdown" ? MARKDOWN_LIMIT : TEXT_LIMIT
+      const invalidText =
+        format === "markdown" && input.platform !== "feishu"
+          ? "Markdown is supported only by Feishu channels"
+          : input.text.length > limit
+            ? `IM ${format} exceeds ${limit} characters`
+            : undefined
       const leaseExpiresAt = (yield* Clock.currentTimeMillis) + SEND_LEASE_MS
       const pendingResult = Database.transaction(
         (db) => {
@@ -662,6 +678,7 @@ export const layer = Layer.effect(
             provider_sequence_key: sequenceKey,
             provider_sequence: providerSequence,
             text: input.text,
+            format,
             status: invalidText ? "failed" : "pending",
             attempt_count: invalidText ? 0 : 1,
             last_error: invalidText,
@@ -695,6 +712,7 @@ export const layer = Layer.effect(
           pending.channel_name === input.channelName &&
           pending.mode === input.mode &&
           pending.text === input.text &&
+          pending.format === format &&
           JSON.stringify(pending.target) === JSON.stringify(targetValue(input.target))
         if (!matches) return yield* new OutboundConflictError({ outboundID: input.id })
         return fromOutboundRow(pending)
@@ -735,6 +753,7 @@ export const layer = Layer.effect(
         return fromOutboundRow(row ?? pending)
       }
       log.info("outbound send starting", {
+        format,
         platform: input.platform,
         channelName: input.channelName,
         outboundID: input.id,
@@ -780,7 +799,8 @@ export const layer = Layer.effect(
               try: () =>
                 transport.sendText({
                   target: input.target,
-                  text: input.text,
+              text: input.text,
+              format,
                   mode: input.mode,
                   ...(pending.provider_sequence !== null && pending.provider_sequence !== undefined
                     ? { providerSequence: pending.provider_sequence }
@@ -830,6 +850,7 @@ export const layer = Layer.effect(
 
     const sendText = Effect.fn("IM.sendText")(function* (input: SendInput) {
       log.info("outbound send requested", {
+        format: input.format ?? "text",
         channelName: input.channelName,
         outboundID: input.id,
         projectID: input.projectID,

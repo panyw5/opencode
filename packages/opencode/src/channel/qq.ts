@@ -139,6 +139,7 @@ export function createQQTransport(input: {
     channelName: input.name,
     capabilities: transportCapabilities("qq"),
     sendText: async (message) => {
+      if (message.format === "markdown") throw new SendValidationError("QQ Markdown messages are not supported")
       const scope = message.target.scope
       if (scope === "guild" && message.mode === "proactive")
         throw new Error("QQ proactive guild messages are unsupported")

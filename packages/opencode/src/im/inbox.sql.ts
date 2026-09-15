@@ -61,6 +61,7 @@ export const IMOutboundTable = sqliteTable(
     provider_sequence: integer(),
     text: text().notNull(),
     status: text().$type<IMOutboundStatus>().notNull(),
+    format: text().$type<IMModel.MessageFormat>().notNull().default("text"),
     provider_message_id: text(),
     attempt_count: integer().notNull().default(0),
     last_error: text(),

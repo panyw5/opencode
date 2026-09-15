@@ -21,6 +21,7 @@ export type InboundFingerprint = {
   text?: string
 }
 export type OutboundFingerprint = {
+  format?: IMModel.MessageFormat
   platform: IMModel.Platform
   channelName: string
   mode: string
@@ -59,6 +60,7 @@ export function outboundFingerprint(input: OutboundFingerprint) {
         senderID: input.target.senderID,
         replyTo: input.target.replyTo,
         text: input.text,
+        ...(input.format && input.format !== "text" ? { format: input.format } : {}),
       }),
     )
     .digest("hex")
@@ -276,6 +278,7 @@ export const layer = Layer.effect(
                       mode: row.mode,
                       target: row.target,
                       text: row.text,
+                      format: row.format,
                     }),
                     status: row.status,
                     provider_message_id: row.provider_message_id,

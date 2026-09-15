@@ -62,6 +62,7 @@ export const imHandlers = HttpApiBuilder.group(InstanceHttpApi, "im", (handlers)
           mode: "proactive",
           target,
           text: ctx.payload.text,
+          format: ctx.payload.format,
         })
         .pipe(
           Effect.catchTag("IM.OutboundConflictError", (error) =>

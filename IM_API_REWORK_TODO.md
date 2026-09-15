@@ -1,5 +1,25 @@
 # Channel-Only IM API Rework
 
+## Rich Message Follow-Up (2026-09-15)
+
+- [x] Optional text/markdown format in im_send, HTTP and regenerated SDK.
+- [x] Feishu reuses task-card schema/Markdown rendering for a one-shot card;
+  no status panels, automatic fallback or implicit duplicate sends.
+- [x] Persist format; include it in live and retention-receipt idempotency while
+  preserving historical plain-text fingerprints.
+- [x] Text limit 4000, Feishu Markdown limit 12000; unsupported QQ Markdown and
+  oversized input fail before provider requests.
+- [x] 114 tests, zero failures, 476 assertions; backend/app/SDK typechecks passed.
+- [x] Normal native Electron and shared DB (50 migrations): real cc marker
+  IM_MARKDOWN_QA_1789409143827 sent as interactive with one attempt; retry reused
+  provider ID, switching format under the same ID returned 409. Feishu client
+  visibly rendered bold heading, list, code and link.
+
+Feishu message.get returns a compatibility representation for Schema 2.0 cards,
+not the original card body. Platform type was verified; actual body/rendering
+was checked in the logged-in desktop client, not claimed from that fallback.
+Changes not committed or pushed; installed application left running.
+
 ## Review Risk Follow-Up
 
 - [x] Full allowed-users filtering for cached and discovered recipients.

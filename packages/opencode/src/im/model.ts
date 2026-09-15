@@ -20,6 +20,11 @@ export class Target extends Schema.Class<Target>("IMTarget")({
 export const SendMode = Schema.Literals(["reply", "proactive"])
 export type SendMode = Schema.Schema.Type<typeof SendMode>
 
+export const MessageFormat = Schema.Literals(["text", "markdown"])
+export type MessageFormat = Schema.Schema.Type<typeof MessageFormat>
+export const TEXT_LIMIT = 4000
+export const MARKDOWN_LIMIT = 12000
+
 export const Capability = Schema.Literals(["supported", "limited", "unsupported"])
 export type Capability = Schema.Schema.Type<typeof Capability>
 
@@ -48,6 +53,7 @@ export type TransportSendInput = {
   text: string
   mode: SendMode
   providerSequence?: number
+  format?: MessageFormat
 }
 
 export type TransportSendResult = {

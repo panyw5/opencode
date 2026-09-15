@@ -121,6 +121,12 @@ describe("channel-only IM tools", () => {
       expect(asks[0]?.patterns).toEqual(["tool-test"])
       const changed = yield* tool.execute({ channelName: "tool-test", text: "different" }, ctx).pipe(Effect.exit)
       expect(Exit.isFailure(changed)).toBe(true)
+      const rich = yield* tool.execute(
+        { channelName: "tool-test", text: "**rich**", format: "markdown", id: "rich-tool" },
+        ctx,
+      )
+      expect(JSON.parse(rich.output).format).toBe("markdown")
+      expect(calls.at(-1)).toMatchObject({ format: "markdown", text: "**rich**" })
     }),
   )
 

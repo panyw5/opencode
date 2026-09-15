@@ -14,8 +14,9 @@ Fixed-recipient discovery and cached recipients obey the complete channel
 allowed-users list, including lists with several users. A removed recipient is
 never reused just because it was cached.
 
-Text over 4000 characters is recorded as failed before a provider request, with
-zero attempts. Explicit Feishu/QQ HTTP 4xx or business rejections are failed;
+Plain text over 4000 characters, or Feishu Markdown over 12000 characters, is
+recorded as failed before a provider request, with zero attempts. Explicit
+Feishu/QQ HTTP 4xx or business rejections are failed;
 network/server outcomes without confirmed acceptance remain unknown.
 
 Pending sends carry a 60-second lease, renewed every 10 seconds while sending.
@@ -64,11 +65,25 @@ The tool call is simply:
 { "channelName": "cc", "text": "Deployment complete." }
 ```
 
+For rich text, use the existing Feishu Markdown card renderer:
+
+```json
+{ "channelName": "cc", "format": "markdown", "text": "**Deployment complete**\n\n- Version: `1.2.3`\n- [Details](https://example.com)" }
+```
+
+Omitted `format` defaults to plain `text`. Markdown uses a one-shot interactive
+card sharing the existing task-card schema, without task status/turn panels or
+automatic fallback sends. It is not arbitrary HTML or raw provider card JSON.
+QQ currently supports text only; requesting Markdown fails before sending.
+The persisted format participates in idempotency, including after retention
+cleanup: changing format under the same send ID is a conflict. Legacy text
+receipt fingerprints remain compatible.
+
 Available tools:
 
 - `im_list({})`: configured channel names, platforms, enabled/running state,
   and recipient readiness. Never exposes credentials.
-- `im_send({channelName,text,id?})`: send proactively to the channel's fixed
+- `im_send({channelName,text,format?,id?})`: send proactively to the channel's fixed
   user. The default idempotency key is stable for the current tool call.
 - `im_read({channelName,limit?,cursor?,direction?,waitMs?})`: read only that
   channel's fixed user's private messages. `direction` defaults to `after` in
@@ -105,7 +120,7 @@ project identity rather than trusting a payload project ID.
 | Endpoint                            | Input                                            | Purpose                    |
 | ----------------------------------- | ------------------------------------------------ | -------------------------- |
 | `GET /im/channels`                  | workspace routing                                | List configured channels   |
-| `POST /im/send`                     | `{channelName,text,id?}`                         | Send to the fixed user     |
+| `POST /im/send`                     | `{channelName,text,format?,id?}`                 | Send to the fixed user     |
 | `GET /im/messages`                  | required `channelName`, optional pagination/wait | Read fixed-user messages   |
 | `GET /im/subscriptions`             | workspace routing                                | List project watches       |
 | `POST /im/subscriptions`            | `{sessionID,channelName,keyword?}`               | Watch in a project session |

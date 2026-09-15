@@ -32,6 +32,15 @@ const DETAIL_LIMIT = 8000
 const FINAL_LIMIT = 12000
 const PATCH_MIN_INTERVAL_MS = 800
 
+function cardJson(elements: unknown[]) {
+  return JSON.stringify({ schema: "2.0", config: { streaming_mode: false, width_mode: "fill" }, body: { elements } })
+}
+
+/** One-shot Markdown card sharing the task card's existing schema and renderer. */
+export function buildMarkdownCardJson(text: string): string {
+  return cardJson([{ tag: "markdown", content: text }])
+}
+
 /** Schema 2.0 interactive card JSON (stringified for Feishu API). */
 export function buildTaskCardJson(input: { status: string; steps: CardStep[]; final?: string | null }): string {
   const elements: unknown[] = [{ tag: "markdown", content: `**${input.status}**` }]
@@ -45,11 +54,7 @@ export function buildTaskCardJson(input: { status: string; steps: CardStep[]; fi
       content: truncate(input.final, FINAL_LIMIT),
     })
   }
-  return JSON.stringify({
-    schema: "2.0",
-    config: { streaming_mode: false, width_mode: "fill" },
-    body: { elements },
-  })
+  return cardJson(elements)
 }
 
 function stepPanel(idx: number, summary: string, detail: string) {

@@ -5,6 +5,8 @@ import * as ServerAuth from "@/server/auth"
 import { runtime as imRuntime } from "@/im/service"
 import { messageRecordID, NormalizedMessage, Target, type IMTransport } from "@/im/model"
 import { ProviderRejectedError, SendValidationError, transportCapabilities } from "@/im/transport"
+import { buildMarkdownCardJson } from "./feishu-card"
+import { MARKDOWN_LIMIT, TEXT_LIMIT } from "@/im/model"
 import { AppRuntime } from "@/effect/app-runtime"
 import { dispatchMessage } from "@/im/dispatcher"
 import { IMOwner } from "@/im/owner"
@@ -47,21 +49,23 @@ export function createFeishuTransport(input: { name: string; client: Lark.Client
     channelName: input.name,
     capabilities: transportCapabilities("feishu"),
     sendText: async (message) => {
-      const maxLen = 4000
+      const markdown = message.format === "markdown"
+      const maxLen = markdown ? MARKDOWN_LIMIT : TEXT_LIMIT
       if (message.mode === "reply" && !message.target.replyTo)
         throw new Error("Feishu replies require an inbound message ID")
       if (message.text.length > maxLen) throw new SendValidationError(`Feishu text exceeds ${maxLen} characters`)
-      const content = JSON.stringify({ text: message.text })
+      const content = markdown ? buildMarkdownCardJson(message.text) : JSON.stringify({ text: message.text })
+      const msg_type = markdown ? "interactive" : "text"
       const response = await Promise.resolve()
         .then(() =>
           message.mode === "reply"
             ? input.client.im.message.reply({
                 path: { message_id: message.target.replyTo! },
-                data: { content, msg_type: "text" },
+                data: { content, msg_type },
               })
             : input.client.im.message.create({
                 params: { receive_id_type: "chat_id" },
-                data: { receive_id: message.target.conversationID, content, msg_type: "text" },
+                data: { receive_id: message.target.conversationID, content, msg_type },
               }),
         )
         .catch((error: unknown) => {

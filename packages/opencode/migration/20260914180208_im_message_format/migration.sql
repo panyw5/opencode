@@ -1,0 +1,1 @@
+ALTER TABLE `im_outbound` ADD `format` text DEFAULT 'text' NOT NULL;

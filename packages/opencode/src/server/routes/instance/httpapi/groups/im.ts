@@ -1,4 +1,4 @@
-import { Platform, SendMode, TargetScope } from "@/im/model"
+import { Platform, SendMode, TargetScope, MessageFormat } from "@/im/model"
 import { ProjectID } from "@/project/schema"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -66,12 +66,16 @@ export const ListQuery = Schema.Struct({
 })
 
 export const SendPayload = Schema.Struct({
+  format: Schema.optional(MessageFormat).annotate({
+    description: "text by default; markdown sends a rich Feishu card.",
+  }),
   id: Schema.optional(Schema.String),
   channelName: Schema.String,
   text: Schema.String,
 })
 
 export const OutboundSchema = Schema.Struct({
+  format: Schema.optional(MessageFormat),
   id: Schema.String,
   projectID: ProjectID,
   platform: Platform,

@@ -3,6 +3,7 @@ import { IM, type ListInput } from "@/im/service"
 import { IMOwner } from "@/im/owner"
 import { IMSubscription } from "@/im/subscription"
 import type { Target } from "@/im/model"
+import { MessageFormat } from "@/im/model"
 import { Effect, Schema } from "effect"
 import * as Log from "@opencode-ai/core/util/log"
 import * as Tool from "./tool"
@@ -13,12 +14,16 @@ const ReadParams = Schema.Struct({
   channelName: Schema.String,
   limit: Schema.optional(Schema.Number),
   cursor: Schema.optional(Schema.String).annotate({
-    description: "Omit on the first read. Later use the exact opaque checkpoint or nextCursor returned by im_read. Never use numeric watch startSeq/deliveryCursor or invent a cursor.",
+    description:
+      "Omit on the first read. Later use the exact opaque checkpoint or nextCursor returned by im_read. Never use numeric watch startSeq/deliveryCursor or invent a cursor.",
   }),
   direction: Schema.optional(Schema.Literals(["before", "after"])),
   waitMs: Schema.optional(Schema.Number),
 })
 const SendParams = Schema.Struct({
+  format: Schema.optional(MessageFormat).annotate({
+    description: "Defaults to text. Use markdown for a rich Feishu card; QQ currently supports text only.",
+  }),
   channelName: Schema.String,
   text: Schema.String,
   id: Schema.optional(Schema.String).annotate({
@@ -111,7 +116,7 @@ export const IMSendTool = Tool.define<typeof SendParams, { status: string }, IM.
     const owner = yield* IMOwner.Service
     return {
       description:
-        "Send text through an existing IM channel to its fixed user. Use {channelName,text}; recipient discovery is automatic. Do not supply platform, chat ID, target, or mode.",
+        "Send through a configured IM channel to its fixed user. Use {channelName,text,format?}; markdown renders a rich Feishu card, omitted format is plain text. Do not supply chat ID, target, or mode.",
       parameters: SendParams,
       execute: (params, ctx) =>
         Effect.gen(function* () {
@@ -138,6 +143,7 @@ export const IMSendTool = Tool.define<typeof SendParams, { status: string }, IM.
             mode: "proactive",
             target,
             text: params.text,
+            format: params.format,
           })
           return {
             title: `IM send ${result.status}`,

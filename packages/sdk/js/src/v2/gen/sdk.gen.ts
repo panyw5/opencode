@@ -1430,6 +1430,7 @@ export class Workspace extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
+      format?: "text" | "markdown"
       id?: string
       type?: string
       branch?: string | null
@@ -1444,6 +1445,7 @@ export class Workspace extends HeyApiClient {
           args: [
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
+            { in: "body", key: "format" },
             { in: "body", key: "id" },
             { in: "body", key: "type" },
             { in: "body", key: "branch" },

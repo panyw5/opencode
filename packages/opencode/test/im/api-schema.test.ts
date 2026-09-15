@@ -11,6 +11,10 @@ import {
 
 describe("channel-first IM API contract", () => {
   test("send requires only a channel name and text", () => {
+    expect(
+      Schema.decodeUnknownSync(SendPayload)({ channelName: "cc", text: "**rich**", format: "markdown" }).format,
+    ).toBe("markdown")
+    expect(() => Schema.decodeUnknownSync(SendPayload)({ channelName: "cc", text: "rich", format: "html" })).toThrow()
     expect(Schema.decodeUnknownSync(SendPayload)({ channelName: "cc", text: "hello" })).toEqual({
       channelName: "cc",
       text: "hello",
