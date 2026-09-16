@@ -66,6 +66,29 @@
     background-color: color-mix(in srgb, var(--text-base) 62%, transparent);
   }
 
+  [data-component="config-page"] [data-component="input"][data-variant="normal"] [data-slot="input-wrapper"] {
+    min-height: 40px;
+    border-color: var(--border-weak-base);
+    border-radius: var(--radius-xl);
+    background-color: var(--background-base);
+    transition:
+      border-color 120ms ease-out,
+      box-shadow 120ms ease-out;
+  }
+
+  [data-component="config-page"]
+    [data-component="input"][data-variant="normal"]
+    [data-slot="input-wrapper"]:focus-within:not(:has([data-readonly], [data-disabled], [data-invalid])) {
+    border-color: var(--border-strong-base);
+    box-shadow: inset 0 0 0 1px var(--border-strong-base);
+  }
+
+  [data-component="config-page"]
+    [data-component="input"][data-variant="normal"]
+    [data-slot="input-input"]:not(textarea) {
+    height: 38px;
+  }
+
   [data-component="button"].config-save-button[data-config-save-state="active"] {
     border-color: var(--border-weak-base);
     background-color: var(--button-primary-base);

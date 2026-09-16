@@ -8002,7 +8002,7 @@ export default function ConfigPage() {
   // middle column titles, or section descriptions here, also update
   // ConfigLoadingShell in app.tsx to avoid a visual flash on first render.
   return (
-    <div class="size-full overflow-hidden bg-background-base">
+    <div data-component="config-page" class="size-full overflow-hidden bg-background-base">
       <div class="flex h-full min-h-0 flex-col bg-[radial-gradient(circle_at_5%_0%,color-mix(in_srgb,var(--surface-brand-base)_7%,transparent),transparent_32%),linear-gradient(135deg,color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base)),var(--background-base)_45%)] xl:flex-row">
         <aside
           class="h-[200px] shrink-0 border-b border-border-weak-base bg-[linear-gradient(165deg,color-mix(in_srgb,var(--surface-brand-base)_7%,var(--surface-base)),color-mix(in_srgb,var(--surface-brand-base)_3%,var(--background-base))_46%,var(--background-base))] transition-shadow duration-150 xl:h-auto xl:w-[236px] xl:border-r xl:border-b-0"

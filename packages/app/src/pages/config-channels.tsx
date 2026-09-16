@@ -185,7 +185,7 @@ const ChannelDirectoryInput: Component<{
 
   return (
     <div ref={(node) => (rootRef = node)} class="relative">
-      <div class="flex h-10 overflow-hidden rounded-lg border border-border-weak-base bg-background-base transition-colors focus-within:border-border-strong-base focus-within:ring-1 focus-within:ring-border-strong-base">
+      <div class="flex h-10 overflow-hidden rounded-xl border border-border-weak-base bg-background-base transition-colors focus-within:border-border-strong-base focus-within:ring-1 focus-within:ring-border-strong-base">
         <input
           role="combobox"
           aria-autocomplete="list"
