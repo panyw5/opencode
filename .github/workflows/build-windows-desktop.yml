@@ -146,9 +146,9 @@ jobs:
 
       - name: Verify installed sidecar version
         run: |
-          $version = $env:APP_VERSION -replace '^v', ''
-          $sourceVersion = (Get-Content VERSION).Trim()
-          $installer = Join-Path $PWD "packages/desktop/dist/OpenCode_${version}_x64-setup.exe"
+          $artifactVersion = $env:APP_VERSION -replace '^v', ''
+          $expectedVersion = (Get-Content VERSION).Trim()
+          $installer = Join-Path $PWD "packages/desktop/dist/OpenCode_${artifactVersion}_x64-setup.exe"
           if (-not (Test-Path -LiteralPath $installer)) { throw "Installer for sidecar verification was not found at $installer." }
           $verifyRoot = Join-Path $env:RUNNER_TEMP "OpenCode Sidecar Verify"
           $installRoot = Join-Path $verifyRoot "Install"
@@ -174,15 +174,15 @@ jobs:
           $sidecarVersion = (@($output | Where-Object { "$_".Trim() }) | Select-Object -First 1)
           $sidecarVersion = "$sidecarVersion".Trim()
 
-          Write-Host "expected version=$version"
-          Write-Host "source version=$sourceVersion"
+          Write-Host "artifact version=$artifactVersion"
+          Write-Host "expected version=$expectedVersion"
           Write-Host "sidecar path=$sidecar"
           Write-Host "sidecar version=$sidecarVersion"
           Write-Host "RUST_TARGET=$($env:RUST_TARGET)"
           Write-Host "updater config=$updateConfig"
 
-          if ($sourceVersion -ne $version) { throw "Source version mismatch: got '$sourceVersion', expected '$version'." }
-          if ($sidecarVersion -ne $version) { throw "Installed sidecar version mismatch: got '$sidecarVersion', expected '$version' (RUST_TARGET=$($env:RUST_TARGET))." }
+          if ($env:OPENCODE_VERSION -ne $expectedVersion) { throw "Prepared version mismatch: got '$($env:OPENCODE_VERSION)', expected '$expectedVersion'." }
+          if ($sidecarVersion -ne $expectedVersion) { throw "Installed sidecar version mismatch: got '$sidecarVersion', expected '$expectedVersion' (RUST_TARGET=$($env:RUST_TARGET))." }
 
           $updater = Get-Content -LiteralPath $updateConfig -Raw
           if ($updater -notmatch '(?m)^owner:\s*panyw5\s*$' -or $updater -notmatch '(?m)^repo:\s*opencode\s*$') {
