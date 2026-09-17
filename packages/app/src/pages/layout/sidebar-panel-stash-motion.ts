@@ -36,11 +36,6 @@ export async function animateToSidebarStash(source?: HTMLElement) {
     console.debug("[sidebar-panel-motion] skip reason=missing-source")
     return
   }
-  if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-    console.debug("[sidebar-panel-motion] skip reason=reduced-motion")
-    return
-  }
-
   await nextPaint()
   const target = visibleStashTarget(source)
   if (!target) {
@@ -74,12 +69,10 @@ export async function animateToSidebarStash(source?: HTMLElement) {
     pointerEvents: "none",
     overflow: "hidden",
     transformOrigin: "center center",
-    willChange: "transform, opacity, filter",
+    willChange: "transform",
   })
   document.body.append(clone)
 
-  const previousOpacity = source.style.opacity
-  const previousPointerEvents = source.style.pointerEvents
   source.style.opacity = "0"
   source.style.pointerEvents = "none"
   console.debug(
@@ -92,40 +85,19 @@ export async function animateToSidebarStash(source?: HTMLElement) {
   try {
     const flight = clone.animate(
       [
-        { transform: transform(0, 1), opacity: 1, filter: "blur(0px)", offset: 0 },
+        { transform: transform(0, 1), offset: 0 },
         {
-          transform: transform(1.025, motion.scale * 0.76),
-          opacity: 0.82,
-          filter: "blur(0px)",
-          offset: 0.72,
-          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
-        },
-        {
-          transform: transform(0.985, motion.scale * 1.2),
-          opacity: 0.58,
-          filter: "blur(0.6px)",
-          offset: 0.86,
-          easing: "cubic-bezier(0.34, 1.35, 0.64, 1)",
+          transform: transform(0.86, Math.max(motion.scale * 2.4, 0.12)),
+          offset: 0.82,
         },
         {
           transform: transform(1, motion.scale),
-          opacity: 0,
-          filter: "blur(2px)",
           offset: 1,
         },
       ],
-      { duration: 560, fill: "forwards", easing: "linear" },
+      { duration: 360, fill: "forwards", easing: "cubic-bezier(0.4, 0, 0.2, 1)" },
     )
-    const pulse = target.animate(
-      [
-        { transform: "scale(1)", offset: 0 },
-        { transform: "scale(1.16)", offset: 0.45 },
-        { transform: "scale(0.96)", offset: 0.72 },
-        { transform: "scale(1)", offset: 1 },
-      ],
-      { delay: 390, duration: 330, easing: "cubic-bezier(0.22, 1.25, 0.36, 1)" },
-    )
-    await Promise.allSettled([flight.finished, pulse.finished])
+    await flight.finished
     console.debug("[sidebar-panel-motion] finish")
   } catch (error) {
     console.error(
@@ -133,7 +105,5 @@ export async function animateToSidebarStash(source?: HTMLElement) {
     )
   } finally {
     clone.remove()
-    source.style.opacity = previousOpacity
-    source.style.pointerEvents = previousPointerEvents
   }
 }
