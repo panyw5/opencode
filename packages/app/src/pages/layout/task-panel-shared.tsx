@@ -57,6 +57,9 @@ export function TaskPanelShell(props: {
   title: string
   backLabel: string
   onBack: () => void
+  /** Optional: park the panel on the rail stash so the work area is free again. */
+  minimizeLabel?: string
+  onMinimize?: () => void
   newLabel?: string
   onNew?: () => void
   newDisabled?: boolean
@@ -91,6 +94,19 @@ export function TaskPanelShell(props: {
             </div>
           </div>
           <div class="flex shrink-0 items-center gap-1">
+            <Show when={props.onMinimize}>
+              <Tooltip placement="bottom" value={props.minimizeLabel ?? ""}>
+                <IconButton
+                  icon="panel-minimize"
+                  variant="ghost"
+                  size="large"
+                  class="rounded-lg"
+                  aria-label={props.minimizeLabel}
+                  data-action="panel-minimize"
+                  onClick={() => props.onMinimize?.()}
+                />
+              </Tooltip>
+            </Show>
             <Show when={props.onNew}>
               <Tooltip placement="bottom" value={props.newLabel ?? ""}>
                 <IconButton

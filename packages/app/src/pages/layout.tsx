@@ -149,10 +149,24 @@ import {
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
 import { ScoopJoin } from "./layout/scoop-join"
-import { ProjectTasksPanel } from "./layout/project-tasks-panel"
-import { ScheduledTasksPanel } from "./layout/scheduled-tasks-panel"
+import {
+  ProjectTaskDetailDialog,
+  ProjectTasksPanel,
+  type ProjectTaskEditorStash,
+} from "./layout/project-tasks-panel"
+import { ScheduledTaskFormDialog, ScheduledTasksPanel, type ScheduledTaskEditorStash } from "./layout/scheduled-tasks-panel"
 import { AgentsMdDialog } from "@/components/agents-md-dialog"
 import { visibleSidebarActionCount } from "./layout/sidebar-quick-actions"
+import {
+  panelStashId,
+  projectTaskEditorStashId,
+  scheduledEditorStashId,
+  stashRailEntry,
+  unstashRailEntry,
+  type SidebarPanelKind,
+  type StashedRailEntry,
+  type StashedSidebarPanel,
+} from "./layout/sidebar-panel-stash"
 
 const QUICK_ASSISTANT_DIR = "quick-assistant"
 
@@ -244,6 +258,17 @@ function SidebarQuickActions(props: { primary: SidebarQuickAction; actions: Side
   )
 }
 
+/**
+ * Renders nothing; exposes a `useDialog()` handle whose owner sits inside
+ * `SessionTabsProvider`. Dialogs re-shown through it keep the context the
+ * sidebar panels had when they stashed themselves (e.g. `useSessionTabs`).
+ */
+function DialogRestoreHost(props: { onReady: (dialog: ReturnType<typeof useDialog>) => void }): null {
+  const dialog = useDialog()
+  onMount(() => props.onReady(dialog))
+  return null
+}
+
 export default function Layout(props: ParentProps) {
   type CurrentProject = LocalProject & {
     root: string
@@ -261,9 +286,15 @@ export default function Layout(props: ParentProps) {
       workspaceBranchName: {} as Record<string, Record<string, string>>,
       workspaceExpanded: {} as Record<string, boolean>,
       gettingStartedDismissed: false,
-      sidebarPanel: "project" as "project" | "scheduled" | "projectTasks",
+      sidebarPanel: "project" as "project" | SidebarPanelKind,
     }),
   )
+
+  // Parked work (minimized sidebar panels, editor dialogs put down mid-edit)
+  // is a scratch pad — intentionally NOT persisted, so a restart starts clean.
+  const [stash, setStash] = createStore({ items: [] as StashedRailEntry[] })
+  // Dialog handle captured inside SessionTabsProvider (see DialogRestoreHost).
+  let stashDialog: ReturnType<typeof useDialog> | undefined
 
   const pageReady = createMemo(() => ready())
   let booted = false
@@ -1962,6 +1993,42 @@ export default function Layout(props: ParentProps) {
     })
   }
 
+  function pushStashEntry(entry: StashedRailEntry) {
+    setStash("items", (items) => stashRailEntry(items, entry))
+  }
+
+  function removeStashEntry(id: string) {
+    setStash("items", (items) => unstashRailEntry(items, id))
+  }
+
+  /** Rail click / menu pick: drop the entry, then let it reopen itself. */
+  function restoreStashEntry(entry: StashedRailEntry) {
+    console.debug(`[sidebar-panel] restore entry id=${entry.id}`)
+    removeStashEntry(entry.id)
+    try {
+      entry.restore()
+    } catch (error) {
+      console.error(`[sidebar-panel] restore failed id=${entry.id} error=${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  /**
+   * Scope a sidebar panel is bound to right now. This follows the sidebar
+   * selection (which survives navigation), not the route — the same rule the
+   * panel components themselves use for `projectID` / `directory`.
+   */
+  function activePanelScope(kind: SidebarPanelKind): StashedSidebarPanel {
+    const project = sidebarProject()
+    return { kind, projectID: project?.id ?? "", directory: project?.root ?? routeDir() }
+  }
+
+  /** Opening a panel by any other path takes it off the rail stash. */
+  function clearStashedPanel(kind: SidebarPanelKind) {
+    const scope = activePanelScope(kind)
+    if (!scope.directory) return
+    removeStashEntry(panelStashId(kind, scope.directory))
+  }
+
   function openProjectTasksPanel() {
     // Prefer the sidebar-selected project: rail clicks can select a project
     // without navigating when it has no sessions, so params.dir may be empty.
@@ -1970,6 +2037,7 @@ export default function Layout(props: ParentProps) {
       `[layout] open-project-tasks directory=${directory || "none"} route-dir=${params.dir ?? "none"} pathname=${location.pathname}`,
     )
     if (!directory) return
+    clearStashedPanel("projectTasks")
     setStore("sidebarPanel", "projectTasks")
     layout.sidebar.open()
   }
@@ -1982,8 +2050,106 @@ export default function Layout(props: ParentProps) {
       `[layout] open-scheduled directory=${directory || "none"} route-dir=${params.dir ?? "none"} on-session=${onSessionRoute()} pathname=${location.pathname}`,
     )
     if (!directory) return
+    clearStashedPanel("scheduled")
     setStore("sidebarPanel", "scheduled")
     layout.sidebar.open()
+  }
+
+  /**
+   * Minimize the panel sitting in the sidebar slot: it moves onto the rail
+   * stash (under the home button) and the sidebar collapses, freeing the work
+   * area. Several panels can be stashed at once and reconnected with one click.
+   */
+  function minimizeSidebarPanel(kind: SidebarPanelKind) {
+    const scope = activePanelScope(kind)
+    console.debug(
+      `[sidebar-panel] minimize kind=${kind} directory=${scope.directory || "none"} projectID=${scope.projectID || "none"}`,
+    )
+    if (!scope.directory) return
+    pushStashEntry({
+      id: panelStashId(kind, scope.directory),
+      label: `${panelKindLabel(kind)} · ${getFilename(scope.directory)}`,
+      icon: kind === "scheduled" ? "clock" : "checklist",
+      restore: () => restoreSidebarPanel(scope),
+    })
+    batch(() => {
+      setStore("sidebarPanel", "project")
+      layout.sidebar.close()
+    })
+  }
+
+  /** Reopen a minimized panel, restoring the project it was minimized from. */
+  function restoreSidebarPanel(scope: StashedSidebarPanel) {
+    console.debug(
+      `[sidebar-panel] restore kind=${scope.kind} directory=${scope.directory} projectID=${scope.projectID || "none"}`,
+    )
+    setSidebarProjectRoot(scope.directory)
+    batch(() => {
+      setStore("sidebarPanel", scope.kind)
+      layout.sidebar.open()
+    })
+  }
+
+  const panelKindLabel = (kind: SidebarPanelKind) =>
+    kind === "scheduled" ? language.t("scheduled.title") : language.t("projectTask.title")
+
+  /**
+   * Park a scheduled task editor dialog (create or edit) with its form state.
+   * Restoring re-shows the dialog from the snapshot; saving supersedes any
+   * parked editing session, which the panel dismisses via `onSaved`.
+   */
+  function stashScheduledTaskEditor(payload: ScheduledTaskEditorStash) {
+    const directory = payload.directory || activePanelScope("scheduled").directory
+    if (!directory) return
+    const id = scheduledEditorStashId(payload.task?.id, directory)
+    const title = payload.task?.name || language.t("scheduled.create")
+    console.debug(`[sidebar-panel] stash scheduled-editor id=${id} title=${title}`)
+    pushStashEntry({
+      id,
+      label: `${language.t("sidebar.panels.stashedEditorScheduled")} · ${title}`,
+      icon: "clock",
+      restore: () => {
+        console.debug(`[sidebar-panel] restore scheduled-editor id=${id}`)
+        ;(stashDialog ?? dialog).show(() => (
+          <ScheduledTaskFormDialog
+            task={payload.task}
+            projectID={payload.projectID}
+            directory={payload.directory}
+            initialState={payload.snapshot}
+            minimizeLabel={language.t("sidebar.panels.minimize")}
+            onMinimize={(snapshot) => stashScheduledTaskEditor({ ...payload, snapshot })}
+            onSaved={() => Promise.resolve()}
+          />
+        ))
+      },
+    })
+  }
+
+  /** Park a project task detail dialog with its draft editing state. */
+  function stashProjectTaskEditor(payload: ProjectTaskEditorStash) {
+    const directory = payload.directory
+    if (!directory) return
+    const id = projectTaskEditorStashId(payload.task.id, directory)
+    console.debug(`[sidebar-panel] stash project-task-editor id=${id} title=${payload.task.title}`)
+    pushStashEntry({
+      id,
+      label: `${language.t("sidebar.panels.stashedEditorProject")} · ${payload.task.title}`,
+      icon: "sticky-note",
+      restore: () => {
+        console.debug(`[sidebar-panel] restore project-task-editor id=${id}`)
+        ;(stashDialog ?? dialog).show(() => (
+          <ProjectTaskDetailDialog
+            task={payload.task}
+            directory={payload.directory}
+            client={globalSDK.createClient({ directory: payload.directory.replace(/\\/g, "/"), throwOnError: true })}
+            initialState={payload.snapshot}
+            minimizeLabel={language.t("sidebar.panels.minimize")}
+            onMinimize={(snapshot) => stashProjectTaskEditor({ ...payload, snapshot })}
+            onChanged={() => Promise.resolve()}
+          />
+        ))
+      },
+    })
   }
 
   /** Resolve the channel's own work directory (not an OpenCode project). */
@@ -4357,6 +4523,9 @@ export default function Layout(props: ParentProps) {
       onOpenSettings={openSettings}
       helpLabel={() => language.t("sidebar.help")}
       onOpenHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}
+      stashedEntries={() => stash.items}
+      stashLabel={() => language.t("sidebar.panels.stashed")}
+      onRestoreEntry={restoreStashEntry}
       renderPanel={() =>
         scheduledPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ScheduledTasksPanel
@@ -4365,6 +4534,14 @@ export default function Layout(props: ParentProps) {
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
+            minimizeLabel={language.t("sidebar.panels.minimize")}
+            onMinimize={() => minimizeSidebarPanel("scheduled")}
+            editorMinimizeLabel={language.t("sidebar.panels.minimize")}
+            onStashEditor={stashScheduledTaskEditor}
+            onDismissEditorStash={(taskID) => {
+              const scope = activePanelScope("scheduled")
+              if (scope.directory) removeStashEntry(scheduledEditorStashId(taskID, scope.directory))
+            }}
           />
         ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ProjectTasksPanel
@@ -4382,6 +4559,14 @@ export default function Layout(props: ParentProps) {
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
+            minimizeLabel={language.t("sidebar.panels.minimize")}
+            onMinimize={() => minimizeSidebarPanel("projectTasks")}
+            editorMinimizeLabel={language.t("sidebar.panels.minimize")}
+            onStashEditor={stashProjectTaskEditor}
+            onDismissEditorStash={(taskID) => {
+              const scope = activePanelScope("projectTasks")
+              if (scope.directory) removeStashEntry(projectTaskEditorStashId(taskID, scope.directory))
+            }}
           />
         ) : mobile ? (
           <SidebarPanel project={sidebarProject} mobile />
@@ -4394,6 +4579,9 @@ export default function Layout(props: ParentProps) {
 
   return (
     <SessionTabsProvider value={sessionTabs}>
+      {/* Captures a dialog handle from inside SessionTabsProvider: stashed editor
+          dialogs must restore with the same context they were opened from. */}
+      <DialogRestoreHost onReady={(dialog) => (stashDialog = dialog)} />
       <div
         data-component="app-root"
         class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text"

@@ -150,6 +150,11 @@ const icons = {
 <circle cx="76" cy="34" r="2.5" fill="#00e5cc"/>`,
   models: `<path fill-rule="evenodd" clip-rule="evenodd" d="M17.5 10C12.2917 10 10 12.2917 10 17.5C10 12.2917 7.70833 10 2.5 10C7.70833 10 10 7.70833 10 2.5C10 7.70833 12.2917 10 17.5 10Z" stroke="currentColor"/>`,
   "sticky-note": `<path d="M4.583 2.917H15.417C16.337 2.917 17.083 3.663 17.083 4.583V12.917L12.917 17.083H4.583C3.663 17.083 2.917 16.337 2.917 15.417V4.583C2.917 3.663 3.663 2.917 4.583 2.917Z" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M17.083 12.917H13.75C13.29 12.917 12.917 13.29 12.917 13.75V17.083" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/><path d="M6.667 7.5H13.333M6.667 10.417H10" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
+  // Sidebar panel minimize / rail stash pair. `panel-minimize` is the button
+  // rendered inside a task panel header, `panel-stash` is the rail entry that
+  // holds every minimized panel.
+  "panel-minimize": `<path d="M2.91699 2.91699H17.0837V17.0837H2.91699V2.91699ZM6.25033 13.7503H13.7503" stroke="currentColor" stroke-linecap="square"/>`,
+  "panel-stash": `<path d="M5.83301 4.58301H17.083V13.7497M2.91634 6.24967H14.1663V17.083H2.91634V6.24967Z" stroke="currentColor" stroke-linecap="square"/>`,
 }
 
 export type IconName = keyof typeof icons

@@ -16,6 +16,7 @@ import { Mark } from "@opencode-ai/ui/logo"
 import { type LocalProject } from "@/context/layout"
 import { ScoopJoin } from "./scoop-join"
 import { RailTooltip } from "./rail-tooltip"
+import type { StashedRailEntry } from "./sidebar-panel-stash"
 
 export type SidebarExtraAgent = {
   id: string
@@ -66,6 +67,10 @@ export const SidebarContent = (props: {
   onOpenSettings: () => void
   helpLabel: Accessor<string>
   onOpenHelp: () => void
+  /** Parked items (minimized panels, editor dialogs), most recent first. */
+  stashedEntries: Accessor<StashedRailEntry[]>
+  stashLabel: Accessor<string>
+  onRestoreEntry: (entry: StashedRailEntry) => void
   renderPanel: () => JSX.Element
 }): JSX.Element => {
   const expanded = createMemo(() => !!props.mobile || props.opened())
@@ -115,12 +120,40 @@ export const SidebarContent = (props: {
     }, 200)
   }
 
+  // Minimized panels menu state. A single stashed panel does not need a menu —
+  // the rail tooltip already names it and a click reopens it directly.
+  const [stashMenuOpen, setStashMenuOpen] = createSignal(false)
+  let stashCloseTimer: number | undefined
+
+  const stashHead = createMemo(() => props.stashedEntries()[0])
+  const stashTitle = () => {
+    const items = props.stashedEntries()
+    return items.length === 1 ? items[0]!.label : props.stashLabel()
+  }
+
+  const handleStashMouseEnter = () => {
+    if (stashCloseTimer) {
+      clearTimeout(stashCloseTimer)
+      stashCloseTimer = undefined
+    }
+    setStashMenuOpen(true)
+  }
+
+  const handleStashMouseLeave = () => {
+    stashCloseTimer = window.setTimeout(() => {
+      setStashMenuOpen(false)
+    }, 200)
+  }
+
   onCleanup(() => {
     if (closeTimer) {
       clearTimeout(closeTimer)
     }
     if (imCloseTimer) {
       clearTimeout(imCloseTimer)
+    }
+    if (stashCloseTimer) {
+      clearTimeout(stashCloseTimer)
     }
   })
 
@@ -160,6 +193,54 @@ export const SidebarContent = (props: {
               <Mark class="size-5" />
             </button>
           </RailTooltip>
+          <Show when={props.stashedEntries().length > 0}>
+            <Popover
+              open={props.stashedEntries().length > 1 && stashMenuOpen()}
+              onOpenChange={setStashMenuOpen}
+              placement={placement()}
+              trigger={
+                <div class="mt-2" onMouseEnter={handleStashMouseEnter} onMouseLeave={handleStashMouseLeave}>
+                  <RailTooltip mobile={props.mobile} title={stashTitle()} inactive={stashMenuOpen()}>
+                    <IconButton
+                      icon="panel-stash"
+                      variant="ghost"
+                      size="large"
+                      data-action="panel-stash"
+                      classList={{ "bg-surface-base-active": stashMenuOpen() }}
+                      aria-label={props.stashLabel()}
+                      onClick={() => {
+                        const head = stashHead()
+                        if (head) props.onRestoreEntry(head)
+                      }}
+                    />
+                  </RailTooltip>
+                </div>
+              }
+            >
+              <div
+                class="flex flex-col gap-1 p-2 min-w-[200px]"
+                onMouseEnter={handleStashMouseEnter}
+                onMouseLeave={handleStashMouseLeave}
+              >
+                <For each={props.stashedEntries()}>
+                  {(entry) => (
+                    <button
+                      type="button"
+                      class="flex items-center gap-2 px-3 py-2 rounded-md text-text-base hover:bg-surface-base-hover transition-colors"
+                      data-stashed-entry={entry.id}
+                      onClick={() => {
+                        props.onRestoreEntry(entry)
+                        setStashMenuOpen(false)
+                      }}
+                    >
+                      <Icon name={entry.icon} class="size-5 shrink-0" />
+                      <span class="min-w-0 flex-1 truncate text-left text-14-regular">{entry.label}</span>
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Popover>
+          </Show>
           <div aria-hidden="true" class="mt-3 h-px w-7 bg-border-weaker-base" />
         </div>
         <div class="flex-1 min-h-0 w-full">

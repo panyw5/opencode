@@ -225,11 +225,29 @@ function ProjectTaskCard(props: {
   )
 }
 
-function ProjectTaskDetailDialog(props: {
+/** Editing state worth carrying across a minimize/restore round-trip. */
+export type ProjectTaskDetailSnapshot = {
+  draft: string
+  mode: "preview" | "edit"
+  dirty: boolean
+}
+
+/** Everything needed to reopen a minimized project task detail dialog. */
+export type ProjectTaskEditorStash = {
+  task: ProjectTask
+  directory: string
+  snapshot: ProjectTaskDetailSnapshot
+}
+
+export function ProjectTaskDetailDialog(props: {
   task: ProjectTask
   directory: string
   client: ReturnType<ReturnType<typeof useGlobalSDK>["createClient"]>
   onChanged: () => void | Promise<void>
+  /** Restored editing state from a previous minimize; wins over fresh load. */
+  initialState?: ProjectTaskDetailSnapshot
+  minimizeLabel?: string
+  onMinimize?: (snapshot: ProjectTaskDetailSnapshot) => void
 }): JSX.Element {
   const language = useLanguage()
   const dialog = useDialog()
@@ -238,14 +256,15 @@ function ProjectTaskDetailDialog(props: {
   const [maximized, setMaximized] = createSignal(false)
   const [idCopied, setIdCopied] = createSignal(false)
   let idCopiedTimer: ReturnType<typeof setTimeout> | undefined
+  const restored = props.initialState
   const [state, setState] = createStore({
     detail: undefined as ProjectTaskDetail | undefined,
     loading: true,
     pending: false,
     error: "",
-    mode: "preview" as "preview" | "edit",
-    draft: props.task.description,
-    dirty: false,
+    mode: restored?.mode ?? ("preview" as "preview" | "edit"),
+    draft: restored?.draft ?? props.task.description,
+    dirty: restored?.dirty ?? false,
     saved: props.task.description,
   })
 
@@ -282,11 +301,13 @@ function ProjectTaskDetailDialog(props: {
     try {
       const result = await props.client.projectTask.detail({ taskID: props.task.id })
       if (result.data) {
+        // A restored editing session keeps its draft; the server description
+        // stays the "saved" baseline so dirty state remains meaningful.
         setState({
           detail: result.data,
-          draft: result.data.description,
+          draft: restored ? restored.draft : result.data.description,
           saved: result.data.description,
-          dirty: false,
+          dirty: restored ? restored.dirty : false,
         })
       } else {
       }
@@ -295,6 +316,15 @@ function ProjectTaskDetailDialog(props: {
     } finally {
       setState("loading", false)
     }
+  }
+
+  /** Park the dialog on the rail stash: snapshot the draft, then close without saving. */
+  function minimize() {
+    if (!props.onMinimize) return
+    const snapshot: ProjectTaskDetailSnapshot = { draft: state.draft, mode: state.mode, dirty: state.dirty }
+    console.debug(`[project-task] detail minimize task=${props.task.id} dirty=${String(snapshot.dirty)}`)
+    props.onMinimize(snapshot)
+    dialog.close()
   }
 
   async function archive() {
@@ -493,6 +523,18 @@ function ProjectTaskDetailDialog(props: {
         data-maximized={maximized() ? "" : undefined}
         action={
           <div class="flex items-center gap-2">
+            <Show when={props.onMinimize}>
+              <Tooltip placement="bottom" value={props.minimizeLabel ?? ""}>
+                <IconButton
+                  icon="panel-minimize"
+                  variant="ghost"
+                  size="large"
+                  aria-label={props.minimizeLabel}
+                  data-action="dialog-minimize"
+                  onClick={minimize}
+                />
+              </Tooltip>
+            </Show>
             <Tooltip placement="bottom" value={language.t("projectTask.archive")}>
               <IconButton
                 icon="archive"
@@ -794,6 +836,13 @@ export function ProjectTasksPanel(props: {
   width: Accessor<number>
   mobile?: boolean
   onBack: () => void
+  /** Optional: park the panel on the rail stash so the work area is free again. */
+  minimizeLabel?: string
+  onMinimize?: () => void
+  /** Optional: let the task detail dialog park itself on the rail stash. */
+  editorMinimizeLabel?: string
+  onStashEditor?: (payload: ProjectTaskEditorStash) => void
+  onDismissEditorStash?: (taskID: string) => void
 }): JSX.Element {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
@@ -872,7 +921,17 @@ export function ProjectTasksPanel(props: {
         task={task}
         directory={dir()}
         client={client()}
-        onChanged={() => Promise.resolve()}
+        onChanged={() => {
+          // The stashed editing session (if any) is superseded by this save/archive.
+          props.onDismissEditorStash?.(task.id)
+          return Promise.resolve()
+        }}
+        minimizeLabel={props.editorMinimizeLabel}
+        onMinimize={
+          props.onStashEditor
+            ? (snapshot) => props.onStashEditor!({ task, directory: dir(), snapshot })
+            : undefined
+        }
       />
     ))
   }
@@ -971,6 +1030,8 @@ export function ProjectTasksPanel(props: {
       title={language.t("projectTask.title")}
       backLabel={language.t("projectTask.back")}
       onBack={props.onBack}
+      minimizeLabel={props.minimizeLabel}
+      onMinimize={props.onMinimize}
       newLabel={language.t("projectTask.create")}
       onNew={newTask}
       newDisabled={!dir()}

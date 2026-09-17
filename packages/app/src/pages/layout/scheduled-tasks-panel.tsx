@@ -125,11 +125,78 @@ type ModelOption = {
   variants?: Record<string, Record<string, unknown>>
 }
 
-function ScheduledTaskFormDialog(props: {
+/** Form fields worth carrying across a minimize/restore round-trip. */
+export type ScheduledTaskFormSnapshot = {
+  name: string
+  prompt: string
+  agent: string
+  providerID: string
+  modelID: string
+  variant: string
+  executionMode: ExecutionMode
+  sessionID: string
+  scheduleKind: ScheduleKind
+  at: string
+  intervalMinutes: string
+  cron: string
+  timezone: string
+  unattended: boolean
+  enabled: boolean
+}
+
+/** Everything needed to reopen a minimized scheduled task editor. */
+export type ScheduledTaskEditorStash = {
+  task?: ScheduledTask
+  projectID?: string
+  directory?: string
+  snapshot: ScheduledTaskFormSnapshot
+}
+
+function formSnapshot(state: {
+  name: string
+  prompt: string
+  agent: string
+  providerID: string
+  modelID: string
+  variant: string
+  executionMode: ExecutionMode
+  sessionID: string
+  scheduleKind: ScheduleKind
+  at: string
+  intervalMinutes: string
+  cron: string
+  timezone: string
+  unattended: boolean
+  enabled: boolean
+}): ScheduledTaskFormSnapshot {
+  return {
+    name: state.name,
+    prompt: state.prompt,
+    agent: state.agent,
+    providerID: state.providerID,
+    modelID: state.modelID,
+    variant: state.variant,
+    executionMode: state.executionMode,
+    sessionID: state.sessionID,
+    scheduleKind: state.scheduleKind,
+    at: state.at,
+    intervalMinutes: state.intervalMinutes,
+    cron: state.cron,
+    timezone: state.timezone,
+    unattended: state.unattended,
+    enabled: state.enabled,
+  }
+}
+
+export function ScheduledTaskFormDialog(props: {
   task?: ScheduledTask
   projectID?: string
   directory?: string
   onSaved: () => void | Promise<void>
+  /** Restored editing state from a previous minimize; wins over `task` defaults. */
+  initialState?: ScheduledTaskFormSnapshot
+  minimizeLabel?: string
+  onMinimize?: (snapshot: ScheduledTaskFormSnapshot) => void
 }): JSX.Element {
   const sdk = useGlobalSDK()
   const globalSync = useGlobalSync()
@@ -138,26 +205,32 @@ function ScheduledTaskFormDialog(props: {
   const dialog = useDialog()
   const sessionTabs = useSessionTabs()
   const task = props.task
+  const restored = props.initialState
   const [maximized, setMaximized] = createSignal(false)
   const [state, setState] = createStore({
-    name: task?.name ?? "",
-    prompt: task?.prompt ?? "",
-    agent: task?.agent ?? "build",
-    providerID: task?.model.providerID ?? "",
-    modelID: task?.model.modelID ?? "",
-    variant: task?.model.variant ?? "",
-    executionMode: task?.executionMode ?? ("automatic_session" as ExecutionMode),
-    sessionID: task?.sessionID ?? "",
-    scheduleKind: task?.schedule.kind ?? ("every" as ScheduleKind),
-    at: task?.schedule.kind === "at" ? new Date(task.schedule.at).toISOString().slice(0, 16) : "",
-    intervalMinutes: task?.schedule.kind === "every" ? String(task.schedule.interval / 60_000) : "60",
-    cron: task?.schedule.kind === "cron" ? task.schedule.expression : "0 9 * * 1-5",
+    name: restored?.name ?? task?.name ?? "",
+    prompt: restored?.prompt ?? task?.prompt ?? "",
+    agent: restored?.agent ?? task?.agent ?? "build",
+    providerID: restored?.providerID ?? task?.model.providerID ?? "",
+    modelID: restored?.modelID ?? task?.model.modelID ?? "",
+    variant: restored?.variant ?? task?.model.variant ?? "",
+    executionMode: restored?.executionMode ?? task?.executionMode ?? ("automatic_session" as ExecutionMode),
+    sessionID: restored?.sessionID ?? task?.sessionID ?? "",
+    scheduleKind: restored?.scheduleKind ?? task?.schedule.kind ?? ("every" as ScheduleKind),
+    at:
+      restored?.at ??
+      (task?.schedule.kind === "at" ? new Date(task.schedule.at).toISOString().slice(0, 16) : ""),
+    intervalMinutes:
+      restored?.intervalMinutes ??
+      (task?.schedule.kind === "every" ? String(task.schedule.interval / 60_000) : "60"),
+    cron: restored?.cron ?? (task?.schedule.kind === "cron" ? task.schedule.expression : "0 9 * * 1-5"),
     timezone:
-      task?.schedule.kind === "cron"
+      restored?.timezone ??
+      (task?.schedule.kind === "cron"
         ? (task.schedule.timezone ?? "")
-        : Intl.DateTimeFormat().resolvedOptions().timeZone,
-    unattended: !!task,
-    enabled: task?.enabled ?? true,
+        : Intl.DateTimeFormat().resolvedOptions().timeZone),
+    unattended: restored?.unattended ?? !!task,
+    enabled: restored?.enabled ?? task?.enabled ?? true,
     runs: [] as ScheduledTaskRun[],
     loadingRuns: !!task,
     pendingAction: false,
@@ -184,6 +257,15 @@ function ScheduledTaskFormDialog(props: {
     const next = !maximized()
     console.debug(`[scheduled-panel] edit maximize task=${task?.id ?? "new"} maximized=${String(next)}`)
     setMaximized(next)
+  }
+
+  /** Park the dialog on the rail stash: snapshot the form, then close without saving. */
+  function minimize() {
+    if (!props.onMinimize) return
+    const snapshot = formSnapshot(state)
+    console.debug(`[scheduled-panel] edit minimize task=${task?.id ?? "new"} name=${snapshot.name || "none"}`)
+    props.onMinimize(snapshot)
+    dialog.close()
   }
 
   const agentOptions = createMemo(() => {
@@ -489,20 +571,34 @@ function ScheduledTaskFormDialog(props: {
       data-scheduled-task-dialog={task?.id}
       data-maximized={task && maximized() ? "" : undefined}
       action={
-        task ? (
+        task || props.onMinimize ? (
           <div class="flex items-center gap-2">
-            <Tooltip
-              placement="bottom"
-              value={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
-            >
-              <IconButton
-                icon={maximized() ? "collapse" : "expand"}
-                size="large"
-                variant="ghost"
-                onClick={toggleMaximized}
-                aria-label={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
-              />
-            </Tooltip>
+            <Show when={props.onMinimize}>
+              <Tooltip placement="bottom" value={props.minimizeLabel ?? ""}>
+                <IconButton
+                  icon="panel-minimize"
+                  size="large"
+                  variant="ghost"
+                  onClick={minimize}
+                  aria-label={props.minimizeLabel}
+                  data-action="dialog-minimize"
+                />
+              </Tooltip>
+            </Show>
+            <Show when={task}>
+              <Tooltip
+                placement="bottom"
+                value={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+              >
+                <IconButton
+                  icon={maximized() ? "collapse" : "expand"}
+                  size="large"
+                  variant="ghost"
+                  onClick={toggleMaximized}
+                  aria-label={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+                />
+              </Tooltip>
+            </Show>
             <IconButton
               icon="close"
               size="large"
@@ -761,6 +857,13 @@ export function ScheduledTasksPanel(props: {
   width: Accessor<number>
   mobile?: boolean
   onBack: () => void
+  /** Optional: park the panel on the rail stash so the work area is free again. */
+  minimizeLabel?: string
+  onMinimize?: () => void
+  /** Optional: let the task editor dialog park itself on the rail stash. */
+  editorMinimizeLabel?: string
+  onStashEditor?: (payload: ScheduledTaskEditorStash) => void
+  onDismissEditorStash?: (taskID: string | undefined) => void
 }): JSX.Element {
   const sdk = useGlobalSDK()
   const language = useLanguage()
@@ -810,7 +913,28 @@ export function ScheduledTasksPanel(props: {
   }
 
   function open(task: ScheduledTask) {
-    dialog.show(() => <ScheduledTaskFormDialog task={task} onSaved={() => load({ silent: true })} />)
+    dialog.show(() => (
+      <ScheduledTaskFormDialog
+        task={task}
+        onSaved={() => {
+          // The stashed editing session (if any) is superseded by this save.
+          props.onDismissEditorStash?.(task.id)
+          return load({ silent: true })
+        }}
+        minimizeLabel={props.editorMinimizeLabel}
+        onMinimize={
+          props.onStashEditor
+            ? (snapshot) =>
+                props.onStashEditor!({
+                  task,
+                  projectID: props.projectID() || undefined,
+                  directory: props.directory() || task.directory || undefined,
+                  snapshot,
+                })
+            : undefined
+        }
+      />
+    ))
   }
 
   function create() {
@@ -818,7 +942,20 @@ export function ScheduledTasksPanel(props: {
     const directory = props.directory()
     if (!projectID || !directory) return
     dialog.show(() => (
-      <ScheduledTaskFormDialog projectID={projectID} directory={directory} onSaved={() => load({ silent: true })} />
+      <ScheduledTaskFormDialog
+        projectID={projectID}
+        directory={directory}
+        onSaved={() => {
+          props.onDismissEditorStash?.(undefined)
+          return load({ silent: true })
+        }}
+        minimizeLabel={props.editorMinimizeLabel}
+        onMinimize={
+          props.onStashEditor
+            ? (snapshot) => props.onStashEditor!({ projectID, directory, snapshot })
+            : undefined
+        }
+      />
     ))
   }
 
@@ -862,6 +999,19 @@ export function ScheduledTasksPanel(props: {
             <div class="truncate text-14-medium text-text-strong">{language.t("scheduled.title")}</div>
           </div>
           <div class="flex shrink-0 items-center gap-1">
+            <Show when={props.onMinimize}>
+              <Tooltip placement="bottom" value={props.minimizeLabel ?? ""}>
+                <IconButton
+                  icon="panel-minimize"
+                  variant="ghost"
+                  size="large"
+                  class="rounded-lg"
+                  onClick={() => props.onMinimize?.()}
+                  aria-label={props.minimizeLabel}
+                  data-action="panel-minimize"
+                />
+              </Tooltip>
+            </Show>
             <Tooltip placement="bottom" value={language.t("scheduled.create")}>
               <IconButton
                 icon="plus"
