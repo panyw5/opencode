@@ -152,6 +152,7 @@ import { ScoopJoin } from "./layout/scoop-join"
 import { ProjectTasksPanel } from "./layout/project-tasks-panel"
 import { ScheduledTasksPanel } from "./layout/scheduled-tasks-panel"
 import { AgentsMdDialog } from "@/components/agents-md-dialog"
+import { visibleSidebarActionCount } from "./layout/sidebar-quick-actions"
 
 const QUICK_ASSISTANT_DIR = "quick-assistant"
 
@@ -167,39 +168,35 @@ type SidebarQuickAction = {
   disabled?: boolean
 }
 
-/**
- * Responsive toolbar for the sidebar quick actions. Tracks its own rendered
- * width: full shows every action, compact keeps the primary + first two,
- * mini keeps only the primary and moves the rest into the overflow menu.
- */
 function SidebarQuickActions(props: { primary: SidebarQuickAction; actions: SidebarQuickAction[]; moreLabel: string }) {
-  const [mode, setMode] = createSignal<"full" | "compact" | "mini">("full")
+  const [visibleCount, setVisibleCount] = createSignal(props.actions.length)
   let ref: HTMLDivElement | undefined
 
   onMount(() => {
     const observer = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? 0
-      setMode(width >= 280 ? "full" : width >= 170 ? "compact" : "mini")
+      const width = ref?.getBoundingClientRect().width ?? 0
+      const next = visibleSidebarActionCount(width, props.actions.length)
+      if (next === visibleCount()) return
+      console.debug(
+        `[sidebar-actions] resize width=${Math.round(width)} actions=${props.actions.length} visible=${next} overflow=${props.actions.length - next}`,
+      )
+      setVisibleCount(next)
     })
     observer.observe(ref!)
     onCleanup(() => observer.disconnect())
   })
 
-  const visible = createMemo(() => {
-    if (mode() === "full") return props.actions
-    if (mode() === "compact") return props.actions.slice(0, 2)
-    return []
-  })
+  const visible = createMemo(() => props.actions.slice(0, visibleCount()))
   const overflow = createMemo(() => props.actions.slice(visible().length))
 
   return (
-    <div ref={ref} classList={{ "sidebar-actions": true }} data-mode={mode()}>
+    <div ref={ref} class="sidebar-actions">
       <Tooltip placement="bottom" value={props.primary.label}>
         <IconButton
           icon={props.primary.icon}
           variant="ghost"
           size="large"
-          class="sidebar-action-button sidebar-action-button-primary h-10 w-full"
+          class="sidebar-action-button sidebar-action-button-primary size-10 shrink-0"
           aria-label={props.primary.label}
           onClick={props.primary.onSelect}
         />
@@ -211,7 +208,7 @@ function SidebarQuickActions(props: { primary: SidebarQuickAction; actions: Side
               icon={action.icon}
               variant="ghost"
               size="large"
-              class="sidebar-action-button h-10 w-full"
+              class="sidebar-action-button size-10 shrink-0"
               aria-label={action.label}
               disabled={action.disabled}
               onClick={action.onSelect}
@@ -226,7 +223,7 @@ function SidebarQuickActions(props: { primary: SidebarQuickAction; actions: Side
             icon="dot-grid"
             variant="ghost"
             size="large"
-            class="sidebar-action-button h-10 w-full"
+            class="sidebar-action-button size-10 shrink-0"
             aria-label={props.moreLabel}
           />
           <DropdownMenu.Portal>
