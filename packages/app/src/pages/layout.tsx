@@ -2145,6 +2145,7 @@ export default function Layout(props: ParentProps) {
           <ProjectTaskDetailDialog
             task={payload.task}
             directory={payload.directory}
+            projectName={payload.projectName}
             client={globalSDK.createClient({ directory: payload.directory.replace(/\\/g, "/"), throwOnError: true })}
             initialState={payload.snapshot}
             minimizeLabel={language.t("sidebar.panels.minimize")}
@@ -4552,6 +4553,7 @@ export default function Layout(props: ParentProps) {
         ) : projectTasksPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ProjectTasksPanel
             projectID={() => sidebarProject()?.id ?? ""}
+            projectName={() => sidebarProject()?.name || getFilename(sidebarProject()?.root ?? routeDir())}
             directory={() => sidebarProject()?.root ?? routeDir()}
             worktrees={() => {
               const project = sidebarProject()

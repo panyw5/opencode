@@ -4,6 +4,7 @@ import type {
   ScheduledTaskRun,
   ScheduledTaskSchedule,
 } from "@opencode-ai/sdk/v2/client"
+import { getFilename } from "@opencode-ai/core/util/path"
 import { Button } from "@opencode-ai/ui/button"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -148,6 +149,7 @@ export type ScheduledTaskFormSnapshot = {
 export type ScheduledTaskEditorStash = {
   task?: ScheduledTask
   projectID?: string
+  projectName?: string
   directory?: string
   snapshot: ScheduledTaskFormSnapshot
 }
@@ -191,6 +193,7 @@ function formSnapshot(state: {
 export function ScheduledTaskFormDialog(props: {
   task?: ScheduledTask
   projectID?: string
+  projectName?: string
   directory?: string
   onSaved: () => void | Promise<void>
   /** Restored editing state from a previous minimize; wins over `task` defaults. */
@@ -564,7 +567,14 @@ export function ScheduledTaskFormDialog(props: {
       <Dialog
       title={
         <div class="flex min-w-0 flex-col pl-1">
-          <span class="truncate leading-6">{task?.name ?? language.t("scheduled.create")}</span>
+          <div class="flex min-w-0 items-center gap-3">
+            <span class="min-w-0 flex-1 truncate leading-6">{task?.name ?? language.t("scheduled.create")}</span>
+            <Show when={props.projectName || props.directory}>
+              <span class="max-w-[40%] shrink-0 truncate rounded-full bg-surface-base px-2.5 py-0.5 text-16-medium leading-6 text-text-weak">
+                {props.projectName || getFilename(props.directory ?? "") || props.directory}
+              </span>
+            </Show>
+          </div>
           <span class="mt-0.5 truncate text-12-regular leading-4 text-text-weak">
             {task?.id ?? props.directory ?? language.t("scheduled.subtitle")}
           </span>
@@ -858,6 +868,7 @@ function FieldLabel(props: { label: string; children: JSX.Element }): JSX.Elemen
 
 export function ScheduledTasksPanel(props: {
   projectID: Accessor<string>
+  projectName: Accessor<string>
   directory: Accessor<string>
   width: Accessor<number>
   mobile?: boolean
@@ -921,6 +932,7 @@ export function ScheduledTasksPanel(props: {
     dialog.show(() => (
       <ScheduledTaskFormDialog
         task={task}
+        projectName={props.projectName() || task.projectName}
         onSaved={() => {
           // The stashed editing session (if any) is superseded by this save.
           props.onDismissEditorStash?.(task.id)
@@ -933,6 +945,7 @@ export function ScheduledTasksPanel(props: {
                 props.onStashEditor!({
                   task,
                   projectID: props.projectID() || undefined,
+                  projectName: props.projectName() || task.projectName,
                   directory: props.directory() || task.directory || undefined,
                   snapshot,
                 }, source)
@@ -949,6 +962,7 @@ export function ScheduledTasksPanel(props: {
     dialog.show(() => (
       <ScheduledTaskFormDialog
         projectID={projectID}
+        projectName={props.projectName()}
         directory={directory}
         onSaved={() => {
           props.onDismissEditorStash?.(undefined)
@@ -957,7 +971,7 @@ export function ScheduledTasksPanel(props: {
         minimizeLabel={props.editorMinimizeLabel}
         onMinimize={
           props.onStashEditor
-            ? (snapshot, source) => props.onStashEditor!({ projectID, directory, snapshot }, source)
+            ? (snapshot, source) => props.onStashEditor!({ projectID, projectName: props.projectName(), directory, snapshot }, source)
             : undefined
         }
       />

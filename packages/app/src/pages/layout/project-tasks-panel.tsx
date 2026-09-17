@@ -236,12 +236,14 @@ export type ProjectTaskDetailSnapshot = {
 export type ProjectTaskEditorStash = {
   task: ProjectTask
   directory: string
+  projectName?: string
   snapshot: ProjectTaskDetailSnapshot
 }
 
 export function ProjectTaskDetailDialog(props: {
   task: ProjectTask
   directory: string
+  projectName?: string
   client: ReturnType<ReturnType<typeof useGlobalSDK>["createClient"]>
   onChanged: () => void | Promise<void>
   /** Restored editing state from a previous minimize; wins over fresh load. */
@@ -491,10 +493,14 @@ export function ProjectTaskDetailDialog(props: {
       />
       <Dialog
         title={
-          <div class="flex min-w-0 items-center gap-2">
-            <div class="min-w-0 flex-1">
+          <div class="flex min-w-0 flex-col">
+            <div class="inline-flex w-fit max-w-full min-w-0 items-center gap-3">
               <div class="min-w-0 truncate">{title()}</div>
-              <div class="mt-0.5 flex min-w-0 items-center gap-1 text-12-regular text-text-weak">
+              <span class="max-w-[40%] shrink-0 truncate rounded-full bg-surface-base px-2.5 py-0.5 text-16-medium leading-6 text-text-weak">
+                {props.projectName || getFilename(props.directory) || props.directory}
+              </span>
+            </div>
+            <div class="mt-0.5 flex min-w-0 items-center gap-1 text-12-regular text-text-weak">
                 <span class="shrink-0">{language.t("trellis.tasks.taskId")}:</span>
                 <span class="min-w-0 truncate">{props.task.id}</span>
                 <Tooltip
@@ -517,7 +523,6 @@ export function ProjectTaskDetailDialog(props: {
                 <span class="shrink-0">
                   {labelStatus(status())} · {progressText(detail() ?? props.task)}
                 </span>
-              </div>
             </div>
           </div>
         }
@@ -835,6 +840,7 @@ function ProjectTaskCards(props: {
 
 export function ProjectTasksPanel(props: {
   projectID: Accessor<string>
+  projectName: Accessor<string>
   directory: Accessor<string>
   worktrees?: Accessor<string[]>
   worktreeName?: (directory: string) => string
@@ -925,6 +931,7 @@ export function ProjectTasksPanel(props: {
       <ProjectTaskDetailDialog
         task={task}
         directory={dir()}
+        projectName={props.projectName()}
         client={client()}
         onChanged={() => {
           // The stashed editing session (if any) is superseded by this save/archive.
@@ -934,7 +941,7 @@ export function ProjectTasksPanel(props: {
         minimizeLabel={props.editorMinimizeLabel}
         onMinimize={
           props.onStashEditor
-            ? (snapshot, source) => props.onStashEditor!({ task, directory: dir(), snapshot }, source)
+            ? (snapshot, source) => props.onStashEditor!({ task, directory: dir(), projectName: props.projectName(), snapshot }, source)
             : undefined
         }
       />
