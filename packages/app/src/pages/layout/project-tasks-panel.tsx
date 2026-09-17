@@ -247,7 +247,7 @@ export function ProjectTaskDetailDialog(props: {
   /** Restored editing state from a previous minimize; wins over fresh load. */
   initialState?: ProjectTaskDetailSnapshot
   minimizeLabel?: string
-  onMinimize?: (snapshot: ProjectTaskDetailSnapshot) => void
+  onMinimize?: (snapshot: ProjectTaskDetailSnapshot, source: HTMLElement) => void | Promise<void>
 }): JSX.Element {
   const language = useLanguage()
   const dialog = useDialog()
@@ -319,11 +319,16 @@ export function ProjectTaskDetailDialog(props: {
   }
 
   /** Park the dialog on the rail stash: snapshot the draft, then close without saving. */
-  function minimize() {
+  async function minimize(event: MouseEvent & { currentTarget: HTMLElement }) {
     if (!props.onMinimize) return
     const snapshot: ProjectTaskDetailSnapshot = { draft: state.draft, mode: state.mode, dirty: state.dirty }
     console.debug(`[project-task] detail minimize task=${props.task.id} dirty=${String(snapshot.dirty)}`)
-    props.onMinimize(snapshot)
+    const source = event.currentTarget.closest<HTMLElement>('[data-component="dialog"]')
+    if (!source) {
+      console.debug(`[project-task] detail minimize missing-source task=${props.task.id}`)
+      return
+    }
+    await props.onMinimize(snapshot, source)
     dialog.close()
   }
 
@@ -838,10 +843,10 @@ export function ProjectTasksPanel(props: {
   onBack: () => void
   /** Optional: park the panel on the rail stash so the work area is free again. */
   minimizeLabel?: string
-  onMinimize?: () => void
+  onMinimize?: (source: HTMLElement) => void | Promise<void>
   /** Optional: let the task detail dialog park itself on the rail stash. */
   editorMinimizeLabel?: string
-  onStashEditor?: (payload: ProjectTaskEditorStash) => void
+  onStashEditor?: (payload: ProjectTaskEditorStash, source: HTMLElement) => void | Promise<void>
   onDismissEditorStash?: (taskID: string) => void
 }): JSX.Element {
   const globalSDK = useGlobalSDK()
@@ -929,7 +934,7 @@ export function ProjectTasksPanel(props: {
         minimizeLabel={props.editorMinimizeLabel}
         onMinimize={
           props.onStashEditor
-            ? (snapshot) => props.onStashEditor!({ task, directory: dir(), snapshot })
+            ? (snapshot, source) => props.onStashEditor!({ task, directory: dir(), snapshot }, source)
             : undefined
         }
       />

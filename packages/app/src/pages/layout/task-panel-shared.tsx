@@ -59,7 +59,7 @@ export function TaskPanelShell(props: {
   onBack: () => void
   /** Optional: park the panel on the rail stash so the work area is free again. */
   minimizeLabel?: string
-  onMinimize?: () => void
+  onMinimize?: (source: HTMLElement) => void | Promise<void>
   newLabel?: string
   onNew?: () => void
   newDisabled?: boolean
@@ -103,7 +103,10 @@ export function TaskPanelShell(props: {
                   class="rounded-lg"
                   aria-label={props.minimizeLabel}
                   data-action="panel-minimize"
-                  onClick={() => props.onMinimize?.()}
+                  onClick={(event) => {
+                    const source = event.currentTarget.closest<HTMLElement>('[data-component="sidebar-panel"]')
+                    if (source) void props.onMinimize?.(source)
+                  }}
                 />
               </Tooltip>
             </Show>

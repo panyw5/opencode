@@ -196,7 +196,7 @@ export function ScheduledTaskFormDialog(props: {
   /** Restored editing state from a previous minimize; wins over `task` defaults. */
   initialState?: ScheduledTaskFormSnapshot
   minimizeLabel?: string
-  onMinimize?: (snapshot: ScheduledTaskFormSnapshot) => void
+  onMinimize?: (snapshot: ScheduledTaskFormSnapshot, source: HTMLElement) => void | Promise<void>
 }): JSX.Element {
   const sdk = useGlobalSDK()
   const globalSync = useGlobalSync()
@@ -260,11 +260,16 @@ export function ScheduledTaskFormDialog(props: {
   }
 
   /** Park the dialog on the rail stash: snapshot the form, then close without saving. */
-  function minimize() {
+  async function minimize(event: MouseEvent & { currentTarget: HTMLElement }) {
     if (!props.onMinimize) return
     const snapshot = formSnapshot(state)
     console.debug(`[scheduled-panel] edit minimize task=${task?.id ?? "new"} name=${snapshot.name || "none"}`)
-    props.onMinimize(snapshot)
+    const source = event.currentTarget.closest<HTMLElement>('[data-component="dialog"]')
+    if (!source) {
+      console.debug(`[scheduled-panel] edit minimize missing-source task=${task?.id ?? "new"}`)
+      return
+    }
+    await props.onMinimize(snapshot, source)
     dialog.close()
   }
 
@@ -859,10 +864,10 @@ export function ScheduledTasksPanel(props: {
   onBack: () => void
   /** Optional: park the panel on the rail stash so the work area is free again. */
   minimizeLabel?: string
-  onMinimize?: () => void
+  onMinimize?: (source: HTMLElement) => void | Promise<void>
   /** Optional: let the task editor dialog park itself on the rail stash. */
   editorMinimizeLabel?: string
-  onStashEditor?: (payload: ScheduledTaskEditorStash) => void
+  onStashEditor?: (payload: ScheduledTaskEditorStash, source: HTMLElement) => void | Promise<void>
   onDismissEditorStash?: (taskID: string | undefined) => void
 }): JSX.Element {
   const sdk = useGlobalSDK()
@@ -924,13 +929,13 @@ export function ScheduledTasksPanel(props: {
         minimizeLabel={props.editorMinimizeLabel}
         onMinimize={
           props.onStashEditor
-            ? (snapshot) =>
+            ? (snapshot, source) =>
                 props.onStashEditor!({
                   task,
                   projectID: props.projectID() || undefined,
                   directory: props.directory() || task.directory || undefined,
                   snapshot,
-                })
+                }, source)
             : undefined
         }
       />
@@ -952,7 +957,7 @@ export function ScheduledTasksPanel(props: {
         minimizeLabel={props.editorMinimizeLabel}
         onMinimize={
           props.onStashEditor
-            ? (snapshot) => props.onStashEditor!({ projectID, directory, snapshot })
+            ? (snapshot, source) => props.onStashEditor!({ projectID, directory, snapshot }, source)
             : undefined
         }
       />
@@ -1006,7 +1011,10 @@ export function ScheduledTasksPanel(props: {
                   variant="ghost"
                   size="large"
                   class="rounded-lg"
-                  onClick={() => props.onMinimize?.()}
+                  onClick={(event) => {
+                    const source = event.currentTarget.closest<HTMLElement>('[data-component="sidebar-panel"]')
+                    if (source) void props.onMinimize?.(source)
+                  }}
                   aria-label={props.minimizeLabel}
                   data-action="panel-minimize"
                 />

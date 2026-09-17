@@ -48,7 +48,8 @@ export async function animateToSidebarStash(source?: HTMLElement) {
     return
   }
 
-  const sourceRect = source.getBoundingClientRect()
+  const visualSource = source.querySelector<HTMLElement>('[data-slot="dialog-content"]') ?? source
+  const sourceRect = visualSource.getBoundingClientRect()
   const targetRect = target.getBoundingClientRect()
   if (!sourceRect.width || !sourceRect.height) {
     console.debug("[sidebar-panel-motion] skip reason=empty-source")
@@ -61,6 +62,9 @@ export async function animateToSidebarStash(source?: HTMLElement) {
   clone.setAttribute("aria-hidden", "true")
   Object.assign(clone.style, {
     position: "fixed",
+    inset: "auto",
+    right: "auto",
+    bottom: "auto",
     left: `${sourceRect.left}px`,
     top: `${sourceRect.top}px`,
     width: `${sourceRect.width}px`,

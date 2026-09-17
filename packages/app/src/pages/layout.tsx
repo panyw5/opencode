@@ -167,6 +167,7 @@ import {
   type StashedRailEntry,
   type StashedSidebarPanel,
 } from "./layout/sidebar-panel-stash"
+import { animateToSidebarStash } from "./layout/sidebar-panel-stash-motion"
 
 const QUICK_ASSISTANT_DIR = "quick-assistant"
 
@@ -2060,7 +2061,7 @@ export default function Layout(props: ParentProps) {
    * stash (under the home button) and the sidebar collapses, freeing the work
    * area. Several panels can be stashed at once and reconnected with one click.
    */
-  function minimizeSidebarPanel(kind: SidebarPanelKind) {
+  async function minimizeSidebarPanel(kind: SidebarPanelKind, source: HTMLElement) {
     const scope = activePanelScope(kind)
     console.debug(
       `[sidebar-panel] minimize kind=${kind} directory=${scope.directory || "none"} projectID=${scope.projectID || "none"}`,
@@ -2072,6 +2073,7 @@ export default function Layout(props: ParentProps) {
       icon: kind === "scheduled" ? "clock" : "checklist",
       restore: () => restoreSidebarPanel(scope),
     })
+    await animateToSidebarStash(source)
     batch(() => {
       setStore("sidebarPanel", "project")
       layout.sidebar.close()
@@ -2098,7 +2100,7 @@ export default function Layout(props: ParentProps) {
    * Restoring re-shows the dialog from the snapshot; saving supersedes any
    * parked editing session, which the panel dismisses via `onSaved`.
    */
-  function stashScheduledTaskEditor(payload: ScheduledTaskEditorStash) {
+  async function stashScheduledTaskEditor(payload: ScheduledTaskEditorStash, source: HTMLElement) {
     const directory = payload.directory || activePanelScope("scheduled").directory
     if (!directory) return
     const id = scheduledEditorStashId(payload.task?.id, directory)
@@ -2117,16 +2119,17 @@ export default function Layout(props: ParentProps) {
             directory={payload.directory}
             initialState={payload.snapshot}
             minimizeLabel={language.t("sidebar.panels.minimize")}
-            onMinimize={(snapshot) => stashScheduledTaskEditor({ ...payload, snapshot })}
+            onMinimize={(snapshot, nextSource) => stashScheduledTaskEditor({ ...payload, snapshot }, nextSource)}
             onSaved={() => Promise.resolve()}
           />
         ))
       },
     })
+    await animateToSidebarStash(source)
   }
 
   /** Park a project task detail dialog with its draft editing state. */
-  function stashProjectTaskEditor(payload: ProjectTaskEditorStash) {
+  async function stashProjectTaskEditor(payload: ProjectTaskEditorStash, source: HTMLElement) {
     const directory = payload.directory
     if (!directory) return
     const id = projectTaskEditorStashId(payload.task.id, directory)
@@ -2144,12 +2147,13 @@ export default function Layout(props: ParentProps) {
             client={globalSDK.createClient({ directory: payload.directory.replace(/\\/g, "/"), throwOnError: true })}
             initialState={payload.snapshot}
             minimizeLabel={language.t("sidebar.panels.minimize")}
-            onMinimize={(snapshot) => stashProjectTaskEditor({ ...payload, snapshot })}
+            onMinimize={(snapshot, nextSource) => stashProjectTaskEditor({ ...payload, snapshot }, nextSource)}
             onChanged={() => Promise.resolve()}
           />
         ))
       },
     })
+    await animateToSidebarStash(source)
   }
 
   /** Resolve the channel's own work directory (not an OpenCode project). */
@@ -4535,7 +4539,7 @@ export default function Layout(props: ParentProps) {
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
             minimizeLabel={language.t("sidebar.panels.minimize")}
-            onMinimize={() => minimizeSidebarPanel("scheduled")}
+            onMinimize={(source) => minimizeSidebarPanel("scheduled", source)}
             editorMinimizeLabel={language.t("sidebar.panels.minimize")}
             onStashEditor={stashScheduledTaskEditor}
             onDismissEditorStash={(taskID) => {
@@ -4560,7 +4564,7 @@ export default function Layout(props: ParentProps) {
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
             minimizeLabel={language.t("sidebar.panels.minimize")}
-            onMinimize={() => minimizeSidebarPanel("projectTasks")}
+            onMinimize={(source) => minimizeSidebarPanel("projectTasks", source)}
             editorMinimizeLabel={language.t("sidebar.panels.minimize")}
             onStashEditor={stashProjectTaskEditor}
             onDismissEditorStash={(taskID) => {
