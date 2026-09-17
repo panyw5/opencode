@@ -462,6 +462,16 @@ export const dict = {
   "prompt.suggestion.hint.customizeShortcuts": "可以在设置页查看或修改所有键盘快捷键。",
   "prompt.suggestion.hint.backgroundTasks":
     "可以让 OpenCode 在后台运行 shell 命令或子智能体，完成后结果会自动回到主会话。",
+  "prompt.suggestion.hint.backgroundShell":
+    "Shell 命令运行时，点击“设为背景 shell”，无需等待命令结束即可继续其他工作。",
+  "prompt.suggestion.hint.backgroundShellManager":
+    "使用提示词输入框上方的背景 Shell 菜单，可以查看输出或停止仍在运行的后台命令。",
+  "prompt.suggestion.hint.backgroundSubagent":
+    "可以在任务卡片中把运行中的子智能体切换到背景；完成后，它会自动把结果返回主会话。",
+  "prompt.suggestion.hint.intervene":
+    "OpenCode 工作时，可以输入新指令并点击“发送干预”，立即调整当前任务的方向。",
+  "prompt.suggestion.hint.advisorIntervention":
+    "打开运行中的 Codex 或 Claude 参谋会话，点击“干预”即可直接向参谋发送补充指令。",
   "prompt.suggestion.hint.scheduledTasks": "可以让智能体创建定时任务，并在主页查看最近的定时任务。",
   "prompt.suggestion.hint.switchProject": "使用“切换项目”快捷键，可以在多个项目之间快速跳转。",
   "prompt.suggestion.hint.worktrees": "新建会话时，可以选择主分支、已有 worktree，或创建新 worktree。",
