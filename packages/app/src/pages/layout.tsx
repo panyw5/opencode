@@ -4541,8 +4541,6 @@ export default function Layout(props: ParentProps) {
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
-            minimizeLabel={language.t("sidebar.panels.minimize")}
-            onMinimize={(source) => minimizeSidebarPanel("scheduled", source)}
             editorMinimizeLabel={language.t("sidebar.panels.minimize")}
             onStashEditor={stashScheduledTaskEditor}
             onDismissEditorStash={(taskID) => {
@@ -4567,8 +4565,6 @@ export default function Layout(props: ParentProps) {
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
-            minimizeLabel={language.t("sidebar.panels.minimize")}
-            onMinimize={(source) => minimizeSidebarPanel("projectTasks", source)}
             editorMinimizeLabel={language.t("sidebar.panels.minimize")}
             onStashEditor={stashProjectTaskEditor}
             onDismissEditorStash={(taskID) => {

@@ -847,9 +847,6 @@ export function ProjectTasksPanel(props: {
   width: Accessor<number>
   mobile?: boolean
   onBack: () => void
-  /** Optional: park the panel on the rail stash so the work area is free again. */
-  minimizeLabel?: string
-  onMinimize?: (source: HTMLElement) => void | Promise<void>
   /** Optional: let the task detail dialog park itself on the rail stash. */
   editorMinimizeLabel?: string
   onStashEditor?: (payload: ProjectTaskEditorStash, source: HTMLElement) => void | Promise<void>
@@ -1042,8 +1039,6 @@ export function ProjectTasksPanel(props: {
       title={language.t("projectTask.title")}
       backLabel={language.t("projectTask.back")}
       onBack={props.onBack}
-      minimizeLabel={props.minimizeLabel}
-      onMinimize={props.onMinimize}
       newLabel={language.t("projectTask.create")}
       onNew={newTask}
       newDisabled={!dir()}

@@ -873,9 +873,6 @@ export function ScheduledTasksPanel(props: {
   width: Accessor<number>
   mobile?: boolean
   onBack: () => void
-  /** Optional: park the panel on the rail stash so the work area is free again. */
-  minimizeLabel?: string
-  onMinimize?: (source: HTMLElement) => void | Promise<void>
   /** Optional: let the task editor dialog park itself on the rail stash. */
   editorMinimizeLabel?: string
   onStashEditor?: (payload: ScheduledTaskEditorStash, source: HTMLElement) => void | Promise<void>
@@ -1018,22 +1015,6 @@ export function ScheduledTasksPanel(props: {
             <div class="truncate text-14-medium text-text-strong">{language.t("scheduled.title")}</div>
           </div>
           <div class="flex shrink-0 items-center gap-1">
-            <Show when={props.onMinimize}>
-              <Tooltip placement="bottom" value={props.minimizeLabel ?? ""}>
-                <IconButton
-                  icon="panel-minimize"
-                  variant="ghost"
-                  size="large"
-                  class="rounded-lg"
-                  onClick={(event) => {
-                    const source = event.currentTarget.closest<HTMLElement>('[data-component="sidebar-panel"]')
-                    if (source) void props.onMinimize?.(source)
-                  }}
-                  aria-label={props.minimizeLabel}
-                  data-action="panel-minimize"
-                />
-              </Tooltip>
-            </Show>
             <Tooltip placement="bottom" value={language.t("scheduled.create")}>
               <IconButton
                 icon="plus"
