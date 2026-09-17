@@ -924,6 +924,7 @@ export default function Page() {
     messageId: undefined as string | undefined,
     mobileTab: "session" as "session" | "changes",
     changes: "git" as ChangeMode,
+    reviewTurnMessageID: undefined as string | undefined,
     newSessionWorktree: "main",
     newSessionPicked: false,
   })
@@ -983,7 +984,12 @@ export default function Page() {
     ),
   )
 
-  const turnDiffs = createMemo(() => list(lastUserMessage()?.summary?.diffs))
+  const reviewTurnMessage = createMemo(() => {
+    const id = store.reviewTurnMessageID
+    if (!id) return lastUserMessage()
+    return visibleUserMessages().find((message) => message.id === id) ?? lastUserMessage()
+  })
+  const turnDiffs = createMemo(() => list(reviewTurnMessage()?.summary?.diffs))
   const changesOptions = createMemo<ChangeMode[]>(() => {
     const list: ChangeMode[] = []
     if (sync.project?.vcs === "git") list.push("git")
@@ -1647,6 +1653,7 @@ export default function Page() {
     on(
       sessionKey,
       () => {
+        setStore("reviewTurnMessageID", undefined)
         setTree({
           reviewScroll: undefined,
           pendingDiff: undefined,
@@ -1950,12 +1957,17 @@ export default function Page() {
       return language.t("ui.sessionReview.title.lastTurn")
     }
 
+    const select = (option: ChangeMode | undefined) => {
+      if (!option) return
+      setStore("changes", option)
+    }
+
     return (
       <Select
         options={changesOptions()}
         current={store.changes}
         label={label}
-        onSelect={(option) => option && setStore("changes", option)}
+        onSelect={select}
         variant="ghost"
         size="small"
         valueClass="text-14-medium"
@@ -2109,6 +2121,27 @@ export default function Page() {
     view().review.openPath(path)
     setTree({ activeDiff: path, pendingDiff: path })
   }
+
+  const openTurnReview = (input: { userMessageID: string; file?: string }) => {
+    const target = visibleUserMessages().find((message) => message.id === input.userMessageID)
+    console.debug(
+      `[turn-review] open session=${params.id ?? "none"} turn=${input.userMessageID} file=${input.file ?? "all"} desktop=${String(isDesktop())} found=${String(!!target)} diffs=${String(target?.summary?.diffs?.length ?? 0)}`,
+    )
+    batch(() => {
+      setStore("changes", "turn")
+      setStore("reviewTurnMessageID", input.userMessageID)
+      if (!isDesktop()) setStore("mobileTab", "changes")
+      view().review.setOpen(input.file ? [input.file] : [])
+      setTree({ activeDiff: input.file, pendingDiff: input.file })
+    })
+    if (isDesktop()) openReviewPanel()
+    console.debug(
+      `[turn-review] queued session=${params.id ?? "none"} turn=${input.userMessageID} file=${input.file ?? "all"} open=${input.file ? "exclusive" : "collapsed"} mode=${store.changes} selected=${store.reviewTurnMessageID ?? "none"} reviewDiffs=${String(turnDiffs().length)}`,
+    )
+  }
+
+  const openTurnReviewDiff = (input: { userMessageID: string; file: string }) => openTurnReview(input)
+  const openTurnReviewAll = (userMessageID: string) => openTurnReview({ userMessageID })
 
   createEffect(() => {
     const pending = tree.pendingDiff
@@ -3621,6 +3654,8 @@ export default function Page() {
                           if (root) scheduleScrollState(root)
                         }}
                         userMessages={visibleUserMessages()}
+                        onReviewTurnDiff={openTurnReviewDiff}
+                        onReviewTurnAll={openTurnReviewAll}
                         anchor={anchor}
                         setRevealMessage={(fn) => {
                           revealMessage = fn

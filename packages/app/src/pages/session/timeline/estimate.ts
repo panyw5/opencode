@@ -30,7 +30,9 @@ export const REASONING_PREVIEW_HEIGHT = 76
 /** `reasoning-collapsible` uses an 8px gap between trigger and preview. */
 export const REASONING_PREVIEW_GAP = 8
 export const TURN_DIVIDER_HEIGHT = 40
-export const DIFF_SUMMARY_HEIGHT = 44
+export const DIFF_SUMMARY_HEADER_HEIGHT = 28
+export const DIFF_SUMMARY_FILE_HEIGHT = 52
+export const DIFF_SUMMARY_ROW_GAP = 6
 /** session-turn-thinking measures 24px; the row itself lands at ~40 once wrapped. */
 export const THINKING_HEIGHT = 24
 export const TEXT_PART_MARGIN = 24
@@ -297,7 +299,9 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
       return capRowEstimate(ERROR_CARD_CHROME, viewportHeight)
 
     case "DiffSummary":
-      return DIFF_SUMMARY_HEIGHT
+      const columns = Math.max(2, Math.floor((width + DIFF_SUMMARY_ROW_GAP) / 180))
+      const rows = Math.min(2, Math.ceil((row.diffs?.length ?? 0) / columns))
+      return DIFF_SUMMARY_HEADER_HEIGHT + rows * DIFF_SUMMARY_FILE_HEIGHT + Math.max(0, rows - 1) * DIFF_SUMMARY_ROW_GAP
 
     case "Error":
       return Math.min(
@@ -326,8 +330,9 @@ export function rowRenderCost(row: EstimateRowInput, options: EstimateRowHeightO
     case "Retry":
       return 0.25
     case "TurnDivider":
-    case "DiffSummary":
       return 0.5
+    case "DiffSummary":
+      return 0.5 + Math.min(row.diffs?.length ?? 0, 16) * 0.15
     case "CommentStrip":
     case "Error":
       return 1

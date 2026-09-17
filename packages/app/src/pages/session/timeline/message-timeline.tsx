@@ -12,7 +12,6 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import { Dynamic } from "solid-js/web"
 import {
   createVirtualizer,
   defaultRangeExtractor,
@@ -21,10 +20,8 @@ import {
   type VirtualItem,
   type Virtualizer,
 } from "@tanstack/solid-virtual"
-import { Accordion } from "@opencode-ai/ui/accordion"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
-import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -39,7 +36,6 @@ import { clearToolPartHydration, markToolHydrationScrollActivity } from "./defer
 import { DeferredMessagePart } from "./deferred-tool-part"
 import { SessionRetry } from "@opencode-ai/ui/session-retry"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { TextReveal } from "@opencode-ai/ui/text-reveal"
 import { TextShimmer } from "@opencode-ai/ui/text-shimmer"
 import type {
@@ -49,9 +45,7 @@ import type {
   ToolPart,
   UserMessage,
 } from "@opencode-ai/sdk/v2"
-import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { useFileComponent } from "@opencode-ai/ui/context/file"
-import { normalize } from "@opencode-ai/ui/session-diff"
+import { getFilename } from "@opencode-ai/core/util/path"
 import {
   accumulateSmoothWheelTarget,
   normalizeWheelDelta,
@@ -150,95 +144,77 @@ function TimelineThinkingRow(props: {
   )
 }
 
-function TimelineDiffSummaryRow(props: { diffs: SummaryDiff[] }) {
+function TimelineDiffSummaryRow(props: {
+  diffs: SummaryDiff[]
+  onReviewDiff?: (file: string) => void
+  onReviewAll?: () => void
+}) {
   const language = useLanguage()
-  const maxFiles = 10
-  const [state, setState] = createStore({ open: false, showAll: false, expanded: [] as string[] })
-  const overflow = createMemo(() => Math.max(0, props.diffs.length - maxFiles))
-  const visible = createMemo(() => (state.showAll ? props.diffs : props.diffs.slice(0, maxFiles)))
-  const onOpenChange = (open: boolean) => {
-    setState("open", open)
-    if (!open) setState("expanded", [])
-  }
+  const [columns, setColumns] = createSignal(4)
+  const capacity = createMemo(() => columns() * 2)
+  const overflow = createMemo(() => props.diffs.length > capacity())
+  const visible = createMemo(() => props.diffs.slice(0, overflow() ? capacity() - 1 : capacity()))
+  let grid: HTMLDivElement | undefined
+
+  onMount(() => {
+    if (!grid) return
+    const update = () => setColumns(Math.max(2, Math.floor((grid!.clientWidth + 6) / 180)))
+    const observer = new ResizeObserver(update)
+    observer.observe(grid)
+    update()
+    onCleanup(() => observer.disconnect())
+  })
 
   return (
-    <div
-      data-slot="session-turn-diffs"
-      data-component="session-turn-diffs-group"
-      data-show-all={state.showAll || undefined}
-    >
-      <Collapsible open={state.open} onOpenChange={onOpenChange} variant="ghost">
-        <Collapsible.Trigger>
-          <div data-slot="session-turn-diffs-header">
-            <span data-slot="session-turn-diffs-label">
-              {language.t("ui.sessionTurn.diffs.summary", { count: String(props.diffs.length) })}
-            </span>
-            <div data-slot="session-turn-diffs-summary">
-              <DiffChanges changes={props.diffs} />
-              <Collapsible.Arrow />
-            </div>
-          </div>
-        </Collapsible.Trigger>
-        <Collapsible.Content>
-          <Show when={state.open}>
-            <div data-component="session-turn-diffs-content">
-              <Accordion
-                multiple
-                style={{ "--sticky-accordion-offset": "44px" }}
-                value={state.expanded}
-                onChange={(value) => setState("expanded", Array.isArray(value) ? value : value ? [value] : [])}
-              >
-                <For each={visible()}>
-                  {(diff) => (
-                    <Accordion.Item value={diff.file}>
-                      <StickyAccordionHeader>
-                        <Accordion.Trigger>
-                          <div data-slot="session-turn-diff-trigger">
-                            <span data-slot="session-turn-diff-path">
-                              <Show when={diff.file.includes("/")}>
-                                <span data-slot="session-turn-diff-directory">{`\u202A${getDirectory(diff.file)}\u202C`}</span>
-                              </Show>
-                              <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
-                            </span>
-                            <div data-slot="session-turn-diff-meta">
-                              <span data-slot="session-turn-diff-changes">
-                                <DiffChanges changes={diff} />
-                              </span>
-                              <span data-slot="session-turn-diff-chevron">
-                                <Icon name="chevron-down" size="small" />
-                              </span>
-                            </div>
-                          </div>
-                        </Accordion.Trigger>
-                      </StickyAccordionHeader>
-                      <Accordion.Content>
-                        <Show when={state.expanded.includes(diff.file)}>
-                          <TimelineDiffView diff={diff} />
-                        </Show>
-                      </Accordion.Content>
-                    </Accordion.Item>
-                  )}
-                </For>
-              </Accordion>
-              <Show when={!state.showAll && overflow() > 0}>
-                <div data-slot="session-turn-diffs-more" onClick={() => setState("showAll", true)}>
-                  {language.t("ui.sessionTurn.diffs.more", { count: String(overflow()) })}
-                </div>
-              </Show>
-            </div>
-          </Show>
-        </Collapsible.Content>
-      </Collapsible>
-    </div>
-  )
-}
-
-function TimelineDiffView(props: { diff: SummaryDiff }) {
-  const fileComponent = useFileComponent()
-  const view = normalize(props.diff)
-  return (
-    <div data-slot="session-turn-diff-view" data-scrollable>
-      <Dynamic component={fileComponent} mode="diff" virtualize={false} fileDiff={view.fileDiff} />
+    <div data-slot="session-turn-diffs" data-component="session-turn-diffs-group">
+      <div data-slot="session-turn-diffs-header">
+        <span data-slot="session-turn-diffs-label">
+          {language.t("ui.sessionTurn.diffs.summary", { count: String(props.diffs.length) })}
+        </span>
+        <div data-slot="session-turn-diffs-summary">
+          <DiffChanges changes={props.diffs} />
+        </div>
+      </div>
+      <div ref={grid} data-component="session-turn-diffs-content" style={{ "--turn-diff-columns": String(columns()) }}>
+        <For each={visible()}>
+          {(diff) => (
+            <button
+              type="button"
+              data-slot="session-turn-diff-card"
+              aria-label={diff.file}
+              title={diff.file}
+              onClick={() => props.onReviewDiff?.(diff.file)}
+            >
+              <FileIcon node={{ path: diff.file, type: "file" }} class="size-6 shrink-0" />
+              <span data-slot="session-turn-diff-details">
+                <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
+                <span data-slot="session-turn-diff-meta">
+                  <Show when={diff.status === "added"}>
+                    <span data-slot="session-turn-diff-status" data-status="added">
+                      {language.t("ui.sessionReview.change.added")} +{diff.additions}
+                    </span>
+                  </Show>
+                  <Show when={diff.status === "deleted"}>
+                    <span data-slot="session-turn-diff-status" data-status="deleted">
+                      {language.t("ui.sessionReview.change.removed")}
+                    </span>
+                  </Show>
+                  <Show when={diff.status !== "added" && diff.status !== "deleted"}>
+                    <DiffChanges changes={diff} />
+                  </Show>
+                </span>
+              </span>
+              <Icon name="chevron-right" size="small" />
+            </button>
+          )}
+        </For>
+        <Show when={overflow()}>
+          <button type="button" data-slot="session-turn-diffs-more" onClick={() => props.onReviewAll?.()}>
+            {language.t("ui.sessionTurn.diffs.showAll")}
+            <Icon name="chevron-right" size="small" />
+          </button>
+        </Show>
+      </div>
     </div>
   )
 }
@@ -283,6 +259,8 @@ export function MessageTimeline(props: {
   setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => Promise<void> }) => void
   onContentReady?: (detail: { rows: number; cached: boolean }) => void
   onViewportTurnChange?: (userMessageID: string | undefined) => void
+  onReviewTurnDiff?: (input: { userMessageID: string; file: string }) => void
+  onReviewTurnAll?: (userMessageID: string) => void
 }) {
   const sync = useSync()
   const settings = useSettings()
@@ -1849,10 +1827,15 @@ export function MessageTimeline(props: {
         )
       }
       case "DiffSummary":
+        const item = row as Accessor<TimelineRowByTag<"DiffSummary">>
         return (
-          <TimelineRowFrame row={row as Accessor<TimelineRowByTag<"DiffSummary">>}>
+          <TimelineRowFrame row={item}>
             <div class="w-full px-4 md:px-5">
-              <TimelineDiffSummaryRow diffs={(row() as TimelineRowByTag<"DiffSummary">).diffs} />
+              <TimelineDiffSummaryRow
+                diffs={item().diffs}
+                onReviewDiff={(file) => props.onReviewTurnDiff?.({ userMessageID: item().userMessageID, file })}
+                onReviewAll={() => props.onReviewTurnAll?.(item().userMessageID)}
+              />
             </div>
           </TimelineRowFrame>
         )

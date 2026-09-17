@@ -57,9 +57,20 @@ describe("estimateRowHeight fixed-height rows", () => {
     expect(TURN_GAP_HEIGHT).toBe(24)
   })
 
-  test("TurnDivider and collapsed DiffSummary match measured heights", () => {
+  test("TurnDivider and DiffSummary match their compact card heights", () => {
     expect(estimateRowHeight({ _tag: "TurnDivider", userMessageID: "m", label: "compaction" }, WIDTH, base)).toBe(40)
-    expect(estimateRowHeight({ _tag: "DiffSummary", userMessageID: "m", diffs: [{ file: "a" }] }, WIDTH, base)).toBe(44)
+    expect(estimateRowHeight({ _tag: "DiffSummary", userMessageID: "m", diffs: [{ file: "a" }] }, WIDTH, base)).toBe(80)
+    expect(
+      estimateRowHeight(
+        {
+          _tag: "DiffSummary",
+          userMessageID: "m",
+          diffs: Array.from({ length: 11 }, (_, index) => ({ file: String(index) })),
+        },
+        WIDTH,
+        base,
+      ),
+    ).toBe(138)
   })
 
   test("Thinking and Retry use their calibrated constants without the min clamp", () => {

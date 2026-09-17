@@ -15,6 +15,7 @@ export const dict = {
   "ui.sessionReview.change.added": "已新增",
   "ui.sessionReview.change.removed": "已移除",
   "ui.sessionReview.change.modified": "已修改",
+  "ui.sessionTurn.diffs.showAll": "顯示全部",
   "ui.sessionReview.image.loading": "載入中...",
   "ui.sessionReview.image.placeholder": "圖片",
   "ui.sessionReview.largeDiff.title": "差異過大，無法渲染",
