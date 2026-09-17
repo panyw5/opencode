@@ -8,7 +8,6 @@ import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { Markdown } from "@opencode-ai/ui/markdown"
 import { useNavigate } from "@solidjs/router"
 import {
   createEffect,
@@ -313,9 +312,13 @@ function ProjectTaskDetailDialog(props: {
 
   async function saveDescription(options?: { preview?: boolean }) {
     if (!state.dirty && state.draft === state.saved) {
+      console.debug(`[project-task] description-save skipped task=${props.task.id} preview=${String(!!options?.preview)}`)
       if (options?.preview) setState("mode", "preview")
       return true
     }
+    console.debug(
+      `[project-task] description-save start task=${props.task.id} preview=${String(!!options?.preview)} length=${state.draft.length}`,
+    )
     setState({ pending: true, error: "" })
     try {
       const result = await props.client.projectTask.update({
@@ -331,9 +334,12 @@ function ProjectTaskDetailDialog(props: {
       }
       setState({ dirty: false, saved: state.draft, mode: options?.preview ? "preview" : state.mode })
       await props.onChanged()
+      console.debug(`[project-task] description-save success task=${props.task.id} preview=${String(!!options?.preview)}`)
       return true
     } catch (error) {
-      setState("error", error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[project-task] description-save failed task=${props.task.id} error=${message}`)
+      setState("error", message)
       return false
     } finally {
       setState("pending", false)
@@ -395,6 +401,7 @@ function ProjectTaskDetailDialog(props: {
   }
 
   const enterEdit = () => {
+    console.debug(`[project-task] editor-mode task=${props.task.id} mode=edit`)
     setState({
       mode: "edit",
       draft: detail()?.description ?? props.task.description,
@@ -403,8 +410,12 @@ function ProjectTaskDetailDialog(props: {
   }
 
   const saveAndPreview = async () => {
+    console.debug(`[project-task] editor-mode-request task=${props.task.id} mode=preview dirty=${String(state.dirty)}`)
     const ok = await saveDescription({ preview: true })
-    if (ok) setState("mode", "preview")
+    if (ok) {
+      setState("mode", "preview")
+      console.debug(`[project-task] editor-mode task=${props.task.id} mode=preview`)
+    }
   }
 
   const closeDialog = async () => {
@@ -546,39 +557,6 @@ function ProjectTaskDetailDialog(props: {
             class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"
             classList={{ "border-border-focus": state.mode === "edit" }}
           >
-            <div class="flex shrink-0 justify-end px-3 pt-3">
-              <div
-                role="group"
-                class="flex items-center rounded-lg border border-border-weak-base bg-background-stronger p-0.5"
-              >
-                <button
-                  data-action="project-task-preview"
-                  type="button"
-                  class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
-                  classList={{
-                    "bg-background-base text-text-strong shadow-sm": state.mode === "preview",
-                    "text-text-base hover:text-text-strong": state.mode !== "preview",
-                  }}
-                  onClick={() => void saveAndPreview()}
-                >
-                  <Icon name="eye" size="small" />
-                  {language.t("trellis.tasks.preview")}
-                </button>
-                <button
-                  data-action="project-task-edit"
-                  type="button"
-                  class="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-12-medium transition-colors"
-                  classList={{
-                    "bg-background-base text-text-strong shadow-sm": state.mode === "edit",
-                    "text-text-base hover:text-text-strong": state.mode !== "edit",
-                  }}
-                  onClick={enterEdit}
-                >
-                  <Icon name="edit" size="small" />
-                  {language.t("trellis.tasks.edit")}
-                </button>
-              </div>
-            </div>
             <Show when={state.loading}>
               <div class="flex flex-1 items-center justify-center gap-2 text-12-regular text-text-weak">
                 <Spinner />
@@ -586,42 +564,32 @@ function ProjectTaskDetailDialog(props: {
               </div>
             </Show>
             <Show when={!state.loading}>
-              <Show
-                when={state.mode === "preview"}
-                fallback={
-                  <MarkdownEditorField
-                    text={state.draft}
-                    chrome={false}
-                    autofocus
-                    placeholder={language.t("projectTask.field.descriptionPlaceholder")}
-                    class="min-h-0 flex-1 bg-transparent"
-                    onInput={(next) => {
-                      const dirty = next !== state.saved
-                      setState({ draft: next, dirty })
-                    }}
-                    onKeyDown={(event) => {
-                      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                        event.preventDefault()
-                        void saveDescription()
-                        return
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault()
-                        void saveAndPreview()
-                      }
-                    }}
-                  />
-                }
-              >
-                <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4" style={{ transform: "translateZ(0)" }}>
-                  <Show
-                    when={(detail()?.description ?? props.task.description).trim()}
-                    fallback={<Empty text={language.t("projectTask.noDescription")} />}
-                  >
-                    <Markdown text={detail()?.description ?? props.task.description} />
-                  </Show>
-                </div>
-              </Show>
+              <MarkdownEditorField
+                text={state.draft}
+                chrome={false}
+                autofocus
+                preview
+                mode={state.mode === "edit" ? "source" : "preview"}
+                placeholder={language.t("projectTask.field.descriptionPlaceholder")}
+                previewPlaceholder={language.t("projectTask.noDescription")}
+                class="min-h-0 flex-1 bg-transparent"
+                onModeChange={(next) => (next === "preview" ? saveAndPreview() : enterEdit())}
+                onInput={(next) => {
+                  const dirty = next !== state.saved
+                  setState({ draft: next, dirty })
+                }}
+                onKeyDown={(event) => {
+                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                    event.preventDefault()
+                    void saveDescription()
+                    return
+                  }
+                  if (event.key === "Escape") {
+                    event.preventDefault()
+                    void saveAndPreview()
+                  }
+                }}
+              />
             </Show>
           </div>
 

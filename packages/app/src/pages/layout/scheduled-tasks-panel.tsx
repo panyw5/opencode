@@ -19,7 +19,6 @@ import { createStore } from "solid-js/store"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
-import { Markdown } from "@opencode-ai/ui/markdown"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
@@ -97,337 +96,6 @@ function ScheduledTaskCard(props: {
   )
 }
 
-function ScheduledTaskDetailDialog(props: { task: ScheduledTask; onChanged: () => void | Promise<void> }): JSX.Element {
-  const sdk = useGlobalSDK()
-  const language = useLanguage()
-  const dialog = useDialog()
-  const sessionTabs = useSessionTabs()
-  const [state, setState] = createStore({
-    task: props.task,
-    runs: [] as ScheduledTaskRun[],
-    loading: true,
-    pending: false,
-    error: "",
-  })
-
-  async function load() {
-    setState({ loading: true, error: "" })
-    try {
-      const [task, runs] = await Promise.all([
-        sdk.client.scheduledTask.get({ taskID: props.task.id }),
-        sdk.client.scheduledTask.runs({ taskID: props.task.id, limit: "20" }),
-      ])
-      if (task.data) setState("task", task.data)
-      setState("runs", runs.data ?? [])
-    } catch (error) {
-      setState("error", error instanceof Error ? error.message : String(error))
-    } finally {
-      setState("loading", false)
-    }
-  }
-
-  async function mutate(effect: () => Promise<unknown>) {
-    setState({ pending: true, error: "" })
-    try {
-      await effect()
-      await load()
-      await props.onChanged()
-    } catch (error) {
-      setState("error", error instanceof Error ? error.message : String(error))
-    } finally {
-      setState("pending", false)
-    }
-  }
-
-  async function remove() {
-    if (!window.confirm(language.t("scheduled.delete.confirm", { name: state.task.name }))) return
-    setState({ pending: true, error: "" })
-    try {
-      await sdk.client.scheduledTask.remove({ taskID: state.task.id })
-      await props.onChanged()
-      dialog.close()
-    } catch (error) {
-      setState("error", error instanceof Error ? error.message : String(error))
-      setState("pending", false)
-    }
-  }
-
-  function edit() {
-    dialog.show(() => (
-      <ScheduledTaskFormDialog
-        task={state.task}
-        onSaved={async () => {
-          await load()
-          await props.onChanged()
-        }}
-      />
-    ))
-  }
-
-  let openingSessionID: string | undefined
-
-  async function openSession(sessionID?: string) {
-    if (!sessionID) {
-      console.debug(`[scheduled-panel] open-session ignored task=${state.task.id} reason=missing-session-id`)
-      return
-    }
-    if (openingSessionID) {
-      console.debug(
-        `[scheduled-panel] open-session ignored task=${state.task.id} id=${sessionID} reason=pending pendingID=${openingSessionID}`,
-      )
-      return
-    }
-    openingSessionID = sessionID
-    const directory = state.task.directory
-    console.debug(
-      `[scheduled-panel] open-session requested task=${state.task.id} directory=${directory} id=${sessionID}`,
-    )
-    setState("error", "")
-    try {
-      console.debug(
-        `[scheduled-panel] open-session probe-start task=${state.task.id} directory=${directory} id=${sessionID}`,
-      )
-      const session = await sdk.client.session.get({ directory, sessionID }).then((result) => result.data)
-      if (!session) throw new Error(`Session not found: ${sessionID}`)
-      console.debug(
-        `[scheduled-panel] open-session probe-success task=${state.task.id} directory=${session.directory} id=${sessionID} archived=${String(!!session.time.archived)}`,
-      )
-
-      const restored = session.time.archived
-        ? await (async () => {
-            console.debug(
-              `[scheduled-panel] open-session restore-start task=${state.task.id} directory=${session.directory} id=${sessionID}`,
-            )
-            const value = await sdk.client.session
-              .update({ directory: session.directory, sessionID, time: { archived: null } })
-              .then((result) => result.data)
-            if (!value) throw new Error(`Failed to restore session: ${sessionID}`)
-            console.debug(
-              `[scheduled-panel] open-session restore-success task=${state.task.id} directory=${value.directory} id=${sessionID}`,
-            )
-            return value
-          })()
-        : session
-
-      sessionTabs.restore({
-        directory: restored.directory,
-        id: restored.id,
-        title: restored.title,
-        parentID: restored.parentID,
-      })
-      console.debug(
-        `[scheduled-panel] open-session tab-restored task=${state.task.id} directory=${restored.directory} id=${sessionID}`,
-      )
-      console.debug(
-        `[scheduled-panel] open-session activation-start task=${state.task.id} directory=${restored.directory} id=${sessionID}`,
-      )
-      const result = await sessionTabs.activate({ type: "session", directory: restored.directory, id: sessionID })
-      console.debug(`[scheduled-panel] open-session completed task=${state.task.id} id=${sessionID} result=${result}`)
-      if (result !== "navigated") throw new Error(`Failed to open session: ${result}`)
-      dialog.close()
-      console.debug(`[scheduled-panel] open-session dialog-closed task=${state.task.id} id=${sessionID}`)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      console.error(`[scheduled-panel] open-session failed task=${state.task.id} id=${sessionID} error=${message}`)
-      setState("error", message)
-    } finally {
-      openingSessionID = undefined
-    }
-  }
-
-  onMount(() => void load())
-
-  return (
-    <Dialog
-      title={
-        <div class="flex min-w-0 flex-col pl-1">
-          <span class="truncate leading-6">{state.task.name}</span>
-          <span class="mt-0.5 truncate text-12-regular leading-4 text-text-weak">{state.task.directory}</span>
-        </div>
-      }
-      size="x-large"
-      transition
-      containerStyle={{
-        width: "min(calc(100vw - 32px), 1120px)",
-        height: "min(calc(100vh - 32px), 860px)",
-      }}
-      action={
-        <div class="flex items-center gap-2">
-          <Tooltip value={language.t("scheduled.edit")}>
-            <Button icon="edit" size="large" variant="ghost" onClick={edit} aria-label={language.t("scheduled.edit")}>
-              {language.t("common.edit")}
-            </Button>
-          </Tooltip>
-          <Tooltip value={language.t("scheduled.delete")}>
-            <Button
-              icon="trash"
-              size="large"
-              variant="ghost"
-              disabled={state.pending}
-              onClick={() => void remove()}
-              aria-label={language.t("scheduled.delete")}
-            >
-              {language.t("common.delete")}
-            </Button>
-          </Tooltip>
-          <IconButton
-            icon="close"
-            size="large"
-            variant="ghost"
-            onClick={() => dialog.close()}
-            aria-label={language.t("common.close")}
-          />
-        </div>
-      }
-    >
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4">
-        <Show
-          when={!state.loading}
-          fallback={
-            <div class="flex justify-center py-10">
-              <Spinner />
-            </div>
-          }
-        >
-          <div class="config-scrollbar flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-1">
-            <Show when={state.error}>
-              <div class="rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong">
-                {state.error}
-              </div>
-            </Show>
-
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
-              <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
-                <Icon name="clock" size="small" class="text-icon-base" />
-                {language.t("scheduled.parameters")}
-              </div>
-              <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <Detail
-                  label={language.t("scheduled.schedule")}
-                  value={scheduleLabel(state.task.schedule, language.t)}
-                />
-                <Detail label={language.t("scheduled.nextRun")} value={formatDate(state.task.nextRunAt)} />
-                <Detail
-                  label={language.t("scheduled.execution")}
-                  value={language.t(executionModeKey(state.task.executionMode))}
-                />
-                <Detail
-                  label={language.t("scheduled.model")}
-                  value={`${state.task.model.providerID}/${state.task.model.modelID}`}
-                />
-                <Detail
-                  label={language.t("scheduled.lastStatus")}
-                  value={state.task.lastStatus ?? "-"}
-                  tone={statusTone(state.task.lastStatus)}
-                />
-                <div class="min-w-0 rounded-lg border border-border-weak-base bg-background-base p-3">
-                  <div class="flex items-center gap-1.5 text-11-medium text-text-weak">
-                    <Icon name="shield" size="small" class="text-icon-base" />
-                    {language.t("scheduled.unattended.title")}
-                  </div>
-                  <div class="mt-1 line-clamp-3 text-13-regular text-text-strong">
-                    {language.t("scheduled.unattended.detail")}
-                  </div>
-                </div>
-              </div>
-              <Show when={state.task.lastError}>
-                <div class="mt-3 rounded-lg border border-border-critical-base bg-surface-critical-base px-3 py-2 text-12-regular text-text-strong break-words">
-                  {state.task.lastError}
-                </div>
-              </Show>
-            </section>
-
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
-              <div class="mb-2 text-12-medium text-text-weak">{language.t("scheduled.prompt")}</div>
-              {/* Explicit height: MarkdownEditorField uses h-full and collapses when parent has no height. */}
-              <div class="max-h-80 min-h-40 overflow-y-auto rounded-xl border border-border-weak-base bg-background-base px-3 py-3">
-                <Show when={state.task.prompt.trim()} fallback={<div class="text-12-regular text-text-weak">—</div>}>
-                  <Markdown text={state.task.prompt} class="text-13-regular text-text-strong" />
-                </Show>
-              </div>
-            </section>
-
-            <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
-              <div class="mb-3 text-12-medium text-text-weak">{language.t("scheduled.history")}</div>
-              <Show
-                when={state.runs.length > 0}
-                fallback={
-                  <div class="py-5 text-center text-12-regular text-text-weak">
-                    {language.t("scheduled.history.empty")}
-                  </div>
-                }
-              >
-                <div class="flex flex-col divide-y divide-border-weak-base rounded-lg border border-border-weak-base bg-background-base">
-                  <For each={state.runs}>
-                    {(run) => {
-                      const sessionID = () => run.sessionID ?? state.task.sessionID
-                      return (
-                        <div class="flex flex-col gap-1 px-3 py-2">
-                          <div class="flex min-h-10 items-center gap-3">
-                            <span class={`w-16 shrink-0 text-11-medium ${statusTone(run.status)}`}>{run.status}</span>
-                            <span class="min-w-0 flex-1 truncate text-12-regular text-text-base">
-                              {formatDate(run.scheduledAt)}
-                            </span>
-                            <Show when={sessionID()}>
-                              <Button size="small" variant="ghost" onClick={() => void openSession(sessionID())}>
-                                {language.t("scheduled.openSession")}
-                              </Button>
-                            </Show>
-                          </div>
-                          <Show when={run.error}>
-                            <div class="pl-[4.5rem] text-11-regular text-text-danger break-words">{run.error}</div>
-                          </Show>
-                        </div>
-                      )
-                    }}
-                  </For>
-                </div>
-              </Show>
-            </section>
-          </div>
-
-          <div class="mt-4 flex shrink-0 flex-wrap items-center gap-2 border-t border-border-weak-base pt-4">
-            <Button
-              icon="arrow-right"
-              variant="primary"
-              disabled={state.pending}
-              onClick={() => void mutate(() => sdk.client.scheduledTask.runNow({ taskID: state.task.id }))}
-            >
-              {language.t("scheduled.runNow")}
-            </Button>
-            <Button
-              icon={state.task.enabled ? "stop" : "play"}
-              variant="ghost"
-              disabled={state.pending}
-              onClick={() =>
-                void mutate(() =>
-                  sdk.client.scheduledTask.update({
-                    taskID: state.task.id,
-                    scheduledTaskUpdateInput: { enabled: !state.task.enabled },
-                  }),
-                )
-              }
-            >
-              {state.task.enabled ? language.t("scheduled.disable") : language.t("scheduled.enable")}
-            </Button>
-            <Show when={state.runs.find((run) => run.sessionID)?.sessionID ?? state.task.sessionID}>
-              {(sessionID) => (
-                <Button icon="speech-bubble" variant="ghost" onClick={() => void openSession(sessionID())}>
-                  {language.t("scheduled.openLatestSession")}
-                </Button>
-              )}
-            </Show>
-            <div class="ml-auto flex items-center gap-1.5 text-12-regular text-text-weak">
-              <Icon name="shield" size="small" />
-              {language.t("scheduled.unattended.title")}
-            </div>
-          </div>
-        </Show>
-      </div>
-    </Dialog>
-  )
-}
-
 type ScheduleKind = ScheduledTaskSchedule["kind"]
 type ExecutionMode = ScheduledTask["executionMode"]
 
@@ -457,6 +125,7 @@ function ScheduledTaskFormDialog(props: {
   const models = useModels()
   const language = useLanguage()
   const dialog = useDialog()
+  const sessionTabs = useSessionTabs()
   const task = props.task
   const [state, setState] = createStore({
     name: task?.name ?? "",
@@ -476,6 +145,10 @@ function ScheduledTaskFormDialog(props: {
         ? (task.schedule.timezone ?? "")
         : Intl.DateTimeFormat().resolvedOptions().timeZone,
     unattended: !!task,
+    enabled: task?.enabled ?? true,
+    runs: [] as ScheduledTaskRun[],
+    loadingRuns: !!task,
+    pendingAction: false,
     saving: false,
     error: "",
   })
@@ -546,6 +219,121 @@ function ScheduledTaskFormDialog(props: {
     if (!agents.includes(state.agent) && agents[0]) setState("agent", agents[0])
   })
 
+  async function loadRuns(source: string) {
+    if (!task) return
+    console.debug(`[scheduled-panel] edit runs load-start task=${task.id} source=${source}`)
+    setState("loadingRuns", true)
+    try {
+      const result = await sdk.client.scheduledTask.runs({ taskID: task.id, limit: "20" })
+      console.debug(`[scheduled-panel] edit runs load-success task=${task.id} count=${result.data?.length ?? 0}`)
+      setState("runs", result.data ?? [])
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[scheduled-panel] edit runs load-failed task=${task.id} error=${message}`)
+      setState("error", message)
+    } finally {
+      setState("loadingRuns", false)
+    }
+  }
+
+  async function runNow() {
+    if (!task || state.pendingAction) return
+    console.debug(`[scheduled-panel] edit run-now start task=${task.id}`)
+    setState({ pendingAction: true, error: "" })
+    try {
+      await sdk.client.scheduledTask.runNow({ taskID: task.id })
+      console.debug(`[scheduled-panel] edit run-now success task=${task.id}`)
+      await loadRuns("run-now")
+      await props.onSaved()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[scheduled-panel] edit run-now failed task=${task.id} error=${message}`)
+      setState("error", message)
+    } finally {
+      setState("pendingAction", false)
+    }
+  }
+
+  async function toggleEnabled() {
+    if (!task || state.pendingAction) return
+    const enabled = !state.enabled
+    console.debug(`[scheduled-panel] edit toggle start task=${task.id} enabled=${enabled}`)
+    setState({ pendingAction: true, error: "" })
+    try {
+      await sdk.client.scheduledTask.update({ taskID: task.id, scheduledTaskUpdateInput: { enabled } })
+      console.debug(`[scheduled-panel] edit toggle success task=${task.id} enabled=${enabled}`)
+      setState("enabled", enabled)
+      await props.onSaved()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[scheduled-panel] edit toggle failed task=${task.id} error=${message}`)
+      setState("error", message)
+    } finally {
+      setState("pendingAction", false)
+    }
+  }
+
+  async function remove() {
+    if (!task || !window.confirm(language.t("scheduled.delete.confirm", { name: task.name }))) return
+    console.debug(`[scheduled-panel] edit delete start task=${task.id}`)
+    setState({ pendingAction: true, error: "" })
+    try {
+      await sdk.client.scheduledTask.remove({ taskID: task.id })
+      console.debug(`[scheduled-panel] edit delete success task=${task.id}`)
+      await props.onSaved()
+      dialog.close()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[scheduled-panel] edit delete failed task=${task.id} error=${message}`)
+      setState({ pendingAction: false, error: message })
+    }
+  }
+
+  let openingSessionID: string | undefined
+  async function openSession(sessionID?: string) {
+    if (!task || !sessionID || openingSessionID) {
+      console.debug(
+        `[scheduled-panel] edit open-session ignored task=${task?.id ?? "new"} id=${sessionID ?? "none"} pending=${openingSessionID ?? "none"}`,
+      )
+      return
+    }
+    openingSessionID = sessionID
+    console.debug(`[scheduled-panel] edit open-session probe-start task=${task.id} id=${sessionID}`)
+    setState("error", "")
+    try {
+      const session = await sdk.client.session.get({ directory: task.directory, sessionID }).then((result) => result.data)
+      if (!session) throw new Error(`Session not found: ${sessionID}`)
+      console.debug(
+        `[scheduled-panel] edit open-session probe-success task=${task.id} id=${sessionID} archived=${String(!!session.time.archived)}`,
+      )
+      const restored = session.time.archived
+        ? await sdk.client.session
+            .update({ directory: session.directory, sessionID, time: { archived: null } })
+            .then((result) => result.data)
+        : session
+      if (!restored) throw new Error(`Failed to restore session: ${sessionID}`)
+      console.debug(`[scheduled-panel] edit open-session activate-start task=${task.id} id=${sessionID}`)
+      sessionTabs.restore({
+        directory: restored.directory,
+        id: restored.id,
+        title: restored.title,
+        parentID: restored.parentID,
+      })
+      const result = await sessionTabs.activate({ type: "session", directory: restored.directory, id: sessionID })
+      console.debug(`[scheduled-panel] edit open-session activate-finish task=${task.id} id=${sessionID} result=${result}`)
+      if (result !== "navigated") throw new Error(`Failed to open session: ${result}`)
+      dialog.close()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[scheduled-panel] edit open-session failed task=${task.id} id=${sessionID} error=${message}`)
+      setState("error", message)
+    } finally {
+      openingSessionID = undefined
+    }
+  }
+
+  onMount(() => void loadRuns("open"))
+
   function schedule(): ScheduledTaskSchedule | undefined {
     if (state.scheduleKind === "at") {
       const at = new Date(state.at).getTime()
@@ -583,6 +371,7 @@ function ScheduledTaskFormDialog(props: {
     }
 
     setState({ saving: true, error: "" })
+    console.debug(`[scheduled-panel] edit save start task=${task?.id ?? "new"}`)
     const model = {
       providerID: state.providerID.trim(),
       modelID: state.modelID.trim(),
@@ -620,10 +409,13 @@ function ScheduledTaskFormDialog(props: {
         }
         await sdk.client.scheduledTask.create({ scheduledTaskCreateInput: input })
       }
+      console.debug(`[scheduled-panel] edit save success task=${task?.id ?? "new"}`)
       await props.onSaved()
       dialog.close()
     } catch (error) {
-      setState("error", error instanceof Error ? error.message : String(error))
+      const message = error instanceof Error ? error.message : String(error)
+      console.error(`[scheduled-panel] edit save failed task=${task?.id ?? "new"} error=${message}`)
+      setState("error", message)
     } finally {
       setState("saving", false)
     }
@@ -633,21 +425,38 @@ function ScheduledTaskFormDialog(props: {
     <Dialog
       title={
         <div class="flex min-w-0 flex-col pl-1">
-          <span class="leading-6">{task ? language.t("scheduled.edit") : language.t("scheduled.create")}</span>
+          <span class="truncate leading-6">{task?.name ?? language.t("scheduled.create")}</span>
           <span class="mt-0.5 truncate text-12-regular leading-4 text-text-weak">
-            {task?.directory ?? props.directory ?? language.t("scheduled.subtitle")}
+            {task?.id ?? props.directory ?? language.t("scheduled.subtitle")}
           </span>
         </div>
       }
       size="x-large"
       transition
       containerStyle={{
-        width: "min(calc(100vw - 32px), 1120px)",
+        width: task ? "min(calc(100vw - 32px), 1480px)" : "min(calc(100vw - 32px), 1120px)",
         height: "min(calc(100vh - 32px), 860px)",
       }}
+      action={
+        task ? (
+          <IconButton
+            icon="close"
+            size="large"
+            variant="ghost"
+            onClick={() => dialog.close()}
+            aria-label={language.t("common.close")}
+          />
+        ) : undefined
+      }
     >
       <form onSubmit={save} class="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pb-4">
-        <div class="grid min-h-0 flex-1 gap-4 overflow-hidden lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]">
+        <div
+          class="grid min-h-0 flex-1 gap-4 overflow-hidden"
+          classList={{
+            "lg:grid-cols-[minmax(0,1.3fr)_minmax(300px,0.7fr)]": !task,
+            "lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.8fr)_minmax(220px,0.65fr)]": !!task,
+          }}
+        >
           <MarkdownEditorField
             text={state.prompt}
             preview
@@ -658,10 +467,6 @@ function ScheduledTaskFormDialog(props: {
 
           <div class="config-scrollbar flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto px-1">
             <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
-              <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
-                <Icon name="settings-gear" size="small" class="text-icon-base" />
-                {language.t("scheduled.section.basics")}
-              </div>
               <div class="grid gap-4">
                 <div>
                   <TextField
@@ -712,10 +517,6 @@ function ScheduledTaskFormDialog(props: {
             </section>
 
             <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
-              <div class="mb-3 flex items-center gap-2 text-13-medium text-text-strong">
-                <Icon name="clock" size="small" class="text-icon-base" />
-                {language.t("scheduled.section.timing")}
-              </div>
               <div class="grid gap-4">
                 <FieldLabel label={language.t("scheduled.execution")}>
                   <Select
@@ -786,14 +587,93 @@ function ScheduledTaskFormDialog(props: {
               </div>
             </Show>
           </div>
+
+          <Show when={task}>
+            <aside class="config-scrollbar min-h-0 min-w-0 overflow-y-auto px-1">
+              <section class="rounded-xl border border-border-weak-base bg-surface-raised-base p-4">
+                <div class="mb-3 flex items-center justify-between gap-2">
+                  <div class="text-12-medium text-text-weak">{language.t("scheduled.history")}</div>
+                  <span class="text-11-regular text-text-weaker">{state.runs.length}</span>
+                </div>
+                <Show
+                  when={!state.loadingRuns && state.runs.length > 0}
+                  fallback={
+                    <Show when={!state.loadingRuns}>
+                      <div class="py-3 text-center text-12-regular text-text-weak">
+                        {language.t("scheduled.history.empty")}
+                      </div>
+                    </Show>
+                  }
+                >
+                  <div class="grid gap-2">
+                    <For each={state.runs}>
+                      {(run) => {
+                        const sessionID = () => run.sessionID ?? task?.sessionID
+                        return (
+                          <button
+                            type="button"
+                            class="min-w-0 rounded-lg border border-border-weak-base bg-background-base px-3 py-2 text-left transition-colors enabled:hover:bg-surface-raised-base-hover disabled:cursor-default"
+                            disabled={!sessionID()}
+                            title={run.error ?? (sessionID() ? language.t("scheduled.openSession") : undefined)}
+                            onClick={() => void openSession(sessionID())}
+                          >
+                            <div class={`truncate text-11-medium ${statusTone(run.status)}`}>{run.status}</div>
+                            <div class="mt-1 text-11-regular leading-4 text-text-weak">
+                              {formatDate(run.scheduledAt)}
+                            </div>
+                          </button>
+                        )
+                      }}
+                    </For>
+                  </div>
+                </Show>
+              </section>
+            </aside>
+          </Show>
         </div>
-        <div class="mt-4 flex shrink-0 justify-end gap-2 border-t border-border-weak-base pt-4">
-          <Button type="button" variant="ghost" onClick={() => dialog.close()}>
-            {language.t("common.cancel")}
-          </Button>
-          <Button type="submit" variant="primary" disabled={state.saving}>
-            {state.saving ? language.t("common.saving") : language.t("common.save")}
-          </Button>
+        <div class="mt-4 flex shrink-0 flex-wrap items-center gap-2 border-t border-border-weak-base pt-4">
+          <Show when={task}>
+            <Button
+              type="button"
+              icon="arrow-right"
+              variant="ghost"
+              disabled={state.pendingAction}
+              onClick={() => void runNow()}
+            >
+              {language.t("scheduled.runNow")}
+            </Button>
+            <Button
+              type="button"
+              icon={state.enabled ? "stop" : "play"}
+              variant="ghost"
+              disabled={state.pendingAction}
+              onClick={() => void toggleEnabled()}
+            >
+              {state.enabled ? language.t("scheduled.disable") : language.t("scheduled.enable")}
+            </Button>
+          </Show>
+          <div class="ml-auto flex items-center gap-2">
+            <Show when={task}>
+              <Tooltip value={language.t("scheduled.delete")}>
+                <Button
+                  type="button"
+                  icon="trash"
+                  variant="ghost"
+                  disabled={state.pendingAction}
+                  onClick={() => void remove()}
+                  aria-label={language.t("scheduled.delete")}
+                >
+                  {language.t("common.delete")}
+                </Button>
+              </Tooltip>
+            </Show>
+            <Button type="button" variant="ghost" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button type="submit" variant="primary" disabled={state.saving || state.pendingAction}>
+              {state.saving ? language.t("common.saving") : language.t("common.save")}
+            </Button>
+          </div>
         </div>
       </form>
     </Dialog>
@@ -806,15 +686,6 @@ function FieldLabel(props: { label: string; children: JSX.Element }): JSX.Elemen
       <span class="shrink-0 text-12-medium text-text-weak">{props.label}</span>
       <div class="ml-auto max-w-full">{props.children}</div>
     </label>
-  )
-}
-
-function Detail(props: { label: string; value: string; tone?: string }): JSX.Element {
-  return (
-    <div class="min-w-0 rounded-lg border border-border-weak-base bg-background-base p-3">
-      <div class="text-11-medium text-text-weak">{props.label}</div>
-      <div class={`mt-1 truncate text-13-regular ${props.tone ?? "text-text-strong"}`}>{props.value}</div>
-    </div>
   )
 }
 
@@ -873,7 +744,7 @@ export function ScheduledTasksPanel(props: {
   }
 
   function open(task: ScheduledTask) {
-    dialog.show(() => <ScheduledTaskDetailDialog task={task} onChanged={() => load({ silent: true })} />)
+    dialog.show(() => <ScheduledTaskFormDialog task={task} onSaved={() => load({ silent: true })} />)
   }
 
   function create() {

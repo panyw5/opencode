@@ -23,7 +23,9 @@ export function MarkdownEditorField(props: {
   preview?: boolean
   toolbarAbove?: boolean
   defaultMode?: MarkdownEditorMode
+  mode?: MarkdownEditorMode
   placeholder?: string
+  previewPlaceholder?: string
   class?: string
   chrome?: boolean
   autofocus?: boolean
@@ -31,6 +33,7 @@ export function MarkdownEditorField(props: {
   mentions?: boolean
   searchFilesAndDirectories?: (query: string) => Promise<string[]>
   onInput: (value: string) => void
+  onModeChange?: (mode: MarkdownEditorMode) => void | Promise<void>
   onKeyDown?: (event: KeyboardEvent & { currentTarget: HTMLTextAreaElement }) => void
 }): JSX.Element {
   const settings = useSettings()
@@ -46,8 +49,18 @@ export function MarkdownEditorField(props: {
   const html = createMemo(() => (props.paint ?? defaultPaint)(props.text))
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
   const editable = createMemo(() => props.editable ?? true)
-  const previewMode = createMemo(() => props.preview && mode() === "preview")
+  const activeMode = createMemo(() => props.mode ?? mode())
+  const previewMode = createMemo(() => props.preview && activeMode() === "preview")
   const chrome = createMemo(() => props.chrome ?? true)
+
+  const changeMode = (next: MarkdownEditorMode) => {
+    if (next === activeMode()) return
+    console.debug(
+      `[markdown-editor-field] mode-change from=${activeMode()} to=${next} controlled=${String(props.mode !== undefined)}`,
+    )
+    if (props.mode === undefined) setMode(next)
+    void props.onModeChange?.(next)
+  }
 
   const sync = () => {
     if (!box || !back) return
@@ -230,6 +243,14 @@ export function MarkdownEditorField(props: {
   })
 
   createEffect(() => {
+    if (!props.autofocus || activeMode() !== "source") return
+    requestAnimationFrame(() => {
+      console.debug(`[markdown-editor-field] autofocus mode=${activeMode()} mounted=${String(!!box)}`)
+      box?.focus()
+    })
+  })
+
+  createEffect(() => {
     if (popover() !== "at") return
     atFlat()
     requestAnimationFrame(placeAtMenu)
@@ -255,7 +276,7 @@ export function MarkdownEditorField(props: {
     >
       <Show when={props.preview && props.toolbarAbove}>
         <div class="mb-2 flex shrink-0 justify-end">
-          <MarkdownEditorModeToggle mode={mode()} onMode={setMode} inline />
+          <MarkdownEditorModeToggle mode={activeMode()} onMode={changeMode} inline />
         </div>
       </Show>
       <div
@@ -264,7 +285,7 @@ export function MarkdownEditorField(props: {
         }`}
       >
         <Show when={props.preview && !props.toolbarAbove}>
-          <MarkdownEditorModeToggle mode={mode()} onMode={setMode} />
+          <MarkdownEditorModeToggle mode={activeMode()} onMode={changeMode} />
         </Show>
         <Show
           when={previewMode()}
@@ -378,9 +399,18 @@ export function MarkdownEditorField(props: {
             </div>
           }
         >
-          <div class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4">
-            <Markdown text={props.text} math="full" highlight="defer" class="text-13-regular leading-6" />
-          </div>
+          <Show
+            when={props.text.trim() || !props.previewPlaceholder}
+            fallback={
+              <div class="flex min-h-0 flex-1 items-center justify-center text-13-regular text-text-weak">
+                {props.previewPlaceholder}
+              </div>
+            }
+          >
+            <div class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4">
+              <Markdown text={props.text} math="full" highlight="defer" class="text-13-regular leading-6" />
+            </div>
+          </Show>
         </Show>
       </div>
     </div>
@@ -399,24 +429,29 @@ function MarkdownEditorModeToggle(props: {
       class="config-editor-mode-toggle"
       style={props.inline ? { position: "static", "pointer-events": "auto" } : undefined}
     >
-      <div role="group" class="config-editor-mode-toggle__group">
+      <div
+        role="group"
+        class="config-editor-mode-toggle__group config-editor-mode-toggle__group--compact"
+      >
         <button
           type="button"
           class="config-editor-mode-toggle__button"
           data-active={props.mode === "source" ? "true" : undefined}
+          aria-label={language.t("trellis.tasks.edit")}
           onClick={() => props.onMode("source")}
         >
           <Icon name="edit" size="small" />
-          {language.t("trellis.tasks.edit")}
+          <span class="config-editor-mode-toggle__label">{language.t("trellis.tasks.edit")}</span>
         </button>
         <button
           type="button"
           class="config-editor-mode-toggle__button"
           data-active={props.mode === "preview" ? "true" : undefined}
+          aria-label={language.t("trellis.tasks.preview")}
           onClick={() => props.onMode("preview")}
         >
           <Icon name="eye" size="small" />
-          {language.t("trellis.tasks.preview")}
+          <span class="config-editor-mode-toggle__label">{language.t("trellis.tasks.preview")}</span>
         </button>
       </div>
     </div>

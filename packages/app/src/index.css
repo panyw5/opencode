@@ -178,6 +178,62 @@
     box-shadow: var(--shadow-xs-border-base);
   }
 
+  .config-editor-mode-toggle__group--compact:not(:hover):not(:focus-within)
+    .config-editor-mode-toggle__button:not([data-active="true"]),
+  .config-editor-mode-toggle__group--compact:not(:hover):not(:focus-within) .config-editor-mode-toggle__label {
+    display: none;
+  }
+
+  .config-editor-mode-toggle__group--compact {
+    width: 2.125rem;
+    overflow: hidden;
+    transition: width 140ms ease-in;
+    will-change: width;
+  }
+
+  .config-editor-mode-toggle__group--compact .config-editor-mode-toggle__button,
+  .config-editor-mode-toggle__group--compact .config-editor-mode-toggle__label {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .config-editor-mode-toggle__group--compact:hover,
+  .config-editor-mode-toggle__group--compact:focus-within {
+    width: 10.5rem;
+    animation: config-editor-mode-toggle-expand 300ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
+  .config-editor-mode-toggle__group--compact:hover .config-editor-mode-toggle__label,
+  .config-editor-mode-toggle__group--compact:focus-within .config-editor-mode-toggle__label {
+    animation: config-editor-mode-toggle-label-in 180ms 70ms both;
+  }
+
+  .config-editor-mode-toggle__group--compact:not(:hover):not(:focus-within) .config-editor-mode-toggle__button {
+    padding-inline: 0.375rem;
+  }
+
+  @keyframes config-editor-mode-toggle-expand {
+    from {
+      width: 2.125rem;
+    }
+
+    to {
+      width: 10.5rem;
+    }
+  }
+
+  @keyframes config-editor-mode-toggle-label-in {
+    from {
+      opacity: 0;
+      transform: translateX(0.375rem);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
   /* The titlebar surface can be close to --border-weak-base in some themes.
      Use an inset outline so inactive session tabs remain distinct. */
   [data-component="session-tab"].session-tab-inactive {

@@ -32,8 +32,8 @@ import { showPromiseToast, showToast } from "@opencode-ai/ui/toast"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { paint } from "@/components/prompt-input/expand"
-import { pair } from "@/components/dialog-prompt-editor-input"
-import { handleTextareaIndent, indent } from "@/components/markdown-editor-indent"
+import { handleTextareaIndent } from "@/components/markdown-editor-indent"
+import { MarkdownEditorField } from "@/components/markdown-editor-field"
 import { DialogConnectProvider } from "@/components/dialog-connect-provider"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import {
@@ -1814,148 +1814,16 @@ function MarkdownField(props: {
   paint?: (value: string) => string
   preview?: boolean
 }) {
-  const settings = useSettings()
-  const language = useLanguage()
-  const [mode, setMode] = createSignal<"source" | "preview">("source")
-  let box: HTMLTextAreaElement | undefined
-  let back: HTMLDivElement | undefined
-  const html = createMemo(() => (props.paint ?? paint)(props.text))
-  const font = createMemo(() => monoFontFamily(settings.appearance.font()))
-  const previewMode = createMemo(() => props.preview && mode() === "preview")
-
-  const sync = () => {
-    if (!box || !back) return
-    back.scrollTop = box.scrollTop
-    back.scrollLeft = box.scrollLeft
-  }
-
-  const applyEdit = (next: { text: string; start: number; end: number }) => {
-    props.onInput(next.text)
-    requestAnimationFrame(() => {
-      if (!box) return
-      box.setSelectionRange(next.start, next.end)
-      sync()
-    })
-  }
-
-  const onKeyDown: JSX.EventHandlerUnion<HTMLTextAreaElement, KeyboardEvent> = (event) => {
-    if (!props.editable) return
-    if (event.metaKey || event.ctrlKey || event.altKey) return
-    if (event.isComposing || event.keyCode === 229) return
-
-    if (event.key === "Tab") {
-      const next = indent({
-        text: props.text,
-        start: event.currentTarget.selectionStart ?? 0,
-        end: event.currentTarget.selectionEnd ?? 0,
-        shiftKey: event.shiftKey,
-      })
-      event.preventDefault()
-      if (next) applyEdit(next)
-      return
-    }
-
-    const next = pair({
-      text: props.text,
-      start: event.currentTarget.selectionStart ?? 0,
-      end: event.currentTarget.selectionEnd ?? 0,
-      key: event.key,
-    })
-    if (!next) return
-    event.preventDefault()
-    applyEdit(next)
-  }
-
-  createEffect(() => {
-    props.text
-    requestAnimationFrame(sync)
-  })
-
-  createEffect(() => {
-    if (!props.preview && mode() !== "source") setMode("source")
-  })
-
   return (
-    <div class="relative flex h-full min-h-0 flex-col overflow-hidden rounded-xl border border-border-weak-base bg-background-base">
-      <Show when={props.preview}>
-        <ConfigEditorModeToggle mode={mode()} onMode={setMode} />
-      </Show>
-      <Show
-        when={previewMode()}
-        fallback={
-          <div class="relative min-h-0 flex-1 overflow-hidden">
-            <div
-              ref={(el) => {
-                back = el
-              }}
-              aria-hidden="true"
-              class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 text-13-mono leading-6 whitespace-pre-wrap break-words"
-              style={{ "font-family": font() }}
-            >
-              <div class="min-h-full w-full" innerHTML={html()} />
-            </div>
-            <Show when={props.busy}>
-              <div class="pointer-events-none absolute left-4 top-3 z-10 text-12-regular text-text-weak">
-                {language.t("config.editor.loadingFile")}
-              </div>
-            </Show>
-            <textarea
-              ref={(el) => {
-                box = el
-              }}
-              class="config-scrollbar absolute inset-0 size-full min-h-0 resize-none overflow-auto bg-transparent px-4 py-3 text-13-mono leading-6 focus:outline-none"
-              style={{
-                color: "transparent",
-                "-webkit-text-fill-color": "transparent",
-                "caret-color": "var(--text-strong)",
-                "font-family": font(),
-              }}
-              spellcheck={false}
-              readOnly={!props.editable}
-              value={props.text}
-              onInput={(event) => props.onInput(event.currentTarget.value)}
-              onScroll={sync}
-              onKeyDown={onKeyDown}
-            />
-          </div>
-        }
-      >
-        <div class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4">
-          <Markdown text={props.text} math="full" highlight="defer" class="text-13-regular leading-6" />
-        </div>
-      </Show>
-    </div>
-  )
-}
-
-type ConfigEditorMode = "source" | "preview"
-
-function ConfigEditorModeToggle(props: { mode: ConfigEditorMode; onMode: (mode: ConfigEditorMode) => void }) {
-  const language = useLanguage()
-
-  return (
-    <div class="config-editor-mode-toggle">
-      <div role="group" class="config-editor-mode-toggle__group">
-        <button
-          type="button"
-          class="config-editor-mode-toggle__button"
-          data-active={props.mode === "source" ? "true" : undefined}
-          onClick={() => props.onMode("source")}
-        >
-          <Icon name="edit" size="small" />
-          {language.t("trellis.tasks.edit")}
-        </button>
-        <button
-          type="button"
-          class="config-editor-mode-toggle__button"
-          data-active={props.mode === "preview" ? "true" : undefined}
-          onClick={() => props.onMode("preview")}
-        >
-          <Icon name="eye" size="small" />
-          {language.t("trellis.tasks.preview")}
-        </button>
-      </div>
-    </div>
+    <MarkdownEditorField
+      text={props.text}
+      busy={props.busy}
+      editable={props.editable}
+      preview={props.preview}
+      paint={props.paint}
+      onInput={props.onInput}
+      class="h-full min-h-0"
+    />
   )
 }
 
