@@ -14,7 +14,18 @@ import { Select } from "@opencode-ai/ui/select"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { createEffect, createMemo, For, onCleanup, onMount, Show, untrack, type Accessor, type JSX } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+  untrack,
+  type Accessor,
+  type JSX,
+} from "solid-js"
 import { createStore } from "solid-js/store"
 import { CronExpressionField } from "@/components/cron-expression-field"
 import { TimezoneSelectField } from "@/components/timezone-select-field"
@@ -127,6 +138,7 @@ function ScheduledTaskFormDialog(props: {
   const dialog = useDialog()
   const sessionTabs = useSessionTabs()
   const task = props.task
+  const [maximized, setMaximized] = createSignal(false)
   const [state, setState] = createStore({
     name: task?.name ?? "",
     prompt: task?.prompt ?? "",
@@ -154,6 +166,25 @@ function ScheduledTaskFormDialog(props: {
   })
 
   const directory = () => task?.directory ?? props.directory ?? ""
+  const dialogContainerStyle = createMemo(() =>
+    task && maximized()
+      ? {
+          width: "90vw",
+          "max-width": "90vw",
+          height: "95vh",
+          "max-height": "95vh",
+        }
+      : {
+          width: task ? "min(calc(100vw - 32px), 1480px)" : "min(calc(100vw - 32px), 1120px)",
+          height: "min(calc(100vh - 32px), 860px)",
+        },
+  )
+
+  function toggleMaximized() {
+    const next = !maximized()
+    console.debug(`[scheduled-panel] edit maximize task=${task?.id ?? "new"} maximized=${String(next)}`)
+    setMaximized(next)
+  }
 
   const agentOptions = createMemo(() => {
     const dir = directory()
@@ -422,7 +453,28 @@ function ScheduledTaskFormDialog(props: {
   }
 
   return (
-    <Dialog
+    <>
+      <style
+        // eslint-disable-next-line solid/no-innerhtml
+        innerHTML={`
+          [data-component="dialog"][data-scheduled-task-dialog][data-maximized] [data-slot="dialog-container"] {
+            display: flex;
+            flex-direction: column;
+          }
+          [data-component="dialog"][data-scheduled-task-dialog][data-maximized] [data-slot="dialog-content"] {
+            height: 100% !important;
+            max-height: 100% !important;
+            overflow: hidden !important;
+          }
+          [data-component="dialog"][data-scheduled-task-dialog][data-maximized] [data-slot="dialog-body"] {
+            min-height: 0;
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+          }
+        `}
+      />
+      <Dialog
       title={
         <div class="flex min-w-0 flex-col pl-1">
           <span class="truncate leading-6">{task?.name ?? language.t("scheduled.create")}</span>
@@ -433,19 +485,32 @@ function ScheduledTaskFormDialog(props: {
       }
       size="x-large"
       transition
-      containerStyle={{
-        width: task ? "min(calc(100vw - 32px), 1480px)" : "min(calc(100vw - 32px), 1120px)",
-        height: "min(calc(100vh - 32px), 860px)",
-      }}
+      containerStyle={dialogContainerStyle()}
+      data-scheduled-task-dialog={task?.id}
+      data-maximized={task && maximized() ? "" : undefined}
       action={
         task ? (
-          <IconButton
-            icon="close"
-            size="large"
-            variant="ghost"
-            onClick={() => dialog.close()}
-            aria-label={language.t("common.close")}
-          />
+          <div class="flex items-center gap-2">
+            <Tooltip
+              placement="bottom"
+              value={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+            >
+              <IconButton
+                icon={maximized() ? "collapse" : "expand"}
+                size="large"
+                variant="ghost"
+                onClick={toggleMaximized}
+                aria-label={maximized() ? language.t("trellis.tasks.restore") : language.t("trellis.tasks.maximize")}
+              />
+            </Tooltip>
+            <IconButton
+              icon="close"
+              size="large"
+              variant="ghost"
+              onClick={() => dialog.close()}
+              aria-label={language.t("common.close")}
+            />
+          </div>
         ) : undefined
       }
     >
@@ -676,7 +741,8 @@ function ScheduledTaskFormDialog(props: {
           </div>
         </div>
       </form>
-    </Dialog>
+      </Dialog>
+    </>
   )
 }
 

@@ -48,6 +48,14 @@ export function MarkdownEditorField(props: {
   let menuRef: HTMLDivElement | undefined
   const html = createMemo(() => (props.paint ?? defaultPaint)(props.text))
   const font = createMemo(() => monoFontFamily(settings.appearance.font()))
+  const typography = createMemo(() => {
+    const size = settings.appearance.fontSize()
+    return {
+      "font-family": font(),
+      "font-size": `${size}px`,
+      "line-height": `${size * 1.65}px`,
+    }
+  })
   const editable = createMemo(() => props.editable ?? true)
   const activeMode = createMemo(() => props.mode ?? mode())
   const previewMode = createMemo(() => props.preview && activeMode() === "preview")
@@ -348,8 +356,8 @@ export function MarkdownEditorField(props: {
                 back = el
               }}
               aria-hidden="true"
-              class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 text-13-mono leading-6 whitespace-pre-wrap break-words"
-              style={{ "font-family": font() }}
+              class="config-scrollbar pointer-events-none absolute inset-0 overflow-auto px-4 py-3 whitespace-pre-wrap break-words"
+              style={typography()}
             >
               <div class="min-h-full w-full" innerHTML={html()} />
             </div>
@@ -363,12 +371,12 @@ export function MarkdownEditorField(props: {
                 box = el
               }}
               autofocus={props.autofocus}
-              class="config-scrollbar absolute inset-0 size-full min-h-0 resize-none overflow-auto bg-transparent px-4 py-3 text-13-mono leading-6 focus:outline-none"
+              class="config-scrollbar absolute inset-0 size-full min-h-0 resize-none overflow-auto bg-transparent px-4 py-3 focus:outline-none"
               style={{
+                ...typography(),
                 color: "transparent",
                 "-webkit-text-fill-color": "transparent",
                 "caret-color": "var(--text-strong)",
-                "font-family": font(),
               }}
               spellcheck={false}
               readOnly={!editable()}
@@ -390,8 +398,8 @@ export function MarkdownEditorField(props: {
             />
             <Show when={props.placeholder && props.text.length === 0}>
               <div
-                class="pointer-events-none absolute inset-x-0 top-0 px-4 py-3 text-13-mono leading-6 whitespace-pre-wrap text-text-weak"
-                style={{ "font-family": font() }}
+                class="pointer-events-none absolute inset-x-0 top-0 px-4 py-3 whitespace-pre-wrap text-text-weak"
+                style={typography()}
               >
                 {props.placeholder}
               </div>
@@ -408,7 +416,7 @@ export function MarkdownEditorField(props: {
             }
           >
             <div class="config-scrollbar min-h-0 flex-1 overflow-auto px-5 py-4">
-              <Markdown text={props.text} math="full" highlight="defer" class="text-13-regular leading-6" />
+              <Markdown text={props.text} math="full" highlight="defer" />
             </div>
           </Show>
         </Show>
