@@ -78,3 +78,6 @@ packages/opencode/bin/.opencode
 .workbuddy/
 opencode.db
 sidecar.js
+
+# Local code-signing certificates and requests
+/certificates/
