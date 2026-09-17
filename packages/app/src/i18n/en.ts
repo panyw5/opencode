@@ -444,16 +444,6 @@ export const dict = {
   "prompt.suggestion.hint.customizeShortcuts": "View or change any keyboard shortcut in Settings.",
   "prompt.suggestion.hint.backgroundTasks":
     "Ask OpenCode to run shell commands or subagents in the background; their results return automatically.",
-  "prompt.suggestion.hint.backgroundShell":
-    "While a shell command is running, click Set as background shell to keep working without waiting for it.",
-  "prompt.suggestion.hint.backgroundShellManager":
-    "Use the background shell menu above the prompt to inspect output or stop a running background command.",
-  "prompt.suggestion.hint.backgroundSubagent":
-    "Send a running subagent to the background from its task card; it will report back automatically when finished.",
-  "prompt.suggestion.hint.intervene":
-    "While OpenCode is working, type new guidance and use Send intervention to steer the task immediately.",
-  "prompt.suggestion.hint.advisorIntervention":
-    "Open a running Codex or Claude consultation and click Intervene to give the advisor follow-up instructions directly.",
   "prompt.suggestion.hint.scheduledTasks":
     "Ask an agent to create a scheduled task, then find recent scheduled tasks on Home.",
   "prompt.suggestion.hint.switchProject": "Use the Switch project shortcut to jump between projects quickly.",
@@ -2008,8 +1998,6 @@ export const dict = {
   "config.channels.test.botName": "Bot",
   "config.channels.test.botOpenId": "Gateway",
   "config.channels.error.duplicateName": "A channel with this name already exists",
-  "config.channels.note.runtime":
-    "Enabled channels are registered by the server at startup. Use the channel status and logs to confirm runtime state.",
   "config.im.title": "Project IM service",
   "config.im.header":
     "Projects send through configured channels to their fixed users. Private chats are discovered automatically; no chat IDs or separate grants are required.",

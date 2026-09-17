@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { imLoadBatch, imSelectedProject } from "./config-im"
+import { imLoadBatch, imPreferenceInitPending, imSelectedProject } from "./config-im"
 import { parseRetentionDays, rebaseChannelMap } from "./config-channel-helpers"
 
 describe("channel IM service configuration", () => {
@@ -29,6 +29,11 @@ describe("channel IM service configuration", () => {
     })
     expect(calls).toEqual(["channels", "subscriptions", "sessions"])
     expect(result).toEqual(["channels", "subscriptions", "sessions"])
+  })
+
+  test("keeps asynchronous preference initialization local to the IM pane", () => {
+    expect(imPreferenceInitPending(Promise.resolve(null))).toBe(true)
+    expect(imPreferenceInitPending(null)).toBe(false)
   })
 
   test("accepts only bounded optional retention periods", () => {

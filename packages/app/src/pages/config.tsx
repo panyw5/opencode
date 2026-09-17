@@ -2,7 +2,6 @@ import {
   batch,
   createEffect,
   createMemo,
-  createResource,
   createSignal,
   For,
   lazy,
@@ -86,6 +85,7 @@ import {
   providerEnabled,
   type ConfigProviderItem,
 } from "./config-provider-list"
+import { createConfigLocalLoader } from "./config-local-loader"
 import {
   CONFIG_MIDDLE_ITEM_ACTIVE_CLASS,
   CONFIG_MIDDLE_ITEM_CLASS,
@@ -3931,10 +3931,17 @@ export default function ConfigPage() {
       .sort((a, b) => a.name.localeCompare(b.name))
   })
 
-  const [projectMcpRecords, { refetch: refetchProjectMcpRecords }] = createResource(
-    () => sync.data.path?.directory,
-    async (directory) => (directory ? loadConfigRecords(directory, "project") : []),
+  const projectMcpRecords = createConfigLocalLoader(
+    () => (state.section === "mcp" ? sync.data.path?.directory || null : false),
+    async (directory) => loadConfigRecords(directory, "project"),
+    "mcp.project-records",
   )
+
+  async function refetchProjectMcpRecords() {
+    const directory = sync.data.path?.directory
+    const records = directory ? await loadConfigRecords(directory, "project") : []
+    projectMcpRecords.replace(records)
+  }
 
   const mcpProject = createMemo(() => {
     const directory = sync.data.path?.directory ?? ""
@@ -4249,7 +4256,7 @@ export default function ConfigPage() {
     })
   }
 
-  const [workspace] = createResource(
+  const workspace = createConfigLocalLoader(
     () => state.workspaceRev,
     async () => {
       // Shared by agents-md / skills / plugins / commands roots — keep eager.
@@ -4260,9 +4267,10 @@ export default function ConfigPage() {
       console.info(`[config-perf] fetch configWorkspace done ms=${(performance.now() - started).toFixed(1)}`)
       return result
     },
+    "workspace",
   )
 
-  const [rawSkills] = createResource(
+  const rawSkills = createConfigLocalLoader(
     () => (state.section === "skills" ? state.skillRev : false),
     async () => {
       console.info("[config-perf] fetch app.skills start")
@@ -4271,9 +4279,10 @@ export default function ConfigPage() {
       console.info(`[config-perf] fetch app.skills done ms=${(performance.now() - started).toFixed(1)}`)
       return resp.data ?? []
     },
+    "skills.runtime",
   )
 
-  const [loaded] = createResource(
+  const loaded = createConfigLocalLoader(
     () => (state.section === "agents" ? state.agentRev : false),
     async () => {
       console.info("[config-perf] fetch app.agents start")
@@ -4282,6 +4291,7 @@ export default function ConfigPage() {
       console.info(`[config-perf] fetch app.agents done ms=${(performance.now() - started).toFixed(1)}`)
       return resp.data ?? []
     },
+    "agents.runtime",
   )
 
   const [configFileAgents, setConfigFileAgents] = createSignal<Config["agent"]>()
@@ -4691,6 +4701,38 @@ export default function ConfigPage() {
       )
       .join("\x1e"),
   )
+  const projectScanSection = createMemo(() =>
+    state.section === "agents" ||
+    state.section === "skills" ||
+    state.section === "plugins" ||
+    state.section === "commands"
+      ? openedKey()
+      : false,
+  )
+  const accessibleProjectRoots = createConfigLocalLoader(
+    projectScanSection,
+    async (key) => {
+      const roots = Array.from(new Set(untrack(opened).flatMap(projectRoots)))
+      const allowed = platform.filterDirectories ? await platform.filterDirectories(roots) : roots
+      return { key, roots: allowed }
+    },
+    "projects.accessible-roots",
+  )
+  const allowedProjectRoots = createMemo(() => {
+    const value = accessibleProjectRoots.latest
+    if (!value || value.key !== openedKey()) return
+    return new Set(value.roots.map(norm))
+  })
+  const allowedProjectRootsKey = createMemo(() => {
+    const roots = allowedProjectRoots()
+    if (!roots) return
+    return Array.from(roots).sort().join("\x1e")
+  })
+  const scannableProjectRoots = (item: { worktree: string; sandboxes?: string[] }) => {
+    const allowed = allowedProjectRoots()
+    if (!allowed) return []
+    return projectRoots(item).filter((root) => allowed.has(norm(root)))
+  }
 
   const agentsMd = createMemo<DocItem[]>(() => {
     if (!space()?.agentsMdPath) return []
@@ -4909,14 +4951,17 @@ export default function ConfigPage() {
     return list
   }
 
-  const [diskAgents] = createResource(
-    () => (state.section === "agents" ? ([state.agentRev, openedKey()] as const) : false),
+  const diskAgents = createConfigLocalLoader(
+    () => {
+      const roots = allowedProjectRootsKey()
+      return state.section === "agents" && roots !== undefined ? ([state.agentRev, openedKey(), roots] as const) : false
+    },
     async () => {
       const list = untrack(opened)
       return Promise.all(
         list.map(async (item) => {
           const label = item.name ?? name(item.worktree)
-          const roots = projectRoots(item)
+          const roots = scannableProjectRoots(item)
 
           return Promise.all(
             roots.map(async (dir) => {
@@ -4958,9 +5003,10 @@ export default function ConfigPage() {
         }),
       ).then((list) => list.flat())
     },
+    "agents.projects",
   )
 
-  const [pluginAgents] = createResource(
+  const pluginAgents = createConfigLocalLoader(
     () => (state.section === "agents" ? ([state.agentRev, mainPath().home, enabledPluginKey()] as const) : false),
     async ([, home]) => {
       const plugins = untrack(() => cfg().plugin)
@@ -5005,6 +5051,7 @@ export default function ConfigPage() {
           }),
       ).then((list) => list.flat())
     },
+    "agents.plugins",
   )
 
   const runtimeAgents = createMemo<DocItem[]>(() => {
@@ -5101,30 +5148,35 @@ export default function ConfigPage() {
   const agentProjectOpen = (key: string) => !!state.treeClosed[`agent-project:${key}`]
   const toggleAgentProject = (key: string) => setState("treeClosed", `agent-project:${key}`, (v) => !v)
 
-  const [diskClaude] = createResource(
+  const diskClaude = createConfigLocalLoader(
     () => (state.section === "skills" ? ([state.skillRev, claudeRoot()] as const) : false),
     async ([, root]) => {
       if (!root) return [] as SkillItem[]
       return scan(root, { source: "external", group: "claude", origin: ".claude" })
     },
+    "skills.claude",
   )
 
-  const [diskOpenCode] = createResource(
+  const diskOpenCode = createConfigLocalLoader(
     () => (state.section === "skills" ? ([state.skillRev, space()?.skillsRoot] as const) : false),
     async ([, root]) => {
       if (!root) return [] as SkillItem[]
       return scan(root, { source: "opencode", group: "opencode", origin: ".opencode" })
     },
+    "skills.opencode",
   )
 
-  const [diskProject] = createResource(
-    () => (state.section === "skills" ? ([state.skillRev, openedKey()] as const) : false),
+  const diskProject = createConfigLocalLoader(
+    () => {
+      const roots = allowedProjectRootsKey()
+      return state.section === "skills" && roots !== undefined ? ([state.skillRev, openedKey(), roots] as const) : false
+    },
     async () => {
       const list = untrack(opened)
       return Promise.all(
         list.map(async (item) => {
           const label = item.name ?? name(item.worktree)
-          const roots = projectRoots(item)
+          const roots = scannableProjectRoots(item)
 
           return Promise.all(
             roots.map(async (dir) => {
@@ -5164,6 +5216,7 @@ export default function ConfigPage() {
         }),
       ).then((list) => list.flat())
     },
+    "skills.projects",
   )
 
   const skillDocs = createMemo<DocItem[]>(() => {
@@ -5192,7 +5245,7 @@ export default function ConfigPage() {
   })
 
   const globalCommandsDir = createMemo(() => space()?.configRoot)
-  const [diskGlobalCmds] = createResource(
+  const diskGlobalCmds = createConfigLocalLoader(
     () => (state.section === "commands" ? ([state.commandRev, globalCommandsDir()] as const) : false),
     async ([, dir]) => {
       console.info("[config-perf] fetch diskGlobalCmds start")
@@ -5201,15 +5254,22 @@ export default function ConfigPage() {
       console.info(`[config-perf] fetch diskGlobalCmds done ms=${(performance.now() - started).toFixed(1)}`)
       return result
     },
+    "commands.global",
   )
-  const [diskProjectCmds] = createResource(
-    () => (state.section === "commands" ? ([state.commandRev, openedKey()] as const) : false),
+  const diskProjectCmds = createConfigLocalLoader(
+    () => {
+      const roots = allowedProjectRootsKey()
+      return state.section === "commands" && roots !== undefined
+        ? ([state.commandRev, openedKey(), roots] as const)
+        : false
+    },
     async () => {
       console.info("[config-perf] fetch diskProjectCmds start")
       const started = performance.now()
       const list = untrack(opened)
       const projects = new Map<string, { root: string; label: string }>()
       for (const item of list) {
+        if (!scannableProjectRoots(item).some((root) => norm(root) === norm(item.worktree))) continue
         projects.set(norm(item.worktree), { root: item.worktree, label: item.name ?? name(item.worktree) })
       }
       const result = await Promise.all(
@@ -5221,6 +5281,7 @@ export default function ConfigPage() {
       console.info(`[config-perf] fetch diskProjectCmds done ms=${(performance.now() - started).toFixed(1)}`)
       return result
     },
+    "commands.projects",
   )
 
   const commandDocs = createMemo(() => [...(diskGlobalCmds.latest ?? []), ...(diskProjectCmds.latest ?? [])])
@@ -5402,8 +5463,11 @@ export default function ConfigPage() {
     return walk(root)
   }
 
-  const [diskProjectPlugins] = createResource(
-    () => (state.section === "plugins" ? ([state.pluginRev, openedKey()] as const) : false),
+  const diskProjectPlugins = createConfigLocalLoader(
+    () => {
+      const roots = allowedProjectRootsKey()
+      return state.section === "plugins" && roots !== undefined ? ([state.pluginRev, openedKey(), roots] as const) : false
+    },
     async () => {
       console.info("[config-perf] fetch diskProjectPlugins start")
       const started = performance.now()
@@ -5411,7 +5475,7 @@ export default function ConfigPage() {
       const result = await Promise.all(
         list.map(async (item) => {
           const label = item.name ?? name(item.worktree)
-          const roots = projectRoots(item)
+          const roots = scannableProjectRoots(item)
 
           return Promise.all(
             roots.map(async (dir) => {
@@ -5453,15 +5517,24 @@ export default function ConfigPage() {
       )
       return result
     },
+    "plugins.projects",
   )
 
   const [projectPluginConfigs, setProjectPluginConfigs] = createSignal<NonNullable<Config["plugin"]>>([])
   let projectPluginConfigsRun = 0
   createEffect(
     on(
-      () => [state.section, state.pluginRev, openedKey()] as const,
-      ([section]) => {
-        if (section !== "plugins") return
+      () => {
+        const roots = allowedProjectRootsKey()
+        return state.section === "plugins" && roots !== undefined
+          ? ([state.pluginRev, openedKey(), roots] as const)
+          : false
+      },
+      (request) => {
+        if (request === false) {
+          projectPluginConfigsRun++
+          return
+        }
         const run = ++projectPluginConfigsRun
         console.info("[config-perf] fetch projectPluginConfigs start")
         const started = performance.now()
@@ -5469,7 +5542,7 @@ export default function ConfigPage() {
           const projects = untrack(opened)
           const configs = await Promise.allSettled(
             projects.flatMap((project) =>
-              projectRoots(project).map(async (directory) => {
+              scannableProjectRoots(project).map(async (directory) => {
                 const client = globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
                 const result = await client.config.get()
                 return result.data?.plugin ?? []
@@ -5934,7 +6007,11 @@ export default function ConfigPage() {
     return next
   }
 
-  const [tree] = createResource(currentSkillRoot, async (root) => ({ root, list: await loadTree(root) }))
+  const tree = createConfigLocalLoader(
+    currentSkillRoot,
+    async (root) => ({ root, list: await loadTree(root) }),
+    "skills.tree",
+  )
   const currentTree = createMemo(() => {
     const root = currentSkillRoot()
     const value = tree.latest

@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, on, untrack, type Component } from "solid-js"
+import { For, Show, createEffect, createMemo, on, onCleanup, untrack, type Component } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { useLanguage } from "@/context/language"
@@ -39,6 +39,10 @@ export async function imLoadBatch<C, W, S>(requests: {
   return Promise.all([requests.channels(), requests.subscriptions(), requests.sessions()] as const)
 }
 
+export function imPreferenceInitPending(init: unknown): init is Promise<unknown> {
+  return init instanceof Promise
+}
+
 const inputClass =
   "h-9 min-w-0 rounded-md border border-border-weak-base bg-background-base px-2.5 text-13-regular text-text-strong outline-none focus:border-border-strong-base"
 
@@ -47,7 +51,7 @@ export const ConfigIM: Component = () => {
   const globalSDK = useGlobalSDK()
   const globalSync = useGlobalSync()
   const layout = useLayout()
-  const [preferences, setPreferences, , preferencesReady] = persisted(
+  const [preferences, setPreferences, preferencesInit] = persisted(
     Persist.global("config.im.service.v1"),
     createStore({ selectedDirectory: "" }),
   )
@@ -57,13 +61,30 @@ export const ConfigIM: Component = () => {
     sessions: [] as Session[],
     loading: false,
     error: "",
+    preferencesReady: !imPreferenceInitPending(preferencesInit),
     busy: {} as Record<string, boolean>,
     form: { channelName: "", sessionID: "", keyword: "" },
   })
+  let alive = true
+  onCleanup(() => {
+    alive = false
+  })
+  if (imPreferenceInitPending(preferencesInit)) {
+    console.info("[im-service-ui] preference load started")
+    void preferencesInit
+      .catch((error) => {
+        console.error("[im-service-ui] preference load failed", { error: String(error) })
+      })
+      .finally(() => {
+        if (!alive) return
+        setState("preferencesReady", true)
+        console.info("[im-service-ui] preference load completed")
+      })
+  }
   const projects = createMemo(() => layout.projects.list().filter((p) => p.visibility !== "internal" && !!p.worktree))
   const directories = createMemo(() => projects().map((p) => p.worktree))
   const directory = createMemo(() =>
-    preferencesReady()
+    state.preferencesReady
       ? imSelectedProject(preferences.selectedDirectory, globalSync.data.path.directory ?? "", directories())
       : "",
   )
@@ -106,7 +127,7 @@ export const ConfigIM: Component = () => {
   }
   createEffect(
     on(
-      () => [preferencesReady(), directory()] as const,
+      () => [state.preferencesReady, directory()] as const,
       ([ready, value]) => {
         if (!ready) return
         void untrack(() => load(value))
@@ -114,7 +135,7 @@ export const ConfigIM: Component = () => {
     ),
   )
   createEffect(() => {
-    if (!preferencesReady()) return
+    if (!state.preferencesReady) return
     const value = directory()
     if (value && !preferences.selectedDirectory) setPreferences("selectedDirectory", value)
   })

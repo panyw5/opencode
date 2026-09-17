@@ -10,7 +10,6 @@ import {
   on,
   onCleanup,
   type Component,
-  createResource,
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { getFilename } from "@opencode-ai/core/util/path"
@@ -34,6 +33,7 @@ import {
   type FeishuRegistrationSession,
 } from "@/lib/feishu-app-registration"
 import { defaultChannelDirectory } from "@/pages/layout/helpers"
+import { createConfigLocalLoader } from "./config-local-loader"
 import {
   directoryAbsoluteToDisplay,
   directoryBrowseLeaf,
@@ -157,8 +157,8 @@ const ChannelDirectoryInput: Component<{
 
   const browsePath = createMemo(() => directoryBrowsePath(state.query))
   const absolutePath = createMemo(() => displayToAbsolute(browsePath(), props.home, props.home))
-  const [entries] = createResource(
-    absolutePath,
+  const entries = createConfigLocalLoader(
+    () => (state.open ? absolutePath() : false),
     async (directory) => {
       if (!directory || !platform.listLocalDirectory) return [] as BrowseEntry[]
       const list = await platform.listLocalDirectory(directory).catch(() => [])
@@ -170,7 +170,7 @@ const ChannelDirectoryInput: Component<{
         }))
         .sort((a, b) => a.name.localeCompare(b.name))
     },
-    { initialValue: [] as BrowseEntry[] },
+    "channels.directory-entries",
   )
   const filtered = createMemo(() => {
     const leaf = directoryBrowseLeaf(state.query).toLocaleLowerCase()
@@ -1046,7 +1046,6 @@ export const ConfigChannelsDetail: Component<{
           {/* Add form */}
           <section class="flex flex-col gap-4 rounded-[14px] border border-border-weak-base bg-surface-base/40 p-4">
             <div class="text-14-medium text-text-strong">{language.t("config.channels.add.title")}</div>
-            <p class="text-11-regular text-text-weaker">{language.t("config.channels.note.runtime")}</p>
 
             <div class="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(180px,0.65fr)_minmax(0,1.35fr)]">
               <TextField
