@@ -1,5 +1,6 @@
 import type { Todo } from "@opencode-ai/sdk/v2"
 import { Checkbox } from "@opencode-ai/ui/checkbox"
+import { Icon } from "@opencode-ai/ui/icon"
 import { Index, createMemo, createEffect, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { TextStrikethrough } from "@opencode-ai/ui/text-strikethrough"
@@ -29,7 +30,7 @@ function dot(status: Todo["status"]) {
   )
 }
 
-export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: string }) {
+export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: string; completedAsCircle?: boolean }) {
   const [store, setStore] = createStore({
     stuck: false,
     scrolling: false,
@@ -97,20 +98,25 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
       >
         <Index each={props.todos}>
           {(todo) => (
-            <Checkbox
-              readOnly
-              checked={todo().status === "completed"}
-              indeterminate={todo().status === "in_progress"}
-              data-in-progress={todo().status === "in_progress" ? "" : undefined}
-              data-state={todo().status}
-              icon={dot(todo().status)}
-              style={{
-                "--checkbox-align": "center",
-                "--checkbox-offset": "1px",
-                transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
-                opacity: todo().status === "pending" ? "0.94" : "1",
-              }}
-            >
+            <div class="flex items-center gap-3">
+              {props.completedAsCircle && todo().status === "completed" ? (
+                <Icon name="circle-check" size="normal" class="shrink-0 text-icon-weak" />
+              ) : (
+                <Checkbox
+                  readOnly
+                  checked={todo().status === "completed"}
+                  indeterminate={todo().status === "in_progress"}
+                  data-in-progress={todo().status === "in_progress" ? "" : undefined}
+                  data-state={todo().status}
+                  icon={dot(todo().status)}
+                  style={{
+                    "--checkbox-align": "center",
+                    "--checkbox-offset": "1px",
+                    transition: "opacity 220ms var(--tool-motion-ease, cubic-bezier(0.22, 1, 0.36, 1))",
+                    opacity: todo().status === "pending" ? "0.94" : "1",
+                  }}
+                />
+              )}
               <TextStrikethrough
                 active={todo().status === "completed" || todo().status === "cancelled"}
                 text={todo().content}
@@ -126,7 +132,7 @@ export function TodoList(props: { todos: Todo[]; open: boolean; maxHeight?: stri
                   opacity: todo().status === "pending" ? "0.92" : "1",
                 }}
               />
-            </Checkbox>
+            </div>
           )}
         </Index>
       </div>
