@@ -76,6 +76,36 @@ if (import.meta.env.VITE_SENTRY_DSN) {
 
 void initI18n()
 
+void (async () => {
+  try {
+    await initI18n()
+    const config = await desktopApi.getWindowConfig().catch(() => ({ updaterEnabled: false }))
+    if (!config.updaterEnabled) {
+      console.info("[desktop] automatic updater is disabled")
+      return
+    }
+
+    console.info("[desktop] listening for automatic update readiness")
+    let promptedVersion: string | undefined
+    desktopApi.onUpdaterStateChanged((state) => {
+      if (state.status !== "ready" || state.version === promptedVersion) return
+      promptedVersion = state.version
+      console.info(`[desktop] update ${state.version} downloaded; asking to restart`)
+      if (!window.confirm(t("desktop.updater.downloaded.prompt", { version: state.version }))) {
+        console.info(`[desktop] update ${state.version} restart deferred by user`)
+        return
+      }
+      console.info(`[desktop] installing update ${state.version}`)
+      void desktopApi.installUpdate().catch((error) => {
+        console.error(`[desktop] failed to install update: ${error instanceof Error ? error.message : String(error)}`)
+        window.alert(t("desktop.updater.installFailed.message"))
+      })
+    })
+  } catch (error) {
+    console.error(`[desktop] automatic updater setup failed: ${error instanceof Error ? error.message : String(error)}`)
+  }
+})()
+
 const deepLinkEvent = "opencode:deep-link"
 const lastActiveUrlKey = "opencode.desktop.last-active-url"
 

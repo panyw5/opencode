@@ -330,7 +330,15 @@ const main = Effect.gen(function* () {
   app.setAsDefaultProtocolClient("opencode")
   registerRendererProtocol()
   setDockIcon()
-  setupAutoUpdater(killBackends).start()
+  const updater = setupAutoUpdater(killBackends)
+  void updater
+    .start()
+    .then((state) => {
+      logger.log("automatic update check finished", { status: state.status })
+    })
+    .catch((error) => {
+      logger.error("automatic update check failed", error)
+    })
   yield* Effect.promise(() => startNetLog()).pipe(
     Effect.catch((error) =>
       Effect.sync(() => {

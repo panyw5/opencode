@@ -2104,11 +2104,11 @@ export default function Layout(props: ParentProps) {
     const directory = payload.directory || activePanelScope("scheduled").directory
     if (!directory) return
     const id = scheduledEditorStashId(payload.task?.id, directory)
-    const title = payload.task?.name || language.t("scheduled.create")
+    const title = payload.snapshot.name.trim() || payload.task?.name || language.t("scheduled.create")
     console.debug(`[sidebar-panel] stash scheduled-editor id=${id} title=${title}`)
     pushStashEntry({
       id,
-      label: `${language.t("sidebar.panels.stashedEditorScheduled")} · ${title}`,
+      label: title,
       icon: "clock",
       restore: () => {
         console.debug(`[sidebar-panel] restore scheduled-editor id=${id}`)
@@ -2116,6 +2116,7 @@ export default function Layout(props: ParentProps) {
           <ScheduledTaskFormDialog
             task={payload.task}
             projectID={payload.projectID}
+            projectName={payload.projectName}
             directory={payload.directory}
             initialState={payload.snapshot}
             minimizeLabel={language.t("sidebar.panels.minimize")}
@@ -2136,7 +2137,7 @@ export default function Layout(props: ParentProps) {
     console.debug(`[sidebar-panel] stash project-task-editor id=${id} title=${payload.task.title}`)
     pushStashEntry({
       id,
-      label: `${language.t("sidebar.panels.stashedEditorProject")} · ${payload.task.title}`,
+      label: payload.task.title,
       icon: "sticky-note",
       restore: () => {
         console.debug(`[sidebar-panel] restore project-task-editor id=${id}`)
@@ -4534,6 +4535,7 @@ export default function Layout(props: ParentProps) {
         scheduledPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ScheduledTasksPanel
             projectID={() => sidebarProject()?.id ?? ""}
+            projectName={() => sidebarProject()?.name || getFilename(sidebarProject()?.root ?? routeDir())}
             directory={() => sidebarProject()?.root ?? routeDir()}
             width={panel}
             mobile={mobile}
