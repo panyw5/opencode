@@ -60,6 +60,7 @@ import { TextShimmer } from "./text-shimmer"
 import { AnimatedCountList } from "./tool-count-summary"
 import { ToolStatusTitle } from "./tool-status-title"
 import { Spinner } from "./spinner"
+import { previousTodoList, todoSnapshot } from "./message-todo"
 import { animate } from "motion"
 import { attached, inline, kind } from "./message-file"
 import { patchFiles } from "./apply-patch-file"
@@ -620,7 +621,7 @@ function sessionLink(id: string | undefined, path: string, href?: (id: string) =
   return `${path.slice(0, idx)}/session/${id}`
 }
 const CONTEXT_GROUP_TOOLS = new Set(["read", "glob", "grep", "list"])
-const HIDDEN_TOOLS = new Set(["todowrite", "todoread"])
+const HIDDEN_TOOLS = new Set(["todoread"])
 function toolName(part: { tool: string }) {
   return normalizeTool(part.tool)
 }
@@ -1716,7 +1717,7 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
   const loc = useLocation()
   const part = () => props.part as ToolPart
   const tool = toolName(part())
-  if (tool === "todowrite" || tool === "todoread") return null
+  if (tool === "todoread") return null
 
   const [handoffVersion, setHandoffVersion] = createSignal(0)
   onMount(() => {
@@ -3280,6 +3281,7 @@ ToolRegistry.register({
 ToolRegistry.register({
   name: "todowrite",
   render(props) {
+    const data = useData()
     const i18n = useI18n()
     const todos = createMemo(() => {
       const meta = props.metadata?.todos
@@ -3290,6 +3292,12 @@ ToolRegistry.register({
 
       return []
     })
+    const previous = createMemo(() => {
+      const part = props.part
+      if (!part) return undefined
+      return previousTodoList(data.store.message[part.sessionID] ?? [], data.store.part, part)
+    })
+    const snapshot = createMemo(() => todoSnapshot(previous(), todos()))
 
     const subtitle = createMemo(() => {
       const list = todos()
@@ -3309,18 +3317,27 @@ ToolRegistry.register({
           subtitle: subtitle(),
         }}
       >
-        <Show when={todos().length}>
+        <Show when={snapshot().length}>
           <div data-component="todos">
-            <For each={todos()}>
-              {(todo: Todo) => (
-                <Checkbox readOnly checked={todo.status === "completed"}>
-                  <span
-                    data-slot="message-part-todo-content"
-                    data-completed={todo.status === "completed" ? "completed" : undefined}
-                  >
-                    {todo.content}
-                  </span>
-                </Checkbox>
+            <For each={snapshot()}>
+              {(row) => (
+                <div
+                  data-slot="message-part-todo-row"
+                  data-change={row.change}
+                  data-gap-before={row.gapBefore ? "true" : undefined}
+                >
+                  <Show when={row.gapBefore}>
+                    <span data-slot="message-part-todo-gap">...</span>
+                  </Show>
+                  <Checkbox readOnly checked={row.todo.status === "completed"}>
+                    <span
+                      data-slot="message-part-todo-content"
+                      data-completed={row.todo.status === "completed" ? "completed" : undefined}
+                    >
+                      {row.todo.content}
+                    </span>
+                  </Checkbox>
+                </div>
               )}
             </For>
           </div>

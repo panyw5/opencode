@@ -1439,9 +1439,54 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   flex-direction: column;
   gap: 8px;
 
+  [data-slot="message-part-todo-row"] {
+    min-width: 0;
+    padding-left: 12px;
+    border-left: 2px solid transparent;
+
+    &[data-gap-before="true"] {
+      margin-top: 8px;
+    }
+
+    &[data-change="added"] {
+      border-left-color: var(--icon-diff-add-base);
+
+      [data-slot="message-part-todo-content"] {
+        color: var(--icon-diff-add-base);
+      }
+    }
+
+    &[data-change="modified"] {
+      border-left-color: var(--text-strong);
+
+      [data-slot="message-part-todo-content"] {
+        color: var(--text-strong);
+        font-weight: 500;
+      }
+    }
+
+    &[data-change="removed"] {
+      border-left-color: var(--icon-diff-delete-base);
+
+      [data-slot="message-part-todo-content"] {
+        color: var(--icon-diff-delete-base);
+        text-decoration: line-through;
+      }
+    }
+  }
+
+  [data-slot="message-part-todo-gap"] {
+    display: block;
+    height: 8px;
+    color: var(--text-weaker);
+    line-height: 1px;
+    letter-spacing: 2px;
+  }
+
   [data-component="checkbox"] {
     --checkbox-align: flex-start;
     --checkbox-offset: 0.5px;
+    min-width: 0;
   }
 
   [data-slot="message-part-todo-content"] {

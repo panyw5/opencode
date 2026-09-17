@@ -92,7 +92,7 @@ function list<T>(value: T[] | undefined | null, fallback: T[]) {
   return fallback
 }
 
-const hidden = new Set(["todowrite", "todoread"])
+const hidden = new Set(["todoread"])
 
 function text(value: unknown) {
   if (typeof value !== "string") return

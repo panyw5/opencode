@@ -467,6 +467,7 @@ export function MessageTimeline(props: {
   const defaultOpen = (part: PartType) => {
     if (part.type !== "tool") return
     const tool = normalizeTool(part.tool)
+    if (tool === "todowrite") return true
     if (tool === "bash") return settings.general.shellToolPartsExpanded()
     if (["edit", "write", "apply_patch"].includes(tool)) return settings.general.editToolPartsExpanded()
   }
