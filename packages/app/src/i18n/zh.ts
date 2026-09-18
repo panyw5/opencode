@@ -521,6 +521,7 @@ export const dict = {
   "prompt.at.badge.consult": "参谋",
   "prompt.context.active": "当前",
   "prompt.context.includeActiveFile": "包含当前文件",
+  "session.fileTab.mentionInSession": "在会话中@此文件",
   "prompt.context.removeActiveFile": "从上下文移除活动文件",
   "prompt.context.removeFile": "从上下文移除文件",
   "prompt.action.attachFile": "附加文件",

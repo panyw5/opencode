@@ -510,6 +510,7 @@ export const dict = {
   "prompt.at.badge.consult": "consult",
   "prompt.context.active": "active",
   "prompt.context.includeActiveFile": "Include active file",
+  "session.fileTab.mentionInSession": "Mention this file in session",
   "prompt.context.removeActiveFile": "Remove active file from context",
   "prompt.context.removeFile": "Remove file from context",
   "prompt.action.attachFile": "Add files",
