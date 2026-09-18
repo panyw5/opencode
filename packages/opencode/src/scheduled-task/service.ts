@@ -162,14 +162,16 @@ export const layer = Layer.effect(
               if (task.executionMode === "automatic_session" && !sessionID && task.sessionID) {
                 const current = yield* sessions.get(task.sessionID).pipe(Effect.catch(() => Effect.succeed(undefined)))
                 const runs = yield* ScheduledTaskRepository.countRunsBySession(task.id, task.sessionID)
-                const rotation = ScheduledTaskRotation.evaluate({ runs, tokens: current?.tokens })
+                const contextTokens = current ? yield* ScheduledTaskRepository.latestContextTokens(task.sessionID) : 0
+                const rotation = ScheduledTaskRotation.evaluate({ runs, tokens: contextTokens })
                 log.info("scheduled task automatic rotation evaluated", {
                   taskID: task.id,
                   runID: run.id,
                   sessionID: task.sessionID,
                   sessionFound: current !== undefined,
                   runs: rotation.runs,
-                  tokens: rotation.tokens,
+                  contextTokens: rotation.tokens,
+                  cumulativeTokens: ScheduledTaskRotation.cumulativeTokenCount(current?.tokens),
                   maxRuns: ScheduledTaskRotation.MAX_RUNS_PER_SESSION,
                   maxTokens: ScheduledTaskRotation.MAX_TOKENS_PER_SESSION,
                   rotate: rotation.rotate,

@@ -10,6 +10,6 @@ Provide (at least one) changed data: name/schedule/prompt/executionMode/model/en
 
 Behavior:
 - Passing `schedule` or `enabled` (even unchanged) recomputes the next run time; `enabled: false` clears it (task stays dormant until re-enabled)
-- `executionMode === "automatic_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists); reuses one session until 30 runs or 1000000 accumulated tokens, then rotates and references the previous session
+- `executionMode === "automatic_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists); reuses one session until 30 runs or the current context reaches 1000000 tokens, then rotates and references the previous session
 - `executionMode === "existing_session"`: keeps the existing session binding (or binds a fresh session on the next run if none exists) and never rotates
 - `executionMode === "new_session"`: clears the binding and creates unrelated sessions on every future run

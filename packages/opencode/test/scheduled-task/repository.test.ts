@@ -9,8 +9,8 @@ import { ScheduledTaskRepository } from "@/scheduled-task/repository"
 import { ScheduledTaskRunTable, ScheduledTaskTable } from "@/scheduled-task/scheduled-task.sql"
 import { WorkspaceTable } from "@/control-plane/workspace.sql"
 import { WorkspaceID } from "@/control-plane/schema"
-import { SessionID } from "@/session/schema"
-import { SessionTable } from "@/session/session.sql"
+import { MessageID, SessionID } from "@/session/schema"
+import { MessageTable, SessionTable } from "@/session/session.sql"
 import { Identifier } from "@/id/id"
 
 const now = 1_700_000_000_000
@@ -82,6 +82,51 @@ beforeEach(() => {
 })
 
 describe("ScheduledTaskRepository", () => {
+  test("reads current context tokens from the latest completed assistant message", async () => {
+    const projectID = project("context-tokens")
+    const sessionID = SessionID.make(Identifier.ascending("session"))
+    Database.use((db) => {
+      db.insert(SessionTable)
+        .values({
+          id: sessionID,
+          project_id: projectID,
+          slug: "context-tokens",
+          directory: "/tmp/context-tokens",
+          title: "Context tokens",
+          version: "test",
+          time_created: now,
+          time_updated: now,
+        })
+        .run()
+      db.insert(MessageTable)
+        .values([
+          {
+            id: MessageID.ascending(),
+            session_id: sessionID,
+            time_created: now,
+            time_updated: now,
+            data: {
+              role: "assistant",
+              tokens: { total: 84_312, input: 707, output: 762, reasoning: 27, cache: { read: 82_816, write: 0 } },
+            } as never,
+          },
+          {
+            id: MessageID.ascending(),
+            session_id: sessionID,
+            time_created: now + 1,
+            time_updated: now + 1,
+            data: {
+              role: "assistant",
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            } as never,
+          },
+        ])
+        .run()
+    })
+
+    expect(await Effect.runPromise(ScheduledTaskRepository.latestContextTokens(sessionID))).toBe(84_312)
+  })
+
   test("persists an optional location without changing the public task shape", async () => {
     const projectID = project("location")
     const locationID = LocationID.ascending()

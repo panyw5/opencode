@@ -2,6 +2,7 @@ import { Database, and, asc, desc, eq, gt, inArray, isNull, lt, or, sql } from "
 import { Effect, Schema } from "effect"
 import { ProjectID, type LocationID } from "@/project/schema"
 import type { SessionID } from "@/session/schema"
+import { MessageTable } from "@/session/session.sql"
 import { ScheduledTaskRunTable, ScheduledTaskTable } from "./scheduled-task.sql"
 import {
   CreateInput,
@@ -169,6 +170,38 @@ export function countRunsBySession(taskID: ScheduledTaskID, sessionID: SessionID
           .get()?.count ?? 0,
     ),
   )
+}
+
+export function latestContextTokens(sessionID: SessionID): Effect.Effect<number> {
+  return Effect.sync(() => {
+    const row = Database.use((db) =>
+      db
+        .select({ data: MessageTable.data })
+        .from(MessageTable)
+        .where(
+          and(
+            eq(MessageTable.session_id, sessionID),
+            sql`json_extract(${MessageTable.data}, '$.role') = 'assistant'`,
+            sql`case when coalesce(json_extract(${MessageTable.data}, '$.tokens.total'), 0) > 0
+              then json_extract(${MessageTable.data}, '$.tokens.total')
+              else
+              coalesce(json_extract(${MessageTable.data}, '$.tokens.input'), 0) +
+              coalesce(json_extract(${MessageTable.data}, '$.tokens.output'), 0) +
+              coalesce(json_extract(${MessageTable.data}, '$.tokens.reasoning'), 0) +
+              coalesce(json_extract(${MessageTable.data}, '$.tokens.cache.read'), 0) +
+              coalesce(json_extract(${MessageTable.data}, '$.tokens.cache.write'), 0)
+            end > 0`,
+          ),
+        )
+        .orderBy(desc(MessageTable.time_created), desc(MessageTable.id))
+        .get(),
+    )
+    if (!row || row.data.role !== "assistant") return 0
+    const tokens = row.data.tokens
+    return tokens.total && tokens.total > 0
+      ? tokens.total
+      : tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
+  })
 }
 
 export function due(now = Date.now()): Effect.Effect<Info[]> {

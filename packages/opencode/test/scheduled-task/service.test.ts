@@ -13,8 +13,8 @@ import { ScheduledTask } from "@/scheduled-task/service"
 import { ScheduledTaskRunTable, ScheduledTaskTable } from "@/scheduled-task/scheduled-task.sql"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
-import { SessionTable } from "@/session/session.sql"
-import { SessionID } from "@/session/schema"
+import { MessageTable, SessionTable } from "@/session/session.sql"
+import { MessageID, SessionID } from "@/session/schema"
 import { SessionStatus } from "@/session/status"
 import { InstanceRef } from "@/effect/instance-ref"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
@@ -150,8 +150,30 @@ describe("ScheduledTask automatic sessions", () => {
             directory,
             title: "Scheduled source",
             version: "test",
+            tokens_input: 112_728,
+            tokens_output: 11_735,
+            tokens_reasoning: 4_360,
+            tokens_cache_read: 4_000_640,
             time_created: now,
             time_updated: now,
+          })
+          .run()
+        db.insert(MessageTable)
+          .values({
+            id: MessageID.ascending(),
+            session_id: sourceSessionID,
+            time_created: now,
+            time_updated: now,
+            data: {
+              role: "assistant",
+              tokens: {
+                total: 84_312,
+                input: 707,
+                output: 762,
+                reasoning: 27,
+                cache: { read: 82_816, write: 0 },
+              },
+            } as never,
           })
           .run()
       })
@@ -269,9 +291,23 @@ describe("ScheduledTask automatic sessions", () => {
         yield* Effect.sync(() =>
           Database.use((db) =>
             db
-              .update(SessionTable)
-              .set({ tokens_input: 1_000_000 })
-              .where(eq(SessionTable.id, sourceSessionID))
+              .insert(MessageTable)
+              .values({
+                id: MessageID.ascending(),
+                session_id: sourceSessionID,
+                time_created: Date.now(),
+                time_updated: Date.now(),
+                data: {
+                  role: "assistant",
+                  tokens: {
+                    total: 1_000_000,
+                    input: 100_000,
+                    output: 0,
+                    reasoning: 0,
+                    cache: { read: 900_000, write: 0 },
+                  },
+                } as never,
+              })
               .run(),
           ),
         )

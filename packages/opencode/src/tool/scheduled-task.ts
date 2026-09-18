@@ -59,7 +59,7 @@ export const Parameters = Schema.Struct({
   schedule: Schedule,
   executionMode: Schema.optional(Schema.Literals(["automatic_session", "existing_session", "new_session"])).annotate({
     description:
-      "automatic_session reuses one session until 30 runs or 1000000 tokens, then rotates and references the previous session (default); existing_session never rotates; new_session creates unrelated sessions",
+      "automatic_session reuses one session until 30 runs or the current context reaches 1000000 tokens, then rotates and references the previous session (default); existing_session never rotates; new_session creates unrelated sessions",
   }),
   enabled: Schema.optional(Schema.Boolean).annotate({
     description: "Whether the task should start enabled. Defaults to true.",
@@ -228,7 +228,7 @@ const UpdateParameters = Schema.Struct({
   schedule: Schema.optional(Schedule),
   executionMode: Schema.optional(Schema.Literals(["automatic_session", "existing_session", "new_session"])).annotate({
     description:
-      "automatic_session reuses one session until 30 runs or 1000000 tokens, then rotates and references the previous session (default); existing_session never rotates; new_session creates unrelated sessions",
+      "automatic_session reuses one session until 30 runs or the current context reaches 1000000 tokens, then rotates and references the previous session (default); existing_session never rotates; new_session creates unrelated sessions",
   }),
   model: Schema.optional(Model).annotate({
     description: "New model and optional reasoning or thinking intensity used when the task runs",
