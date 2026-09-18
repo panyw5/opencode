@@ -71,6 +71,7 @@ export const SidebarContent = (props: {
   stashedEntries: Accessor<StashedRailEntry[]>
   stashLabel: Accessor<string>
   onRestoreEntry: (entry: StashedRailEntry) => void
+  onRemoveEntry: (entry: StashedRailEntry) => void
   renderPanel: () => JSX.Element
 }): JSX.Element => {
   const expanded = createMemo(() => !!props.mobile || props.opened())
@@ -120,8 +121,7 @@ export const SidebarContent = (props: {
     }, 200)
   }
 
-  // Minimized panels menu state. A single stashed panel does not need a menu —
-  // the rail tooltip already names it and a click reopens it directly.
+  // The stash menu is the stable home for minimized entries, even when there is one.
   const [stashMenuOpen, setStashMenuOpen] = createSignal(false)
   let stashCloseTimer: number | undefined
 
@@ -195,7 +195,7 @@ export const SidebarContent = (props: {
           </RailTooltip>
           <Show when={props.stashedEntries().length > 0}>
             <Popover
-              open={props.stashedEntries().length > 1 && stashMenuOpen()}
+              open={stashMenuOpen()}
               onOpenChange={setStashMenuOpen}
               placement={placement()}
               trigger={
@@ -224,18 +224,31 @@ export const SidebarContent = (props: {
               >
                 <For each={props.stashedEntries()}>
                   {(entry) => (
-                    <button
-                      type="button"
-                      class="flex items-center gap-2 px-3 py-2 rounded-md text-text-base hover:bg-surface-base-hover transition-colors"
+                    <div
+                      class="flex items-center gap-1 rounded-md transition-colors hover:bg-surface-base-hover"
                       data-stashed-entry={entry.id}
-                      onClick={() => {
-                        props.onRestoreEntry(entry)
-                        setStashMenuOpen(false)
-                      }}
                     >
-                      <Icon name={entry.icon} class="size-5 shrink-0" />
-                      <span class="min-w-0 flex-1 truncate text-left text-14-regular">{entry.label}</span>
-                    </button>
+                      <button
+                        type="button"
+                        class="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-text-base"
+                        onClick={() => props.onRestoreEntry(entry)}
+                      >
+                        <Icon name={entry.icon} class="size-5 shrink-0" />
+                        <span class="min-w-0 flex-1 truncate text-left text-14-regular">{entry.label}</span>
+                      </button>
+                      <IconButton
+                        icon="close-small"
+                        variant="ghost"
+                        size="small"
+                        class="!mr-1 !size-5 !rounded-full border border-transparent text-icon-base transition-colors hover:!border-border-critical-base hover:!bg-surface-critical-weak hover:!text-text-critical-base active:!bg-surface-critical-base active:scale-[0.94]"
+                        aria-label={`${props.stashLabel()}: ${entry.label}`}
+                        data-action="panel-stash-remove"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          props.onRemoveEntry(entry)
+                        }}
+                      />
+                    </div>
                   )}
                 </For>
               </div>

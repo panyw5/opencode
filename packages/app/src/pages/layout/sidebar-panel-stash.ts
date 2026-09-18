@@ -32,7 +32,7 @@ export function stashRailEntry(list: StashedRailEntry[], entry: StashedRailEntry
   return [entry, ...list.filter((item) => item.id !== entry.id)]
 }
 
-/** Drop an entry by id — used when it is reopened, dismissed, or superseded. */
+/** Drop an entry by id — used when it is explicitly dismissed or superseded. */
 export function unstashRailEntry(list: StashedRailEntry[], id: string) {
   return list.filter((item) => item.id !== id)
 }

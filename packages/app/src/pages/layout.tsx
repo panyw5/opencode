@@ -2002,10 +2002,9 @@ export default function Layout(props: ParentProps) {
     setStash("items", (items) => unstashRailEntry(items, id))
   }
 
-  /** Rail click / menu pick: drop the entry, then let it reopen itself. */
+  /** Reopen a parked item without forgetting its restore record. */
   function restoreStashEntry(entry: StashedRailEntry) {
     console.debug(`[sidebar-panel] restore entry id=${entry.id}`)
-    removeStashEntry(entry.id)
     try {
       entry.restore()
     } catch (error) {
@@ -4532,6 +4531,7 @@ export default function Layout(props: ParentProps) {
       stashedEntries={() => stash.items}
       stashLabel={() => language.t("sidebar.panels.stashed")}
       onRestoreEntry={restoreStashEntry}
+      onRemoveEntry={(entry) => removeStashEntry(entry.id)}
       renderPanel={() =>
         scheduledPanelActive() && (!mobile || layout.mobileSidebar.opened()) ? (
           <ScheduledTasksPanel
