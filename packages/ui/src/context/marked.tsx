@@ -567,6 +567,44 @@ function mathPlaceholder(math: string, style: "display" | "inline") {
   return `<${tag} data-opencode-math-style="${style}" data-opencode-math-tex="${escapeMathHtml(math)}"></${tag}>`
 }
 
+function protectDisplayMath(markdown: string, display: RegExp, empty: string): string {
+  let out = ""
+  let from = 0
+  let match: RegExpExecArray | null
+
+  while ((match = display.exec(markdown))) {
+    const math = match[1] ?? ""
+    const clean = math.trim()
+    if (!clean) {
+      out += markdown.slice(from, match.index) + empty
+      from = match.index + match[0].length
+      continue
+    }
+
+    const lineStart = markdown.lastIndexOf("\n", match.index - 1) + 1
+    const linePrefix = markdown.slice(lineStart, match.index)
+    const indented = /^[ \t]+$/.test(linePrefix)
+    const placeholder = mathPlaceholder(clean, "display")
+
+    if (indented) {
+      // Keep list and blockquote indentation on the placeholder. Removing it
+      // makes the following indented prose become an unrelated code block.
+      out += markdown.slice(from, lineStart)
+      out += `${linePrefix}${placeholder}`
+      console.debug(`[markdown] protect display math indent=${linePrefix.length} tex=${clean.length}`)
+    } else {
+      out += markdown.slice(from, match.index)
+      out += `\n\n${placeholder}\n\n`
+      console.debug(`[markdown] protect display math indent=0 tex=${clean.length}`)
+    }
+
+    from = match.index + match[0].length
+  }
+
+  if (from === 0) return markdown
+  return out + markdown.slice(from)
+}
+
 export function protectMathExpressions(markdown: string): string {
   const block = /(```[\s\S]*?```|~~~[\s\S]*?~~~)/g
   const parts = markdown.split(block)
@@ -574,16 +612,9 @@ export function protectMathExpressions(markdown: string): string {
   return parts
     .map((part, i) => {
       if (i % 2 === 1) return part
-      const displayProtected = part
-        .replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
-          const clean = math.trim()
-          return clean ? `\n\n${mathPlaceholder(clean, "display")}\n\n` : "$$$$"
-        })
-        .replace(/\\\[([\s\S]*?)\\\]/g, (_, math) => {
-          const clean = math.trim()
-          return clean ? `\n\n${mathPlaceholder(clean, "display")}\n\n` : "\\[\\]"
-        })
-      return protectInlineMath(displayProtected)
+      const displayProtected = protectDisplayMath(part, /\$\$([\s\S]*?)\$\$/g, "$$$$")
+      const bracketProtected = protectDisplayMath(displayProtected, /\\\[([\s\S]*?)\\\]/g, "\\[\\]")
+      return protectInlineMath(bracketProtected)
     })
     .join("")
 }

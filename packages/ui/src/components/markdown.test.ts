@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Marked } from "marked"
+import { parseMarkdown as parseNativeMarkdown } from "../../../desktop/src/main/markdown"
 import {
   fileLink,
   findFileLinks,
@@ -332,6 +333,24 @@ $$
     expect(texes).toEqual(["x<y", "a>0", "i<n"])
     expect(html).not.toContain("$x<y$")
     expect(html).not.toContain("$a>0$")
+  })
+
+  test("does not expose inline math placeholders in indented list items", async () => {
+    const markdown = `10. 可取
+    $$
+    v(z)=\\operatorname{Arg}z+C,\\qquad \\operatorname{Arg}z\\in(-\\pi,\\pi).
+    $$
+
+    在穿孔平面中沿单位圆绕原点一周时，$v$ 必须增加 $2\\pi$。`
+
+    const protectedMarkdown = prepareMarkdown(markdown)
+    const localHtml = await new Marked().parse(protectedMarkdown)
+    const nativeHtml = await parseNativeMarkdown(protectedMarkdown)
+
+    expect(localHtml).not.toContain("<pre>")
+    expect(nativeHtml).not.toContain("<pre>")
+    expect(localHtml).not.toContain("&lt;span data-opencode-math-style")
+    expect(nativeHtml).not.toContain("&lt;span data-opencode-math-style")
   })
 
   test("escapes pipes in protected math so GFM tables keep cell boundaries", async () => {
