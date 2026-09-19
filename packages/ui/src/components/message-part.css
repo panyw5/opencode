@@ -1457,10 +1457,8 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
     }
 
     &[data-change="modified"] {
-      border-left-color: var(--text-strong);
-
       [data-slot="message-part-todo-content"] {
-        color: var(--text-strong);
+        color: var(--markdown-code);
         font-weight: 500;
       }
     }
