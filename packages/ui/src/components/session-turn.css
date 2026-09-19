@@ -154,6 +154,10 @@
     min-width: 0;
   }
 
+  [data-component="session-turn-diffs-group"] {
+    margin-top: 8px;
+  }
+
   [data-slot="session-turn-diffs-header"] {
     display: flex;
     align-items: center;
@@ -242,7 +246,7 @@
 
     &:hover,
     &:focus-visible {
-      background: var(--surface-interactive-base);
+      background: var(--surface-interactive-weak-hover);
     }
 
     &:focus-visible {
@@ -314,7 +318,7 @@
     &:hover,
     &:focus-visible {
       color: var(--text-strong);
-      background: var(--surface-interactive-base);
+      background: var(--surface-interactive-weak-hover);
     }
   }
 }
