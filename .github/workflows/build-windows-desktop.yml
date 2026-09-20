@@ -65,6 +65,26 @@ jobs:
           }
           Rename-Item -Path $installer.FullName -NewName "OpenCode_${version}_x64-setup.exe" -Force
           ./../../script/sign-windows.ps1 "dist/OpenCode_${version}_x64-setup.exe"
+
+          $signedInstaller = "dist/OpenCode_${version}_x64-setup.exe"
+          $hashHex = (Get-FileHash -LiteralPath $signedInstaller -Algorithm SHA512).Hash
+          $hashBytes = New-Object byte[] ($hashHex.Length / 2)
+          for ($i = 0; $i -lt $hashHex.Length; $i += 2) {
+            $hashBytes[$i / 2] = [Convert]::ToByte($hashHex.Substring($i, 2), 16)
+          }
+          $sha512 = [Convert]::ToBase64String($hashBytes)
+          $size = (Get-Item -LiteralPath $signedInstaller).Length
+          $releaseDate = (Get-Date).ToUniversalTime().ToString("o")
+          @"
+          version: $version
+          files:
+            - url: OpenCode_${version}_x64-setup.exe
+              sha512: $sha512
+              size: $size
+          path: OpenCode_${version}_x64-setup.exe
+          sha512: $sha512
+          releaseDate: '$releaseDate'
+          "@ | Set-Content -LiteralPath "dist/latest.yml" -Encoding utf8
         shell: pwsh
 
       - name: Smoke test installed desktop app
@@ -195,4 +215,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: opencode-desktop-windows-x64
-          path: packages/desktop/dist/OpenCode_*_x64-setup.exe
+          path: |
+            packages/desktop/dist/OpenCode_*_x64-setup.exe
+            packages/desktop/dist/latest.yml

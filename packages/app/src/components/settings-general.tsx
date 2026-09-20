@@ -189,6 +189,14 @@ export const SettingsGeneral: Component = () => {
     void platform
       .checkUpdate()
       .then((result) => {
+        if (result.failed) {
+          showToast({
+            title: language.t("common.requestFailed"),
+            description: result.error ?? language.t("common.requestFailed"),
+          })
+          return
+        }
+
         if (!result.updateAvailable) {
           showToast({
             variant: "success",

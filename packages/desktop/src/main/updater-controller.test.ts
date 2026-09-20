@@ -84,6 +84,34 @@ describe("createUpdaterController", () => {
       expect(states.map((s) => s.status)).toEqual(["idle", "checking", "up-to-date"])
     })
 
+    test("transitions to error when the backend returns no result", async () => {
+      const ctrl = createUpdaterController({
+        enabled: true,
+        currentVersion: "1.0.0",
+        backend: createMockBackend(),
+        persistence: createMockPersistence(),
+        stop: async () => {},
+      })
+
+      const result = await ctrl.check()
+      expect(result).toEqual({ status: "error", message: "Updater returned no check result" })
+    })
+
+    test("transitions to error when an available update has no version", async () => {
+      const ctrl = createUpdaterController({
+        enabled: true,
+        currentVersion: "1.0.0",
+        backend: createMockBackend({
+          checkForUpdates: async () => ({ isUpdateAvailable: true }),
+        }),
+        persistence: createMockPersistence(),
+        stop: async () => {},
+      })
+
+      const result = await ctrl.check()
+      expect(result).toEqual({ status: "error", message: "Updater reported an update without a version" })
+    })
+
     test("transitions through downloading to ready when update is available", async () => {
       const downloadCalls: string[] = []
       const ctrl = createUpdaterController({
@@ -367,7 +395,7 @@ describe("createUpdaterController", () => {
       })
       await ctrl.check()
       expect(logs.length).toBeGreaterThan(0)
-      expect(logs[0].message).toBe("updater state changed")
+      expect(logs[0].message).toBe("updater state changed from=idle to=checking")
     })
   })
 })

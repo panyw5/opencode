@@ -390,7 +390,7 @@ export type ElectronAPI = {
   runDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>
   loadingWindowComplete: () => void
   runUpdater: (alertOnFail: boolean) => Promise<void>
-  checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
+  checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string; failed?: boolean; error?: string }>
   installUpdate: () => Promise<void>
   getUpdaterState: () => Promise<UpdaterState>
   onUpdaterStateChanged: (cb: (state: UpdaterState) => void) => () => void

@@ -49,17 +49,21 @@ export function getUpdaterController(): UpdaterController | undefined {
   return controller
 }
 
-type UpdateCheckResult = { updateAvailable: boolean; version?: string; failed?: boolean }
+type UpdateCheckResult = { updateAvailable: boolean; version?: string; failed?: boolean; error?: string }
 
 /**
  * Legacy checkUpdate — delegates to controller.check() and maps the stateful
  * result back to the original { updateAvailable, version, failed } shape.
  */
 export async function checkUpdate(): Promise<UpdateCheckResult> {
-  if (!controller) return { updateAvailable: false }
+  if (!controller) {
+    getLogger().log("updater check skipped reason=controller-not-initialized")
+    return { updateAvailable: false, failed: true, error: "Updater controller is not initialized" }
+  }
   const state = await controller.check()
+  getLogger().log(`updater legacy check result status=${state.status}`)
   if (state.status === "ready") return { updateAvailable: true, version: state.version }
-  if (state.status === "error") return { updateAvailable: false, failed: true }
+  if (state.status === "error") return { updateAvailable: false, failed: true, error: state.message }
   return { updateAvailable: false }
 }
 
@@ -82,12 +86,17 @@ export async function installUpdate(_killSidecar: () => Promise<void>) {
  * Legacy checkForUpdates — delegates to showUpdaterDialog.
  */
 export async function checkForUpdates(alertOnFail: boolean, _killSidecar: () => Promise<void>) {
-  if (!controller) return
+  if (!controller) {
+    getLogger().log("updater dialog skipped reason=controller-not-initialized")
+    return
+  }
+  getLogger().log(`updater dialog check started alertOnFail=${String(alertOnFail)}`)
   await showUpdaterDialog(controller, alertOnFail)
 }
 
 export async function showUpdaterDialog(ctrl: UpdaterController, alertOnFail: boolean) {
   const state = await ctrl.check()
+  getLogger().log(`updater dialog check result status=${state.status}`)
   if (state.status === "error") {
     if (!alertOnFail) return
     await dialog.showMessageBox({ type: "error", message: "Update check failed.", title: "Update Error" })

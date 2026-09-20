@@ -98,7 +98,7 @@ type Deps = {
   resolveAppPath: (appName: string) => Promise<string | null>
   loadingWindowComplete: () => void
   runUpdater: (alertOnFail: boolean) => Promise<void> | void
-  checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string }>
+  checkUpdate: () => Promise<{ updateAvailable: boolean; version?: string; failed?: boolean; error?: string }>
   installUpdate: () => Promise<void> | void
   getUpdaterState: () => Promise<UpdaterState>
   onUpdaterStateChanged: (listener: (state: UpdaterState) => void) => () => void

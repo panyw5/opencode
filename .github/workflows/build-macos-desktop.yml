@@ -145,6 +145,18 @@ jobs:
           name: opencode-desktop-macos-x64
           path: packages/desktop/dist/OpenCode_*_x64.dmg
 
+      - name: Prepare macOS x64 updater metadata
+        run: |
+          cp packages/desktop/dist/latest-mac.yml packages/desktop/dist/latest-mac-x64.yml
+
+      - name: Upload macOS x64 updater artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-desktop-macos-x64-updater
+          path: |
+            packages/desktop/dist/opencode-desktop-mac-x64.zip
+            packages/desktop/dist/latest-mac-x64.yml
+
       - name: Remove signing keychain
         if: always()
         run: |
@@ -283,6 +295,18 @@ jobs:
           name: opencode-desktop-macos-arm64
           path: packages/desktop/dist/OpenCode_*_aarch64.dmg
 
+      - name: Prepare macOS arm64 updater metadata
+        run: |
+          cp packages/desktop/dist/latest-mac.yml packages/desktop/dist/latest-mac-arm64.yml
+
+      - name: Upload macOS arm64 updater artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-desktop-macos-arm64-updater
+          path: |
+            packages/desktop/dist/opencode-desktop-mac-arm64.zip
+            packages/desktop/dist/latest-mac-arm64.yml
+
       - name: Remove signing keychain
         if: always()
         run: |
@@ -305,6 +329,13 @@ jobs:
         with:
           pattern: opencode-desktop-macos-*
           path: release-assets
+          merge-multiple: true
+
+      - name: Download macOS updater artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: opencode-desktop-macos-*-updater
+          path: release-assets/updater
           merge-multiple: true
 
       - name: Download matching Windows artifact
@@ -340,10 +371,34 @@ jobs:
           X64="release-assets/OpenCode_${VERSION}_x64.dmg"
           ARM64="release-assets/OpenCode_${VERSION}_aarch64.dmg"
           WINDOWS="release-assets/windows/OpenCode_${VERSION}_x64-setup.exe"
+          MAC_X64_ZIP="release-assets/updater/opencode-desktop-mac-x64.zip"
+          MAC_ARM64_ZIP="release-assets/updater/opencode-desktop-mac-arm64.zip"
+          MAC_X64_METADATA="release-assets/updater/latest-mac-x64.yml"
+          MAC_ARM64_METADATA="release-assets/updater/latest-mac-arm64.yml"
+          MAC_METADATA="release-assets/latest-mac.yml"
+          WINDOWS_METADATA="release-assets/windows/latest.yml"
           test -f "$X64"
           test -f "$ARM64"
           test -f "$WINDOWS"
-          printf 'release target=%s\nx64 asset=%s\narm64 asset=%s\nwindows asset=%s\n' "$GITHUB_SHA" "$X64" "$ARM64" "$WINDOWS"
-          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" "$X64" "$ARM64" "$WINDOWS"
+          test -f "$MAC_X64_ZIP"
+          test -f "$MAC_ARM64_ZIP"
+          test -f "$MAC_X64_METADATA"
+          test -f "$MAC_ARM64_METADATA"
+          test -f "$WINDOWS_METADATA"
+          ruby -ryaml -e '
+            x64 = YAML.load_file(ARGV[0])
+            arm64 = YAML.load_file(ARGV[1])
+            files = Array(x64["files"]) + Array(arm64["files"])
+            abort "macOS updater metadata has no files" if files.empty?
+            metadata = {
+              "version" => x64.fetch("version"),
+              "files" => files,
+              "releaseDate" => x64["releaseDate"] || arm64["releaseDate"],
+            }
+            File.write(ARGV[2], metadata.to_yaml)
+          ' "$MAC_X64_METADATA" "$MAC_ARM64_METADATA" "$MAC_METADATA"
+          printf 'release target=%s\nx64 asset=%s\narm64 asset=%s\nwindows asset=%s\nmac metadata=%s\nwindows metadata=%s\n' "$GITHUB_SHA" "$X64" "$ARM64" "$WINDOWS" "$MAC_METADATA" "$WINDOWS_METADATA"
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" \
+            "$X64" "$ARM64" "$WINDOWS" "$MAC_X64_ZIP" "$MAC_ARM64_ZIP" "$MAC_METADATA" "$WINDOWS_METADATA"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
