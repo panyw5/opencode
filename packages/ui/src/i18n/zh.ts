@@ -32,6 +32,8 @@ export const dict = {
   "ui.fileMedia.binary.description.default": "无法显示此文件，因为它是二进制文件。",
   "ui.file.preview": "预览",
   "ui.file.source": "源码",
+  "ui.file.table.empty": "没有可显示的行。",
+  "ui.file.table.limited": "为保证性能，预览内容已截断；切换到源码可查看完整文件。",
   "ui.file.copyContent": "复制全部内容",
   "ui.file.copyPath": "复制文件地址",
   "ui.file.openFolder": "打开所在文件夹",
