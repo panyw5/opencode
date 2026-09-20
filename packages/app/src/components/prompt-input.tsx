@@ -1321,7 +1321,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       shape.setAttribute("stroke-linejoin", "round")
       icon.append(shape)
       const label = document.createElement("span")
-      label.textContent = "IM"
+      label.textContent = part.channelName
+        ? `${part.channelName}${part.botName ? ` · ${part.botName}` : ""}`
+        : "IM"
       pill.append(icon, label)
     } else {
       pill.textContent = part.content
