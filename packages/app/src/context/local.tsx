@@ -7,6 +7,7 @@ import { useModels } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
 import { modelEnabled, modelProbe } from "@/testing/model-selection"
 import { Persist, persisted } from "@/utils/persist"
+import { createSessionModelRestoreQueue } from "@/pages/session/session-model-helpers"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { internalAgent, primaryAgents, selectableAgents } from "./agent-selection"
 import { useSDK } from "./sdk"
@@ -23,12 +24,23 @@ type State = {
   variant?: string | null
 }
 
+type RestoreMessage = {
+  sessionID: string
+  agent: string
+  model: ModelKey & { variant?: string }
+}
+
 type Saved = {
   session: Record<string, State | undefined>
 }
 
 const WORKSPACE_KEY = "__workspace__"
 const handoff = new Map<string, State>()
+
+function modelDebug(event: string, details: Record<string, unknown>) {
+  if (!import.meta.env.DEV) return
+  console.debug(`[local:model] ${event}`, details)
+}
 
 const handoffKey = (dir: string, id: string) => `${dir}\n${id}`
 
@@ -73,7 +85,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const list = createMemo(() => selectableAgents(sync.data.agent))
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
-    const [saved, setSaved] = persisted(
+    const [saved, setSaved, , savedReady] = persisted(
       {
         ...Persist.workspace(sdk.directory, "model-selection", ["model-selection.v1"], pathContext),
         migrate,
@@ -82,6 +94,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         session: {},
       }),
     )
+
+    createEffect(() => {
+      if (!savedReady()) return
+      modelDebug("persistence-ready", { directory: sdk.directory, sessionID: id() ?? "none" })
+    })
 
     const [store, setStore] = createStore<{
       current?: string
@@ -163,11 +180,22 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
         // If switching from one session to another
         if (prevSession && session && prevSession !== session) {
+          modelDebug("session-switch", {
+            fromSessionID: prevSession,
+            toSessionID: session,
+            fromSaved: saved.session[prevSession] !== undefined,
+            toSaved: saved.session[session] !== undefined,
+            handoff: handoff.has(handoffKey(sdk.directory, session)),
+          })
           // If the new session doesn't have saved state, inherit from previous session
           if (saved.session[session] === undefined && !handoff.has(handoffKey(sdk.directory, session))) {
             const prevState = saved.session[prevSession]
             if (prevState) {
-              console.log(`[local] Preserving model selection from session ${prevSession} to ${session}`)
+              modelDebug("session-inherit-applied", {
+                fromSessionID: prevSession,
+                toSessionID: session,
+                model: prevState.model ? `${prevState.model.providerID}/${prevState.model.modelID}` : "none",
+              })
               setSaved("session", session, clone(prevState))
             }
           }
@@ -314,6 +342,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       const session = id()
       if (session) {
+        modelDebug("manual-write", {
+          sessionID: session,
+          model: state.model ? `${state.model.providerID}/${state.model.modelID}` : "none",
+          ready: savedReady(),
+        })
         setSaved("session", session, state)
         return
       }
@@ -405,6 +438,48 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
+    // Do not let message history write over a session selection before async desktop storage is loaded.
+    const applyRestore = (msg: RestoreMessage) => {
+      const session = id()
+      if (!session) {
+        modelDebug("restore-skipped", { reason: "no-session", messageSessionID: msg.sessionID })
+        return
+      }
+      if (msg.sessionID !== session) {
+        modelDebug("restore-skipped", {
+          reason: "session-mismatch",
+          sessionID: session,
+          messageSessionID: msg.sessionID,
+        })
+        return
+      }
+      if (saved.session[session] !== undefined) {
+        modelDebug("restore-skipped", { reason: "saved-state-exists", sessionID: session })
+        return
+      }
+      if (handoff.has(handoffKey(sdk.directory, session))) {
+        modelDebug("restore-skipped", { reason: "handoff-exists", sessionID: session })
+        return
+      }
+
+      modelDebug("restore-applied", {
+        sessionID: session,
+        agent: msg.agent,
+        model: `${msg.model.providerID}/${msg.model.modelID}`,
+      })
+      setSaved("session", session, {
+        agent: msg.agent,
+        model: msg.model,
+        variant: msg.model.variant ?? null,
+      })
+    }
+
+    const requestRestore = createSessionModelRestoreQueue({
+      ready: savedReady,
+      wait: savedReady.promise,
+      restore: applyRestore,
+    })
+
     const result = {
       slug: createMemo(() => base64Encode(sdk.directory)),
       model,
@@ -427,17 +502,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setStore("draft", undefined)
         },
         restore(msg: { sessionID: string; agent: string; model: ModelKey; variant?: string }) {
-          const session = id()
-          if (!session) return
-          if (msg.sessionID !== session) return
-          if (saved.session[session] !== undefined) return
-          if (handoff.has(handoffKey(sdk.directory, session))) return
-
-          setSaved("session", session, {
-            agent: msg.agent,
-            model: msg.model,
-            variant: msg.variant ?? null,
+          modelDebug("restore-requested", {
+            sessionID: msg.sessionID,
+            model: `${msg.model.providerID}/${msg.model.modelID}`,
+            ready: savedReady(),
           })
+          requestRestore(msg)
         },
       },
     }
