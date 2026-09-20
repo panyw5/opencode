@@ -76,6 +76,7 @@ export const dict = {
   "scheduled.parameters": "计划任务参数",
   "scheduled.schedule": "执行计划",
   "scheduled.schedule.at": "单次执行",
+  "scheduled.schedule.at.time": "执行时间",
   "scheduled.schedule.every": "固定间隔",
   "scheduled.schedule.every.interval": "每 {{count}} min",
   "scheduled.schedule.cron": "Cron 表达式",

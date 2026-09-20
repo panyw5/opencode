@@ -36,6 +36,7 @@ import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useSessionTabs } from "@/context/session-tabs"
+import { formatDateTimeLocal, parseDateTimeLocal } from "@/utils/time"
 import {
   sameScheduledTaskPanelScope,
   scheduledTaskEventMatchesScope,
@@ -222,7 +223,9 @@ export function ScheduledTaskFormDialog(props: {
     scheduleKind: restored?.scheduleKind ?? task?.schedule.kind ?? ("every" as ScheduleKind),
     at:
       restored?.at ??
-      (task?.schedule.kind === "at" ? new Date(task.schedule.at).toISOString().slice(0, 16) : ""),
+      (task?.schedule.kind === "at"
+        ? formatDateTimeLocal(task.schedule.at, task.schedule.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
+        : ""),
     intervalMinutes:
       restored?.intervalMinutes ??
       (task?.schedule.kind === "every" ? String(task.schedule.interval / 60_000) : "60"),
@@ -231,7 +234,9 @@ export function ScheduledTaskFormDialog(props: {
       restored?.timezone ??
       (task?.schedule.kind === "cron"
         ? (task.schedule.timezone ?? "")
-        : Intl.DateTimeFormat().resolvedOptions().timeZone),
+        : task?.schedule.kind === "at"
+          ? (task.schedule.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
+          : Intl.DateTimeFormat().resolvedOptions().timeZone),
     unattended: restored?.unattended ?? !!task,
     enabled: restored?.enabled ?? task?.enabled ?? true,
     runs: [] as ScheduledTaskRun[],
@@ -457,8 +462,9 @@ export function ScheduledTaskFormDialog(props: {
 
   function schedule(): ScheduledTaskSchedule | undefined {
     if (state.scheduleKind === "at") {
-      const at = new Date(state.at).getTime()
-      return Number.isFinite(at) ? { kind: "at", at } : undefined
+      const timezone = state.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+      const at = parseDateTimeLocal(state.at, timezone)
+      return Number.isFinite(at) ? { kind: "at", at, timezone } : undefined
     }
     if (state.scheduleKind === "every") {
       const interval = Number(state.intervalMinutes) * 60_000
@@ -708,16 +714,31 @@ export function ScheduledTaskFormDialog(props: {
                     options={["at", "every", "cron"] as const}
                     current={state.scheduleKind}
                     label={(item) => language.t(`scheduled.schedule.${item}`)}
-                    onSelect={(item) => item && setState("scheduleKind", item)}
+                    onSelect={(item) => {
+                      if (!item) return
+                      setState({
+                        scheduleKind: item,
+                        ...(item === "at" && !state.timezone
+                          ? { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
+                          : {}),
+                      })
+                    }}
                     class="max-w-full"
                   />
                 </FieldLabel>
                 <Show when={state.scheduleKind === "at"}>
-                  <TextField
-                    type="datetime-local"
-                    label={language.t("scheduled.schedule.at")}
-                    value={state.at}
-                    onChange={(value) => setState("at", value)}
+                  <FieldLabel label={language.t("scheduled.schedule.at.time")}>
+                    <TextField
+                      type="datetime-local"
+                      value={state.at}
+                      onChange={(value) => setState("at", value)}
+                      class="!w-fit max-w-full"
+                    />
+                  </FieldLabel>
+                  <TimezoneSelectField
+                    label={language.t("scheduled.timezone")}
+                    value={state.timezone}
+                    onChange={(value) => setState("timezone", value)}
                   />
                 </Show>
                 <Show when={state.scheduleKind === "every"}>

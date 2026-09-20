@@ -1,12 +1,14 @@
 import { Select } from "@opencode-ai/ui/select"
 import { createMemo, type JSX } from "solid-js"
-import { timeZoneGroup, timeZoneOptions } from "@/utils/timezones"
+import { useLanguage } from "@/context/language"
+import { timeZoneGroup, timeZoneLabel, timeZoneOptions } from "@/utils/timezones"
 
 export function TimezoneSelectField(props: {
   label: string
   value: string
   onChange: (value: string) => void
 }): JSX.Element {
+  const language = useLanguage()
   const options = createMemo(() => timeZoneOptions(props.value))
   const current = createMemo(() => {
     const value = props.value
@@ -20,6 +22,7 @@ export function TimezoneSelectField(props: {
         <Select
           options={options()}
           current={current()}
+          label={(zone) => timeZoneLabel(zone, language.intl())}
           groupBy={timeZoneGroup}
           onSelect={(item) => item && props.onChange(item)}
           class="max-w-full"

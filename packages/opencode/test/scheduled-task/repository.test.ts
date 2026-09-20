@@ -35,7 +35,7 @@ function project(name: string) {
 
 function create(
   projectID: ProjectID,
-  input?: { at?: number; enabled?: boolean; directory?: string; locationID?: LocationID },
+  input?: { at?: number; timezone?: string; enabled?: boolean; directory?: string; locationID?: LocationID },
 ) {
   return Effect.runPromise(
     ScheduledTaskRepository.create(
@@ -46,7 +46,7 @@ function create(
         directory: input?.directory ?? "/tmp/scheduled-project",
         name: "Nightly review",
         prompt: "Review the workspace",
-        schedule: { kind: "at", at: input?.at ?? now + 60_000 },
+        schedule: { kind: "at", at: input?.at ?? now + 60_000, timezone: input?.timezone },
         executionMode: "new_session",
         agent: "build",
         model: { providerID: "test", modelID: "test" },
@@ -82,6 +82,16 @@ beforeEach(() => {
 })
 
 describe("ScheduledTaskRepository", () => {
+  test("persists the timezone for one-time schedules", async () => {
+    const task = await create(project("one-time-timezone"), { timezone: "Asia/Shanghai" })
+
+    expect((await Effect.runPromise(ScheduledTaskRepository.get(task.id)))?.schedule).toEqual({
+      kind: "at",
+      at: now + 60_000,
+      timezone: "Asia/Shanghai",
+    })
+  })
+
   test("reads current context tokens from the latest completed assistant message", async () => {
     const projectID = project("context-tokens")
     const sessionID = SessionID.make(Identifier.ascending("session"))

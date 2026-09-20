@@ -24,6 +24,7 @@ export const Schedule = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("at"),
     at: NonNegativeInt,
+    timezone: optionalOmitUndefined(Schema.String),
   }),
   Schema.Struct({
     kind: Schema.Literal("every"),

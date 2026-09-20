@@ -1,3 +1,5 @@
+import { DateTime } from "luxon"
+
 type TimeKey =
   | "common.time.justNow"
   | "common.time.minutesAgo.short"
@@ -5,6 +7,29 @@ type TimeKey =
   | "common.time.daysAgo.short"
 
 type Translate = (key: TimeKey, params?: Record<string, string | number>) => string
+
+/** Format an epoch timestamp as the wall-clock value expected by datetime-local inputs. */
+export function formatDateTimeLocal(
+  value: number,
+  timezone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+): string {
+  if (!Number.isFinite(value)) return ""
+  const result = DateTime.fromMillis(value).setZone(timezone).toFormat("yyyy-MM-dd'T'HH:mm")
+  console.debug("[scheduled-time] formatted local datetime", { input: value, timezone, output: result })
+  return result
+}
+
+/** Parse a datetime-local wall-clock value in the selected timezone. */
+export function parseDateTimeLocal(value: string, timezone = Intl.DateTimeFormat().resolvedOptions().timeZone): number {
+  const parsed = DateTime.fromISO(value, { zone: timezone })
+  const result = parsed.isValid ? parsed.toMillis() : Number.NaN
+  console.debug("[scheduled-time] parsed local datetime", {
+    input: value,
+    timezone,
+    output: Number.isFinite(result) ? result : undefined,
+  })
+  return result
+}
 
 export function getRelativeTime(dateString: string, t: Translate): string {
   const date = new Date(dateString)

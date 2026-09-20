@@ -631,7 +631,11 @@ function runFromRow(row: RunRow): Run {
 
 function scheduleToRow(schedule: Schedule) {
   if (schedule.kind === "at") {
-    return { schedule_kind: schedule.kind, schedule_value: String(schedule.at), schedule_timezone: null }
+    return {
+      schedule_kind: schedule.kind,
+      schedule_value: String(schedule.at),
+      schedule_timezone: schedule.timezone ?? null,
+    }
   }
   if (schedule.kind === "every") {
     return { schedule_kind: schedule.kind, schedule_value: String(schedule.interval), schedule_timezone: null }
@@ -644,7 +648,9 @@ function scheduleToRow(schedule: Schedule) {
 }
 
 function scheduleFromRow(row: Pick<TaskRow, "schedule_kind" | "schedule_value" | "schedule_timezone">): Schedule {
-  if (row.schedule_kind === "at") return { kind: "at", at: Number(row.schedule_value) }
+  if (row.schedule_kind === "at") {
+    return { kind: "at", at: Number(row.schedule_value), timezone: row.schedule_timezone ?? undefined }
+  }
   if (row.schedule_kind === "every") return { kind: "every", interval: Number(row.schedule_value) }
   return {
     kind: "cron",

@@ -397,6 +397,7 @@ export type ScheduledTaskSchedule =
   | {
       kind: "at"
       at: number
+      timezone?: string
     }
   | {
       kind: "every"

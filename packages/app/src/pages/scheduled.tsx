@@ -29,6 +29,7 @@ import { TimezoneSelectField } from "@/components/timezone-select-field"
 import { MarkdownEditorField } from "@/components/markdown-editor-field"
 import { projectOwner, workspaceKey } from "@/pages/layout/helpers"
 import { filterActiveProjects, filterTasksForActiveProjects } from "@/pages/scheduled-utils"
+import { formatDateTimeLocal, parseDateTimeLocal } from "@/utils/time"
 
 type ScheduleKind = ScheduledTaskSchedule["kind"]
 type ExecutionMode = ScheduledTask["executionMode"]
@@ -296,13 +297,18 @@ export default function Scheduled() {
       executionMode: task?.executionMode ?? "automatic_session",
       sessionID: task?.sessionID ?? "",
       scheduleKind: task?.schedule.kind ?? "every",
-      at: task?.schedule.kind === "at" ? new Date(task.schedule.at).toISOString().slice(0, 16) : "",
+      at:
+        task?.schedule.kind === "at"
+          ? formatDateTimeLocal(task.schedule.at, task.schedule.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
+          : "",
       intervalMinutes: task?.schedule.kind === "every" ? String(task.schedule.interval / 60_000) : "60",
       cron: task?.schedule.kind === "cron" ? task.schedule.expression : "0 9 * * 1-5",
       timezone:
         task?.schedule.kind === "cron"
           ? (task.schedule.timezone ?? "")
-          : Intl.DateTimeFormat().resolvedOptions().timeZone,
+          : task?.schedule.kind === "at"
+            ? (task.schedule.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
+            : Intl.DateTimeFormat().resolvedOptions().timeZone,
       unattended: !!task,
       error: "",
     })
@@ -327,9 +333,10 @@ export default function Scheduled() {
 
   function schedule(): ScheduledTaskSchedule | undefined {
     if (state.scheduleKind === "at") {
-      const at = new Date(state.at).getTime()
+      const timezone = state.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+      const at = parseDateTimeLocal(state.at, timezone)
       if (!Number.isFinite(at)) return
-      return { kind: "at", at }
+      return { kind: "at", at, timezone }
     }
     if (state.scheduleKind === "every") {
       const interval = Number(state.intervalMinutes) * 60_000
@@ -672,16 +679,31 @@ export default function Scheduled() {
                           options={["at", "every", "cron"] as const}
                           current={state.scheduleKind}
                           label={(item) => language.t(`scheduled.schedule.${item}`)}
-                          onSelect={(item) => item && setState("scheduleKind", item)}
+                          onSelect={(item) => {
+                            if (!item) return
+                            setState({
+                              scheduleKind: item,
+                              ...(item === "at" && !state.timezone
+                                ? { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }
+                                : {}),
+                            })
+                          }}
                           class="max-w-full"
                         />
                       </FieldLabel>
                       <Show when={state.scheduleKind === "at"}>
-                        <TextField
-                          type="datetime-local"
-                          label={language.t("scheduled.schedule.at")}
-                          value={state.at}
-                          onChange={(value) => setState("at", value)}
+                        <FieldLabel label={language.t("scheduled.schedule.at.time")}>
+                          <TextField
+                            type="datetime-local"
+                            value={state.at}
+                            onChange={(value) => setState("at", value)}
+                            class="!w-fit max-w-full"
+                          />
+                        </FieldLabel>
+                        <TimezoneSelectField
+                          label={language.t("scheduled.timezone")}
+                          value={state.timezone}
+                          onChange={(value) => setState("timezone", value)}
                         />
                       </Show>
                       <Show when={state.scheduleKind === "every"}>

@@ -4,7 +4,10 @@ import { Schedule, InvalidScheduleError } from "./schema"
 const MAX_TIMEOUT = 2_147_483_647
 
 export function validate(schedule: Schedule): void {
-  if (schedule.kind === "at") return
+  if (schedule.kind === "at") {
+    validateTimezone(schedule.timezone)
+    return
+  }
   if (schedule.kind === "every") {
     if (!Number.isSafeInteger(schedule.interval) || schedule.interval <= 0) {
       throw new InvalidScheduleError({ message: "Interval must be a positive integer" })
@@ -58,6 +61,15 @@ function normalizeExpression(expression: string): string {
   const count = value.split(/\s+/).filter(Boolean).length
   if (count === 5) return `0 ${value}`
   return value
+}
+
+function validateTimezone(timezone?: string): void {
+  if (!timezone) return
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format()
+  } catch {
+    throw new InvalidScheduleError({ message: `Invalid timezone: ${timezone}` })
+  }
 }
 
 export * as ScheduledTaskSchedule from "./schedule"

@@ -24,5 +24,10 @@ describe("ScheduledTaskSchedule", () => {
     expect(() =>
       ScheduledTaskSchedule.validate({ kind: "cron", expression: "0 9 * * *", timezone: "Mars/Olympus" }),
     ).toThrow()
+    expect(() => ScheduledTaskSchedule.validate({ kind: "at", at: 1_000, timezone: "Mars/Olympus" })).toThrow()
+  })
+
+  test("accepts a valid timezone for one-time schedules", () => {
+    expect(() => ScheduledTaskSchedule.validate({ kind: "at", at: 1_000, timezone: "Asia/Shanghai" })).not.toThrow()
   })
 })

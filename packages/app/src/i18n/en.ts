@@ -93,6 +93,7 @@ export const dict = {
   "scheduled.parameters": "Scheduled task parameters",
   "scheduled.schedule": "Schedule",
   "scheduled.schedule.at": "One time",
+  "scheduled.schedule.at.time": "Execution time",
   "scheduled.schedule.every": "Fixed interval",
   "scheduled.schedule.every.interval": "Every {{count}} min",
   "scheduled.schedule.cron": "Cron expression",

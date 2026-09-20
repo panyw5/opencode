@@ -31,6 +31,9 @@ const Schedule = Schema.Union([
   Schema.Struct({
     kind: Schema.Literal("at"),
     at: NonNegativeInt.annotate({ description: "Unix timestamp in milliseconds for a one-time run" }),
+    timezone: Schema.optional(Text).annotate({
+      description: "Optional IANA timezone used to display and edit the one-time run time",
+    }),
   }),
   Schema.Struct({
     kind: Schema.Literal("every"),
