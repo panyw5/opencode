@@ -1,10 +1,14 @@
 import { Effect, Layer, Context, Schema } from "effect"
+import path from "path"
 import { Bus } from "@/bus"
 import { Snapshot } from "@/snapshot"
 import { Storage } from "@/storage/storage"
 import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionID, MessageID } from "./schema"
+import * as Log from "@opencode-ai/core/util/log"
+
+const log = Log.create({ service: "session.summary" })
 
 function unquoteGitPath(input: string) {
   if (!input.startsWith('"')) return input
@@ -65,10 +69,69 @@ function unquoteGitPath(input: string) {
 export interface Interface {
   readonly summarize: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<void>
   readonly diff: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Snapshot.FileDiff[]>
-  readonly computeDiff: (input: { messages: MessageV2.WithParts[] }) => Effect.Effect<Snapshot.FileDiff[]>
+  readonly computeDiff: (input: {
+    messages: MessageV2.WithParts[]
+    files?: ReadonlySet<string>
+  }) => Effect.Effect<Snapshot.FileDiff[]>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionSummary") {}
+
+function canonicalPath(file: string, root?: string) {
+  const value = unquoteGitPath(file).replaceAll("\\", "/")
+  return path.normalize(path.isAbsolute(value) ? value : path.resolve(root ?? ".", value))
+}
+
+function addOwnedFile(files: Set<string>, value: unknown, root: string) {
+  if (typeof value !== "string" || !value.trim()) return
+  files.add(canonicalPath(value, root))
+}
+
+export function filterSessionDiffs(diffs: Snapshot.FileDiff[], files: ReadonlySet<string>) {
+  return diffs.filter((item) => item.file && files.has(canonicalPath(item.file)))
+}
+
+/** Returns files explicitly reported as written by tools in these messages. */
+export function collectSessionEditedFiles(messages: MessageV2.WithParts[]) {
+  const files = new Set<string>()
+
+  for (const message of messages) {
+    if (message.info.role !== "assistant") continue
+    const root = message.info.path.root
+
+    for (const part of message.parts) {
+      if (part.type !== "tool" || part.state.status !== "completed") continue
+
+      const metadata = part.state.metadata
+      const input = part.state.input
+      const reported = metadata.files
+      if (Array.isArray(reported)) {
+        for (const item of reported) {
+          if (typeof item === "string") {
+            addOwnedFile(files, item, root)
+            continue
+          }
+          if (!item || typeof item !== "object") continue
+          const entry = item as Record<string, unknown>
+          addOwnedFile(files, entry.filePath, root)
+          addOwnedFile(files, entry.movePath, root)
+          addOwnedFile(files, entry.relativePath, root)
+        }
+      }
+      if (part.tool === "write" || part.tool === "edit") {
+        addOwnedFile(files, metadata.filepath ?? input.filePath, root)
+        continue
+      }
+
+      if (part.tool !== "apply_patch") continue
+      if (typeof metadata.filepath === "string") {
+        for (const value of metadata.filepath.split(",")) addOwnedFile(files, value, root)
+      }
+    }
+  }
+
+  return files
+}
 
 export const layer = Layer.effect(
   Service,
@@ -78,7 +141,12 @@ export const layer = Layer.effect(
     const storage = yield* Storage.Service
     const bus = yield* Bus.Service
 
-    const computeDiff = Effect.fn("SessionSummary.computeDiff")(function* (input: { messages: MessageV2.WithParts[] }) {
+    const computeDiff = Effect.fn("SessionSummary.computeDiff")(function* (input: {
+      messages: MessageV2.WithParts[]
+      files?: ReadonlySet<string>
+    }) {
+      if (input.files && input.files.size === 0) return []
+
       let from: string | undefined
       let to: string | undefined
       for (const item of input.messages) {
@@ -94,7 +162,19 @@ export const layer = Layer.effect(
           if (part.type === "step-finish" && part.snapshot) to = part.snapshot
         }
       }
-      if (from && to) return yield* snapshot.diffFull(from, to)
+      if (from && to) {
+        const diffs = yield* snapshot.diffFull(from, to)
+        if (!input.files) return diffs
+
+        const filtered = filterSessionDiffs(diffs, input.files)
+        log.info("filtered session snapshot diff", {
+          sessionID: input.messages[0]?.info.sessionID ?? "",
+          snapshotFiles: diffs.length,
+          ownedFiles: input.files.size,
+          keptFiles: filtered.length,
+        })
+        return filtered
+      }
       return []
     })
 
@@ -105,7 +185,14 @@ export const layer = Layer.effect(
       const all = yield* sessions.messages({ sessionID: input.sessionID }).pipe(Effect.orDie)
       if (!all.length) return
 
-      const diffs = yield* computeDiff({ messages: all })
+      const sessionFiles = collectSessionEditedFiles(all)
+      const diffs = yield* computeDiff({ messages: all, files: sessionFiles })
+      log.info("session summary ownership", {
+        sessionID: input.sessionID,
+        messageID: input.messageID,
+        ownedFiles: sessionFiles.size,
+        diffFiles: diffs.length,
+      })
       yield* sessions.setSummary({
         sessionID: input.sessionID,
         summary: {
@@ -122,7 +209,8 @@ export const layer = Layer.effect(
       )
       const target = messages.find((m) => m.info.id === input.messageID)
       if (!target || target.info.role !== "user") return
-      const msgDiffs = yield* computeDiff({ messages })
+      const msgFiles = collectSessionEditedFiles(messages)
+      const msgDiffs = yield* computeDiff({ messages, files: msgFiles })
       target.info.summary = { ...target.info.summary, diffs: msgDiffs }
       yield* sessions.updateMessage(target.info)
     })

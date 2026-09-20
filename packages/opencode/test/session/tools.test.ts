@@ -200,6 +200,7 @@ it.instance("session tools settle processor tool calls after successful local ex
             completed.push({ toolCallID, output })
           }),
         failToolCall: () => Effect.succeed(false),
+        captureToolFiles: (_tool, action) => action.pipe(Effect.map((value) => ({ value, files: [] }))),
       },
       bypassAgentCheck: false,
       messages: [],

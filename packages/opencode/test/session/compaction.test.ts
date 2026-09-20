@@ -207,6 +207,9 @@ function fake(
     updateToolCall: Effect.fn("TestSessionProcessor.updateToolCall")(() => Effect.succeed(undefined)),
     completeToolCall: Effect.fn("TestSessionProcessor.completeToolCall")(() => Effect.void),
     failToolCall: Effect.fn("TestSessionProcessor.failToolCall")(() => Effect.succeed(false)),
+    captureToolFiles: Effect.fn("TestSessionProcessor.captureToolFiles")((_, action) =>
+      action.pipe(Effect.map((value) => ({ value, files: [] }))),
+    ),
     process: Effect.fn("TestSessionProcessor.process")((streamInput: LLM.StreamInput) => {
       captures?.push(streamInput)
       return Effect.succeed(result)

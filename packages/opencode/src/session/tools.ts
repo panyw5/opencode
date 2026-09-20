@@ -27,7 +27,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
   session: Session.Info
   processor: Pick<
     SessionProcessor.Handle,
-    "message" | "startToolCall" | "updateToolCall" | "completeToolCall" | "failToolCall"
+    "message" | "startToolCall" | "updateToolCall" | "completeToolCall" | "failToolCall" | "captureToolFiles"
   >
   bypassAgentCheck: boolean
   messages: MessageV2.WithParts[]
@@ -94,9 +94,19 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
               { tool: item.id, sessionID: ctx.sessionID, callID: ctx.callID },
               { args },
             )
-            const result = yield* item.execute(args, ctx)
+            const executed = yield* input.processor.captureToolFiles(item.id, item.execute(args, ctx))
+            const result = executed.value
+            const changedFiles = executed.files
             const output = {
               ...result,
+              metadata: {
+                ...result.metadata,
+                ...(changedFiles.length
+                  ? {
+                      files: [...(Array.isArray(result.metadata?.files) ? result.metadata.files : []), ...changedFiles],
+                    }
+                  : {}),
+              },
               attachments: result.attachments?.map((attachment) => ({
                 ...attachment,
                 id: PartID.ascending(),
@@ -202,9 +212,7 @@ export const resolve = Effect.fn("SessionTools.resolve")(function* (input: {
           // Do not rely solely on AI SDK fullStream replaying a tool-result before finish.
           yield* input.processor.completeToolCall(opts.toolCallId, output)
           return output
-        }).pipe(
-          Effect.tapError((error) => input.processor.failToolCall(opts.toolCallId, error).pipe(Effect.ignore)),
-        ),
+        }).pipe(Effect.tapError((error) => input.processor.failToolCall(opts.toolCallId, error).pipe(Effect.ignore))),
       )
     tools[key] = item
   }

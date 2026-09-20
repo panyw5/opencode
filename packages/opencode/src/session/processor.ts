@@ -69,6 +69,7 @@ export interface Handle {
     },
   ) => Effect.Effect<void>
   readonly failToolCall: (toolCallID: string, error: unknown) => Effect.Effect<boolean>
+  readonly captureToolFiles: <A>(tool: string, action: Effect.Effect<A>) => Effect.Effect<{ value: A; files: string[] }>
   readonly process: (streamInput: LLM.StreamInput) => Effect.Effect<Result>
 }
 
@@ -202,6 +203,16 @@ export const layer = Layer.effect(
       }
       let aborted = false
       const slog = log.clone().tag("session.id", input.sessionID).tag("messageID", input.assistantMessage.id)
+
+      const captureToolFiles = <A>(tool: string, action: Effect.Effect<A>) =>
+        Effect.gen(function* () {
+          if (tool !== "bash") return { value: yield* action, files: [] }
+          const before = yield* snapshot.track()
+          const value = yield* action
+          const files = before ? (yield* snapshot.patch(before)).files : []
+          if (files.length) slog.info("captured tool-owned files", { tool, files })
+          return { value, files }
+        })
 
       // Stop-after-step latches are armed by the UI while a reply streams. A
       // latch pinned to a specific assistant message is stale once the loop
@@ -1123,6 +1134,7 @@ export const layer = Layer.effect(
         updateToolCall,
         completeToolCall,
         failToolCall,
+        captureToolFiles,
         process,
       } satisfies Handle
     })
