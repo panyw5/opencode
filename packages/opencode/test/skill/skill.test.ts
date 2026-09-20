@@ -351,10 +351,10 @@ description: A skill in the .claude/skills directory.
           expect(names).not.toContain("math-elaboration")
           expect(names).not.toContain("math-query-memory")
           expect(names).not.toContain("verify-proof")
-          expect(names).toContain("customize-opencode")
+          expect(names).toContain("use-opencode")
           const error = yield* Effect.flip(skill.require("math-initialize"))
           expect(error).toBeInstanceOf(Skill.NotFoundError)
-          expect(error.message).toContain("Available skills: customize-opencode")
+          expect(error.message).toContain("Available skills: use-opencode")
         }),
       { git: true, config: { math: { disabled: true } } },
     ),

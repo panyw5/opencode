@@ -14,7 +14,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Glob } from "@opencode-ai/core/util/glob"
 import * as Log from "@opencode-ai/core/util/log"
 import { Discovery } from "./discovery"
-import CUSTOMIZE_OPENCODE_SKILL_BODY from "./prompt/customize-opencode.md" with { type: "text" }
+import USE_OPENCODE_SKILL_BODY from "./prompt/use-opencode.md" with { type: "text" }
 import MATH_INITIALIZE_SKILL_BODY from "./prompt/math-initialize.md" with { type: "text" }
 import MATH_ELABORATION_SKILL_BODY from "./prompt/math-elaboration.md" with { type: "text" }
 import MATH_QUERY_MEMORY_SKILL_BODY from "./prompt/math-query-memory.md" with { type: "text" }
@@ -41,9 +41,9 @@ const SKILL_PATTERN = "**/SKILL.md"
 // invalid config, so users hit cryptic startup errors. Loading this skill
 // when the model is asked to touch opencode's own config files gives it the
 // actual schemas instead of guesses.
-const CUSTOMIZE_OPENCODE_SKILL_NAME = "customize-opencode"
-const CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION =
-  "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, or files under ~/.config/opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself."
+const USE_OPENCODE_SKILL_NAME = "use-opencode"
+const USE_OPENCODE_SKILL_DESCRIPTION =
+  "Use ONLY when the user is editing or creating opencode's own configuration: opencode.json, opencode.jsonc, files under .opencode/, files under the XDG OpenCode config directory, or files under ~/.opencode/. Also use when creating or fixing opencode agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring opencode itself."
 const MATH_SKILLS = [
   {
     name: "math-initialize",
@@ -353,11 +353,11 @@ export const layer = Layer.effect(
         const s: State = { skills: {}, dirs: new Set() }
         // Register the built-in skill BEFORE disk discovery so a user-disk
         // skill with the same name can override it.
-        s.skills[CUSTOMIZE_OPENCODE_SKILL_NAME] = {
-          name: CUSTOMIZE_OPENCODE_SKILL_NAME,
-          description: CUSTOMIZE_OPENCODE_SKILL_DESCRIPTION,
+        s.skills[USE_OPENCODE_SKILL_NAME] = {
+          name: USE_OPENCODE_SKILL_NAME,
+          description: USE_OPENCODE_SKILL_DESCRIPTION,
           location: "<built-in>",
-          content: CUSTOMIZE_OPENCODE_SKILL_BODY,
+          content: USE_OPENCODE_SKILL_BODY,
         }
         for (const skill of MATH_SKILLS) {
           s.skills[skill.name] = { ...skill, location: "<built-in>" }
