@@ -390,18 +390,27 @@ jobs:
           test -f "$MAC_X64_METADATA"
           test -f "$MAC_ARM64_METADATA"
           test -f "$WINDOWS_METADATA"
-          ruby -ryaml -e '
+          ruby -ryaml -ropenssl -rbase64 -e '
             x64 = YAML.load_file(ARGV[0])
             arm64 = YAML.load_file(ARGV[1])
             files = Array(x64["files"]) + Array(arm64["files"])
             abort "macOS updater metadata has no files" if files.empty?
+            dmgs = { "x64" => ARGV[3], "arm64" => ARGV[4] }
+            files.each do |entry|
+              next unless entry.fetch("url").end_with?(".dmg")
+              arch = entry.fetch("url").include?("arm64") ? "arm64" : "x64"
+              path = dmgs.fetch(arch)
+              entry["url"] = File.basename(path)
+              entry["size"] = File.size(path)
+              entry["sha512"] = Base64.strict_encode64(OpenSSL::Digest::SHA512.file(path).digest)
+            end
             metadata = {
               "version" => x64.fetch("version"),
               "files" => files,
               "releaseDate" => x64["releaseDate"] || arm64["releaseDate"],
             }
             File.write(ARGV[2], metadata.to_yaml)
-          ' "$MAC_X64_METADATA" "$MAC_ARM64_METADATA" "$MAC_METADATA"
+          ' "$MAC_X64_METADATA" "$MAC_ARM64_METADATA" "$MAC_METADATA" "$X64" "$ARM64"
           printf 'release target=%s\nx64 asset=%s\narm64 asset=%s\nwindows asset=%s\nmac metadata=%s\nwindows metadata=%s\n' "$GITHUB_SHA" "$X64" "$ARM64" "$WINDOWS" "$MAC_METADATA" "$WINDOWS_METADATA"
 
       - name: Upload consolidated release assets
