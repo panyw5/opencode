@@ -12,6 +12,11 @@ on:
         description: "Matching Windows workflow run ID used by the serial draft release job."
         required: true
         type: string
+      artifact_only:
+        description: "Validate and bundle release assets without creating a release."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -363,7 +368,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create draft release
+      - name: Prepare release assets
         if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
         run: |
           TAG="${APP_VERSION}"
@@ -398,6 +403,32 @@ jobs:
             File.write(ARGV[2], metadata.to_yaml)
           ' "$MAC_X64_METADATA" "$MAC_ARM64_METADATA" "$MAC_METADATA"
           printf 'release target=%s\nx64 asset=%s\narm64 asset=%s\nwindows asset=%s\nmac metadata=%s\nwindows metadata=%s\n' "$GITHUB_SHA" "$X64" "$ARM64" "$WINDOWS" "$MAC_METADATA" "$WINDOWS_METADATA"
+
+      - name: Upload consolidated release assets
+        if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-desktop-release-assets
+          path: |
+            release-assets/OpenCode_*.dmg
+            release-assets/windows/OpenCode_*_x64-setup.exe
+            release-assets/updater/opencode-desktop-mac-*.zip
+            release-assets/latest-mac.yml
+            release-assets/windows/latest.yml
+          if-no-files-found: error
+
+      - name: Create draft release
+        if: (startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && inputs.version != '')) && inputs.artifact_only != true
+        run: |
+          TAG="${APP_VERSION}"
+          VERSION="${TAG#v}"
+          X64="release-assets/OpenCode_${VERSION}_x64.dmg"
+          ARM64="release-assets/OpenCode_${VERSION}_aarch64.dmg"
+          WINDOWS="release-assets/windows/OpenCode_${VERSION}_x64-setup.exe"
+          MAC_X64_ZIP="release-assets/updater/opencode-desktop-mac-x64.zip"
+          MAC_ARM64_ZIP="release-assets/updater/opencode-desktop-mac-arm64.zip"
+          MAC_METADATA="release-assets/latest-mac.yml"
+          WINDOWS_METADATA="release-assets/windows/latest.yml"
           gh release create "$TAG" -R "$GITHUB_REPOSITORY" --draft --title "$TAG" --target "$GITHUB_SHA" \
             "$X64" "$ARM64" "$WINDOWS" "$MAC_X64_ZIP" "$MAC_ARM64_ZIP" "$MAC_METADATA" "$WINDOWS_METADATA"
         env:
