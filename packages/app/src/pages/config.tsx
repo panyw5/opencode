@@ -17,6 +17,9 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
+import larkIcon from "../../../ui/src/assets/icons/channel/lark.png"
+import qqIcon from "../../../ui/src/assets/icons/channel/qq.png"
+import wechatIcon from "../../../ui/src/assets/icons/channel/wechat.png"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
@@ -1526,6 +1529,11 @@ function ConfigPaneTitle(props: { title: string; description?: string; icon: Ico
   )
 }
 
+function ChannelBrandIcon(props: { platform: "feishu" | "qq" | "wechat" | "discord" }) {
+  const src = props.platform === "feishu" ? larkIcon : props.platform === "qq" ? qqIcon : props.platform === "wechat" ? wechatIcon : undefined
+  return src ? <img src={src} width="38" height="38" alt="" aria-hidden="true" class="object-contain" /> : <Icon name="code" size="medium" />
+}
+
 function PluginListButton(props: {
   active: boolean
   title: string
@@ -1534,6 +1542,8 @@ function PluginListButton(props: {
   warn?: boolean
   onClick: () => void
   extra?: JSX.Element
+  icon?: JSX.Element
+  largeIcon?: boolean
 }) {
   const press = (event: KeyboardEvent) => {
     if (event.key !== "Enter" && event.key !== " ") return
@@ -1555,15 +1565,17 @@ function PluginListButton(props: {
     >
       <div class="flex min-w-0 flex-1 items-start gap-3">
         <div
-          class="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md transition-colors duration-150"
+          class="mt-0.5 flex shrink-0 items-center justify-center rounded-md transition-colors duration-150"
           classList={{
+            "size-14": props.largeIcon,
+            "size-7": !props.largeIcon,
             "bg-surface-danger-base/15 text-text-danger-base": !!props.warn,
             "bg-surface-secondary text-text-strong": props.active && !props.warn,
             "bg-surface-secondary/70 text-text-base group-hover:bg-surface-secondary group-hover:text-text-strong":
               !props.active && !props.warn,
           }}
         >
-          <Icon name="code" size="small" />
+          {props.icon ?? <Icon name="code" size="small" />}
         </div>
         <div class="min-w-0 flex-1">
           <div
@@ -8600,6 +8612,8 @@ export default function ConfigPage() {
                               title={item.title}
                               note={item.note}
                               meta={item.count > 0 ? String(item.count) : undefined}
+                              icon={<ChannelBrandIcon platform={item.platform} />}
+                              largeIcon
                               onClick={() => setState("pick", item.pick)}
                             />
                           )}
