@@ -29,18 +29,24 @@ export function createTextFragment(content: string): DocumentFragment {
 
 export function getNodeLength(node: Node): number {
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return 1
+  if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "im")
+    return ((node as HTMLElement).dataset.content ?? "@IM").length
   return (node.textContent ?? "").replace(/\u200B/g, "").length
 }
 
 export function serialize(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? "").replace(/\u200B/g, "")
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return "\n"
+  if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "im")
+    return (node as HTMLElement).dataset.content ?? "@IM"
   return Array.from(node.childNodes).map(serialize).join("")
 }
 
 export function getTextLength(node: Node): number {
   if (node.nodeType === Node.TEXT_NODE) return (node.textContent ?? "").replace(/\u200B/g, "").length
   if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR") return 1
+  if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).dataset.type === "im")
+    return ((node as HTMLElement).dataset.content ?? "@IM").length
   let length = 0
   for (const child of Array.from(node.childNodes)) {
     length += getTextLength(child)
@@ -67,7 +73,7 @@ export function setCursorPosition(parent: HTMLElement, position: number) {
     const isText = node.nodeType === Node.TEXT_NODE
     const isPill =
       node.nodeType === Node.ELEMENT_NODE &&
-      ((node as HTMLElement).dataset.type === "file" || (node as HTMLElement).dataset.type === "agent")
+      ["file", "agent", "im"].includes((node as HTMLElement).dataset.type ?? "")
     const isBreak = node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR"
 
     if (isText && remaining <= length) {
@@ -132,7 +138,7 @@ export function setRangeEdge(parent: HTMLElement, range: Range, edge: "start" | 
     const isText = node.nodeType === Node.TEXT_NODE
     const isPill =
       node.nodeType === Node.ELEMENT_NODE &&
-      ((node as HTMLElement).dataset.type === "file" || (node as HTMLElement).dataset.type === "agent")
+      ["file", "agent", "im"].includes((node as HTMLElement).dataset.type ?? "")
     const isBreak = node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName === "BR"
 
     if (isText && remaining <= length) {

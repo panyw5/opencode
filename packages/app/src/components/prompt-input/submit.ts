@@ -17,6 +17,7 @@ import { useSync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
+import { promptText } from "./prompt-text"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { sessionHookControlCommand, sessionHookControlInput } from "@/pages/session/session-hook-controls"
@@ -104,7 +105,7 @@ async function delivered(
   return false
 }
 
-const draftText = (prompt: Prompt) => prompt.map((part) => ("content" in part ? part.content : "")).join("")
+const draftText = (prompt: Prompt) => promptText(prompt)
 
 const draftImages = (prompt: Prompt) => prompt.filter((part): part is ImageAttachmentPart => part.type === "image")
 
@@ -559,7 +560,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // sessionTabs.promoteDraft fires it via onCommit.
     let deferScopeReset = false
     let pendingScopeReset: (() => void) | undefined
-    const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
+    const text = promptText(currentPrompt)
     const images = input.imageAttachments().slice()
     const mode = input.mode()
 

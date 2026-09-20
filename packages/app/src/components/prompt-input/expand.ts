@@ -1,6 +1,6 @@
-import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
+import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, ImPart, Prompt } from "@/context/prompt"
 
-type Inline = AgentPart | FileAttachmentPart
+type Inline = AgentPart | FileAttachmentPart | ImPart
 
 const tone = {
   quote: "var(--syntax-comment)",
@@ -30,7 +30,8 @@ const text = (value: string, at: number) => ({
   end: at + value.length,
 })
 
-const inline = (part: Prompt[number]): part is Inline => part.type === "file" || part.type === "agent"
+const inline = (part: Prompt[number]): part is Inline =>
+  part.type === "file" || part.type === "agent" || part.type === "im"
 
 const image = (part: Prompt[number]): part is ImageAttachmentPart => part.type === "image"
 
@@ -38,6 +39,7 @@ const clone = (part: Inline, at: number): Inline => {
   if (part.type === "agent") {
     return { ...part, start: at, end: at + part.content.length }
   }
+  if (part.type === "im") return { ...part, start: at, end: at + part.content.length }
   return {
     ...part,
     start: at,

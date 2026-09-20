@@ -117,4 +117,16 @@ describe("prompt-input editor dom", () => {
 
     expect(serialize(container)).toBe("saffs\n\n```\nsadf\n```")
   })
+
+  test("serialize treats the styled IM pill as its visible prompt token", () => {
+    const container = document.createElement("div")
+    const pill = document.createElement("span")
+    pill.dataset.type = "im"
+    pill.dataset.content = "@IM"
+    pill.textContent = "▣IM"
+    container.append(pill)
+
+    expect(serialize(container)).toBe("@IM")
+    expect(getTextLength(container)).toBe(3)
+  })
 })

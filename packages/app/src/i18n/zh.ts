@@ -519,6 +519,7 @@ export const dict = {
   "prompt.slash.badge.skill": "技能",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.at.badge.consult": "参谋",
+  "prompt.at.im": "IM 渠道",
   "prompt.context.active": "当前",
   "prompt.context.includeActiveFile": "包含当前文件",
   "session.fileTab.mentionInSession": "在会话中@此文件",

@@ -25,10 +25,12 @@ import {
   ImageAttachmentPart,
   AgentPart,
   FileAttachmentPart,
+  ImPart,
 } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useGlobalSync } from "@/context/global-sync"
+import { useGlobalSDK } from "@/context/global-sdk"
 import { useSync } from "@/context/sync"
 import { useComments } from "@/context/comments"
 import { Button } from "@opencode-ai/ui/button"
@@ -51,7 +53,7 @@ import { dict as enDict } from "@/i18n/en"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { extraAgentByDirectory, extraAgentCapabilities } from "@/pages/layout/extra-agents"
+import { extraAgentByDirectory, extraAgentCapabilities, mainDomain } from "@/pages/layout/extra-agents"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { promptEnabled, promptProbe } from "@/testing/prompt"
@@ -428,6 +430,7 @@ const GitContext = () => {
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
   const globalSync = useGlobalSync()
+  const globalSDK = useGlobalSDK()
   const sync = useSync()
   const local = useLocal()
   const files = useFile()
@@ -1087,6 +1090,42 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       display: item.display,
     })),
   )
+  const [imChannels, setImChannels] = createSignal<Array<{ channelName: string; botName?: string }>>([])
+  createEffect(() => {
+    let cancelled = false
+    const imClient = globalSDK.forDomain(mainDomain).createClient({ directory: sdk.directory, throwOnError: true })
+    console.info("[prompt-im] channels load started", { directory: sdk.directory })
+    void imClient.im
+      .channels({ directory: sdk.directory })
+      .then((result) => {
+        if (cancelled) return
+        const channels = result.data ?? []
+        console.info("[prompt-im] channels loaded", { directory: sdk.directory, count: channels.length })
+        setImChannels(
+          channels.map((channel) => ({
+            channelName: channel.channelName,
+            botName: channel.recipient?.name || channel.platform,
+          })),
+        )
+      })
+      .catch(() => {
+        console.warn("[prompt-im] channels load failed", { directory: sdk.directory })
+        if (!cancelled) setImChannels([])
+      })
+    onCleanup(() => {
+      cancelled = true
+    })
+  })
+  const imOptions = createMemo<AtOption[]>(() => {
+    const channels = imChannels()
+    if (channels.length === 0) return [{ type: "im", display: language.t("prompt.at.im") }]
+    return channels.map((channel) => ({
+      type: "im" as const,
+      channelName: channel.channelName,
+      botName: channel.botName,
+      display: channel.botName ? `${channel.channelName} · ${channel.botName}` : channel.channelName,
+    }))
+  })
   const lockedAgent = createMemo(() => local.agent.locked()?.name)
   const agentNames = createMemo(() => {
     const locked = lockedAgent()
@@ -1105,7 +1144,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const handleAtSelect = (option: AtOption | undefined) => {
     if (!option) return
-    if (option.type === "agent" || option.type === "consult") {
+    if (option.type === "im") {
+      addPart({
+        type: "im",
+        content: `@${option.display}`,
+        channelName: option.channelName,
+        botName: option.botName,
+        start: 0,
+        end: 0,
+      })
+    } else if (option.type === "agent" || option.type === "consult") {
       addPart({ type: "agent", name: option.name, content: "@" + option.name, start: 0, end: 0 })
     } else {
       addPart({ type: "file", path: option.path, content: option.content ?? "@" + option.path, start: 0, end: 0 })
@@ -1114,6 +1162,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const atKey = (x: AtOption | undefined) => {
     if (!x) return ""
+    if (x.type === "im") return `im:${x.channelName ?? "all"}`
     if (x.type === "consult") return `consult:${x.id}`
     if (x.type === "agent") return `agent:${x.name}`
     return `file:${x.path}`
@@ -1146,7 +1195,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             }
           })
       if (!query.trim()) {
-        return [...consults, ...agents, ...pinned]
+        return [...imOptions(), ...consults, ...agents, ...pinned]
       }
       const paths = atDirectory
         ? await sdk
@@ -1155,11 +1204,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             .then((x) => x.data ?? [])
             .catch(() => [])
         : await files.searchFilesAndDirectories(query)
-      return [...consults, ...agents, ...pinned, ...toFileOptions(paths)]
+      return [...imOptions(), ...consults, ...agents, ...pinned, ...toFileOptions(paths)]
     },
     key: atKey,
     filterKeys: ["display", "name"],
     groupBy: (item) => {
+      if (item.type === "im") return "im"
       if (item.type === "consult") return "consult"
       if (item.type === "agent") return "agent"
       if (item.type === "file" && item.recent) return "recent"
@@ -1168,9 +1218,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     sortGroupsBy: (a, b) => {
       const rank = (category: string) => {
         if (category === "consult") return 0
-        if (category === "agent") return 1
-        if (category === "recent") return 2
-        return 3
+        if (category === "im") return 1
+        if (category === "agent") return 2
+        if (category === "recent") return 3
+        return 4
       }
       return rank(a.category) - rank(b.category)
     },
@@ -1248,10 +1299,33 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     onSelect: handleSlashSelect,
   })
 
-  const createPill = (part: FileAttachmentPart | AgentPart) => {
+  const createPill = (part: FileAttachmentPart | AgentPart | ImPart) => {
     const pill = document.createElement("span")
-    pill.textContent = part.content
     pill.setAttribute("data-type", part.type)
+    if (part.type === "im") {
+      pill.dataset.content = part.content
+      if (part.channelName) pill.dataset.channelName = part.channelName
+      if (part.botName) pill.dataset.botName = part.botName
+      pill.className =
+        "inline-flex items-center gap-1 rounded-full border border-border-weak-base bg-surface-raised-base px-2 text-syntax-property"
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg")
+      icon.setAttribute("viewBox", "0 0 20 20")
+      icon.setAttribute("width", "14")
+      icon.setAttribute("height", "14")
+      icon.setAttribute("fill", "none")
+      icon.setAttribute("stroke", "currentColor")
+      icon.setAttribute("stroke-width", "1.5")
+      icon.setAttribute("aria-hidden", "true")
+      const shape = document.createElementNS("http://www.w3.org/2000/svg", "path")
+      shape.setAttribute("d", "M3 4.5h14v10H8l-5 2v-12z")
+      shape.setAttribute("stroke-linejoin", "round")
+      icon.append(shape)
+      const label = document.createElement("span")
+      label.textContent = "IM"
+      pill.append(icon, label)
+    } else {
+      pill.textContent = part.content
+    }
     if (part.type === "file") pill.setAttribute("data-path", part.path)
     if (part.type === "agent") pill.setAttribute("data-name", part.name)
     pill.setAttribute("contenteditable", "false")
@@ -1276,6 +1350,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       const el = node as HTMLElement
       if (el.dataset.type === "file") return true
       if (el.dataset.type === "agent") return true
+      if (el.dataset.type === "im") return true
       return el.tagName === "BR"
     })
 
@@ -1286,7 +1361,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         editorRef.appendChild(createTextFragment(part.content))
         continue
       }
-      if (part.type === "file" || part.type === "agent") {
+      if (part.type === "file" || part.type === "agent" || part.type === "im") {
         editorRef.appendChild(createPill(part))
       }
     }
@@ -1436,6 +1511,19 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       position += content.length
     }
 
+    const pushIm = (im: HTMLElement) => {
+      const content = im.dataset.content ?? "@IM"
+      parts.push({
+        type: "im",
+        content,
+        channelName: im.dataset.channelName,
+        botName: im.dataset.botName,
+        start: position,
+        end: position + content.length,
+      })
+      position += content.length
+    }
+
     const visit = (node: Node) => {
       if (node.nodeType === Node.TEXT_NODE) {
         buffer += node.textContent ?? ""
@@ -1452,6 +1540,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       if (el.dataset.type === "agent") {
         flushText()
         pushAgent(el)
+        return
+      }
+      if (el.dataset.type === "im") {
+        flushText()
+        pushIm(el)
         return
       }
       if (el.tagName === "BR") {
@@ -1549,7 +1642,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const range = selection.getRangeAt(0)
     if (!editorRef.contains(range.startContainer)) return false
 
-    if (part.type === "file" || part.type === "agent") {
+    if (part.type === "file" || part.type === "agent" || part.type === "im") {
       const cursorPosition = getCursorPosition(editorRef)
       const rawText = prompt
         .current()
@@ -1616,7 +1709,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Chromium loses IME tracking when contenteditable DOM is modified
     // with non-editable elements (pills) via Range API.
     // Blur/refocus forces the browser to reinitialize IME handling.
-    if (part.type === "file" || part.type === "agent") {
+    if (part.type === "file" || part.type === "agent" || part.type === "im") {
       const cursorPos = getCursorPosition(editorRef)
       requestAnimationFrame(() => {
         editorRef.blur()
@@ -2367,6 +2460,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   "w-full min-h-[96px] px-4 pt-3 pb-3 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
                   "[&_[data-type=file]]:text-syntax-property": true,
                   "[&_[data-type=agent]]:text-syntax-type": true,
+                  "[&_[data-type=im]]:text-syntax-property": true,
                   "font-mono!": true,
                 }}
               />

@@ -5,6 +5,7 @@ import { usePlatform } from "@/context/platform"
 import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 
 export type AtOption =
+  | { type: "im"; display: string; channelName?: string; botName?: string }
   | { type: "agent"; name: string; display: string }
   | { type: "consult"; id: string; name: string; display: string }
   | { type: "file"; path: string; display: string; content?: string; recent?: boolean }
@@ -73,6 +74,21 @@ export const PromptPopover: Component<PromptPopoverProps> = (props) => {
               <For each={props.atFlat}>
                 {(item) => {
                   const key = props.atKey(item)
+
+                  if (item.type === "im") {
+                    return (
+                      <button
+                        data-prompt-popover-active={props.atActive === key ? "" : undefined}
+                        class="w-full flex items-center gap-x-2 rounded-md px-2 py-0.5"
+                        classList={{ "bg-surface-raised-base-active": props.atActive === key }}
+                        onClick={() => props.onAtSelect(item)}
+                        onMouseEnter={() => props.setAtActive(key)}
+                      >
+                        <Icon name="prompt" size="small" class="text-icon-info-active shrink-0" />
+                        <span class="text-14-regular text-text-strong whitespace-nowrap">@{item.display}</span>
+                      </button>
+                    )
+                  }
 
                   if (item.type === "agent" || item.type === "consult") {
                     return (

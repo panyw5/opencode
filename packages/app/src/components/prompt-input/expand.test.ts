@@ -45,6 +45,20 @@ describe("prompt-input expand", () => {
     ])
   })
 
+  test("merge preserves the IM capability pill while editing surrounding text", () => {
+    const prev: Prompt = [
+      { type: "text", content: "Please use ", start: 0, end: 11 },
+      { type: "im", content: "@IM", start: 11, end: 14 },
+      { type: "text", content: " when needed", start: 14, end: 26 },
+    ]
+
+    expect(merge("Please use @IM when needed!", prev)).toEqual([
+      { type: "text", content: "Please use ", start: 0, end: 11 },
+      { type: "im", content: "@IM", start: 11, end: 14 },
+      { type: "text", content: " when needed!", start: 14, end: 27 },
+    ])
+  })
+
   test("paint escapes html while highlighting markdown markers", () => {
     const html = paint("# title\n> `code` <tag>")
     expect(html).toContain("var(--syntax-type)")

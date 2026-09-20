@@ -508,6 +508,7 @@ export const dict = {
   "prompt.slash.badge.skill": "skill",
   "prompt.slash.badge.mcp": "mcp",
   "prompt.at.badge.consult": "consult",
+  "prompt.at.im": "IM channel",
   "prompt.context.active": "active",
   "prompt.context.includeActiveFile": "Include active file",
   "session.fileTab.mentionInSession": "Mention this file in session",
