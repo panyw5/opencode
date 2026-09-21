@@ -36,10 +36,11 @@ type Saved = {
 
 const WORKSPACE_KEY = "__workspace__"
 const handoff = new Map<string, State>()
+const manualSession = new Map<string, State>()
 
 function modelDebug(event: string, details: Record<string, unknown>) {
   if (!import.meta.env.DEV) return
-  console.debug(`[local:model] ${event}`, details)
+  console.debug(`[local:model] ${event} ${JSON.stringify(details)}`)
 }
 
 const handoffKey = (dir: string, id: string) => `${dir}\n${id}`
@@ -151,7 +152,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const scope = createMemo<State | undefined>(() => {
       const session = id()
       if (!session) return store.draft ?? store.promoting
-      return saved.session[session] ?? handoff.get(handoffKey(sdk.directory, session))
+      const key = handoffKey(sdk.directory, session)
+      return manualSession.get(key) ?? saved.session[session] ?? handoff.get(key)
     })
 
     // Track previous session to preserve model selection when switching
@@ -183,20 +185,26 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           modelDebug("session-switch", {
             fromSessionID: prevSession,
             toSessionID: session,
-            fromSaved: saved.session[prevSession] !== undefined,
-            toSaved: saved.session[session] !== undefined,
+            fromSaved:
+              manualSession.has(handoffKey(sdk.directory, prevSession)) || saved.session[prevSession] !== undefined,
+            toSaved: manualSession.has(handoffKey(sdk.directory, session)) || saved.session[session] !== undefined,
             handoff: handoff.has(handoffKey(sdk.directory, session)),
           })
           // If the new session doesn't have saved state, inherit from previous session
-          if (saved.session[session] === undefined && !handoff.has(handoffKey(sdk.directory, session))) {
-            const prevState = saved.session[prevSession]
+          const targetKey = handoffKey(sdk.directory, session)
+          if (!manualSession.has(targetKey) && saved.session[session] === undefined && !handoff.has(targetKey)) {
+            const prevState = manualSession.get(handoffKey(sdk.directory, prevSession)) ?? saved.session[prevSession]
             if (prevState) {
               modelDebug("session-inherit-applied", {
                 fromSessionID: prevSession,
                 toSessionID: session,
                 model: prevState.model ? `${prevState.model.providerID}/${prevState.model.modelID}` : "none",
               })
-              setSaved("session", session, clone(prevState))
+              const next = clone(prevState)
+              if (next) {
+                manualSession.set(targetKey, next)
+                setSaved("session", session, next)
+              }
             }
           }
         }
@@ -273,6 +281,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           } satisfies State
           const session = id()
           if (session) {
+            const key = handoffKey(sdk.directory, session)
+            manualSession.set(key, clone(next) ?? next)
+            modelDebug("manual-agent-write", {
+              sessionID: session,
+              model: next.model ? `${next.model.providerID}/${next.model.modelID}` : "none",
+              ready: savedReady(),
+            })
             setSaved("session", session, next)
             return
           }
@@ -304,10 +319,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const current = () => {
+      const session = id()
       const item = firstModel(
         () => scope()?.model,
-        () => agent.current()?.model,
-        fallback,
+        // Existing sessions must wait for their saved/message model. Configured
+        // and agent defaults are only valid for drafts and newly created sessions.
+        () => (session ? undefined : agent.current()?.model),
+        () => (session ? undefined : fallback()),
       )
       if (!item) return undefined
       return models.find(item)
@@ -342,6 +360,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       const session = id()
       if (session) {
+        const key = handoffKey(sdk.directory, session)
+        const manual = clone(state)
+        if (manual) manualSession.set(key, manual)
         modelDebug("manual-write", {
           sessionID: session,
           model: state.model ? `${state.model.providerID}/${state.model.modelID}` : "none",
@@ -457,6 +478,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         modelDebug("restore-skipped", { reason: "saved-state-exists", sessionID: session })
         return
       }
+      if (manualSession.has(handoffKey(sdk.directory, session))) {
+        modelDebug("restore-skipped", { reason: "manual-memory-exists", sessionID: session })
+        return
+      }
       if (handoff.has(handoffKey(sdk.directory, session))) {
         modelDebug("restore-skipped", { reason: "handoff-exists", sessionID: session })
         return
@@ -495,6 +520,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           handoff.set(key, next)
 
           if (dir === sdk.directory) {
+            manualSession.set(key, next)
             setSaved("session", session, next)
           }
 
