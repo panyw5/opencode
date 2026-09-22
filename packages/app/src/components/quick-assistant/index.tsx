@@ -847,6 +847,7 @@ export function QuickAssistant() {
       <Show when={!saved.open && dock()}>
         <button
           type="button"
+          data-component="quick-assistant-launcher"
           class="fixed right-5 bottom-5 z-40 flex items-center gap-2 rounded-full border border-border-weak-base px-3 py-2 shadow-[var(--shadow-lg-border-base)]"
           style={{
             "background-color":

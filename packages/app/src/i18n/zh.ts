@@ -806,6 +806,13 @@ export const dict = {
   "notification.session.error.title": "会话错误",
   "notification.session.error.fallbackDescription": "发生错误",
 
+  "notification.bell.title": "通知",
+  "notification.bell.empty": "没有未读通知",
+  "notification.bell.markAllRead": "全部标为已读",
+  "notification.bell.type.turnComplete": "已完成",
+  "notification.bell.type.error": "错误",
+  "notification.bell.untitledSession": "未命名会话",
+
   "home.recentProjects": "最近项目",
   "home.empty.title": "没有最近项目",
   "home.empty.description": "通过打开本地项目开始使用",

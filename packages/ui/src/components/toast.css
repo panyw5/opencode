@@ -1,6 +1,7 @@
 [data-component="toast-region"] {
   position: fixed;
-  bottom: 48px;
+  /* Cleared above the notification bell (bottom-right) and its live toasts. */
+  bottom: 96px;
   right: 32px;
   z-index: 1000;
   display: flex;

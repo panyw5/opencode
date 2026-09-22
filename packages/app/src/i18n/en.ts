@@ -856,6 +856,13 @@ export const dict = {
   "notification.session.error.title": "Session error",
   "notification.session.error.fallbackDescription": "An error occurred",
 
+  "notification.bell.title": "Notifications",
+  "notification.bell.empty": "No unread notifications",
+  "notification.bell.markAllRead": "Mark all read",
+  "notification.bell.type.turnComplete": "Completed",
+  "notification.bell.type.error": "Error",
+  "notification.bell.untitledSession": "Untitled session",
+
   "home.recentProjects": "Recent projects",
   "home.empty.title": "No recent projects",
   "home.empty.description": "Get started by opening a local project",

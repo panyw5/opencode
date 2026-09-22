@@ -16,6 +16,14 @@ import { Persist, persisted } from "@/utils/persist"
 import { playSoundById } from "@/utils/sound"
 import { formatServerError } from "@/utils/server-errors"
 import { markCurrentNotifications, shouldNotifyTurnComplete, type Notification } from "./notification-state"
+import {
+  BELL_TOAST_TTL_MS,
+  bellToastID,
+  expireBellToasts,
+  pushBellToast,
+  removeBellToast,
+  type BellToast,
+} from "./notification-bell-state"
 import { useServer } from "./server"
 import { domainFromDirectory, mainDomain, type DomainId } from "@/pages/layout/extra-agents"
 
@@ -222,6 +230,55 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
     )
     const [index, setIndex] = createStore<NotificationIndex>(buildNotificationIndex(store.byDomain))
 
+    const [bell, setBell] = createStore<{ items: BellToast[] }>({ items: [] })
+    const bellTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+    const [titles, setTitles] = createStore<Record<string, string>>({})
+
+    const pushToast = (input: { type: BellToast["type"]; session?: string; directory?: string; title?: string }) => {
+      if (meta.disposed) return
+      const id = bellToastID(input.type, input.session)
+      const item: BellToast = { ...input, id, time: Date.now() }
+      const timer = bellTimers.get(id)
+      if (timer) clearTimeout(timer)
+      setBell("items", (list) => pushBellToast(list, item))
+      bellTimers.set(
+        id,
+        setTimeout(() => {
+          bellTimers.delete(id)
+          setBell("items", (list) => removeBellToast(list, id))
+        }, BELL_TOAST_TTL_MS),
+      )
+    }
+
+    const dismissToast = (id: string) => {
+      const timer = bellTimers.get(id)
+      if (timer) {
+        clearTimeout(timer)
+        bellTimers.delete(id)
+      }
+      setBell("items", (list) => removeBellToast(list, id))
+    }
+
+    onCleanup(() => {
+      bellTimers.forEach((timer) => clearTimeout(timer))
+      bellTimers.clear()
+    })
+
+    const cacheTitle = (sessionID: string | undefined, session: { title?: string } | undefined) => {
+      if (!sessionID || !session?.title) return
+      if (titles[sessionID] === session.title) return
+      setTitles(sessionID, session.title)
+    }
+
+    const resolveTitle = (directory: string, sessionID?: string) => {
+      if (!sessionID || titles[sessionID]) return
+      void lookup(directory, sessionID).then((session) => {
+        if (meta.disposed) return
+        cacheTitle(sessionID, session)
+      })
+    }
+
     const meta = { pruned: false, disposed: false }
 
     createEffect(() => {
@@ -399,16 +456,21 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           void playSoundById(settings.sounds.agent())
         }
 
+        const viewed = viewedInCurrentSession(directory, sessionID)
         append(
           {
             directory,
             time,
-            viewed: viewedInCurrentSession(directory, sessionID),
+            viewed,
             type: "turn-complete",
             session: sessionID,
           },
           domain,
         )
+        if (!viewed) {
+          cacheTitle(sessionID, session)
+          pushToast({ type: "turn-complete", session: sessionID, directory, title: session?.title })
+        }
 
         const href = `/${base64Encode(directory)}/session/${sessionID}`
         if (settings.notifications.agent()) {
@@ -450,17 +512,22 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         }
 
         const error = "error" in event.properties ? event.properties.error : undefined
+        const viewed = viewedInCurrentSession(directory, sessionID)
         append(
           {
             directory,
             time,
-            viewed: viewedInCurrentSession(directory, sessionID),
+            viewed,
             type: "error",
             session: sessionID ?? "global",
             error,
           },
           domain,
         )
+        if (!viewed) {
+          cacheTitle(sessionID, session)
+          pushToast({ type: "error", session: sessionID, directory, title: session?.title })
+        }
         const description =
           session?.title ??
           (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
@@ -557,6 +624,46 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
 
     return {
       ready,
+      bell: {
+        toasts() {
+          return bell.items
+        },
+        dismiss: dismissToast,
+      },
+      titleOf(session: string | undefined) {
+        if (!session) return undefined
+        return titles[session]
+      },
+      resolveTitle,
+      unseenTotal() {
+        const list = store.byDomain[currentDomain()] ?? empty
+        return list.reduce((count, notification) => (notification.viewed ? count : count + 1), 0)
+      },
+      unseenHasError() {
+        const list = store.byDomain[currentDomain()] ?? empty
+        return list.some((notification) => !notification.viewed && notification.type === "error")
+      },
+      unseenList() {
+        const list = store.byDomain[currentDomain()] ?? empty
+        const unseen = list.filter((notification) => !notification.viewed)
+        return unseen.slice().reverse()
+      },
+      markAllViewed() {
+        const domain = currentDomain()
+        const list = store.byDomain[domain] ?? empty
+        if (!list.some((notification) => !notification.viewed)) return
+        const domainIdx = index.byDomain[domain]
+        batch(() => {
+          setStore("byDomain", domain, (notification) => !notification.viewed, "viewed", true)
+          if (domainIdx) {
+            for (const key of Object.keys(domainIdx.session.unseen)) updateUnseen(domain, "session", key, [])
+            for (const key of Object.keys(domainIdx.project.unseen)) updateUnseen(domain, "project", key, [])
+          }
+        })
+        bellTimers.forEach((timer) => clearTimeout(timer))
+        bellTimers.clear()
+        setBell("items", [])
+      },
       session: {
         all(session: string) {
           return domainIndex().session.all[session] ?? empty

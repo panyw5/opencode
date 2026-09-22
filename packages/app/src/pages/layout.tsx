@@ -157,6 +157,7 @@ import {
 import { ScheduledTaskFormDialog, ScheduledTasksPanel, type ScheduledTaskEditorStash } from "./layout/scheduled-tasks-panel"
 import { AgentsMdDialog } from "@/components/agents-md-dialog"
 import { visibleSidebarActionCount } from "./layout/sidebar-quick-actions"
+import { NotificationBell } from "./layout/notification-bell"
 import {
   panelStashId,
   projectTaskEditorStashId,
@@ -4850,6 +4851,7 @@ export default function Layout(props: ParentProps) {
           {import.meta.env.DEV && platform.platform !== "desktop" && <DebugBar />}
         </div>
         <QuickAssistant />
+        <NotificationBell />
         <Toast.Region />
       </div>
     </SessionTabsProvider>
