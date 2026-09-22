@@ -38,10 +38,10 @@ function ToastRoot(props: ToastRootComponentProps) {
   )
 }
 
-function ToastIcon(props: { name: IconProps["name"] }) {
+function ToastIcon(props: { name: IconProps["name"]; size?: IconProps["size"] }) {
   return (
     <div data-slot="toast-icon">
-      <Icon name={props.name} />
+      <Icon name={props.name} size={props.size} />
     </div>
   )
 }
@@ -189,7 +189,7 @@ export function showCompactToast(options: CompactToastOptions) {
     <Toast toastId={props.toastId} duration={duration} data-variant="default" data-compact>
       <Toast.Content>
         <div data-slot="toast-compact-body">
-          <Toast.Icon name={options.icon} />
+          <Toast.Icon name={options.icon} size={options.icon === "question-mark" ? "medium" : undefined} />
           <div data-slot="toast-compact-main">
             <span data-slot="toast-compact-title">{options.title}</span>
             <div data-slot="toast-compact-row">
