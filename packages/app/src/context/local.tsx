@@ -22,6 +22,7 @@ type State = {
   agent?: string
   model?: ModelKey
   variant?: string | null
+  source?: "manual" | "message" | "inherited"
 }
 
 type RestoreMessage = {
@@ -200,7 +201,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
                 toSessionID: session,
                 model: prevState.model ? `${prevState.model.providerID}/${prevState.model.modelID}` : "none",
               })
-              const next = clone(prevState)
+              const next = clone({ ...prevState, source: "inherited" })
               if (next) {
                 manualSession.set(targetKey, next)
                 setSaved("session", session, next)
@@ -264,6 +265,23 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setStore("current", undefined)
           return
         }
+        modelDebug("agent-set-requested", {
+          requestedAgent: name ?? "none",
+          resolvedAgent: item.name,
+          currentAgent: agent.current()?.name ?? "none",
+          savedAgent: scope()?.agent ?? "none",
+          savedSource: scope()?.source ?? "legacy",
+          sessionID: id() ?? "draft",
+        })
+        const session = id()
+        if (item.name === agent.current()?.name || (session && item.name === scope()?.agent)) {
+          modelDebug("agent-write-skipped", {
+            reason: "same-agent",
+            agent: item.name,
+            sessionID: session ?? "draft",
+          })
+          return
+        }
 
         batch(() => {
           setStore("current", item.name)
@@ -278,8 +296,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             agent: item.name,
             model: item.model ?? prev?.model,
             variant: item.variant ?? prev?.variant,
+            source: "manual" as const,
           } satisfies State
-          const session = id()
           if (session) {
             const key = handoffKey(sdk.directory, session)
             manualSession.set(key, clone(next) ?? next)
@@ -356,6 +374,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       const state = {
         ...(scope() ?? { agent: agent.current()?.name }),
         ...next,
+        source: "manual" as const,
       } satisfies State
 
       const session = id()
@@ -474,15 +493,16 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         })
         return
       }
-      if (saved.session[session] !== undefined) {
-        modelDebug("restore-skipped", { reason: "saved-state-exists", sessionID: session })
+      if (saved.session[session]?.source === "manual") {
+        modelDebug("restore-skipped", { reason: "manual-saved-state-exists", sessionID: session })
         return
       }
-      if (manualSession.has(handoffKey(sdk.directory, session))) {
+      const key = handoffKey(sdk.directory, session)
+      if (manualSession.get(key)?.source === "manual") {
         modelDebug("restore-skipped", { reason: "manual-memory-exists", sessionID: session })
         return
       }
-      if (handoff.has(handoffKey(sdk.directory, session))) {
+      if (handoff.has(key)) {
         modelDebug("restore-skipped", { reason: "handoff-exists", sessionID: session })
         return
       }
@@ -492,10 +512,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         agent: msg.agent,
         model: `${msg.model.providerID}/${msg.model.modelID}`,
       })
+      manualSession.delete(key)
       setSaved("session", session, {
         agent: msg.agent,
         model: msg.model,
         variant: msg.model.variant ?? null,
+        source: "message",
       })
     }
 
@@ -516,6 +538,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         promote(dir: string, session: string) {
           const next = clone(snapshot())
           if (!next) return
+          next.source = "manual"
           const key = handoffKey(dir, session)
           handoff.set(key, next)
 
