@@ -11,7 +11,6 @@ import {
 } from "@opencode-ai/ui/pierre/file-find"
 import type { FindNavigationTarget, FindPositionResult } from "../message-navigation"
 import { TimelineRow } from "./rows"
-import type { ScrollOrigin } from "./scroll-ledger"
 
 export type FindMatch = {
   rowKey: string
@@ -49,7 +48,6 @@ export function createSessionFind(opts: {
   sessionID: () => string | undefined
   onNavigate: (target: FindNavigationTarget) => void
   onRelease?: (reason: "open" | "query" | "close" | "empty") => void
-  writeScroll?: (root: HTMLDivElement, origin: ScrollOrigin, callback: () => void) => void
 }): SessionFindController {
   let input: HTMLInputElement | undefined
   let highlightFrame: number | undefined
@@ -485,8 +483,14 @@ export function createSessionFind(opts: {
       const row = listRoot?.querySelector<HTMLElement>(`[data-timeline-key="${CSS.escape(target.rowKey)}"]`)
       if (!listRoot || !row) {
         const index = opts.timelineRows().findIndex((item) => TimelineRow.key(item) === target.rowKey)
-        if (index >= 0) opts.virtualizer.scrollToIndex(index, { align: "center" })
-        return { available: false, aligned: false, geometry: "unmounted" }
+        const item = index >= 0 ? opts.virtualizer.measurementsCache[index] : undefined
+        const top = item
+          ? Math.min(
+              Math.max(0, item.start),
+              Math.max(0, opts.virtualizer.getTotalSize() - (listRoot?.clientHeight ?? 0)),
+            )
+          : undefined
+        return { available: false, aligned: false, top, geometry: `unmounted:${index}` }
       }
       const match: FindMatch = {
         ...target,
@@ -503,15 +507,12 @@ export function createSessionFind(opts: {
         Math.min(listRoot.scrollTop + delta, Math.max(0, opts.virtualizer.getTotalSize() - listRoot.clientHeight)),
       )
       const adjustment = top - listRoot.scrollTop
-      if (Math.abs(adjustment) > 2) {
-        const write = () => (listRoot.scrollTop = top)
-        if (opts.writeScroll) opts.writeScroll(listRoot, "navigation", write)
-        else write()
-        debugFind(`position-write key=${target.rowKey} targetTop=${Math.round(top)} delta=${Math.round(adjustment)}`)
-      }
+      if (Math.abs(adjustment) > 2)
+        debugFind(`position-goal key=${target.rowKey} targetTop=${Math.round(top)} delta=${Math.round(adjustment)}`)
       return {
         available: true,
         aligned: Math.abs(adjustment) <= 2,
+        top,
         geometry: `${Math.round(top)}:${Math.round(row.getBoundingClientRect().height)}:${listRoot.clientHeight}`,
       }
     },

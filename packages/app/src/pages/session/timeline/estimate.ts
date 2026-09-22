@@ -33,6 +33,11 @@ export const TURN_DIVIDER_HEIGHT = 40
 export const DIFF_SUMMARY_HEADER_HEIGHT = 28
 export const DIFF_SUMMARY_FILE_HEIGHT = 52
 export const DIFF_SUMMARY_ROW_GAP = 6
+/** The diff group sits 8px below the preceding turn content. */
+export const DIFF_SUMMARY_GROUP_MARGIN_TOP = 8
+/** Timeline row padding at the desktop/mobile breakpoints. */
+export const DIFF_SUMMARY_DESKTOP_HORIZONTAL_INSET = 40
+export const DIFF_SUMMARY_MOBILE_HORIZONTAL_INSET = 32
 /** session-turn-thinking measures 24px; the row itself lands at ~40 once wrapped. */
 export const THINKING_HEIGHT = 24
 export const TEXT_PART_MARGIN = 24
@@ -122,6 +127,13 @@ export type EstimateRowHeightOptions = {
   textPartHasMeta?: (messageID: string, partID: string) => boolean
   /** Match ReasoningPartDisplay's live preview predicate for this message. */
   reasoningStreaming?: (messageID: string, part: Part) => boolean
+  /** Horizontal padding around the diff grid; defaults to the desktop 40px inset. */
+  diffSummaryHorizontalInset?: number
+}
+
+/** Match the DOM grid's minimum of two columns and 180px card track target. */
+export function diffSummaryColumns(innerWidth: number) {
+  return Math.max(2, Math.floor((Math.max(0, innerWidth) + DIFF_SUMMARY_ROW_GAP) / 180))
 }
 
 /** Live tools are cheap in height but expensive to keep mounted and reactive. */
@@ -272,12 +284,7 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
       )
       return clampRowEstimate(
         USER_MESSAGE_CHROME +
-          estimateTextHeight(
-            text,
-            userWidth,
-            options,
-            USER_MESSAGE_TEXT_INSET,
-          ) +
+          estimateTextHeight(text, userWidth, options, USER_MESSAGE_TEXT_INSET) +
           (injected ? INJECTED_PROMPT_HEIGHT : 0),
         viewportHeight,
       )
@@ -299,9 +306,15 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
       return capRowEstimate(ERROR_CARD_CHROME, viewportHeight)
 
     case "DiffSummary":
-      const columns = Math.max(2, Math.floor((width + DIFF_SUMMARY_ROW_GAP) / 180))
+      const inset = options.diffSummaryHorizontalInset ?? DIFF_SUMMARY_DESKTOP_HORIZONTAL_INSET
+      const columns = diffSummaryColumns(width - inset)
       const rows = Math.min(2, Math.ceil((row.diffs?.length ?? 0) / columns))
-      return DIFF_SUMMARY_HEADER_HEIGHT + rows * DIFF_SUMMARY_FILE_HEIGHT + Math.max(0, rows - 1) * DIFF_SUMMARY_ROW_GAP
+      return (
+        DIFF_SUMMARY_GROUP_MARGIN_TOP +
+        DIFF_SUMMARY_HEADER_HEIGHT +
+        rows * DIFF_SUMMARY_FILE_HEIGHT +
+        Math.max(0, rows - 1) * DIFF_SUMMARY_ROW_GAP
+      )
 
     case "Error":
       return Math.min(

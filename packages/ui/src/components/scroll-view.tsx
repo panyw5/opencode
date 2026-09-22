@@ -31,6 +31,8 @@ export type ScrollInput = {
   gestureId?: string
 }
 
+type ScrollKeyboardKey = "page-down" | "page-up" | "home" | "end" | "up" | "down"
+
 export function scrollDragMotion(input: {
   top: number
   previousY: number
@@ -58,6 +60,33 @@ export interface ScrollViewProps extends ComponentProps<"div"> {
   ) => void
   /** Called before ScrollView itself changes scrollTop via keyboard or thumb drag. */
   onScrollInput?: (viewport: HTMLDivElement, input?: ScrollInput) => void
+  /** Applies a concrete keyboard or thumb position when ScrollView is externally controlled. */
+  onScrollPosition?: (viewport: HTMLDivElement, top: number, input: ScrollInput) => void
+}
+
+export function scrollKeyboardTarget(input: {
+  key: ScrollKeyboardKey
+  top: number
+  scrollHeight: number
+  clientHeight: number
+}) {
+  const pageAmount = input.clientHeight * 0.8
+  const lineAmount = 40
+
+  switch (input.key) {
+    case "page-down":
+      return input.top + pageAmount
+    case "page-up":
+      return input.top - pageAmount
+    case "home":
+      return 0
+    case "end":
+      return Math.max(0, input.scrollHeight - input.clientHeight)
+    case "up":
+      return input.top - lineAmount
+    case "down":
+      return input.top + lineAmount
+  }
 }
 
 export function scrollThumbGeometry(input: {
@@ -139,6 +168,7 @@ export function ScrollView(props: ScrollViewProps) {
       "scrollViewportHeight",
       "onScrollGeometry",
       "onScrollInput",
+      "onScrollPosition",
     ],
     [
       "onScroll",
@@ -147,6 +177,7 @@ export function ScrollView(props: ScrollViewProps) {
       "onTouchMove",
       "onTouchEnd",
       "onTouchCancel",
+      "onScrollEnd",
       "onPointerDown",
       "onClick",
       "onKeyDown",
@@ -269,8 +300,14 @@ export function ScrollView(props: ScrollViewProps) {
         thumbHeight: thumbHeight(),
       })
       previousY = e.clientY
-      local.onScrollInput?.(viewportRef, { delta: motion.delta, kind: "other", gestureId })
-      viewportRef.scrollTop = motion.top
+      const input = { delta: motion.delta, kind: "other" as const, gestureId }
+      local.onScrollInput?.(viewportRef, input)
+      if (local.onScrollPosition) {
+        trace("position", `kind=${input.kind} delta=${Math.round(input.delta)} top=${Math.round(motion.top)}`)
+        local.onScrollPosition(viewportRef, motion.top, input)
+      } else {
+        viewportRef.scrollTop = motion.top
+      }
     }
 
     const onPointerUp = (e: PointerEvent) => {
@@ -297,10 +334,24 @@ export function ScrollView(props: ScrollViewProps) {
 
     const next = scrollKey(e)
     if (!next) return
-    local.onScrollInput?.(viewportRef, {
+    const input = {
       delta: next === "page-up" || next === "home" || next === "up" ? -1 : 1,
       kind: "keyboard",
-    })
+    } as const
+    local.onScrollInput?.(viewportRef, input)
+
+    if (local.onScrollPosition) {
+      e.preventDefault()
+      const top = scrollKeyboardTarget({
+        key: next,
+        top: viewportRef.scrollTop,
+        scrollHeight: viewportRef.scrollHeight,
+        clientHeight: viewportRef.clientHeight,
+      })
+      trace("position", `kind=${input.kind} key=${next} delta=${input.delta} top=${Math.round(top)}`)
+      local.onScrollPosition(viewportRef, top, input)
+      return
+    }
 
     const scrollAmount = viewportRef.clientHeight * 0.8
     const lineAmount = 40
@@ -365,6 +416,7 @@ export function ScrollView(props: ScrollViewProps) {
         onTouchMove={events.onTouchMove as any}
         onTouchEnd={events.onTouchEnd as any}
         onTouchCancel={events.onTouchCancel as any}
+        onScrollEnd={events.onScrollEnd as any}
         onPointerDown={events.onPointerDown as any}
         onClick={events.onClick as any}
         tabIndex={0}

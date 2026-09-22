@@ -1,20 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { timelineMessageScrollTop, timelineScrollOwner } from "./scroll-owner"
-
-describe("timeline scroll ownership", () => {
-  test("navigation excludes all other scroll owners regardless of bottom/history state", () => {
-    for (const bottom of [false, true]) {
-      for (const history of [false, true]) {
-        expect(timelineScrollOwner({ navigating: true, bottom, history })).toBe("navigation")
-      }
-    }
-  })
-  test("normal bottom, history and reading anchoring resume after navigation releases ownership", () => {
-    expect(timelineScrollOwner({ navigating: false, bottom: true, history: true })).toBe("bottom")
-    expect(timelineScrollOwner({ navigating: false, bottom: false, history: true })).toBe("history")
-    expect(timelineScrollOwner({ navigating: false, bottom: false, history: false })).toBe("reading")
-  })
-})
+import { timelineMessageScrollTop } from "./scroll-owner"
 
 describe("message navigation scroll goal", () => {
   test("reveal and measurement commits align to the top, not the row center", () => {

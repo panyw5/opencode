@@ -60,7 +60,7 @@ describe("session find viewport contract", () => {
     expect(events).toEqual(["release", "navigate"])
   })
 
-  test("positionMatch is the only operation that writes virtual scroll", () => {
+  test("positionMatch returns a goal without writing virtual scroll", () => {
     const { controller, navigated, virtualScrolls } = setup()
     expect(navigated).toHaveLength(1)
     expect(virtualScrolls()).toBe(0)
@@ -137,7 +137,8 @@ describe("session find viewport contract", () => {
     })
     const result = controller.positionMatch(navigated[0] as any)
     expect(result.available).toBe(true)
-    expect(root.scrollTop).toBe(200)
+    expect(result.top).toBe(200)
+    expect(root.scrollTop).toBe(0)
   })
 
   test("passive row prepend preserves the selected stable match identity", () => {

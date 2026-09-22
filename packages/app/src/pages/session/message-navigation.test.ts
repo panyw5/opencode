@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { createMessageNavigation } from "./message-navigation"
+import { createMessageNavigation, type MessageNavigationTarget } from "./message-navigation"
 
 const snapshot = { ready: true, loaded: true, more: false, busy: false }
 const message = (id: string) => ({ kind: "message" as const, id, behavior: "auto" as const })
@@ -269,5 +269,170 @@ describe("message navigation", () => {
     expect(value.observeHash("#message-last")).toBe("superseded")
     expect(value.state().target).toEqual({ kind: "reading" })
     expect(value.observeHash("")).toBe("acknowledged")
+  })
+
+  test("repeated following and reading requests are idempotent", () => {
+    const value = controller()
+    const following = value.requestFollowing()
+    const followingAgain = value.requestFollowing()
+    expect(followingAgain).toEqual(following)
+    expect(value.state().generation).toBe(following.generation)
+
+    const reading = value.requestReading()
+    const readingAgain = value.requestReading()
+    expect(readingAgain).toEqual(reading)
+    expect(value.state().generation).toBe(reading.generation)
+  })
+
+  test("settled targets remain stable while terminal targets can be retried", () => {
+    const value = controller()
+    const target = message("first")
+    const token = value.request(target)
+    expect(value.reconcile(snapshot)).toEqual({ kind: "seek", token, target })
+    expect(value.finishSeek(token, true)).toBe(true)
+    expect(value.request(target)).toEqual(token)
+    expect(value.state().phase).toBe("settled")
+
+    const failed = value.request(message("missing"))
+    expect(value.reconcile({ ...snapshot, loaded: false })).toEqual({
+      kind: "unavailable",
+      token: failed,
+      id: "missing",
+    })
+    const retry = value.request(message("missing"))
+    expect(retry.generation).toBeGreaterThan(failed.generation)
+    expect(value.state().phase).toBe("waiting")
+  })
+
+  test("following ignores downward input and survives a growth gap", () => {
+    const value = controller()
+    const token = value.requestFollowing()
+    expect(value.reconcile(snapshot)?.kind).toBe("seek")
+    value.finishSeek(token, true)
+    const before = value.state()
+    expect(value.userInput({ direction: "down", atBottom: false })).toEqual(token)
+    expect(value.state().target).toEqual({ kind: "live" })
+    expect(value.state().generation).toBe(before.generation)
+    expect(value.state().following).toBe(true)
+  })
+
+  test("observed motion only confirms positive return to bottom", () => {
+    const value = controller()
+    value.requestReading()
+    expect(value.observeUserMotion({ direction: "up", atBottom: false }).generation).toBe(value.state().generation)
+    expect(value.state().reading).toBe(true)
+    const live = value.observeUserMotion({ direction: "down", atBottom: true })
+    expect(value.state().following).toBe(true)
+    expect(value.observeUserMotion({ direction: "up", atBottom: true })).toEqual(live)
+    expect(value.state().following).toBe(true)
+  })
+
+  test("upward input releases following, while reading only follows at the bottom", () => {
+    const value = controller()
+    const following = value.requestFollowing()
+    expect(value.userInput({ direction: "up", atBottom: true })).toEqual({
+      sessionKey: "session-a",
+      generation: following.generation + 1,
+    })
+    expect(value.state().reading).toBe(true)
+
+    const before = value.state().generation
+    expect(value.userInput({ direction: "other", atBottom: true }).generation).toBe(before)
+    expect(value.userInput({ direction: "down", atBottom: false }).generation).toBe(before)
+    const live = value.userInput({ direction: "down", atBottom: true })
+    expect(live.generation).toBe(before + 1)
+    expect(value.state().following).toBe(true)
+  })
+
+  test("target input releases positioning ownership even at a physical edge", () => {
+    const value = controller()
+    const target = value.request(message("first"))
+    expect(value.reconcile(snapshot)?.kind).toBe("seek")
+    value.finishSeek(target, true)
+    const reading = value.userInput({ direction: "down", atBottom: true })
+    expect(reading.generation).toBe(target.generation + 1)
+    expect(value.state().target).toEqual({ kind: "reading" })
+    expect(value.state().reading).toBe(true)
+  })
+
+  test("user takeover keeps a delayed old hash superseded", () => {
+    const value = controller()
+    value.request(message("first"), "#message-first")
+    expect(value.observeHash("#message-last")).toBe("superseded")
+    value.userInput({ direction: "up", atBottom: false })
+    expect(value.state().target).toEqual({ kind: "reading" })
+    expect(value.observeHash("#message-first")).toBe("superseded")
+    expect(value.state().target).toEqual({ kind: "reading" })
+  })
+
+  test("user takeover during history loading clears the pending target", () => {
+    const value = controller()
+    const old = value.request(message("old"), "#message-old")
+    expect(value.reconcile({ ...snapshot, loaded: false, more: true })?.kind).toBe("load")
+    const reading = value.userInput({ direction: "up", atBottom: false })
+    expect(value.state().target).toEqual({ kind: "reading" })
+    expect(value.state().pendingHash).toBe("")
+    expect(value.finishLoad(old)).toBe(true)
+    expect(value.current(reading)).toBe(true)
+    expect(value.state().target).toEqual({ kind: "reading" })
+  })
+
+  test("late old hash after an empty acknowledgement remains an external route", () => {
+    const value = controller()
+    const target = message("old")
+    value.request(target, "#message-old")
+    value.userInput({ direction: "up", atBottom: false })
+    value.reconcile(snapshot)
+    expect(value.observeHash("")).toBe("acknowledged")
+    expect(value.observeHash("#message-old")).toBe("external")
+    value.request(target, "#message-old", "message")
+    expect(value.observeHash("#message-old")).toBe("unchanged")
+    expect(value.state().target).toEqual(target)
+  })
+
+  test("keep-view reading ownership does not require geometry", () => {
+    const value = controller()
+    const token = value.requestReading(undefined, undefined, "keep-view")
+    expect(value.state().target).toEqual({ kind: "reading" })
+    expect(value.state().reading).toBe(true)
+    expect(value.state().source).toBe("keep-view")
+    expect(value.current(token)).toBe(true)
+  })
+
+  test("publishes bounded transition diagnostics without a second owner", () => {
+    const changes: { source: string; target: MessageNavigationTarget | undefined }[] = []
+    const previousTargets: (MessageNavigationTarget | undefined)[] = []
+    const value = createMessageNavigation({
+      onChange: (next, previous, source) => {
+        changes.push({ source, target: next.target })
+        previousTargets.push(previous.target)
+      },
+    })
+    value.reset("session-a", "")
+    value.requestFollowing(undefined, "following")
+    value.userInput({ direction: "up", atBottom: false })
+    expect(changes.map((item) => item.source)).toEqual(["session", "following", "user-scroll"])
+    expect(changes[0]?.target).toBeUndefined()
+    expect(changes[2]).not.toBe(changes[1])
+    expect(changes.at(-1)?.target).toEqual({ kind: "reading" })
+    expect(previousTargets.at(-1)?.kind).toBe("live")
+  })
+
+  test("returns the original request token when diagnostics reenter the model", () => {
+    let nested = false
+    let value: ReturnType<typeof createMessageNavigation>
+    value = createMessageNavigation({
+      onChange: (_next, _previous, source) => {
+        if (source === "message" && !nested) {
+          nested = true
+          value.requestReading()
+        }
+      },
+    })
+    value.reset("session-a", "")
+    const requested = value.request(message("first"), undefined, "message")
+    expect(requested.generation).toBe(2)
+    expect(value.current(requested)).toBe(false)
+    expect(value.state().target).toEqual({ kind: "reading" })
   })
 })

@@ -10,6 +10,7 @@ import {
   restoreViewportAnchor,
   restoreVirtualViewportAnchor,
   rowContentVersion,
+  resolveObserverMeasurement,
   sameVirtualItemGeometry,
   snapshotVirtualItems,
   shouldAdjustVirtualScroll,
@@ -22,7 +23,63 @@ import {
   timelinePartIsLive,
   timelineRowContentVisibility,
   virtualRowOverflow,
+  virtualViewportAnchorCorrection,
 } from "./measure"
+
+test("observer samples refresh only when metadata is stale and reject invalid sizes", () => {
+  let reads = 0
+  expect(
+    resolveObserverMeasurement({
+      sampleSize: 80,
+      readCurrentSize: () => {
+        reads++
+        return 120
+      },
+      sampleWidth: 400,
+      currentWidth: 400,
+      sampleVersion: "a",
+      currentVersion: "a",
+    }),
+  ).toEqual({ stale: false, size: 80 })
+  expect(reads).toBe(0)
+  expect(
+    resolveObserverMeasurement({
+      sampleSize: 80,
+      readCurrentSize: () => {
+        reads++
+        return 120
+      },
+      sampleWidth: 400,
+      currentWidth: 420,
+      sampleVersion: "a",
+      currentVersion: "b",
+    }),
+  ).toEqual({ stale: true, size: 120 })
+  expect(reads).toBe(1)
+  expect(
+    resolveObserverMeasurement({
+      sampleSize: 90,
+      readCurrentSize: () => 140,
+      sampleWidth: 400,
+      currentWidth: 400,
+      sampleVersion: "before",
+      currentVersion: "after",
+    }),
+  ).toEqual({ stale: true, size: 140 })
+  expect(
+    resolveObserverMeasurement({
+      sampleSize: Number.NaN,
+      readCurrentSize: () => {
+        reads++
+        return 0
+      },
+      sampleWidth: 400,
+      currentWidth: 400,
+      sampleVersion: "a",
+      currentVersion: "a",
+    }),
+  ).toBeUndefined()
+})
 
 test("treats replacement virtual items with unchanged geometry as equal", () => {
   const previous = { key: "row-1", index: 4, start: 240, size: 60 }
@@ -173,7 +230,7 @@ test("captures a visible successor so growth cannot push it down", () => {
     "growing",
     42,
   )
-  expect(anchor).toEqual({ key: "gap", offset: 200, scrollTop: 1000, programmaticDelta: 42 })
+  expect(anchor).toEqual({ key: "gap", offset: 200, scrollTop: 1000, programmaticDelta: 42, capturedSize: 24 })
 })
 
 test("does not anchor a successor below the viewport", () => {
@@ -200,7 +257,7 @@ test("refreshes a scroll anchor from current virtual geometry without layout rea
       { key: "row-current", start: 800, size: 500 },
       { key: "row-below", start: 1300, size: 200 },
     ]),
-  ).toEqual({ key: "row-current", offset: -100, scrollTop: 900, programmaticDelta: 0 })
+  ).toEqual({ key: "row-current", offset: -100, scrollTop: 900, programmaticDelta: 0, capturedSize: 500 })
   expect(
     captureVirtualViewportAnchor(
       root,
@@ -212,7 +269,7 @@ test("refreshes a scroll anchor from current virtual geometry without layout rea
       12,
       0.5,
     ),
-  ).toEqual({ key: "row-current", offset: -100, scrollTop: 900, programmaticDelta: 12 })
+  ).toEqual({ key: "row-current", offset: -100, scrollTop: 900, programmaticDelta: 12, capturedSize: 600 })
 })
 
 test("restores a scroll anchor from committed virtual geometry without layout reads", () => {
@@ -233,6 +290,109 @@ test("restores a scroll anchor from committed virtual geometry without layout re
   })
   expect(delta).toBe(-50)
   expect(scrollTop).toBe(950)
+})
+
+test("does not reverse user motion after an unchanged captured row is passed", () => {
+  let scrollTop = 1500
+  const root = {
+    get scrollTop() {
+      return scrollTop
+    },
+    set scrollTop(value: number) {
+      throw new Error(`unexpected virtual anchor write: ${value}`)
+    },
+  }
+  const delta = virtualViewportAnchorCorrection({
+    root,
+    anchor: { key: "row", offset: -100, scrollTop: 1000, programmaticDelta: 0, capturedSize: 500 },
+    itemByKey: () => ({ key: "row", start: 900, size: 500 }),
+    userScrollDelta: 500,
+  })
+  expect(delta).toBe(0)
+  expect(scrollTop).toBe(1500)
+})
+
+test("keeps the new bottom clamp when a captured row really shrinks", () => {
+  let scrollTop = 1300
+  const root = {
+    get scrollTop() {
+      return scrollTop
+    },
+    set scrollTop(value: number) {
+      scrollTop = value
+    },
+  }
+  const delta = virtualViewportAnchorCorrection({
+    root,
+    anchor: { key: "row", offset: -100, scrollTop: 1000, programmaticDelta: 500, capturedSize: 500 },
+    itemByKey: () => ({ key: "row", start: 900, size: 300 }),
+    userScrollDelta: 300,
+  })
+  expect(delta).toBe(-100)
+  expect(scrollTop).toBe(1300)
+})
+
+test("does not reverse user motion when a passed row also shrinks", () => {
+  let scrollTop = 1500
+  const root = {
+    get scrollTop() {
+      return scrollTop
+    },
+    set scrollTop(value: number) {
+      throw new Error(`unexpected virtual anchor write: ${value}`)
+    },
+  }
+  const delta = virtualViewportAnchorCorrection({
+    root,
+    anchor: { key: "row", offset: -100, scrollTop: 1000, programmaticDelta: 0, capturedSize: 500 },
+    itemByKey: () => ({ key: "row", start: 900, size: 300 }),
+    userScrollDelta: 500,
+  })
+  expect(delta).toBe(0)
+  expect(scrollTop).toBe(1500)
+})
+
+test("keeps user displacement through a virtual prepend without mutating the root", () => {
+  const root = { scrollTop: 540 }
+  const delta = virtualViewportAnchorCorrection({
+    root,
+    anchor: { key: "row", offset: 0, scrollTop: 500, programmaticDelta: 0, capturedSize: 500 },
+    itemByKey: () => ({ key: "row", start: 900, size: 500 }),
+    userScrollDelta: 40,
+  })
+  expect(delta).toBe(400)
+  expect(root.scrollTop).toBe(540)
+})
+
+test("combines top and reading corrections without double compensation", () => {
+  const root = { scrollTop: 500 }
+  const top = virtualViewportAnchorCorrection({
+    root,
+    anchor: { key: "top", offset: 0, scrollTop: 500, programmaticDelta: 0, capturedSize: 500 },
+    itemByKey: (key) => (key === "top" ? { key, start: 600, size: 500 } : { key, start: 700, size: 500 }),
+    userScrollDelta: 0,
+  })
+  const reading = virtualViewportAnchorCorrection({
+    root: { scrollTop: root.scrollTop + top },
+    anchor: { key: "reading", offset: 0, scrollTop: 500, programmaticDelta: 0, capturedSize: 500 },
+    itemByKey: (key) => ({ key, start: 600, size: 500 }),
+    userScrollDelta: 0,
+  })
+  expect(top).toBe(100)
+  expect(reading).toBe(0)
+  expect(top + reading).toBe(100)
+})
+
+test("returns no correction for unknown virtual anchors", () => {
+  const root = { scrollTop: 100 }
+  expect(
+    virtualViewportAnchorCorrection({
+      root,
+      anchor: { key: "missing", offset: 0, scrollTop: 100, programmaticDelta: 0, capturedSize: 40 },
+      itemByKey: () => undefined,
+      userScrollDelta: 0,
+    }),
+  ).toBe(0)
 })
 
 test("keeps the reading row steady when an in-view row above it grows", () => {

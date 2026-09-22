@@ -574,7 +574,8 @@ export function SessionComposerRegion(props: {
   onAbort?: () => void | Promise<void>
   onResponseSubmit: () => void
   onScrollToBottom: () => void
-  scrollState?: { overflow: boolean; bottom: boolean }
+  /** Page-owned navigation intent controls whether Jump to latest is offered. */
+  showJumpToLatest?: boolean
   followup?: {
     queue: () => boolean
     items: { id: string; text: string }[]
@@ -717,9 +718,7 @@ export function SessionComposerRegion(props: {
     if (platform.platform !== "desktop") return undefined
     return props.subagentNavigation
   })
-  const jumpToLatestVisible = createMemo(
-    () => !!props.onScrollToBottom && !!props.scrollState?.overflow && !props.scrollState.bottom,
-  )
+  const jumpToLatestVisible = createMemo(() => !!props.onScrollToBottom && props.showJumpToLatest === true)
   const showPromptToolbar = createMemo(
     () =>
       !!props.subagentTitle ||
@@ -731,7 +730,7 @@ export function SessionComposerRegion(props: {
 
   createEffect(() => {
     console.debug(
-      `[composer-scroll-to-latest] visible=${String(jumpToLatestVisible())} handler=${String(!!props.onScrollToBottom)} overflow=${String(!!props.scrollState?.overflow)} bottom=${String(!!props.scrollState?.bottom)}`,
+      `[composer-scroll-to-latest] visible=${String(jumpToLatestVisible())} handler=${String(!!props.onScrollToBottom)} requested=${String(props.showJumpToLatest === true)}`,
     )
   })
 
@@ -864,11 +863,9 @@ export function SessionComposerRegion(props: {
               iconSize="medium"
               class="size-10 rounded-full shadow-md opacity-70 hover:opacity-100 transition-opacity [&_svg_path]:stroke-[2px]"
               onClick={() => {
-                console.debug("[composer-scroll-to-latest] click", {
-                  visible: jumpToLatestVisible(),
-                  overflow: !!props.scrollState?.overflow,
-                  atBottom: !!props.scrollState?.bottom,
-                })
+                console.debug(
+                  `[composer-scroll-to-latest] click visible=${String(jumpToLatestVisible())} requested=${String(props.showJumpToLatest === true)}`,
+                )
                 props.onScrollToBottom()
               }}
               aria-label={language.t("session.messages.jumpToLatest")}
@@ -1133,7 +1130,6 @@ export function SessionComposerRegion(props: {
                 onUserMessageCreated={props.onUserMessageCreated}
                 onSubmitted={props.onSubmitted}
                 onScrollToBottom={props.onScrollToBottom}
-                scrollState={props.scrollState}
               />
             </div>
           </Show>

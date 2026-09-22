@@ -15,7 +15,6 @@ import { createStore } from "solid-js/store"
 import {
   createVirtualizer,
   defaultRangeExtractor,
-  elementScroll,
   observeElementOffset as observeVirtualElementOffset,
   type VirtualItem,
   type Virtualizer,
@@ -46,32 +45,25 @@ import type {
   UserMessage,
 } from "@opencode-ai/sdk/v2"
 import { getFilename } from "@opencode-ai/core/util/path"
-import {
-  accumulateSmoothWheelTarget,
-  normalizeWheelDelta,
-  shouldMarkBoundaryGesture,
-  shouldSmoothDiscreteWheel,
-  smoothWheelFramePosition,
-} from "@/pages/session/message-gesture"
+import { normalizeWheelDelta, shouldMarkBoundaryGesture } from "@/pages/session/message-gesture"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
 import { markSessionProfile } from "@/utils/session-profile"
 import { useComponentMountProfile } from "@/utils/component-mount-profile"
-import { timelineMessageScrollTop, timelineScrollOwner } from "./scroll-owner"
+import { timelineMessageScrollTop } from "./scroll-owner"
 import {
   captureVirtualViewportAnchor,
   captureVisibleSuccessorAnchor,
   heightFromResizeObserverEntry,
   markdownMeasurementPending,
   READING_LINE_RATIO,
-  restoreVirtualViewportAnchor,
+  virtualViewportAnchorCorrection,
   rowContentVersion,
+  resolveObserverMeasurement,
   sameVirtualItemGeometry,
-  shouldAdjustVirtualScroll,
   shouldCommitVirtualRowHeight,
-  shouldDeferFastRowMeasurement,
   snapshotVirtualItems,
   timelineMeasurementsMatchWidth,
   timelinePartIsLive,
@@ -93,9 +85,16 @@ import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from ".
 import { timelineRowCache } from "./row-cache"
 import { DEFAULT_TIMELINE_OVERSCAN, timelineOverscan } from "./windows-performance"
 import { createSessionFind } from "./session-find"
+import { createLiveBottomFollow } from "./live-bottom"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
 import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
-import type { FindNavigationTarget, FindPositionResult, MessageNavigationTarget } from "../message-navigation"
+import { atPhysicalBottom, physicalScrollGap } from "../use-session-scroll-utils"
+import type {
+  FindNavigationTarget,
+  MessageNavigationSnapshot,
+  MessageNavigationToken,
+  MessageNavigationTarget,
+} from "../message-navigation"
 import { createScrollLedger, type ScrollOrigin, type ScrollRuntime } from "./scroll-ledger"
 import type { HistoryInput } from "../history-edge"
 
@@ -230,33 +229,24 @@ export function MessageTimeline(props: {
   onScheduleScrollState: (
     el: HTMLDivElement,
     geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
-    userDelta?: number,
   ) => void
-  onAutoScrollHandleScroll: (geometry: { scrollTop: number; scrollHeight: number; clientHeight: number }) => void
   onMarkScrollGesture: (target?: EventTarget | null, input?: HistoryInput) => void
-  hasScrollGesture: () => boolean
   onUserScroll: () => void
+  onUserSelection?: () => void
+  onUserMotion?: (input: { direction: "up" | "down" | "other"; atBottom: boolean }) => void
   onFindNavigate: (target: FindNavigationTarget) => void
   onFindRelease?: (reason: "open" | "query" | "close" | "empty") => void
   onFindOpenChange?: (open: boolean) => void
   onHistoryScroll: (scrollTop: number) => void
-  onAutoScrollInteraction: (event: MouseEvent) => void
-  shouldAnchorBottom: () => boolean
-  onFollowBottom?: () => void
-  navigationTargetId?: () => string | undefined
-  isInitialScrollSettling: () => boolean
+  navigationState: () => MessageNavigationSnapshot
+  onNavigationSettled?: (token: MessageNavigationToken, success: boolean) => void
+  onNavigationFailed?: (token: MessageNavigationToken) => void
   centered: boolean
   setContentRef: (el: HTMLDivElement) => void
   userMessages: UserMessage[]
   shouldAnimateMessage?: (id: string) => boolean
   anchor: (id: string) => string
-  setRevealMessage?: (fn: (id: string, behavior?: ScrollBehavior) => void) => void
   setPrepareNavigation?: (fn: (target: MessageNavigationTarget) => void) => void
-  setPositionFind?: (fn: (target: FindNavigationTarget) => FindPositionResult) => void
-  setScrollRuntime?: (runtime: ScrollRuntime | undefined) => void
-  viewportTarget?: () => Extract<MessageNavigationTarget, { kind: "message" | "anchor" | "find" }> | undefined
-  setScrollToEnd?: (fn: () => void) => void
-  setHistoryAnchor?: (handlers: { capture: () => void; restore: (done: boolean) => Promise<void> }) => void
   onContentReady?: (detail: { rows: number; cached: boolean }) => void
   onViewportTurnChange?: (userMessageID: string | undefined) => void
   onReviewTurnDiff?: (input: { userMessageID: string; file: string }) => void
@@ -311,81 +301,6 @@ export function MessageTimeline(props: {
     recordTimelineDebug(line)
     console.debug(line)
   }
-  const macOS = typeof navigator !== "undefined" && /Macintosh|Mac OS X/.test(navigator.userAgent)
-  let smoothWheelFrame: number | undefined
-  let smoothWheelTarget: number | undefined
-  let smoothWheelLastTop: number | undefined
-  let smoothWheelLastFrame = 0
-  const stopSmoothWheel = (source: string) => {
-    const active = smoothWheelTarget !== undefined
-    if (smoothWheelFrame !== undefined) cancelAnimationFrame(smoothWheelFrame)
-    smoothWheelFrame = undefined
-    smoothWheelTarget = undefined
-    smoothWheelLastTop = undefined
-    smoothWheelLastFrame = 0
-    if (active && lagging()) timelineLag("wheel-smooth-stop", `source=${source}`)
-  }
-  const animateSmoothWheel = (now: number) => {
-    smoothWheelFrame = undefined
-    const root = listRoot()
-    if (!root || smoothWheelTarget === undefined || smoothWheelLastTop === undefined) {
-      stopSmoothWheel("missing-root")
-      return
-    }
-
-    const max = Math.max(0, virtualizer.getTotalSize() - listSize().height)
-    const externalDelta = root.scrollTop - smoothWheelLastTop
-    if (Math.abs(externalDelta) > 0.5) {
-      smoothWheelTarget = Math.max(0, Math.min(max, smoothWheelTarget + externalDelta))
-      if (lagging()) {
-        timelineLag(
-          "wheel-smooth-anchor",
-          `external=${Math.round(externalDelta)} target=${Math.round(smoothWheelTarget)} top=${Math.round(root.scrollTop)}`,
-        )
-      }
-    }
-    smoothWheelTarget = Math.max(0, Math.min(max, smoothWheelTarget))
-    const next = smoothWheelFramePosition({
-      current: root.scrollTop,
-      target: smoothWheelTarget,
-      elapsed: smoothWheelLastFrame ? now - smoothWheelLastFrame : 16,
-    })
-    scrollRuntime.write(root, "user", () => {
-      root.scrollTop = Math.abs(smoothWheelTarget! - next) < 0.5 ? smoothWheelTarget! : next
-    })
-    smoothWheelLastTop = root.scrollTop
-    smoothWheelLastFrame = now
-    markToolHydrationScrollActivity(now)
-    if (lagging()) {
-      timelineLag(
-        "wheel-smooth-frame",
-        `top=${Math.round(root.scrollTop)} target=${Math.round(smoothWheelTarget)} remaining=${Math.round(smoothWheelTarget - root.scrollTop)}`,
-      )
-    }
-    if (Math.abs(smoothWheelTarget - root.scrollTop) < 0.5) {
-      stopSmoothWheel("finish")
-      return
-    }
-    smoothWheelFrame = requestAnimationFrame(animateSmoothWheel)
-  }
-  const enqueueSmoothWheel = (root: HTMLDivElement, delta: number) => {
-    const max = Math.max(0, virtualizer.getTotalSize() - listSize().height)
-    smoothWheelTarget = accumulateSmoothWheelTarget({
-      current: root.scrollTop,
-      target: smoothWheelTarget,
-      delta,
-      max,
-    })
-    smoothWheelLastTop ??= root.scrollTop
-    smoothWheelLastFrame ||= performance.now()
-    if (lagging()) {
-      timelineLag(
-        "wheel-smooth-input",
-        `delta=${Math.round(delta)} top=${Math.round(root.scrollTop)} target=${Math.round(smoothWheelTarget)} max=${Math.round(max)}`,
-      )
-    }
-    if (smoothWheelFrame === undefined) smoothWheelFrame = requestAnimationFrame(animateSmoothWheel)
-  }
   createEffect(
     on(
       sessionID,
@@ -419,20 +334,10 @@ export function MessageTimeline(props: {
     }
     return ordered
   })
-  const partsCache = new Map<string, { source: PartType[]; result: PartType[] }>()
   const getMessageParts = (messageID: string) => {
     const source = sync.data.part[messageID]
     if (!source) return emptyParts
-    // displayParts is linear and allocates when a message carries duplicate
-    // tool parts. Timeline rebuilds call this for every message repeatedly
-    // (projection memos, virtualizer, row renderers), so cache by array
-    // identity — the store hands back the same reference until a write
-    // replaces it, and Solid still tracks the keyed read above.
-    const cached = partsCache.get(messageID)
-    if (cached && cached.source === source) return cached.result
-    const result = displayParts(source)
-    partsCache.set(messageID, { source, result })
-    return result
+    return displayParts(source)
   }
   const getMessagePart = (messageID: string, partID: string) =>
     getMessageParts(messageID).find((part) => part.id === partID)
@@ -479,13 +384,19 @@ export function MessageTimeline(props: {
   const rowHeightHandlers = new Map<string, (raw: number) => number>()
   const elementRowKey = new WeakMap<HTMLElement, string>()
   let mounted = true
-  const pendingNearBottomShrinks = new Map<number, { key: string; size: number }>()
-  const deferredFastMeasurements = new Map<number, { key: string; size: number; anchor?: ViewportAnchor }>()
-  let deferredFastMeasurementTimer: number | undefined
-  const observerMeasurements = new Map<string, { element: HTMLElement; size: number }>()
+  const observerMeasurements = new Map<
+    string,
+    { element: HTMLElement; size: number; width: number; contentVersion: string | undefined }
+  >()
   let observerMeasurementFrame: number | undefined
   const scheduleObserverMeasurement = (key: string, element: HTMLElement, size: number) => {
-    observerMeasurements.set(key, { element, size })
+    const row = timelineRowByKey().get(key)
+    observerMeasurements.set(key, {
+      element,
+      size,
+      width: estimatorWidth(),
+      contentVersion: row ? rowContentVersion(row, getMessagePart) : undefined,
+    })
     if (observerMeasurementFrame !== undefined) return
     observerMeasurementFrame = requestAnimationFrame(() => {
       observerMeasurementFrame = undefined
@@ -493,46 +404,182 @@ export function MessageTimeline(props: {
       const pending = [...observerMeasurements.entries()]
       observerMeasurements.clear()
       if (lagging()) timelineLag("observer-frame", `rows=${String(pending.length)}`)
+      const resolved: {
+        rowKey: string
+        element: HTMLElement
+        index: number
+        size: number
+        width: number
+        contentVersion: string | undefined
+      }[] = []
       for (const [rowKey, measurement] of pending) {
         if (!measurement.element.isConnected || elementRowKey.get(measurement.element) !== rowKey) continue
-        const index = Number.parseInt(measurement.element.dataset.index ?? "", 10)
-        if (!Number.isFinite(index)) continue
-        const item = virtualizer.measurementsCache[index]
-        if (!item || String(item.key) !== rowKey) continue
-        const handler = rowHeightHandlers.get(rowKey)
+        const currentRow = timelineRowByKey().get(rowKey)
+        const index = timelineIndexByKey().get(rowKey)
+        if (index === undefined) continue
+        const width = estimatorWidth()
+        const contentVersion = currentRow ? rowContentVersion(currentRow, getMessagePart) : undefined
+        const resolution = resolveObserverMeasurement({
+          sampleSize: measurement.size,
+          readCurrentSize: () => measurement.element.offsetHeight,
+          sampleWidth: measurement.width,
+          currentWidth: width,
+          sampleVersion: measurement.contentVersion,
+          currentVersion: contentVersion,
+        })
+        if (!resolution) continue
+        resolved.push({ rowKey, element: measurement.element, index, size: resolution.size, width, contentVersion })
+      }
+      for (const measurement of resolved) {
+        if (
+          !mounted ||
+          !measurement.element.isConnected ||
+          elementRowKey.get(measurement.element) !== measurement.rowKey
+        )
+          continue
+        const currentRow = timelineRowByKey().get(measurement.rowKey)
+        if (
+          measurement.width !== estimatorWidth() ||
+          measurement.contentVersion !== (currentRow ? rowContentVersion(currentRow, getMessagePart) : undefined)
+        )
+          continue
+        const item = virtualizer.measurementsCache[measurement.index]
+        if (!item || String(item.key) !== measurement.rowKey) continue
+        const handler = rowHeightHandlers.get(measurement.rowKey)
         const next = handler ? handler(measurement.size) : measurement.size
         const current = virtualizer.itemSizeCache.get(item.key) ?? item.size
         if (Math.abs(next - current) < 0.5) continue
-        virtualizer.resizeItem(index, next)
+        virtualizer.resizeItem(measurement.index, next)
       }
     })
   }
 
-  const activeNavigation = () =>
-    props.viewportTarget?.() ??
-    (!props.viewportTarget && props.navigationTargetId?.()
-      ? { kind: "message" as const, id: props.navigationTargetId!()!, behavior: "auto" as const }
-      : undefined)
+  const activeNavigation = () => {
+    const target = props.navigationState().target
+    if (!target || target.kind === "reading" || target.kind === "live") return undefined
+    return props.navigationState().viewportTarget ?? target
+  }
   const scrollLedger = createScrollLedger({
     initialTop: 0,
     fastSpeed: FAST_SCROLL_SPEED,
     fastWindowMs: FAST_SCROLL_WINDOW_MS,
   })
   let programmaticScrollDelta = 0
-  const scrollRuntime: ScrollRuntime = {
-    write(root, origin: ScrollOrigin, callback) {
-      const before = root.scrollTop
-      callback()
-      const after = root.scrollTop
-      scrollLedger.recordWrite(before, after, origin)
-      programmaticScrollDelta = scrollLedger.snapshot().systemCompensation
-      if (Math.abs(after - before) > 0.5 && lagging()) {
+  let reportVirtualOffset: ((top: number, scrolling: boolean) => void) | undefined
+  const applyPosition = (root: HTMLDivElement, top: number, origin: ScrollOrigin, token: MessageNavigationToken) => {
+    const state = props.navigationState()
+    const targetKind = state.target?.kind
+    const originAllowed =
+      origin === "bottom" || origin === "initial"
+        ? targetKind === "live"
+        : origin === "navigation"
+          ? !!state.viewportTarget
+          : origin === "layout"
+            ? targetKind === "reading"
+            : true
+    if (
+      root !== listRoot() ||
+      !root.isConnected ||
+      !mounted ||
+      state.sessionKey !== ownerSessionKey ||
+      token.sessionKey !== state.sessionKey ||
+      token.generation !== state.generation ||
+      !originAllowed
+    ) {
+      if (lagging())
         timelineLag(
-          "scroll-write",
-          `source=${origin} before=${Math.round(before)} after=${Math.round(after)} actual=${Math.round(after - before)}`,
+          "scroll-write-rejected",
+          `origin=${origin} top=${Math.round(top)} session=${sessionID() ?? "none"} token=${token.sessionKey}:${String(token.generation)} current=${state.sessionKey}:${String(state.generation)} target=${targetKind ?? "none"}`,
         )
-      }
+      return 0
+    }
+    const before = root.scrollTop
+    const max = Math.max(0, root.scrollHeight - root.clientHeight)
+    root.scrollTop = Math.max(0, Math.min(top, max))
+    const after = root.scrollTop
+    scrollLedger.recordWrite(before, after, origin)
+    programmaticScrollDelta = scrollLedger.snapshot().systemCompensation
+    reportVirtualOffset?.(after, false)
+    if (lagging() && Math.abs(after - before) > 0.5) {
+      timelineLag(
+        "scroll-write",
+        `source=${origin} before=${Math.round(before)} requested=${Math.round(top)} after=${Math.round(after)} actual=${Math.round(after - before)}`,
+      )
+    }
+    return after - before
+  }
+  const currentNavigationToken = (): MessageNavigationToken => {
+    const state = props.navigationState()
+    return { sessionKey: state.sessionKey, generation: state.generation }
+  }
+  let tailToken = currentNavigationToken()
+  const tailFollow = createLiveBottomFollow({
+    root: () => listRoot(),
+    enabled: () => props.navigationState().following && !activeNavigation(),
+    write: (root, top) => applyPosition(root, top, "bottom", tailToken),
+    log: (message) => {
+      if (lagging()) timelineLag("tail-follow", message)
     },
+  })
+  let navigationDeadline: number | undefined
+  createEffect(
+    on(
+      () =>
+        [
+          props.navigationState().sessionKey,
+          props.navigationState().generation,
+          props.navigationState().target?.kind,
+        ] as const,
+      () => {
+        tailFollow.cancel("intent-change")
+        tailToken = currentNavigationToken()
+        if (props.navigationState().following) followTail()
+      },
+    ),
+  )
+  createEffect(
+    on(
+      () =>
+        [
+          props.navigationState().generation,
+          props.navigationState().target?.kind,
+          props.navigationState().phase,
+          props.navigationState().historyPending,
+        ] as const,
+      ([, kind, phase, historyPending]) => {
+        if (navigationDeadline !== undefined) window.clearTimeout(navigationDeadline)
+        navigationDeadline = undefined
+        if (!kind || kind === "live" || kind === "reading" || phase !== "seeking" || historyPending) return
+        const token = currentNavigationToken()
+        navigationDeadline = window.setTimeout(() => {
+          navigationDeadline = undefined
+          const state = props.navigationState()
+          if (
+            state.generation !== token.generation ||
+            state.sessionKey !== token.sessionKey ||
+            state.phase !== "seeking"
+          )
+            return
+          if (lagging()) timelineLag("navigation-deadline", `generation=${String(token.generation)} kind=${kind}`)
+          props.onNavigationFailed?.(token)
+        }, 2_000)
+      },
+    ),
+  )
+  const followTail = () => {
+    const token = currentNavigationToken()
+    if (token.sessionKey !== tailToken.sessionKey || token.generation !== tailToken.generation) {
+      tailFollow.cancel("intent-change")
+      tailToken = token
+    }
+    tailFollow.follow()
+  }
+  onCleanup(() => {
+    tailFollow.cancel("cleanup")
+    if (navigationDeadline !== undefined) window.clearTimeout(navigationDeadline)
+  })
+  const scrollRuntime: ScrollRuntime = {
+    apply: applyPosition,
     rebase: (top) => scrollLedger.rebase(top),
   }
 
@@ -562,7 +609,7 @@ export function MessageTimeline(props: {
       if (lagging()) {
         timelineLag(
           "batch-dispatch",
-          `top=${Math.round(listRoot()?.scrollTop ?? 0)} bottom=${String(props.shouldAnchorBottom())} prepend=${String(prependLoading)} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"}`,
+          `top=${Math.round(listRoot()?.scrollTop ?? 0)} bottom=${String(props.navigationState().following)} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"}`,
         )
       }
       afterMeasurementBatch()
@@ -571,49 +618,35 @@ export function MessageTimeline(props: {
   const afterMeasurementBatch = () => {
     const root = listRoot()
     if (!root) return
-    const owner = timelineScrollOwner({
-      navigating: !!activeNavigation(),
-      bottom: props.shouldAnchorBottom(),
-      history: prependLoading,
-    })
+    if (virtualContent) virtualContent.style.height = `${virtualizer.getTotalSize()}px`
+    const ownerToken = currentNavigationToken()
+    const owner = activeNavigation() ? "navigation" : props.navigationState().following ? "bottom" : "reading"
     if (owner === "navigation") {
       viewportAnchor = undefined
       readingAnchor = undefined
       const target = activeNavigation()
       if (target?.kind === "find") {
         const result = sessionFind.positionMatch(target)
+        if (result.top !== undefined && Math.abs(result.top - root.scrollTop) > 2)
+          scrollRuntime.apply(root, result.top, "navigation", ownerToken)
+        if (
+          result.available &&
+          result.top !== undefined &&
+          Math.abs(result.top - root.scrollTop) <= 2 &&
+          props.navigationState().phase === "seeking"
+        )
+          props.onNavigationSettled?.(ownerToken, true)
         if (lagging())
           timelineLag("find-position", `available=${String(result.available)} aligned=${String(result.aligned)}`)
       } else if (target?.kind === "message" || target?.kind === "anchor") {
         positionMessage(target.id, "measure")
-      } else {
-        const id = props.navigationTargetId?.()
-        if (id) positionMessage(id, "measure")
       }
       return
     }
     if (owner === "bottom") {
       viewportAnchor = undefined
       readingAnchor = undefined
-      if (props.onFollowBottom) {
-        props.onFollowBottom()
-        return
-      }
-      // TanStack already adjusts by each committed delta while bottom-anchored;
-      // this only closes residual gaps (e.g. a guarded shrink committing late).
-      // Never while the user is gesturing: writing scrollTop mid-gesture
-      // locks the user to the bottom.
-      if (!props.isInitialScrollSettling() && !props.hasScrollGesture()) {
-        const gap = virtualizer.getTotalSize() - listSize().height - root.scrollTop
-        if (gap > 0.5) {
-          scrollRuntime.write(root, "bottom", () => (root.scrollTop += gap))
-          if (lagging()) timelineLag("batch-pin", `gap=${Math.round(gap)}`)
-        }
-      }
-      return
-    }
-    if (owner === "history") {
-      restorePrependAnchor(false)
+      followTail()
       return
     }
     const items = virtualizer.measurementsCache
@@ -625,15 +658,29 @@ export function MessageTimeline(props: {
       // programmatic writes; only height-commit displacement gets corrected.
       const userDelta =
         root.scrollTop - viewportAnchor.scrollTop - (programmaticScrollDelta - viewportAnchor.programmaticDelta)
-      let delta = 0
-      scrollRuntime.write(root, "layout", () => {
-        delta = restoreVirtualViewportAnchor({
-          root,
-          anchor: viewportAnchor!,
-          itemByKey: (key) => anchorItem(key),
-          userScrollDelta: userDelta,
-        })
+      const correction = virtualViewportAnchorCorrection({
+        root,
+        anchor: viewportAnchor!,
+        itemByKey: (key) => anchorItem(key),
+        userScrollDelta: userDelta,
       })
+      let totalCorrection = correction
+      let readingUserDeltaForLog = 0
+      let readingCorrection = 0
+      if (readingAnchor) {
+        const simulatedTop = root.scrollTop + correction
+        const readingUserDelta =
+          root.scrollTop - readingAnchor.scrollTop - (programmaticScrollDelta - readingAnchor.programmaticDelta)
+        readingUserDeltaForLog = readingUserDelta
+        readingCorrection = virtualViewportAnchorCorrection({
+          root: { scrollTop: simulatedTop },
+          anchor: readingAnchor,
+          itemByKey: (key) => anchorItem(key),
+          userScrollDelta: readingUserDelta,
+        })
+        totalCorrection += readingCorrection
+      }
+      const delta = scrollRuntime.apply(root, root.scrollTop + totalCorrection, "layout", ownerToken)
       if (lagging()) {
         timelineLag(
           "virtual-anchor",
@@ -658,21 +705,11 @@ export function MessageTimeline(props: {
         // Residual displacement of the reading row after the top restore: the
         // two anchors only disagree when a row between them changed size, and
         // then the reading line wins — that is the content being read.
-        const readingUserDelta =
-          root.scrollTop - readingAnchor.scrollTop - (programmaticScrollDelta - readingAnchor.programmaticDelta)
-        let readingDelta = 0
-        scrollRuntime.write(root, "layout", () => {
-          readingDelta = restoreVirtualViewportAnchor({
-            root,
-            anchor: readingAnchor!,
-            itemByKey: (key) => anchorItem(key),
-            userScrollDelta: readingUserDelta,
-          })
-        })
+        const readingDelta = readingCorrection
         if (lagging()) {
           timelineLag(
             "virtual-anchor",
-            `phase=reading-restore key=${readingAnchor.key} offset=${Math.round(readingAnchor.offset)} user=${Math.round(readingUserDelta)} delta=${Math.round(readingDelta)} top=${Math.round(root.scrollTop)} item=${(() => {
+            `phase=reading-restore key=${readingAnchor.key} offset=${Math.round(readingAnchor.offset)} user=${Math.round(readingUserDeltaForLog)} delta=${Math.round(readingDelta)} top=${Math.round(root.scrollTop)} item=${(() => {
               const item = byKey.get(readingAnchor.key)
               return item ? `${Math.round(item.start)}/${Math.round(item.size)}` : "missing"
             })()}`,
@@ -686,7 +723,7 @@ export function MessageTimeline(props: {
         if (lagging() && Math.abs(readingDelta) > 0.5) {
           timelineLag(
             "reading-restore",
-            `key=${readingAnchor.key} delta=${Math.round(readingDelta)} user=${Math.round(readingUserDelta)}`,
+            `key=${readingAnchor.key} delta=${Math.round(readingDelta)} user=${Math.round(readingUserDeltaForLog)}`,
           )
         }
       }
@@ -762,6 +799,8 @@ export function MessageTimeline(props: {
         if (message?.role !== "assistant") return false
         return typeof part.time?.end !== "number" && typeof message.time.completed !== "number"
       },
+      diffSummaryHorizontalInset:
+        typeof window !== "undefined" && window.matchMedia("(min-width: 768px)").matches ? 40 : 32,
       charWidth: metrics.charWidth,
     }
   }
@@ -796,120 +835,10 @@ export function MessageTimeline(props: {
     }
   }
   const hasCachedMeasurements = initialMeasurements.length > 0
-  const coldBottomMount = !hasCachedMeasurements && props.shouldAnchorBottom()
+  const coldBottomMount = !hasCachedMeasurements && props.navigationState().following
   const [renderOverscan, setRenderOverscan] = createSignal(
     hasCachedMeasurements || coldBottomMount ? 6 : normalTimelineOverscan,
   )
-
-  type PrependAnchor = ViewportAnchor
-  let prependAnchor: PrependAnchor | undefined
-  let prependLoading = false
-  let prependRestoreDone = false
-  let prependAnchorFrame: number | undefined
-  let prependCompletion: Promise<void> | undefined
-  let finishPrepend: (() => void) | undefined
-  // Prefer the virtual spacer height (full list) over the viewport scrollHeight.
-  const contentHeight = (root = listRoot()) => (root ? (virtualContent?.offsetHeight ?? root.scrollHeight) : 0)
-  const clearPrependAnchor = () => {
-    finishPrepend?.()
-    finishPrepend = undefined
-    prependCompletion = undefined
-    prependAnchor = undefined
-    prependLoading = false
-    prependRestoreDone = false
-    if (prependAnchorFrame !== undefined) cancelAnimationFrame(prependAnchorFrame)
-    prependAnchorFrame = undefined
-  }
-  const capturePrependAnchor = () => {
-    if (activeNavigation()) {
-      clearPrependAnchor()
-      return
-    }
-    prependLoading = true
-    prependRestoreDone = false
-    const root = listRoot()
-    if (!root) return
-    const items = virtualizer.measurementsCache
-    prependAnchor = captureVirtualViewportAnchor(root, items, scrollLedger.snapshot().systemCompensation)
-    console.debug(
-      `[timeline] history-capture sid=${sessionID() ?? "none"} key=${prependAnchor?.key ?? "none"} top=${Math.round(root.scrollTop)}`,
-    )
-  }
-  const restorePrependAnchor = (done: boolean): Promise<void> => {
-    if (activeNavigation()) {
-      clearPrependAnchor()
-      return Promise.resolve()
-    }
-    // Keep prependLoading true until the pin loop settles, otherwise scroll events
-    // re-trigger history loads and the anchor is cleared mid-restore.
-    if (done) prependRestoreDone = true
-    const root = listRoot()
-    const saved = prependAnchor
-    if (!root || !saved) {
-      if (done) clearPrependAnchor()
-      return Promise.resolve()
-    }
-    if (prependCompletion) return prependCompletion
-    const completion = new Promise<void>((resolve) => (finishPrepend = resolve))
-    prependCompletion = completion
-    let frames = 0
-    let stable = 0
-    const restore = () => {
-      prependAnchorFrame = undefined
-      if (activeNavigation()) {
-        clearPrependAnchor()
-        return
-      }
-      const anchor = prependAnchor
-      if (!anchor) {
-        clearPrependAnchor()
-        return
-      }
-      const total = virtualizer.getTotalSize()
-      if (virtualContent) virtualContent.style.height = `${total}px`
-      if (!anchorItem(anchor.key)) {
-        console.debug(
-          `[timeline] history-anchor-missing sid=${sessionID() ?? "none"} key=${anchor.key} index=${timelineIndexByKey().get(anchor.key) ?? "none"}`,
-        )
-        prependAnchor = captureVirtualViewportAnchor(root, virtualizer.measurementsCache, programmaticScrollDelta)
-        frames++
-        if (frames >= 12) clearPrependAnchor()
-        else prependAnchorFrame = requestAnimationFrame(restore)
-        return
-      }
-      const ledgerBefore = scrollLedger.snapshot().systemCompensation
-      const userDelta = root.scrollTop - anchor.scrollTop - (ledgerBefore - anchor.programmaticDelta)
-      let delta = 0
-      scrollRuntime.write(root, "layout", () => {
-        delta = restoreVirtualViewportAnchor({
-          root,
-          anchor,
-          itemByKey: (key) => anchorItem(key),
-          userScrollDelta: userDelta,
-        })
-      })
-      console.debug(
-        `[timeline] history-restore sid=${sessionID() ?? "none"} key=${anchor.key} user=${Math.round(userDelta)} correction=${Math.round(delta)} top=${Math.round(root.scrollTop)}`,
-      )
-      if (Math.abs(delta) > 0.5) stable = 0
-      else stable += 1
-      prependAnchor = captureVirtualViewportAnchor(root, virtualizer.measurementsCache, programmaticScrollDelta)
-      refreshUserScrollAnchors(root, root.scrollTop)
-      frames += 1
-      if (stable >= 8 || frames >= 180) {
-        finishPrepend?.()
-        finishPrepend = undefined
-        prependCompletion = undefined
-        if (prependRestoreDone) {
-          clearPrependAnchor()
-        }
-        return
-      }
-      prependAnchorFrame = requestAnimationFrame(restore)
-    }
-    prependAnchorFrame = requestAnimationFrame(restore)
-    return completion
-  }
 
   let virtualContent: HTMLDivElement | undefined
   let resizePinFrame: number | undefined
@@ -934,6 +863,9 @@ export function MessageTimeline(props: {
         observed = true
         callback(offset, scrolling)
       })
+      reportVirtualOffset = (top, scrolling) => {
+        if (active) callback(top, scrolling)
+      }
       const root = instance.scrollElement
       if (!root) return cleanup
       const syncOffset = (phase: "bind" | "frame") => {
@@ -955,6 +887,7 @@ export function MessageTimeline(props: {
       const frame = requestAnimationFrame(() => syncOffset("frame"))
       return () => {
         active = false
+        reportVirtualOffset = undefined
         cancelAnimationFrame(frame)
         cleanup?.()
       }
@@ -999,23 +932,13 @@ export function MessageTimeline(props: {
         textLineHeight: metrics.lineHeight,
       })
     },
-    scrollToFn: (offset, options, instance) => {
-      const root = listRoot()
-      if (virtualContent) virtualContent.style.height = `${instance.getTotalSize()}px`
-      const write = () => elementScroll(offset, { ...options, behavior: "auto" }, instance)
-      if (root)
-        scrollRuntime.write(
-          root,
-          options.adjustments !== undefined
-            ? "layout"
-            : activeNavigation()
-              ? "navigation"
-              : props.shouldAnchorBottom()
-                ? "bottom"
-                : "layout",
-          write,
+    scrollToFn: (offset, options) => {
+      if (Math.abs(offset) > 0.5 && lagging()) {
+        timelineLag(
+          "virtualizer-scroll-request",
+          `rejected=${String(true)} offset=${Math.round(offset)} adjustments=${String(options.adjustments !== undefined)}`,
         )
-      else write()
+      }
     },
     get getItemKey() {
       const rows = timelineRows()
@@ -1053,7 +976,7 @@ export function MessageTimeline(props: {
           ...(active === undefined ? [] : [active]),
           // While pinned to the bottom the tail row must stay mounted so the
           // follow scroll and its live measurement never unmount.
-          ...(lastIndex >= 0 && props.shouldAnchorBottom() ? [lastIndex] : []),
+          ...(lastIndex >= 0 && props.navigationState().following ? [lastIndex] : []),
         ]),
       ].sort((a, b) => a - b)
     },
@@ -1062,6 +985,8 @@ export function MessageTimeline(props: {
       const end = instance.range?.endIndex ?? -1
       if (visibleRange.start === start && visibleRange.end === end) return
       setVisibleRange({ start, end })
+      measurementBatchPending = true
+      queueMeasurementPass()
     },
   })
   const resizeItem = virtualizer.resizeItem
@@ -1081,59 +1006,6 @@ export function MessageTimeline(props: {
     const currentRow = timelineRowByKey().get(rowKey)
     if (!currentRow) return
     timelineRowCache.setMeasured(rowKey, size, rowContentVersion(currentRow, getMessagePart), estimatorWidth())
-  }
-  const captureDeferredGrowthAnchors = (root: HTMLDivElement, source: "scroll" | "flush") => {
-    if (activeNavigation()) return
-    if (deferredFastMeasurements.size === 0) return
-    const items = snapshotVirtualItems(virtualizer.measurementsCache)
-    for (const [index, pending] of deferredFastMeasurements) {
-      if (pending.anchor) continue
-      const current = virtualizer.measurementsCache[index]
-      if (!current || String(current.key) !== pending.key || pending.size <= current.size + 0.5) continue
-      const anchor = captureVisibleSuccessorAnchor(root, items.items, pending.key, programmaticScrollDelta)
-      if (!anchor) continue
-      deferredFastMeasurements.set(index, { ...pending, anchor })
-      if (lagging()) {
-        timelineLag(
-          "deferred-growth-anchor",
-          `phase=late-capture source=${source} index=${index} row=${pending.key} key=${anchor.key} offset=${Math.round(anchor.offset)} top=${Math.round(root.scrollTop)}`,
-        )
-      }
-    }
-  }
-  const scheduleDeferredFastMeasurementFlush = () => {
-    if (deferredFastMeasurementTimer !== undefined) window.clearTimeout(deferredFastMeasurementTimer)
-    deferredFastMeasurementTimer = window.setTimeout(() => {
-      deferredFastMeasurementTimer = undefined
-      if (fastScrolling()) {
-        scheduleDeferredFastMeasurementFlush()
-        return
-      }
-      const root = listRoot()
-      if (root) captureDeferredGrowthAnchors(root, "flush")
-      const pendingEntries = [...deferredFastMeasurements.entries()]
-      const knownItems = snapshotVirtualItems(virtualizer.measurementsCache).byKey
-      const savedAnchor = pendingEntries
-        .map(([, pending]) => pending.anchor)
-        .find((anchor) => anchor && knownItems.has(anchor.key))
-      if (savedAnchor && !activeNavigation()) {
-        readingAnchor = savedAnchor
-        if (lagging()) {
-          timelineLag(
-            "deferred-growth-anchor",
-            `phase=restore key=${savedAnchor.key} offset=${Math.round(savedAnchor.offset)} capturedTop=${Math.round(savedAnchor.scrollTop)} currentTop=${Math.round(listRoot()?.scrollTop ?? 0)}`,
-          )
-        }
-      }
-      for (const [index, pending] of pendingEntries) {
-        const current = virtualizer.measurementsCache[index]
-        deferredFastMeasurements.delete(index)
-        if (!current || String(current.key) !== pending.key) continue
-        measurementBatchPending = true
-        virtualizer.resizeItem(index, pending.size)
-        cacheCommittedRowHeight(pending.key, pending.size)
-      }
-    }, 180)
   }
   virtualizer.resizeItem = (index, size) => {
     const profiling = lagging()
@@ -1186,32 +1058,16 @@ export function MessageTimeline(props: {
       })
     }
   }
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, delta, instance) => {
-    if (activeNavigation()) return false
-    const root = listRoot()
-    const scrollOffset = instance.getLogicalScrollOffset()
-    // While the user is actively wheeling/touching away from the bottom, the
-    // bottom-anchored adjustment would fight the gesture; the first user
-    // scroll event then latches user-scrolled and adjustments stop.
-    const bottomAnchored = props.shouldAnchorBottom() && !props.hasScrollGesture()
-    // The page's animation owns all bottom-follow writes, including in-view
-    // streaming growth. TanStack's immediate compensation would bypass it.
-    const adjust = shouldAdjustVirtualScroll({
-      itemEnd: item.end,
-      scrollOffset,
-      bottomAnchored,
-      initializing: props.isInitialScrollSettling(),
-      animatedBottom: !!props.onFollowBottom,
-    })
-    if (lagging() && Math.abs(delta) >= 1) {
-      timelineLag(
-        "resize-adjust",
-        `index=${item.index} key=${String(item.key)} delta=${Math.round(delta)} itemStart=${Math.round(item.start)} itemEnd=${Math.round(item.end)} scrollOffset=${Math.round(scrollOffset)} viewport=${Math.round(root?.clientHeight ?? 0)} adjust=${adjust} bottom=${props.shouldAnchorBottom()} initializing=${props.isInitialScrollSettling()}`,
-      )
-    }
-    return adjust
-  }
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = () => false
   const virtualSnapshot = createMemo(() => snapshotVirtualItems(virtualizer.getVirtualItems()))
+  createEffect(() => {
+    timelineRows().length
+    listSize()
+    virtualSnapshot().keys.length
+    props.navigationState().generation
+    measurementBatchPending = true
+    queueMeasurementPass()
+  })
   const anchorItem = (key: string) => {
     const index = timelineIndexByKey().get(key)
     if (index === undefined) return undefined
@@ -1222,6 +1078,7 @@ export function MessageTimeline(props: {
   const virtualItemByKey = createMemo(() => virtualSnapshot().byKey)
   const virtualRowKeys = createMemo(() => virtualSnapshot().keys)
   const positionMessage = (id: string, source: "reveal" | "measure" | "layout", behavior: ScrollBehavior = "auto") => {
+    const token = currentNavigationToken()
     const root = listRoot()
     const index = messageRowIndex().get(id)
     if (!root) return
@@ -1239,15 +1096,18 @@ export function MessageTimeline(props: {
     })
     // Publish the new extent before scrolling so Chromium cannot clamp to the
     // previous batch's maximum. This runs inside the height-commit transaction.
-    if (Math.abs(top - root.scrollTop) <= 0.5) return
-    console.debug(
-      `[timeline] message-position sid=${sessionID() ?? "none"} id=${id} source=${source} index=${index} targetTop=${Math.round(top)} delta=${Math.round(top - root.scrollTop)} total=${Math.round(totalSize)}`,
-    )
-    virtualizer.scrollToOffset(top, { align: "start", behavior })
+    if (Math.abs(top - root.scrollTop) > 0.5) {
+      console.debug(
+        `[timeline] message-position sid=${sessionID() ?? "none"} id=${id} source=${source} index=${index} targetTop=${Math.round(top)} delta=${Math.round(top - root.scrollTop)} total=${Math.round(totalSize)}`,
+      )
+      applyPosition(root, top, "navigation", token)
+    }
+    if (Math.abs(top - root.scrollTop) <= 2 && props.navigationState().phase === "seeking")
+      props.onNavigationSettled?.(token, true)
   }
   createEffect(
     on(
-      () => [props.navigationTargetId?.(), messageRowIndex(), listRoot()] as const,
+      () => [props.navigationState().positionTarget, messageRowIndex(), listRoot()] as const,
       ([id]) => {
         if (id) positionMessage(id, "layout")
       },
@@ -1261,10 +1121,10 @@ export function MessageTimeline(props: {
   }
 
   const clearNavigationAnchors = (source: MessageNavigationTarget["kind"]) => {
-    stopSmoothWheel(`navigation-${source}`)
+    inputProvenance = undefined
     navigationResetAt = performance.now()
     console.debug(
-      `[timeline] navigation-reset sid=${sessionID() ?? "none"} source=${source} top=${String(Math.round(listRoot()?.scrollTop ?? 0))} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"} prepend=${String(prependLoading)} bottom=${String(props.shouldAnchorBottom())}`,
+      `[timeline] navigation-reset sid=${sessionID() ?? "none"} source=${source} top=${String(Math.round(listRoot()?.scrollTop ?? 0))} viewport=${viewportAnchor?.key ?? "none"} reading=${readingAnchor?.key ?? "none"} bottom=${String(props.navigationState().following)}`,
     )
     // Message/find navigation supersedes any viewport/bottom anchor. Keeping an
     // anchor captured at the old window would restore that window when the
@@ -1273,8 +1133,6 @@ export function MessageTimeline(props: {
     readingAnchor = undefined
     const root = listRoot()
     if (root) scrollRuntime.rebase(root.scrollTop)
-    for (const pending of deferredFastMeasurements.values()) pending.anchor = undefined
-    clearPrependAnchor()
     if (source === "reading" && root) refreshUserScrollAnchors(root, root.scrollTop)
   }
 
@@ -1290,17 +1148,10 @@ export function MessageTimeline(props: {
     sessionID,
     onNavigate: prepareFindNavigation,
     onRelease: props.onFindRelease,
-    writeScroll: (root, origin, callback) => {
-      scrollRuntime.write(root, origin, callback)
-    },
   })
   createEffect(() => {
     virtualRowKeys()
     sessionFind.refreshHighlights()
-  })
-  createEffect(() => {
-    props.setPositionFind?.(sessionFind.positionMatch)
-    props.setScrollRuntime?.(scrollRuntime)
   })
   createEffect(() => {
     props.onFindOpenChange?.(sessionFind.open())
@@ -1338,17 +1189,7 @@ export function MessageTimeline(props: {
   }
 
   createEffect(() => {
-    props.setRevealMessage?.((id, behavior) => {
-      const index = messageRowIndex().get(id)
-      const row = index === undefined ? undefined : timelineRows()[index]
-      console.debug(
-        `[timeline] reveal-message sid=${sessionID() ?? "none"} id=${id} index=${index === undefined ? "none" : String(index)} row=${row?._tag ?? "none"} anchor=${row?._tag === "UserMessage" ? String(row.anchor) : row?._tag === "CommentStrip" ? "true" : "none"} rows=${String(timelineRows().length)} mounted=${String(virtualizer.getVirtualItems().length)} total=${String(Math.round(virtualizer.getTotalSize()))}`,
-      )
-      positionMessage(id, "reveal", behavior)
-    })
     props.setPrepareNavigation?.(prepareMessageNavigation)
-    props.setScrollToEnd?.(() => virtualizer.scrollToEnd())
-    props.setHistoryAnchor?.({ capture: capturePrependAnchor, restore: restorePrependAnchor })
   })
 
   let overscanTimer: number | undefined
@@ -1381,41 +1222,19 @@ export function MessageTimeline(props: {
   })
 
   onCleanup(() => {
-    stopSmoothWheel("unmount")
     mounted = false
+    inputProvenance = undefined
     console.debug(
       `[timeline] unmount session=${sessionID() ?? "none"} owner=${ownerSessionKey} rows=${String(timelineRows().length)}`,
     )
-    clearPrependAnchor()
-    pendingNearBottomShrinks.clear()
-    deferredFastMeasurements.clear()
-    if (deferredFastMeasurementTimer !== undefined) window.clearTimeout(deferredFastMeasurementTimer)
     observerMeasurements.clear()
     if (observerMeasurementFrame !== undefined) cancelAnimationFrame(observerMeasurementFrame)
-    // Persist measured row heights into the row-level cache so the next mount
-    // (tab switch, session re-entry) can reuse them without re-measuring.
-    const width = estimatorWidth()
-    const rowsNow = timelineRows()
-    for (const item of virtualizer.takeSnapshot()) {
-      if (!item || item.size <= 0) continue
-      const rowKey = String(item.key)
-      // Find the row to compute its content version.
-      const row = timelineRowByKey().get(rowKey)
-      if (!row) continue
-      const version = rowContentVersion(row, getMessagePart)
-      timelineRowCache.setMeasured(rowKey, item.size, version, width)
-    }
     if (resizePinFrame !== undefined) cancelAnimationFrame(resizePinFrame)
     if (overscanTimer !== undefined) window.clearTimeout(overscanTimer)
     listResizeObserver?.disconnect()
     if (debugWindow?.__opencodeTimelineStates) delete debugWindow.__opencodeTimelineStates[ownerSessionKey]
     restoreScrollTopDebug?.()
-    props.setRevealMessage?.(() => {})
     props.setPrepareNavigation?.(() => {})
-    props.setPositionFind?.(() => ({ available: false, aligned: false, geometry: "unmounted" }))
-    props.setScrollRuntime?.(undefined)
-    props.setScrollToEnd?.(() => {})
-    props.setHistoryAnchor?.({ capture: () => {}, restore: () => Promise.resolve() })
   })
 
   let restoreScrollTopDebug: (() => void) | undefined
@@ -1424,7 +1243,6 @@ export function MessageTimeline(props: {
     restoreScrollTopDebug?.()
     setListRoot(root)
     scrollLedger.rebase(root.scrollTop)
-    props.setScrollRuntime?.(scrollRuntime)
     props.setScrollRef(root)
     if (lagDebug) {
       const prototypeDescriptor = (() => {
@@ -1509,7 +1327,7 @@ export function MessageTimeline(props: {
     target: EventTarget | null,
     delta: number,
     kind: "wheel" | "touch" = "wheel",
-  ) => {
+  ): boolean => {
     const nested = boundaryTarget(root, target)
     if (
       nested === root ||
@@ -1526,15 +1344,18 @@ export function MessageTimeline(props: {
         kind,
         gestureId: kind === "touch" ? `touch-${touchSequence}` : undefined,
       })
+      return true
     }
+    return false
   }
   let touchGesture: number | undefined
+  let inputProvenance: { kind: "wheel" | "touch" | "controlled"; direction: "up" | "down" | "other" } | undefined
   const handleScroll = (
     geometry: { scrollTop: number; scrollHeight: number; clientHeight: number },
     event: Event & { currentTarget: HTMLDivElement },
   ) => {
     const root = event.currentTarget
-    const user = props.hasScrollGesture() || smoothWheelTarget !== undefined || touchGesture !== undefined
+    const user = inputProvenance !== undefined
     const motion = scrollLedger.observe(geometry.scrollTop, { user: user && !activeNavigation() })
     if (lagging()) {
       timelineLag(
@@ -1542,42 +1363,19 @@ export function MessageTimeline(props: {
         `trusted=${String(event.isTrusted)} top=${Math.round(geometry.scrollTop)} height=${Math.round(geometry.scrollHeight)} client=${Math.round(geometry.clientHeight)} userDelta=${Math.round(motion.userDisplacement)} systemDelta=${Math.round(motion.compensationDelta)} velocity=${motion.velocity.toFixed(3)} gesture=${String(user)}`,
       )
     }
-    props.onScheduleScrollState(
-      root,
-      geometry,
-      user && !activeNavigation() && Math.abs(motion.userDisplacement) >= 0.01 ? motion.userDisplacement : undefined,
-    )
+    props.onScheduleScrollState(root, geometry)
     sessionFind.refreshHighlights()
     if (activeNavigation() || !user || Math.abs(motion.userDisplacement) < 0.01) return
     refreshUserScrollAnchors(root, geometry.scrollTop)
-    captureDeferredGrowthAnchors(root, "scroll")
-    if (prependLoading) prependAnchor = viewportAnchor
-    props.onAutoScrollHandleScroll(geometry)
     props.onUserScroll()
-    props.onMarkScrollGesture(root)
-    props.onHistoryScroll(geometry.scrollTop)
-    if (pendingNearBottomShrinks.size > 0) {
-      const maxScrollTop = virtualizer.getTotalSize() - geometry.clientHeight
-      for (const [index, pending] of pendingNearBottomShrinks) {
-        const item = virtualizer.measurementsCache[index]
-        if (!item) {
-          pendingNearBottomShrinks.delete(index)
-          continue
-        }
-        const nextMaxScrollTop = maxScrollTop + pending.size - item.size
-        if (geometry.scrollTop <= nextMaxScrollTop - 1) {
-          pendingNearBottomShrinks.delete(index)
-          virtualizer.resizeItem(index, pending.size)
-          cacheCommittedRowHeight(pending.key, pending.size)
-          if (lagging()) {
-            timelineLag(
-              "deferred-shrink",
-              `index=${index} key=${pending.key} size=${Math.round(pending.size)} top=${Math.round(geometry.scrollTop)}`,
-            )
-          }
-        }
-      }
+    const cachedGap = geometry.scrollHeight - geometry.clientHeight - geometry.scrollTop
+    const physicalGap = physicalScrollGap(root)
+    if (inputProvenance?.direction === "down" && motion.userDisplacement > 0 && atPhysicalBottom(root)) {
+      if (lagging())
+        timelineLag("return-bottom", `cachedGap=${Math.round(cachedGap)} physicalGap=${Math.round(physicalGap)}`)
+      props.onUserMotion?.({ direction: "down", atBottom: true })
     }
+    props.onHistoryScroll(geometry.scrollTop)
     // Refresh find highlights after scroll (mounted rows change)
     sessionFind.refreshHighlights()
   }
@@ -1867,6 +1665,7 @@ export function MessageTimeline(props: {
     let element: HTMLDivElement | undefined
     let markdownObserver: MutationObserver | undefined
     let liveToolDetailsMounted = false
+    let reasoningFullMounted = false
     const initialItem = input.item()
     const initialRow = timelineRowByKey().get(input.rowKey)
     const [contentHeight, setContentHeight] = createSignal(initialItem.size)
@@ -1942,8 +1741,19 @@ export function MessageTimeline(props: {
         if (currentPart?.type !== "tool") return false
         return !!element?.querySelector('[data-component="collapsible"][data-detail-mounted="true"]')
       })()
-      const intentionalCollapse = live && liveToolDetailsMounted && !toolDetailsMounted
+      const reasoningDetailsMounted = (() => {
+        const currentRow = row()
+        if (!currentRow || currentRow._tag !== "AssistantPart" || currentRow.group.type !== "part") return false
+        const currentPart = getMessagePart(currentRow.group.ref.messageID, currentRow.group.ref.partID)
+        return (
+          currentPart?.type === "reasoning" &&
+          !!element?.querySelector('[data-component="reasoning-part"][data-mode="full"]')
+        )
+      })()
+      const intentionalCollapse =
+        (live && liveToolDetailsMounted && !toolDetailsMounted) || (reasoningFullMounted && !reasoningDetailsMounted)
       liveToolDetailsMounted = toolDetailsMounted
+      reasoningFullMounted = reasoningDetailsMounted
       const measured = virtualizer.itemSizeCache.has(item().key)
       const root = listRoot()
       if (lagging() && Math.abs(raw - virtual) >= 1_000) {
@@ -1981,13 +1791,6 @@ export function MessageTimeline(props: {
         }
         return virtual
       }
-      // A fresh valid observation supersedes either deferred queue. Without
-      // this, reopening a row after a deferred collapse can leave the old
-      // shrink armed and apply it later when the user scrolls.
-      const previousDeferred = deferredFastMeasurements.get(item().index)
-      deferredFastMeasurements.delete(item().index)
-      pendingNearBottomShrinks.delete(item().index)
-      const fast = fastScrolling()
       const growthAnchor =
         root && !activeNavigation() && raw > virtual + 0.5
           ? captureVisibleSuccessorAnchor(
@@ -1997,19 +1800,6 @@ export function MessageTimeline(props: {
               programmaticScrollDelta,
             )
           : undefined
-      if (shouldDeferFastRowMeasurement({ fast, live, next: raw, previous: virtual })) {
-        const anchor = previousDeferred?.anchor ?? growthAnchor
-        deferredFastMeasurements.set(item().index, { key: input.rowKey, size: raw, anchor })
-        if (lagging() && anchor) {
-          timelineLag(
-            "deferred-growth-anchor",
-            `phase=capture index=${item().index} row=${input.rowKey} key=${anchor.key} offset=${Math.round(anchor.offset)} top=${Math.round(root?.scrollTop ?? 0)}`,
-          )
-        }
-        setContentHeight(Math.min(raw, virtual))
-        scheduleDeferredFastMeasurementFlush()
-        return virtual
-      }
       if (growthAnchor) {
         readingAnchor = growthAnchor
         if (lagging()) {
@@ -2018,24 +1808,6 @@ export function MessageTimeline(props: {
             `index=${item().index} row=${input.rowKey} key=${growthAnchor.key} offset=${Math.round(growthAnchor.offset)} top=${Math.round(root?.scrollTop ?? 0)}`,
           )
         }
-      }
-      const totalSize = virtualizer.getTotalSize()
-      const wouldClampScroll =
-        !!root &&
-        !props.shouldAnchorBottom() &&
-        props.hasScrollGesture() &&
-        raw < virtual &&
-        root.scrollTop > totalSize - listSize().height + raw - virtual + 1
-      if (wouldClampScroll) {
-        pendingNearBottomShrinks.set(item().index, { key: input.rowKey, size: raw })
-        setContentHeight(raw)
-        if (lagging()) {
-          timelineLag(
-            "defer-shrink",
-            `index=${item().index} key=${input.rowKey} previous=${Math.round(virtual)} next=${Math.round(raw)} top=${Math.round(root.scrollTop)} newMax=${Math.round(totalSize - root.clientHeight + raw - virtual)}`,
-          )
-        }
-        return virtual
       }
       setContentHeight(raw)
       // The post-batch pass must run after TanStack has consumed this return
@@ -2141,6 +1913,8 @@ export function MessageTimeline(props: {
       data-component="message-timeline"
       data-session-id={sessionID()}
       data-owner-session-key={ownerSessionKey}
+      data-viewport-intent={props.navigationState().target?.kind ?? "none"}
+      data-viewport-generation={String(props.navigationState().generation)}
       class="relative w-full h-full min-w-0"
     >
       <ScrollView
@@ -2155,33 +1929,16 @@ export function MessageTimeline(props: {
             deltaMode: event.deltaMode,
             rootHeight: listSize().height,
           })
-          const legacyDelta = (event as WheelEvent & { wheelDeltaY?: number }).wheelDeltaY
-          if (delta) markBoundaryGesture(event.currentTarget, event.target, delta)
-          const smooth =
-            boundaryTarget(event.currentTarget, event.target) === event.currentTarget &&
-            event.cancelable &&
-            shouldSmoothDiscreteWheel({
-              deltaX: event.deltaX,
-              deltaY: event.deltaY,
-              deltaMode: event.deltaMode,
-              wheelDeltaY: legacyDelta,
-              macOS,
-            })
-          if (smooth) {
-            event.preventDefault()
-            enqueueSmoothWheel(event.currentTarget, delta)
-          } else {
-            stopSmoothWheel("native-wheel")
-          }
+          if (delta && markBoundaryGesture(event.currentTarget, event.target, delta))
+            inputProvenance = { kind: "wheel", direction: delta < 0 ? "up" : "down" }
           if (lagging()) {
             timelineLag(
               "wheel-input",
-              `trusted=${String(event.isTrusted)} delta=${Math.round(delta)} legacy=${Math.round(legacyDelta ?? 0)} smooth=${String(smooth)} prevented=${String(event.defaultPrevented)} top=${Math.round(event.currentTarget.scrollTop)} height=${Math.round(event.currentTarget.scrollHeight)} client=${Math.round(event.currentTarget.clientHeight)}`,
+              `trusted=${String(event.isTrusted)} delta=${Math.round(delta)} prevented=${String(event.defaultPrevented)} top=${Math.round(event.currentTarget.scrollTop)} height=${Math.round(event.currentTarget.scrollHeight)} client=${Math.round(event.currentTarget.clientHeight)}`,
             )
           }
         }}
         onTouchStart={(event) => {
-          stopSmoothWheel("touch")
           touchSequence += 1
           touchGesture = event.touches[0]?.clientY
           markBoundaryGesture(event.currentTarget, event.target, 0, "touch")
@@ -2191,22 +1948,39 @@ export function MessageTimeline(props: {
           if (touchGesture === undefined || next === undefined) return
           markToolHydrationScrollActivity()
           const delta = touchGesture - next
-          markBoundaryGesture(event.currentTarget, event.target, delta, "touch")
+          if (markBoundaryGesture(event.currentTarget, event.target, delta, "touch"))
+            inputProvenance = { kind: "touch", direction: delta < 0 ? "up" : "down" }
           touchGesture = next
         }}
         onTouchEnd={() => (touchGesture = undefined)}
-        onTouchCancel={() => (touchGesture = undefined)}
+        onTouchCancel={() => {
+          touchGesture = undefined
+          inputProvenance = undefined
+        }}
         onPointerDown={(event) => {
-          stopSmoothWheel("pointer")
           if (event.target === event.currentTarget)
             props.onMarkScrollGesture(event.currentTarget, { kind: "other", top: event.currentTarget.scrollTop })
         }}
+        onMouseUp={(event) => {
+          const selection = window.getSelection()
+          if (!selection || selection.isCollapsed || !selection.anchorNode) return
+          if (event.currentTarget.contains(selection.anchorNode)) props.onUserSelection?.()
+        }}
         onScrollInput={(root, input) => {
-          stopSmoothWheel("scroll-input")
           props.onMarkScrollGesture(root, input ?? { kind: "other", top: root.scrollTop })
+          inputProvenance = {
+            kind: "controlled",
+            direction: (input?.delta ?? 0) < 0 ? "up" : (input?.delta ?? 0) > 0 ? "down" : "other",
+          }
+        }}
+        onScrollEnd={(event) => {
+          if (event.target !== event.currentTarget) return
+          inputProvenance = undefined
+        }}
+        onScrollPosition={(root, top) => {
+          scrollRuntime.apply(root, top, "user", currentNavigationToken())
         }}
         onScrollGeometry={handleScroll}
-        onClick={props.onAutoScrollInteraction}
         class="relative min-w-0 w-full h-full"
       >
         <div

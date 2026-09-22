@@ -4,6 +4,10 @@ import {
   capRowEstimate,
   clampRowEstimate,
   COLLAPSED_TOOL_HEIGHT,
+  diffSummaryColumns,
+  DIFF_SUMMARY_DESKTOP_HORIZONTAL_INSET,
+  DIFF_SUMMARY_GROUP_MARGIN_TOP,
+  DIFF_SUMMARY_MOBILE_HORIZONTAL_INSET,
   estimateRowHeight,
   estimateTextLines,
   ERROR_CARD_MAX_HEIGHT,
@@ -59,7 +63,9 @@ describe("estimateRowHeight fixed-height rows", () => {
 
   test("TurnDivider and DiffSummary match their compact card heights", () => {
     expect(estimateRowHeight({ _tag: "TurnDivider", userMessageID: "m", label: "compaction" }, WIDTH, base)).toBe(40)
-    expect(estimateRowHeight({ _tag: "DiffSummary", userMessageID: "m", diffs: [{ file: "a" }] }, WIDTH, base)).toBe(80)
+    expect(estimateRowHeight({ _tag: "DiffSummary", userMessageID: "m", diffs: [{ file: "a" }] }, WIDTH, base)).toBe(
+      DIFF_SUMMARY_GROUP_MARGIN_TOP + 28 + 52,
+    )
     expect(
       estimateRowHeight(
         {
@@ -70,7 +76,35 @@ describe("estimateRowHeight fixed-height rows", () => {
         WIDTH,
         base,
       ),
-    ).toBe(138)
+    ).toBe(DIFF_SUMMARY_GROUP_MARGIN_TOP + 28 + 2 * 52 + 6)
+  })
+
+  test("matches the grid width for desktop and mobile narrow panes", () => {
+    const diffs = Array.from({ length: 11 }, (_, index) => ({ file: String(index) }))
+    expect(diffSummaryColumns(700)).toBe(3)
+    expect(diffSummaryColumns(300)).toBe(2)
+    expect(
+      estimateRowHeight({ _tag: "DiffSummary", userMessageID: "m", diffs }, 740, {
+        ...base,
+        diffSummaryHorizontalInset: DIFF_SUMMARY_DESKTOP_HORIZONTAL_INSET,
+      }),
+    ).toBe(146)
+    expect(
+      estimateRowHeight({ _tag: "DiffSummary", userMessageID: "m", diffs }, 332, {
+        ...base,
+        diffSummaryHorizontalInset: DIFF_SUMMARY_MOBILE_HORIZONTAL_INSET,
+      }),
+    ).toBe(146)
+  })
+
+  test("caps overflow estimates at two rows", () => {
+    const row = (count: number) => ({
+      _tag: "DiffSummary",
+      userMessageID: "m",
+      diffs: Array.from({ length: count }, (_, index) => ({ file: String(index) })),
+    })
+    expect(estimateRowHeight(row(11), 740, base)).toBe(146)
+    expect(estimateRowHeight(row(25), 740, base)).toBe(146)
   })
 
   test("Thinking and Retry use their calibrated constants without the min clamp", () => {
@@ -139,9 +173,7 @@ describe("estimateRowHeight AssistantPart rows", () => {
       userMessageID: "m",
       group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } },
     })
-    expect(estimateRowHeight(groupOf(running), WIDTH, { ...base, parts: lookup(running) })).toBe(
-      COLLAPSED_TOOL_HEIGHT,
-    )
+    expect(estimateRowHeight(groupOf(running), WIDTH, { ...base, parts: lookup(running) })).toBe(COLLAPSED_TOOL_HEIGHT)
     expect(
       estimateRowHeight(groupOf(completed), WIDTH, {
         ...base,
@@ -327,9 +359,7 @@ describe("estimateRowHeight text-driven rows", () => {
   })
 
   test("Error respects the real card max-height", () => {
-    expect(estimateRowHeight({ _tag: "Error", text: "x\n".repeat(500) }, WIDTH, base)).toBe(
-      ERROR_CARD_MAX_HEIGHT,
-    )
+    expect(estimateRowHeight({ _tag: "Error", text: "x\n".repeat(500) }, WIDTH, base)).toBe(ERROR_CARD_MAX_HEIGHT)
   })
 })
 

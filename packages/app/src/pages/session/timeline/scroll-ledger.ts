@@ -1,7 +1,12 @@
 export type ScrollOrigin = "user" | "navigation" | "layout" | "initial" | "bottom"
 
 export type ScrollRuntime = {
-  write(root: Pick<HTMLElement, "scrollTop">, origin: ScrollOrigin, callback: () => void): void
+  apply(
+    root: Pick<HTMLElement, "scrollTop">,
+    top: number,
+    origin: ScrollOrigin,
+    token: { sessionKey: string; generation: number },
+  ): number
   rebase(top: number): void
 }
 

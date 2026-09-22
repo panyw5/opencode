@@ -1,11 +1,16 @@
-export function returnedToLiveBottom(input: {
-  gap: number
-  threshold: number
-  gesture: boolean
-  userScrolled: boolean
-  reading: boolean
+export const SESSION_SCROLL_BOTTOM_THRESHOLD = 16
+
+export function physicalScrollGap(input: { scrollTop: number; scrollHeight: number; clientHeight: number }) {
+  return Math.max(0, input.scrollHeight - input.clientHeight - input.scrollTop)
+}
+
+export function atPhysicalBottom(input: {
+  scrollTop: number
+  scrollHeight: number
+  clientHeight: number
+  threshold?: number
 }) {
-  return input.gap <= input.threshold && input.gesture && !input.userScrolled && input.reading
+  return physicalScrollGap(input) <= (input.threshold ?? SESSION_SCROLL_BOTTOM_THRESHOLD)
 }
 
 export function targetTop(input: { itemTop: number; rootTop: number; scrollTop: number; inset: number }) {

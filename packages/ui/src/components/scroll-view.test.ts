@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import { scrollDragMotion, scrollEventGeometry, scrollKey, scrollThumbGeometry } from "./scroll-view"
+import {
+  scrollDragMotion,
+  scrollEventGeometry,
+  scrollKey,
+  scrollKeyboardTarget,
+  scrollThumbGeometry,
+} from "./scroll-view"
 
 describe("scrollDragMotion", () => {
   test("preserves compensation and scales only new motion after extent growth", () => {
@@ -56,6 +62,23 @@ describe("scrollKey", () => {
     ).toBeUndefined()
     expect(scrollKey({ key: "PageUp", altKey: false, ctrlKey: true, metaKey: false, shiftKey: false })).toBeUndefined()
     expect(scrollKey({ key: "End", altKey: false, ctrlKey: false, metaKey: false, shiftKey: true })).toBeUndefined()
+  })
+})
+
+describe("scrollKeyboardTarget", () => {
+  const geometry = { top: 120, scrollHeight: 1000, clientHeight: 500 }
+
+  test("converts keyboard input to concrete positions", () => {
+    expect(scrollKeyboardTarget({ ...geometry, key: "page-down" })).toBe(520)
+    expect(scrollKeyboardTarget({ ...geometry, key: "page-up" })).toBe(-280)
+    expect(scrollKeyboardTarget({ ...geometry, key: "up" })).toBe(80)
+    expect(scrollKeyboardTarget({ ...geometry, key: "down" })).toBe(160)
+    expect(scrollKeyboardTarget({ ...geometry, key: "home" })).toBe(0)
+    expect(scrollKeyboardTarget({ ...geometry, key: "end" })).toBe(500)
+  })
+
+  test("clamps End to zero when the viewport does not overflow", () => {
+    expect(scrollKeyboardTarget({ top: 0, scrollHeight: 400, clientHeight: 500, key: "end" })).toBe(0)
   })
 })
 

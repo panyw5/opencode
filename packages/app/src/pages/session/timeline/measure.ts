@@ -61,12 +61,27 @@ export type ViewportAnchor = {
   scrollTop: number
   /** Cumulative programmatic scroll delta at capture time. */
   programmaticDelta: number
+  /** Virtual row size at capture time; omitted for DOM anchors and legacy literals. */
+  capturedSize?: number
 }
 
 export type VirtualAnchorItem = {
   key: string | number | bigint
   start: number
   size: number
+}
+
+export function resolveObserverMeasurement(input: {
+  sampleSize: number
+  readCurrentSize: () => number
+  sampleWidth: number
+  currentWidth: number
+  sampleVersion: string | undefined
+  currentVersion: string | undefined
+}) {
+  const stale = input.sampleWidth !== input.currentWidth || input.sampleVersion !== input.currentVersion
+  const size = stale ? input.readCurrentSize() : input.sampleSize
+  return Number.isFinite(size) && size > 0 ? { stale, size } : undefined
 }
 
 /**
@@ -90,6 +105,7 @@ export function captureVirtualViewportAnchor(
         offset: item.start - root.scrollTop,
         scrollTop: root.scrollTop,
         programmaticDelta,
+        capturedSize: item.size,
       }
     }
     fallback ??= item
@@ -101,6 +117,7 @@ export function captureVirtualViewportAnchor(
     offset: fallback.start - root.scrollTop,
     scrollTop: root.scrollTop,
     programmaticDelta,
+    capturedSize: fallback.size,
   }
 }
 
@@ -130,6 +147,7 @@ export function captureVisibleSuccessorAnchor(
       offset: item.start - top,
       scrollTop: top,
       programmaticDelta,
+      capturedSize: item.size,
     }
   }
 }
@@ -245,14 +263,37 @@ export function restoreVirtualViewportAnchor(input: {
   userScrollDelta: number
   tolerance?: number
 }): number {
-  const item = input.itemByKey(input.anchor.key)
-  if (!item) return 0
-  const expected = Math.max(input.anchor.offset - input.userScrollDelta, -item.size)
-  const actual = item.start - input.root.scrollTop
-  const delta = actual - expected
+  const delta = virtualViewportAnchorCorrection(input)
   if (Math.abs(delta) <= (input.tolerance ?? 1)) return 0
   input.root.scrollTop += delta
   return delta
+}
+
+/** Calculate virtual anchor correction without mutating the viewport. */
+export function virtualViewportAnchorCorrection(input: {
+  root: Readonly<Pick<HTMLElement, "scrollTop">>
+  anchor: ViewportAnchor
+  itemByKey: (key: string) => VirtualAnchorItem | undefined
+  userScrollDelta: number
+  tolerance?: number
+}): number {
+  const item = input.itemByKey(input.anchor.key)
+  if (!item) return 0
+  const tolerance = input.tolerance ?? 1
+  const expectedUnclamped = input.anchor.offset - input.userScrollDelta
+
+  // Once the user has passed the captured row, the anchor is stale and must
+  // not be clamped back into view. This remains true if the row also shrank;
+  // only a user position still inside the captured row can use the new bottom
+  // clamp to preserve continuity through a real shrink.
+  if (input.anchor.capturedSize !== undefined && expectedUnclamped < -input.anchor.capturedSize) {
+    return 0
+  }
+
+  const expected = Math.max(expectedUnclamped, -item.size)
+  const actual = item.start - input.root.scrollTop
+  const delta = actual - expected
+  return Math.abs(delta) <= tolerance ? 0 : delta
 }
 
 export function timelineMeasurementsMatchWidth(cachedWidth: number | undefined, currentWidth: number) {
