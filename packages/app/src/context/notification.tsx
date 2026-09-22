@@ -260,6 +260,41 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
       setBell("items", (list) => removeBellToast(list, id))
     }
 
+    const dismissSessionToasts = (session: string) => {
+      for (const toast of bell.items) {
+        if (toast.session === session) dismissToast(toast.id)
+      }
+    }
+
+    // Question/permission asks arrive from layout.tsx (per-session listener);
+    // record them in the unread index and optionally surface a live bell toast.
+    const pushActionNeeded = (input: {
+      type: "question" | "permission"
+      directory: string
+      session: string
+      title?: string
+      live?: boolean
+    }) => {
+      if (meta.disposed) return
+      const domain = domainFromDirectory(input.directory)
+      const viewed = viewedInCurrentSession(input.directory, input.session)
+      append(
+        {
+          directory: input.directory,
+          time: Date.now(),
+          viewed,
+          type: input.type,
+          session: input.session,
+        },
+        domain,
+      )
+      if (viewed) return
+      cacheTitle(input.session, input.title ? { title: input.title } : undefined)
+      if (!input.title) resolveTitle(input.directory, input.session)
+      if (input.live === false) return
+      pushToast({ type: input.type, session: input.session, directory: input.directory, title: input.title })
+    }
+
     onCleanup(() => {
       bellTimers.forEach((timer) => clearTimeout(timer))
       bellTimers.clear()
@@ -629,7 +664,9 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
           return bell.items
         },
         dismiss: dismissToast,
+        dismissSession: dismissSessionToasts,
       },
+      pushActionNeeded,
       titleOf(session: string | undefined) {
         if (!session) return undefined
         return titles[session]

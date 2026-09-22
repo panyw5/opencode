@@ -800,7 +800,7 @@ export const dict = {
   "notification.permission.description": "{{sessionTitle}}（{{projectName}}）需要权限",
   "notification.question.title": "问题",
   "notification.question.description": "{{sessionTitle}}（{{projectName}}）有一个问题",
-  "notification.action.goToSession": "前往会话",
+  "notification.action.goToSession": "前往",
   "session.tabs.permission.view": "查看",
   "notification.session.responseReady.title": "回复已就绪",
   "notification.session.error.title": "会话错误",
@@ -811,6 +811,8 @@ export const dict = {
   "notification.bell.markAllRead": "全部标为已读",
   "notification.bell.type.turnComplete": "已完成",
   "notification.bell.type.error": "错误",
+  "notification.bell.type.question": "提问",
+  "notification.bell.type.permission": "权限请求",
   "notification.bell.untitledSession": "未命名会话",
 
   "home.recentProjects": "最近项目",

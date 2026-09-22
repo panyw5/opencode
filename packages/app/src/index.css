@@ -1287,3 +1287,10 @@ html[data-platform="desktop"][data-color-scheme="dark"] [data-component="collaps
     transform: translateY(36px) scale(0.7);
   }
 }
+
+/* Notification bell popover: the shared popover-body slot adds 14px padding,
+   which combined with the bell's fixed-width panel overflows the 320px popover
+   shell — strip it here so the bell panel controls its own padding. */
+[data-component="popover-content"].notification-bell-popover-shell [data-slot="popover-body"] {
+  padding: 0;
+}

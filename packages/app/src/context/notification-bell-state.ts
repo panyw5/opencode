@@ -1,4 +1,4 @@
-export type BellToastType = "turn-complete" | "error"
+export type BellToastType = "turn-complete" | "error" | "question" | "permission"
 
 export type BellToast = {
   id: string

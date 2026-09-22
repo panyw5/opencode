@@ -18,7 +18,11 @@ type ErrorNotification = NotificationBase & {
   error: EventSessionError["properties"]["error"]
 }
 
-export type Notification = TurnCompleteNotification | ErrorNotification
+type ActionNeededNotification = NotificationBase & {
+  type: "question" | "permission"
+}
+
+export type Notification = TurnCompleteNotification | ErrorNotification | ActionNeededNotification
 
 export function shouldNotifyTurnComplete(
   session: Pick<Session, "parentID" | "time"> | undefined,

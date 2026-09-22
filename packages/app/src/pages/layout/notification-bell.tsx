@@ -9,7 +9,14 @@ import { usePlatform } from "@/context/platform"
 import type { Notification } from "@/context/notification-state"
 import type { BellToast } from "@/context/notification-bell-state"
 
-const typeIcon = (type: BellToast["type"]) => (type === "error" ? "circle-exclamation" : "check-small")
+const typeIcon = (type: BellToast["type"]) =>
+  type === "error"
+    ? "circle-exclamation"
+    : type === "question"
+      ? "question-mark"
+      : type === "permission"
+        ? "shield-check"
+        : "check-small"
 
 const BELL_SIZE = 40
 const BELL_CORNER_OFFSET = 20
@@ -72,7 +79,13 @@ export function NotificationBell() {
   })
 
   const typeLabel = (type: BellToast["type"]) =>
-    type === "error" ? language.t("notification.bell.type.error") : language.t("notification.bell.type.turnComplete")
+    type === "error"
+      ? language.t("notification.bell.type.error")
+      : type === "question"
+        ? language.t("notification.bell.type.question")
+        : type === "permission"
+          ? language.t("notification.bell.type.permission")
+          : language.t("notification.bell.type.turnComplete")
 
   const sessionHref = (item: { directory?: string; session?: string }) => {
     if (!item.directory) return undefined
@@ -158,6 +171,7 @@ export function NotificationBell() {
           open={open()}
           onOpenChange={setOpen}
           placement="top-end"
+          class="notification-bell-popover-shell"
           trigger={
             <div class="relative" data-component="notification-bell">
               <button
@@ -202,16 +216,11 @@ export function NotificationBell() {
         >
           <div
             data-component="notification-bell-popover"
-            class="flex max-h-[360px] w-[340px] flex-col overflow-hidden"
+            class="flex max-h-[360px] w-[320px] max-w-[calc(100vw-32px)] flex-col overflow-hidden"
           >
             <div class="flex shrink-0 items-center justify-between border-b border-border-weak-base px-3 py-2">
               <span class="text-13-medium text-text-strong">{language.t("notification.bell.title")}</span>
-              <Show
-                when={count() > 0}
-                fallback={
-                  <span class="text-12-regular text-text-weak">{language.t("notification.bell.empty")}</span>
-                }
-              >
+              <Show when={count() > 0}>
                 <button
                   type="button"
                   data-action="notification-mark-all-read"

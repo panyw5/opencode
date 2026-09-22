@@ -45,7 +45,7 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import { useProviders } from "@/hooks/use-providers"
-import { showToast, Toast, toaster } from "@opencode-ai/ui/toast"
+import { showCompactToast, showToast, Toast, toaster } from "@opencode-ai/ui/toast"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { clearWorkspaceTerminals } from "@/context/terminal"
 import { SESSION_CACHE_LIMIT, dropSessionCaches, pickSessionCacheEvictions } from "@/context/global-sync/session-cache"
@@ -700,6 +700,7 @@ export default function Layout(props: ParentProps) {
           const props = e.details.properties as { sessionID: string }
           const sessionKey = `${e.name}:${props.sessionID}`
           dismissSessionAlert(sessionKey)
+          notification.bell.dismissSession(props.sessionID)
           return
         }
 
@@ -708,7 +709,7 @@ export default function Layout(props: ParentProps) {
           e.details.type === "permission.asked"
             ? language.t("notification.permission.title")
             : language.t("notification.question.title")
-        const icon = e.details.type === "permission.asked" ? ("checklist" as const) : ("bubble-5" as const)
+        const icon = e.details.type === "permission.asked" ? ("shield-check" as const) : ("question-mark" as const)
         const directory = e.name
         const quickAssistantDirectory = globalSync.data.path.config
           ? workspaceKey(joinPath(globalSync.data.path.config, QUICK_ASSISTANT_DIR))
@@ -773,21 +774,22 @@ export default function Layout(props: ParentProps) {
 
         dismissSessionAlert(sessionKey)
 
-        const toastId = showToast({
-          persistent: true,
+        // Compact toast is the only live surface for asks (no bell live toast —
+        // the entry already lands in the bell's unread list via pushActionNeeded).
+        notification.pushActionNeeded({
+          type: e.details.type === "permission.asked" ? "permission" : "question",
+          directory,
+          session: props.sessionID,
+          title: sessionTitle,
+          live: false,
+        })
+        const toastId = showCompactToast({
           icon,
-          title,
-          description,
-          actions: [
-            {
-              label: language.t("notification.action.goToSession"),
-              onClick: () => navigate(href),
-            },
-            {
-              label: language.t("common.dismiss"),
-              onClick: "dismiss",
-            },
-          ],
+          title: sessionTitle,
+          duration: 3000,
+          goLabel: language.t("notification.action.goToSession"),
+          dismissLabel: language.t("common.dismiss"),
+          onGo: () => navigate(href),
         })
         toastBySession.set(sessionKey, toastId)
       })

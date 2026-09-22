@@ -849,7 +849,7 @@ export const dict = {
   "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
   "notification.question.title": "Question",
   "notification.question.description": "{{sessionTitle}} in {{projectName}} has a question",
-  "notification.action.goToSession": "Go to session",
+  "notification.action.goToSession": "Go",
   "session.tabs.permission.view": "View",
 
   "notification.session.responseReady.title": "Response ready",
@@ -861,6 +861,8 @@ export const dict = {
   "notification.bell.markAllRead": "Mark all read",
   "notification.bell.type.turnComplete": "Completed",
   "notification.bell.type.error": "Error",
+  "notification.bell.type.question": "Question",
+  "notification.bell.type.permission": "Permission",
   "notification.bell.untitledSession": "Untitled session",
 
   "home.recentProjects": "Recent projects",

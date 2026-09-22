@@ -1,14 +1,19 @@
 [data-component="toast-region"] {
   position: fixed;
-  /* Cleared above the notification bell (bottom-right) and its live toasts. */
-  bottom: 96px;
-  right: 32px;
+  /* Cleared above the notification bell (bottom-right) and its live toasts.
+     The 24px right/bottom padding is shadow room: content sits at the same
+     spot as the old bottom:96px / right:32px, while the clip boundary moves
+     24px further out so box-shadows don't get hard-cut at the region edge. */
+  bottom: 72px;
+  right: 8px;
+  padding-right: 24px;
+  padding-bottom: 24px;
   z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  max-width: min(400px, calc(100vw - 64px));
-  max-height: calc(100dvh - 96px);
+  max-width: min(424px, calc(100vw - 40px));
+  max-height: calc(100dvh - 72px);
   width: 100%;
   overflow: hidden;
   pointer-events: none;
@@ -27,6 +32,15 @@
     &::-webkit-scrollbar {
       display: none;
     }
+  }
+
+  /* Shadow room: overflow-y above clips children's box-shadows at the scroll
+     box, leaving hard-edged truncated shadows on toasts near the edges. The
+     padding gives shadows drawing space while the negative margin keeps the
+     visual layout identical (toasts still occupy the same content box). */
+  [data-slot="toast-list"] {
+    padding: 24px;
+    margin: -24px;
   }
 }
 
@@ -301,6 +315,141 @@
       -webkit-backdrop-filter: blur(40px) saturate(150%);
     }
   }
+
+  /* Compact action toast (session ask notifications): type icon + truncated
+     title on row 1, arrow "go" + countdown-ring "dismiss" on row 2. Styled
+     like the floating popover/menu family instead of the dark toast. */
+  &[data-compact] {
+    --toast-bg: light-dark(
+      color-mix(in srgb, var(--background-stronger) 92%, transparent),
+      color-mix(in srgb, var(--background-stronger) 70%, transparent)
+    );
+    --toast-border: var(--border-weak-base);
+    --toast-title: var(--text-strong);
+    --toast-text: var(--text-base);
+    --toast-icon: var(--icon-base);
+    --toast-action: var(--text-weak);
+    --toast-action-strong: var(--text-base);
+    --toast-progress: var(--icon-base);
+
+    align-self: flex-end;
+    width: fit-content;
+    max-width: 100%;
+    gap: 0;
+    padding: 10px 12px;
+    border-radius: var(--radius-xl);
+    /* Popover-style shadow: the shared --shadow-lg-border-base carries a huge
+       36px/80px blur layer that reads as a dirty smudge under a small toast. */
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--border-weak-base) 58%, transparent) inset,
+      0 1px 0 color-mix(in srgb, white 12%, transparent) inset,
+      0 8px 24px rgb(0 0 0 / 0.12),
+      0 2px 8px rgb(0 0 0 / 0.08);
+
+    [data-slot="toast-content"] {
+      gap: 4px;
+      overflow-y: visible;
+    }
+
+    [data-slot="toast-compact-body"] {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+    }
+
+    [data-slot="toast-compact-main"] {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      flex: 1;
+      min-width: 0;
+    }
+
+    [data-slot="toast-compact-row"] {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    [data-slot="toast-compact-title"] {
+      min-width: 0;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+
+      color: var(--toast-title);
+      font-family: var(--font-family-sans);
+      font-size: 13px;
+      font-weight: var(--font-weight-medium);
+      line-height: var(--line-height-large);
+      letter-spacing: var(--letter-spacing-normal);
+    }
+
+    [data-slot="toast-compact-go"],
+    [data-slot="toast-compact-dismiss"] {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-shrink: 0;
+      height: 22px;
+      padding: 0 7px;
+      border: none;
+      border-radius: var(--radius-md, 6px);
+      background: none;
+      cursor: pointer;
+      color: var(--toast-action-strong);
+
+      [data-component="icon"] {
+        width: 14px;
+        height: 14px;
+        color: var(--toast-action-strong);
+      }
+
+      [data-slot="toast-compact-label"] {
+        font-family: var(--font-family-sans);
+        font-size: 12px;
+        font-weight: var(--font-weight-medium);
+        line-height: var(--line-height-large);
+        letter-spacing: var(--letter-spacing-normal);
+        white-space: nowrap;
+      }
+
+      &:hover {
+        background-color: var(--surface-base-hover);
+      }
+
+      &:active {
+        background-color: color-mix(in srgb, var(--surface-base-hover) 60%, transparent);
+      }
+    }
+
+    [data-slot="toast-compact-dismiss"] {
+      color: var(--toast-action);
+
+      [data-component="icon"] {
+        color: inherit;
+      }
+
+      /* The shared ring track is white-on-dark; on the light menu surface it
+         would vanish into the background, so use a theme-aware track color. */
+      [data-slot="toast-countdown"] {
+        width: 14px;
+        height: 14px;
+        background-color: light-dark(rgb(0 0 0 / 0.1), rgb(255 255 255 / 0.16));
+      }
+
+      [data-slot="toast-countdown-fill"]::after {
+        inset: 2px;
+      }
+
+      [data-slot="toast-compact-label"] {
+        color: var(--toast-action);
+      }
+    }
+  }
 }
 
 html[data-platform="desktop"][data-os="windows"] [data-component="toast"] {
@@ -311,6 +460,10 @@ html[data-platform="desktop"][data-os="windows"] [data-component="toast"] {
 html[data-platform="desktop"][data-os="windows"] [data-component="toast"][data-variant="default"],
 html[data-platform="desktop"][data-os="windows"] [data-component="toast"][data-variant="loading"] {
   --toast-bg: var(--surface-raised-stronger-non-alpha);
+}
+
+html[data-platform="desktop"][data-os="windows"] [data-component="toast"][data-compact] {
+  --toast-bg: var(--background-stronger);
 }
 
 html[data-platform="desktop"][data-os="windows"] [data-component="toast"][data-variant="success"] {

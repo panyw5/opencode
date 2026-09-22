@@ -170,6 +170,58 @@ export function showToast(options: ToastOptions | string) {
   ))
 }
 
+export interface CompactToastOptions {
+  icon: IconProps["name"]
+  title: string
+  duration?: number
+  goLabel?: string
+  dismissLabel?: string
+  onGo?: () => void
+}
+
+// Compact two-row action toast: the type icon sits alone in a left column;
+// the right column holds the truncated title on row 1 and the "go" arrow
+// button + countdown-ring dismiss control on row 2 (left-aligned with the
+// title). No close button, no type text.
+export function showCompactToast(options: CompactToastOptions) {
+  const duration = options.duration ?? 3000
+  return toaster.show((props) => (
+    <Toast toastId={props.toastId} duration={duration} data-variant="default" data-compact>
+      <Toast.Content>
+        <div data-slot="toast-compact-body">
+          <Toast.Icon name={options.icon} />
+          <div data-slot="toast-compact-main">
+            <span data-slot="toast-compact-title">{options.title}</span>
+            <div data-slot="toast-compact-row">
+              <button
+                type="button"
+                data-slot="toast-compact-go"
+                aria-label={options.goLabel}
+                onClick={() => {
+                  options.onGo?.()
+                  toaster.dismiss(props.toastId)
+                }}
+              >
+                <Icon name="arrow-right" />
+                <span data-slot="toast-compact-label">{options.goLabel}</span>
+              </button>
+              <button
+                type="button"
+                data-slot="toast-compact-dismiss"
+                aria-label={options.dismissLabel}
+                onClick={() => toaster.dismiss(props.toastId)}
+              >
+                <Toast.Countdown />
+                <span data-slot="toast-compact-label">{options.dismissLabel}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </Toast.Content>
+    </Toast>
+  ))
+}
+
 export interface ToastPromiseOptions<T, U = unknown> {
   loading?: JSX.Element
   success?: (data: T) => JSX.Element
