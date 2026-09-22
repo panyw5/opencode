@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
-import { createSessionModelRestoreQueue, resetSessionModel, syncSessionModel } from "./session-model-helpers"
+import { resetSessionModel, syncSessionModel } from "./session-model-helpers"
 
 const message = (input?: Partial<Pick<UserMessage, "agent" | "model">> & { variant?: string }) =>
   ({
@@ -36,31 +36,6 @@ describe("syncSessionModel", () => {
         variant: "high",
       },
     ])
-  })
-
-  test("waits for persisted state before restoring a message model", async () => {
-    const calls: UserMessage[] = []
-    let release!: () => void
-    let ready = false
-    const wait = new Promise<void>((resolve) => {
-      release = resolve
-    })
-    const request = createSessionModelRestoreQueue<UserMessage>({
-      ready: () => ready,
-      wait,
-      restore: (value) => calls.push(value),
-    })
-    const value = message({ variant: "high" })
-
-    request(value)
-    expect(calls).toEqual([])
-
-    ready = true
-    release()
-    await wait
-    await Promise.resolve()
-
-    expect(calls).toEqual([value])
   })
 })
 

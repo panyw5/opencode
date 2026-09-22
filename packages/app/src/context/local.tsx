@@ -7,23 +7,26 @@ import { useModels } from "@/context/models"
 import { useProviders } from "@/hooks/use-providers"
 import { modelEnabled, modelProbe } from "@/testing/model-selection"
 import { Persist, persisted } from "@/utils/persist"
-import { createSessionModelRestoreQueue } from "@/pages/session/session-model-helpers"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { internalAgent, primaryAgents, selectableAgents } from "./agent-selection"
+import {
+  activeSelection,
+  restoreMessageSelection,
+  selectAgent,
+  selectModel,
+  selectVariant,
+  type ModelKey,
+  type ModelSelection,
+} from "./model-selection-state"
 import { useSDK } from "./sdk"
 import { useSync } from "./sync"
 import { useServer } from "./server"
 import { usePlatform } from "./platform"
 import { workspacePathContext } from "@/pages/layout/helpers"
 
-export type ModelKey = { providerID: string; modelID: string }
+export type { ModelKey } from "./model-selection-state"
 
-type State = {
-  agent?: string
-  model?: ModelKey
-  variant?: string | null
-  source?: "manual" | "message" | "inherited"
-}
+type State = ModelSelection
 
 type RestoreMessage = {
   sessionID: string
@@ -35,9 +38,7 @@ type Saved = {
   session: Record<string, State | undefined>
 }
 
-const WORKSPACE_KEY = "__workspace__"
 const handoff = new Map<string, State>()
-const manualSession = new Map<string, State>()
 
 function modelDebug(event: string, details: Record<string, unknown>) {
   if (!import.meta.env.DEV) return
@@ -45,22 +46,6 @@ function modelDebug(event: string, details: Record<string, unknown>) {
 }
 
 const handoffKey = (dir: string, id: string) => `${dir}\n${id}`
-
-const migrate = (value: unknown) => {
-  if (!value || typeof value !== "object") return { session: {} }
-
-  const item = value as {
-    session?: Record<string, State | undefined>
-    pick?: Record<string, State | undefined>
-  }
-
-  if (item.session && typeof item.session === "object") return { session: item.session }
-  if (!item.pick || typeof item.pick !== "object") return { session: {} }
-
-  return {
-    session: Object.fromEntries(Object.entries(item.pick).filter(([key]) => key !== WORKSPACE_KEY)),
-  }
-}
 
 const clone = (value: State | undefined) => {
   if (!value) return undefined
@@ -88,10 +73,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved, , savedReady] = persisted(
-      {
-        ...Persist.workspace(sdk.directory, "model-selection", ["model-selection.v1"], pathContext),
-        migrate,
-      },
+      Persist.workspace(sdk.directory, "model-selection.v2", undefined, pathContext),
       createStore<Saved>({
         session: {},
       }),
@@ -107,6 +89,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       locked?: string
       draft?: State
       promoting?: State
+      restored: Record<string, State | undefined>
       last?: {
         type: "agent" | "model" | "variant"
         agent?: string
@@ -116,6 +99,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }>({
       current: list()[0]?.name,
       draft: undefined,
+      restored: {},
       last: undefined,
     })
 
@@ -152,12 +136,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const scope = createMemo<State | undefined>(() => {
       const session = id()
-      if (!session) return store.draft ?? store.promoting
-      const key = handoffKey(sdk.directory, session)
-      return manualSession.get(key) ?? saved.session[session] ?? handoff.get(key)
+      return activeSelection({
+        sessionID: session,
+        manual: session ? saved.session[session] : undefined,
+        restored: session ? (store.restored[session] ?? handoff.get(handoffKey(sdk.directory, session))) : undefined,
+        draft: store.draft,
+        promoting: store.promoting,
+      })
     })
 
-    // Track previous session to preserve model selection when switching
     createEffect(() => {
       const session = id()
       if (!session) return
@@ -175,45 +162,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       handoff.delete(key)
       setStore("promoting", undefined)
     })
-
-    // Preserve model selection when switching to a session without saved state
-    createEffect(
-      (prevSession: string | undefined) => {
-        const session = id()
-
-        // If switching from one session to another
-        if (prevSession && session && prevSession !== session) {
-          modelDebug("session-switch", {
-            fromSessionID: prevSession,
-            toSessionID: session,
-            fromSaved:
-              manualSession.has(handoffKey(sdk.directory, prevSession)) || saved.session[prevSession] !== undefined,
-            toSaved: manualSession.has(handoffKey(sdk.directory, session)) || saved.session[session] !== undefined,
-            handoff: handoff.has(handoffKey(sdk.directory, session)),
-          })
-          // If the new session doesn't have saved state, inherit from previous session
-          const targetKey = handoffKey(sdk.directory, session)
-          if (!manualSession.has(targetKey) && saved.session[session] === undefined && !handoff.has(targetKey)) {
-            const prevState = manualSession.get(handoffKey(sdk.directory, prevSession)) ?? saved.session[prevSession]
-            if (prevState) {
-              modelDebug("session-inherit-applied", {
-                fromSessionID: prevSession,
-                toSessionID: session,
-                model: prevState.model ? `${prevState.model.providerID}/${prevState.model.modelID}` : "none",
-              })
-              const next = clone({ ...prevState, source: "inherited" })
-              if (next) {
-                manualSession.set(targetKey, next)
-                setSaved("session", session, next)
-              }
-            }
-          }
-        }
-
-        return session
-      },
-      undefined as string | undefined,
-    )
 
     const configuredModel = () => {
       if (!sync.data.config.model) return
@@ -246,6 +194,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const fallback = createMemo<ModelKey | undefined>(() => configuredModel() ?? recentModel() ?? defaultModel())
 
+    const save = (state: State) => {
+      const session = id()
+      if (session) {
+        setSaved("session", session, state)
+        return
+      }
+      setStore("draft", state)
+    }
+
     const agent = {
       list,
       available(name: string) {
@@ -265,23 +222,14 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setStore("current", undefined)
           return
         }
-        modelDebug("agent-set-requested", {
-          requestedAgent: name ?? "none",
-          resolvedAgent: item.name,
-          currentAgent: agent.current()?.name ?? "none",
-          savedAgent: scope()?.agent ?? "none",
-          savedSource: scope()?.source ?? "legacy",
+        const current = scope() ?? { agent: agent.current()?.name }
+        const next = selectAgent(current, item)
+        if (next === current) return
+        modelDebug("agent-selected", {
           sessionID: id() ?? "draft",
+          agent: item.name,
+          model: next.model ? `${next.model.providerID}/${next.model.modelID}` : "none",
         })
-        const session = id()
-        if (item.name === agent.current()?.name || (session && item.name === scope()?.agent)) {
-          modelDebug("agent-write-skipped", {
-            reason: "same-agent",
-            agent: item.name,
-            sessionID: session ?? "draft",
-          })
-          return
-        }
 
         batch(() => {
           setStore("current", item.name)
@@ -291,25 +239,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             model: item.model,
             variant: item.variant ?? null,
           })
-          const prev = scope()
-          const next = {
-            agent: item.name,
-            model: item.model ?? prev?.model,
-            variant: item.variant ?? prev?.variant,
-            source: "manual" as const,
-          } satisfies State
-          if (session) {
-            const key = handoffKey(sdk.directory, session)
-            manualSession.set(key, clone(next) ?? next)
-            modelDebug("manual-agent-write", {
-              sessionID: session,
-              model: next.model ? `${next.model.providerID}/${next.model.modelID}` : "none",
-              ready: savedReady(),
-            })
-            setSaved("session", session, next)
-            return
-          }
-          setStore("draft", next)
+          save(next)
         })
       },
       move(direction: 1 | -1) {
@@ -331,7 +261,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const item = pickInternalAgent(name)
         if (name && !item) return false
         setStore("locked", item?.name)
-        if (item) agent.set(item.name)
         return true
       },
     }
@@ -370,29 +299,6 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       } satisfies State
     }
 
-    const write = (next: Partial<State>) => {
-      const state = {
-        ...(scope() ?? { agent: agent.current()?.name }),
-        ...next,
-        source: "manual" as const,
-      } satisfies State
-
-      const session = id()
-      if (session) {
-        const key = handoffKey(sdk.directory, session)
-        const manual = clone(state)
-        if (manual) manualSession.set(key, manual)
-        modelDebug("manual-write", {
-          sessionID: session,
-          model: state.model ? `${state.model.providerID}/${state.model.modelID}` : "none",
-          ready: savedReady(),
-        })
-        setSaved("session", session, state)
-        return
-      }
-      setStore("draft", state)
-    }
-
     const recent = createMemo(() => models.recent.list().map(models.find).filter(Boolean))
 
     const model = {
@@ -424,7 +330,11 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             model: item ?? null,
             variant: selected(),
           })
-          write({ model: item })
+          modelDebug("model-selected", {
+            sessionID: id() ?? "draft",
+            model: item ? `${item.providerID}/${item.modelID}` : "none",
+          })
+          save(selectModel(scope() ?? { agent: agent.current()?.name }, item))
           if (!item) return
           models.setVisibility(item, true)
           if (!options?.recent) return
@@ -461,7 +371,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
               model: model ? { providerID: model.provider.id, modelID: model.id } : null,
               variant: value ?? null,
             })
-            write({ variant: value ?? null })
+            save(selectVariant(scope() ?? { agent: agent.current()?.name }, value ?? null))
           })
         },
         cycle() {
@@ -478,54 +388,27 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
-    // Do not let message history write over a session selection before async desktop storage is loaded.
-    const applyRestore = (msg: RestoreMessage) => {
+    const restore = (msg: RestoreMessage) => {
       const session = id()
-      if (!session) {
-        modelDebug("restore-skipped", { reason: "no-session", messageSessionID: msg.sessionID })
-        return
-      }
-      if (msg.sessionID !== session) {
-        modelDebug("restore-skipped", {
-          reason: "session-mismatch",
-          sessionID: session,
-          messageSessionID: msg.sessionID,
-        })
-        return
-      }
-      if (saved.session[session]?.source === "manual") {
-        modelDebug("restore-skipped", { reason: "manual-saved-state-exists", sessionID: session })
-        return
-      }
+      if (!session || msg.sessionID !== session) return
       const key = handoffKey(sdk.directory, session)
-      if (manualSession.get(key)?.source === "manual") {
-        modelDebug("restore-skipped", { reason: "manual-memory-exists", sessionID: session })
-        return
-      }
-      if (handoff.has(key)) {
-        modelDebug("restore-skipped", { reason: "handoff-exists", sessionID: session })
-        return
-      }
-
-      modelDebug("restore-applied", {
-        sessionID: session,
-        agent: msg.agent,
-        model: `${msg.model.providerID}/${msg.model.modelID}`,
+      const next = restoreMessageSelection({
+        manual: saved.session[session],
+        handoff: handoff.get(key),
+        message: {
+          agent: msg.agent,
+          model: msg.model,
+          variant: msg.model.variant ?? null,
+        },
       })
-      manualSession.delete(key)
-      setSaved("session", session, {
-        agent: msg.agent,
-        model: msg.model,
-        variant: msg.model.variant ?? null,
-        source: "message",
-      })
+      if (next) {
+        modelDebug("message-restored", {
+          sessionID: session,
+          model: `${msg.model.providerID}/${msg.model.modelID}`,
+        })
+        setStore("restored", session, next)
+      }
     }
-
-    const requestRestore = createSessionModelRestoreQueue({
-      ready: savedReady,
-      wait: savedReady.promise,
-      restore: applyRestore,
-    })
 
     const result = {
       slug: createMemo(() => base64Encode(sdk.directory)),
@@ -538,12 +421,10 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         promote(dir: string, session: string) {
           const next = clone(snapshot())
           if (!next) return
-          next.source = "manual"
           const key = handoffKey(dir, session)
           handoff.set(key, next)
 
           if (dir === sdk.directory) {
-            manualSession.set(key, next)
             setSaved("session", session, next)
           }
 
@@ -551,12 +432,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           setStore("draft", undefined)
         },
         restore(msg: { sessionID: string; agent: string; model: ModelKey; variant?: string }) {
-          modelDebug("restore-requested", {
-            sessionID: msg.sessionID,
-            model: `${msg.model.providerID}/${msg.model.modelID}`,
-            ready: savedReady(),
-          })
-          requestRestore(msg)
+          restore(msg)
         },
       },
     }

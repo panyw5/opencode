@@ -249,6 +249,27 @@ async function newWorkspaceSession(page: Page, slug: string) {
   return waitSession(page, { directory: next.directory }).then((item) => item.directory)
 }
 
+test("manual model selection survives session activation without sending", async ({ page, withProject }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+
+  await withProject(async ({ directory, gotoSession, trackSession }) => {
+    await gotoSession()
+    const session = await submit(page, `manual model persistence ${Date.now()}`)
+    trackSession(session)
+    await waitUser(directory, session)
+
+    const selected = await chooseOtherModel(page)
+
+    await gotoSession()
+    await goto(page, directory, session)
+    await waitFooter(page, selected)
+
+    await page.reload()
+    await waitSession(page, { directory, sessionID: session })
+    await waitFooter(page, selected)
+  })
+})
+
 test("session model and variant restore per session without leaking into new sessions", async ({
   page,
   withProject,
