@@ -216,8 +216,9 @@
         height: 100%;
         border-radius: var(--tabs-compact-pill-radius);
 
+        /* No active-tab underline for file preview tabs */
         &::after {
-          bottom: 0;
+          display: none;
         }
       }
 
