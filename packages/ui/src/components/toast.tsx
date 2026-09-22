@@ -138,6 +138,12 @@ export function showToast(options: ToastOptions | string) {
         <Toast.Icon name={opts.icon!} />
       </Show>
       <Toast.Content>
+        <div data-slot="toast-controls">
+          <Show when={hasCountdown}>
+            <Toast.Countdown />
+          </Show>
+          <Toast.CloseButton />
+        </div>
         <Show when={opts.title}>
           <Toast.Title>{opts.title}</Toast.Title>
         </Show>
@@ -162,10 +168,6 @@ export function showToast(options: ToastOptions | string) {
           </Toast.Actions>
         </Show>
       </Toast.Content>
-      <Show when={hasCountdown}>
-        <Toast.Countdown />
-      </Show>
-      <Toast.CloseButton />
     </Toast>
   ))
 }
@@ -189,7 +191,10 @@ export function showCompactToast(options: CompactToastOptions) {
     <Toast toastId={props.toastId} duration={duration} data-variant="default" data-compact>
       <Toast.Content>
         <div data-slot="toast-compact-body">
-          <Toast.Icon name={options.icon} size={options.icon === "question-mark" ? "medium" : undefined} />
+          <Toast.Icon
+            name={options.icon}
+            size={options.icon === "question-mark" || options.icon === "shield-check" ? "medium" : undefined}
+          />
           <div data-slot="toast-compact-main">
             <span data-slot="toast-compact-title">{options.title}</span>
             <div data-slot="toast-compact-row">
@@ -238,16 +243,18 @@ export function showPromiseToast<T, U = unknown>(
       data-variant={props.state === "pending" ? "loading" : props.state === "fulfilled" ? "success" : "error"}
     >
       <Toast.Content>
+        <div data-slot="toast-controls">
+          <Show when={props.state !== "pending"}>
+            <Toast.Countdown />
+          </Show>
+          <Toast.CloseButton />
+        </div>
         <Toast.Description>
           {props.state === "pending" && options.loading}
           {props.state === "fulfilled" && options.success?.(props.data!)}
           {props.state === "rejected" && options.error?.(props.error)}
         </Toast.Description>
       </Toast.Content>
-      <Show when={props.state !== "pending"}>
-        <Toast.Countdown />
-      </Show>
-      <Toast.CloseButton />
     </Toast>
   ))
 }
