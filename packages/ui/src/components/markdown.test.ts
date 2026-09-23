@@ -13,8 +13,10 @@ import {
 } from "./markdown"
 import {
   healPunctuationEmphasis,
+  normalizeAutolink,
   normalizeCodeLanguage,
   prepareMarkdown,
+  protectBareAutolinks,
   protectMathExpressions,
   renderMathExpressions,
 } from "../context/marked"
@@ -327,6 +329,81 @@ $$
     expect(parsed.match(/<tr>/g)?.length).toBe(4)
     expect(html).toContain("katex")
     expect(html).not.toContain("katex-error")
+  })
+})
+
+describe("markdown autolinks", () => {
+  const glued = "增加这个服务器的维护 https://axonhub-k34h.onrender.com，跟现在的2个render服务器是一样的维护流程。"
+
+  test("ends a bare autolink where CJK prose starts", () => {
+    expect(protectBareAutolinks(glued)).toBe(
+      "增加这个服务器的维护 <https://axonhub-k34h.onrender.com>，跟现在的2个render服务器是一样的维护流程。",
+    )
+  })
+
+  test("keeps the trailing prose out of the link for every renderer", async () => {
+    const marked = new Marked()
+    const prepared = prepareMarkdown(glued)
+    const local = await marked.parse(prepared)
+    const native = await parseNativeMarkdown(prepared)
+
+    for (const html of [local, native]) {
+      expect(html).toContain('<a href="https://axonhub-k34h.onrender.com"')
+      expect(html).toContain(">https://axonhub-k34h.onrender.com</a>")
+      expect(html).not.toContain("onrender.com，")
+      expect(html).toContain("，跟现在的2个render服务器是一样的维护流程。")
+    }
+  })
+
+  test("stops at CJK punctuation and quotes glued to the URL", () => {
+    expect(protectBareAutolinks("见 https://a.com（括号）")).toBe("见 <https://a.com>（括号）")
+    expect(protectBareAutolinks('见 “https://a.com”，随后')).toBe('见 “<https://a.com>”，随后')
+    expect(protectBareAutolinks("见https://a.com即可")).toBe("见<https://a.com>即可")
+  })
+
+  test("leaves plain ASCII URLs and their own trailing punctuation alone", () => {
+    const markdown = "see https://example.com/foo?bar=1 for details, then https://example.com."
+
+    expect(protectBareAutolinks(markdown)).toBe(markdown)
+  })
+
+  test("keeps parentheses and dots inside a URL", () => {
+    const markdown = "see https://en.wikipedia.org/wiki/Foo_(bar)"
+
+    expect(protectBareAutolinks(markdown)).toBe(markdown)
+  })
+
+  test("does not rewrite URLs in code spans or fences", () => {
+    const markdown = ["`https://a.com，x`", "", "```bash", "curl https://a.com，x", "```"].join("\n")
+
+    expect(protectBareAutolinks(markdown)).toBe(markdown)
+  })
+
+  test("does not rewrite existing autolinks or markdown link destinations", () => {
+    expect(protectBareAutolinks("<https://a.com，x>")).toBe("<https://a.com，x>")
+    expect(protectBareAutolinks("[t](https://a.com，x)")).toBe("[t](https://a.com，x)")
+    expect(protectBareAutolinks("[https://a.com，x](y)")).toBe("[https://a.com，x](y)")
+    expect(protectBareAutolinks("[见 https://a.com，x](y)")).toBe("[见 https://a.com，x](y)")
+  })
+
+  test("still rewrites after a balanced bracket pair in prose", () => {
+    expect(protectBareAutolinks("- [ ] 见 https://a.com，x")).toBe("- [ ] 见 <https://a.com>，x")
+  })
+
+  test("keeps URLs in protected math untouched", () => {
+    const markdown = "公式 $\\text{https://a.com，x}$ 结束"
+
+    expect(protectBareAutolinks(protectMathExpressions(markdown))).toBe(protectMathExpressions(markdown))
+  })
+
+  test("trims the rendered href and text of an autolink glued to CJK prose", () => {
+    expect(normalizeAutolink("https://a.com，后文", "https://a.com，后文")).toEqual({
+      href: "https://a.com",
+      text: "https://a.com",
+    })
+    expect(normalizeAutolink("https://a.com", "https://a.com")).toBeUndefined()
+    expect(normalizeAutolink("https://a.com", "label")).toBeUndefined()
+    expect(normalizeAutolink("/local/path，后文", "/local/path，后文")).toBeUndefined()
   })
 })
 

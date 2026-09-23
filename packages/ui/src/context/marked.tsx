@@ -29,64 +29,54 @@ function katexOptions(input: { output: MathOutput; displayMode?: boolean }): kat
   }
 }
 
-const autoLinkBoundaryChars = new Set([
-  " ",
-  "\t",
-  "\n",
-  "\r",
-  "\f",
-  "\v",
-  ",",
-  ".",
-  ";",
-  ":",
-  "!",
-  "?",
-  ")",
-  "]",
-  "}",
-  ">",
-  "，",
-  "。",
-  "；",
-  "：",
-  "！",
-  "？",
-  "、",
-  "）",
-  "］",
-  "】",
-  "｝",
-  "〉",
-  "》",
-  "」",
-  "』",
-])
+// marked's GFM autolink stops at whitespace or "<" only, so a bare URL glued to
+// Chinese prose swallows the rest of the sentence:
+//   增加维护 https://axonhub-k34h.onrender.com，跟现在的2个render服务器… 
+// would link the whole tail. Chinese has no word spaces, so a link has to end
+// where CJK text starts. ASCII is left to marked: it already strips trailing
+// punctuation and keeps balanced parentheses in URLs.
+const autolinkProseChars =
+  /[\u00a0\u2000-\u206f\u2e80-\u303f\ufe10-\ufe4f\uff00-\uffef]|\p{Script=Han}|\p{Script=Hiragana}|\p{Script=Katakana}|\p{Script=Hangul}|\p{Script=Bopomofo}/u
 
-function trimAutolinkAtBoundary(value: string) {
+// Length of the URL at the start of `value`, or undefined when the URL already
+// ends at a clean boundary (marked trims ASCII itself, so only CJK needs help).
+// CJK prose always terminates a bare URL, so the cut point is the first CJK
+// character; ASCII punctuation marked would have dropped from a shorter match is
+// dropped here too.
+function autolinkLength(value: string) {
+  let end = -1
   for (let i = 0; i < value.length; i++) {
-    if (autoLinkBoundaryChars.has(value[i])) return value.slice(0, i)
+    if (autolinkProseChars.test(value[i])) {
+      end = i
+      break
+    }
   }
-  return value
+  if (end === -1) return
+
+  const cut = value.slice(0, end).replace(/[\s.,;:!?'"~*_]+$/, "")
+  // "<a b>" is an HTML tag, not an autolink, so a cut spanning whitespace or an
+  // angle bracket must not be wrapped.
+  if (!cut || /[\s<>]/.test(cut)) return
+  try {
+    if (!new URL(cut).hostname) return
+  } catch {
+    return
+  }
+  return cut.length
 }
 
-function normalizeAutolink(href: string, text: string) {
+export function normalizeAutolink(href: string, text: string) {
   const hrefTrimmed = href.trim()
   const textTrimmed = text.trim()
   if (!hrefTrimmed.startsWith("http://") && !hrefTrimmed.startsWith("https://")) return
   if (textTrimmed !== hrefTrimmed) return
 
-  const nextHref = trimAutolinkAtBoundary(hrefTrimmed)
-  if (!nextHref || nextHref === hrefTrimmed) return
+  const length = autolinkLength(hrefTrimmed)
+  if (!length) return
 
-  try {
-    const parsed = new URL(nextHref)
-    return {
-      href: parsed.toString(),
-      text: trimAutolinkAtBoundary(textTrimmed),
-    }
-  } catch {
-    return
+  return {
+    href: hrefTrimmed.slice(0, length),
+    text: textTrimmed.slice(0, length),
   }
 }
 
@@ -620,7 +610,9 @@ export function protectMathExpressions(markdown: string): string {
 }
 
 export function prepareMarkdown(markdown: string): string {
-  return healPunctuationEmphasis(protectMathExpressions(markdown))
+  // Autolinks run last: protected math is already an HTML tag by then, so a URL
+  // inside math or a code span is skipped instead of being rewritten.
+  return protectBareAutolinks(healPunctuationEmphasis(protectMathExpressions(markdown)))
 }
 
 function escapedDollar(text: string, at: number) {
@@ -860,6 +852,64 @@ function healPunctuationEmphasisInText(text: string): string {
   let out = text
   for (const at of unique) out = `${out.slice(0, at)}<!-- -->${out.slice(at)}`
   return out
+}
+
+// Wrap a bare URL that runs straight into CJK prose in an explicit "<...>"
+// autolink so the parser stops the link at the URL. Rewriting the source (instead
+// of the rendered <a>) keeps every render path consistent, including the desktop
+// native parser, which does not go through the marked link renderer.
+export function protectBareAutolinks(markdown: string): string {
+  const block = /(```[\s\S]*?```|~~~[\s\S]*?~~~)/g
+  const parts = markdown.split(block)
+  return parts.map((part, i) => (i % 2 === 1 ? part : protectBareAutolinksInText(part))).join("")
+}
+
+function protectBareAutolinksInText(text: string) {
+  let out = ""
+  let from = 0
+  let label = 0
+
+  for (let i = 0; i < text.length; i++) {
+    const code = inlineCodeEnd(text, i)
+    if (code) {
+      i = code - 1
+      continue
+    }
+
+    const tag = htmlTagEnd(text, i)
+    if (tag !== undefined) {
+      i = tag
+      continue
+    }
+
+    const ch = text[i]
+    if (ch === "[") {
+      label++
+      continue
+    }
+    if (ch === "]") {
+      if (label > 0) label--
+      continue
+    }
+
+    if (!text.startsWith("https://", i) && !text.startsWith("http://", i)) continue
+
+    // A URL after "(" or "[" is a markdown link destination, one after "<" is
+    // already an autolink, and one inside "[...]" is a link label; adding
+    // brackets would break all three.
+    const before = text[i - 1]
+    if (label > 0 || before === "(" || before === "[" || before === "<") continue
+
+    const length = autolinkLength(text.slice(i))
+    if (!length) continue
+
+    out += `${text.slice(from, i)}<${text.slice(i, i + length)}>`
+    from = i + length
+    i = from - 1
+  }
+
+  if (from === 0) return text
+  return out + text.slice(from)
 }
 
 function renderMathInText(text: string, output: MathOutput): string {
