@@ -44,6 +44,10 @@ export type MathWorkerStatus = {
   lastSummary?: string
 }
 
+export function mathWorkerIsRunning(worker: Pick<MathWorkerStatus, "alive" | "state"> | undefined) {
+  return worker?.alive === true && (worker.state === "running" || worker.state === "stopping")
+}
+
 export type MathDetailKind = "facts" | "correct" | "wrong" | "error"
 
 export type MathVerificationReport = {

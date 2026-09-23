@@ -264,7 +264,8 @@ export function glyph(tool: string): IconProps["name"] {
   if (name.includes("read")) return "glasses"
   if (name.includes("search") || name.includes("grep") || name.includes("glob") || name.includes("find"))
     return "magnifying-glass-menu"
-  if (name.includes("write") || name.includes("patch") || name.includes("edit")) return "code-lines"
+  if (name.includes("patch")) return "pencil-line"
+  if (name.includes("write") || name.includes("edit")) return "code-lines"
   if (
     name === "bash" ||
     name.includes("terminal") ||

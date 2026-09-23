@@ -3,11 +3,17 @@ import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { createStore, reconcile } from "solid-js/store"
 import {
   authoritativeSessionStatusMap,
+  bumpSessionStatusRevision,
   isSessionStatusRefreshBoundary,
   mergeSessionStatusRefresh,
+  pendingSessionStatusIDs,
+  sessionStatusRevisionSnapshot,
+  sessionStatusValueSnapshot,
   SESSION_STATUS_VISIBILITY_REFRESH_MS,
   sessionsToReconcileOnStreamConnect,
+  sessionsToReconcileMessagesAfterStatusRefresh,
   sessionToReconcileOnStatusEvent,
+  setSessionStatusPending,
   shouldRefreshSessionStatusOnVisibility,
 } from "./session-status-refresh"
 
@@ -80,14 +86,108 @@ describe("session-status-refresh", () => {
     expect(store.session_status).toEqual({})
   })
 
-  test("merge keeps optimistic busy while the last message is still a user turn", () => {
+  test("authoritative snapshot clears stale busy even when the cached turn ends with a user message", () => {
     const user = { id: "msg_user", role: "user", sessionID: "ses_1" } as Message
+    const next = mergeSessionStatusRefresh({ ses_1: { type: "busy" } as SessionStatus }, {}, { ses_1: [user] })
+    expect(next.ses_1).toBeUndefined()
+  })
+
+  test("pending submit lease preserves only its optimistic busy until request confirmation", () => {
+    const directory = "/tmp/status-pending-test"
+    setSessionStatusPending(directory, "ses_optimistic", true, "message_a")
+    expect(pendingSessionStatusIDs(directory)).toEqual(["ses_optimistic"])
+    expect(
+      mergeSessionStatusRefresh(
+        { ses_optimistic: { type: "busy" } as SessionStatus },
+        {},
+        {},
+        pendingSessionStatusIDs(directory),
+      ),
+    ).toEqual({ ses_optimistic: { type: "busy" } })
+
+    setSessionStatusPending(directory, "ses_optimistic", false, "message_a")
+    expect(pendingSessionStatusIDs(directory)).toEqual([])
+    expect(
+      mergeSessionStatusRefresh(
+        { ses_optimistic: { type: "busy" } as SessionStatus },
+        {},
+        {},
+        pendingSessionStatusIDs(directory),
+      ),
+    ).toEqual({})
+  })
+
+  test("settling an older submit token does not clear a newer lease for the same session", () => {
+    const directory = "/tmp/status-pending-concurrent-test"
+    setSessionStatusPending(directory, "ses_rapid", true, "message_old")
+    setSessionStatusPending(directory, "ses_rapid", true, "message_new")
+    setSessionStatusPending(directory, "ses_rapid", false, "message_old")
+    expect(pendingSessionStatusIDs(directory)).toEqual(["ses_rapid"])
+    setSessionStatusPending(directory, "ses_rapid", false, "message_new")
+    expect(pendingSessionStatusIDs(directory)).toEqual([])
+  })
+
+  test("a status event newer than an in-flight snapshot wins over that response", () => {
+    const busy = { type: "busy" } as SessionStatus
+    const idle = { type: "idle" } as SessionStatus
+    expect(
+      mergeSessionStatusRefresh({ ses_1: idle }, { ses_1: busy }, {}, [], sessionStatusValueSnapshot({ ses_1: busy })),
+    ).toEqual({ ses_1: idle })
+    expect(mergeSessionStatusRefresh({ ses_1: busy }, {}, {}, [], sessionStatusValueSnapshot({}))).toEqual({
+      ses_1: busy,
+    })
+  })
+
+  test("reconcile preserves an idle event newer than an in-flight busy snapshot", () => {
+    const directory = "/tmp/status-revision-idle-test"
+    const busy = { type: "busy" } as SessionStatus
+    const idle = { type: "idle" } as SessionStatus
+    const [store, setStore] = createStore<{ session_status: Record<string, SessionStatus> }>({
+      session_status: { ses_1: busy },
+    })
+    const valuesAtStart = sessionStatusValueSnapshot(store.session_status)
+    const revisionsAtStart = sessionStatusRevisionSnapshot(directory)
+    bumpSessionStatusRevision(directory, "ses_1")
+    setStore("session_status", "ses_1", reconcile(idle))
+
     const next = mergeSessionStatusRefresh(
-      { ses_1: { type: "busy" } as SessionStatus },
+      store.session_status,
+      { ses_1: busy },
       {},
-      { ses_1: [user] },
+      [],
+      valuesAtStart,
+      revisionsAtStart,
+      sessionStatusRevisionSnapshot(directory),
     )
-    expect(next.ses_1).toEqual({ type: "busy" })
+    expect(next.ses_1).toEqual(idle)
+  })
+
+  test("revision preserves a same-value busy event from a newer worker generation", () => {
+    const directory = "/tmp/status-revision-restart-test"
+    const busy = { type: "busy" } as SessionStatus
+    const [store, setStore] = createStore<{ session_status: Record<string, SessionStatus> }>({
+      session_status: { ses_1: busy },
+    })
+    const valuesAtStart = sessionStatusValueSnapshot(store.session_status)
+    const revisionsAtStart = sessionStatusRevisionSnapshot(directory)
+    bumpSessionStatusRevision(directory, "ses_1")
+    setStore("session_status", "ses_1", reconcile({ type: "busy" } as SessionStatus))
+
+    const next = mergeSessionStatusRefresh(
+      store.session_status,
+      {},
+      {},
+      [],
+      valuesAtStart,
+      revisionsAtStart,
+      sessionStatusRevisionSnapshot(directory),
+    )
+    expect(next.ses_1).toEqual(busy)
+  })
+
+  test("authoritative snapshot clears stale busy when messages were never loaded", () => {
+    const next = mergeSessionStatusRefresh({ ses_1: { type: "busy" } as SessionStatus }, {}, {})
+    expect(next.ses_1).toBeUndefined()
   })
 
   test("merge drops local busy when the turn has a completed assistant", () => {
@@ -122,7 +222,7 @@ describe("session-status-refresh", () => {
     })
   })
 
-  test("stream reconnect selects loaded busy sessions for message reconciliation", () => {
+  test("stream reconnect selects every busy session for reconciliation, including unloaded messages", () => {
     expect(
       sessionsToReconcileOnStreamConnect(
         {
@@ -135,7 +235,50 @@ describe("session-status-refresh", () => {
           ses_idle: [{ id: "msg_idle" } as Message],
         },
       ),
-    ).toEqual(["ses_loaded"])
+    ).toEqual(["ses_loaded", "ses_unloaded"])
+  })
+
+  test("status refresh schedules message reconciliation when idle would expose a stale active assistant", () => {
+    const activeAssistant = {
+      id: "msg_assistant",
+      role: "assistant",
+      sessionID: "ses_stale_transcript",
+      time: { created: 1 },
+    } as Message
+    expect(
+      sessionsToReconcileMessagesAfterStatusRefresh(
+        { ses_stale_transcript: { type: "busy" } as SessionStatus },
+        {},
+        { ses_stale_transcript: [activeAssistant] },
+      ),
+    ).toEqual(["ses_stale_transcript"])
+    expect(
+      sessionsToReconcileMessagesAfterStatusRefresh(
+        { ses_live: { type: "busy" } as SessionStatus },
+        { ses_live: { type: "busy" } as SessionStatus },
+        { ses_live: [activeAssistant] },
+      ),
+    ).toEqual([])
+  })
+
+  test("select transcript reconciliation before Solid reconcile mutates nested status proxies", () => {
+    const activeAssistant = {
+      id: "msg_active",
+      role: "assistant",
+      sessionID: "ses_proxy",
+      time: { created: 1 },
+    } as Message
+    const [store, setStore] = createStore<{ session_status: Record<string, SessionStatus> }>({
+      session_status: { ses_proxy: { type: "busy" } as SessionStatus },
+    })
+    const previous = { ...store.session_status }
+    const next = { ses_proxy: { type: "idle" } as SessionStatus }
+    const transcripts = sessionsToReconcileMessagesAfterStatusRefresh(previous, next, {
+      ses_proxy: [activeAssistant],
+    })
+    setStore("session_status", reconcile(next))
+
+    expect(transcripts).toEqual(["ses_proxy"])
   })
 
   test("idle status event selects a session only when it was locally busy", () => {

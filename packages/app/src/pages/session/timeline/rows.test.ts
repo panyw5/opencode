@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
-import type { AssistantMessage, Part, TextPart, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, Part, TextPart, ToolPart, UserMessage } from "@opencode-ai/sdk/v2"
 
 // `./rows` transitively imports @solidjs/router and @kobalte/core (via
 // @opencode-ai/ui/message-part), whose module scopes call client-only APIs that
@@ -108,6 +108,23 @@ const textPart = (messageID: string, text: string, synthetic = false): Part =>
     ...(synthetic ? { synthetic: true } : {}),
   }) as TextPart
 
+const toolPart = (messageID: string, id: string, tool: string): ToolPart =>
+  ({
+    id,
+    sessionID: "ses_test",
+    messageID,
+    type: "tool",
+    callID: `call_${id}`,
+    tool,
+    state: {
+      status: "completed",
+      input: {},
+      output: "ok",
+      metadata: {},
+      time: { start: 1, end: 2 },
+    },
+  }) as ToolPart
+
 const partsByID = (parts: Part[]) => (messageID: string) => parts.filter((part) => part.messageID === messageID)
 
 describe("constructMessageRows", () => {
@@ -115,6 +132,33 @@ describe("constructMessageRows", () => {
     const message = userMessage("user-1")
     const rows = construct(message, partsByID([textPart("user-1", "hello")]), [], 0, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage"])
+  })
+
+  test("collapses consecutive tool groups into one timeline row", () => {
+    const user = userMessage("user-tools")
+    const assistant = assistantMessage("assistant-tools", user.id)
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "tool-read", "read"),
+      toolPart(assistant.id, "tool-bash", "bash"),
+    ]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup"])
+    const group = rows.find((row) => row._tag === "ToolGroup")
+    expect(group?.groups.flatMap((item) => (item.type === "part" ? [item.ref] : item.refs))).toHaveLength(2)
+  })
+
+  test("starts a new tool group after assistant text", () => {
+    const user = userMessage("user-split-tools")
+    const assistant = assistantMessage("assistant-split-tools", user.id)
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "tool-before", "bash"),
+      textPart(assistant.id, "progress"),
+      toolPart(assistant.id, "tool-after", "bash"),
+    ]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart", "ToolGroup"])
   })
 
   test("keeps the row for a synthetic math-worker event panel", () => {

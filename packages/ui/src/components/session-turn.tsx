@@ -713,6 +713,7 @@ export function SessionTurn(
                 </Show>
                 <Show when={showThinking()}>
                   <div data-slot="session-turn-thinking">
+                    <Icon name="lightbulb" size="small" />
                     <Show
                       when={working()}
                       fallback={<span>{i18n.t("ui.messagePart.reasoning.thought")}</span>}

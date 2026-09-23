@@ -3,7 +3,7 @@ import { LUCIDE_VIEWBOX, lucideIcons } from "./lucide-icons"
 import { PHOSPHOR_VIEWBOX, phosphorIcons } from "./phosphor-icons"
 import { TABLER_VIEWBOX, tablerIcons } from "./tabler-icons"
 
-const icons = {
+const baseIcons = {
   "align-right": `<path d="M12.292 6.04167L16.2503 9.99998L12.292 13.9583M2.91699 9.99998H15.6253M17.0837 3.75V16.25" stroke="currentColor" stroke-linecap="square"/>`,
   "arrow-up": `<path fill-rule="evenodd" clip-rule="evenodd" d="M9.99991 2.24121L16.0921 8.33343L15.2083 9.21731L10.6249 4.63397V17.5001H9.37492V4.63398L4.7916 9.21731L3.90771 8.33343L9.99991 2.24121Z" fill="currentColor"/>`,
   "arrow-up-bold": `<path d="M10 15.8333V5.83333" stroke="currentColor" stroke-width="2.25" stroke-linecap="round"/><path d="M5.83301 10.0003L9.99967 5.83366L14.1663 10.0003" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"/>`,
@@ -158,6 +158,12 @@ const icons = {
   // holds every minimized panel.
   "panel-minimize": `<path d="M2.91699 2.91699H17.0837V17.0837H2.91699V2.91699ZM6.25033 13.7503H13.7503" stroke="currentColor" stroke-linecap="square"/>`,
   "panel-stash": `<path d="M5.83301 4.58301H17.083V13.7497M2.91634 6.24967H14.1663V17.083H2.91634V6.24967Z" stroke="currentColor" stroke-linecap="square"/>`,
+}
+
+// Pack-independent outline icon for tiny thinking-status rows.
+const icons = {
+  ...baseIcons,
+  lightbulb: `<path d="M10 2.083A5.417 5.417 0 0 0 6.667 11.77C7.187 12.176 7.5 12.775 7.5 13.434V13.75H12.5V13.434C12.5 12.775 12.813 12.176 13.333 11.77A5.417 5.417 0 0 0 10 2.083Z" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/><path d="M7.917 16.25H12.083M8.75 18.333H11.25" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
 }
 
 export type IconName = keyof typeof icons

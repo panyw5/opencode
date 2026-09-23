@@ -45,4 +45,29 @@ describe("session status controller", () => {
     expect(service.get("/project", "session")?.type).toBe("retry")
     expect(service.inspect()).toEqual({ inflight: 0 })
   })
+
+  test("refresh reloads an active assistant transcript when its local busy status is omitted", async () => {
+    const harness = createSessionControllerHarness({ status: async () => ({ data: {} }) })
+    harness.child[1]("session_status", "session", { type: "busy" } as SessionStatus)
+    harness.child[1]("message", "session", [
+      {
+        id: "msg_active",
+        sessionID: "session",
+        role: "assistant",
+        time: { created: 1 },
+      } as never,
+    ])
+    const reconciled: string[] = []
+    const service = createSessionStatusService({
+      ...harness.deps,
+      reconcileMessages: async (_directory, sessionID) => {
+        reconciled.push(sessionID)
+      },
+    })
+
+    await service.refresh("/project")
+
+    expect(service.get("/project", "session")).toBeUndefined()
+    expect(reconciled).toEqual(["session"])
+  })
 })

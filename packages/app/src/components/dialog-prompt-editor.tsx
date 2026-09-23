@@ -326,7 +326,11 @@ export function DialogPromptEditor(props: DialogPromptEditorProps) {
         transition: "width 180ms cubic-bezier(0.16, 1, 0.3, 1), height 180ms cubic-bezier(0.16, 1, 0.3, 1)",
       }}
     >
-      <div class="flex min-h-0 flex-1 flex-col gap-4 px-4 pb-4">
+      {/* `pt-px`: the editor shell below paints `shadow-xs-border-base`, whose first layer is a 1px
+          ring drawn outside its border box. This column is the first child of `[data-slot=dialog-body]`,
+          which is `overflow: hidden` with no padding, so a flush top edge would clip that ring and the
+          shell would read 2px on the sides/bottom but 1px on top. */}
+      <div class="flex min-h-0 flex-1 flex-col gap-4 px-4 pt-px pb-4">
         {props.before && <div class="flex flex-col gap-2">{props.before}</div>}
         <div
           class="relative overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-xs-border-base"

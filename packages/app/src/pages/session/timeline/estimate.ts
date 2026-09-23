@@ -40,6 +40,8 @@ export const DIFF_SUMMARY_DESKTOP_HORIZONTAL_INSET = 40
 export const DIFF_SUMMARY_MOBILE_HORIZONTAL_INSET = 32
 /** session-turn-thinking measures 24px; the row itself lands at ~40 once wrapped. */
 export const THINKING_HEIGHT = 24
+/** Collapsed tool activity uses the same compact 32px trigger as other ghost collapsibles. */
+export const TOOL_GROUP_HEIGHT = 32
 export const TEXT_PART_MARGIN = 24
 /** Copy/meta row shown under the final assistant text: margin-top 4 + min-height 24. */
 export const TEXT_PART_META_HEIGHT = 28
@@ -102,6 +104,11 @@ export type EstimateRowInput = {
     ref?: { messageID: string; partID: string }
     refs?: ReadonlyArray<{ messageID: string; partID: string }>
   }
+  groups?: ReadonlyArray<{
+    type: "part" | "context"
+    ref?: { messageID: string; partID: string }
+    refs?: ReadonlyArray<{ messageID: string; partID: string }>
+  }>
   diffs?: ReadonlyArray<{ file: string }>
   text?: string
 }
@@ -299,6 +306,9 @@ export function estimateRowHeight(row: EstimateRowInput, width: number, options:
       return group.uncertain ? clampRowEstimate(raw, viewportHeight) : capRowEstimate(raw, viewportHeight)
     }
 
+    case "ToolGroup":
+      return capRowEstimate(previousSpacing + TOOL_GROUP_HEIGHT, viewportHeight)
+
     case "Thinking":
       return THINKING_HEIGHT
 
@@ -344,6 +354,8 @@ export function rowRenderCost(row: EstimateRowInput, options: EstimateRowHeightO
       return 0.25
     case "TurnDivider":
       return 0.5
+    case "ToolGroup":
+      return 0.35
     case "DiffSummary":
       return 0.5 + Math.min(row.diffs?.length ?? 0, 16) * 0.15
     case "CommentStrip":

@@ -51,4 +51,9 @@ describe("basic-tool glyph", () => {
     expect(glyph("terminal")).toBe("console")
     expect(glyph("write_file")).toBe("code-lines")
   })
+
+  test("maps patch tools to the pencil icon", () => {
+    expect(glyph("apply_patch")).toBe("pencil-line")
+    expect(glyph("custom_patch")).toBe("pencil-line")
+  })
 })

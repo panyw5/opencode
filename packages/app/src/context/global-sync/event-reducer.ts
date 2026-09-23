@@ -15,6 +15,7 @@ import type {
 import type { State, VcsCache } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { publishSessionLifecycle } from "./session-lifecycle"
+import { bumpSessionStatusRevision } from "./session-status-refresh"
 
 const SKIP_PARTS = new Set(["patch", "step-start", "step-finish"])
 
@@ -198,6 +199,7 @@ export function applyDirectoryEvent(input: {
     }
     case "session.status": {
       const props = event.properties as { sessionID: string; status: SessionStatus }
+      bumpSessionStatusRevision(input.directory, props.sessionID)
       input.setStore("session_status", props.sessionID, reconcile(props.status))
       break
     }
@@ -380,7 +382,9 @@ export function applyDirectoryEvent(input: {
       )
       if (!permissions) {
         input.setStore("permission", permission.sessionID, [permission])
-        console.debug(`[permission-sync] event asked inserted session=${permission.sessionID} request=${permission.id} index=0`)
+        console.debug(
+          `[permission-sync] event asked inserted session=${permission.sessionID} request=${permission.id} index=0`,
+        )
         break
       }
       const result = Binary.search(permissions, permission.id, (p) => p.id)
@@ -425,7 +429,9 @@ export function applyDirectoryEvent(input: {
             delete draft[props.sessionID]
           }),
         )
-        console.debug(`[permission-sync] event replied removed session=${props.sessionID} request=${props.requestID} remaining=0`)
+        console.debug(
+          `[permission-sync] event replied removed session=${props.sessionID} request=${props.requestID} remaining=0`,
+        )
         break
       }
       input.setStore(

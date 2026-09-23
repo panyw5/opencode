@@ -18,7 +18,13 @@ import type { State, VcsCache } from "./types"
 import { cmp, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
 import { projectOwner } from "@/pages/layout/helpers"
-import { mergeSessionStatusRefresh } from "./session-status-refresh"
+import {
+  mergeSessionStatusRefresh,
+  pendingSessionStatusIDs,
+  sessionStatusRevisionSnapshot,
+  sessionStatusValueSnapshot,
+  sessionsToReconcileMessagesAfterStatusRefresh,
+} from "./session-status-refresh"
 
 // Minimal type for bootstrap - actual GlobalStore has more fields (rootByDomain, projectByDomain, etc.)
 // but bootstrap only needs to set these core fields
@@ -222,6 +228,7 @@ export async function bootstrapDirectory(input: {
   vcsCache: VcsCache
   setProject?: (projects: Project[]) => void
   translate: (key: string, vars?: Record<string, string | number>) => string
+  reconcileMessages?(sessionID: string): Promise<unknown>
   global: {
     config: Config
     project: Project[]
@@ -251,17 +258,43 @@ export async function bootstrapDirectory(input: {
         }),
       ),
     () =>
-      retry(() =>
+      retry(() => {
+        const statusAtStart = sessionStatusValueSnapshot(input.store.session_status)
+        const revisionsAtStart = sessionStatusRevisionSnapshot(input.directory)
+        const previous = { ...input.store.session_status }
         // Boundary: directory bootstrap (start / reconnect / backend reload path).
-        input.sdk.session
-          .status()
-          .then((x) =>
-            input.setStore(
-              "session_status",
-              reconcile(mergeSessionStatusRefresh(input.store.session_status, x.data ?? {}, input.store.message)),
-            ),
-          ),
-      ),
+        return input.sdk.session.status().then((x) => {
+          const next = mergeSessionStatusRefresh(
+            input.store.session_status,
+            x.data ?? {},
+            input.store.message,
+            pendingSessionStatusIDs(input.directory),
+            statusAtStart,
+            revisionsAtStart,
+            sessionStatusRevisionSnapshot(input.directory),
+          )
+          const transcripts = sessionsToReconcileMessagesAfterStatusRefresh(previous, next, input.store.message)
+          input.setStore("session_status", reconcile(next))
+          for (const sessionID of transcripts) {
+            if (!input.reconcileMessages) break
+            console.debug(
+              `[global-sync] bootstrap stale assistant transcript reconcile start directory=${input.directory} session=${sessionID}`,
+            )
+            void input
+              .reconcileMessages(sessionID)
+              .then(() => {
+                console.debug(
+                  `[global-sync] bootstrap stale assistant transcript reconcile finish directory=${input.directory} session=${sessionID}`,
+                )
+              })
+              .catch((error) => {
+                console.debug(
+                  `[global-sync] bootstrap stale assistant transcript reconcile failed directory=${input.directory} session=${sessionID} err=${error instanceof Error ? error.message : String(error)}`,
+                )
+              })
+          }
+        })
+      }),
     () =>
       retry(() =>
         input.sdk.vcs.get().then((x) => {

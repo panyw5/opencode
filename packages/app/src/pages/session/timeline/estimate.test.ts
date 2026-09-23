@@ -22,6 +22,7 @@ import {
   TEXT_PART_META_HEIGHT,
   timelineTextMetrics,
   timelineEstimateWidth,
+  TOOL_GROUP_HEIGHT,
   trimRangeToBudget,
   TURN_GAP_HEIGHT,
 } from "./estimate"
@@ -110,6 +111,13 @@ describe("estimateRowHeight fixed-height rows", () => {
   test("Thinking and Retry use their calibrated constants without the min clamp", () => {
     expect(estimateRowHeight({ _tag: "Thinking", userMessageID: "m", phase: "thinking" }, WIDTH, base)).toBe(24)
     expect(estimateRowHeight({ _tag: "Retry", userMessageID: "m" }, WIDTH, base)).toBe(44)
+  })
+
+  test("ToolGroup uses one compact trigger plus timeline spacing", () => {
+    expect(estimateRowHeight({ _tag: "ToolGroup", userMessageID: "m" }, WIDTH, base)).toBe(TOOL_GROUP_HEIGHT)
+    expect(
+      estimateRowHeight({ _tag: "ToolGroup", userMessageID: "m", topSpacing: true }, WIDTH, base),
+    ).toBe(TOOL_GROUP_HEIGHT + PREVIOUS_PART_SPACING)
   })
 
   test("unknown tags keep the legacy fallback", () => {

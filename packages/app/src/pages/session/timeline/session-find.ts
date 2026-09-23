@@ -108,6 +108,14 @@ export function createSessionFind(opts: {
           seen.add(key)
           refs.push({ messageID: ref.messageID, partID: ref.partID, rowIndex: index, rowKey })
         }
+      } else if (row._tag === "ToolGroup") {
+        const partRefs = row.groups.flatMap((group) => (group.type === "part" ? [group.ref] : group.refs))
+        for (const ref of partRefs) {
+          const key = `${ref.messageID}:${ref.partID}`
+          if (seen.has(key)) continue
+          seen.add(key)
+          refs.push({ messageID: ref.messageID, partID: ref.partID, rowIndex: index, rowKey })
+        }
       }
     })
 

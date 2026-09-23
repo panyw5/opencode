@@ -206,9 +206,9 @@ function createGlobalSync() {
         }
       }),
     )
-    if (domain !== currentDomain()) return
-    // Reconcile object values so keys removed upstream (e.g. a config field the server
-    // deleted) are dropped too — a plain set shallow-merges and keeps stale keys forever.
+    if (domain !== currentDomain())
+      return // Reconcile object values so keys removed upstream (e.g. a config field the server
+      // deleted) are dropped too — a plain set shallow-merges and keeps stale keys forever.
     ;(setGlobalStore as (...args: unknown[]) => unknown)(
       key,
       value !== null && typeof value === "object" ? reconcile(value) : value,
@@ -759,6 +759,14 @@ function createGlobalSync() {
         setProject: (projects) => setProjectsFor(domainFromDirectory(logical), projects),
         vcsCache: cache,
         translate: language.t,
+        reconcileMessages: (sessionID) =>
+          sessionService.api.messages.load({
+            directory: logical,
+            sessionID,
+            limit: 80,
+            mode: "replace",
+            authoritative: true,
+          }),
       })
       setLoaded("dir", directoryKey, true)
     })()
