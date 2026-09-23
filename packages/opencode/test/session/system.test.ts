@@ -73,6 +73,8 @@ describe("session.system", () => {
       expect(prompt[0]).toContain("break the work into a todo list")
       expect(prompt[0]).toContain("inspect relevant local read-only context")
       expect(prompt[0]).toContain("Do not add unrelated cleanup")
+      expect(prompt[0]).toContain("`[title](url)`")
+      expect(prompt[0]).toContain("not as a bare path or inline code")
       expect(prompt[0].length).toBeLessThan(2_000)
     }),
   )
