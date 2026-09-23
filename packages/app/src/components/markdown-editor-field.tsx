@@ -281,7 +281,12 @@ export function MarkdownEditorField(props: {
   return (
     <div
       data-component="markdown-editor-field"
-      class={`flex h-full min-h-0 flex-col ${props.class ?? ""}`}
+      // The shell below paints `shadow-xs-border-base`, whose first layer is a 1px ring drawn
+      // OUTSIDE its border box. Callers routinely mount this component in a zero-padding
+      // `overflow-hidden` box (dialog bodies, css grid tracks), which clips that ring and leaves
+      // the shell reading 1px on three sides and 2px on the fourth. 1px of inset here gives the
+      // ring room to paint no matter how the caller constrains us.
+      class={`flex h-full min-h-0 flex-col p-px ${props.class ?? ""}`}
     >
       <Show when={props.preview && props.toolbarAbove}>
         <div class="mb-2 flex shrink-0 justify-end">
