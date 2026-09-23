@@ -7,7 +7,7 @@ import { Markdown } from "@opencode-ai/ui/markdown"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { For, Show, createEffect, createMemo, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
 import { useLanguage } from "@/context/language"
@@ -99,7 +99,6 @@ function SessionMathDialog(props: SessionMathFloatProps) {
   const language = useLanguage()
   const dialog = useDialog()
   const [maximized, setMaximized] = createSignal(true)
-  const running = createMemo(() => props.workers.filter((worker) => worker.alive && worker.state === "running").length)
   const busy = (entry: SessionMathWorkerEntry) => props.busy.includes(entry.sessionID)
   const projectSummary = createMemo(() => props.workers[0])
   const openWorker = (entry: SessionMathWorkerEntry) => {
@@ -256,17 +255,13 @@ function SessionMathDialog(props: SessionMathFloatProps) {
       setVerifier("saving", false)
     }
   }
-  const elapsed = (entry: SessionMathWorkerEntry) => {
-    if (!entry.startedAt) return undefined
-    const end = entry.alive ? Date.now() : (entry.lastHeartbeatAt ?? entry.transcriptUpdatedAt ?? entry.startedAt)
-    const minutes = Math.max(0, Math.floor((end - entry.startedAt) / 60_000))
-    if (minutes < 60) return `${minutes}m`
-    const hours = Math.floor(minutes / 60)
-    return `${hours}h ${minutes % 60}m`
-  }
   const compact = (value?: number) => {
     if (value === undefined) return undefined
     return new Intl.NumberFormat(language.intl(), { notation: "compact", maximumFractionDigits: 1 }).format(value)
+  }
+  const roundLabel = (entry: SessionMathWorkerEntry) => {
+    if (entry.round === undefined) return undefined
+    return language.t("session.mathSwarm.round", { round: entry.round })
   }
   const stateClass = (entry: SessionMathWorkerEntry) => {
     if (entry.alive && entry.state === "running") return "text-icon-success-base"
@@ -281,19 +276,33 @@ function SessionMathDialog(props: SessionMathFloatProps) {
     }
     return language.t("session.mathSwarm.state.missing")
   }
-  const detail = (entry: SessionMathWorkerEntry) => {
-    const runtime = elapsed(entry)
-    return [
-      entry.pid ? `PID ${entry.pid}` : undefined,
-      entry.round !== undefined ? language.t("session.mathSwarm.round", { round: entry.round }) : undefined,
-      entry.last_fact_id ? `fact ${entry.last_fact_id.slice(0, 8)}` : undefined,
-      entry.variant,
-      entry.project,
-      runtime ? language.t("session.mathSwarm.elapsed", { elapsed: runtime }) : undefined,
-    ]
-      .filter(Boolean)
-      .join(" · ")
+  const [copiedWorker, setCopiedWorker] = createSignal<string>()
+  let copiedWorkerTimer: ReturnType<typeof setTimeout> | undefined
+  const copyWorkerMeta = (entry: SessionMathWorkerEntry) => {
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    const value = JSON.stringify(entry, null, 2)
+    console.debug(`[math-swarm] copy worker meta session=${entry.sessionID} bytes=${value.length}`)
+    if (!clipboard?.writeText) {
+      console.warn(`[math-swarm] copy worker meta clipboard unavailable session=${entry.sessionID}`)
+      return
+    }
+    void clipboard.writeText(value).then(
+      () => {
+        console.debug(`[math-swarm] copy worker meta done session=${entry.sessionID}`)
+        setCopiedWorker(entry.sessionID)
+        if (copiedWorkerTimer) clearTimeout(copiedWorkerTimer)
+        copiedWorkerTimer = setTimeout(() => setCopiedWorker(undefined), 1_200)
+      },
+      (error: unknown) => {
+        console.warn(
+          `[math-swarm] copy worker meta failed session=${entry.sessionID} error=${error instanceof Error ? error.message : String(error)}`,
+        )
+      },
+    )
   }
+  onCleanup(() => {
+    if (copiedWorkerTimer) clearTimeout(copiedWorkerTimer)
+  })
   const dialogContainerStyle = createMemo(() =>
     maximized()
       ? {
@@ -337,11 +346,6 @@ function SessionMathDialog(props: SessionMathFloatProps) {
         title={
           <div class="min-w-0">
             <div class="truncate">{language.t("session.mathSwarm.details")}</div>
-            <div class="mt-0.5 text-12-regular text-text-weak">
-              {props.initializing
-                ? language.t("session.mathInitialize.initializing")
-                : language.t("session.mathSwarm.summary", { running: running(), total: props.workers.length })}
-            </div>
           </div>
         }
         size="x-large"
@@ -379,10 +383,10 @@ function SessionMathDialog(props: SessionMathFloatProps) {
       >
         <div
           data-component="session-math-dialog"
-          class="grid h-full min-h-0 flex-1 grid-cols-[minmax(300px,0.8fr)_minmax(0,1.4fr)] gap-4 p-4"
+          class="grid h-full min-h-0 flex-1 grid-cols-[minmax(240px,348px)_minmax(0,1fr)] gap-4 p-4"
         >
           <aside class="flex min-h-0 flex-col gap-3 overflow-hidden">
-            <div class="shrink-0 space-y-3">
+            <div class="shrink-0 space-y-3 p-1">
               <Show when={projectSummary()}>
                 <div class="rounded-xl border border-border-weak-base bg-surface-raised-base p-3 shadow-xs-border-base">
                   <div class="text-12-medium text-text-strong">{language.t("session.mathSwarm.verifierModel")}</div>
@@ -431,19 +435,9 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                   </p>
                 </div>
               </Show>
-              <Show when={projectSummary()?.latestVerification}>
-                {(latest) => (
-                  <div class="rounded-xl border border-border-weak-base bg-surface-raised-base px-3 py-2.5 shadow-xs-border-base">
-                    <div class="text-11-medium text-text-weak">
-                      {language.t("session.mathSwarm.latestVerification")}
-                    </div>
-                    <p class="mt-1 line-clamp-3 text-12-regular leading-5 text-text-strong">{latest()}</p>
-                  </div>
-                )}
-              </Show>
             </div>
             <section class="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-              <div class="flex shrink-0 items-center gap-1.5">
+              <div class="flex shrink-0 items-center gap-1.5 px-1">
                 <div class="text-12-medium text-text-base">{language.t("session.mathSwarm.label")}</div>
                 <span class="font-mono text-11-regular text-text-weak">{props.workers.length}</span>
               </div>
@@ -453,7 +447,7 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                   <Show
                     when={props.initializing}
                     fallback={
-                      <div class="rounded-lg border border-dashed border-border-weak-base px-4 py-8 text-center">
+                      <div class="mx-1 rounded-lg border border-dashed border-border-weak-base px-4 py-8 text-center">
                         <p class="text-13-medium text-text-strong">{language.t("session.mathSwarm.empty")}</p>
                         <p class="mt-1 text-12-regular text-text-weak">
                           {language.t("session.mathSwarm.empty.description")}
@@ -468,7 +462,7 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                       data-slot="session-math-initializing"
                       aria-live="polite"
                       aria-busy="true"
-                      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border-weak-base px-4 py-12 text-center"
+                      class="mx-1 flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border-weak-base px-4 py-12 text-center"
                     >
                       <Spinner class="size-5 text-icon-weak" />
                       <p class="text-13-medium text-text-strong">{language.t("session.mathInitialize.initializing")}</p>
@@ -476,81 +470,80 @@ function SessionMathDialog(props: SessionMathFloatProps) {
                   </Show>
                 }
               >
-                <div class="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
+                <div class="min-h-0 flex-1 space-y-2 overflow-y-auto p-1">
                   <For each={props.workers}>
                     {(entry) => (
                       <div class="rounded-xl border border-border-weak-base bg-surface-raised-base p-3 shadow-xs-border-base">
-                        <div class="flex min-w-0 items-center justify-between gap-3">
-                          <button class="min-w-0 flex-1 text-left" onClick={() => openWorker(entry)}>
-                            <div class="flex min-w-0 items-center gap-2 text-13-medium text-text-strong">
-                              <span class={`shrink-0 text-10-medium ${stateClass(entry)}`} aria-hidden="true">
-                                ●
-                              </span>
-                              <span class="truncate">{entry.title}</span>
-                              <span class={`shrink-0 text-11-medium ${stateClass(entry)}`}>{stateLabel(entry)}</span>
-                            </div>
-                          </button>
-                          <div class="flex shrink-0 items-center gap-1">
-                            <Show when={entry.restartable && !entry.stopRequested}>
-                              <Button
-                                size="small"
-                                variant="secondary"
-                                disabled={busy(entry)}
-                                onClick={() => props.onEnsure(entry)}
-                              >
-                                {language.t("session.mathSwarm.restart")}
-                              </Button>
-                            </Show>
-                            <Show when={entry.stopRequested && !entry.alive}>
-                              <Button
-                                size="small"
-                                variant="secondary"
-                                disabled={busy(entry)}
-                                onClick={() => props.onReEnable(entry)}
-                              >
-                                {language.t("session.mathSwarm.reEnable.short")}
-                              </Button>
-                            </Show>
-                            <Show when={entry.alive && entry.state !== "stopping"}>
-                              <Button
-                                size="small"
-                                variant="ghost"
-                                class="text-text-critical-base"
-                                disabled={busy(entry)}
-                                onClick={() => props.onStop(entry)}
-                              >
-                                {language.t("session.mathSwarm.stop.short")}
-                              </Button>
-                            </Show>
-                            <Button
-                              size="small"
-                              variant="secondary"
-                              disabled={busy(entry)}
-                              onClick={() => props.onTask(entry)}
-                            >
-                              {language.t("session.mathSwarm.task")}
-                            </Button>
-                          </div>
-                        </div>
-                        <Show when={entry.taskPreview}>
+                        <div class="flex min-w-0 items-center gap-2">
                           <button
-                            class="mt-2 block min-w-0 text-left text-12-regular leading-5 text-text-weak"
+                            class="flex min-w-0 flex-1 items-center gap-2 text-left"
                             onClick={() => openWorker(entry)}
                           >
-                            <span class="line-clamp-2">{entry.taskPreview}</span>
+                            <span class={`shrink-0 text-10-medium ${stateClass(entry)}`} aria-hidden="true">
+                              ●
+                            </span>
+                            <span class="truncate text-13-medium text-text-strong" title={entry.title}>
+                              {entry.title}
+                            </span>
                           </button>
-                        </Show>
-                        <div class="mt-2 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-11-regular text-text-weak">
-                          <span class="min-w-0 truncate font-mono">{detail(entry)}</span>
+                          <Tooltip
+                            placement="bottom"
+                            value={language.t(
+                              copiedWorker() === entry.sessionID
+                                ? "session.mathSwarm.copyMeta.copied"
+                                : "session.mathSwarm.copyMeta",
+                            )}
+                          >
+                            <IconButton
+                              icon={copiedWorker() === entry.sessionID ? "check" : "copy"}
+                              size="normal"
+                              variant="secondary"
+                              aria-label={language.t("session.mathSwarm.copyMeta")}
+                              onClick={() => copyWorkerMeta(entry)}
+                            />
+                          </Tooltip>
+                        </div>
+                        <div class="mt-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-11-regular text-text-weak">
+                          <Show when={roundLabel(entry)}>
+                            {(round) => <span class="font-mono">{round()}</span>}
+                          </Show>
                           <Show when={compact(entry.tokens)}>
                             {(tokens) => <span>{language.t("session.mathSwarm.tokens", { tokens: tokens() })}</span>}
                           </Show>
-                          <Show when={entry.cost !== undefined}>
-                            <span>{language.t("session.mathSwarm.cost", { cost: (entry.cost ?? 0).toFixed(4) })}</span>
+                          <span class={`ml-auto shrink-0 text-11-medium ${stateClass(entry)}`}>{stateLabel(entry)}</span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap items-center justify-end gap-1">
+                          <Show when={entry.restartable && !entry.stopRequested}>
+                            <Button
+                              size="small"
+                              variant="secondary"
+                              icon="play"
+                              disabled={busy(entry)}
+                              onClick={() => props.onEnsure(entry)}
+                            >
+                              {language.t("session.mathSwarm.restart")}
+                            </Button>
                           </Show>
-                          <Show when={entry.last_rc !== undefined && entry.last_rc !== null}>
-                            <span>rc {entry.last_rc}</span>
+                          <Show when={entry.stopRequested && !entry.alive}>
+                            <Button
+                              size="small"
+                              variant="secondary"
+                              icon="play"
+                              disabled={busy(entry)}
+                              onClick={() => props.onReEnable(entry)}
+                            >
+                              {language.t("session.mathSwarm.reEnable.short")}
+                            </Button>
                           </Show>
+                          <Button
+                            size="small"
+                            variant="secondary"
+                            icon="pencil-line"
+                            disabled={busy(entry)}
+                            onClick={() => props.onTask(entry)}
+                          >
+                            {language.t("session.mathSwarm.task")}
+                          </Button>
                         </div>
                       </div>
                     )}
