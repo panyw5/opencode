@@ -253,6 +253,20 @@ html[data-theme="claude"][data-color-scheme="dark"]
   }
 }
 
+/* File-link pills: replace the default purple accent with the Claude orange
+   so they match the theme's warm dark palette. */
+html[data-theme="claude"][data-color-scheme="dark"]
+  [data-component="markdown"]
+  a[data-file-link] {
+  --file-link-accent: #d97757;
+}
+
+html[data-theme="claude"][data-color-scheme="dark"]
+  [data-component="markdown"]
+  a[data-file-link]:hover {
+  color: #e8916f;
+}
+
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-attach"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-markdown-attachment"],
 html[data-theme="claude"] [data-component="session-prompt-dock"] [data-action="prompt-expand"] {
