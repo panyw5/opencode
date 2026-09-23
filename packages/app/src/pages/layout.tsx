@@ -4853,8 +4853,13 @@ export default function Layout(props: ParentProps) {
           </div>
           {import.meta.env.DEV && platform.platform !== "desktop" && <DebugBar />}
         </div>
-        <QuickAssistant />
-        <NotificationBell />
+        <div
+          data-component="floating-actions"
+          class="absolute right-5 bottom-5 flex items-center gap-2 pointer-events-none"
+        >
+          <NotificationBell />
+          <QuickAssistant />
+        </div>
         <Toast.Region />
       </div>
     </SessionTabsProvider>

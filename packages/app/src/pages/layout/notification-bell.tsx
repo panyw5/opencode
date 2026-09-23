@@ -7,7 +7,7 @@ import { useNotification } from "@/context/notification"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import type { Notification } from "@/context/notification-state"
-import type { BellToast } from "@/context/notification-bell-state"
+import { BELL_TOAST_TTL_MS, type BellToast } from "@/context/notification-bell-state"
 
 const typeIcon = (type: BellToast["type"]) =>
   type === "error"
@@ -19,8 +19,10 @@ const typeIcon = (type: BellToast["type"]) =>
         : "check-small"
 
 const BELL_SIZE = 40
-const BELL_CORNER_OFFSET = 20
-const BELL_GAP = 8
+const TOAST_ENTER_MS = 600
+const TOAST_EXIT_MS = 500
+const TOAST_GAP = 8
+const VIEWPORT_GAP = 16
 
 function formatTime(time: number) {
   return new Date(time).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
@@ -32,51 +34,62 @@ export function NotificationBell() {
   const navigate = useNavigate()
   const platform = usePlatform()
   const [open, setOpen] = createSignal(false)
+  let bellElement: HTMLDivElement | undefined
+  let toastLayer: HTMLDivElement | undefined
+  const frames = new Set<number>()
+
+  const updateToastPosition = () => {
+    if (!bellElement || !toastLayer) return
+    const bell = bellElement.getBoundingClientRect()
+    const width = toastLayer.offsetWidth
+    const centered = bell.left + (bell.width - width) / 2
+    const left = Math.max(VIEWPORT_GAP, Math.min(centered, window.innerWidth - width - VIEWPORT_GAP))
+    const bottom = window.innerHeight - bell.top + TOAST_GAP
+    toastLayer.style.left = `${left}px`
+    toastLayer.style.bottom = `${bottom}px`
+    toastLayer.style.visibility = "visible"
+
+    const layer = toastLayer.getBoundingClientRect()
+    for (const toast of toastLayer.querySelectorAll<HTMLElement>('[data-component="notification-bell-toast"]')) {
+      const dx = bell.left + bell.width / 2 - layer.left - toast.offsetLeft - toast.offsetWidth / 2
+      const dy = bell.top + bell.height / 2 - layer.top - toast.offsetTop - toast.offsetHeight / 2
+      toast.style.setProperty("--bell-dx", `${dx}px`)
+      toast.style.setProperty("--bell-dy", `${dy}px`)
+      console.debug("[notification-bell] toast origin", { session: toast.dataset.session, dx, dy })
+    }
+    console.debug("[notification-bell] positioned toasts", { left, bottom, bell: [bell.left, bell.top] })
+  }
+
+  const animateToast = (element: HTMLButtonElement, toast: BellToast) => {
+    const frame = requestAnimationFrame(() => {
+      frames.delete(frame)
+      if (!element.isConnected) return
+      updateToastPosition()
+      const exitDelay = Math.max(0, toast.time + BELL_TOAST_TTL_MS - TOAST_EXIT_MS - Date.now())
+      element.style.animation = `bellToastIn ${TOAST_ENTER_MS}ms ease-in-out both, bellToastCollapse ${TOAST_EXIT_MS}ms ease-in-out ${exitDelay}ms forwards`
+      console.debug("[notification-bell] animating toast", { id: toast.id, exitDelay })
+    })
+    frames.add(frame)
+  }
+
+  onMount(() => {
+    updateToastPosition()
+    const observer = new ResizeObserver(updateToastPosition)
+    if (bellElement) observer.observe(bellElement)
+    const actions = bellElement?.closest('[data-component="floating-actions"]')
+    if (actions) observer.observe(actions)
+    if (toastLayer) observer.observe(toastLayer)
+    window.addEventListener("resize", updateToastPosition)
+    onCleanup(() => {
+      observer.disconnect()
+      window.removeEventListener("resize", updateToastPosition)
+      for (const frame of frames) cancelAnimationFrame(frame)
+    })
+  })
 
   const unread = createMemo(() => notification.unseenList())
   const count = createMemo(() => notification.unseenTotal())
   const hasError = createMemo(() => notification.unseenHasError())
-
-  // Track the Quick Assistant launcher (fixed right-5 bottom-5 z-40) so the bell
-  // can sit on its row, to the horizontal left, whenever it is mounted.
-  const [qaAnchor, setQaAnchor] = createSignal<{ left: number; bottom: number; height: number } | null>(null)
-
-  onMount(() => {
-    let ro: ResizeObserver | undefined
-    const measure = () => {
-      const el = document.querySelector<HTMLElement>('[data-component="quick-assistant-launcher"]')
-      if (!el || !el.isConnected) {
-        setQaAnchor(null)
-        ro?.disconnect()
-        ro = undefined
-        return
-      }
-      const rect = el.getBoundingClientRect()
-      setQaAnchor({ left: rect.left, bottom: window.innerHeight - rect.bottom, height: rect.height })
-      if (!ro) {
-        ro = new ResizeObserver(measure)
-        ro.observe(el)
-      }
-    }
-    measure()
-    const mo = new MutationObserver(measure)
-    mo.observe(document.body, { childList: true, subtree: true })
-    window.addEventListener("resize", measure)
-    onCleanup(() => {
-      mo.disconnect()
-      ro?.disconnect()
-      window.removeEventListener("resize", measure)
-    })
-  })
-
-  const bellPosition = createMemo(() => {
-    const qa = qaAnchor()
-    if (!qa) return { right: `${BELL_CORNER_OFFSET}px`, bottom: `${BELL_CORNER_OFFSET}px` }
-    return {
-      right: `${Math.max(window.innerWidth - qa.left + BELL_GAP, BELL_CORNER_OFFSET)}px`,
-      bottom: `${qa.bottom + (qa.height - BELL_SIZE) / 2}px`,
-    }
-  })
 
   const typeLabel = (type: BellToast["type"]) =>
     type === "error"
@@ -125,7 +138,9 @@ export function NotificationBell() {
     <div class="contents">
       <div
         data-component="notification-bell-toasts"
-        class="pointer-events-none fixed right-5 bottom-[106px] z-[999] flex w-[340px] max-w-[calc(100vw-64px)] flex-col items-stretch gap-2"
+        ref={toastLayer}
+        class="pointer-events-none fixed z-[999] flex w-[340px] max-w-[calc(100vw-32px)] flex-col-reverse items-stretch gap-2"
+        style={{ visibility: "hidden" }}
       >
         <For each={notification.bell.toasts()}>
           {(toast) => (
@@ -133,13 +148,16 @@ export function NotificationBell() {
               type="button"
               data-component="notification-bell-toast"
               data-variant={toast.type}
+              ref={(element) => animateToast(element, toast)}
               class="pointer-events-auto flex items-center gap-2 rounded-xl border px-3 py-2 text-left shadow-lg backdrop-blur-xl transition-colors"
               classList={{
                 "border-border-critical-base/60 bg-surface-critical-weak/80": toast.type === "error",
                 "border-border-weak-base bg-surface-raised-base/80": toast.type !== "error",
               }}
-              style={{ animation: "bellToastIn 180ms ease-out, bellToastCollapse 260ms ease-in 4720ms forwards" }}
+              style={{ opacity: 0, "transform-origin": "center center" }}
               data-session={toast.session}
+              onAnimationStart={(event) => console.debug("[notification-bell] animation started", { id: toast.id, name: event.animationName })}
+              onAnimationEnd={(event) => console.debug("[notification-bell] animation ended", { id: toast.id, name: event.animationName })}
               onClick={() => {
                 notification.bell.dismiss(toast.id)
                 go(toast)
@@ -163,17 +181,14 @@ export function NotificationBell() {
         </For>
       </div>
 
-      {/* When the Quick Assistant launcher is mounted, sit on its row to the
-          horizontal left; otherwise take the bottom-right corner. z-30 keeps the
-          bell under the expanded Quick Assistant panel (z-40). */}
-      <div class="fixed z-30" style={bellPosition()}>
+      <div class="relative z-30 pointer-events-auto">
         <Popover
           open={open()}
           onOpenChange={setOpen}
           placement="top-end"
           class="notification-bell-popover-shell"
           trigger={
-            <div class="relative" data-component="notification-bell">
+            <div ref={bellElement} class="relative" data-component="notification-bell">
               <button
                 type="button"
                 data-action="notification-bell"
@@ -187,13 +202,9 @@ export function NotificationBell() {
                       ? "var(--surface-raised-stronger-non-alpha)"
                       : "color-mix(in srgb, var(--background-stronger) 92%, transparent)",
                   "backdrop-filter":
-                    platform.platform === "desktop" && platform.os === "windows"
-                      ? "none"
-                      : "blur(24px) saturate(150%)",
+                    platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(24px) saturate(150%)",
                   "-webkit-backdrop-filter":
-                    platform.platform === "desktop" && platform.os === "windows"
-                      ? "none"
-                      : "blur(24px) saturate(150%)",
+                    platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(24px) saturate(150%)",
                 }}
               >
                 <Icon name="bell" class="size-[22px] text-icon-base" />

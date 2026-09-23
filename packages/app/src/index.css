@@ -1268,23 +1268,32 @@ html[data-platform="desktop"][data-color-scheme="dark"] [data-component="collaps
   animation: session-review-panel-spring-in 420ms cubic-bezier(0.22, 1.32, 0.36, 1) both;
 }
 
-/* Notification bell: live toasts pop in above the bell, then collapse into it
-   right before the entry is removed from the feed (see notification-bell-state). */
+/* Each toast receives its exact offset to the bell center from the renderer. */
 @keyframes bellToastIn {
   from {
-    opacity: 0;
-    transform: translateY(16px) scale(0.96);
+    opacity: 0.9;
+    transform: translate(var(--bell-dx), var(--bell-dy)) scale(0.12);
+  }
+  15% {
+    opacity: 1;
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
+    transform: none;
   }
 }
 
 @keyframes bellToastCollapse {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  85% {
+    opacity: 1;
+  }
   to {
     opacity: 0;
-    transform: translateY(36px) scale(0.7);
+    transform: translate(var(--bell-dx), var(--bell-dy)) scale(0.12);
   }
 }
 
