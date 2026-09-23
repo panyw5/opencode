@@ -207,7 +207,7 @@ function ensureFileLinkIcon(node: HTMLAnchorElement, path: string) {
   svg.setAttribute("aria-hidden", "true")
   use.setAttribute("href", `${fileIconSprite}#${chooseIconName(path, "file", false)}`)
   svg.appendChild(use)
-  node.prepend(svg)
+  node.insertBefore(svg, node.firstChild)
 }
 
 function applyFileLink(node: HTMLAnchorElement, link: FileLink) {
