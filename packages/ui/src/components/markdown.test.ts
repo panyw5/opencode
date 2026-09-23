@@ -2,11 +2,10 @@ import { describe, expect, test } from "bun:test"
 import { Marked } from "marked"
 import { parseMarkdown as parseNativeMarkdown } from "../../../desktop/src/main/markdown"
 import {
-  fileLink,
-  findFileLinks,
   initialMarkdownEager,
   initialMarkdownMathSeen,
   markdownCacheMode,
+  markdownFileLink,
   prepareMarkdownSource,
   shouldShowMarkdownCodeTopCopy,
   shouldShowMarkdownMathBottomCopy,
@@ -21,16 +20,8 @@ import {
 } from "../context/marked"
 
 describe("markdown fileLink", () => {
-  test("parses relative file paths", () => {
-    expect(fileLink(".trellis/tasks/foo/scripts/run.py")).toEqual({
-      path: ".trellis/tasks/foo/scripts/run.py",
-      line: undefined,
-      col: undefined,
-    })
-  })
-
-  test("parses file paths with line and column", () => {
-    expect(fileLink("packages/app/src/app.tsx:12:4")).toEqual({
+  test("parses explicit markdown file links with line and column", () => {
+    expect(markdownFileLink("packages/app/src/app.tsx:12:4")).toEqual({
       path: "packages/app/src/app.tsx",
       line: 12,
       col: 4,
@@ -38,7 +29,7 @@ describe("markdown fileLink", () => {
   })
 
   test("parses file paths with line ranges", () => {
-    expect(fileLink("packages/app/src/app.tsx:12-18")).toEqual({
+    expect(markdownFileLink("packages/app/src/app.tsx:12-18")).toEqual({
       path: "packages/app/src/app.tsx",
       line: 12,
       col: undefined,
@@ -46,78 +37,38 @@ describe("markdown fileLink", () => {
   })
 
   test("parses hash line references", () => {
-    expect(fileLink("/tmp/demo/file.ts#L20C3")).toEqual({
+    expect(markdownFileLink("/tmp/demo/file.ts#L20C3")).toEqual({
       path: "/tmp/demo/file.ts",
       line: 20,
       col: 3,
     })
   })
 
-  test("parses @ file mentions with spaces and non-ascii path segments", () => {
-    expect(fileLink("@广义相对论讲义/Schwarzchild Balck Hole/assets/rain-null-geodesics.html")).toEqual({
-      path: "广义相对论讲义/Schwarzchild Balck Hole/assets/rain-null-geodesics.html",
+  test("parses relative and single-file markdown links", () => {
+    expect(markdownFileLink("Notes/admissible-characters.md")).toEqual({
+      path: "Notes/admissible-characters.md",
+      line: undefined,
+      col: undefined,
+    })
+    expect(markdownFileLink("README.md")).toEqual({
+      path: "README.md",
       line: undefined,
       col: undefined,
     })
   })
 
-  test("finds full @ file mention instead of suffix after a path space", () => {
-    const text = "参考 @广义相对论讲义/Schwarzchild Balck Hole/assets/rain-null-geodesics.html 生成"
-    const raw = "@广义相对论讲义/Schwarzchild Balck Hole/assets/rain-null-geodesics.html"
-    const start = text.indexOf(raw)
-
-    expect(findFileLinks(text)).toEqual([
-      {
-        raw,
-        start,
-        end: start + raw.length,
-        link: {
-          path: "广义相对论讲义/Schwarzchild Balck Hole/assets/rain-null-geodesics.html",
-          line: undefined,
-          col: undefined,
-        },
-      },
-    ])
+  test("decodes spaces in explicit markdown file links", () => {
+    expect(markdownFileLink("Notes/representation%20theory.md#L12C4")).toEqual({
+      path: "Notes/representation theory.md",
+      line: 12,
+      col: 4,
+    })
   })
 
-  test("ignores urls", () => {
-    expect(fileLink("https://opencode.ai/docs/file.ts")).toBeUndefined()
-  })
-
-  test("ignores fractions", () => {
-    expect(fileLink("9/8")).toBeUndefined()
-    expect(fileLink("9/4")).toBeUndefined()
-  })
-
-  test("ignores plain slash-separated prose", () => {
-    expect(fileLink("mode/Zhu")).toBeUndefined()
-  })
-
-  test("ignores inline code commands containing file paths", () => {
-    expect(fileLink("pytest tests/test_backend.py tests/test_operator_spaces.py -q")).toBeUndefined()
-  })
-
-  test("finds grep result file headers", () => {
-    const text = [
-      "Found 2 matches",
-      "/Users/lelouch/apps/opencode/packages/ui/src/components/message-part.tsx:",
-      "  Line 2414:          title: i18n.t(\"ui.tool.grep\"),",
-    ].join("\n")
-
-    const raw = "/Users/lelouch/apps/opencode/packages/ui/src/components/message-part.tsx"
-    const start = text.indexOf(raw)
-    expect(findFileLinks(text)).toEqual([
-      {
-        raw,
-        start,
-        end: start + raw.length,
-        link: {
-          path: raw,
-          line: undefined,
-          col: undefined,
-        },
-      },
-    ])
+  test("keeps non-file markdown links external", () => {
+    expect(markdownFileLink("https://opencode.ai/docs/file-links")).toBeUndefined()
+    expect(markdownFileLink("mailto:test@example.com")).toBeUndefined()
+    expect(markdownFileLink("#local-heading")).toBeUndefined()
   })
 })
 

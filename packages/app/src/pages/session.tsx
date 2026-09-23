@@ -23,6 +23,8 @@ import { createStore } from "solid-js/store"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
 import { Select } from "@opencode-ai/ui/select"
 import { Tabs } from "@opencode-ai/ui/tabs"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
 import { previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
 import { Button } from "@opencode-ai/ui/button"
 import { taskSessionSiblings } from "@opencode-ai/ui/message-task-session"
@@ -173,6 +175,11 @@ function list(value: unknown): FileDiff[] {
 function joinWorkspacePath(root: string, child: string) {
   const slash = /^[A-Za-z]:\\|\\\\/.test(root) || root.includes("\\") ? "\\" : "/"
   return root.replace(/[\\/]+$/, "") + slash + child.replace(/^[\\/]+/, "")
+}
+
+function absoluteFileLinkPath(root: string, raw: string, normalized: string) {
+  if (/^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(raw)) return raw
+  return joinWorkspacePath(root, normalized)
 }
 
 function parentDirectory(input: string) {
@@ -929,6 +936,14 @@ export default function Page() {
     reviewTurnMessageID: undefined as string | undefined,
     newSessionWorktree: "main",
     newSessionPicked: false,
+    fileLinkMenu: {
+      open: false,
+      raw: "",
+      path: "",
+      line: undefined as number | undefined,
+      x: 0,
+      y: 0,
+    },
   })
 
   // Review data (git/branch VCS lists) lives in a service bound to the
@@ -1880,24 +1895,113 @@ export default function Page() {
     loadFile: file.load,
   })
 
-  const handleFileLinkClick = (event: MouseEvent) => {
-    const target = event.target
+  const openFileLinkPreview = (raw: string, path: string, line?: number) => {
+    const tab = file.tab(path)
+    console.debug(
+      `[file-link] preview start session=${params.id ?? "none"} root=${sdk.directory} raw=${raw} path=${path} line=${line ?? "none"} tab=${tab}`,
+    )
+    tabs().open(tab)
+    void file.load(path).then(() => {
+      const state = file.get(path)
+      console.debug(
+        `[file-link] load session=${params.id ?? "none"} root=${sdk.directory} path=${path} loaded=${String(!!state?.loaded)} error=${state?.error ?? "none"}`,
+      )
+    })
+    if (line && line > 0) file.setSelectedLines(path, { start: line, end: line })
+    if (!view().filePreview.opened()) view().filePreview.open()
+    tabs().setActive(tab)
+    console.debug(`[file-link] opened session=${params.id ?? "none"} root=${sdk.directory} path=${path} tab=${tab}`)
+  }
+
+  const fileLinkFromTarget = (target: EventTarget | null) => {
     if (!(target instanceof Element)) return
     const link = target.closest("a[data-file-link]")
     if (!(link instanceof HTMLAnchorElement)) return
 
-    event.preventDefault()
     const raw = link.dataset.path ?? ""
     const path = file.normalize(raw)
-    const line = Number.parseInt(link.dataset.line ?? "", 10)
-    const mod = event.metaKey ? "cmd" : event.ctrlKey ? "ctrl" : "none"
+    const parsedLine = Number.parseInt(link.dataset.line ?? "", 10)
+    const line = Number.isFinite(parsedLine) && parsedLine > 0 ? parsedLine : undefined
+    if (!path) return
+    return { link, raw, path, line }
+  }
+
+  const handleFileLinkHover = (event: MouseEvent) => {
+    const entry = fileLinkFromTarget(event.target)
+    if (!entry) return
+    const absolute = absoluteFileLinkPath(sdk.directory, entry.raw, entry.path)
+    if (entry.link.title === absolute) return
+    entry.link.title = absolute
     console.debug(
-      `[file-link] click session=${params.id ?? "none"} root=${sdk.directory} raw=${raw || "none"} path=${path || "none"} line=${Number.isFinite(line) ? line : "none"} mod=${mod}`,
+      `[file-link] tooltip session=${params.id ?? "none"} root=${sdk.directory} raw=${entry.raw} absolute=${absolute}`,
     )
-    if (!path) {
-      console.warn(`[file-link] ignored empty path session=${params.id ?? "none"} root=${sdk.directory}`)
+  }
+
+  const handleFileLinkContextMenu = (event: MouseEvent) => {
+    const entry = fileLinkFromTarget(event.target)
+    if (!entry) {
+      if (store.fileLinkMenu.open) setStore("fileLinkMenu", "open", false)
       return
     }
+    event.preventDefault()
+    event.stopPropagation()
+    const absolute = absoluteFileLinkPath(sdk.directory, entry.raw, entry.path)
+    entry.link.title = absolute
+    setStore("fileLinkMenu", {
+      open: true,
+      raw: entry.raw,
+      path: entry.path,
+      line: entry.line,
+      x: event.clientX,
+      y: event.clientY,
+    })
+    console.debug(
+      `[file-link] context-menu session=${params.id ?? "none"} root=${sdk.directory} raw=${entry.raw} path=${entry.path} x=${event.clientX} y=${event.clientY}`,
+    )
+  }
+
+  const fileLinkMenuAbsolutePath = () =>
+    absoluteFileLinkPath(sdk.directory, store.fileLinkMenu.raw, store.fileLinkMenu.path)
+
+  const revealFileLink = () => {
+    const target = fileLinkMenuAbsolutePath()
+    if (!target || platform.platform !== "desktop" || !server.isLocal()) return
+    const open = platform.openInFinder ? platform.openInFinder(target) : platform.openPath?.(parentDirectory(target))
+    if (!open) return
+    console.debug(`[file-link] context reveal start session=${params.id ?? "none"} target=${target}`)
+    void Promise.resolve(open)
+      .then(() => console.debug(`[file-link] context reveal done session=${params.id ?? "none"} target=${target}`))
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.warn(`[file-link] context reveal failed session=${params.id ?? "none"} target=${target} err=${message}`)
+        showToast({ variant: "error", title: language.t("common.requestFailed"), description: message })
+      })
+  }
+
+  const copyFileLinkPath = () => {
+    const target = fileLinkMenuAbsolutePath()
+    const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
+    if (!target || !clipboard?.writeText) return
+    console.debug(`[file-link] context copy start session=${params.id ?? "none"} target=${target}`)
+    void clipboard.writeText(target).then(
+      () => console.debug(`[file-link] context copy done session=${params.id ?? "none"} target=${target}`),
+      (err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        console.warn(`[file-link] context copy failed session=${params.id ?? "none"} target=${target} err=${message}`)
+        showToast({ variant: "error", title: language.t("common.requestFailed"), description: message })
+      },
+    )
+  }
+
+  const handleFileLinkClick = (event: MouseEvent) => {
+    const entry = fileLinkFromTarget(event.target)
+    if (!entry) return
+
+    event.preventDefault()
+    const mod = event.metaKey ? "cmd" : event.ctrlKey ? "ctrl" : "none"
+    console.debug(
+      `[file-link] click session=${params.id ?? "none"} root=${sdk.directory} raw=${entry.raw} path=${entry.path} line=${entry.line ?? "none"} mod=${mod}`,
+    )
 
     if (event.metaKey || event.ctrlKey) {
       // Cmd+click / Ctrl+click: open the file's folder in the OS file manager.
@@ -1907,7 +2011,7 @@ export default function Page() {
         )
         return
       }
-      const target = joinWorkspacePath(sdk.directory, path)
+      const target = absoluteFileLinkPath(sdk.directory, entry.raw, entry.path)
       console.debug(`[file-link] reveal session=${params.id ?? "none"} target=${target}`)
       const open = platform.openInFinder ? platform.openInFinder(target) : platform.openPath!(parentDirectory(target))
       void Promise.resolve(open)
@@ -1923,19 +2027,7 @@ export default function Page() {
         })
       return
     }
-
-    const tab = file.tab(path)
-    tabs().open(tab)
-    void file.load(path).then(() => {
-      const state = file.get(path)
-      console.debug(
-        `[file-link] load session=${params.id ?? "none"} root=${sdk.directory} path=${path} loaded=${String(!!state?.loaded)} error=${state?.error ?? "none"}`,
-      )
-    })
-    if (Number.isFinite(line) && line > 0) file.setSelectedLines(path, { start: line, end: line })
-    if (!view().filePreview.opened()) view().filePreview.open()
-    tabs().setActive(tab)
-    console.debug(`[file-link] opened session=${params.id ?? "none"} root=${sdk.directory} path=${path} tab=${tab}`)
+    openFileLinkPreview(entry.raw, entry.path, entry.line)
   }
 
   const changesTitle = () => {
@@ -3270,6 +3362,8 @@ export default function Page() {
       data-session-id={params.id}
       data-render-phase={sessionRenderState().phase}
       onClick={handleFileLinkClick}
+      onMouseOver={handleFileLinkHover}
+      onContextMenu={handleFileLinkContextMenu}
       class="relative bg-background-stronger size-full overflow-hidden flex flex-col"
     >
       <SessionHeader />
@@ -3615,6 +3709,59 @@ export default function Page() {
       </div>
 
       <TerminalPanel />
+
+      <DropdownMenu
+        modal={false}
+        open={store.fileLinkMenu.open}
+        onOpenChange={(open) => {
+          console.debug(
+            `[file-link] context state session=${params.id ?? "none"} open=${String(open)} path=${store.fileLinkMenu.path || "none"}`,
+          )
+          setStore("fileLinkMenu", "open", open)
+        }}
+        getAnchorRect={() => ({ x: store.fileLinkMenu.x, y: store.fileLinkMenu.y, width: 0, height: 0 })}
+        placement="bottom-start"
+        gutter={0}
+      >
+        <DropdownMenu.Trigger
+          aria-label={language.t("session.fileLink.menu")}
+          class="fixed size-px opacity-0 pointer-events-none"
+          style={{ left: `${store.fileLinkMenu.x}px`, top: `${store.fileLinkMenu.y}px` }}
+        />
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content>
+            <DropdownMenu.Item
+              onSelect={() =>
+                openFileLinkPreview(store.fileLinkMenu.raw, store.fileLinkMenu.path, store.fileLinkMenu.line)
+              }
+            >
+              <DropdownMenu.Icon>
+                <Icon name="read" size="small" />
+              </DropdownMenu.Icon>
+              <DropdownMenu.ItemLabel>{language.t("session.fileLink.preview")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item
+              disabled={
+                platform.platform !== "desktop" ||
+                !server.isLocal() ||
+                (!platform.openInFinder && !platform.openPath)
+              }
+              onSelect={revealFileLink}
+            >
+              <DropdownMenu.Icon>
+                <Icon name="folder" size="small" />
+              </DropdownMenu.Icon>
+              <DropdownMenu.ItemLabel>{language.t("session.fileLink.openFolder")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+            <DropdownMenu.Item onSelect={copyFileLinkPath}>
+              <DropdownMenu.Icon>
+                <Icon name="copy" size="small" />
+              </DropdownMenu.Icon>
+              <DropdownMenu.ItemLabel>{language.t("session.fileLink.copyPath")}</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
     </div>
   )
 }

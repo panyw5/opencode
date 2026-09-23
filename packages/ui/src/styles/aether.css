@@ -62,7 +62,8 @@ html[data-theme="aether"] {
 
 html[data-theme="aether"] [data-component="markdown"] a[data-file-link],
 html[data-theme="aether"] [data-component="markdown"] a[data-file-link]:hover {
-  color: var(--markdown-code);
+  --file-link-accent: var(--markdown-code);
+  color: var(--file-link-accent);
 }
 
 /* Dock surfaces follow the app's active color scheme, which can differ from the OS preference. */

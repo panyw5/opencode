@@ -1053,6 +1053,10 @@ export const dict = {
   "session.header.open.ariaLabel": "在 {{app}} 中打开",
   "session.header.open.menu": "打开选项",
   "session.header.open.copyPath": "复制路径",
+  "session.fileLink.menu": "文件链接操作",
+  "session.fileLink.preview": "预览文件",
+  "session.fileLink.openFolder": "打开所在文件夹",
+  "session.fileLink.copyPath": "复制文件路径",
 
   "status.popover.trigger": "状态",
   "status.popover.ariaLabel": "服务器配置",
