@@ -447,6 +447,11 @@ export type RowContentVersionInput = {
     ref?: { messageID: string; partID: string }
     refs?: ReadonlyArray<{ messageID: string; partID: string }>
   }
+  groups?: ReadonlyArray<{
+    type: "part" | "context"
+    ref?: { messageID: string; partID: string }
+    refs?: ReadonlyArray<{ messageID: string; partID: string }>
+  }>
   label?: string
   phase?: string
   reasoningHeading?: string
@@ -492,6 +497,12 @@ export function rowContentVersion(
       }
       return "assistant:missing"
     }
+
+    case "ToolGroup":
+      return `tools:${(row.groups ?? [])
+        .flatMap((group) => (group.type === "part" && group.ref ? [group.ref] : (group.refs ?? [])))
+        .map((ref) => partMeasurementKey(parts(ref.messageID, ref.partID)))
+        .join(",")}`
 
     case "Thinking":
       return `thinking:${row.phase ?? ""}:${row.reasoningHeading?.length ?? 0}`

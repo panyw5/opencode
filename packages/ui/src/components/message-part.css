@@ -650,8 +650,14 @@
   gap: 6px;
   min-width: 0;
   font-size: var(--font-size-base);
-  font-weight: var(--font-weight-regular);
+  font-weight: var(--font-weight-medium);
   line-height: var(--line-height-normal);
+  color: var(--text-interactive-base);
+
+  > [data-component="icon"] {
+    flex: 0 0 auto;
+    color: var(--icon-interactive-base);
+  }
 
   > span {
     white-space: nowrap;
@@ -2730,7 +2736,7 @@ html[data-color-scheme="dark"] [data-component="reasoning-part"] [data-component
   -webkit-text-fill-color: transparent;
   background-image:
     linear-gradient(90deg, transparent 0%, transparent 42%, var(--text-strong) 50%, transparent 58%, transparent 100%),
-    linear-gradient(var(--text-weaker), var(--text-weaker));
+    linear-gradient(var(--text-interactive-base), var(--text-interactive-base));
   background-size:
     260% 100%,
     100% 100%;

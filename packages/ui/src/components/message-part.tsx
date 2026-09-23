@@ -569,7 +569,7 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
       }
     case "apply_patch":
       return {
-        icon: "code-lines",
+        icon: "pencil-line",
         title: i18n.t("ui.tool.patch"),
         subtitle: input.files?.length
           ? `${input.files.length} ${i18n.t(input.files.length > 1 ? "ui.common.file.other" : "ui.common.file.one")}`
@@ -2101,6 +2101,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
         <Collapsible.Trigger>
           <div data-component="reasoning-trigger" data-streaming={streaming()}>
             <div data-slot="reasoning-trigger-title">
+              <Icon name="lightbulb" size="small" />
               <span data-slot="reasoning-trigger-label" data-shimmer={streaming() ? "true" : "false"}>
                 {title()}
               </span>
@@ -3101,7 +3102,7 @@ ToolRegistry.register({
             <BasicTool
               {...props}
               hasDetails={files().length > 0}
-              icon="code-lines"
+              icon="pencil-line"
               defer
               trigger={{
                 title: i18n.t("ui.tool.patch"),
@@ -3204,7 +3205,7 @@ ToolRegistry.register({
             <BasicTool
               {...props}
               hasDetails
-              icon="code-lines"
+              icon="pencil-line"
               defer
               trigger={
                 <div data-component="edit-trigger">

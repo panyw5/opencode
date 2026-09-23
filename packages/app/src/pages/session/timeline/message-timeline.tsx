@@ -21,12 +21,14 @@ import {
 } from "@tanstack/solid-virtual"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
+import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { DiffChanges } from "@opencode-ai/ui/diff-changes"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
 import {
   Message,
   MessageDivider,
+  getToolInfo,
   normalizeTool,
   type MessageProps,
   type UserActions,
@@ -89,6 +91,7 @@ import { createLiveBottomFollow } from "./live-bottom"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
 import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
 import { atPhysicalBottom, physicalScrollGap } from "../use-session-scroll-utils"
+import { suppressAutoScrollResize } from "@opencode-ai/ui/hooks"
 import type {
   FindNavigationTarget,
   MessageNavigationSnapshot,
@@ -135,6 +138,7 @@ function TimelineThinkingRow(props: {
     language.t(props.phase === "sending" ? "ui.sessionTurn.status.sending" : "ui.sessionTurn.status.thinking")
   return (
     <div data-slot="session-turn-thinking">
+      <Icon name="lightbulb" size="small" />
       <TextShimmer text={label()} active={props.phase === "thinking"} />
       <Show when={!props.showReasoningSummaries && props.phase === "thinking"}>
         <TextReveal text={props.reasoningHeading} class="session-turn-thinking-heading" travel={25} duration={700} />
@@ -761,9 +765,12 @@ export function MessageTimeline(props: {
     const activeID = activeMessageID()
     const groupKey = activeID ? lastAssistantGroupKey().get(activeID) : undefined
     if (!activeID || !groupKey) return
-    const index = timelineRows().findIndex(
-      (row) => row._tag === "AssistantPart" && row.userMessageID === activeID && row.group.key === groupKey,
-    )
+    const index = timelineRows().findIndex((row) => {
+      if (row.userMessageID !== activeID) return false
+      if (row._tag === "AssistantPart") return row.group.key === groupKey
+      if (row._tag === "ToolGroup") return row.groups.some((group) => group.key === groupKey)
+      return false
+    })
     return index >= 0 ? index : undefined
   })
   const estimatorWidth = createMemo(() =>
@@ -1403,7 +1410,10 @@ export function MessageTimeline(props: {
     const topSpacing = () => {
       const value = row()
       if (!value) return false
-      return value._tag === "AssistantPart" && (value.topSpacing ?? value.previousAssistantPart)
+      return (
+        (value._tag === "AssistantPart" || value._tag === "ToolGroup") &&
+        (value.topSpacing ?? value.previousAssistantPart)
+      )
     }
     return (
       <div
@@ -1420,6 +1430,157 @@ export function MessageTimeline(props: {
           {input.children}
         </div>
       </div>
+    )
+  }
+
+  function TimelineToolGroupRow(input: { item: Accessor<TimelineRowByTag<"ToolGroup">> }) {
+    const [open, setOpen] = createSignal(false)
+    const refs = createMemo(() =>
+      input.item().groups.flatMap((group) => (group.type === "part" ? [group.ref] : group.refs)),
+    )
+    const refKey = (ref: { messageID: string; partID: string }) => `${ref.messageID}\n${ref.partID}`
+    const keys = createMemo(() => refs().map(refKey))
+    const refsByKey = createMemo(() => new Map(refs().map((ref) => [refKey(ref), ref] as const)))
+    const toolPart = (key: string) => {
+      const ref = refsByKey().get(key)
+      if (!ref) return
+      const part = getMessagePart(ref.messageID, ref.partID)
+      return part?.type === "tool" ? part : undefined
+    }
+    const assistantMessage = (key: string) => {
+      const ref = refsByKey().get(key)
+      if (!ref) return
+      const message = messageByID().get(ref.messageID)
+      return message?.role === "assistant" ? message : undefined
+    }
+    const current = createMemo(() => {
+      const parts = keys().flatMap((key) => toolPart(key) ?? [])
+      return parts.findLast((part) => part.state.status === "pending" || part.state.status === "running") ?? parts.at(-1)
+    })
+    const running = createMemo(() => {
+      const part = current()
+      return part?.state.status === "pending" || part?.state.status === "running"
+    })
+    const currentInfo = createMemo(() => {
+      const part = current()
+      if (!part) return
+      const state = part.state
+      const metadata = state.status === "pending" ? {} : (state.metadata ?? {})
+      return getToolInfo(normalizeTool(part.tool), state.input ?? {}, metadata)
+    })
+    const title = createMemo(() => currentInfo()?.title ?? "")
+    const description = createMemo(() => currentInfo()?.subtitle?.trim() ?? "")
+    const statusLabel = createMemo(() =>
+      language.t(running() ? "ui.sessionTurn.tools.running" : "ui.sessionTurn.tools.completed", {
+        title: title(),
+      }),
+    )
+    const [now, setNow] = createSignal(Date.now())
+    createEffect(
+      on(
+        () => {
+          const part = current()
+          return part ? `${part.id}:${part.state.status}` : "empty"
+        },
+        () => {
+          const part = current()
+          console.debug("[tool-group] activity", {
+            sessionID: sessionID(),
+            userMessageID: input.item().userMessageID,
+            partID: part?.id,
+            tool: part?.tool,
+            status: part?.state.status,
+            description: description() || undefined,
+            count: refs().length,
+          })
+          setNow(Date.now())
+          if (!running()) return
+          const timer = setInterval(() => setNow(Date.now()), 100)
+          onCleanup(() => clearInterval(timer))
+        },
+      ),
+    )
+    const elapsedLabel = createMemo(() => {
+      const part = current()
+      if (!part || part.state.status === "pending") return ""
+      const state = part.state
+      const start = state.time.start
+      if (typeof start !== "number") return ""
+      const end = state.status === "running" ? now() : state.time.end
+      if (typeof end !== "number" || end < start) return ""
+      const seconds = Math.max(0, (end - start) / 1000)
+      if (seconds < 60) return language.t("ui.message.duration.seconds", { count: seconds.toFixed(1) })
+      return language.t("ui.message.duration.minutesSeconds", {
+        minutes: Math.floor(seconds / 60),
+        seconds: (seconds % 60).toFixed(1),
+      })
+    })
+    const onOpenChange = (value: boolean) => {
+      suppressAutoScrollResize()
+      console.debug("[tool-group] toggle", {
+        sessionID: sessionID(),
+        userMessageID: input.item().userMessageID,
+        open: value,
+        count: refs().length,
+      })
+      setOpen(value)
+    }
+
+    return (
+      <Collapsible open={open()} onOpenChange={onOpenChange} variant="ghost" class="tool-activity-group">
+        <Collapsible.Trigger>
+          <div data-component="tool-activity-group-trigger">
+            <Show when={current()}>
+              {(part) => {
+                const state = () => part().state
+                const metadata = () => {
+                  const value = state()
+                  return value.status === "pending" ? {} : (value.metadata ?? {})
+                }
+                const info = () => getToolInfo(normalizeTool(part().tool), state().input ?? {}, metadata())
+                return <Icon name={info().icon} size="small" />
+              }}
+            </Show>
+            <TextShimmer text={statusLabel()} active={running()} />
+            <Show when={description()}>
+              {(value) => (
+                <span data-slot="tool-activity-description" title={value()}>
+                  {value()}
+                </span>
+              )}
+            </Show>
+            <Show when={elapsedLabel()}>{(value) => <span data-slot="tool-activity-time">{value()}</span>}</Show>
+            <Collapsible.Arrow />
+          </div>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
+          <div data-component="tool-activity-group-list">
+            <For each={keys()}>
+              {(key) => (
+                <Show when={assistantMessage(key)}>
+                  {(message) => (
+                    <Show when={toolPart(key)}>
+                      {(part) => (
+                        <DeferredMessagePart
+                          sessionID={sessionID() ?? input.item().userMessageID}
+                          part={part()}
+                          message={message()}
+                          defaultOpen={defaultOpen(part())}
+                          onBackgroundShell={props.onBackgroundShell}
+                          onBackgroundTask={props.onBackgroundTask}
+                          markdownViewport={listRoot()}
+                          markdownHighlight="defer"
+                          markdownMath="full"
+                        />
+                      )}
+                    </Show>
+                  )}
+                </Show>
+              )}
+            </For>
+          </div>
+        </Collapsible.Content>
+      </Collapsible>
     )
   }
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>) => {
@@ -1601,6 +1762,16 @@ export function MessageTimeline(props: {
           </TimelineRowFrame>
         )
       }
+      case "ToolGroup": {
+        const item = row as Accessor<TimelineRowByTag<"ToolGroup">>
+        return (
+          <TimelineRowFrame row={item}>
+            <div class="w-full px-4 md:px-5" data-slot="session-turn-assistant-content">
+              <TimelineToolGroupRow item={item} />
+            </div>
+          </TimelineRowFrame>
+        )
+      }
       case "Thinking": {
         const item = row as Accessor<TimelineRowByTag<"Thinking">>
         return (
@@ -1693,7 +1864,14 @@ export function MessageTimeline(props: {
     // make a completed text row use the live-growth-only shrink guard.
     const liveMeasured = () => {
       const currentRow = row()
-      if (!currentRow || currentRow._tag !== "AssistantPart") return false
+      if (!currentRow) return false
+      if (currentRow._tag === "ToolGroup") {
+        return currentRow.groups.some((group) => {
+          const refs = group.type === "part" ? [group.ref] : group.refs
+          return refs.some((ref) => timelinePartIsLive(getMessagePart(ref.messageID, ref.partID)))
+        })
+      }
+      if (currentRow._tag !== "AssistantPart") return false
       const group = currentRow.group
       if (group.type !== "part" || !group.ref) return false
       return timelinePartIsLive(getMessagePart(group.ref.messageID, group.ref.partID))

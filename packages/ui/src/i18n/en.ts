@@ -88,6 +88,8 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.status.thinkingWithTopic": "Thinking - {{topic}}",
   "ui.sessionTurn.status.gatheringThoughts": "Gathering thoughts",
   "ui.sessionTurn.status.consideringNextSteps": "Considering next steps",
+  "ui.sessionTurn.tools.running": "Agent is {{title}}",
+  "ui.sessionTurn.tools.completed": "Agent finished {{title}}",
   "ui.messagePart.reasoning.thinking": "Thinking",
   "ui.messagePart.reasoning.thought": "Thought complete",
 

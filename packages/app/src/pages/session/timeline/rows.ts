@@ -26,6 +26,12 @@ export type TimelineRowMap = {
     previousAssistantPart: boolean
     topSpacing?: boolean
   }
+  ToolGroup: {
+    userMessageID: string
+    groups: PartGroup[]
+    previousAssistantPart: boolean
+    topSpacing?: boolean
+  }
   Thinking: { userMessageID: string; phase: "sending" | "thinking"; reasoningHeading?: string }
   Retry: { userMessageID: string }
   DiffSummary: { userMessageID: string; diffs: SummaryDiff[] }
@@ -53,6 +59,12 @@ export namespace TimelineRow {
     previousAssistantPart: boolean
     topSpacing?: boolean
   }> {}
+  export class ToolGroup extends Data.TaggedClass("ToolGroup")<{
+    userMessageID: string
+    groups: PartGroup[]
+    previousAssistantPart: boolean
+    topSpacing?: boolean
+  }> {}
   export class Thinking extends Data.TaggedClass("Thinking")<{
     userMessageID: string
     phase: "sending" | "thinking"
@@ -76,6 +88,7 @@ export namespace TimelineRow {
     | UserMessage
     | TurnDivider
     | AssistantPart
+    | ToolGroup
     | Thinking
     | DiffSummary
     | Error
@@ -93,6 +106,8 @@ export namespace TimelineRow {
         return `turn-divider:${row.userMessageID}:${row.label}`
       case "AssistantPart":
         return `assistant-part:${row.userMessageID}:${row.group.key}`
+      case "ToolGroup":
+        return `tool-group:${row.userMessageID}:${row.groups[0]?.key ?? "empty"}`
       case "Thinking":
         return `thinking:${row.userMessageID}`
       case "DiffSummary":
@@ -197,8 +212,28 @@ export namespace Timeline {
     }
 
     let assistantGroupIndex = 0
+    let pendingToolGroups: PartGroup[] = []
+    let pendingToolPrevious = false
+    const groupIsTools = (group: PartGroup) => {
+      const refs = group.type === "part" ? [group.ref] : group.refs
+      return refs.every((ref) => assistantPartByRef.get(`${ref.messageID}\n${ref.partID}`)?.type === "tool")
+    }
+    const flushToolGroups = () => {
+      if (pendingToolGroups.length === 0) return
+      rows.push(
+        new TimelineRow.ToolGroup({
+          userMessageID: userMessage.id,
+          groups: pendingToolGroups,
+          previousAssistantPart: pendingToolPrevious,
+          topSpacing: true,
+        }),
+      )
+      assistantGroupIndex += pendingToolGroups.length
+      pendingToolGroups = []
+    }
     assistantItems.forEach((item) => {
       if (item.type === "interrupted") {
+        flushToolGroups()
         rows.push(
           new TimelineRow.TurnDivider({
             userMessageID: userMessage.id,
@@ -207,6 +242,14 @@ export namespace Timeline {
         )
         return
       }
+
+      if (groupIsTools(item.group)) {
+        if (pendingToolGroups.length === 0) pendingToolPrevious = assistantGroupIndex > 0
+        pendingToolGroups.push(item.group)
+        return
+      }
+
+      flushToolGroups()
 
       const ref = item.group.type === "part" ? item.group.ref : item.group.refs[0]
       const firstPart = ref ? assistantPartByRef.get(`${ref.messageID}\n${ref.partID}`) : undefined
@@ -222,6 +265,7 @@ export namespace Timeline {
       )
       assistantGroupIndex += 1
     })
+    flushToolGroups()
 
     if (isActive && status === "busy" && !error && (showReasoning ? assistantPartRefs.length === 0 : true)) {
       const reasoningParts = assistantMessages.flatMap((message) =>

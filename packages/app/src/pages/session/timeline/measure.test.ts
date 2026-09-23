@@ -887,6 +887,33 @@ test("rowContentVersion for a context group combines all member parts", () => {
   expect(v2).not.toBe(v1)
 })
 
+test("rowContentVersion for a ToolGroup combines every tool part", () => {
+  const partA = {
+    id: "prt_a",
+    type: "tool",
+    tool: "read",
+    state: { status: "completed" as const, input: {}, output: "ok", metadata: {}, time: { start: 1, end: 2 } },
+  } as ToolPart
+  const partB = {
+    id: "prt_b",
+    type: "tool",
+    tool: "bash",
+    state: { status: "completed" as const, input: {}, output: "done", metadata: {}, time: { start: 2, end: 3 } },
+  } as ToolPart
+  const row = {
+    _tag: "ToolGroup",
+    userMessageID: "msg_1",
+    groups: [
+      { type: "part" as const, ref: { messageID: "msg_1", partID: "prt_a" } },
+      { type: "part" as const, ref: { messageID: "msg_1", partID: "prt_b" } },
+    ],
+  }
+  const v1 = rowContentVersion(row, (_messageID, partID) => (partID === "prt_a" ? partA : partB))
+  const changed = { ...partB, state: { ...partB.state, output: "changed" } } as ToolPart
+  const v2 = rowContentVersion(row, (_messageID, partID) => (partID === "prt_a" ? partA : changed))
+  expect(v2).not.toBe(v1)
+})
+
 test("rowContentVersion for DiffSummary depends on diff count", () => {
   const v1 = rowContentVersion({ _tag: "DiffSummary", userMessageID: "msg_1", diffs: [{ file: "a" }] }, () => undefined)
   const v2 = rowContentVersion(
