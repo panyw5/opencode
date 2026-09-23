@@ -20,6 +20,7 @@ export function createTimelineProjection(input: {
   status: Accessor<SessionStatus>
   showReasoningSummaries: Accessor<boolean>
   showCustomHookParts: Accessor<boolean>
+  toolGroupExpanded?: (key: string) => boolean
 }) {
   const messageByID = createMemo(() => new Map(input.messages().map((message) => [message.id, message] as const)))
   const assistantMessagesByParent = createMemo(() => {
@@ -37,9 +38,12 @@ export function createTimelineProjection(input: {
   })
   const queuedMessageIDs = createMemo(() => queuedUserMessageIDs(input.messages()))
   const rawActiveMessageID = createMemo(() => {
-    const parentID = input.messages().findLast(
-      (message): message is AssistantMessage => message.role === "assistant" && typeof message.time.completed !== "number",
-    )?.parentID
+    const parentID = input
+      .messages()
+      .findLast(
+        (message): message is AssistantMessage =>
+          message.role === "assistant" && typeof message.time.completed !== "number",
+      )?.parentID
     if (parentID) {
       const messages = input.messages()
       const result = Binary.search(messages, parentID, (message) => message.id)
@@ -127,7 +131,10 @@ export function createTimelineProjection(input: {
   const rows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) =>
     reuseTimelineRows(
       previous,
-      messageRowMemos().flatMap((memo) => memo()),
+      Timeline.expandToolRows(
+        messageRowMemos().flatMap((memo) => memo()),
+        input.toolGroupExpanded ?? (() => false),
+      ),
     ),
   )
   const rowByKey = createMemo(() => new Map(rows().map((row) => [TimelineRow.key(row), row] as const)))

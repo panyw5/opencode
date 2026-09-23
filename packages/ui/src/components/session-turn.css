@@ -136,13 +136,6 @@
     font-weight: var(--font-weight-regular);
   }
 
-  [data-component="tool-activity-group-list"] {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding-top: 8px;
-  }
-
   [data-slot="session-turn-thinking-status"] {
     display: inline-flex;
     align-items: center;

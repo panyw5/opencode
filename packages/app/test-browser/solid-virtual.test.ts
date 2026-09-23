@@ -1,8 +1,57 @@
 import { expect, test } from "bun:test"
 import { createVirtualizer } from "@tanstack/solid-virtual"
-import { createRoot, createSignal } from "solid-js"
+import { createMemo, createRoot, createSignal } from "solid-js"
+import { createStore } from "solid-js/store"
 import type { ToolPart } from "@opencode-ai/sdk/v2"
 import { DeferredMessagePart, type DeferredMessagePartProps } from "../src/pages/session/timeline/deferred-tool-part"
+import { Timeline, TimelineRow } from "../src/pages/session/timeline/rows"
+
+test("expanded tool details share virtual measurements without mounting the whole group", () => {
+  createRoot((dispose) => {
+    const header = new TimelineRow.ToolGroup({
+      userMessageID: "user",
+      previousAssistantPart: false,
+      groups: [
+        {
+          type: "context",
+          key: "context",
+          refs: Array.from({ length: 160 }, (_, i) => ({ messageID: "assistant", partID: `part-${i}` })),
+        },
+      ],
+    })
+    const [state, setState] = createStore({ open: false })
+    const rows = createMemo(() => Timeline.expandToolRows([header], () => state.open))
+    const virtualizer = createVirtualizer<HTMLDivElement, HTMLDivElement>({
+      get count() {
+        return rows().length
+      },
+      get getItemKey() {
+        const items = rows()
+        return (index: number) => TimelineRow.key(items[index])
+      },
+      getScrollElement: () => null,
+      estimateSize: (index) => (index === 0 ? 44 : 62),
+      initialRect: { width: 800, height: 600 },
+      overscan: 3,
+    })
+    expect(virtualizer.getTotalSize()).toBe(44)
+    setState("open", true)
+    expect(rows()).toHaveLength(161)
+    expect(virtualizer.getVirtualItems().length).toBeLessThan(20)
+    virtualizer.resizeItem(1, 200)
+    const measured = virtualizer.getTotalSize()
+    const key = TimelineRow.key(rows()[1])
+    setState("open", false)
+    expect(virtualizer.getTotalSize()).toBe(44)
+    expect(virtualizer.itemSizeCache.get(key)).toBe(200)
+    setState("open", true)
+    expect(virtualizer.getTotalSize()).toBe(measured)
+    console.info(
+      `[tool-group-virtual-test] total=${rows().length} mounted=${virtualizer.getVirtualItems().length} measurementRetained=true`,
+    )
+    dispose()
+  })
+})
 
 test("reactive count updates preserve measured row sizes", () => {
   createRoot((dispose) => {

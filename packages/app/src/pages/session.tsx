@@ -3438,7 +3438,7 @@ export default function Page() {
                         onScheduleScrollState={scheduleScrollState}
                         onMarkScrollGesture={markScrollGesture}
                         onUserScroll={markUserScroll}
-                        onUserSelection={takeoverReading}
+                        onReadingTakeover={takeoverReading}
                         onUserMotion={observeUserMotion}
                         onFindNavigate={scrollToFind}
                         onFindRelease={(reason) => {

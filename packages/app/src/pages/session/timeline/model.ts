@@ -1,5 +1,5 @@
 import type { AssistantMessage, Message, Part, UserMessage } from "@opencode-ai/sdk/v2"
-import type { Accessor } from "solid-js"
+import { createMemo, mapArray, type Accessor } from "solid-js"
 import { compareMessages, resolveMessage, sortMessages } from "@/utils/message-order"
 
 const toolRank = (part: Extract<Part, { type: "tool" }>) => {
@@ -37,6 +37,25 @@ export function displayParts(parts: Part[]): Part[] {
     result.push(best.get(part.callID) ?? part)
   }
   return result
+}
+
+/** One reactive display projection per message; lookups never re-run deduplication. */
+export function createDisplayPartIndex(messages: Accessor<Message[]>, source: (id: string) => Part[]) {
+  const indexes = createMemo(
+    mapArray(messages, (message) => {
+      const index = createMemo(() => {
+        const parts = displayParts(source(message.id))
+        return { parts, byID: new Map(parts.map((part) => [part.id, part])) }
+      })
+      return [message.id, index] as const
+    }),
+  )
+  const byMessage = createMemo(() => new Map(indexes()))
+  const empty: Part[] = []
+  return {
+    parts: (id: string) => byMessage().get(id)?.().parts ?? empty,
+    part: (messageID: string, partID: string) => byMessage().get(messageID)?.().byID.get(partID),
+  }
 }
 
 export function assistantCopySummary(messages: AssistantMessage[], parts: (messageID: string) => Part[]) {

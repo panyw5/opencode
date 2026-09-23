@@ -56,6 +56,8 @@ const kobalteStub = () => {
 }
 
 let construct: (typeof import("./rows"))["Timeline"]["constructMessageRows"]
+let expandTools: (typeof import("./rows"))["Timeline"]["expandToolRows"]
+let rowKey: (typeof import("./rows"))["TimelineRow"]["key"]
 
 beforeAll(async () => {
   mock.module("@solidjs/router", () => ({
@@ -72,6 +74,8 @@ beforeAll(async () => {
   for (const subpath of KOBALTE_SUBPATHS) mock.module(`@kobalte/core/${subpath}`, () => kobalteStub())
   const mod = await import("./rows")
   construct = mod.Timeline.constructMessageRows
+  expandTools = mod.Timeline.expandToolRows
+  rowKey = mod.TimelineRow.key
 })
 
 const userMessage = (id: string): UserMessage => ({
@@ -159,6 +163,62 @@ describe("constructMessageRows", () => {
     ]
     const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart", "ToolGroup"])
+  })
+
+  test("expands large context groups into individually virtualizable stable rows", () => {
+    const user = userMessage("user-large-tools")
+    const assistant = assistantMessage("assistant-large-tools", user.id)
+    const tools = Array.from({ length: 200 }, (_, i) => toolPart(assistant.id, `tool-${i}`, i < 199 ? "read" : "bash"))
+    const rows = construct(
+      user,
+      partsByID([textPart(user.id, "work"), ...tools]),
+      [assistant],
+      0,
+      true,
+      true,
+      "idle",
+      false,
+    )
+    const header = rows.find((row) => row._tag === "ToolGroup")!
+    const expanded = expandTools(rows, (key) => key === rowKey(header))
+    expect(expanded).toHaveLength(rows.length + tools.length)
+    expect(expanded[1]).toBe(header)
+    const details = expanded.filter((row) => row._tag === "AssistantPart")
+    expect(details.map((row) => row.group.type === "part" && row.group.ref.partID)).toEqual(
+      tools.map((part) => part.id),
+    )
+    expect(new Set(expanded.map(rowKey)).size).toBe(expanded.length)
+    expect(expandTools(rows, () => false)).toEqual(rows)
+    expect(expandTools(rows, () => true).map(rowKey)).toEqual(expanded.map(rowKey))
+    console.info(`[tool-group-test] tools=${tools.length} virtualRows=${details.length} stableKeys=true`)
+  })
+
+  test("only expands the selected group and preserves detail keys when live tools arrive", () => {
+    const user = userMessage("user-growing-tools")
+    const assistant = assistantMessage("assistant-growing-tools", user.id)
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "before", "bash"),
+      textPart(assistant.id, "progress"),
+    ]
+    const build = (count: number) =>
+      construct(
+        user,
+        partsByID([...parts, ...Array.from({ length: count }, (_, i) => toolPart(assistant.id, `after-${i}`, "read"))]),
+        [assistant],
+        0,
+        true,
+        true,
+        "busy",
+        true,
+      )
+    const rows = build(2)
+    const key = rowKey(rows.findLast((row) => row._tag === "ToolGroup")!)
+    const expanded = expandTools(rows, (value) => value === key)
+    const grown = expandTools(build(3), (value) => value === key)
+    expect(expanded.filter((row) => row._tag === "AssistantPart")).toHaveLength(3)
+    expect(grown.map(rowKey)).toEqual(expect.arrayContaining(expanded.map(rowKey)))
+    expect(grown).toHaveLength(expanded.length + 1)
   })
 
   test("keeps the row for a synthetic math-worker event panel", () => {

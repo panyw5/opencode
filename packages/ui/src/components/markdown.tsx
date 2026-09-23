@@ -72,11 +72,9 @@ export function upgradeStreamingMath(
 const max = 200
 const cache = new Map<string, Entry>()
 
-function mark(_name: string, _data: Mark = {}) {
-}
+function mark(_name: string, _data: Mark = {}) {}
 
-function markImpact(_kind: string, _data: Mark = {}) {
-}
+function markImpact(_kind: string, _data: Mark = {}) {}
 
 if (typeof window !== "undefined" && DOMPurify.isSupported) {
   DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
@@ -277,8 +275,7 @@ export function shouldShowMarkdownMathBottomCopy(height: number): boolean {
 }
 
 function mathCopyButtonPositions(wrapper: HTMLElement): CopyButtonPosition[] {
-  const height = Math.max(wrapper.scrollHeight, wrapper.offsetHeight, wrapper.getBoundingClientRect().height)
-  return shouldShowMarkdownMathBottomCopy(height) ? copyButtonPositions : mathCopyButtonTopPositions
+  return shouldShowMarkdownMathBottomCopy(wrapper.offsetHeight) ? copyButtonPositions : mathCopyButtonTopPositions
 }
 
 function createCopyButton(labels: CopyLabels, position: CopyButtonPosition) {
@@ -346,60 +343,6 @@ function ensureCopyButtons(parent: Element, labels: CopyLabels, positions: CopyB
   }
 }
 
-function ensureCodeWrapper(block: HTMLPreElement, labels: CopyLabels) {
-  const parent = block.parentElement
-  if (!parent) return
-  const positions = codeCopyButtonPositions(block)
-  const wrapped = parent.getAttribute("data-component") === "markdown-code"
-  if (!wrapped) {
-    const wrapper = document.createElement("div")
-    wrapper.setAttribute("data-component", "markdown-code")
-    parent.replaceChild(wrapper, block)
-    wrapper.appendChild(block)
-    ensureCopyButtons(wrapper, labels, positions)
-    return
-  }
-
-  ensureCopyButtons(parent, labels, positions)
-}
-
-function ensureMathWrapper(block: HTMLElement, labels: CopyLabels) {
-  const tex = block.getAttribute("data-opencode-math-tex")
-  if (!tex) return
-
-  const existing = block.closest('[data-component="markdown-math"]')
-  if (existing instanceof HTMLElement) {
-    existing.setAttribute("data-opencode-math-tex", tex)
-    const viewport = Array.from(existing.children).find(
-      (child): child is HTMLDivElement =>
-        child instanceof HTMLDivElement && child.getAttribute("data-slot") === "markdown-math-viewport",
-    )
-    if (viewport) {
-      if (block.parentElement !== viewport) viewport.appendChild(block)
-    } else {
-      const next = document.createElement("div")
-      next.setAttribute("data-slot", "markdown-math-viewport")
-      block.parentElement?.replaceChild(next, block)
-      next.appendChild(block)
-    }
-    ensureCopyButtons(existing, labels, mathCopyButtonPositions(existing))
-    return
-  }
-
-  const parent = block.parentElement
-  if (!parent) return
-
-  const wrapper = document.createElement("div")
-  wrapper.setAttribute("data-component", "markdown-math")
-  wrapper.setAttribute("data-opencode-math-tex", tex)
-  const viewport = document.createElement("div")
-  viewport.setAttribute("data-slot", "markdown-math-viewport")
-  parent.replaceChild(wrapper, block)
-  wrapper.appendChild(viewport)
-  viewport.appendChild(block)
-  ensureCopyButtons(wrapper, labels, mathCopyButtonPositions(wrapper))
-}
-
 function markCodeLinks(root: HTMLDivElement) {
   const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
   for (const code of codeNodes) {
@@ -427,16 +370,18 @@ function markCodeLinks(root: HTMLDivElement) {
   }
 }
 
-function decorate(root: HTMLDivElement, labels: CopyLabels, options: { fileLinks?: boolean } = {}) {
-  const blocks = Array.from(root.querySelectorAll("pre"))
-  for (const block of blocks) {
-    ensureCodeWrapper(block, labels)
+export function decorateMarkdown(root: HTMLDivElement, labels: CopyLabels, options: { fileLinks?: boolean } = {}) {
+  wrapMarkdownBlocks(root)
+  // Read every formula before inserting buttons: interleaving these operations
+  // forces a separate layout for each formula in a newly mounted message.
+  const math = Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-math"]')).map((wrapper) => ({
+    wrapper,
+    positions: mathCopyButtonPositions(wrapper),
+  }))
+  for (const block of root.querySelectorAll("pre")) {
+    if (block.parentElement) ensureCopyButtons(block.parentElement, labels, codeCopyButtonPositions(block))
   }
-
-  const mathBlocks = Array.from(root.querySelectorAll(".katex-display[data-opencode-math-tex]"))
-  for (const block of mathBlocks) {
-    if (block instanceof HTMLElement) ensureMathWrapper(block, labels)
-  }
+  for (const { wrapper, positions } of math) ensureCopyButtons(wrapper, labels, positions)
 
   const fileLinks = options.fileLinks !== false
   if (fileLinks) markMarkdownFileLinks(root)
@@ -458,51 +403,6 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels, options: { file
   const updateLabel = (button: HTMLButtonElement) => {
     const copied = button.getAttribute("data-copied") === "true"
     setCopyState(button, labels, copied)
-  }
-
-  const ensureWrapper = (block: HTMLPreElement) => {
-    const parent = block.parentElement
-    if (!parent) return
-    const positions = codeCopyButtonPositions(block)
-    const wrapped = parent.getAttribute("data-component") === "markdown-code"
-    if (wrapped) {
-      ensureCopyButtons(parent, labels, positions)
-      return
-    }
-    const wrapper = document.createElement("div")
-    wrapper.setAttribute("data-component", "markdown-code")
-    parent.replaceChild(wrapper, block)
-    wrapper.appendChild(block)
-    ensureCopyButtons(wrapper, labels, positions)
-  }
-
-  const markCodeLinks = () => {
-    const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
-    for (const code of codeNodes) {
-      const href = codeUrl(code.textContent ?? "")
-      const parentLink =
-        code.parentElement instanceof HTMLAnchorElement && code.parentElement.classList.contains("external-link")
-          ? code.parentElement
-          : null
-
-      if (!href) {
-        if (parentLink) parentLink.replaceWith(code)
-        continue
-      }
-
-      if (parentLink) {
-        parentLink.href = href
-        continue
-      }
-
-      const link = document.createElement("a")
-      link.href = href
-      link.className = "external-link"
-      link.target = "_blank"
-      link.rel = "noopener noreferrer"
-      code.parentNode?.replaceChild(link, code)
-      link.appendChild(code)
-    }
   }
 
   const handleClick = async (event: MouseEvent) => {
@@ -533,7 +433,7 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels, options: { file
     }
   }
 
-  decorate(root, labels, options)
+  decorateMarkdown(root, labels, options)
 
   const buttons = Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]'))
   for (const button of buttons) {
@@ -561,11 +461,7 @@ function touch(key: string, value: Entry) {
   cache.delete(first)
 }
 
-export function markdownCacheMode(input: {
-  highlight?: "full" | "defer"
-  chunked?: boolean
-  math: "full" | "defer"
-}) {
+export function markdownCacheMode(input: { highlight?: "full" | "defer"; chunked?: boolean; math: "full" | "defer" }) {
   return ["math-protect-v8", input.highlight ?? "full", input.math ?? "full", input.chunked ? "chunked" : "plain"].join(
     ":",
   )
@@ -924,9 +820,7 @@ export function Markdown(
       } else {
         rendered = await Promise.race([
           renderPromise,
-          new Promise<string>((resolve) =>
-            setTimeout(() => resolve(fallback(input.normalized)), PARSE_TIMEOUT_MS),
-          ),
+          new Promise<string>((resolve) => setTimeout(() => resolve(fallback(input.normalized)), PARSE_TIMEOUT_MS)),
         ])
       }
 

@@ -80,7 +80,7 @@ import {
   timelineTextMetrics,
   trimRangeToBudget,
 } from "./estimate"
-import { assistantCopySummary, displayParts } from "./model"
+import { assistantCopySummary, createDisplayPartIndex } from "./model"
 import { createTimelineProjection } from "./projection"
 import { sortMessages } from "@/utils/message-order"
 import { MessageComment, type SummaryDiff, TimelineRow, TimelineRowMap } from "./rows"
@@ -91,7 +91,6 @@ import { createLiveBottomFollow } from "./live-bottom"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
 import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
 import { atPhysicalBottom, physicalScrollGap } from "../use-session-scroll-utils"
-import { suppressAutoScrollResize } from "@opencode-ai/ui/hooks"
 import type {
   FindNavigationTarget,
   MessageNavigationSnapshot,
@@ -236,7 +235,7 @@ export function MessageTimeline(props: {
   ) => void
   onMarkScrollGesture: (target?: EventTarget | null, input?: HistoryInput) => void
   onUserScroll: () => void
-  onUserSelection?: () => void
+  onReadingTakeover?: () => void
   onUserMotion?: (input: { direction: "up" | "down" | "other"; atBottom: boolean }) => void
   onFindNavigate: (target: FindNavigationTarget) => void
   onFindRelease?: (reason: "open" | "query" | "close" | "empty") => void
@@ -338,13 +337,9 @@ export function MessageTimeline(props: {
     }
     return ordered
   })
-  const getMessageParts = (messageID: string) => {
-    const source = sync.data.part[messageID]
-    if (!source) return emptyParts
-    return displayParts(source)
-  }
-  const getMessagePart = (messageID: string, partID: string) =>
-    getMessageParts(messageID).find((part) => part.id === partID)
+  const displayPartIndex = createDisplayPartIndex(sessionMessages, (id) => sync.data.part[id] ?? emptyParts)
+  const getMessageParts = displayPartIndex.parts
+  const getMessagePart = displayPartIndex.part
   const userMessageText = (messageID: string) => {
     const texts = getMessageParts(messageID).flatMap((part) =>
       part.type === "text" && part.text && !part.synthetic ? [part.text] : [],
@@ -742,6 +737,7 @@ export function MessageTimeline(props: {
     }
   }
 
+  const [expandedToolGroups, setExpandedToolGroups] = createStore<Record<string, boolean>>({})
   const projection = createTimelineProjection({
     messages: sessionMessages,
     userMessages: () => props.userMessages,
@@ -749,6 +745,7 @@ export function MessageTimeline(props: {
     status: sessionStatus,
     showReasoningSummaries: settings.general.showReasoningSummaries,
     showCustomHookParts: settings.general.showCustomHookParts,
+    toolGroupExpanded: (key) => expandedToolGroups[key] === true,
   })
   const timelineRows = projection.rows
   const timelineIndexByKey = createMemo(
@@ -765,7 +762,7 @@ export function MessageTimeline(props: {
     const activeID = activeMessageID()
     const groupKey = activeID ? lastAssistantGroupKey().get(activeID) : undefined
     if (!activeID || !groupKey) return
-    const index = timelineRows().findIndex((row) => {
+    const index = timelineRows().findLastIndex((row) => {
       if (row.userMessageID !== activeID) return false
       if (row._tag === "AssistantPart") return row.group.key === groupKey
       if (row._tag === "ToolGroup") return row.groups.some((group) => group.key === groupKey)
@@ -1434,28 +1431,19 @@ export function MessageTimeline(props: {
   }
 
   function TimelineToolGroupRow(input: { item: Accessor<TimelineRowByTag<"ToolGroup">> }) {
-    const [open, setOpen] = createSignal(false)
+    const open = () => expandedToolGroups[TimelineRow.key(input.item())] === true
     const refs = createMemo(() =>
       input.item().groups.flatMap((group) => (group.type === "part" ? [group.ref] : group.refs)),
     )
-    const refKey = (ref: { messageID: string; partID: string }) => `${ref.messageID}\n${ref.partID}`
-    const keys = createMemo(() => refs().map(refKey))
-    const refsByKey = createMemo(() => new Map(refs().map((ref) => [refKey(ref), ref] as const)))
-    const toolPart = (key: string) => {
-      const ref = refsByKey().get(key)
-      if (!ref) return
+    const toolPart = (ref: { messageID: string; partID: string }) => {
       const part = getMessagePart(ref.messageID, ref.partID)
       return part?.type === "tool" ? part : undefined
     }
-    const assistantMessage = (key: string) => {
-      const ref = refsByKey().get(key)
-      if (!ref) return
-      const message = messageByID().get(ref.messageID)
-      return message?.role === "assistant" ? message : undefined
-    }
     const current = createMemo(() => {
-      const parts = keys().flatMap((key) => toolPart(key) ?? [])
-      return parts.findLast((part) => part.state.status === "pending" || part.state.status === "running") ?? parts.at(-1)
+      const parts = refs().flatMap((ref) => toolPart(ref) ?? [])
+      return (
+        parts.findLast((part) => part.state.status === "pending" || part.state.status === "running") ?? parts.at(-1)
+      )
     })
     const running = createMemo(() => {
       const part = current()
@@ -1484,15 +1472,9 @@ export function MessageTimeline(props: {
         },
         () => {
           const part = current()
-          console.debug("[tool-group] activity", {
-            sessionID: sessionID(),
-            userMessageID: input.item().userMessageID,
-            partID: part?.id,
-            tool: part?.tool,
-            status: part?.state.status,
-            description: description() || undefined,
-            count: refs().length,
-          })
+          console.debug(
+            `[tool-group] activity sid=${sessionID()} part=${part?.id} tool=${part?.tool} status=${part?.state.status} count=${refs().length}`,
+          )
           setNow(Date.now())
           if (!running()) return
           const timer = setInterval(() => setNow(Date.now()), 100)
@@ -1516,31 +1498,23 @@ export function MessageTimeline(props: {
       })
     })
     const onOpenChange = (value: boolean) => {
-      suppressAutoScrollResize()
-      console.debug("[tool-group] toggle", {
-        sessionID: sessionID(),
-        userMessageID: input.item().userMessageID,
-        open: value,
-        count: refs().length,
-      })
-      setOpen(value)
+      props.onReadingTakeover?.()
+      console.debug(
+        `[tool-group] toggle sid=${sessionID()} key=${TimelineRow.key(input.item())} open=${value} virtualDetails=${refs().length}`,
+      )
+      setExpandedToolGroups(TimelineRow.key(input.item()), value)
     }
 
     return (
-      <Collapsible open={open()} onOpenChange={onOpenChange} variant="ghost" class="tool-activity-group">
-        <Collapsible.Trigger>
+      <div data-component="collapsible" data-variant="ghost" class="tool-activity-group">
+        <button
+          type="button"
+          data-slot="collapsible-trigger"
+          aria-expanded={open()}
+          onClick={() => onOpenChange(!open())}
+        >
           <div data-component="tool-activity-group-trigger">
-            <Show when={current()}>
-              {(part) => {
-                const state = () => part().state
-                const metadata = () => {
-                  const value = state()
-                  return value.status === "pending" ? {} : (value.metadata ?? {})
-                }
-                const info = () => getToolInfo(normalizeTool(part().tool), state().input ?? {}, metadata())
-                return <Icon name={info().icon} size="small" />
-              }}
-            </Show>
+            <Show when={currentInfo()}>{(info) => <Icon name={info().icon} size="small" />}</Show>
             <TextShimmer text={statusLabel()} active={running()} />
             <Show when={description()}>
               {(value) => (
@@ -1552,35 +1526,8 @@ export function MessageTimeline(props: {
             <Show when={elapsedLabel()}>{(value) => <span data-slot="tool-activity-time">{value()}</span>}</Show>
             <Collapsible.Arrow />
           </div>
-        </Collapsible.Trigger>
-        <Collapsible.Content>
-          <div data-component="tool-activity-group-list">
-            <For each={keys()}>
-              {(key) => (
-                <Show when={assistantMessage(key)}>
-                  {(message) => (
-                    <Show when={toolPart(key)}>
-                      {(part) => (
-                        <DeferredMessagePart
-                          sessionID={sessionID() ?? input.item().userMessageID}
-                          part={part()}
-                          message={message()}
-                          defaultOpen={defaultOpen(part())}
-                          onBackgroundShell={props.onBackgroundShell}
-                          onBackgroundTask={props.onBackgroundTask}
-                          markdownViewport={listRoot()}
-                          markdownHighlight="defer"
-                          markdownMath="full"
-                        />
-                      )}
-                    </Show>
-                  )}
-                </Show>
-              )}
-            </For>
-          </div>
-        </Collapsible.Content>
-      </Collapsible>
+        </button>
+      </div>
     )
   }
   const renderTimelineRow = (row: Accessor<TimelineRow.TimelineRow>) => {
@@ -1660,14 +1607,6 @@ export function MessageTimeline(props: {
       }
       case "AssistantPart": {
         const item = row as Accessor<TimelineRowByTag<"AssistantPart">>
-        const assistantCopy = createMemo(() => {
-          const userMessageID = item().userMessageID
-          if (workingTurn(userMessageID)) return { partID: null, text: "" }
-          return assistantCopySummary(
-            assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages,
-            getMessageParts,
-          )
-        })
         const message = createMemo(() => {
           const group = item().group
           return group.type === "part" ? messageByID().get(group.ref.messageID) : undefined
@@ -1675,6 +1614,14 @@ export function MessageTimeline(props: {
         const part = createMemo(() => {
           const group = item().group
           return group.type === "part" ? getMessagePart(group.ref.messageID, group.ref.partID) : undefined
+        })
+        const assistantCopy = createMemo(() => {
+          const userMessageID = item().userMessageID
+          if (part()?.type !== "text" || workingTurn(userMessageID)) return { partID: null, text: "" }
+          return assistantCopySummary(
+            assistantMessagesByParent().get(userMessageID) ?? emptyAssistantMessages,
+            getMessageParts,
+          )
         })
         const contextPartRefs = createMemo(() => {
           const group = item().group
@@ -2142,7 +2089,7 @@ export function MessageTimeline(props: {
         onMouseUp={(event) => {
           const selection = window.getSelection()
           if (!selection || selection.isCollapsed || !selection.anchorNode) return
-          if (event.currentTarget.contains(selection.anchorNode)) props.onUserSelection?.()
+          if (event.currentTarget.contains(selection.anchorNode)) props.onReadingTakeover?.()
         }}
         onScrollInput={(root, input) => {
           props.onMarkScrollGesture(root, input ?? { kind: "other", top: root.scrollTop })

@@ -125,6 +125,29 @@ export namespace TimelineRow {
 }
 
 export namespace Timeline {
+  export function expandToolRows(rows: TimelineRow.TimelineRow[], expanded: (key: string) => boolean) {
+    return rows.flatMap((row): TimelineRow.TimelineRow[] => {
+      if (row._tag !== "ToolGroup" || !expanded(TimelineRow.key(row))) return [row]
+      // Details use the same measured, budgeted virtual rows as other parts.
+      // Flatten context groups too, so one large group cannot bypass virtualization.
+      return [
+        row,
+        ...row.groups.flatMap((group) => {
+          const refs = group.type === "part" ? [group.ref] : group.refs
+          return refs.map(
+            (ref) =>
+              new TimelineRow.AssistantPart({
+                userMessageID: row.userMessageID,
+                group: { type: "part", key: `part:${ref.messageID}:${ref.partID}`, ref },
+                previousAssistantPart: true,
+                topSpacing: true,
+              }),
+          )
+        }),
+      ]
+    })
+  }
+
   export function constructMessageRows(
     userMessage: UserMessage,
     getMessageParts: (messageID: string) => Part[],
