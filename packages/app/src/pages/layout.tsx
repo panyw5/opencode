@@ -149,12 +149,12 @@ import {
 import { ProjectDragOverlay, SortableProject, type ProjectSidebarContext } from "./layout/sidebar-project"
 import { SidebarContent } from "./layout/sidebar-shell"
 import { ScoopJoin } from "./layout/scoop-join"
+import { ProjectTaskDetailDialog, ProjectTasksPanel, type ProjectTaskEditorStash } from "./layout/project-tasks-panel"
 import {
-  ProjectTaskDetailDialog,
-  ProjectTasksPanel,
-  type ProjectTaskEditorStash,
-} from "./layout/project-tasks-panel"
-import { ScheduledTaskFormDialog, ScheduledTasksPanel, type ScheduledTaskEditorStash } from "./layout/scheduled-tasks-panel"
+  ScheduledTaskFormDialog,
+  ScheduledTasksPanel,
+  type ScheduledTaskEditorStash,
+} from "./layout/scheduled-tasks-panel"
 import { AgentsMdDialog } from "@/components/agents-md-dialog"
 import { visibleSidebarActionCount } from "./layout/sidebar-quick-actions"
 import { NotificationBell } from "./layout/notification-bell"
@@ -937,9 +937,8 @@ export default function Layout(props: ParentProps) {
           return
         }
         if (resolveProject(directory)) return
-        console.debug(`[layout] registering untracked route directory=${directory}`)
+        console.debug(`[layout] untracked route stays outside project rail directory=${directory}`)
         sessionTabs.restoreDirectory(directory)
-        layout.projects.open(directory)
       },
       { defer: true },
     ),
@@ -2011,7 +2010,9 @@ export default function Layout(props: ParentProps) {
     try {
       entry.restore()
     } catch (error) {
-      console.error(`[sidebar-panel] restore failed id=${entry.id} error=${error instanceof Error ? error.message : String(error)}`)
+      console.error(
+        `[sidebar-panel] restore failed id=${entry.id} error=${error instanceof Error ? error.message : String(error)}`,
+      )
     }
   }
 

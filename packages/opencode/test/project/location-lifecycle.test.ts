@@ -1,4 +1,5 @@
 import { describe, expect } from "bun:test"
+import { mkdirSync } from "node:fs"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { InstanceRef } from "../../src/effect/instance-ref"
@@ -64,9 +65,7 @@ describe("LocationLifecycle", () => {
           if (inside === 2) yield* Deferred.succeed(bothInside, undefined)
           yield* Deferred.await(bothInside)
           const snap = yield* lifecycle.snapshot(ctx.location.id)
-          leasesDuring.push(
-            snap.runtime.tag === "stopped" || snap.runtime.tag === "stopping" ? 0 : snap.runtime.leases,
-          )
+          leasesDuring.push(snap.runtime.tag === "stopped" || snap.runtime.tag === "stopping" ? 0 : snap.runtime.leases)
           // Hold the lease until both admissions observed the count, otherwise
           // the first release races the second snapshot.
           observed++
@@ -91,11 +90,13 @@ describe("LocationLifecycle", () => {
       const lifecycle = yield* LocationLifecycle.Service
 
       const leasesOf = (locationID: LocationID) =>
-        lifecycle.snapshot(locationID).pipe(
-          Effect.map((snap) =>
-            snap.runtime.tag === "stopped" || snap.runtime.tag === "stopping" ? 0 : snap.runtime.leases,
-          ),
-        )
+        lifecycle
+          .snapshot(locationID)
+          .pipe(
+            Effect.map((snap) =>
+              snap.runtime.tag === "stopped" || snap.runtime.tag === "stopping" ? 0 : snap.runtime.leases,
+            ),
+          )
 
       // success
       const started = yield* Deferred.make<LocationID>()
@@ -205,9 +206,7 @@ describe("LocationLifecycle", () => {
       expect(row?.lifecycle.timeDeleted).toBeTruthy()
 
       // Verify admission is blocked after delete
-      const error = yield* lifecycle
-        .provide({ directory: dir, purpose: "http-request" }, Effect.void)
-        .pipe(Effect.flip)
+      const error = yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void).pipe(Effect.flip)
       expect(error).toBeInstanceOf(LocationLifecycle.LocationDeleted)
     }),
   )
@@ -346,9 +345,7 @@ describe("LocationLifecycle", () => {
       expect(row?.lifecycle.state).toBe("deleting")
 
       // Admission should be blocked (LocationDeleting)
-      const error = yield* lifecycle
-        .provide({ directory: dir, purpose: "http-request" }, Effect.void)
-        .pipe(Effect.flip)
+      const error = yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void).pipe(Effect.flip)
       expect(error).toBeInstanceOf(LocationLifecycle.LocationDeleting)
     }),
   )
@@ -380,15 +377,51 @@ describe("LocationLifecycle", () => {
 
         // Wait for idle disposal to fire
         yield* pollWithTimeout(
-          lifecycle
-            .snapshot(locationID)
-            .pipe(Effect.map((s) => (s.runtime.tag === "stopped" ? true : undefined))),
+          lifecycle.snapshot(locationID).pipe(Effect.map((s) => (s.runtime.tag === "stopped" ? true : undefined))),
           "idle disposal did not complete",
           "3 seconds",
         )
 
         snap = yield* lifecycle.snapshot(locationID)
         expect(snap.runtime.tag).toBe("stopped")
+      } finally {
+        LocationLifecycle.config.idleDisposalMs = original
+      }
+    }),
+  )
+
+  it.live("disposes an isolated execution cwd through its owning location lease", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const runtimeDirectory = `${dir}/.math/problems/lifecycle-fixture`
+      mkdirSync(runtimeDirectory, { recursive: true })
+      const lifecycle = yield* LocationLifecycle.Service
+      const original = LocationLifecycle.config.idleDisposalMs
+      LocationLifecycle.config.idleDisposalMs = 25
+      let runtimeDisposed = false
+      const unregister = registerDisposer(async (directoryKey) => {
+        if (String(directoryKey) === String(Path.identity(runtimeDirectory, localPathContext))) runtimeDisposed = true
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(unregister))
+
+      try {
+        const locationID = yield* lifecycle.provide(
+          { directory: dir, runtimeDirectory, purpose: "http-request" },
+          Effect.gen(function* () {
+            const ctx = yield* InstanceRef
+            if (!ctx) return yield* Effect.die(new Error("missing InstanceRef"))
+            return ctx.location.id
+          }),
+        )
+
+        yield* pollWithTimeout(
+          lifecycle
+            .snapshot(locationID)
+            .pipe(Effect.map((state) => (state.runtime.tag === "stopped" ? true : undefined))),
+          "isolated runtime idle disposal did not complete",
+          "3 seconds",
+        )
+        expect(runtimeDisposed).toBe(true)
       } finally {
         LocationLifecycle.config.idleDisposalMs = original
       }
@@ -494,9 +527,7 @@ describe("LocationLifecycle", () => {
       )
 
       // Admission should be rejected with LocationUnavailable
-      const error = yield* lifecycle
-        .provide({ directory: dir, purpose: "http-request" }, Effect.void)
-        .pipe(Effect.flip)
+      const error = yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void).pipe(Effect.flip)
       expect(error).toBeInstanceOf(LocationLifecycle.LocationUnavailable)
 
       // Recover: mark available
@@ -524,9 +555,7 @@ describe("LocationLifecycle", () => {
       expect(row?.lifecycle.state).toBe("deleted")
 
       // Admission should still be blocked
-      const error = yield* lifecycle
-        .provide({ directory: dir, purpose: "http-request" }, Effect.void)
-        .pipe(Effect.flip)
+      const error = yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void).pipe(Effect.flip)
       expect(error).toBeInstanceOf(LocationLifecycle.LocationDeleted)
     }),
   )

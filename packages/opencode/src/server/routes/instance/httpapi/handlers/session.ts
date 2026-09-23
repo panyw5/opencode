@@ -417,12 +417,21 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload?: typeof MathWorkerEnsurePayload.Type
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
-      yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
+      const worker = yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
       const projectDir = mathProjectDirForWorker(parent, ctx.params.workerID, ctx.query.project)
       if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      log.info("math worker ensure ownership resolved", {
+        parentSessionID: parent.id,
+        workerSessionID: worker.id,
+        ownerProjectID: parent.projectID,
+        ownerDirectory: parent.directory,
+        problemDirectory: projectDir,
+      })
       const result = yield* ensureMathWorker({
         sessionID: ctx.params.workerID,
         projectDir,
+        ownerDirectory: parent.directory,
+        ownerProjectID: parent.projectID,
         model: ctx.payload?.model,
         variant: ctx.payload?.variant,
         verifierModel: ctx.payload?.verifierModel,

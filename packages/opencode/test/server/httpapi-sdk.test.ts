@@ -469,6 +469,8 @@ describe("HttpApi SDK", () => {
       Effect.gen(function* () {
         const project = yield* capture(() => sdk.project.current())
         const projects = yield* capture(() => sdk.project.list())
+        const openedProject = yield* capture(() => sdk.project.open({ directory }))
+        const projectsAfterOpen = yield* capture(() => sdk.project.list())
         const paths = yield* capture(() => sdk.path.get())
         const config = yield* capture(() => sdk.config.get())
         const providers = yield* capture(() => sdk.config.providers())
@@ -488,6 +490,8 @@ describe("HttpApi SDK", () => {
           statuses: statuses({
             project,
             projects,
+            openedProject,
+            projectsAfterOpen,
             paths,
             config,
             providers,
@@ -506,7 +510,11 @@ describe("HttpApi SDK", () => {
           project: { worktreeSelected: record(project.data).worktree === directory },
           paths: { directorySelected: record(paths.data).directory === directory },
           file: record(file.data).content,
-          hasProject: array(projects.data).length > 0,
+          hasProjectBeforeOpen: array(projects.data).some((item) => record(item).id === record(project.data).id),
+          openedProjectMatchesCurrent: record(openedProject.data).id === record(project.data).id,
+          hasProjectAfterOpen: array(projectsAfterOpen.data).some(
+            (item) => record(item).id === record(project.data).id,
+          ),
           foundFile: JSON.stringify(findFiles.data).includes("hello.txt"),
           foundText: JSON.stringify(findText.data ?? null).includes("sdk-parity"),
           listedFile: JSON.stringify(files.data).includes("hello.txt"),

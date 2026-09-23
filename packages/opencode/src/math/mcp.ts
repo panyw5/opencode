@@ -5,6 +5,7 @@ import { createGateway, type MathGateway, type MathGatewayConfig, ToolNotFoundEr
 import { type MathToolName } from "./roles"
 import { httpVerifier, sessionVerifier, type Verifier } from "./verifier"
 import { readSwarm } from "./swarm"
+import { readMathProblemIdentity } from "./identity"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "math.mcp" })
@@ -95,8 +96,11 @@ export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier 
   const url = env.OPENCODE_MATH_VERIFY_URL
   if (url) return httpVerifier(url)
   const workspace = env.OPENCODE_MATH_WORKSPACE || process.cwd()
+  const identity = readMathProblemIdentity(env.OPENCODE_MATH_PROJECT_DIR || workspace)
   return {
     async verify(input) {
+      if (!identity) throw new Error("MathProblem ownership record is required for verification")
+      if (input.problem_id !== identity.problemID) throw new Error("MathProblem ID does not match its owner record")
       const projectModel = projectVerifierModel(env)
       const model = projectModel ?? env.OPENCODE_MATH_VERIFY_MODEL
       log.info("math verifier model selected", {
@@ -104,7 +108,13 @@ export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier 
         model,
         source: projectModel ? "project" : env.OPENCODE_MATH_VERIFY_MODEL ? "environment" : "default",
       })
-      return sessionVerifier({ workspace, model }).verify(input)
+      return sessionVerifier({
+        workspace,
+        ownerDirectory: identity.ownerDirectory,
+        ownerProjectID: identity.ownerProjectID,
+        workerSessionID: env.OPENCODE_MATH_AUTHOR,
+        model,
+      }).verify(input)
     },
   }
 }

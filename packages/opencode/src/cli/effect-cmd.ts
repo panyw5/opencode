@@ -49,6 +49,8 @@ interface EffectCmdBase<Args> {
   directory?: (args: Args) => string
   /** Register the command's directory as an internal runtime instead of a user-facing project. */
   instanceRegistration?: InstanceStore.LoadInput["registration"]
+  /** Execute at a private cwd while retaining the project context of `directory`. */
+  runtimeDirectory?: (args: Args) => string | undefined
 }
 
 type EffectCmdOpts<Args, A, R> = EffectCmdBase<Args> & {
@@ -98,10 +100,11 @@ export function effectCmd<Args, A>(opts: EffectCmdOpts<Args, A, AppServices | No
         return
       }
       const directory = opts.directory?.(args) ?? process.cwd()
+      const runtimeDirectory = opts.runtimeDirectory?.(args)
       await AppRuntime.runPromise(
         LocationLifecycle.Service.use((lifecycle) =>
           lifecycle.provide(
-            { directory, purpose: "http-request", registration: opts.instanceRegistration },
+            { directory, runtimeDirectory, purpose: "http-request", registration: opts.instanceRegistration },
             opts.handler(args),
           ),
         ),

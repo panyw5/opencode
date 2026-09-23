@@ -3,7 +3,7 @@ import { Project } from "@/project/project"
 import { ProjectID } from "@/project/schema"
 import * as Log from "@opencode-ai/core/util/log"
 import { Effect, Schema } from "effect"
-import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ProjectNotFoundError } from "../errors"
 import { markInstanceForReload } from "../lifecycle"
@@ -56,7 +56,8 @@ export const projectHandlers = HttpApiBuilder.group(InstanceHttpApi, "project", 
     })
 
     const current = Effect.fn("ProjectHttpApi.current")(function* () {
-      const result = (yield* InstanceState.context).project
+      const ctx = yield* InstanceState.context
+      const result = (yield* svc.get(ctx.project.id)) ?? ctx.project
       try {
         // Decoding here would validate the wire-input side and reject valid explicit undefined values.
         Schema.encodeUnknownSync(Project.Info)(result)
@@ -68,6 +69,13 @@ export const projectHandlers = HttpApiBuilder.group(InstanceHttpApi, "project", 
         throw error
       }
       return result
+    })
+
+    const open = Effect.fn("ProjectHttpApi.open")(function* () {
+      const ctx = yield* InstanceState.context
+      return yield* svc
+        .openDirectory(ctx.directory)
+        .pipe(Effect.catchTag("Project.InternalDirectoryError", () => Effect.fail(new HttpApiError.BadRequest({}))))
     })
 
     const initGit = Effect.fn("ProjectHttpApi.initGit")(function* () {
@@ -99,6 +107,11 @@ export const projectHandlers = HttpApiBuilder.group(InstanceHttpApi, "project", 
       )
     })
 
-    return handlers.handle("list", list).handle("current", current).handle("initGit", initGit).handle("update", update)
+    return handlers
+      .handle("list", list)
+      .handle("current", current)
+      .handle("open", open)
+      .handle("initGit", initGit)
+      .handle("update", update)
   }),
 )

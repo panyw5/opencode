@@ -53,7 +53,9 @@ function waitForPaint() {
 // surface.
 export function isMissingDirectoryError(err: unknown) {
   const message = err instanceof Error ? err.message : String(err)
-  return message.includes("DirectoryNotFound") || message.includes("ENOENT") || message.includes("no such file or directory")
+  return (
+    message.includes("DirectoryNotFound") || message.includes("ENOENT") || message.includes("no such file or directory")
+  )
 }
 
 function errors(list: PromiseSettledResult<unknown>[]) {
@@ -62,7 +64,8 @@ function errors(list: PromiseSettledResult<unknown>[]) {
 
 function logBootstrapErrors(phase: string, directory: string, list: unknown[]) {
   for (const error of list) {
-    const cause = error instanceof Error && typeof error.cause === "object" && error.cause !== null ? error.cause : undefined
+    const cause =
+      error instanceof Error && typeof error.cause === "object" && error.cause !== null ? error.cause : undefined
     const details = cause as
       | { method?: string; status?: number; statusText?: string; url?: string; body?: unknown }
       | undefined
@@ -238,14 +241,6 @@ export async function bootstrapDirectory(input: {
   if (loading) input.setStore("status", "partial")
 
   const fast = [
-    () =>
-      retry(() => input.sdk.project.current()).then((x) => {
-        const project = x.data!
-        projects = upsertProject(projects, project)
-        input.setProject?.(projects)
-        const id = projectID(input.directory, projects) ?? project.id
-        input.setStore("project", id)
-      }),
     () => retry(() => input.sdk.config.get().then((x) => input.setStore("config", x.data!))),
     () =>
       retry(() =>
@@ -258,12 +253,14 @@ export async function bootstrapDirectory(input: {
     () =>
       retry(() =>
         // Boundary: directory bootstrap (start / reconnect / backend reload path).
-        input.sdk.session.status().then((x) =>
-          input.setStore(
-            "session_status",
-            reconcile(mergeSessionStatusRefresh(input.store.session_status, x.data ?? {}, input.store.message)),
+        input.sdk.session
+          .status()
+          .then((x) =>
+            input.setStore(
+              "session_status",
+              reconcile(mergeSessionStatusRefresh(input.store.session_status, x.data ?? {}, input.store.message)),
+            ),
           ),
-        ),
       ),
     () =>
       retry(() =>
@@ -286,9 +283,7 @@ export async function bootstrapDirectory(input: {
         const baseCount = flattenRequests(base).length
         console.debug(`[permission-sync] refresh start directory=${input.directory} base=${baseCount}`)
         const x = await input.sdk.permission.list()
-        const remote = (x.data ?? []).filter(
-          (perm): perm is PermissionRequest => !!perm?.id && !!perm.sessionID,
-        )
+        const remote = (x.data ?? []).filter((perm): perm is PermissionRequest => !!perm?.id && !!perm.sessionID)
         const currentCount = flattenRequests(input.store.permission).length
         const grouped = mergePermissionRefresh(base, input.store.permission, remote)
         const mergedCount = flattenRequests(grouped).length

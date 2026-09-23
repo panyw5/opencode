@@ -12,9 +12,12 @@ import { Provider } from "@/provider/provider"
 import { SessionID } from "@/session/schema"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect } from "effect"
-import { readFileSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import path from "path"
 import * as Log from "@opencode-ai/core/util/log"
+import { ensureMathProblemIdentity, readMathProblemIdentity } from "@/math/identity"
+import { computeFactId } from "@/math/schema"
+import { readSwarm } from "@/math/swarm"
 
 const log = Log.create({ service: "math.verify.command" })
 
@@ -33,6 +36,7 @@ export const MathCommand = cmd({
       .command(MathWorkerCommand)
       .command(MathVerifyCommand)
       .command(MathMigrateCommand)
+      .command(MathOwnershipCommand)
       .command(MathStartCommand)
       .command(MathEnsureCommand)
       .command(MathStatusCommand)
@@ -71,15 +75,95 @@ export const MathMigrateCommand = cmd({
   },
 })
 
+export const MathOwnershipCommand = effectCmd({
+  command: "ownership",
+  describe: "verify and optionally register legacy MathProblem ownership",
+  directory: (args: { "owner-dir": string }) => path.resolve(process.cwd(), args["owner-dir"]),
+  runtimeDirectory: (args: { dir: string }) => path.resolve(process.cwd(), args.dir),
+  builder: (yargs: Argv) =>
+    yargs
+      .option("dir", { type: "string", demandOption: true, describe: "legacy MathProblem workspace" })
+      .option("owner-dir", { type: "string", demandOption: true, describe: "owning project directory" })
+      .option("parent", { type: "string", demandOption: true, describe: "owning orchestrator session ID" })
+      .option("worker", { type: "string", demandOption: true, describe: "worker session listed in swarm.json" })
+      .option("apply", { type: "boolean", default: false, describe: "write ownership.json after validation" }),
+  handler: Effect.fn("Cli.math.ownership")(function* (args) {
+    const ctx = yield* InstanceState.context
+    const sessions = yield* Session.Service
+    const parent = yield* sessions.get(SessionID.make(args.parent)).pipe(Effect.orDie)
+    const worker = yield* sessions.get(SessionID.make(args.worker)).pipe(Effect.orDie)
+    const ownerDirectory = path.resolve(process.cwd(), args["owner-dir"])
+    const directory = path.resolve(process.cwd(), args.dir)
+    const record = readSwarm(directory).workers[worker.id]
+    const taskFile = record?.taskFile ? path.resolve(record.taskFile) : undefined
+    const taskIsContained =
+      taskFile !== undefined && taskFile.startsWith(`${directory}${path.sep}`) && existsSync(taskFile)
+    if (
+      ctx.project.id !== parent.projectID ||
+      path.resolve(parent.directory) !== ownerDirectory ||
+      parent.agent !== "math-orchestrator" ||
+      worker.agent !== "math-worker" ||
+      worker.parentID !== parent.id ||
+      worker.projectID !== parent.projectID ||
+      record?.parentSessionID !== parent.id ||
+      !taskIsContained
+    ) {
+      return yield* fail("MathProblem ownership evidence does not agree across project, sessions, and swarm roster")
+    }
+
+    const existing = readMathProblemIdentity(directory)
+    if (existing) {
+      if (
+        existing.ownerProjectID !== parent.projectID ||
+        path.resolve(existing.ownerDirectory) !== ownerDirectory ||
+        existing.orchestratorSessionID !== parent.id
+      ) {
+        return yield* fail("existing MathProblem ownership conflicts with the verified owner")
+      }
+    }
+    log.info("MathProblem legacy ownership evidence verified", {
+      ownerProjectID: parent.projectID,
+      ownerDirectory,
+      orchestratorSessionID: parent.id,
+      workerSessionID: worker.id,
+      problemID: path.basename(directory),
+      directory,
+      apply: args.apply === true,
+    })
+    const result = args.apply
+      ? ensureMathProblemIdentity({
+          directory,
+          ownerProjectID: parent.projectID,
+          ownerDirectory,
+          orchestratorSessionID: parent.id,
+          legacyAdoption: { workerSessionID: worker.id, parentSessionID: parent.id },
+        })
+      : {
+          version: 1,
+          problemID: path.basename(directory),
+          directory,
+          ownerProjectID: parent.projectID,
+          ownerDirectory,
+          orchestratorSessionID: parent.id,
+          legacyAdoption: { workerSessionID: worker.id, parentSessionID: parent.id },
+        }
+    process.stdout.write(JSON.stringify({ applied: args.apply === true, identity: result }) + "\n")
+  }),
+})
+
 export const MathVerifyCommand = effectCmd({
   command: "verify",
   describe: false,
-  instanceRegistration: { visibility: "internal", kind: "math" },
-  directory: (args: { dir?: string }) => (args.dir ? path.resolve(process.cwd(), args.dir) : process.cwd()),
+  directory: (args: { "owner-dir"?: string }) =>
+    args["owner-dir"] ? path.resolve(process.cwd(), args["owner-dir"]) : process.cwd(),
+  runtimeDirectory: (args: { dir?: string }) => (args.dir ? path.resolve(process.cwd(), args.dir) : undefined),
   builder: (yargs: Argv) =>
     yargs
       .option("input", { type: "string", demandOption: true, describe: "verifier input JSON file" })
       .option("dir", { type: "string", describe: "workspace directory (Instance cwd)" })
+      .option("owner-dir", { type: "string", demandOption: true, describe: "owning user project directory" })
+      .option("owner-project", { type: "string", demandOption: true, describe: "owning project ID" })
+      .option("parent", { type: "string", demandOption: true, describe: "worker session that submitted the claim" })
       .option("model", { type: "string", describe: "verifier model as provider/model" }),
   handler: Effect.fn("Cli.math.verify")(function* (args) {
     const inputFile = path.resolve(process.cwd(), String(args.input))
@@ -89,31 +173,91 @@ export const MathVerifyCommand = effectCmd({
     }).pipe(Effect.orDie)
     const sessions = yield* Session.Service
     const prompts = yield* SessionPrompt.Service
+    const ctx = yield* InstanceState.context
+    if (ctx.project.id !== args["owner-project"]) return yield* fail("math verifier owner project mismatch")
+    const identity = readMathProblemIdentity(ctx.directory)
+    if (!identity || identity.ownerProjectID !== ctx.project.id) {
+      return yield* fail("math verifier MathProblem ownership could not be validated")
+    }
+    const worker = yield* sessions.get(SessionID.make(args.parent)).pipe(Effect.orDie)
+    if (
+      worker.agent !== "math-worker" ||
+      worker.projectID !== identity.ownerProjectID ||
+      worker.parentID !== identity.orchestratorSessionID ||
+      path.resolve(worker.directory) !== path.resolve(identity.directory)
+    ) {
+      return yield* fail("math verifier parent must be a math-worker owned by the parent project")
+    }
+    const reviewID = computeFactId({
+      problem_id: input.problem_id,
+      predecessors: input.predecessors,
+      glossary_introduces: input.glossary,
+      statement: input.statement,
+      proof: input.proof,
+    })
     // The prompt loop deliberately refuses to run archived sessions. Keep the
     // verifier live until its one prompt settles, then archive it in the
     // ensuring finalizer below so verifier sessions remain hidden afterwards.
-    log.info("creating verifier session", { inputFile })
-    const session = yield* sessions.create({ title: "math-verifier", agent: "math-verifier" })
-    log.info("verifier session created", { sessionID: session.id, archived: session.time.archived })
-    const modelName = typeof args.model === "string" ? args.model : process.env.OPENCODE_MATH_VERIFY_MODEL
-    const model = modelName ? Provider.parseModel(modelName) : undefined
-    log.info("starting verifier prompt", { sessionID: session.id, model: modelName })
-    const result = yield* prompts
-      .prompt({
+    log.info("creating internal verifier review session", {
+      inputFile,
+      ownerProjectID: identity.ownerProjectID,
+      problemID: identity.problemID,
+      parentSessionID: worker.id,
+      directory: ctx.directory,
+      reviewID,
+    })
+    const session = yield* sessions.create({
+      parentID: worker.id,
+      title: `math-verifier ${identity.problemID} ${reviewID}`,
+      agent: "math-verifier",
+    })
+    log.info("internal verifier review session created", {
+      sessionID: session.id,
+      parentSessionID: worker.id,
+      ownerProjectID: session.projectID,
+      directory: session.directory,
+      reviewID,
+      archived: session.time.archived,
+    })
+    const result = yield* Effect.gen(function* () {
+      const modelName = typeof args.model === "string" ? args.model : process.env.OPENCODE_MATH_VERIFY_MODEL
+      const model = modelName ? Provider.parseModel(modelName) : undefined
+      log.info("starting verifier prompt", {
+        sessionID: session.id,
+        parentSessionID: worker.id,
+        ownerProjectID: identity.ownerProjectID,
+        problemID: identity.problemID,
+        reviewID,
+        model: modelName,
+      })
+      return yield* prompts.prompt({
         sessionID: session.id,
         agent: "math-verifier",
         model,
         parts: [{ type: "text", text: buildVerifierPrompt(input) }],
       })
-      .pipe(
-        Effect.ensuring(sessions.setArchived({ sessionID: session.id, time: Date.now() })),
-        Effect.tapCause((cause) =>
-          Effect.sync(() => log.error("verifier prompt failed", { sessionID: session.id, cause: String(cause) })),
+    }).pipe(
+      Effect.ensuring(sessions.setArchived({ sessionID: session.id, time: Date.now() })),
+      Effect.tapCause((cause) =>
+        Effect.sync(() =>
+          log.error("verifier prompt failed", {
+            sessionID: session.id,
+            parentSessionID: worker.id,
+            ownerProjectID: identity.ownerProjectID,
+            problemID: identity.problemID,
+            reviewID,
+            cause: String(cause),
+          }),
         ),
-        Effect.catchCause((cause) => fail(`math verifier session failed: ${String(cause)}`)),
-      )
+      ),
+      Effect.catchCause((cause) => fail(`math verifier session failed: ${String(cause)}`)),
+    )
     log.info("verifier prompt completed", {
       sessionID: session.id,
+      parentSessionID: worker.id,
+      ownerProjectID: identity.ownerProjectID,
+      problemID: identity.problemID,
+      reviewID,
       role: result.info.role,
       error: result.info.role === "assistant" ? result.info.error : undefined,
     })
@@ -173,8 +317,9 @@ export const MathMcpCommand = cmd({
 export const MathWorkerCommand = effectCmd({
   command: "worker",
   describe: "run a detached math-worker prompt loop (does not follow sidecar lifetime)",
-  instanceRegistration: { visibility: "internal", kind: "math" },
-  directory: (args: { dir?: string }) => (args.dir ? path.resolve(process.cwd(), args.dir) : process.cwd()),
+  directory: (args: { "owner-dir"?: string }) =>
+    args["owner-dir"] ? path.resolve(process.cwd(), args["owner-dir"]) : process.cwd(),
+  runtimeDirectory: (args: { dir?: string }) => (args.dir ? path.resolve(process.cwd(), args.dir) : undefined),
   builder: (yargs: Argv) =>
     yargs
       .option("session", {
@@ -194,6 +339,8 @@ export const MathWorkerCommand = effectCmd({
         type: "string",
         describe: "workspace directory (Instance cwd)",
       })
+      .option("owner-dir", { type: "string", demandOption: true, describe: "owning user project directory" })
+      .option("owner-project", { type: "string", demandOption: true, describe: "owning project ID" })
       .option("interval", {
         type: "number",
         default: 2000,
@@ -220,22 +367,59 @@ export const MathWorkerCommand = effectCmd({
       }),
   handler: Effect.fn("Cli.math.worker")(function* (args) {
     const ctx = yield* InstanceState.context
+    const ownerProjectID = typeof args["owner-project"] === "string" ? args["owner-project"] : undefined
+    if (!ownerProjectID || ownerProjectID !== ctx.project.id) {
+      return yield* fail("math worker requires a matching explicit owner project")
+    }
     const projectDir = resolveMathProjectDir(
       typeof args["project-dir"] === "string" ? args["project-dir"] : undefined,
       ctx.directory,
     )
+    const identity = readMathProblemIdentity(projectDir)
+    if (
+      !identity ||
+      identity.ownerProjectID !== ownerProjectID ||
+      path.resolve(identity.ownerDirectory) !== path.resolve(ctx.directory)
+    ) {
+      return yield* fail("math worker MathProblem ownership could not be validated")
+    }
     let sessionID = typeof args.session === "string" ? args.session : undefined
+    const sessions = yield* Session.Service
     if (!sessionID) {
       if (!args.create) return yield* fail("math worker requires --session or --create")
-      const sessions = yield* Session.Service
+      if (!args.parent) return yield* fail("math worker --create requires a parent session")
+      const parent = yield* sessions.get(SessionID.make(args.parent)).pipe(Effect.orDie)
+      if (
+        parent.projectID !== identity.ownerProjectID ||
+        path.resolve(parent.directory) !== path.resolve(identity.ownerDirectory) ||
+        parent.id !== identity.orchestratorSessionID
+      ) {
+        return yield* fail("math worker parent does not own this MathProblem")
+      }
       const session = yield* sessions.create({
-        parentID: typeof args.parent === "string" ? SessionID.make(args.parent) : undefined,
+        parentID: parent.id,
         title: "math-worker",
         agent: "math-worker",
       })
       sessionID = session.id
       process.stderr.write(`created session ${sessionID}\n`)
     }
+    const worker = yield* sessions.get(SessionID.make(sessionID)).pipe(Effect.orDie)
+    if (
+      worker.agent !== "math-worker" ||
+      worker.projectID !== ownerProjectID ||
+      worker.parentID !== identity.orchestratorSessionID
+    ) {
+      return yield* fail("math worker session is not owned by the declared parent project")
+    }
+    log.info("math worker execution context validated", {
+      ownerProjectID,
+      ownerDirectory: ctx.project.worktree,
+      parentSessionID: worker.parentID,
+      sessionID,
+      problemID: identity.problemID,
+      directory: projectDir,
+    })
     const interval = typeof args.interval === "number" && args.interval > 0 ? args.interval : 2000
     yield* runWorkerLoop({
       sessionID,

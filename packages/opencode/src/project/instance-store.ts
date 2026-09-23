@@ -13,6 +13,8 @@ import type { ProjectLocation } from "./location"
 
 export interface LoadInput {
   directory: string
+  /** Isolated execution cwd owned by the project at `directory`. */
+  runtimeDirectory?: string
   worktree?: string
   project?: Project.Info
   location?: ProjectLocation.Info
@@ -62,23 +64,23 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
     const scope = yield* Scope.Scope
     const cache = new Map<PathIdentity, Entry>()
 
-    const boot = (input: BootInput) =>
+    const boot = (input: BootInput, runtimeDirectory: NormalizedDirectory) =>
       Effect.gen(function* () {
         const ctx: InstanceContext =
           input.project && input.worktree && input.location
             ? {
-                directory: input.directory.logical,
-                directoryKey: input.directory.identity,
-                nativeDirectory: input.directory.native,
+                directory: runtimeDirectory.logical,
+                directoryKey: runtimeDirectory.identity,
+                nativeDirectory: runtimeDirectory.native,
                 worktree: Path.logical(input.worktree, localPathContext),
                 project: input.project,
                 location: input.location,
               }
             : yield* project.fromDirectory(input.directory.native, input.registration).pipe(
                 Effect.map((result) => ({
-                  directory: input.directory.logical,
-                  directoryKey: input.directory.identity,
-                  nativeDirectory: input.directory.native,
+                  directory: runtimeDirectory.logical,
+                  directoryKey: runtimeDirectory.identity,
+                  nativeDirectory: runtimeDirectory.native,
                   worktree: Path.logical(result.sandbox, localPathContext),
                   project: result.project,
                   location: result.location,
@@ -95,26 +97,21 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
         return true
       })
 
-    const applyRegistration = Effect.fn("InstanceStore.applyRegistration")(function* (
-      ctx: InstanceContext,
-      registration?: Project.Registration,
-    ) {
-      if (registration?.visibility === "internal") {
-        const current = yield* project.get(ctx.project.id)
-        return current && current.visibility !== ctx.project.visibility ? { ...ctx, project: current } : ctx
-      }
-      if (ctx.project.visibility === "user") return ctx
-      const visible = yield* project.ensureUserVisible(ctx.project.id)
-      if (!visible) return ctx
-      yield* Effect.logInfo("instance project visibility refreshed").pipe(
-        Effect.annotateLogs({ directory: ctx.directory, projectID: ctx.project.id, kind: visible.kind }),
-      )
-      return { ...ctx, project: visible }
+    const applyRegistration = Effect.fn("InstanceStore.refreshProject")(function* (ctx: InstanceContext) {
+      const current = yield* project.get(ctx.project.id)
+      if (current) ctx.project = current
+      return ctx
     })
 
-    const completeLoad = (directoryKey: PathIdentity, input: LoadInput, entry: Entry, directory: NormalizedDirectory) =>
+    const completeLoad = (
+      directoryKey: PathIdentity,
+      input: LoadInput,
+      entry: Entry,
+      directory: NormalizedDirectory,
+      runtimeDirectory: NormalizedDirectory,
+    ) =>
       Effect.gen(function* () {
-        const exit = yield* Effect.exit(boot({ ...input, directory }))
+        const exit = yield* Effect.exit(boot({ ...input, directory }, runtimeDirectory))
         if (Exit.isFailure(exit)) yield* removeEntry(directoryKey, entry)
         yield* Deferred.done(entry.deferred, exit).pipe(Effect.asVoid)
       })
@@ -164,7 +161,8 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
       // /cygdrive/<drive> and /<drive> inputs on Windows. Converting to native
       // separators before that boundary would destroy those prefixes.
       const directory = normalizeDirectory(AppFileSystem.resolve(input.directory))
-      const directoryKey = directory.identity
+      const runtimeDirectory = normalizeDirectory(AppFileSystem.resolve(input.runtimeDirectory ?? input.directory))
+      const directoryKey = runtimeDirectory.identity
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const existing = cache.get(directoryKey)
@@ -181,7 +179,7 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
               }),
             )
             const ctx = yield* restore(Deferred.await(existing.deferred))
-            return yield* applyRegistration(ctx, input.registration)
+            return yield* applyRegistration(ctx)
           }
 
           const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
@@ -198,17 +196,18 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
                 workspaceKind: localPathContext.kind,
               }),
             )
-            yield* completeLoad(directoryKey, input, entry, directory)
+            yield* completeLoad(directoryKey, input, entry, directory, runtimeDirectory)
           }).pipe(Effect.forkIn(scope, { startImmediately: true }))
           const ctx = yield* restore(Deferred.await(entry.deferred))
-          return yield* applyRegistration(ctx, input.registration)
+          return yield* applyRegistration(ctx)
         }),
       ).pipe(Effect.withSpan("InstanceStore.load"))
     }
 
     const reload = (input: LoadInput): Effect.Effect<InstanceContext> => {
       const directory = normalizeDirectory(AppFileSystem.resolve(input.directory))
-      const directoryKey = directory.identity
+      const runtimeDirectory = normalizeDirectory(AppFileSystem.resolve(input.runtimeDirectory ?? input.directory))
+      const directoryKey = runtimeDirectory.identity
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const previous = cache.get(directoryKey)
@@ -232,7 +231,7 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
               yield* Effect.promise(() => runDisposers(directoryKey))
               yield* emitDisposed({ directory: directory.logical, project: input.project?.id })
             }
-            yield* completeLoad(directoryKey, input, entry, directory)
+            yield* completeLoad(directoryKey, input, entry, directory, runtimeDirectory)
           }).pipe(Effect.forkIn(scope, { startImmediately: true }))
           return yield* restore(Deferred.await(entry.deferred))
         }),

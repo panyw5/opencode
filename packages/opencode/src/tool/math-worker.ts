@@ -188,6 +188,8 @@ export const MathWorkerEnsureTool = Tool.define(
           const result = yield* ensureMathWorker({
             sessionID: SessionID.make(params.session_id),
             projectDir,
+            ownerDirectory: parent.directory,
+            ownerProjectID: parent.projectID,
             model: params.model,
             verifierModel: params.verifier_model,
             variant: params.variant,

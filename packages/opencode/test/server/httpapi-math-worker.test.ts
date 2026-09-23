@@ -21,6 +21,9 @@ import { killProcessGroup, pidAlive, spawnDetached } from "@/math/spawn"
 import { readSwarm, writeSwarm } from "@/math/swarm"
 import { FactGraph } from "@/math/fact-graph"
 import { GlobalMemory } from "@/math/global-memory"
+import { ensureMathProblemIdentity } from "@/math/identity"
+import { ProjectLocation } from "@/project/location"
+import { Project } from "@/project/project"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
@@ -61,6 +64,126 @@ afterEach(async () => {
 })
 
 describe("Math worker HttpApi", () => {
+  it.instance("keeps project reads hidden until the explicit open endpoint", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const directory = encodeURIComponent(test.directory)
+      const current = yield* Effect.promise(() =>
+        Server.Default().app.request(`/project/current?directory=${directory}`),
+      )
+      const currentData = (yield* Effect.promise(() => current.json())) as { id: string; visibility: string }
+      const before = yield* Effect.promise(() => Server.Default().app.request(`/project?directory=${directory}`))
+      const beforeData = (yield* Effect.promise(() => before.json())) as Array<{ id: string }>
+
+      expect(current.status).toBe(200)
+      expect(currentData.visibility).toBe("internal")
+      expect(beforeData.some((item) => item.id === currentData.id)).toBe(false)
+      expect(ProjectLocation.getByDirectory(test.directory)?.projectID).toBe(currentData.id)
+
+      const opened = yield* Effect.promise(() =>
+        Server.Default().app.request(`/project/open?directory=${directory}`, { method: "POST" }),
+      )
+      const after = yield* Effect.promise(() => Server.Default().app.request(`/project?directory=${directory}`))
+      const afterData = (yield* Effect.promise(() => after.json())) as Array<{ id: string }>
+
+      expect(opened.status).toBe(200)
+      expect(Project.get(currentData.id as Project.Info["id"])?.visibility).toBe("user")
+      expect(afterData.some((item) => item.id === currentData.id)).toBe(true)
+    }),
+  )
+
+  it.instance("admits and verifies one detached worker event", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const sessions = yield* Session.Service
+      const inbox = yield* SessionInput.Service
+      const parent = yield* sessions.create({ title: "math event owner", agent: "math-orchestrator" })
+      const worker = yield* sessions.create({ title: "math event worker", agent: "math-worker", parentID: parent.id })
+      writeSwarm(test.directory, {
+        projectDir: test.directory,
+        parentSessionID: parent.id,
+        workers: {
+          [worker.id]: {
+            sessionID: worker.id,
+            parentSessionID: parent.id,
+            pid: 987_654_321,
+            state: "running",
+            startedAt: Date.now(),
+            logFile: path.join(test.directory, "worker.log"),
+            generation: 1,
+            taskFingerprint: "task-v1",
+          },
+        },
+      })
+      const url = endpoint(SessionPaths.mathWorkerEvent, { sessionID: parent.id, workerID: worker.id })
+      const response = yield* Effect.promise(() =>
+        Server.Default().app.request(url, {
+          method: "POST",
+          headers: { "x-opencode-directory": test.directory, "content-type": "application/json" },
+          body: JSON.stringify({
+            eventID: "delivery-check-1",
+            kind: "progress",
+            round: 1,
+            summary: "Worker event delivery fixture.",
+            generation: 1,
+            taskFingerprint: "task-v1",
+          }),
+        }),
+      )
+      const cursor = yield* inbox.cursor(parent.id)
+      const received = [...(yield* inbox.pending(parent.id)), ...(yield* inbox.promotedUnacked(parent.id))]
+      expect(response.status).toBe(204)
+      expect(cursor.nextAdmittedSeq).toBe(1)
+      expect(received.some((item) => item.prompt.metadata?.kind === "math-worker-event")).toBe(true)
+    }),
+  )
+
+  it.instance("restores a worker transcript through its owner without registering the problem cwd", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const sessions = yield* Session.Service
+      const parent = yield* sessions.create({ title: "math owner", agent: "math-orchestrator" })
+      const parentContext = yield* InstanceState.context
+      const projectDir = mathRoot(test.directory, "isolated-problem")
+      ensureMathProblemIdentity({
+        directory: projectDir,
+        ownerProjectID: parent.projectID,
+        ownerDirectory: parent.directory,
+        orchestratorSessionID: parent.id,
+      })
+      const worker = yield* sessions
+        .create({ title: "worker transcript", agent: "math-worker", parentID: parent.id })
+        .pipe(Effect.provideService(InstanceRef, { ...parentContext, directory: projectDir }))
+      const directory = encodeURIComponent(projectDir)
+      const current = yield* Effect.promise(() =>
+        Server.Default().app.request(`/project/current?directory=${directory}`),
+      )
+      const restored = yield* Effect.promise(() =>
+        Server.Default().app.request(`/session/${worker.id}?directory=${directory}`),
+      )
+      const projects = yield* Effect.promise(() => Server.Default().app.request(`/project?directory=${directory}`))
+      const openProblem = yield* Effect.promise(() =>
+        Server.Default().app.request(`/project/open?directory=${directory}`, { method: "POST" }),
+      )
+      const currentData = (yield* Effect.promise(() => current.json())) as { id: string }
+      const restoredData = (yield* Effect.promise(() => restored.json())) as {
+        projectID: string
+        directory: string
+      }
+      const projectsData = (yield* Effect.promise(() => projects.json())) as Array<{ worktree: string }>
+
+      expect(current.status).toBe(200)
+      expect(restored.status).toBe(200)
+      expect(projects.status).toBe(200)
+      expect(openProblem.status).toBe(400)
+      expect(currentData.id).toBe(parent.projectID)
+      expect(restoredData.projectID).toBe(parent.projectID)
+      expect(restoredData.directory).toBe(projectDir)
+      expect(projectsData.some((project) => project.worktree === projectDir)).toBe(false)
+      expect(ProjectLocation.getByDirectory(projectDir)).toBeUndefined()
+    }),
+  )
+
   it.instance(
     "idempotently admits a detached worker event for the parent",
     () =>
@@ -552,6 +675,13 @@ describe("Math worker HttpApi", () => {
             },
           },
         })
+        ensureMathProblemIdentity({
+          directory: projectDir,
+          ownerProjectID: parent.projectID,
+          ownerDirectory: parent.directory,
+          orchestratorSessionID: parent.id,
+          legacyAdoption: { workerSessionID: worker.id, parentSessionID: parent.id },
+        })
 
         const headers = { "x-opencode-directory": test.directory, "content-type": "application/json" }
         const listResponse = yield* Effect.promise(() =>
@@ -715,14 +845,6 @@ describe("Math worker HttpApi", () => {
           ),
         )
         expect(blockedEnsure.status).toBe(400)
-
-        const earlyReEnable = yield* Effect.promise(() =>
-          Server.Default().app.request(
-            `${endpoint(SessionPaths.mathWorkerEnsure, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
-            { headers, method: "POST", body: JSON.stringify({ reEnable: true }) },
-          ),
-        )
-        expect(earlyReEnable.status).toBe(400)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

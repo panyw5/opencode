@@ -815,6 +815,7 @@ export type Session = {
   id: string
   slug: string
   projectID: string
+  locationID?: string
   workspaceID?: string
   directory: string
   path?: string
@@ -3942,6 +3943,7 @@ export type SessionInfo = {
   id: string
   parentID?: string
   projectID: string
+  locationID?: string
   workspaceID?: string
   path?: string
   agent?: string
@@ -6912,6 +6914,28 @@ export type ProjectCurrentResponses = {
 }
 
 export type ProjectCurrentResponse = ProjectCurrentResponses[keyof ProjectCurrentResponses]
+
+export type ProjectOpenData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/project/open"
+}
+
+export type ProjectOpenErrors = {
+  400: BadRequestError
+}
+
+export type ProjectOpenError = ProjectOpenErrors[keyof ProjectOpenErrors]
+
+export type ProjectOpenResponses = {
+  200: Project
+}
+
+export type ProjectOpenResponse = ProjectOpenResponses[keyof ProjectOpenResponses]
 
 export type ProjectInitGitData = {
   body?: never

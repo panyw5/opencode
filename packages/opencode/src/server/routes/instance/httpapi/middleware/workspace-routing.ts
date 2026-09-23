@@ -32,11 +32,15 @@ export const WorkspaceRoutingQueryFields = {
 export const WorkspaceRoutingQuery = Schema.Struct(WorkspaceRoutingQueryFields)
 
 type RemoteTarget = Extract<Target, { type: "remote" }>
+export type RouteSession = Pick<
+  Session.Info,
+  "id" | "projectID" | "parentID" | "directory" | "locationID" | "workspaceID" | "agent"
+>
 
 type RequestPlan = Data.TaggedEnum<{
   InvalidWorkspace: {}
   MissingWorkspace: { readonly workspaceID: WorkspaceID }
-  Local: { readonly directory: string; readonly workspaceID?: WorkspaceID }
+  Local: { readonly directory: string; readonly workspaceID?: WorkspaceID; readonly session?: RouteSession }
   Remote: {
     readonly request: HttpServerRequest.HttpServerRequest
     readonly workspace: Workspace.Info
@@ -52,6 +56,7 @@ export class WorkspaceRouteContext extends Context.Service<
   {
     readonly directory: string
     readonly workspaceID?: WorkspaceID
+    readonly session?: RouteSession
   }
 >()("@opencode/ExperimentalHttpApiWorkspaceRouteContext") {}
 
@@ -167,25 +172,29 @@ function planWorkspaceRequest(
   request: HttpServerRequest.HttpServerRequest,
   url: URL,
   workspace: Workspace.Info,
+  session?: RouteSession,
 ): Effect.Effect<RequestPlan, never, Workspace.Service> {
   return Effect.gen(function* () {
     const target = yield* resolveTarget(workspace)
     if (target.type === "remote") return RequestPlan.Remote({ request, workspace, target, url })
-    return RequestPlan.Local({ directory: target.directory, workspaceID: workspace.id })
+    return RequestPlan.Local({
+      directory: session?.directory ?? target.directory,
+      workspaceID: workspace.id,
+      session,
+    })
   })
 }
 
 function planRequest(
   request: HttpServerRequest.HttpServerRequest,
-  sessionWorkspaceID?: WorkspaceID,
-  sessionDirectory?: string,
+  session?: RouteSession,
 ): Effect.Effect<RequestPlan, never, Workspace.Service> {
   return Effect.gen(function* () {
     const url = requestURL(request)
     const envWorkspaceID = configuredWorkspaceID()
     const workspaceID = url.pathname.startsWith("/api/")
-      ? selectedV2WorkspaceID(url, sessionWorkspaceID)
-      : selectedWorkspaceID(url, sessionWorkspaceID)
+      ? selectedV2WorkspaceID(url, session?.workspaceID)
+      : selectedWorkspaceID(url, session?.workspaceID)
     if (workspaceID === InvalidWorkspaceID) return RequestPlan.InvalidWorkspace()
     const workspace = yield* resolveWorkspace(workspaceID, envWorkspaceID)
 
@@ -194,18 +203,18 @@ function planRequest(
     }
 
     if (workspace !== undefined && !envWorkspaceID && !shouldStayOnControlPlane(request, url)) {
-      return yield* planWorkspaceRequest(request, url, workspace)
+      return yield* planWorkspaceRequest(request, url, workspace, session)
     }
 
     const requestDirectory = defaultDirectory(request, url)
-    const directory = sessionRouteDirectory(requestDirectory, sessionDirectory)
-    if (sessionDirectory && sessionDirectory !== requestDirectory) {
+    const directory = sessionRouteDirectory(requestDirectory, session?.directory)
+    if (session?.directory && session.directory !== requestDirectory) {
       // eslint-disable-next-line no-console
       console.error(
-        `[workspace-routing] session directory overrides request context sessionDirectory=${sessionDirectory} requestDirectory=${requestDirectory} pathname=${url.pathname}`,
+        `[workspace-routing] session directory overrides request context sessionDirectory=${session.directory} requestDirectory=${requestDirectory} pathname=${url.pathname}`,
       )
     }
-    return RequestPlan.Local({ directory, workspaceID: envWorkspaceID ?? workspaceID })
+    return RequestPlan.Local({ directory, workspaceID: envWorkspaceID ?? workspaceID, session })
   })
 }
 
@@ -228,8 +237,10 @@ function routeWorkspace<E>(
       ),
     MissingWorkspace: ({ workspaceID }) => Effect.succeed(missingWorkspaceResponse(workspaceID)),
     Remote: ({ request, workspace, target, url }) => proxyRemote(client, request, workspace, target, url),
-    Local: ({ directory, workspaceID }) =>
-      effect.pipe(Effect.provideService(WorkspaceRouteContext, WorkspaceRouteContext.of({ directory, workspaceID }))),
+    Local: ({ directory, workspaceID, session }) =>
+      effect.pipe(
+        Effect.provideService(WorkspaceRouteContext, WorkspaceRouteContext.of({ directory, workspaceID, session })),
+      ),
   })
 }
 
@@ -250,7 +261,12 @@ function routeHttpApiWorkspace<E>(
           Effect.catchDefect(() => Effect.succeed(undefined)),
         )
       : undefined
-    const plan = yield* planRequest(request, session?.workspaceID, session?.directory)
+    if (sessionID) {
+      console.log(
+        `[workspace-routing] sessionLookup id=${sessionID} found=${!!session} project=${session?.projectID ?? "-"} location=${session?.locationID ?? "-"} directory=${session?.directory ?? "-"} path=${requestURL(request).pathname}`,
+      )
+    }
+    const plan = yield* planRequest(request, session)
     return yield* routeWorkspace(client, effect, plan)
   })
 }

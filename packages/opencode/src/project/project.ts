@@ -28,6 +28,7 @@ import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { NonNegativeInt, optionalOmitUndefined } from "@opencode-ai/core/schema"
 import { serviceUse } from "@/effect/service-use"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { hasMathProblemOwnershipMarker } from "@/math/identity"
 
 const log = Log.create({ service: "project" })
 
@@ -187,6 +188,11 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Pro
   projectID: ProjectID,
 }) {}
 
+export class InternalDirectoryError extends Schema.TaggedErrorClass<InternalDirectoryError>()(
+  "Project.InternalDirectoryError",
+  { directory: Schema.String },
+) {}
+
 // ---------------------------------------------------------------------------
 // Effect service
 // ---------------------------------------------------------------------------
@@ -202,6 +208,7 @@ export interface Interface {
     directory: string,
     registration?: Registration,
   ) => Effect.Effect<{ project: Info; sandbox: string; location: ProjectLocation.Info }>
+  readonly openDirectory: (directory: string) => Effect.Effect<Info, InternalDirectoryError>
   readonly ensureUserVisible: (id: ProjectID) => Effect.Effect<Info | undefined>
   readonly claimLegacy: () => Effect.Effect<LegacyClaimCounts>
   readonly discover: (input: Info) => Effect.Effect<void>
@@ -316,7 +323,7 @@ export const layer: Layer.Layer<
     ) {
       const canonicalDirectory = toLogicalPath(AppFileSystem.resolve(directory))
       const fallbackID = ProjectID.make(`dir:${Hash.fast(canonicalDirectory)}`)
-      const requestedVisibility = registration.visibility ?? "user"
+      const requestedVisibility = registration.visibility ?? "internal"
       log.info("project resolution started", {
         inputDirectory: directory,
         canonicalDirectory,
@@ -883,6 +890,8 @@ export const layer: Layer.Layer<
         rows,
         (info) =>
           Effect.gen(function* () {
+            if (info.kind === "math") return undefined
+            if (yield* Effect.sync(() => hasMathProblemOwnershipMarker(info.worktree))) return undefined
             if (isNetworkMount(info.worktree)) return info
             if (yield* worktreeMissing(info.worktree)) {
               log.debug("hiding project with missing worktree", { projectID: info.id, worktree: info.worktree })
@@ -912,6 +921,29 @@ export const layer: Layer.Layer<
       log.info("internal project promoted", { projectID: id, kind: info.kind, worktree: info.worktree })
       yield* emitUpdated(info)
       return info
+    })
+
+    const openDirectory = Effect.fn("Project.openDirectory")(function* (directory: string) {
+      if (yield* Effect.sync(() => hasMathProblemOwnershipMarker(directory))) {
+        log.warn("refusing to open internal MathProblem as a user project", { directory })
+        return yield* new InternalDirectoryError({ directory })
+      }
+      const resolved = yield* fromDirectory(directory, { visibility: "internal" })
+      if (resolved.project.kind === "math") {
+        log.warn("refusing to open internal Math project as a user project", {
+          projectID: resolved.project.id,
+          directory,
+        })
+        return yield* new InternalDirectoryError({ directory })
+      }
+      const opened = yield* ensureUserVisible(resolved.project.id)
+      if (!opened) throw new Error(`Project could not be opened: ${resolved.project.id}`)
+      log.info("project explicitly opened", {
+        projectID: opened.id,
+        directory: resolved.location.directory,
+        locationID: resolved.location.id,
+      })
+      return opened
     })
 
     const get = Effect.fn("Project.get")(function* (id: ProjectID) {
@@ -1048,6 +1080,7 @@ export const layer: Layer.Layer<
     return Service.of({
       init,
       fromDirectory,
+      openDirectory,
       ensureUserVisible,
       claimLegacy,
       discover,

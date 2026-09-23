@@ -17,6 +17,7 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProjectAlias } from "@/project/alias"
 import { Database } from "@/storage/db"
 import { ProjectTable } from "@/project/project.sql"
+import { ensureMathProblemIdentity } from "@/math/identity"
 
 void Log.init({ print: false })
 
@@ -795,7 +796,7 @@ describe("Project.update", () => {
   it.live("should emit GlobalBus event on update", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const { project } = yield* run((svc) => svc.fromDirectory(tmp))
+      const project = yield* run((svc) => svc.openDirectory(tmp))
 
       let eventPayload: any = null
       const on = (data: any) => {
@@ -836,28 +837,57 @@ describe("Project.update", () => {
 })
 
 describe("Project.list and Project.list with reconciliation", () => {
-  it.live("hides internal math projects and promotes them when explicitly opened", () =>
+  it.live("filters a legacy user-visible row with verified MathProblem ownership", () =>
+    Effect.gen(function* () {
+      const tmp = yield* tmpdirScoped()
+      const directory = path.join(tmp, ".math", "problems", "legacy-problem")
+      ensureMathProblemIdentity({
+        directory,
+        ownerProjectID: "dir:owner",
+        ownerDirectory: tmp,
+        orchestratorSessionID: "ses-owner",
+      })
+      const now = Date.now()
+      const id = ProjectID.make("dir:legacy-math-workspace")
+      Database.use((db) =>
+        db
+          .insert(ProjectTable)
+          .values({
+            id,
+            worktree: directory,
+            visibility: "user",
+            sandboxes: [],
+            time_created: now,
+            time_updated: now,
+          })
+          .run(),
+      )
+
+      expect((yield* run((svc) => svc.list())).some((project) => project.id === id)).toBe(false)
+    }),
+  )
+
+  it.live("keeps directory loads internal and promotes only on explicit open", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped()
       const events: any[] = []
       const on = (event: any) => events.push(event)
       GlobalBus.on("event", on)
       yield* Effect.addFinalizer(() => Effect.sync(() => GlobalBus.off("event", on)))
-      const internal = yield* run((svc) => svc.fromDirectory(tmp, { visibility: "internal", kind: "math" }))
+      const internal = yield* run((svc) => svc.fromDirectory(tmp, { visibility: "internal" }))
       expect(internal.project.visibility).toBe("internal")
-      expect(internal.project.kind).toBe("math")
       expect((yield* run((svc) => svc.list())).some((project) => project.id === internal.project.id)).toBe(false)
       expect(events.some((event) => event.project === internal.project.id)).toBe(false)
 
-      const stillInternal = yield* run((svc) => svc.fromDirectory(tmp, { visibility: "internal", kind: "math" }))
+      const stillInternal = yield* run((svc) => svc.fromDirectory(tmp))
       expect(stillInternal.project.visibility).toBe("internal")
 
-      const visible = yield* run((svc) => svc.fromDirectory(tmp))
-      expect(visible.project.visibility).toBe("user")
-      expect((yield* run((svc) => svc.list())).some((project) => project.id === visible.project.id)).toBe(true)
-      expect(events.some((event) => event.project === visible.project.id)).toBe(true)
+      const visible = yield* run((svc) => svc.openDirectory(tmp))
+      expect(visible.visibility).toBe("user")
+      expect((yield* run((svc) => svc.list())).some((project) => project.id === visible.id)).toBe(true)
+      expect(events.some((event) => event.project === visible.id)).toBe(true)
 
-      const cannotDemote = yield* run((svc) => svc.fromDirectory(tmp, { visibility: "internal", kind: "math" }))
+      const cannotDemote = yield* run((svc) => svc.fromDirectory(tmp, { visibility: "internal" }))
       expect(cannotDemote.project.visibility).toBe("user")
     }),
   )
@@ -865,7 +895,7 @@ describe("Project.list and Project.list with reconciliation", () => {
   it.live("list returns all projects", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const { project } = yield* run((svc) => svc.fromDirectory(tmp))
+      const project = yield* run((svc) => svc.openDirectory(tmp))
 
       const all = Project.list()
       expect(all.length).toBeGreaterThan(0)
@@ -876,7 +906,7 @@ describe("Project.list and Project.list with reconciliation", () => {
   it.live("list hides projects whose worktree was deleted from disk", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const live = yield* run((svc) => svc.fromDirectory(tmp))
+      const live = yield* run((svc) => svc.openDirectory(tmp))
       const gone = tmp + "-deleted-worktree"
       const now = Date.now()
       Database.use((db) =>
@@ -893,7 +923,7 @@ describe("Project.list and Project.list with reconciliation", () => {
       )
 
       const listed = yield* run((svc) => svc.list())
-      expect(listed.find((p) => p.id === live.project.id)).toBeDefined()
+      expect(listed.find((p) => p.id === live.id)).toBeDefined()
       expect(listed.find((p) => p.worktree === gone)).toBeUndefined()
     }),
   )
@@ -901,7 +931,7 @@ describe("Project.list and Project.list with reconciliation", () => {
   it.live("list keeps network-mount projects whose worktree is currently missing", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const live = yield* run((svc) => svc.fromDirectory(tmp))
+      const live = yield* run((svc) => svc.openDirectory(tmp))
       // A missing Dropbox/Nutstore-style path is treated as a temporarily offline
       // mount, not a deleted project.
       const offline = `/Users/someone/Dropbox/Papers/offline-mount-${Date.now()}`
@@ -921,7 +951,7 @@ describe("Project.list and Project.list with reconciliation", () => {
 
       const listed = yield* run((svc) => svc.list())
       expect(listed.find((p) => p.worktree === offline)).toBeDefined()
-      expect(listed.find((p) => p.id === live.project.id)).toBeDefined()
+      expect(listed.find((p) => p.id === live.id)).toBeDefined()
     }),
   )
 
@@ -980,7 +1010,7 @@ describe("Project.addSandbox and Project.removeSandbox", () => {
   it.live("addSandbox emits GlobalBus event", () =>
     Effect.gen(function* () {
       const tmp = yield* tmpdirScoped({ git: true })
-      const { project } = yield* run((svc) => svc.fromDirectory(tmp))
+      const project = yield* run((svc) => svc.openDirectory(tmp))
       const sandboxDir = path.join(tmp, "sandbox-event")
 
       const events: any[] = []

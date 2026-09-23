@@ -82,8 +82,12 @@ export interface Interface {
   readonly provide: <A, E, R>(
     input: {
       directory: string
+      runtimeDirectory?: string
       purpose: AdmissionPurpose
       registration?: InstanceStore.LoadInput["registration"]
+      project?: InstanceStore.LoadInput["project"]
+      worktree?: string
+      location?: InstanceStore.LoadInput["location"]
     },
     effect: Effect.Effect<A, E, R>,
   ) => Effect.Effect<A, E | AdmissionError, R>
@@ -148,14 +152,27 @@ export const lease = <A, E, R>(
  */
 export const load = (input: {
   directory: string
+  runtimeDirectory?: string
   purpose: AdmissionPurpose
   registration?: InstanceStore.LoadInput["registration"]
+  project?: InstanceStore.LoadInput["project"]
+  worktree?: string
+  location?: InstanceStore.LoadInput["location"]
 }): Effect.Effect<InstanceContext, AdmissionError, InstanceStore.Service> =>
   Effect.serviceOption(Service).pipe(
     Effect.flatMap((service) =>
       service._tag === "None"
         ? InstanceStore.Service.pipe(
-            Effect.flatMap((store) => store.load({ directory: input.directory, registration: input.registration })),
+            Effect.flatMap((store) =>
+              store.load({
+                directory: input.directory,
+                runtimeDirectory: input.runtimeDirectory,
+                registration: input.registration,
+                project: input.project,
+                worktree: input.worktree,
+                location: input.location,
+              }),
+            ),
           )
         : service.value.provide(
             input,
@@ -178,6 +195,7 @@ interface EntryState {
 interface Entry {
   readonly directory: string
   readonly ref: SynchronizedRef.SynchronizedRef<EntryState>
+  readonly executionDirectories: Set<string>
 }
 
 const stopped: RuntimeState = { tag: "stopped" }
@@ -204,6 +222,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
         const row = ProjectLocation.getByDirectory(directory)
         const created: Entry = {
           directory,
+          executionDirectories: new Set([directory]),
           ref: SynchronizedRef.makeUnsafe<EntryState>({
             lifecycle: row?.lifecycle.state ?? "available",
             generation: row?.lifecycle.generation ?? 0,
@@ -226,6 +245,18 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
         yield* log(`[location-lifecycle] idle-cancelled location=${directory} reason=new-lease`)
       })
 
+    const disposeExecutionDirectories = (entry: Entry, reason: string) =>
+      Effect.gen(function* () {
+        const directories = [...entry.executionDirectories]
+        entry.executionDirectories.clear()
+        for (const directory of directories) {
+          yield* Effect.promise(() => runDisposers(directory)).pipe(Effect.ignore)
+          yield* log(
+            `[location-lifecycle] execution-disposed location=${entry.directory} execution=${directory} reason=${reason}`,
+          )
+        }
+      })
+
     const scheduleIdleDisposal = (entry: Entry, generation: number) =>
       Effect.gen(function* () {
         yield* cancelIdleTimer(entry.directory)
@@ -240,7 +271,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
             undefined,
             { ...s, runtime: { tag: "stopping" } },
           ])
-          yield* Effect.promise(() => runDisposers(entry.directory)).pipe(Effect.ignore)
+          yield* disposeExecutionDirectories(entry, "idle")
           yield* SynchronizedRef.modify(entry.ref, (s): readonly [void, EntryState] => [
             undefined,
             { ...s, runtime: stopped },
@@ -260,8 +291,12 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
     const provide = <A, E, R>(
       input: {
         directory: string
+        runtimeDirectory?: string
         purpose: AdmissionPurpose
         registration?: InstanceStore.LoadInput["registration"]
+        project?: InstanceStore.LoadInput["project"]
+        worktree?: string
+        location?: InstanceStore.LoadInput["location"]
       },
       effect: Effect.Effect<A, E, R>,
     ): Effect.Effect<A, E | AdmissionError, R> => {
@@ -269,6 +304,8 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
       return Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           const entry = yield* entryFor(directory)
+          const runtimeDirectory = AppFileSystem.resolve(input.runtimeDirectory ?? directory)
+          entry.executionDirectories.add(runtimeDirectory)
 
           // Sync lifecycle state with DB: the DB might have been modified
           // externally (e.g. a crashed delete, markDeleting, or markAvailable
@@ -358,7 +395,14 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
             if (!(yield* fs.existsSafe(directory))) {
               return yield* new LocationUnavailable({ directory })
             }
-            const ctx = yield* store.load({ directory, registration: input.registration })
+            const ctx = yield* store.load({
+              directory,
+              runtimeDirectory: input.runtimeDirectory,
+              registration: input.registration,
+              project: input.project,
+              worktree: input.worktree,
+              location: input.location,
+            })
 
             type Mark = "started" | "already" | { readonly tag: "stale"; readonly actual: number }
             const started = yield* SynchronizedRef.modify(entry.ref, (state): readonly [Mark, EntryState] => {
@@ -495,7 +539,7 @@ export const layer: Layer.Layer<Service, never, InstanceStore.Service | AppFileS
               undefined,
               { ...state, runtime: { tag: "stopping" } },
             ])
-            yield* Effect.promise(() => runDisposers(directory)).pipe(Effect.ignore)
+            yield* disposeExecutionDirectories(entry, `delete:${operationID}`)
             yield* SynchronizedRef.modify(entry.ref, (state): readonly [void, EntryState] => [
               undefined,
               { ...state, runtime: stopped },

@@ -39,6 +39,17 @@ export const ProjectApi = HttpApi.make("project")
             description: "Retrieve the currently active project that OpenCode is working with.",
           }),
         ),
+        HttpApiEndpoint.post("open", `${root}/open`, {
+          query: WorkspaceRoutingQuery,
+          success: described(Project.Info, "Project information after an explicit user open"),
+          error: [HttpApiError.BadRequest],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "project.open",
+            summary: "Explicitly open project",
+            description: "Register the routed directory as a user-opened project.",
+          }),
+        ),
         HttpApiEndpoint.post("initGit", `${root}/git/init`, {
           query: WorkspaceRoutingQuery,
           success: described(Project.Info, "Project information after git initialization"),

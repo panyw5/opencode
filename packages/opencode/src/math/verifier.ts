@@ -185,6 +185,9 @@ export function parseVerifierText(text: string): VerifyResult {
 
 type ProcessVerifierOptions = {
   workspace: string
+  ownerDirectory?: string
+  ownerProjectID?: string
+  workerSessionID?: string
   model?: string
   timeoutMs?: number
   run?: (inputFile: string) => Promise<string>
@@ -206,6 +209,9 @@ export function extractVerifierProcessOutput(stdout: string): string {
 
 async function runVerifyProcess(
   workspace: string,
+  ownerDirectory: string,
+  ownerProjectID: string,
+  workerSessionID: string,
   inputFile: string,
   timeoutMs: number,
   model?: string,
@@ -217,6 +223,12 @@ async function runVerifyProcess(
     inputFile,
     "--dir",
     workspace,
+    "--owner-dir",
+    ownerDirectory,
+    "--owner-project",
+    ownerProjectID,
+    "--parent",
+    workerSessionID,
     ...(model ? ["--model", model] : []),
   ])
   return new Promise((resolve, reject) => {
@@ -265,6 +277,9 @@ export function sessionVerifier(options: ProcessVerifierOptions): Verifier {
       log.info("math verifier confined to problem workspace", {
         problemID: input.problem_id,
         workspace: options.workspace,
+        ownerProjectID: options.ownerProjectID,
+        workerSessionID: options.workerSessionID,
+        operation: "verify",
       })
       const root = await mkdtemp(path.join(tmpdir(), "opencode-math-verify-"))
       const inputFile = path.join(root, "input.json")
@@ -273,7 +288,17 @@ export function sessionVerifier(options: ProcessVerifierOptions): Verifier {
         await writeFile(inputFile, JSON.stringify(input), "utf8")
         const raw = options.run
           ? await options.run(inputFile)
-          : await runVerifyProcess(options.workspace, inputFile, options.timeoutMs ?? 3_600_000, options.model)
+          : options.ownerDirectory && options.ownerProjectID && options.workerSessionID
+            ? await runVerifyProcess(
+                options.workspace,
+                options.ownerDirectory,
+                options.ownerProjectID,
+                options.workerSessionID,
+                inputFile,
+                options.timeoutMs ?? 3_600_000,
+                options.model,
+              )
+            : await Promise.reject(new VerifyUnavailableError("math verifier owner context is not configured"))
         return parseVerifierText(raw)
       } catch (error) {
         if (error instanceof VerifyUnavailableError) throw error

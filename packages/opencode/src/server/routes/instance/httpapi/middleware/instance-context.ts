@@ -2,12 +2,14 @@ import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { ProjectLocation } from "@/project/location"
 import { LocationLifecycle } from "@/project/location-lifecycle"
 import { Project } from "@/project/project"
+import type { InstanceContext } from "@/project/instance-context"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Effect, Layer } from "effect"
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 import * as Log from "@opencode-ai/core/util/log"
-import { WorkspaceRouteContext } from "./workspace-routing"
+import { WorkspaceRouteContext, type RouteSession } from "./workspace-routing"
+import { readMathProblemIdentity } from "@/math/identity"
 
 const log = Log.create({ service: "httpapi.instance-context" })
 
@@ -47,6 +49,50 @@ function provideInstanceContext<E>(
   return Effect.gen(function* () {
     const route = yield* WorkspaceRouteContext
     const directory = decode(route.directory)
+    if (route.session) {
+      const owned = yield* sessionOwnerContext(route.session, project)
+      if (owned) {
+        log.info("session owner context selected", {
+          sessionID: route.session.id,
+          parentSessionID: route.session.parentID,
+          agent: route.session.agent,
+          ownerProjectID: owned.project.id,
+          ownerLocationID: owned.location.id,
+          executionDirectory: directory,
+        })
+        return yield* lifecycle.provide(
+          {
+            directory: owned.location.directory,
+            runtimeDirectory: directory,
+            purpose: "http-request",
+            project: owned.project,
+            worktree: owned.project.worktree,
+            location: owned.location,
+          },
+          effect.pipe(Effect.provideService(WorkspaceRef, route.workspaceID)),
+        )
+      }
+    }
+    const problemOwner = yield* problemOwnerContext(directory, project)
+    if (problemOwner) {
+      log.info("MathProblem execution context selected", {
+        ownerProjectID: problemOwner.project.id,
+        problemID: problemOwner.problemID,
+        locationID: problemOwner.location.id,
+        executionDirectory: directory,
+      })
+      return yield* lifecycle.provide(
+        {
+          directory: problemOwner.location.directory,
+          runtimeDirectory: directory,
+          purpose: "http-request",
+          project: problemOwner.project,
+          worktree: problemOwner.project.worktree,
+          location: problemOwner.location,
+        },
+        effect.pipe(Effect.provideService(WorkspaceRef, route.workspaceID)),
+      )
+    }
     const registration = yield* requestRegistration(directory, project)
     return yield* lifecycle.provide(
       { directory, purpose: "http-request", registration },
@@ -62,6 +108,60 @@ function provideInstanceContext<E>(
     // which catchTags cannot express here.
     Effect.catchIf(isAdmissionError, (error) => Effect.die(missingDirectoryResponse(error.directory))),
   )
+}
+
+function sessionOwnerContext(session: RouteSession, project: Project.Interface) {
+  return Effect.gen(function* () {
+    log.info("session owner lookup started", {
+      sessionID: session.id,
+      parentSessionID: session.parentID,
+      sessionProjectID: session.projectID,
+      sessionLocationID: session.locationID,
+      executionDirectory: session.directory,
+    })
+    const owner = yield* project.get(session.projectID)
+    if (!owner) {
+      log.error("session owner project missing", { sessionID: session.id, ownerProjectID: session.projectID })
+      return undefined
+    }
+    const byID = session.locationID ? ProjectLocation.getByID(session.locationID) : undefined
+    const location = byID?.projectID === owner.id ? byID : ProjectLocation.getByDirectory(owner.worktree)
+    if (!location || location.projectID !== owner.id) {
+      log.warn("session owner location unavailable", {
+        sessionID: session.id,
+        ownerProjectID: owner.id,
+        locationID: session.locationID,
+        ownerWorktree: owner.worktree,
+      })
+      return undefined
+    }
+    log.info("session owner lookup completed", {
+      sessionID: session.id,
+      ownerProjectID: owner.id,
+      ownerLocationID: location.id,
+      ownerDirectory: location.directory,
+    })
+    return { project: owner, location } satisfies Pick<InstanceContext, "project" | "location">
+  })
+}
+
+function problemOwnerContext(directory: string, project: Project.Interface) {
+  return Effect.gen(function* () {
+    const identity = yield* Effect.sync(() => readMathProblemIdentity(AppFileSystem.resolve(directory)))
+    if (!identity) return undefined
+    const owner = yield* project.get(identity.ownerProjectID as Project.Info["id"])
+    const location = ProjectLocation.getByDirectory(AppFileSystem.resolve(identity.ownerDirectory))
+    if (!owner || !location || location.projectID !== owner.id) {
+      log.error("MathProblem owner context could not be resolved", {
+        ownerProjectID: identity.ownerProjectID,
+        problemID: identity.problemID,
+        ownerDirectory: identity.ownerDirectory,
+        directory,
+      })
+      return yield* Effect.die(new Error(`MathProblem owner context is unavailable for ${identity.problemID}`))
+    }
+    return { project: owner, location, problemID: identity.problemID }
+  })
 }
 
 const admissionTags = new Set<string>([
@@ -111,6 +211,7 @@ function requestRegistration(directory: string, project: Project.Interface) {
 }
 
 export function canUseLightweightInstanceContext(input: { readonly group: string; readonly endpoint: string }) {
+  if (input.group === "project") return ["list", "current", "open"].includes(input.endpoint)
   if (input.group === "session") {
     return ["list", "get", "children", "todo", "diff", "messages", "message"].includes(input.endpoint)
   }
@@ -133,8 +234,14 @@ function provideLightweightInstanceContext<E>(
     if (!(yield* fs.existsSafe(resolvedDirectory))) {
       return yield* Effect.die(missingDirectoryResponse(directory))
     }
-    const registration = yield* requestRegistration(directory, project)
-    const result = yield* project.fromDirectory(directory, registration)
+    const owned = route.session ? yield* sessionOwnerContext(route.session, project) : undefined
+    const problemOwner = owned ? undefined : yield* problemOwnerContext(directory, project)
+    const registration = owned || problemOwner ? undefined : yield* requestRegistration(directory, project)
+    const result = owned
+      ? { project: owned.project, location: owned.location, sandbox: owned.project.worktree }
+      : problemOwner
+        ? { project: problemOwner.project, location: problemOwner.location, sandbox: problemOwner.project.worktree }
+        : yield* project.fromDirectory(directory, registration)
     log.info("lightweight instance context resolved", {
       directory,
       projectID: result.project.id,
@@ -146,6 +253,7 @@ function provideLightweightInstanceContext<E>(
       directory,
       worktree: result.sandbox,
       project: result.project,
+      location: result.location,
     }
 
     // Keep lightweight read routes independent from full instance bootstrap.

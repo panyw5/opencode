@@ -961,17 +961,24 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         }),
         open(directory: string) {
           const root = rootFor(directory)
+          const registerBackendProject = () => {
+            void globalSdk.client.project
+              .open({ directory: root })
+              .catch((error) => console.error(`[project-open] backend registration failed directory=${root}`, error))
+          }
           const existing = server.projects.list().find((x) => sameWorkspacePath(x.worktree, root))
           if (existing) {
             console.debug(
               `[project-open] layout skip-existing directory=${directory} root=${root} worktree=${existing.worktree}`,
             )
+            registerBackendProject()
             return
           }
           console.debug(
             `[project-open] layout open directory=${directory} root=${root} domain=${server.domain} list=${server.projects.list().length}`,
           )
           server.projects.open(root)
+          registerBackendProject()
         },
         close(directory: string) {
           console.debug(`[project-close] layout directory=${directory}`)

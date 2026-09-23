@@ -35,6 +35,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { InstanceRef } from "@/effect/instance-ref"
 import * as Log from "@opencode-ai/core/util/log"
 import { parse as parseJsonc } from "jsonc-parser"
+import { ensureMathProblemIdentity, readMathProblemIdentity } from "./identity"
 
 const log = Log.create({ service: "math.worker" })
 export const MAX_MATH_WORKER_NO_PROGRESS_ROUNDS = 8
@@ -237,6 +238,8 @@ export function workerMcpConfig(input: {
   projectDir: string
   workspace: string
   sessionID: string
+  ownerDirectory?: string
+  ownerProjectID?: string
   baseContent?: string
   verifierModel?: string
 }) {
@@ -289,6 +292,8 @@ export function workerMcpConfig(input: {
         environment: {
           OPENCODE_MATH_WORKSPACE: input.workspace,
           OPENCODE_MATH_PROJECT_DIR: input.projectDir,
+          OPENCODE_MATH_OWNER_DIRECTORY: input.ownerDirectory ?? input.workspace,
+          OPENCODE_MATH_OWNER_PROJECT_ID: input.ownerProjectID ?? "unknown",
           OPENCODE_MATH_ROLE: "worker",
           OPENCODE_MATH_AUTHOR: input.sessionID,
           OPENCODE_MATH_PROBLEM_ID: path.basename(input.projectDir) || "default",
@@ -307,6 +312,19 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
   const parentContext = yield* InstanceState.context
   const parent = yield* sessions.get(input.parentSessionID).pipe(Effect.orDie)
   const projectDir = resolveProjectDir(parent.directory, input.project, input.parentSessionID)
+  const identity = ensureMathProblemIdentity({
+    directory: projectDir,
+    ownerProjectID: parent.projectID,
+    ownerDirectory: parent.directory,
+    orchestratorSessionID: input.parentSessionID,
+  })
+  log.info("MathProblem ownership established", {
+    ownerProjectID: identity.ownerProjectID,
+    orchestratorSessionID: identity.orchestratorSessionID,
+    problemID: identity.problemID,
+    directory: identity.directory,
+    operation: "start",
+  })
   if (input.problem) writeProblemStatement(projectDir, input.problem)
   if (input.references?.length) stageReferences(projectDir, input.references)
   ensureProblemStatementReady(projectDir)
@@ -345,6 +363,10 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     projectDir,
     "--dir",
     projectDir,
+    "--owner-dir",
+    parent.directory,
+    "--owner-project",
+    parent.projectID,
     "--generation",
     String(generation),
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
@@ -363,12 +385,16 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
         projectDir,
         workspace: projectDir,
         sessionID: session.id,
+        ownerDirectory: parent.directory,
+        ownerProjectID: parent.projectID,
         baseContent: process.env.OPENCODE_CONFIG_CONTENT,
         verifierModel,
       }),
       OPENCODE_MATH_WORKSPACE: projectDir,
       OPENCODE_MATH_PROJECT_DIR: projectDir,
       OPENCODE_MATH_ROLE: "worker",
+      OPENCODE_MATH_OWNER_DIRECTORY: parent.directory,
+      OPENCODE_MATH_OWNER_PROJECT_ID: parent.projectID,
       ...(parentServerUrl ? { OPENCODE_MATH_PARENT_SERVER_URL: parentServerUrl } : {}),
     },
   })
@@ -401,6 +427,8 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
 const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function* (input: {
   sessionID: SessionID
   projectDir: string
+  ownerDirectory?: string
+  ownerProjectID?: string
   intervalMs?: number
   model?: string
   variant?: string
@@ -411,8 +439,36 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   const sessions = yield* Session.Service
   const session = yield* sessions.get(input.sessionID)
   if (session.agent !== "math-worker") throw new Error(`session is not a math-worker: ${input.sessionID}`)
-
+  if (!session.parentID) throw new Error(`math worker has no owning orchestrator: ${input.sessionID}`)
+  const parent = yield* sessions.get(SessionID.make(session.parentID))
   const existing = readSwarm(input.projectDir).workers[input.sessionID]
+  const existingIdentity = readMathProblemIdentity(input.projectDir)
+  if (!existingIdentity) throw new Error(`MathProblem ownership is missing: ${input.projectDir}`)
+  const ownerDirectory = input.ownerDirectory ?? existingIdentity?.ownerDirectory ?? parent.directory
+  const ownerProjectID = input.ownerProjectID ?? existingIdentity?.ownerProjectID ?? parent.projectID
+  if (session.projectID !== ownerProjectID || parent.projectID !== ownerProjectID) {
+    throw new Error(`math worker owner project mismatch: ${input.sessionID}`)
+  }
+  if (path.resolve(parent.directory) !== path.resolve(ownerDirectory)) {
+    throw new Error(`math worker orchestrator directory mismatch: ${input.sessionID}`)
+  }
+  const identity = existingIdentity
+  if (
+    identity.ownerProjectID !== ownerProjectID ||
+    path.resolve(identity.ownerDirectory) !== path.resolve(ownerDirectory) ||
+    identity.orchestratorSessionID !== parent.id
+  ) {
+    throw new Error(`MathProblem owner identity mismatch: ${input.projectDir}`)
+  }
+  log.info("MathProblem ownership validated", {
+    ownerProjectID: identity.ownerProjectID,
+    orchestratorSessionID: identity.orchestratorSessionID,
+    problemID: identity.problemID,
+    directory: identity.directory,
+    workerSessionID: input.sessionID,
+    operation: "ensure",
+  })
+
   if (input.verifierModel) {
     log.info("math verifier model updated", { projectDir: input.projectDir, model: input.verifierModel })
     setVerifierModel(input.projectDir, input.verifierModel)
@@ -469,6 +525,10 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     input.projectDir,
     "--dir",
     input.projectDir,
+    "--owner-dir",
+    ownerDirectory,
+    "--owner-project",
+    ownerProjectID,
     "--generation",
     String(generation),
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
@@ -490,12 +550,16 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
         projectDir: input.projectDir,
         workspace: input.projectDir,
         sessionID: input.sessionID,
+        ownerDirectory,
+        ownerProjectID,
         baseContent: process.env.OPENCODE_CONFIG_CONTENT,
         verifierModel,
       }),
       OPENCODE_MATH_WORKSPACE: input.projectDir,
       OPENCODE_MATH_PROJECT_DIR: input.projectDir,
       OPENCODE_MATH_ROLE: "worker",
+      OPENCODE_MATH_OWNER_DIRECTORY: ownerDirectory,
+      OPENCODE_MATH_OWNER_PROJECT_ID: ownerProjectID,
       ...(parentServerUrl ? { OPENCODE_MATH_PARENT_SERVER_URL: parentServerUrl } : {}),
     },
   })
@@ -540,6 +604,8 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
 export const ensureMathWorker = Effect.fn("MathWorker.ensure")(function* (input: {
   sessionID: SessionID
   projectDir: string
+  ownerDirectory?: string
+  ownerProjectID?: string
   intervalMs?: number
   model?: string
   variant?: string

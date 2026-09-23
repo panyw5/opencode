@@ -38,6 +38,8 @@ import { MessageID, SessionID } from "@/session/schema"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { InstanceState } from "@/effect/instance-state"
 import { InstanceRef } from "@/effect/instance-ref"
+import { ProjectLocation } from "@/project/location"
+import { readMathProblemIdentity } from "@/math/identity"
 
 const it = testEffect(Layer.mergeAll(Agent.defaultLayer, Session.defaultLayer))
 
@@ -85,6 +87,8 @@ describe("math.worker", () => {
       expect(result.sessionID.startsWith("ses")).toBe(true)
       expect(spawned[0]?.join(" ")).toContain("math worker")
       expect(spawned[0]?.join(" ")).toContain(result.sessionID)
+      expect(spawned[0]?.join(" ")).toContain(`--owner-dir ${parent.directory}`)
+      expect(spawned[0]?.join(" ")).toContain(`--owner-project ${parent.projectID}`)
       expect(spawned[0]?.join(" ")).toContain("--model test/prover --variant xhigh")
       expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"math-truth"')
       expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"worker"')
@@ -95,6 +99,13 @@ describe("math.worker", () => {
       const workerSession = yield* sessions.get(SessionID.make(result.sessionID))
       expect(workerSession.directory).toBe(projectDir)
       expect(workerSession.projectID).toBe(parent.projectID)
+      expect(ProjectLocation.getByID(workerSession.locationID!)?.projectID).toBe(parent.projectID)
+      expect(ProjectLocation.getByDirectory(projectDir)).toBeUndefined()
+      expect(readMathProblemIdentity(projectDir)).toMatchObject({
+        ownerProjectID: parent.projectID,
+        ownerDirectory: parent.directory,
+        orchestratorSessionID: parent.id,
+      })
       expect(workerSession.path).toBe(path.relative(test.directory, projectDir).replaceAll("\\", "/"))
       expect(spawnedCwd).toEqual([projectDir])
       expect(spawnedEnv[0]?.OPENCODE_MATH_WORKSPACE).toBe(projectDir)
@@ -195,11 +206,15 @@ describe("math.worker", () => {
           projectDir: "/tmp/math",
           workspace: "/tmp/work",
           sessionID: "ses_test",
+          ownerDirectory: "/tmp/owner",
+          ownerProjectID: "project-owner",
           verifierModel: "test/verifier",
         }),
       )
       expect(config.mcp["math-truth"].command.join(" ")).toContain("math mcp --role worker")
       expect(config.mcp["math-truth"].environment.OPENCODE_MATH_WORKSPACE).toBe("/tmp/work")
+      expect(config.mcp["math-truth"].environment.OPENCODE_MATH_OWNER_DIRECTORY).toBe("/tmp/owner")
+      expect(config.mcp["math-truth"].environment.OPENCODE_MATH_OWNER_PROJECT_ID).toBe("project-owner")
       expect(config.mcp["math-truth"].environment.OPENCODE_MATH_VERIFY_MODEL).toBe("test/verifier")
       expect(config.agent["math-worker"].permission.external_directory).toBe("deny")
     }),

@@ -61,24 +61,28 @@ describe("project.initGit endpoint", () => {
       const fs = yield* AppFileSystem.Service
       const events = yield* collectGlobalEvents()
 
+      const opened = yield* request(tmp.directory, "/project/open", { method: "POST" })
+      const openedProject = yield* json<{ id: string }>(opened)
+      expect(opened.status).toBe(200)
+
       const init = yield* request(tmp.directory, "/project/git/init", {
         method: "POST",
       })
       const body = yield* json(init)
       expect(init.status).toBe(200)
       expect(body).toMatchObject({
-        id: "global",
+        id: openedProject.id,
         vcs: "git",
         worktree: tmp.directory,
       })
       // Reload behavior: bus emits exactly one server.instance.disposed for the directory.
       expect(disposedEvents(events.seen, tmp.directory)).toBe(1)
-      expect(yield* fs.exists(path.join(tmp.directory, ".git", "opencode"))).toBe(false)
+      expect(yield* fs.readFileString(path.join(tmp.directory, ".git", "opencode"))).toBe(openedProject.id)
 
       const current = yield* request(tmp.directory, "/project/current")
       expect(current.status).toBe(200)
       expect(yield* json(current)).toMatchObject({
-        id: "global",
+        id: openedProject.id,
         vcs: "git",
         worktree: tmp.directory,
       })

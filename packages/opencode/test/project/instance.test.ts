@@ -7,6 +7,7 @@ import { registerDisposer } from "../../src/effect/instance-registry"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { localPathContext } from "../../src/project/instance-context"
 import { InstanceStore } from "../../src/project/instance-store"
+import { Project } from "../../src/project/project"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 
@@ -17,7 +18,10 @@ const noopBootstrap = Layer.succeed(
 )
 
 const it = testEffect(
-  Layer.mergeAll(InstanceStore.defaultLayer, CrossSpawnSpawner.defaultLayer).pipe(Layer.provide(noopBootstrap)),
+  Layer.mergeAll(
+    InstanceStore.layer.pipe(Layer.provideMerge(Project.defaultLayer)),
+    CrossSpawnSpawner.defaultLayer,
+  ).pipe(Layer.provide(noopBootstrap)),
 )
 
 const setBootstrap = (run: Effect.Effect<void>) =>
@@ -87,7 +91,7 @@ describe("InstanceStore", () => {
     }),
   )
 
-  it.live("promotes a cached internal instance when the user explicitly opens it", () =>
+  it.live("keeps generic loads internal and promotes only through explicit project open", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped()
       const store = yield* InstanceStore.Service
@@ -100,19 +104,17 @@ describe("InstanceStore", () => {
       )
       const internal = yield* store.load({
         directory: dir,
-        registration: { visibility: "internal", kind: "math" },
+        registration: { visibility: "internal" },
       })
-      const visible = yield* store.load({ directory: dir })
-      const visibleAgain = yield* store.load({ directory: dir })
-      const internalAgain = yield* store.load({
-        directory: dir,
-        registration: { visibility: "internal", kind: "math" },
-      })
-
+      const generic = yield* store.load({ directory: dir })
       expect(internal.project.visibility).toBe("internal")
-      expect(visible.project.visibility).toBe("user")
-      expect(visibleAgain.project.visibility).toBe("user")
-      expect(internalAgain.project.visibility).toBe("user")
+      expect(generic.project.visibility).toBe("internal")
+      const svc = yield* Project.Service
+      const visible = yield* svc.openDirectory(dir)
+      const refreshed = yield* store.load({ directory: dir })
+
+      expect(visible.visibility).toBe("user")
+      expect(refreshed.project.visibility).toBe("user")
       expect(initialized).toBe(1)
     }),
   )
