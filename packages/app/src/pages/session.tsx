@@ -113,6 +113,7 @@ import {
 import { collectSessionChildAgentEntries, type SessionChildAgentEntry } from "@/pages/session/session-child-agents"
 import { collectSessionActiveSkills } from "@/pages/session/session-active-skills"
 import {
+  mathWorkerIsRunning,
   ensureMathWorker as ensureMathWorkerApi,
   getMathFactGraph,
   getMathWorkerTask,
@@ -594,6 +595,19 @@ export default function Page() {
         return
       }
       setMathSwarm("workers", workers)
+      const workerByID = new Map(workers.map((worker) => [worker.sessionID, worker] as const))
+      for (const child of childAgentSessions().filter(
+        (session) => session.agent === "math-worker" && session.parentID === parentSessionID,
+      )) {
+        const worker = workerByID.get(child.id)
+        const running = mathWorkerIsRunning(worker)
+        const current = globalSync.session.status.get(sdk.directory, child.id)?.type ?? "idle"
+        const next = running ? "busy" : "idle"
+        console.debug(
+          `[math-swarm] parent reconcile parent=${parentSessionID} worker=${child.id} generation=${worker?.generation ?? "unknown"} alive=${String(worker?.alive ?? false)} state=${worker?.state ?? "missing"} previous=${current} next=${next}`,
+        )
+        globalSync.session.status.set(sdk.directory, child.id, { type: next })
+      }
       console.debug(
         `[math-swarm] refresh finish parent=${parentSessionID} request=${request} workers=${workers.length}`,
       )
@@ -627,7 +641,7 @@ export default function Page() {
             })
             if (cancelled) return
             const worker = workers.find((entry) => entry.sessionID === target.workerSessionID)
-            const running = worker?.alive === true && worker.state === "running"
+            const running = mathWorkerIsRunning(worker)
             globalSync.session.status.set(sdk.directory, target.workerSessionID, {
               type: running ? "busy" : "idle",
             })

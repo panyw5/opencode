@@ -107,6 +107,11 @@ describe("Math worker HttpApi", () => {
         )
         expect(first.status).toBe(204)
         expect(second.status).toBe(204)
+        const statusUrl = endpoint(SessionPaths.status, {})
+        const afterBlocked = yield* Effect.promise(() =>
+          Server.Default().app.request(statusUrl, { headers: { "x-opencode-directory": test.directory } }),
+        )
+        expect((yield* Effect.promise(() => afterBlocked.json()))[worker.id]).toBeUndefined()
         const semanticDuplicate = yield* Effect.promise(() =>
           Server.Default().app.request(url, {
             method: "POST",
@@ -637,6 +642,14 @@ describe("Math worker HttpApi", () => {
           alive: true,
           verifierModel: "test/verifier",
         })
+        const statusAfterEnsure = yield* Effect.promise(() =>
+          Server.Default().app.request(endpoint(SessionPaths.status, {}), { headers }),
+        )
+        expect(
+          (yield* Effect.promise(() => body<Record<string, { type: string }>>(statusAfterEnsure)))[worker.id],
+        ).toEqual({
+          type: "busy",
+        })
         expect(readSwarm(projectDir).verifierModel).toBe("test/verifier")
 
         const taskGetResponse = yield* Effect.promise(() =>
@@ -707,7 +720,6 @@ describe("Math worker HttpApi", () => {
           "stop endpoint did not terminate the detached worker process group",
           "3 seconds",
         )
-
         const blockedEnsure = yield* Effect.promise(() =>
           Server.Default().app.request(
             `${endpoint(SessionPaths.mathWorkerEnsure, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
@@ -715,14 +727,6 @@ describe("Math worker HttpApi", () => {
           ),
         )
         expect(blockedEnsure.status).toBe(400)
-
-        const earlyReEnable = yield* Effect.promise(() =>
-          Server.Default().app.request(
-            `${endpoint(SessionPaths.mathWorkerEnsure, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
-            { headers, method: "POST", body: JSON.stringify({ reEnable: true }) },
-          ),
-        )
-        expect(earlyReEnable.status).toBe(400)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

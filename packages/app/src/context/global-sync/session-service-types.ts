@@ -15,4 +15,5 @@ export type SessionControllerDeps = {
   revision(directory: string): number
   pin(directory: string): void
   unpin(directory: string): void
+  reconcileMessages?(directory: string, sessionID: string): Promise<unknown>
 }

@@ -3,6 +3,7 @@ import path from "path"
 import * as Tool from "./tool"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
+import { SessionStatus } from "@/session/status"
 import {
   discoverMathWorkers,
   ensureMathWorker,
@@ -78,6 +79,7 @@ export const MathWorkerStartTool = Tool.define(
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const bus = yield* Bus.Service
+    const status = yield* SessionStatus.Service
     return {
       description: DESCRIPTION_START,
       parameters: StartParameters,
@@ -103,6 +105,12 @@ export const MathWorkerStartTool = Tool.define(
             verifierModel: params.verifier_model,
             variant: params.variant,
           }).pipe(Effect.provideService(Session.Service, sessions))
+          yield* status.set(SessionID.make(result.sessionID), { type: "busy" })
+          log.info("math worker session status set busy after start", {
+            parentSessionID: ctx.sessionID,
+            workerSessionID: result.sessionID,
+            pid: result.pid,
+          })
           yield* bus.publish(MathWorkerEvent.Status, {
             sessionID: result.sessionID,
             parentSessionID: ctx.sessionID,
@@ -127,6 +135,7 @@ export const MathWorkerStatusTool = Tool.define(
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const bus = yield* Bus.Service
+    const status = yield* SessionStatus.Service
     return {
       description: DESCRIPTION_STATUS,
       parameters: StatusParameters,
@@ -146,6 +155,9 @@ export const MathWorkerStatusTool = Tool.define(
             parentSessionID: SessionID.make(ctx.sessionID),
           }).pipe(Effect.provideService(Session.Service, sessions))
           for (const row of rows) {
+            yield* status.set(SessionID.make(row.sessionID), {
+              type: row.alive && (row.state === "running" || row.state === "stopping") ? "busy" : "idle",
+            })
             yield* bus.publish(MathWorkerEvent.Status, {
               sessionID: row.sessionID,
               parentSessionID: row.parentSessionID,
@@ -172,6 +184,7 @@ export const MathWorkerEnsureTool = Tool.define(
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const bus = yield* Bus.Service
+    const status = yield* SessionStatus.Service
     return {
       description: DESCRIPTION_ENSURE,
       parameters: EnsureParameters,
@@ -192,6 +205,13 @@ export const MathWorkerEnsureTool = Tool.define(
             verifierModel: params.verifier_model,
             variant: params.variant,
           }).pipe(Effect.provideService(Session.Service, sessions), Effect.orDie)
+          yield* status.set(SessionID.make(result.sessionID), { type: "busy" })
+          log.info("math worker session status set busy after ensure", {
+            parentSessionID: ctx.sessionID,
+            workerSessionID: result.sessionID,
+            pid: result.pid,
+            restarted: result.restarted,
+          })
           yield* bus.publish(MathWorkerEvent.Status, {
             sessionID: result.sessionID,
             parentSessionID: ctx.sessionID,
@@ -216,6 +236,7 @@ export const MathWorkerStopTool = Tool.define(
   Effect.gen(function* () {
     const sessions = yield* Session.Service
     const bus = yield* Bus.Service
+    const status = yield* SessionStatus.Service
     return {
       description: DESCRIPTION_STOP,
       parameters: StopParameters,
@@ -234,6 +255,14 @@ export const MathWorkerStopTool = Tool.define(
             sessionID: params.session_id,
             force: params.force,
           })
+          if (!result.alive) {
+            yield* status.set(SessionID.make(result.sessionID), { type: "idle" })
+            log.info("math worker session status set idle after confirmed stop", {
+              parentSessionID: ctx.sessionID,
+              workerSessionID: result.sessionID,
+              pid: result.pid,
+            })
+          }
           yield* bus.publish(MathWorkerEvent.Status, {
             sessionID: result.sessionID,
             parentSessionID: ctx.sessionID,

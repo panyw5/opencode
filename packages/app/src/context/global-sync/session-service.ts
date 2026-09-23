@@ -11,7 +11,12 @@ export function createSessionService(deps: SessionControllerDeps) {
   const messages = createSessionMessagesService(deps)
   const todo = createSessionTodoService(deps)
   const diff = createSessionDiffService(deps)
-  const status = createSessionStatusService(deps)
+  const status = createSessionStatusService({
+    ...deps,
+    reconcileMessages(directory, sessionID) {
+      return messages.load({ directory, sessionID, limit: 80, mode: "replace", authoritative: true })
+    },
+  })
   const { clear: clearInfo, clearDirectory: clearInfoDirectory, clearDomain, ...infoApi } = info
   const {
     event: messageEvent,
@@ -20,8 +25,20 @@ export function createSessionService(deps: SessionControllerDeps) {
     inspect: _inspectMessages,
     ...messagesApi
   } = messages
-  const { event: todoEvent, clear: clearTodo, clearDirectory: clearTodoDirectory, inspect: _inspectTodo, ...todoApi } = todo
-  const { event: diffEvent, clear: clearDiff, clearDirectory: clearDiffDirectory, inspect: _inspectDiff, ...diffApi } = diff
+  const {
+    event: todoEvent,
+    clear: clearTodo,
+    clearDirectory: clearTodoDirectory,
+    inspect: _inspectTodo,
+    ...todoApi
+  } = todo
+  const {
+    event: diffEvent,
+    clear: clearDiff,
+    clearDirectory: clearDiffDirectory,
+    inspect: _inspectDiff,
+    ...diffApi
+  } = diff
   const { clearDirectory: clearStatusDirectory, inspect: _inspectStatus, ...statusApi } = status
 
   return {

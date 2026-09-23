@@ -22,6 +22,7 @@ import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { sessionHookControlCommand, sessionHookControlInput } from "@/pages/session/session-hook-controls"
 import { takePendingProjectTaskMount } from "@/components/session/pending-project-task-mount"
+import { setSessionStatusPending } from "@/context/global-sync/session-status-refresh"
 
 type PendingPrompt = {
   abort: AbortController
@@ -185,16 +186,24 @@ const submitMeasureSummary = () =>
     .join(" ")
 
 export async function sendFollowupDraft(input: FollowupSendInput) {
+  const pendingToken = input.messageID ?? Identifier.ascending("message")
   const text = draftText(input.draft.prompt)
   const images = draftImages(input.draft.prompt)
   const setBusy = () => {
     if (!input.optimisticBusy) return
+    setSessionStatusPending(input.draft.sessionDirectory, input.draft.sessionID, true, pendingToken)
     input.globalSync.session.status.set(input.draft.sessionDirectory, input.draft.sessionID, { type: "busy" })
   }
 
   const setIdle = () => {
     if (!input.optimisticBusy) return
+    setSessionStatusPending(input.draft.sessionDirectory, input.draft.sessionID, false, pendingToken)
     input.globalSync.session.status.set(input.draft.sessionDirectory, input.draft.sessionID, { type: "idle" })
+  }
+
+  const setAccepted = () => {
+    if (!input.optimisticBusy) return
+    setSessionStatusPending(input.draft.sessionDirectory, input.draft.sessionID, false, pendingToken)
   }
 
   const wait = async () => {
@@ -257,6 +266,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         sessionID: input.draft.sessionID,
         messageID,
       })
+      setAccepted()
       return true
     } catch (err) {
       if (await delivered(input.globalSync, input.draft.sessionDirectory, input.draft.sessionID, messageID)) {
@@ -266,6 +276,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
           sessionID: input.draft.sessionID,
           messageID,
         })
+        setAccepted()
         return true
       }
       setIdle()
@@ -346,6 +357,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       parts: requestParts,
       variant: input.draft.variant,
     })
+    setAccepted()
     console.debug("[prompt-submit]", {
       stage: "request-complete",
       sessionID: input.draft.sessionID,
@@ -357,7 +369,10 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     console.debug(`[perf:submit] breakdown ${submitMeasureSummary()}`)
     return true
   } catch (err) {
-    if (await delivered(input.globalSync, input.draft.sessionDirectory, input.draft.sessionID, messageID)) return true
+    if (await delivered(input.globalSync, input.draft.sessionDirectory, input.draft.sessionID, messageID)) {
+      setAccepted()
+      return true
+    }
     setIdle()
     remove()
     throw err
@@ -1038,12 +1053,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       diagnose("worktree-wait", { directory: sessionDirectory })
 
       if (sessionDirectory === currentDirectory) {
+        setSessionStatusPending(sessionDirectory, session.id, true, messageID)
         globalSync.session.status.set(sessionDirectory, session.id, { type: "busy" })
       }
 
       const controller = new AbortController()
       const cleanup = () => {
         if (sessionDirectory === currentDirectory) {
+          setSessionStatusPending(sessionDirectory, session.id, false, messageID)
           globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
         }
         removeOptimisticMessage()
@@ -1137,6 +1154,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         if (aborted(err)) return
         pending.delete(session.id)
         if (sessionDirectory === currentDirectory) {
+          setSessionStatusPending(sessionDirectory, session.id, false, messageID)
           globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
         }
         showToast({

@@ -1,5 +1,5 @@
 import type { Message, SessionStatus } from "@opencode-ai/sdk/v2/client"
-import { working } from "@/pages/session/session-working"
+import { active } from "@/pages/session/session-working"
 
 /**
  * Session-status full-table refresh is a **reconciliation** tool, not a heartbeat.
@@ -16,12 +16,54 @@ import { working } from "@/pages/session/session-working"
 /** Minimum time hidden before a visibility restore triggers a status snapshot. */
 export const SESSION_STATUS_VISIBILITY_REFRESH_MS = 60_000
 
-export type SessionStatusRefreshReason =
-  | "bootstrap"
-  | "server-connected"
-  | "global-disposed"
-  | "visibility"
-  | "manual"
+const pendingSubmissions = new Map<string, Map<string, Set<string>>>()
+const statusRevisions = new Map<string, Map<string, number>>()
+
+export function bumpSessionStatusRevision(directory: string, sessionID: string) {
+  if (!directory || !sessionID) return
+  let revisions = statusRevisions.get(directory)
+  if (!revisions) statusRevisions.set(directory, (revisions = new Map()))
+  revisions.set(sessionID, (revisions.get(sessionID) ?? 0) + 1)
+}
+
+export function sessionStatusRevisionSnapshot(directory: string) {
+  return Object.fromEntries(statusRevisions.get(directory) ?? [])
+}
+
+export function sessionStatusValueSnapshot(statuses: Record<string, SessionStatus | undefined>) {
+  return Object.fromEntries(Object.entries(statuses).map(([sessionID, status]) => [sessionID, JSON.stringify(status)]))
+}
+
+export function clearSessionStatusTracking(directory: string) {
+  pendingSubmissions.delete(directory)
+  statusRevisions.delete(directory)
+}
+
+export function setSessionStatusPending(directory: string, sessionID: string, pending: boolean, token = "default") {
+  if (!directory || !sessionID) return
+  let sessions = pendingSubmissions.get(directory)
+  if (pending) {
+    if (!sessions) pendingSubmissions.set(directory, (sessions = new Map()))
+    let tokens = sessions.get(sessionID)
+    if (!tokens) sessions.set(sessionID, (tokens = new Set()))
+    tokens.add(token)
+    console.debug(`[global-sync] optimistic submit pending directory=${directory} session=${sessionID} token=${token}`)
+    return
+  }
+  const tokens = sessions?.get(sessionID)
+  tokens?.delete(token)
+  if (tokens?.size === 0) sessions?.delete(sessionID)
+  if (sessions?.size === 0) pendingSubmissions.delete(directory)
+  console.debug(
+    `[global-sync] optimistic submit confirmed or cleared directory=${directory} session=${sessionID} token=${token}`,
+  )
+}
+
+export function pendingSessionStatusIDs(directory: string) {
+  return [...(pendingSubmissions.get(directory)?.keys() ?? [])]
+}
+
+export type SessionStatusRefreshReason = "bootstrap" | "server-connected" | "global-disposed" | "visibility" | "manual"
 
 export function authoritativeSessionStatusMap(
   data: Record<string, SessionStatus> | null | undefined,
@@ -31,31 +73,63 @@ export function authoritativeSessionStatusMap(
 }
 
 /**
- * Merge a full status snapshot from the server without wiping optimistic busy
- * that was set locally while the request is still in flight (server list still idle).
+ * A full status snapshot is authoritative. Pending user messages are not proof
+ * of activity: they may outlive a detached worker process indefinitely.
  */
 export function mergeSessionStatusRefresh(
   local: Record<string, SessionStatus | undefined>,
   remote: Record<string, SessionStatus> | null | undefined,
-  messages: Record<string, readonly Message[] | undefined>,
+  _messages: Record<string, readonly Message[] | undefined>,
+  pendingIDs: readonly string[] = [],
+  requestStatuses: Record<string, string | undefined> = sessionStatusValueSnapshot(local),
+  requestRevisions: Record<string, number> = {},
+  currentRevisions: Record<string, number> = {},
 ): Record<string, SessionStatus> {
   const next = authoritativeSessionStatusMap(remote)
-  for (const [sessionID, status] of Object.entries(local)) {
-    if (!status || status.type !== "busy") continue
-    if (next[sessionID]) continue
-    // Server omitted this session ⇒ idle. Keep local busy only while work still looks pending
-    // (e.g. optimistic user message with no completed assistant yet).
-    if (working(status, messages[sessionID])) next[sessionID] = status
+  const pending = new Set(pendingIDs)
+  const staleBusy = Object.entries(local)
+    .filter(([sessionID, status]) => status?.type === "busy" && next[sessionID] === undefined && pending.has(sessionID))
+    .map(([sessionID, status]) => [sessionID, status] as const)
+  for (const [sessionID, status] of staleBusy) next[sessionID] = status!
+  const requestIDs = new Set([...Object.keys(requestStatuses), ...Object.keys(local)])
+  for (const sessionID of requestIDs) {
+    const changedDuringRequest = (currentRevisions[sessionID] ?? 0) > (requestRevisions[sessionID] ?? 0)
+    if (!changedDuringRequest && requestStatuses[sessionID] === JSON.stringify(local[sessionID])) continue
+    const status = local[sessionID]
+    if (status) next[sessionID] = status
+    else delete next[sessionID]
+    console.debug(
+      `[global-sync] status refresh kept newer local change session=${sessionID} revisionChanged=${String(changedDuringRequest)} current=${status?.type ?? "missing"}`,
+    )
   }
+  const cleared = Object.entries(local)
+    .filter(
+      ([sessionID, status]) => status?.type === "busy" && next[sessionID] === undefined && !pending.has(sessionID),
+    )
+    .map(([sessionID]) => sessionID)
+  if (cleared.length) console.debug(`[global-sync] status snapshot cleared omitted busy sessions=${cleared.join(",")}`)
   return next
 }
 
 export function sessionsToReconcileOnStreamConnect(
   statuses: Record<string, SessionStatus | undefined>,
-  messages: Record<string, readonly Message[] | undefined>,
+  _messages: Record<string, readonly Message[] | undefined>,
 ) {
   return Object.entries(statuses)
-    .filter(([sessionID, status]) => status?.type === "busy" && messages[sessionID] !== undefined)
+    .filter(([, status]) => status?.type === "busy")
+    .map(([sessionID]) => sessionID)
+}
+
+export function sessionsToReconcileMessagesAfterStatusRefresh(
+  previous: Record<string, SessionStatus | undefined>,
+  next: Record<string, SessionStatus | undefined>,
+  messages: Record<string, readonly Message[] | undefined>,
+) {
+  return Object.entries(previous)
+    .filter(
+      ([sessionID, status]) =>
+        status?.type === "busy" && next[sessionID]?.type !== "busy" && active(messages[sessionID]) !== undefined,
+    )
     .map(([sessionID]) => sessionID)
 }
 

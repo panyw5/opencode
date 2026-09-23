@@ -7,6 +7,7 @@ import {
   listMathWorkers,
   stopMathWorker,
   updateMathWorkerTask,
+  mathWorkerIsRunning,
 } from "./math-worker-api"
 
 function fixture(response: unknown) {
@@ -22,6 +23,13 @@ function fixture(response: unknown) {
 }
 
 describe("math-worker-api", () => {
+  test("only live running worker snapshots map to busy", () => {
+    expect(mathWorkerIsRunning({ alive: true, state: "running" })).toBe(true)
+    expect(mathWorkerIsRunning({ alive: true, state: "stopping" })).toBe(true)
+    expect(mathWorkerIsRunning({ alive: false, state: "running" })).toBe(false)
+    expect(mathWorkerIsRunning(undefined)).toBe(false)
+  })
+
   test("lists workers with workspace routing", async () => {
     const input = fixture([{ sessionID: "worker", alive: true, state: "running" }])
     const result = await listMathWorkers({

@@ -14,6 +14,10 @@ import { SessionInput } from "@/session/input"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
+import { InstanceState } from "@/effect/instance-state"
+import { Database, and, eq, inArray } from "@/storage/db"
+import { SessionTable } from "@/session/session.sql"
+import { directorySqlEq } from "@/util/directory-sql"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import {
@@ -22,6 +26,7 @@ import {
   readMathWorkerTask,
   stopMathWorker,
   updateMathWorkerTask,
+  statusMathWorker,
 } from "@/math/worker"
 import { legacyMathRoot, mathProblemsRoot, mathRoot } from "@/math/layout"
 import { MathWorkerEvent } from "@/math/event"
@@ -195,6 +200,82 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const status = Effect.fn("SessionHttpApi.status")(function* () {
+      const directory = yield* InstanceState.directory
+      const parentIDs = Database.use((db) =>
+        db
+          .select({ id: SessionTable.id })
+          .from(SessionTable)
+          .where(and(directorySqlEq(SessionTable.directory, directory), eq(SessionTable.agent, "math-orchestrator")))
+          .all()
+          .map((row) => row.id),
+      )
+      const childRows =
+        parentIDs.length === 0
+          ? []
+          : Database.use((db) =>
+              db
+                .select({ id: SessionTable.id, parentID: SessionTable.parent_id })
+                .from(SessionTable)
+                .where(and(inArray(SessionTable.parent_id, parentIDs), eq(SessionTable.agent, "math-worker")))
+                .all(),
+            )
+      const childrenByParent = new Map<string, string[]>()
+      for (const child of childRows) {
+        if (!child.parentID) continue
+        const children = childrenByParent.get(child.parentID) ?? []
+        children.push(child.id)
+        childrenByParent.set(child.parentID, children)
+      }
+      let workerCount = 0
+      const parents = [...childrenByParent.keys()]
+      log.info("math worker status recovery start", { directory, parents: parents.length })
+      for (const parentID of parents) {
+        const parent = yield* session.get(SessionID.make(parentID)).pipe(Effect.orElseSucceed(() => undefined))
+        if (!parent) continue
+        const rows = new Map<string, { row: ReturnType<typeof statusMathWorker>[number]; projectDir: string }>()
+        for (const projectDir of mathProjectDirs(parent)) {
+          for (const row of statusMathWorker({ projectDir, parentSessionID: parent.id })) {
+            if (!rows.has(row.sessionID)) rows.set(row.sessionID, { row, projectDir })
+          }
+        }
+        for (const workerID of childrenByParent.get(parentID) ?? []) {
+          workerCount++
+          const captured = rows.get(workerID)
+          const latest = captured
+            ? statusMathWorker({ projectDir: captured.projectDir, sessionID: workerID })[0]
+            : undefined
+          if (
+            captured &&
+            (!latest || latest.generation !== captured.row.generation || latest.pid !== captured.row.pid)
+          ) {
+            log.info("math worker status recovery skipped stale snapshot", {
+              parentSessionID: parentID,
+              workerSessionID: workerID,
+              capturedGeneration: captured.row.generation,
+              latestGeneration: latest?.generation,
+              capturedPid: captured.row.pid,
+              latestPid: latest?.pid,
+            })
+            continue
+          }
+          const row = latest
+          const running = row?.alive === true && (row.state === "running" || row.state === "stopping")
+          const next = { type: running ? ("busy" as const) : ("idle" as const) }
+          const current = yield* statusSvc.get(SessionID.make(workerID))
+          if (current.type === next.type) continue
+          log.info("math worker status recovered from detached process snapshot", {
+            parentSessionID: parent.id,
+            workerSessionID: workerID,
+            generation: row?.generation,
+            state: row?.state ?? "missing",
+            alive: row?.alive ?? false,
+            previous: current.type,
+            next: next.type,
+          })
+          yield* statusSvc.set(SessionID.make(workerID), next)
+        }
+      }
+      log.info("math worker status recovery finish", { directory, parents: parents.length, workers: workerCount })
       return Object.fromEntries(yield* statusSvc.list())
     })
 
@@ -305,6 +386,25 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       }
       const actualIDs = new Set(actual.keys())
       const result = [...actual.values(), ...[...missing.values()].filter((row) => !actualIDs.has(row.sessionID))]
+      yield* Effect.forEach(result, (row) =>
+        Effect.gen(function* () {
+          const running = row.alive && (row.state === "running" || row.state === "stopping")
+          const next = { type: running ? ("busy" as const) : ("idle" as const) }
+          const current = yield* statusSvc.get(SessionID.make(row.sessionID))
+          if (current.type !== next.type) {
+            log.info("math worker status snapshot reconciled", {
+              parentSessionID: parent.id,
+              workerSessionID: row.sessionID,
+              generation: row.generation,
+              state: row.state,
+              alive: row.alive,
+              previous: current.type,
+              next: next.type,
+            })
+            yield* statusSvc.set(SessionID.make(row.sessionID), next)
+          }
+        }),
+      )
       return result
     })
 
@@ -428,6 +528,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         verifierModel: ctx.payload?.verifierModel,
         reEnable: ctx.payload?.reEnable,
       }).pipe(Effect.catchCause(() => new HttpApiError.BadRequest({})))
+      yield* statusSvc.set(SessionID.make(result.sessionID), { type: "busy" })
+      log.info("math worker status set busy after ensure", {
+        parentSessionID: parent.id,
+        workerSessionID: result.sessionID,
+        state: result.state,
+      })
       yield* bus.publish(MathWorkerEvent.Status, {
         sessionID: result.sessionID,
         parentSessionID: parent.id,
@@ -500,6 +606,15 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           }),
         ),
       )
+      if (!result.alive) {
+        yield* statusSvc.set(SessionID.make(result.sessionID), { type: "idle" })
+        log.info("math worker status set idle after confirmed stop", {
+          parentSessionID: parent.id,
+          workerSessionID: result.sessionID,
+          pid: result.pid,
+          state: result.state,
+        })
+      }
       log.info("math worker stop transcript cancel finish", {
         parentSessionID: parent.id,
         workerSessionID: result.sessionID,
@@ -559,6 +674,17 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           generation: ctx.payload.generation,
         })
         return HttpApiSchema.NoContent.make()
+      }
+      if (ctx.payload.kind === "completed" || ctx.payload.kind === "blocked" || ctx.payload.kind === "failed") {
+        log.info("math worker terminal event reconciles session status", {
+          parentSessionID: parent.id,
+          workerSessionID: worker.id,
+          eventID: ctx.payload.eventID,
+          eventKind: ctx.payload.kind,
+          generation: ctx.payload.generation,
+          state: record.state,
+        })
+        yield* statusSvc.set(worker.id, { type: "idle" })
       }
       const inputID = mathWorkerEventInputID({ workerID: ctx.params.workerID, ...ctx.payload })
       const legacyInputID = legacyMathWorkerEventInputID({ workerID: ctx.params.workerID, ...ctx.payload })
