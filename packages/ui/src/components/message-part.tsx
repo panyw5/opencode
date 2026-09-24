@@ -67,6 +67,7 @@ import { patchFiles } from "./apply-patch-file"
 import { text as diffText } from "./session-diff"
 import { skillText } from "./message-skill"
 import { hasVisibleText } from "./message-part-text"
+import { reasoningElapsedMs } from "./reasoning-time"
 import { isDismissedQuestion } from "./message-question"
 import { InjectedPromptFromParts } from "./injected-prompt"
 import { hookName, isCustomHookTool, normalizeTool } from "./tool-meta"
@@ -2072,9 +2073,29 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const part = props.part as ReasoningPart
   const text = () => part.text.trim()
   const [open, setOpen] = createSignal(false)
+  const [now, setNow] = createSignal(Date.now())
   const streaming = createMemo(() => {
     if (props.message.role !== "assistant") return false
     return reasoningPartStreaming(part, props.message as AssistantMessage)
+  })
+  createEffect(
+    on(streaming, (active) => {
+      if (!active) return
+      setNow(Date.now())
+      const timer = setInterval(() => setNow(Date.now()), 100)
+      onCleanup(() => clearInterval(timer))
+    }),
+  )
+  const elapsedLabel = createMemo(() => {
+    if (props.message.role !== "assistant") return ""
+    const ms = reasoningElapsedMs(part, props.message as AssistantMessage, now())
+    if (ms === undefined) return ""
+    const seconds = ms / 1000
+    if (seconds < 60) return i18n.t("ui.message.duration.seconds", { count: seconds.toFixed(1) })
+    return i18n.t("ui.message.duration.minutesSeconds", {
+      minutes: Math.floor(seconds / 60),
+      seconds: (seconds % 60).toFixed(1),
+    })
   })
   const title = createMemo(() =>
     streaming() ? i18n.t("ui.messagePart.reasoning.thinking") : i18n.t("ui.messagePart.reasoning.thought"),
@@ -2109,6 +2130,7 @@ PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
                 <Spinner />
               </Show>
             </div>
+            <Show when={elapsedLabel()}>{(value) => <span data-slot="reasoning-trigger-time">{value()}</span>}</Show>
             <Collapsible.Arrow />
           </div>
         </Collapsible.Trigger>

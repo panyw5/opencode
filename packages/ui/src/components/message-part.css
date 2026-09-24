@@ -664,6 +664,15 @@
   }
 }
 
+[data-slot="reasoning-trigger-time"] {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-weaker);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-regular);
+}
+
 [data-component="reasoning-part"] {
   width: 100%;
   color: var(--text-base);
