@@ -221,6 +221,12 @@ function TimelineDiffSummaryRow(props: {
   )
 }
 
+export type MessageTimelineViewport = {
+  root: HTMLDivElement
+  content: HTMLDivElement
+  prepareNavigation: (target: MessageNavigationTarget) => void
+}
+
 export function MessageTimeline(props: {
   actions?: UserActions
   onSendQueued?: () => void
@@ -228,12 +234,12 @@ export function MessageTimeline(props: {
   onBackgroundTask?: MessageProps["onBackgroundTask"]
   scroll: { overflow: boolean; bottom: boolean }
   onResumeScroll: () => void
-  setScrollRef: (el: HTMLDivElement | undefined) => void
+  bindViewport: (viewport: MessageTimelineViewport) => () => void
   onScheduleScrollState: (
     el: HTMLDivElement,
     geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
   ) => void
-  onMarkScrollGesture: (target?: EventTarget | null, input?: HistoryInput) => void
+  onMarkScrollGesture: (root: HTMLDivElement, input: HistoryInput) => void
   onUserScroll: () => void
   onReadingTakeover?: () => void
   onUserMotion?: (input: { direction: "up" | "down" | "other"; atBottom: boolean }) => void
@@ -245,11 +251,9 @@ export function MessageTimeline(props: {
   onNavigationSettled?: (token: MessageNavigationToken, success: boolean) => void
   onNavigationFailed?: (token: MessageNavigationToken) => void
   centered: boolean
-  setContentRef: (el: HTMLDivElement) => void
   userMessages: UserMessage[]
   shouldAnimateMessage?: (id: string) => boolean
   anchor: (id: string) => string
-  setPrepareNavigation?: (fn: (target: MessageNavigationTarget) => void) => void
   onContentReady?: (detail: { rows: number; cached: boolean }) => void
   onViewportTurnChange?: (userMessageID: string | undefined) => void
   onReviewTurnDiff?: (input: { userMessageID: string; file: string }) => void
@@ -1192,10 +1196,6 @@ export function MessageTimeline(props: {
     })
   }
 
-  createEffect(() => {
-    props.setPrepareNavigation?.(prepareMessageNavigation)
-  })
-
   let overscanTimer: number | undefined
   let contentReadyID: string | undefined
   createEffect(() => {
@@ -1238,7 +1238,6 @@ export function MessageTimeline(props: {
     listResizeObserver?.disconnect()
     if (debugWindow?.__opencodeTimelineStates) delete debugWindow.__opencodeTimelineStates[ownerSessionKey]
     restoreScrollTopDebug?.()
-    props.setPrepareNavigation?.(() => {})
   })
 
   let restoreScrollTopDebug: (() => void) | undefined
@@ -1247,7 +1246,9 @@ export function MessageTimeline(props: {
     restoreScrollTopDebug?.()
     setListRoot(root)
     scrollLedger.rebase(root.scrollTop)
-    props.setScrollRef(root)
+    // ScrollView invokes viewportRef on mount, after its content ref has initialized.
+    const release = props.bindViewport({ root, content: virtualContent!, prepareNavigation: prepareMessageNavigation })
+    onCleanup(release)
     if (lagDebug) {
       const prototypeDescriptor = (() => {
         let current: object | null = root
@@ -1359,6 +1360,7 @@ export function MessageTimeline(props: {
     event: Event & { currentTarget: HTMLDivElement },
   ) => {
     const root = event.currentTarget
+    if (!mounted || root !== listRoot() || !root.isConnected) return
     const user = inputProvenance !== undefined
     const motion = scrollLedger.observe(geometry.scrollTop, { user: user && !activeNavigation() })
     if (lagging()) {
@@ -2111,7 +2113,6 @@ export function MessageTimeline(props: {
         <div
           ref={(element) => {
             virtualContent = element
-            props.setContentRef(element)
           }}
           data-timeline-virtual-content
           style={{ height: `${virtualizer.getTotalSize()}px`, position: "relative", width: "100%" }}

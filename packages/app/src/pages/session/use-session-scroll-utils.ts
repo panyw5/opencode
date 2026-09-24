@@ -10,7 +10,7 @@ export function atPhysicalBottom(input: {
   clientHeight: number
   threshold?: number
 }) {
-  return physicalScrollGap(input) <= (input.threshold ?? SESSION_SCROLL_BOTTOM_THRESHOLD)
+  return input.clientHeight > 0 && physicalScrollGap(input) <= (input.threshold ?? SESSION_SCROLL_BOTTOM_THRESHOLD)
 }
 
 export function targetTop(input: { itemTop: number; rootTop: number; scrollTop: number; inset: number }) {

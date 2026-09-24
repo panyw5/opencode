@@ -86,7 +86,7 @@ import {
   focusTerminalById,
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
-import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
+import { MessageTimeline, type MessageTimelineViewport } from "@/pages/session/timeline/message-timeline"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
@@ -727,6 +727,8 @@ export default function Page() {
     if (!id) return true
     return sync.data.message[id] !== undefined
   })
+  // Draft readiness is not permission to mount a timeline during a route transition.
+  const timelineKey = createMemo(() => (params.id && messagesReady() ? sessionKey() : undefined))
   const [sessionRenderState, setSessionRenderState] = createSignal(initialSessionRenderState)
   const dispatchSessionRender = (event: SessionRenderEvent, reason?: string) => {
     const previous = sessionRenderState()
@@ -1182,21 +1184,18 @@ export default function Page() {
   let userInput: (input: { direction: "up" | "down" | "other"; atBottom: boolean }) => void = () => {}
   const live = () => viewportIntent()?.kind === "live"
 
-  const markScrollGesture = (target?: EventTarget | null, input?: HistoryInput) => {
-    const root = scroller
-    if (!root) return
-
-    const el = target instanceof Element ? target : undefined
-    const nested = el?.closest("[data-scrollable]")
-    if (nested && nested !== root) return
-
-    if (input) {
-      const atBottom = atPhysicalBottom(root)
-      const direction =
-        input.delta === undefined ? "other" : input.delta < 0 ? "up" : input.delta > 0 ? "down" : "other"
-      userInput({ direction, atBottom })
-      noteHistoryInput(root, input)
+  const markScrollGesture = (root: HTMLDivElement, input: HistoryInput) => {
+    if (!root.isConnected) return
+    if (root !== scroller) {
+      console.warn(
+        `[session] scroll-root-mismatch sid=${params.id ?? "none"} registeredConnected=${String(scroller?.isConnected ?? false)} inputTop=${root.scrollTop} inputHeight=${root.scrollHeight} inputClient=${root.clientHeight}`,
+      )
+      return
     }
+    const atBottom = atPhysicalBottom(root)
+    const direction = input.delta === undefined ? "other" : input.delta < 0 ? "up" : input.delta > 0 ? "down" : "other"
+    userInput({ direction, atBottom })
+    noteHistoryInput(root, input)
   }
 
   const lagKey = "opencode.session.lag.debug"
@@ -1595,7 +1594,10 @@ export default function Page() {
       !(event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) &&
       (event.key === "PageUp" || event.key === "PageDown" || event.key === "Home" || event.key === "End")
     ) {
-      markScrollGesture(event.target, {
+      const root = scroller
+      const nested = target?.closest("[data-scrollable]")
+      if (!root || (nested && nested !== root)) return
+      markScrollGesture(root, {
         delta: event.key === "PageUp" || event.key === "Home" ? -1 : 1,
         kind: "keyboard",
       })
@@ -2462,7 +2464,7 @@ export default function Page() {
   ) => {
     const clientHeight = geometry?.clientHeight ?? el.clientHeight
     const scrollHeight = geometry?.scrollHeight ?? el.scrollHeight
-    if (!el.isConnected || clientHeight <= 0 || scrollHeight <= 0) return
+    if (el !== scroller || !el.isConnected || clientHeight <= 0 || scrollHeight <= 0) return
     debug("state:before", el)
     const max = scrollHeight - clientHeight
     const top = geometry?.scrollTop ?? el.scrollTop
@@ -2485,6 +2487,7 @@ export default function Page() {
     el: HTMLDivElement,
     geometry?: { scrollTop: number; scrollHeight: number; clientHeight: number },
   ) => {
+    if (el !== scroller) return
     scrollStateTarget = el
     scrollStateGeometry = geometry
     if (scrollStateFrame !== undefined) return
@@ -2587,9 +2590,15 @@ export default function Page() {
     ),
   )
 
-  const setScrollRef = (el: HTMLDivElement | undefined) => {
+  const bindViewport = (viewport: MessageTimelineViewport) => {
+    const el = viewport.root
+    console.debug(
+      `[session] scroll-root-bind sid=${params.id ?? "none"} previousConnected=${String(scroller?.isConnected ?? false)} nextConnected=${String(el.isConnected)} same=${String(scroller === el)}`,
+    )
+    if (!el.isConnected) return () => {}
     scroller = el
-    if (!el) return
+    content = viewport.content
+    prepareMessageNavigation = viewport.prepareNavigation
     debug("scroll-ref", el)
     scheduleScrollState(el)
     fill()
@@ -2606,6 +2615,14 @@ export default function Page() {
       armInitialScrollDeadline(key)
       if (initialScrollFrame !== undefined) cancelAnimationFrame(initialScrollFrame)
       initialScrollFrame = requestAnimationFrame(() => settle(key))
+    }
+    return () => {
+      const current = scroller === el
+      console.debug(`[session] scroll-root-release sid=${params.id ?? "none"} current=${String(current)}`)
+      if (!current) return
+      scroller = undefined
+      content = undefined
+      prepareMessageNavigation = () => {}
     }
   }
 
@@ -3408,11 +3425,7 @@ export default function Page() {
             <div class="absolute inset-0 overflow-hidden">
               <Switch>
                 <Match when={params.id}>
-                  <Show
-                    when={messagesReady() ? sessionKey() : false}
-                    keyed
-                    fallback={<div class="size-full bg-background-stronger" />}
-                  >
+                  <Show when={timelineKey()} keyed fallback={<div class="size-full bg-background-stronger" />}>
                     <Show
                       when={!mobileChanges()}
                       fallback={
@@ -3434,7 +3447,7 @@ export default function Page() {
                         onBackgroundTask={backgroundTask}
                         scroll={ui.scroll}
                         onResumeScroll={resumeScroll}
-                        setScrollRef={setScrollRef}
+                        bindViewport={bindViewport}
                         onScheduleScrollState={scheduleScrollState}
                         onMarkScrollGesture={markScrollGesture}
                         onUserScroll={markUserScroll}
@@ -3458,18 +3471,10 @@ export default function Page() {
                         onNavigationFailed={failNavigation}
                         centered={centered()}
                         shouldAnimateMessage={consumeUserMessageAnimation}
-                        setContentRef={(el) => {
-                          content = el
-                          const root = scroller
-                          if (root) scheduleScrollState(root)
-                        }}
                         userMessages={visibleUserMessages()}
                         onReviewTurnDiff={openTurnReviewDiff}
                         onReviewTurnAll={openTurnReviewAll}
                         anchor={anchor}
-                        setPrepareNavigation={(fn) => {
-                          prepareMessageNavigation = fn
-                        }}
                         onContentReady={(detail) => {
                           const id = params.id
                           if (!id) return

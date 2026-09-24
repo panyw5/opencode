@@ -2,6 +2,15 @@ import { describe, expect, test } from "bun:test"
 import { atPhysicalBottom, physicalScrollGap, reachableTargetTop, targetTop } from "./use-session-scroll-utils"
 
 describe("physical bottom", () => {
+  test("an unmounted or hidden viewport is not a physical bottom", () => {
+    expect(atPhysicalBottom({ scrollTop: 0, scrollHeight: 0, clientHeight: 0 })).toBe(false)
+    expect(atPhysicalBottom({ scrollTop: 100, scrollHeight: 100, clientHeight: 0 })).toBe(false)
+  })
+
+  test("a visible short conversation can be at the physical bottom", () => {
+    expect(atPhysicalBottom({ scrollTop: 0, scrollHeight: 400, clientHeight: 400 })).toBe(true)
+  })
+
   test("uses actual geometry rather than an underestimated cached extent", () => {
     const cached = { scrollTop: 400, scrollHeight: 500, clientHeight: 100 }
     const physical = { scrollTop: 400, scrollHeight: 900, clientHeight: 100 }

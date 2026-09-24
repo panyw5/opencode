@@ -371,3 +371,64 @@ Evidence:
 - Jump to latest flashing is fixed by canonical following plus overflow visibility, not a
   debounce, timeout or visibility latch. Real physical gap remains separately observable;
   per-frame intent and motion checks prevent hiding an ownership defect behind the button.
+
+## 2026-09-24: Reentry viewport lifetime defect
+
+The earlier streaming acceptance did not cover sidebar prefetch racing a route transition.
+It was insufficient to claim that session/generation identity alone protected the DOM binding.
+
+Observed evidence:
+- The reported history contained 218 messages, including 20 user messages and 184 tool parts.
+  Database contents were inspected before code changes; the original conversation was not edited.
+- Installed renderer logs showed an invalid `session=none owner=undefined/` timeline mount,
+  followed by two same-session mounts. Development Electron reproduced this sequence.
+- Only one timeline was connected. The disconnected instance overwrote the page's shared
+  scroller with a root reporting `scrollTop=scrollHeight=clientHeight=0`.
+- Wheel input carried the real root, but the page discarded it and read the shared root.
+  The zero-sized root satisfied the old bottom predicate. A real `deltaY=12` changed the
+  visible viewport from top 23040.5 (reading) to 24960 (live), a roughly 1920px jump.
+- The same wrong input geometry also requested unnecessary history pages while the visible
+  viewport was not at the top. This was not merely a button visibility problem.
+
+Correction boundaries:
+- Timeline mounting requires a real session ID and ready messages in one derived key.
+  Draft readiness is not timeline readiness. No copied owner or new state machine is added.
+- Replace three independent page registrations (root, content, navigation reset callback)
+  with one `bindViewport` call. Reject disconnected roots. Its release callback clears the
+  registration only while that exact DOM root is still current; an old cleanup cannot clear
+  a replacement. Existing DOM identity is sufficient, without a new ID/lease registry.
+- Input uses its originating root. Stale-root input cannot change intent or history state.
+- A zero-height viewport is not a physical bottom; visible short conversations still are.
+- Keep bounded lifecycle diagnostics for registration/release/mismatch and reject invalid
+  lifecycle evidence in runtime acceptance, rather than hiding it behind a successful scroll.
+
+Verification:
+- `session-viewport-reentry.ts` exercises real memory-router/sidebar navigation, real message
+  data, optional scoped configuration-response delay, the actual user-message marker, a single
+  12px wheel movement, and natural return. It never sends to the historical conversation or
+  writes scrollTop. It records failure evidence as well as successful results.
+- First fixed run: marker visible, top 11835 -> 11847, gap 1441 -> 1429, reading unchanged;
+  natural return passed. Configuration delay triggered once, target root registered once,
+  no invalid lifecycle logs. Artifact: /tmp/viewport-reentry-fixed.json.
+- Replaying the old mount predicate alone does not deterministically reproduce the race.
+  The isolated Solid/Router model also did not reproduce it. Do not claim the derived-key
+  change proves a framework-level fix: atomic connected-root registration is the ownership
+  guarantee even if speculative rendering occurs again.
+- App type checking passed; browser suite: 33 passed. Session suite: 399 passed, one unchanged
+  baseline failure in session-render-state.test.ts:80. Added zero-height and visible-short
+  geometry regressions. Final live-stream and repeated reentry checks are recorded below.
+- Final reentry runs with 500ms and 1000ms scoped configuration-response delays both passed:
+  the specified marker was visible, 12px input produced exactly 12px movement while retaining
+  reading, and natural return recovered live at a gap <= 1px. Each run triggered the delay,
+  bound exactly one connected target root, and recorded no invalid mount/binding/mismatch.
+  Evidence: /tmp/viewport-reentry-final-500.json and /tmp/viewport-reentry-final-1000.json.
+- A new, separate temporary-project sidecar stream passed with verified user/assistant receipts:
+  108 post-return growth commits, 3,902 RAF samples, zero identity/owner/button violations,
+  and successful idle return. Evidence: /tmp/viewport-stream-20260924.json. The later changes
+  only added stale-root observation rejection and clarified ScrollView's mount-time ref contract;
+  the final reentry run includes these changes. No physical hardware coverage is claimed.
+- ScrollView calls viewportRef from onMount, after child refs initialize. Atomic registration
+  relies on that existing contract; it does not add a dual-ref retry loop or binding scheduler.
+- Final app type check, 33 browser tests, focused 37 geometry/navigation tests and diff whitespace
+  validation passed. Installed OpenCode was not stopped, updated or repackaged. No commit or push
+  was performed for this follow-up. Unrelated concurrent updater/settings changes were preserved.
