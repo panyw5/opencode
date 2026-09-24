@@ -6,7 +6,7 @@ import { Plugin } from "@/plugin"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { MessageV2 } from "@/session/message-v2"
-import { MessageID, SessionID } from "@/session/schema"
+import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Session } from "@/session/session"
 import { SessionTools } from "@/session/tools"
 import { Tool } from "@/tool/tool"
@@ -90,11 +90,15 @@ const lookupTool: Tool.Def<typeof lookupParameters> = {
     required: ["query"],
     additionalProperties: false,
   },
-  execute: (args) =>
-    Effect.succeed({
-      title: "Lookup",
-      output: `result:${args.query}`,
-      metadata: { source: "unit" },
+  execute: (args, ctx) =>
+    Effect.gen(function* () {
+      yield* ctx.metadata({ title: "Searching", metadata: { progress: 1 } })
+      yield* ctx.metadata({ title: "Searching", metadata: { progress: 2 } })
+      return {
+        title: "Lookup",
+        output: `result:${args.query}`,
+        metadata: { source: "unit" },
+      }
     }),
 }
 
@@ -228,5 +232,58 @@ it.instance("session tools settle processor tool calls after successful local ex
       output: "result:weather",
       metadata: { source: "unit" },
     })
+  }),
+)
+
+it.instance("tool metadata updates retain the first running start time", () =>
+  Effect.gen(function* () {
+    const promptOps = {
+      cancel: () => Effect.void,
+      resolvePromptParts: () => Effect.succeed([]),
+      prompt: () => Effect.die("unused"),
+      loop: () => Effect.die("unused"),
+    } satisfies TaskPromptOps
+    const session = { id: sessionID, permission: [] } as Session.Info
+    let part: MessageV2.ToolPart = {
+      id: PartID.ascending(),
+      messageID,
+      sessionID,
+      type: "tool",
+      tool: "lookup",
+      callID: "call_metadata",
+      state: { status: "pending", input: {}, raw: "" },
+    }
+    const starts: number[] = []
+    const tools = yield* SessionTools.resolve({
+      agent,
+      model,
+      session,
+      processor: {
+        message: assistant,
+        startToolCall: () => Effect.succeed(undefined),
+        updateToolCall: (_toolCallID, update) =>
+          Effect.sync(() => {
+            part = update(part)
+            if (part.state.status === "running") starts.push(part.state.time.start)
+            return part
+          }),
+        completeToolCall: () => Effect.void,
+        failToolCall: () => Effect.succeed(false),
+        captureToolFiles: (_tool, action) => action.pipe(Effect.map((value) => ({ value, files: [] }))),
+      },
+      bypassAgentCheck: false,
+      messages: [],
+      promptOps,
+    })
+
+    const lookup = tools.lookup as unknown as ExecutableTool<{ query: string }, unknown>
+    const before = Date.now()
+    yield* Effect.promise(() =>
+      lookup.execute({ query: "weather" }, { toolCallId: "call_metadata", abortSignal: new AbortController().signal }),
+    )
+    expect(starts).toHaveLength(2)
+    expect(starts[0]).toBeGreaterThanOrEqual(before)
+    expect(starts[0]).toBeLessThanOrEqual(Date.now())
+    expect(starts[1]).toBe(starts[0])
   }),
 )

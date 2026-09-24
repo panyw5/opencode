@@ -306,6 +306,7 @@ export const layer = Layer.effect(
           toolCallID,
           partID: part.id,
           status: part.state.status,
+          start: part.state.status === "pending" ? undefined : part.state.time.start,
         })
         return part
       })
