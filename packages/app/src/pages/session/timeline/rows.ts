@@ -239,7 +239,11 @@ export namespace Timeline {
     let pendingToolPrevious = false
     const groupIsTools = (group: PartGroup) => {
       const refs = group.type === "part" ? [group.ref] : group.refs
-      return refs.every((ref) => assistantPartByRef.get(`${ref.messageID}\n${ref.partID}`)?.type === "tool")
+      return refs.every((ref) => {
+        const part = assistantPartByRef.get(`${ref.messageID}\n${ref.partID}`)
+        // Presented artifacts are timeline content, not collapsible tool activity.
+        return part?.type === "tool" && part.tool !== "present_file"
+      })
     }
     const flushToolGroups = () => {
       if (pendingToolGroups.length === 0) return

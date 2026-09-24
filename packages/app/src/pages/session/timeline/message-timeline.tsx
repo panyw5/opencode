@@ -366,6 +366,13 @@ export function MessageTimeline(props: {
   // update re-estimates uncached rows without forcing layout (no clientWidth
   // read inside the estimate path).
   const [listSize, setListSize] = createSignal({ width: 0, height: 0 })
+  const [viewportWidth, setViewportWidth] = createSignal(typeof window === "undefined" ? 0 : window.innerWidth)
+  onMount(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth)
+    window.addEventListener("resize", updateViewportWidth)
+    updateViewportWidth()
+    onCleanup(() => window.removeEventListener("resize", updateViewportWidth))
+  })
   let listResizeObserver: ResizeObserver | undefined
   const textMetrics = createMemo(() => {
     // Markdown metrics scale with the user's base font size setting.
@@ -937,6 +944,7 @@ export function MessageTimeline(props: {
       return estimateRowHeight(timelineRows()[index] ?? unknownRow, estimatorWidth(), {
         ...estimatorOptions(),
         viewportHeight: size.height,
+        viewportWidth: viewportWidth(),
         textLineHeight: metrics.lineHeight,
       })
     },

@@ -18,7 +18,9 @@ import { SDKProvider, useSDK } from "@/context/sdk"
 import { SkillsProvider } from "@/context/skills"
 import { sessionTabsTargetHref, useSessionTabs } from "@/context/session-tabs"
 import { SyncProvider, useSync } from "@/context/sync"
-import { extraAgentByDirectory } from "@/pages/layout/extra-agents"
+import { domainFromDirectory, extraAgentByDirectory } from "@/pages/layout/extra-agents"
+import { openPresentationSource } from "@/pages/session/presentation-source"
+import { authTokenFromCredentials } from "@/utils/server"
 import {
   directoryProviderKey,
   newSessionProjectLabel,
@@ -52,6 +54,8 @@ function DirectoryDataProvider(
   const params = useParams()
   const sync = useSync()
   const sdk = useSDK()
+  const platform = usePlatform()
+  const server = useServer()
   const directory = createMemo(props.directory)
   const slug = createMemo(() => base64Encode(directory()))
   const providerID = ++nextProviderID
@@ -121,6 +125,37 @@ function DirectoryDataProvider(
       onAbortSession={(sessionID: string) => {
         void sdk.client.session.abort({ sessionID }).catch(() => undefined)
       }}
+      loadPresentation={async ({ sessionID, artifactID, variant, signal }) => {
+        console.debug(`[presentation] load start session=${sessionID} artifact=${artifactID} variant=${variant}`)
+        const url = new URL(
+          `/session/${encodeURIComponent(sessionID)}/presentation/${encodeURIComponent(artifactID)}`,
+          sdk.url,
+        )
+        url.searchParams.set("directory", sdk.directory)
+        url.searchParams.set("variant", variant)
+        const headers = new Headers()
+        const auth = server.currentFor(domainFromDirectory(sdk.directory))?.http
+        if (auth?.password) {
+          headers.set(
+            "authorization",
+            `Basic ${authTokenFromCredentials({ username: auth.username, password: auth.password })}`,
+          )
+        }
+        try {
+          const response = await (platform.fetch ?? fetch)(url.toString(), { headers, signal })
+          if (!response.ok) throw new Error(`Presentation unavailable (${response.status})`)
+          const blob = await response.blob()
+          console.debug(
+            `[presentation] load success session=${sessionID} artifact=${artifactID} variant=${variant} bytes=${blob.size} mime=${blob.type}`,
+          )
+          return blob
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error)
+          console.warn(`[presentation] load failed session=${sessionID} artifact=${artifactID} variant=${variant} error=${message}`)
+          throw error
+        }
+      }}
+      openPresentationSource={openPresentationSource}
       onAdvisorIntervention={(input) => {
         const callID = input.callID
         if (input.action === "start") {

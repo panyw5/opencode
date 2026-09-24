@@ -44,6 +44,7 @@ import { Collapsible } from "./collapsible"
 import { FileIcon } from "./file-icon"
 import { Icon } from "./icon"
 import { ToolErrorCard } from "./tool-error-card"
+import { PresentationCard } from "./presentation-card"
 import { Checkbox } from "./checkbox"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
@@ -1779,6 +1780,17 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
             {(() => {
               const state = part().state
               if (state.status !== "error") return null
+              if (tool === "present_file") {
+                return (
+                  <PresentationCard
+                    sessionID={part().sessionID}
+                    input={input()}
+                    metadata={partMetadata()}
+                    status="error"
+                    error={state.error}
+                  />
+                )
+              }
               return (
                 <ToolErrorCard
                   tool={part().tool}
@@ -1797,25 +1809,37 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
             })()}
           </Match>
           <Match when={true}>
-            <Dynamic
-              component={render}
-              input={input()}
-              tool={part().tool}
-              part={part()}
-              metadata={partMetadata()}
-              // @ts-expect-error
-              output={part().state.output}
-              status={part().state.status}
-              hideDetails={props.hideDetails}
-              defaultOpen={props.defaultOpen}
-              markdownEager={props.markdownEager}
-              markdownViewport={props.markdownViewport}
-              markdownStage={props.markdownStage}
-              onMarkdownStage={props.onMarkdownStage}
-              questionHandoff={questionHandoff()}
-              onBackgroundShell={props.onBackgroundShell}
-              onBackgroundTask={props.onBackgroundTask}
-            />
+            <Show
+              when={tool !== "present_file"}
+              fallback={
+                <PresentationCard
+                  sessionID={part().sessionID}
+                  input={input()}
+                  metadata={partMetadata()}
+                  status={part().state.status}
+                />
+              }
+            >
+              <Dynamic
+                component={render}
+                input={input()}
+                tool={part().tool}
+                part={part()}
+                metadata={partMetadata()}
+                // @ts-expect-error
+                output={part().state.output}
+                status={part().state.status}
+                hideDetails={props.hideDetails}
+                defaultOpen={props.defaultOpen}
+                markdownEager={props.markdownEager}
+                markdownViewport={props.markdownViewport}
+                markdownStage={props.markdownStage}
+                onMarkdownStage={props.onMarkdownStage}
+                questionHandoff={questionHandoff()}
+                onBackgroundShell={props.onBackgroundShell}
+                onBackgroundTask={props.onBackgroundTask}
+              />
+            </Show>
           </Match>
         </Switch>
       </div>

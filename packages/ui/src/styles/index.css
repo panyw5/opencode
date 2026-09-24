@@ -28,6 +28,7 @@
 @import "../components/icon.css" layer(components);
 @import "../components/icon-button.css" layer(components);
 @import "../components/image-preview.css" layer(components);
+@import "../components/presentation-card.css" layer(components);
 @import "../components/keybind.css" layer(components);
 @import "../components/text-field.css" layer(components);
 @import "../components/inline-input.css" layer(components);

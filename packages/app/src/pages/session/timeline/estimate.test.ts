@@ -25,6 +25,8 @@ import {
   TOOL_GROUP_HEIGHT,
   trimRangeToBudget,
   TURN_GAP_HEIGHT,
+  PRESENT_FILE_DESKTOP_HEIGHT,
+  PRESENT_FILE_MOBILE_HEIGHT,
 } from "./estimate"
 
 const textPart = (text: string): Part =>
@@ -49,6 +51,24 @@ const toolPart = (overrides: { tool?: string; status?: ToolPart["state"]["status
 
 const lookup = (part: Part) => (_messageID: string, partID: string) => (partID === part.id ? part : undefined)
 
+const presentFilePart = (caption = "") =>
+  ({
+    id: "prt_present",
+    sessionID: "ses_1",
+    messageID: "msg_1",
+    type: "tool",
+    tool: "present_file",
+    callID: "call_present",
+    state: {
+      status: "completed",
+      input: {},
+      output: "presented",
+      title: "present_file",
+      metadata: { presentation: { artifactID: "a1", mime: "image/png", filename: "out.png", caption } },
+      time: { start: 1, end: 2 },
+    },
+  }) as ToolPart
+
 const WIDTH = 1080
 const lineHeight = 31.2
 const charWidth = 11.4
@@ -57,6 +77,14 @@ const MIN_TEXT_WIDTH = 240
 const TEXT_WIDTH_INSET = 48
 
 describe("estimateRowHeight fixed-height rows", () => {
+  test("uses fixed present_file geometry regardless of caption", () => {
+    const part = presentFilePart("caption ".repeat(100))
+    const row = { _tag: "AssistantPart", group: { type: "part" as const, ref: { messageID: "msg_1", partID: part.id } } }
+    expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(part) })).toBe(PRESENT_FILE_DESKTOP_HEIGHT)
+    expect(estimateRowHeight(row, 500, { ...base, parts: lookup(part) })).toBe(PRESENT_FILE_MOBILE_HEIGHT)
+    expect(estimateRowHeight(row, 559, { ...base, parts: lookup(part) })).toBe(PRESENT_FILE_MOBILE_HEIGHT)
+    expect(estimateRowHeight(row, 500, { ...base, parts: lookup(part), viewportWidth: 1440 })).toBe(PRESENT_FILE_DESKTOP_HEIGHT)
+  })
   test("TurnGap uses the h-6 constant", () => {
     expect(estimateRowHeight({ _tag: "TurnGap", userMessageID: "m" }, WIDTH, base)).toBe(TURN_GAP_HEIGHT)
     expect(TURN_GAP_HEIGHT).toBe(24)

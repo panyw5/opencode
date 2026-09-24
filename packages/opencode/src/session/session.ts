@@ -38,6 +38,7 @@ import { LocationID, ProjectID } from "../project/schema"
 import { ProjectTaskID } from "../project-task/schema"
 import { WorkspaceID } from "../control-plane/schema"
 import { SessionID, MessageID, PartID } from "./schema"
+import { removeSessionArtifacts } from "./presentation"
 import { ModelID, ProviderID } from "@/provider/schema"
 
 import type { Provider } from "@/provider/provider"
@@ -764,6 +765,7 @@ export const layer: Layer.Layer<
 
         yield* sync.run(Event.Deleted, { sessionID, info: session }, { publish: hasInstance })
         yield* sync.remove(sessionID)
+        yield* Effect.promise(() => removeSessionArtifacts(sessionID)).pipe(Effect.ignore)
       } catch (e) {
         log.error(e)
       }

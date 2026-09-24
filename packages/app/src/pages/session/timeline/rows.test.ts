@@ -129,6 +129,21 @@ const toolPart = (messageID: string, id: string, tool: string): ToolPart =>
     },
   }) as ToolPart
 
+const presentFilePart = (messageID: string, id = "tool-present"): ToolPart =>
+  ({
+    ...toolPart(messageID, id, "present_file"),
+    state: {
+      status: "completed",
+      input: {},
+      output: "presented",
+      title: "present_file",
+      metadata: {
+        presentation: { artifactID: "artifact-1", mime: "image/png", width: 640, height: 480, filename: "out.png" },
+      },
+      time: { start: 1, end: 2 },
+    },
+  }) as ToolPart
+
 const partsByID = (parts: Part[]) => (messageID: string) => parts.filter((part) => part.messageID === messageID)
 
 describe("constructMessageRows", () => {
@@ -163,6 +178,16 @@ describe("constructMessageRows", () => {
     ]
     const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart", "ToolGroup"])
+  })
+
+  test("keeps present_file as an independent assistant row", () => {
+    const user = userMessage("user-present-file")
+    const assistant = assistantMessage("assistant-present-file", user.id)
+    const parts = [textPart(user.id, "work"), toolPart(assistant.id, "tool-before", "read"), presentFilePart(assistant.id)]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart"])
+    const row = rows.at(-1)
+    expect(row?._tag === "AssistantPart" && row.group.type === "part" && row.group.ref.partID).toBe("tool-present")
   })
 
   test("expands large context groups into individually virtualizable stable rows", () => {

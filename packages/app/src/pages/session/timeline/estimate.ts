@@ -61,6 +61,14 @@ export const COMMENT_STRIP_WIDTH = 260
 export const ERROR_CARD_CHROME = 44
 /** `.error-card` is a nested scroller and never grows beyond this height. */
 export const ERROR_CARD_MAX_HEIGHT = 240
+/** Present-file media preview geometry; the UI keeps this box stable pre-load. */
+export const PRESENT_FILE_DESKTOP_PREVIEW_HEIGHT = 224
+export const PRESENT_FILE_MOBILE_PREVIEW_HEIGHT = 176
+export const PRESENT_FILE_BODY_HEIGHT = 80
+export const PRESENT_FILE_WRAPPER_HEIGHT = 20
+export const PRESENT_FILE_DESKTOP_HEIGHT = 324
+export const PRESENT_FILE_MOBILE_HEIGHT = 276
+export const PRESENT_FILE_MOBILE_BREAKPOINT = 560
 
 export const MIN_ROW_ESTIMATE = 40
 export const MAX_VIEWPORT_MULTIPLIER = 3
@@ -124,6 +132,8 @@ export type EstimateRowHeightOptions = {
   charWidth?: number
   /** Viewport height driving the upper estimate clamp. */
   viewportHeight?: number
+  /** Window width used by viewport media queries (distinct from list width). */
+  viewportWidth?: number
   /** Concatenated text of a user message (drives UserMessage line count). */
   userMessageText?: (messageID: string) => string | undefined
   /** CommentStrip cards are horizontal; only the tallest comment controls row height. */
@@ -170,9 +180,35 @@ function estimateTextHeight(
   return lines * (options.textLineHeight ?? DEFAULT_TEXT_LINE_HEIGHT)
 }
 
-function estimateToolPartHeight(part: ToolPart, options: EstimateRowHeightOptions) {
+function estimateToolPartHeight(part: ToolPart, width: number, options: EstimateRowHeightOptions) {
+  if (part.tool === "present_file") return estimatePresentFileHeight(part, width, options)
   if (options.toolDefaultOpen?.(part)) return OPEN_TOOL_HEIGHT
   return COLLAPSED_TOOL_HEIGHT
+}
+
+type PresentationMetadata = {
+  artifactID?: unknown
+  mime?: unknown
+  width?: unknown
+  height?: unknown
+  filename?: unknown
+  sourcePath?: unknown
+  purpose?: unknown
+  caption?: unknown
+}
+
+export function presentFilePresentation(part: ToolPart): PresentationMetadata | undefined {
+  if (part.tool !== "present_file" || part.state.status === "pending") return undefined
+  const presentation = (part.state.metadata as { presentation?: unknown } | undefined)?.presentation
+  if (!presentation || typeof presentation !== "object") return undefined
+  return presentation as PresentationMetadata
+}
+
+function estimatePresentFileHeight(part: ToolPart, width: number, options: EstimateRowHeightOptions) {
+  const mobile = (options.viewportWidth ?? width) <= PRESENT_FILE_MOBILE_BREAKPOINT
+  // Caption text is clamped inside the fixed body; it must never change the
+  // virtual row height after the preview loads.
+  return mobile ? PRESENT_FILE_MOBILE_HEIGHT : PRESENT_FILE_DESKTOP_HEIGHT
 }
 
 type GroupEstimate = {
@@ -195,7 +231,7 @@ function estimatePartGroupHeight(
     for (const ref of group.refs) {
       const part = options.parts?.(ref.messageID, ref.partID)
       if (part?.type === "tool") {
-        total += estimateToolPartHeight(part, options)
+        total += estimateToolPartHeight(part, width, options)
       } else {
         total += COLLAPSED_TOOL_HEIGHT
       }
@@ -208,7 +244,7 @@ function estimatePartGroupHeight(
   if (group.type === "part" && group.ref) {
     const part = options.parts?.(group.ref.messageID, group.ref.partID)
     if (!part) return { height: UNKNOWN_ROW_HEIGHT, uncertain: false }
-    if (part.type === "tool") return { height: estimateToolPartHeight(part, options), uncertain: false }
+    if (part.type === "tool") return { height: estimateToolPartHeight(part, width, options), uncertain: false }
     if (part.type === "text")
       return {
         height:
@@ -385,6 +421,7 @@ export function rowRenderCost(row: EstimateRowInput, options: EstimateRowHeightO
         if (!part) return 1
         if (part.type === "tool") {
           if (toolPartLive(part)) return 6
+          if (part.tool === "present_file") return 4
           if (options.toolDefaultOpen?.(part)) return 6
           return 1
         }

@@ -1,10 +1,12 @@
 import { Dialog as Kobalte } from "@kobalte/core/dialog"
+import { Show, type JSX } from "solid-js"
 import { useI18n } from "../context/i18n"
 import { IconButton } from "./icon-button"
 
 export interface ImagePreviewProps {
-  src: string
+  src?: string
   alt?: string
+  fallback?: JSX.Element
 }
 
 export function ImagePreview(props: ImagePreviewProps) {
@@ -23,7 +25,9 @@ export function ImagePreview(props: ImagePreviewProps) {
             />
           </div>
           <div data-slot="image-preview-body">
-            <img src={props.src} alt={props.alt ?? i18n.t("ui.imagePreview.alt")} data-slot="image-preview-image" />
+            <Show when={props.src} fallback={props.fallback}>
+              {(src) => <img src={src()} alt={props.alt ?? i18n.t("ui.imagePreview.alt")} data-slot="image-preview-image" />}
+            </Show>
           </div>
         </Kobalte.Content>
       </div>

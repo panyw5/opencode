@@ -423,6 +423,15 @@ export function partMeasurementKey(part: Part | undefined) {
       state.status === "running" || state.status === "completed" || state.status === "error"
         ? state.metadata
         : undefined
+    const presentation =
+      part.tool === "present_file" && metadata && typeof metadata === "object"
+        ? (metadata as { presentation?: unknown }).presentation
+        : undefined
+    if (presentation && typeof presentation === "object") {
+      const value = presentation as Record<string, unknown>
+      // Include every field that can alter the media card's geometry or label.
+      return `tool:${part.tool}:${state.status}:${String(value.artifactID ?? "")}:${String(value.mime ?? "")}:${String(value.width ?? "")}:${String(value.height ?? "")}:${String(value.filename ?? "")}:${String(value.caption ?? "")}`
+    }
     return `tool:${part.tool}:${state.status}:${title}:${output.length}:${JSON.stringify(metadata ?? {}).length}`
   }
   return `${part.type}:${JSON.stringify(part).length}`

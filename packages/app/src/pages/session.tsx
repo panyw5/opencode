@@ -87,6 +87,7 @@ import {
   shouldFocusTerminalOnKeyDown,
 } from "@/pages/session/helpers"
 import { MessageTimeline, type MessageTimelineViewport } from "@/pages/session/timeline/message-timeline"
+import { PRESENTATION_SOURCE_EVENT, type PresentationSourceRequest } from "@/pages/session/presentation-source"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { isExtraAgentDirectory } from "@/pages/layout/extra-agents"
@@ -1914,6 +1915,27 @@ export default function Page() {
     tabs().setActive(tab)
     console.debug(`[file-link] opened session=${params.id ?? "none"} root=${sdk.directory} path=${path} tab=${tab}`)
   }
+
+  onMount(() => {
+    const open = (event: Event) => {
+      const detail = (event as CustomEvent<PresentationSourceRequest>).detail
+      if (!detail || detail.sessionID !== params.id || typeof detail.path !== "string") return
+      const normalized = file.normalize(detail.path)
+      if (!normalized || /^(?:\/|[A-Za-z]:[\\/]|\\\\)/.test(normalized)) {
+        console.warn(`[presentation] source unavailable session=${detail.sessionID} reason=outside-workspace`)
+        showToast({
+          variant: "error",
+          title: language.t("common.requestFailed"),
+          description: language.t("session.presentation.sourceOutsideWorkspace"),
+        })
+        return
+      }
+      console.debug(`[presentation] source open session=${detail.sessionID} file=${normalized}`)
+      openFileLinkPreview(detail.path, normalized)
+    }
+    window.addEventListener(PRESENTATION_SOURCE_EVENT, open)
+    onCleanup(() => window.removeEventListener(PRESENTATION_SOURCE_EVENT, open))
+  })
 
   const fileLinkFromTarget = (target: EventTarget | null) => {
     if (!(target instanceof Element)) return

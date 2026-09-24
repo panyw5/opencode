@@ -42,6 +42,7 @@ import * as Log from "@opencode-ai/core/util/log"
 import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
+import { PresentFileTool } from "./present_file"
 import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
@@ -210,6 +211,7 @@ export const layer: Layer.Layer<
     const patchtool = yield* ApplyPatchTool
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
+    const presentFile = yield* PresentFileTool
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
@@ -350,6 +352,7 @@ export const layer: Layer.Layer<
           question: Tool.init(question),
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
+          present_file: Tool.init(presentFile),
         })
 
         const builtin = [
@@ -402,6 +405,7 @@ export const layer: Layer.Layer<
           tool.patch,
           ...(flags.experimentalLspTool ? [tool.lsp] : []),
           ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
+          tool.present_file,
         ]
         log.info("builtin tools initialized", { ids: builtin.map((item) => item.id) })
 

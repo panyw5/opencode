@@ -52,6 +52,17 @@ export type AdvisorInterventionFn = (input: {
   message?: string
 }) => void | Promise<void>
 
+export type PresentationVariant = "thumbnail" | "original"
+
+export type LoadPresentationFn = (input: {
+  sessionID: string
+  artifactID: string
+  variant: PresentationVariant
+  signal?: AbortSignal
+}) => Promise<Blob>
+
+export type OpenPresentationSourceFn = (input: { sessionID: string; path: string }) => void
+
 export const { use: useData, provider: DataProvider } = createSimpleContext({
   name: "Data",
   init: (props: {
@@ -61,6 +72,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
     onSessionHref?: SessionHrefFn
     onAbortSession?: AbortSessionFn
     onAdvisorIntervention?: AdvisorInterventionFn
+    loadPresentation?: LoadPresentationFn
+    openPresentationSource?: OpenPresentationSourceFn
   }) => {
     // One shared lookup per sessions snapshot: task tool cards resolve their
     // child session through it instead of scanning the full session list.
@@ -79,6 +92,8 @@ export const { use: useData, provider: DataProvider } = createSimpleContext({
       sessionHref: props.onSessionHref,
       abortSession: props.onAbortSession,
       advisorIntervention: props.onAdvisorIntervention,
+      loadPresentation: props.loadPresentation,
+      openPresentationSource: props.openPresentationSource,
     }
   },
 })

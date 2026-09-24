@@ -1057,6 +1057,7 @@ export const dict = {
   "session.fileLink.preview": "预览文件",
   "session.fileLink.openFolder": "打开所在文件夹",
   "session.fileLink.copyPath": "复制文件路径",
+  "session.presentation.sourceOutsideWorkspace": "原文件位于工作区外，无法在文件预览中打开；会话中的成果快照仍可查看。",
 
   "status.popover.trigger": "状态",
   "status.popover.ariaLabel": "服务器配置",

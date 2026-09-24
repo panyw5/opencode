@@ -46,6 +46,9 @@ export function clearToolPartHydration(sessionID?: string) {
 /** Collapsed completed tools can use a same-height shell; live/default-open tools need the real component. */
 export function shouldDeferToolPart(part: Part, defaultOpen?: boolean) {
   if (part.type !== "tool") return false
+  // A presented artifact has a stable media card geometry. Never replace it
+  // with the generic 50px tool placeholder while it approaches the viewport.
+  if (part.tool === "present_file") return false
   if (defaultOpen) return false
   const status = part.state.status
   if (status === "pending" || status === "running") return false

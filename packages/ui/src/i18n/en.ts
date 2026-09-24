@@ -40,6 +40,11 @@ export const dict: Record<string, string> = {
   "ui.file.largePreview.title": "Large markdown preview is paused",
   "ui.file.largePreview.meta": "Open source for an editor-like view, or render the full preview for {{size}}.",
   "ui.file.largePreview.render": "Render full preview",
+  "ui.presentation.file": "Presented file",
+  "ui.presentation.zoom": "Zoom",
+  "ui.presentation.openPreview": "Open file preview",
+  "ui.presentation.loadError": "Unable to load preview",
+  "ui.presentation.retry": "Retry",
 
   "ui.lineComment.label.prefix": "Comment on ",
   "ui.lineComment.label.suffix": "",

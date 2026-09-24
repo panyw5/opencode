@@ -41,6 +41,11 @@ export const dict = {
   "ui.file.largePreview.title": "已暂停大型 Markdown 预览",
   "ui.file.largePreview.meta": "可打开源码获得更接近编辑器的视图，或继续渲染 {{size}} 的完整预览。",
   "ui.file.largePreview.render": "渲染完整预览",
+  "ui.presentation.file": "已呈现文件",
+  "ui.presentation.zoom": "放大",
+  "ui.presentation.openPreview": "打开文件预览",
+  "ui.presentation.loadError": "无法加载预览",
+  "ui.presentation.retry": "重试",
 
   "ui.lineComment.label.prefix": "评论 ",
   "ui.lineComment.label.suffix": "",

@@ -1139,6 +1139,7 @@ export const dict = {
   "session.fileLink.preview": "Preview file",
   "session.fileLink.openFolder": "Open containing folder",
   "session.fileLink.copyPath": "Copy file path",
+  "session.presentation.sourceOutsideWorkspace": "The original file is outside this workspace. The presented snapshot is still available.",
   "session.header.open.finder": "Finder",
   "session.header.open.fileExplorer": "File Explorer",
   "session.header.open.fileManager": "File Manager",
