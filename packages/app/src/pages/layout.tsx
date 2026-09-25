@@ -4856,6 +4856,7 @@ export default function Layout(props: ParentProps) {
         <div
           data-component="floating-actions"
           class="absolute right-5 bottom-5 flex items-center gap-2 pointer-events-none"
+          style={{ display: onConfigRoute() ? "none" : undefined }}
         >
           <NotificationBell />
           <QuickAssistant />
