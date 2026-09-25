@@ -75,6 +75,12 @@ function init() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
+      // When focus sits inside a nested dismissable layer portaled to the
+      // body (e.g. the model selector popover), that layer's own Escape
+      // handling must win. This capture-phase listener would otherwise close
+      // the whole dialog before the popover sees the event.
+      const target = event.target
+      if (target instanceof Element && target.closest('[role="dialog"]:not([data-slot="dialog-content"])')) return
       close()
       event.preventDefault()
       event.stopPropagation()
