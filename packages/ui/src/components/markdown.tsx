@@ -223,7 +223,7 @@ function applyFileLink(node: HTMLAnchorElement, link: FileLink) {
   ensureFileLinkIcon(node, link.path)
 }
 
-function markMarkdownFileLinks(root: HTMLDivElement) {
+function markMarkdownFileLinks(root: HTMLElement) {
   for (const node of Array.from(root.querySelectorAll("a[href]"))) {
     if (!(node instanceof HTMLAnchorElement)) continue
     if (node.dataset.fileLink !== undefined) {
@@ -343,7 +343,7 @@ function ensureCopyButtons(parent: Element, labels: CopyLabels, positions: CopyB
   }
 }
 
-function markCodeLinks(root: HTMLDivElement) {
+function markCodeLinks(root: HTMLElement) {
   const codeNodes = Array.from(root.querySelectorAll(":not(pre) > code"))
   for (const code of codeNodes) {
     const parent = code.parentElement instanceof HTMLAnchorElement ? code.parentElement : null
@@ -370,8 +370,13 @@ function markCodeLinks(root: HTMLDivElement) {
   }
 }
 
-export function decorateMarkdown(root: HTMLDivElement, labels: CopyLabels, options: { fileLinks?: boolean } = {}) {
+export function prepareMarkdownDom(root: HTMLElement, options: { fileLinks?: boolean } = {}) {
   wrapMarkdownBlocks(root)
+  if (options.fileLinks !== false) markMarkdownFileLinks(root)
+  markCodeLinks(root)
+}
+
+function updateMarkdownEnhancements(root: HTMLDivElement, labels: CopyLabels) {
   // Read every formula before inserting buttons: interleaving these operations
   // forces a separate layout for each formula in a newly mounted message.
   const math = Array.from(root.querySelectorAll<HTMLElement>('[data-component="markdown-math"]')).map((wrapper) => ({
@@ -382,10 +387,11 @@ export function decorateMarkdown(root: HTMLDivElement, labels: CopyLabels, optio
     if (block.parentElement) ensureCopyButtons(block.parentElement, labels, codeCopyButtonPositions(block))
   }
   for (const { wrapper, positions } of math) ensureCopyButtons(wrapper, labels, positions)
+}
 
-  const fileLinks = options.fileLinks !== false
-  if (fileLinks) markMarkdownFileLinks(root)
-  markCodeLinks(root)
+export function decorateMarkdown(root: HTMLDivElement, labels: CopyLabels, options: { fileLinks?: boolean } = {}) {
+  prepareMarkdownDom(root, options)
+  updateMarkdownEnhancements(root, labels)
 }
 
 function labelsEqual(root: HTMLDivElement, labels: CopyLabels) {
@@ -397,7 +403,7 @@ function setLabels(root: HTMLDivElement, labels: CopyLabels) {
   root.dataset.copiedLabel = labels.copied
 }
 
-function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels, options: { fileLinks?: boolean } = {}) {
+function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels) {
   const timeouts = new Map<HTMLButtonElement, ReturnType<typeof setTimeout>>()
 
   const updateLabel = (button: HTMLButtonElement) => {
@@ -433,7 +439,7 @@ function setupCodeCopy(root: HTMLDivElement, labels: CopyLabels, options: { file
     }
   }
 
-  decorateMarkdown(root, labels, options)
+  updateMarkdownEnhancements(root, labels)
 
   const buttons = Array.from(root.querySelectorAll('[data-slot="markdown-copy-button"]'))
   for (const button of buttons) {
@@ -661,6 +667,34 @@ function math(el: Element) {
 
 function stable(el: Element) {
   return math(el) || el.querySelector(".katex,.katex-display,.katex-html,.katex-mathml") !== null
+}
+
+const markdownEnhancementSelector = '[data-slot="markdown-copy-button"]'
+
+function markdownNodeEqual(current: Node, incoming: Node) {
+  if (current.isEqualNode(incoming)) return true
+  if (!(current instanceof Element) || !(incoming instanceof Element)) return false
+  if (!current.querySelector(markdownEnhancementSelector)) return false
+
+  const canonical = current.cloneNode(true) as Element
+  canonical.querySelectorAll(markdownEnhancementSelector).forEach((node) => node.remove())
+  return canonical.isEqualNode(incoming)
+}
+
+export function reconcileMarkdownDom(container: HTMLElement, incoming: HTMLElement) {
+  morphdom(container, incoming, {
+    childrenOnly: true,
+    onBeforeElUpdated: (fromEl, toEl) => {
+      if (markdownNodeEqual(fromEl, toEl)) return false
+      if (fromEl.getAttribute("data-opencode-math-tex") !== toEl.getAttribute("data-opencode-math-tex")) return true
+      if (stable(fromEl) && stable(toEl) && fromEl.textContent === toEl.textContent) return false
+      return true
+    },
+    onBeforeNodeDiscarded: (node) => {
+      if (node instanceof Element && node.matches(markdownEnhancementSelector)) return false
+      return true
+    },
+  })
 }
 
 // Debounce delay before upgrading from fast parse to full parse (with shiki)
@@ -1033,6 +1067,16 @@ export function Markdown(
         took: Math.round(took),
       })
 
+      if (isStreaming) {
+        const fileLinkCount = container.querySelectorAll("a[data-file-link]").length
+        const enhancementCount = container.querySelectorAll(markdownEnhancementSelector).length
+        if (fileLinkCount > 0 || enhancementCount > 0) {
+          console.debug(
+            `[markdown] streaming stable-dom key=${local.cacheKey ?? "none"} mode=${mode} files=${fileLinkCount} enhancements=${enhancementCount} text=${local.text.length}`,
+          )
+        }
+      }
+
       if (isStreaming && before) {
         const after = snap(pane)
         if (after) {
@@ -1066,7 +1110,7 @@ export function Markdown(
       const setup = () => {
         if (!live || !container.isConnected) return
         if (copyCleanup) copyCleanup()
-        copyCleanup = setupCodeCopy(container, next, { fileLinks })
+        copyCleanup = setupCodeCopy(container, next)
         setLabels(container, next)
       }
       if ("requestIdleCallback" in window) {
@@ -1089,7 +1133,7 @@ export function Markdown(
       if (existingCount > 0) {
         const temp = document.createElement("div")
         temp.innerHTML = content
-        wrapMarkdownBlocks(temp)
+        prepareMarkdownDom(temp, { fileLinks })
         const newCount = temp.childNodes.length
 
         // Check how many leading children are identical
@@ -1098,7 +1142,7 @@ export function Markdown(
         for (let i = 0; i < limit - 1; i++) {
           const existing = container.childNodes[i]
           const incoming = temp.childNodes[i]
-          if (existing && incoming && existing.isEqualNode(incoming)) {
+          if (existing && incoming && markdownNodeEqual(existing, incoming)) {
             stableCount++
           } else {
             break
@@ -1126,7 +1170,7 @@ export function Markdown(
     // Chunked path prefers a simple replace on first mount to avoid expensive diffing.
     const temp = document.createElement("div")
     temp.innerHTML = content
-    wrapMarkdownBlocks(temp)
+    prepareMarkdownDom(temp, { fileLinks })
 
     if (chunked && !prevHtml) {
       container.replaceChildren(...Array.from(temp.childNodes))
@@ -1134,24 +1178,13 @@ export function Markdown(
       return
     }
 
-    morphdom(container, temp, {
-      childrenOnly: true,
-      onBeforeElUpdated: (fromEl, toEl) => {
-        if (fromEl.isEqualNode(toEl)) return false
-        if (fromEl.getAttribute("data-opencode-math-tex") !== toEl.getAttribute("data-opencode-math-tex")) return true
-        if (stable(fromEl) && stable(toEl) && fromEl.textContent === toEl.textContent) {
-          return false
-        }
-        return true
-      },
-    })
+    reconcileMarkdownDom(container, temp)
     done("morph")
   })
 
   createEffect(() => {
     const container = root()
     const next = labels()
-    const fileLinks = local.fileLinks !== false
     if (!container) return
     if (isServer) return
     if (!container.dataset.html) return
@@ -1161,7 +1194,7 @@ export function Markdown(
     const setup = () => {
       if (!live || !container.isConnected) return
       if (copyCleanup) copyCleanup()
-      copyCleanup = setupCodeCopy(container, next, { fileLinks })
+      copyCleanup = setupCodeCopy(container, next)
       setLabels(container, next)
     }
     if ("requestIdleCallback" in window) {
