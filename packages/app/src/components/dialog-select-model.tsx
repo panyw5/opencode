@@ -73,7 +73,11 @@ export function parseModelRef(raw: string): ModelKey | undefined {
  * Reuses the session model picker (ModelSelectorPopover / DialogSelectModel)
  * without writing into the session-local selection.
  */
-export function useBoundModelState(input: { value: () => string; onChange: (next: string) => void }): ModelState {
+export function useBoundModelState(input: {
+  value: () => string
+  onChange: (next: string) => void
+  trackRecent?: boolean
+}): ModelState {
   const models = useModels()
 
   const key = createMemo(() => parseModelRef(input.value()))
@@ -91,7 +95,7 @@ export function useBoundModelState(input: { value: () => string; onChange: (next
     }
     input.onChange(`${item.providerID}/${item.modelID}`)
     models.setVisibility(item, true)
-    if (options?.recent) models.recent.push(item)
+    if (options?.recent && input.trackRecent !== false) models.recent.push(item)
   }
 
   return {

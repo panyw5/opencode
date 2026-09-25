@@ -36,11 +36,13 @@ export function SessionMathInitializeDialog(props: {
   const workerModel = useBoundModelState({
     value: () => store.workerModel,
     onChange: (value) => setStore("workerModel", value),
+    trackRecent: false,
   })
   const selectedModel = createMemo(() => workerModel.current())
   const verifierModel = useBoundModelState({
     value: () => store.verifierModel,
     onChange: (value) => setStore("verifierModel", value),
+    trackRecent: false,
   })
   const selectedVerifierModel = createMemo(() => verifierModel.current())
   const workerCount = (value: string | number) => Math.max(0, Math.min(16, Math.floor(Number(value) || 0)))
