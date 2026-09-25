@@ -256,6 +256,7 @@ export const dict: Record<string, string> = {
   "ui.message.injection.mathWorkerCompleted": "Math worker completed",
   "ui.message.injection.mathWorkerBlocked": "Math worker blocked",
   "ui.message.injection.mathWorkerEvent": "Math worker event",
+  "ui.message.injection.mathInitializationPrompt": "Math Mode initialization prompt",
   "ui.message.injection.backgroundShellFailed": "{{description}} background shell failed",
   "ui.message.injection.backgroundShellFailedFallback": "Background shell failed",
   "ui.message.injection.prompt": "Injected prompt",

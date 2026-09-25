@@ -89,7 +89,10 @@ import { DEFAULT_TIMELINE_OVERSCAN, timelineOverscan } from "./windows-performan
 import { createSessionFind } from "./session-find"
 import { createLiveBottomFollow } from "./live-bottom"
 import { FileSearchBar } from "@opencode-ai/ui/file-search"
-import { isInjectionTextPart } from "@opencode-ai/ui/injected-prompt-model"
+import {
+  isInjectionTextPart,
+  splitMathInitializationPrompt,
+} from "@opencode-ai/ui/injected-prompt-model"
 import { atPhysicalBottom, physicalScrollGap } from "../use-session-scroll-utils"
 import type {
   FindNavigationTarget,
@@ -345,9 +348,12 @@ export function MessageTimeline(props: {
   const getMessageParts = displayPartIndex.parts
   const getMessagePart = displayPartIndex.part
   const userMessageText = (messageID: string) => {
-    const texts = getMessageParts(messageID).flatMap((part) =>
-      part.type === "text" && part.text && !part.synthetic ? [part.text] : [],
-    )
+    const texts = getMessageParts(messageID).flatMap((part) => {
+      if (part.type !== "text" || !part.text) return []
+      const mathInitialization = splitMathInitializationPrompt(part.text)
+      if (mathInitialization) return [mathInitialization.problem]
+      return !part.synthetic ? [part.text] : []
+    })
     // UserMessageDisplay initially collapses long prompts to its first 1000
     // characters. The estimator must describe that first DOM state rather than
     // the full text that is only mounted after explicit user expansion.

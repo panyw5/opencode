@@ -10,6 +10,8 @@ import {
   isInjectionPartsPending,
   joinInjectionText,
   selectInjectionParts,
+  isMathInitializationPrompt,
+  splitMathInitializationPrompt,
   type InjectionKind,
 } from "./injected-prompt-model"
 
@@ -22,6 +24,8 @@ export {
   isInjectionKind,
   isInjectionPending,
   isInjectionTextPart,
+  isMathInitializationPrompt,
+  splitMathInitializationPrompt,
   joinInjectionText,
   backgroundTaskInjectionPart,
   scheduledInjectionPart,

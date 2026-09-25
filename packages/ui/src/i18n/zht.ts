@@ -166,6 +166,7 @@ export const dict = {
   "ui.message.injection.backgroundShellFailed": "後台 Shell {{description}} 失敗",
   "ui.message.injection.backgroundShellFailedFallback": "後台 Shell 失敗",
   "ui.message.injection.prompt": "注入提示詞",
+  "ui.message.injection.mathInitializationPrompt": "數學模式初始化提示詞",
   "ui.message.injection.part.one": "{{count}} 部分",
   "ui.message.injection.part.other": "{{count}} 部分",
   "ui.message.injection.chars": "{{count}} 字元",

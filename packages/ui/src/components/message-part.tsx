@@ -70,7 +70,7 @@ import { skillText } from "./message-skill"
 import { hasVisibleText } from "./message-part-text"
 import { reasoningElapsedMs } from "./reasoning-time"
 import { isDismissedQuestion } from "./message-question"
-import { InjectedPromptFromParts } from "./injected-prompt"
+import { InjectedPromptFromParts, splitMathInitializationPrompt } from "./injected-prompt"
 import { hookName, isCustomHookTool, normalizeTool } from "./tool-meta"
 export { normalizeTool } from "./tool-meta"
 import {
@@ -1265,7 +1265,10 @@ export function UserMessageDisplay(props: {
     () => props.parts?.find((p) => p.type === "text" && !(p as TextPart).synthetic) as TextPart | undefined,
   )
 
-  const text = createMemo(() => textPart()?.text || "")
+  const text = createMemo(() => {
+    const value = textPart()?.text || ""
+    return splitMathInitializationPrompt(value)?.problem ?? value
+  })
 
   const MAX_PREVIEW_LENGTH = 1000
   const isLongMessage = createMemo(() => text().length > MAX_PREVIEW_LENGTH)

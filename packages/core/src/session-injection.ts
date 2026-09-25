@@ -6,6 +6,7 @@ export const INJECTION_KINDS = [
   "background-task-injection",
   "background-shell-injection",
   "math-worker-event",
+  "math-initialization-injection",
 ] as const
 
 export type InjectionKind = (typeof INJECTION_KINDS)[number]

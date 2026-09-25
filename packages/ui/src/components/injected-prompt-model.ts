@@ -6,16 +6,37 @@ import {
   type InjectionKind,
 } from "@opencode-ai/core/session-injection"
 
-/** Synthetic text parts that render as a collapsible injected-prompt panel. */
+/** Injected text parts that render as a collapsible prompt panel. */
 export { INJECTION_KINDS, isInjectionKind, type InjectionKind }
 
+const MATH_INITIALIZATION_PROMPT_PREFIX =
+  "Use the math-initialize skill to initialize or reconnect this Math Mode project."
+
+export function isMathInitializationPrompt(text: string): boolean {
+  return splitMathInitializationPrompt(text) !== undefined
+}
+
+export function splitMathInitializationPrompt(text: string): { problem: string; injection: string } | undefined {
+  if (!text.startsWith(MATH_INITIALIZATION_PROMPT_PREFIX + "\n")) return
+  const problemStart = text.indexOf("\n\nProblem:\n")
+  const contractStart = text.indexOf("\n\nInitialization contract:\n", problemStart + 1)
+  if (problemStart < 0 || contractStart < 0) return
+  const problem = text.slice(problemStart + "\n\nProblem:\n".length, contractStart).trim()
+  const prefix = text.slice(0, problemStart).trimEnd()
+  const contract = text.slice(contractStart + 2)
+  return { problem, injection: `${prefix}\n\n${contract}` }
+}
+
 export function isInjectionTextPart(part: Part): part is TextPart {
-  if (part.type !== "text" || !part.synthetic) return false
+  if (part.type !== "text") return false
+  if (isMathInitializationPrompt(part.text)) return true
+  if (!part.synthetic) return false
   return injectionKindFromPart(part) !== undefined
 }
 
 /** Includes legacy background-shell notifications written before metadata was added. */
 export function injectionKindFromPart(part: TextPart): InjectionKind | undefined {
+  if (isMathInitializationPrompt(part.text)) return "math-initialization-injection"
   if (isInjectionKind(part.metadata?.kind)) return part.metadata.kind
   if (isLegacyBackgroundShellInjection(part.text)) return "background-shell-injection"
 }
@@ -28,7 +49,7 @@ export function selectInjectionParts(parts: Part[] | undefined): TextPart[] {
 
 export function joinInjectionText(parts: TextPart[]): string {
   return parts
-    .map((part) => part.text)
+    .map((part) => splitMathInitializationPrompt(part.text)?.injection ?? part.text)
     .filter((text) => text.length > 0)
     .join("\n\n")
 }
@@ -38,9 +59,10 @@ export function injectionTextLength(parts: TextPart[]): number {
   let length = 0
   let count = 0
   for (const part of parts) {
-    if (part.text.length === 0) continue
+    const text = splitMathInitializationPrompt(part.text)?.injection ?? part.text
+    if (text.length === 0) continue
     if (count > 0) length += 2
-    length += part.text.length
+    length += text.length
     count += 1
   }
   return length
@@ -176,6 +198,10 @@ export function injectionTitleFromParts(parts: TextPart[], t: InjectionTitleTran
     if (event === "completed") return t("ui.message.injection.mathWorkerCompleted")
     if (event === "blocked") return t("ui.message.injection.mathWorkerBlocked")
     return t("ui.message.injection.mathWorkerEvent")
+  }
+
+  if (kinds.size === 1 && kinds.has("math-initialization-injection")) {
+    return t("ui.message.injection.mathInitializationPrompt")
   }
 
   return t("ui.message.injection.prompt")

@@ -572,6 +572,7 @@ export function SessionComposerRegion(props: {
   onUserMessageCreated?: (messageID: string) => void
   onSubmitted?: (options?: SubmitOptions) => void
   onAbort?: () => void | Promise<void>
+  transformPromptText?: (text: string) => string
   onResponseSubmit: () => void
   onScrollToBottom: () => void
   /** Page-owned navigation intent controls whether Jump to latest is offered. */
@@ -1125,6 +1126,7 @@ export function SessionComposerRegion(props: {
                   props.followup?.onAbort()
                   await props.onAbort?.()
                 }}
+                transformPromptText={props.transformPromptText}
                 onSubmit={props.onSubmit}
                 onSubmitFailed={props.onSubmitFailed}
                 onUserMessageCreated={props.onUserMessageCreated}

@@ -399,6 +399,7 @@ type PromptSubmitInput = {
   shouldQueue?: Accessor<boolean>
   onQueue?: (draft: FollowupDraft) => void
   onAbort?: () => void | Promise<void>
+  transformPromptText?: (text: string) => string
   onUserMessageCreated?: (messageID: string) => void
   onSubmit?: (sessionID: string, options?: SubmitOptions) => void
   onSubmitFailed?: (sessionID: string) => void
@@ -575,9 +576,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // sessionTabs.promoteDraft fires it via onCommit.
     let deferScopeReset = false
     let pendingScopeReset: (() => void) | undefined
-    const text = promptText(currentPrompt)
-    const images = input.imageAttachments().slice()
     const mode = input.mode()
+    const editorText = promptText(currentPrompt)
+    const text = mode === "normal" ? (input.transformPromptText?.(editorText) ?? editorText) : editorText
+    const submittedPrompt: Prompt = [...currentPrompt]
+    if (text !== editorText) {
+      const textIndex = submittedPrompt.findIndex((part) => part.type === "text")
+      if (textIndex >= 0) {
+        const part = submittedPrompt[textIndex]
+        if (part?.type === "text") submittedPrompt[textIndex] = { ...part, content: text, start: 0, end: text.length }
+      }
+    }
+    const images = input.imageAttachments().slice()
 
     diagnose("start", {
       sessionID: params.id,
@@ -893,7 +903,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const draft: FollowupDraft = {
       sessionID: session.id,
       sessionDirectory,
-      prompt: currentPrompt,
+      prompt: submittedPrompt,
       context,
       agent,
       model,

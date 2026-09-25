@@ -9,9 +9,11 @@ import {
   isInjectionKind,
   isInjectionPartsPending,
   isInjectionTextPart,
+  isMathInitializationPrompt,
   joinInjectionText,
   scheduledInjectionPart,
   selectInjectionParts,
+  splitMathInitializationPrompt,
 } from "./injected-prompt-model"
 
 function text(part: Partial<TextPart> & Pick<TextPart, "text">): TextPart {
@@ -104,6 +106,27 @@ describe("injected-prompt-model", () => {
     expect(isInjectionTextPart(parts[1]!)).toBe(true)
     expect(isInjectionTextPart(parts[2]!)).toBe(true)
     expect(isInjectionTextPart(parts[3]!)).toBe(true)
+  })
+
+  test("recognizes Math Mode initialization prompts as collapsible injections", () => {
+    const prompt =
+      "Use the math-initialize skill to initialize or reconnect this Math Mode project.\n\nMath problem ID: algebra\n\nProblem:\nProve $x^2 = 1$ has real solutions.\n\nInitialization contract:\n- Start workers."
+    const part = text({ text: prompt })
+
+    expect(isMathInitializationPrompt(prompt)).toBe(true)
+    expect(splitMathInitializationPrompt(prompt)).toEqual({
+      problem: "Prove $x^2 = 1$ has real solutions.",
+      injection:
+        "Use the math-initialize skill to initialize or reconnect this Math Mode project.\n\nMath problem ID: algebra\n\nInitialization contract:\n- Start workers.",
+    })
+    expect(isMathInitializationPrompt("Use the math-initialize skill to initialize or reconnect this Math Mode project."))
+      .toBe(false)
+    expect(isInjectionTextPart(part)).toBe(true)
+    expect(selectInjectionParts([part])).toEqual([part])
+    expect(injectionTitleFromParts([part], t)).toBe("ui.message.injection.mathInitializationPrompt")
+    expect(joinInjectionText([part])).toBe(splitMathInitializationPrompt(prompt)!.injection)
+    expect(injectionTextLength([part])).toBe(splitMathInitializationPrompt(prompt)!.injection.length)
+    expect(isInjectionTextPart(text({ text: "Use the math-initialize skill for a normal question." }))).toBe(false)
   })
 
   test("titles legacy background shell notifications as visible information", () => {

@@ -243,6 +243,7 @@ export const dict = {
   "ui.message.injection.backgroundShellFailed": "后台 Shell {{description}} 失败",
   "ui.message.injection.backgroundShellFailedFallback": "后台 Shell 失败",
   "ui.message.injection.prompt": "注入提示词",
+  "ui.message.injection.mathInitializationPrompt": "数学模式初始化提示词",
   "ui.message.injection.injecting": "正在注入命令提示词...",
   "ui.message.injection.part.one": "{{count}} 部分",
   "ui.message.injection.part.other": "{{count}} 部分",

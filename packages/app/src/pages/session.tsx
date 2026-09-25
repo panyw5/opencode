@@ -76,7 +76,7 @@ import {
 } from "@/pages/session/composer"
 import { SessionMathFloat, type SessionMathWorkerEntry } from "@/pages/session/session-math-float"
 import { SessionMathInitializeDialog } from "@/pages/session/composer/session-math-initialize-dialog"
-import { buildMathInitializationPrompt } from "@/pages/session/math-initialize"
+import { buildMathInitializationPrompt, type MathInitializationConfig } from "@/pages/session/math-initialize"
 import { MATH_ORCHESTRATOR_AGENT, mathModeIsInitializing, mathModeLocksAgent } from "@/pages/session/math-mode-agent"
 import {
   clipMessages,
@@ -524,6 +524,7 @@ export default function Page() {
   const [mathMode, setMathMode] = createStore({
     prepared: false,
     initializingSessionID: undefined as string | undefined,
+    initializationConfig: undefined as MathInitializationConfig | undefined,
   })
   createEffect(
     on(
@@ -534,7 +535,7 @@ export default function Page() {
           `[math-initialize] session changed session=${sessionID ?? "draft"} pending=${pendingSessionID ?? "none"}`,
         )
         if (pendingSessionID !== sessionID) {
-          setMathMode("prepared", false)
+          setMathMode({ prepared: false, initializationConfig: undefined })
           if (pendingSessionID) {
             console.debug(`[math-initialize] clear pending session=${pendingSessionID} reason=session-changed`)
             setMathMode("initializingSessionID", undefined)
@@ -707,7 +708,7 @@ export default function Page() {
     console.debug(
       `[math-initialize] worker assignment complete session=${requestedSessionID} workers=${mathSwarm.workers.length}`,
     )
-    setMathMode("initializingSessionID", undefined)
+    setMathMode({ initializingSessionID: undefined, initializationConfig: undefined })
   })
   let lastMathInitializationState = ""
   createEffect(() => {
@@ -1710,12 +1711,11 @@ export default function Page() {
         defaultModel={defaultModel}
         defaultVerifierModel={mathSwarm.workers[0]?.verifierModel ?? defaultModel}
         onConfirm={(config) => {
-          const text = buildMathInitializationPrompt(config)
+          const text = config.problem.trim()
           console.debug(
-            `[math-initialize] confirmed project=${config.project} high=${config.highWorkers} xhigh=${config.xhighWorkers} promptLength=${text.length}`,
+            `[math-initialize] confirmed project=${config.project} high=${config.highWorkers} xhigh=${config.xhighWorkers} problemLength=${text.length}`,
           )
-          setMathMode("prepared", true)
-          setMathMode("initializingSessionID", undefined)
+          setMathMode({ prepared: true, initializingSessionID: undefined, initializationConfig: config })
           local.agent.lock(MATH_ORCHESTRATOR_AGENT)
           prompt.set([{ type: "text", content: text, start: 0, end: text.length }], text.length)
           requestAnimationFrame(() => inputRef?.focus())
@@ -3639,6 +3639,11 @@ export default function Page() {
               resumeScroll()
             }}
             onAbort={stopCurrentMathWorkerOnAbort}
+            transformPromptText={(problem) => {
+              const config =
+                mathMode.prepared && !mathMode.initializingSessionID ? mathMode.initializationConfig : undefined
+              return config ? buildMathInitializationPrompt({ ...config, problem }) : problem
+            }}
             onResponseSubmit={resumeScroll}
             onScrollToBottom={resumeScroll}
             showJumpToLatest={ui.scroll.overflow && !navigationState.following}

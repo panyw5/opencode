@@ -745,6 +745,21 @@ describe("prompt submit intervene", () => {
     ...overrides,
   })
 
+  test("transforms only the submitted draft text while preserving queued prompt content", async () => {
+    params = { id: "session-9", dir: "/repo/worktree-a" }
+    const queued: Array<{ prompt: Prompt }> = []
+    const submit = createPromptSubmit(
+      baseInput({
+        transformPromptText: (text) => `initialized: ${text}`,
+        onQueue: (draft) => queued.push(draft),
+      }),
+    )
+
+    await submit.handleSubmit({ preventDefault() {} } as Event)
+
+    expect(queued[0]?.prompt).toEqual([{ type: "text", content: "initialized: ls", start: 0, end: 15 }])
+  })
+
   test("intervene bypasses the queue, posts immediately and flushes the session", async () => {
     params = { dir: "/repo/worktree-a", id: "session-9" }
     const queued: unknown[] = []
