@@ -45,6 +45,8 @@ export const dict: Record<string, string> = {
   "ui.presentation.openPreview": "Open file preview",
   "ui.presentation.loadError": "Unable to load preview",
   "ui.presentation.retry": "Retry",
+  "ui.diagram.title": "Diagram",
+  "ui.diagram.renderError": "Unable to render diagram",
 
   "ui.lineComment.label.prefix": "Comment on ",
   "ui.lineComment.label.suffix": "",

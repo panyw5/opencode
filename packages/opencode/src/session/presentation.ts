@@ -109,6 +109,12 @@ function safeSvg(data: Uint8Array) {
   if (/@import\b|url\s*\(\s*["']?(?!#)(?:https?:|data:|file:|\/|\.\.?\/)/i.test(text) || /<!ENTITY\b|<!DOCTYPE\b/i.test(text)) throw new Error("SVG contains external CSS or entity declarations")
 }
 
+export function validateSvgSource(source: string) {
+  const data = new TextEncoder().encode(source)
+  detect(data, "diagram.svg")
+  safeSvg(data)
+}
+
 function dir(sessionID: string) {
   if (!/^[A-Za-z0-9_-]+$/.test(sessionID)) throw new Error("Invalid session ID")
   return path.join(ROOT(), sessionID)

@@ -181,7 +181,7 @@ function estimateTextHeight(
 }
 
 function estimateToolPartHeight(part: ToolPart, width: number, options: EstimateRowHeightOptions) {
-  if (part.tool === "present_file") return estimatePresentFileHeight(part, width, options)
+  if (part.tool === "present_file" || part.tool === "present_diagram") return estimatePresentFileHeight(part, width, options)
   if (options.toolDefaultOpen?.(part)) return OPEN_TOOL_HEIGHT
   return COLLAPSED_TOOL_HEIGHT
 }
@@ -421,7 +421,7 @@ export function rowRenderCost(row: EstimateRowInput, options: EstimateRowHeightO
         if (!part) return 1
         if (part.type === "tool") {
           if (toolPartLive(part)) return 6
-          if (part.tool === "present_file") return 4
+          if (part.tool === "present_file" || part.tool === "present_diagram") return 4
           if (options.toolDefaultOpen?.(part)) return 6
           return 1
         }

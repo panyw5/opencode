@@ -432,6 +432,14 @@ export function partMeasurementKey(part: Part | undefined) {
       // Include every field that can alter the media card's geometry or label.
       return `tool:${part.tool}:${state.status}:${String(value.artifactID ?? "")}:${String(value.mime ?? "")}:${String(value.width ?? "")}:${String(value.height ?? "")}:${String(value.filename ?? "")}:${String(value.caption ?? "")}`
     }
+    const diagram =
+      part.tool === "present_diagram" && metadata && typeof metadata === "object"
+        ? (metadata as { diagram?: unknown }).diagram
+        : undefined
+    if (diagram && typeof diagram === "object") {
+      const value = diagram as Record<string, unknown>
+      return `tool:${part.tool}:${state.status}:${String(value.id ?? "")}:${String(value.syntax ?? "")}:${String(value.title ?? "")}:${String(value.caption ?? "")}`
+    }
     return `tool:${part.tool}:${state.status}:${title}:${output.length}:${JSON.stringify(metadata ?? {}).length}`
   }
   return `${part.type}:${JSON.stringify(part).length}`

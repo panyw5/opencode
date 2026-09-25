@@ -45,6 +45,7 @@ import { FileIcon } from "./file-icon"
 import { Icon } from "./icon"
 import { ToolErrorCard } from "./tool-error-card"
 import { PresentationCard } from "./presentation-card"
+import { DiagramCard } from "./diagram-card"
 import { Checkbox } from "./checkbox"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
@@ -1794,6 +1795,18 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
                   />
                 )
               }
+              if (tool === "present_diagram") {
+                return (
+                  <DiagramCard
+                    sessionID={part().sessionID}
+                    partID={part().id}
+                    input={input()}
+                    metadata={partMetadata()}
+                    status="error"
+                    error={state.error}
+                  />
+                )
+              }
               return (
                 <ToolErrorCard
                   tool={part().tool}
@@ -1813,14 +1826,27 @@ PART_MAPPING["tool"] = function ToolPartDisplay(props) {
           </Match>
           <Match when={true}>
             <Show
-              when={tool !== "present_file"}
+              when={tool !== "present_file" && tool !== "present_diagram"}
               fallback={
-                <PresentationCard
-                  sessionID={part().sessionID}
-                  input={input()}
-                  metadata={partMetadata()}
-                  status={part().state.status}
-                />
+                <Switch>
+                  <Match when={tool === "present_file"}>
+                    <PresentationCard
+                      sessionID={part().sessionID}
+                      input={input()}
+                      metadata={partMetadata()}
+                      status={part().state.status}
+                    />
+                  </Match>
+                  <Match when={tool === "present_diagram"}>
+                    <DiagramCard
+                      sessionID={part().sessionID}
+                      partID={part().id}
+                      input={input()}
+                      metadata={partMetadata()}
+                      status={part().state.status}
+                    />
+                  </Match>
+                </Switch>
               }
             >
               <Dynamic

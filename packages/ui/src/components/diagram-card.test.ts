@@ -1,0 +1,24 @@
+import { describe, expect, test } from "bun:test"
+import { readDiagramMetadata } from "./diagram-card"
+import { renderDiagramSvg } from "./diagram-render"
+
+describe("diagram card", () => {
+  test("reads Mermaid source from the tool input", () => {
+    expect(
+      readDiagramMetadata(
+        { source: "flowchart LR\n  A --> B" },
+        { diagram: { id: "dg_1", syntax: "mermaid", title: "Flow", caption: "Overview", bytes: 21 } },
+      ),
+    ).toEqual({ id: "dg_1", syntax: "mermaid", source: "flowchart LR\n  A --> B", title: "Flow", caption: "Overview" })
+  })
+
+  test("rejects incomplete metadata and source", () => {
+    expect(readDiagramMetadata({}, { diagram: { id: "dg_1", syntax: "svg" } })).toBeUndefined()
+    expect(readDiagramMetadata({ source: "<svg/>" }, { diagram: { id: "dg_1", syntax: "dot" } })).toBeUndefined()
+  })
+
+  test("renders inline SVG without loading Mermaid", async () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"/>'
+    expect(await renderDiagramSvg({ id: "dg_svg", syntax: "svg", source })).toBe(source)
+  })
+})

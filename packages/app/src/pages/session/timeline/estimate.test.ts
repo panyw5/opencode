@@ -84,6 +84,9 @@ describe("estimateRowHeight fixed-height rows", () => {
     expect(estimateRowHeight(row, 500, { ...base, parts: lookup(part) })).toBe(PRESENT_FILE_MOBILE_HEIGHT)
     expect(estimateRowHeight(row, 559, { ...base, parts: lookup(part) })).toBe(PRESENT_FILE_MOBILE_HEIGHT)
     expect(estimateRowHeight(row, 500, { ...base, parts: lookup(part), viewportWidth: 1440 })).toBe(PRESENT_FILE_DESKTOP_HEIGHT)
+    const diagram = { ...part, tool: "present_diagram" } as ToolPart
+    expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(diagram) })).toBe(PRESENT_FILE_DESKTOP_HEIGHT)
+    expect(estimateRowHeight(row, 500, { ...base, parts: lookup(diagram) })).toBe(PRESENT_FILE_MOBILE_HEIGHT)
   })
   test("TurnGap uses the h-6 constant", () => {
     expect(estimateRowHeight({ _tag: "TurnGap", userMessageID: "m" }, WIDTH, base)).toBe(TURN_GAP_HEIGHT)

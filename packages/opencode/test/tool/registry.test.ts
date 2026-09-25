@@ -153,6 +153,7 @@ describe("tool.registry", () => {
       expect(ids).toContain("math_fact_search")
       expect(ids).toContain("math_fact_get")
       expect(ids).toContain("math_fact_revoke")
+      expect(ids).toContain("present_diagram")
       expect(ids).not.toContain("math_fact_submit")
     }),
   )

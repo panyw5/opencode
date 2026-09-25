@@ -934,3 +934,27 @@ test("rowContentVersion for Thinking depends on phase and heading length", () =>
   const v2 = rowContentVersion({ _tag: "Thinking", userMessageID: "msg_1", phase: "thinking" }, () => undefined)
   expect(v1).not.toBe(v2)
 })
+
+test("diagram metadata changes invalidate its row measurement", () => {
+  const part = {
+    id: "prt_diagram",
+    sessionID: "ses_1",
+    messageID: "msg_1",
+    type: "tool",
+    tool: "present_diagram",
+    callID: "call_diagram",
+    state: {
+      status: "completed" as const,
+      input: { source: "flowchart LR\n A --> B" },
+      output: "presented",
+      title: "Flow",
+      metadata: { diagram: { id: "dg_first", syntax: "mermaid", title: "Flow" } },
+      time: { start: 1, end: 2 },
+    },
+  } as ToolPart
+  const changed = {
+    ...part,
+    state: { ...part.state, metadata: { diagram: { id: "dg_second", syntax: "mermaid", title: "Flow" } } },
+  } as ToolPart
+  expect(partMeasurementKey(changed)).not.toBe(partMeasurementKey(part))
+})

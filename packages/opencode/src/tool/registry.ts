@@ -43,6 +43,7 @@ import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { PresentFileTool } from "./present_file"
+import { PresentDiagramTool } from "./present_diagram"
 import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
@@ -212,6 +213,7 @@ export const layer: Layer.Layer<
     const skilltool = yield* SkillTool
     const agent = yield* Agent.Service
     const presentFile = yield* PresentFileTool
+    const presentDiagram = yield* PresentDiagramTool
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
@@ -353,6 +355,7 @@ export const layer: Layer.Layer<
           lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
           present_file: Tool.init(presentFile),
+          present_diagram: Tool.init(presentDiagram),
         })
 
         const builtin = [
@@ -406,6 +409,7 @@ export const layer: Layer.Layer<
           ...(flags.experimentalLspTool ? [tool.lsp] : []),
           ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
           tool.present_file,
+          tool.present_diagram,
         ]
         log.info("builtin tools initialized", { ids: builtin.map((item) => item.id) })
 

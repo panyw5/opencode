@@ -242,7 +242,7 @@ export namespace Timeline {
       return refs.every((ref) => {
         const part = assistantPartByRef.get(`${ref.messageID}\n${ref.partID}`)
         // Presented artifacts are timeline content, not collapsible tool activity.
-        return part?.type === "tool" && part.tool !== "present_file"
+        return part?.type === "tool" && part.tool !== "present_file" && part.tool !== "present_diagram"
       })
     }
     const flushToolGroups = () => {

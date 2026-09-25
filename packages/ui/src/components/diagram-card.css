@@ -1,0 +1,125 @@
+[data-component="diagram-card"] {
+  position: relative;
+  width: min(100%, 560px);
+  height: 324px;
+  display: grid;
+  grid-template-rows: 224px minmax(0, 1fr);
+  padding: 9px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-base);
+  overflow: hidden;
+  box-sizing: border-box;
+  contain: layout paint;
+}
+
+.diagram-card__open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+.diagram-card__open:focus-visible {
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: -3px;
+  border-radius: var(--radius-lg);
+}
+.diagram-card__zoom {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  z-index: 2;
+  box-shadow: var(--shadow-xxs-border);
+}
+.diagram-card__preview {
+  height: 224px;
+  width: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  background: var(--surface-base);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+[data-component="diagram-card"][data-diagram-syntax="mermaid"] .diagram-card__preview {
+  background: #f7f7f4;
+}
+.diagram-card__preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.diagram-card__placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  color: var(--text-weak);
+  text-align: center;
+  overflow: hidden;
+}
+.diagram-card__body {
+  min-width: 0;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 2px 2px;
+}
+.diagram-card__heading {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.diagram-card__title-row {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.diagram-card__title-row strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+}
+.diagram-card__title-row span {
+  flex: none;
+  color: var(--text-weak);
+  font-size: 12px;
+}
+.diagram-card__heading p {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.diagram-card__retry {
+  position: relative;
+  z-index: 2;
+  flex: none;
+}
+
+@media (max-width: 560px) {
+  [data-component="diagram-card"] {
+    height: 276px;
+    grid-template-rows: 176px minmax(0, 1fr);
+  }
+  .diagram-card__preview {
+    height: 176px;
+  }
+}
