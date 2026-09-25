@@ -559,6 +559,13 @@ export function ModelSelectorPopover(props: {
           }}
           data-component="popover-content"
           data-model-selector-popover-content
+          // Mark the popover as a top layer so a parent modal Dialog's focus
+          // trap never yanks focus back out of it (e.g. clicking the model
+          // search input inside a dialog). Kobalte's focus trap and
+          // ariaHideOutside both skip elements carrying this attribute; the
+          // trap's pause/resume choreography with a non-modal popover is
+          // racy, so this is defense at the yank point.
+          data-kb-top-layer=""
           class="w-[338px] h-[39rem] max-h-[calc(100vh-96px)] flex flex-col p-2 overflow-hidden"
           style={{
             ...props.style,
