@@ -154,7 +154,7 @@ function mermaid() {
           maxTextSize: 64 * 1024,
           maxEdges: 500,
           suppressErrorRendering: true,
-          flowchart: { htmlLabels: false, look: "classic" },
+          flowchart: { htmlLabels: false, look: "classic", subGraphTitleMargin: { top: 16, bottom: 12 } },
           look: "classic",
         })
         return instance
@@ -187,7 +187,7 @@ export function renderDiagramSvg(input: {
       maxTextSize: 64 * 1024,
       maxEdges: 500,
       suppressErrorRendering: true,
-      flowchart: { htmlLabels: false, look: "classic" },
+      flowchart: { htmlLabels: false, look: "classic", subGraphTitleMargin: { top: 16, bottom: 12 } },
       look: "classic",
       theme: "base",
       themeVariables: {
