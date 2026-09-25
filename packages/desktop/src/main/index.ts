@@ -334,10 +334,10 @@ const main = Effect.gen(function* () {
   void updater
     .start()
     .then((state) => {
-      logger.log("automatic update check finished", { status: state.status })
+      logger.log("updater initialized without automatic check", { status: state.status })
     })
     .catch((error) => {
-      logger.error("automatic update check failed", error)
+      logger.error("updater initialization failed", error)
     })
   yield* Effect.promise(() => startNetLog()).pipe(
     Effect.catch((error) =>

@@ -612,59 +612,6 @@ export default function Layout(props: ParentProps) {
     setLocale(next)
   }
 
-  const useUpdatePolling = () =>
-    onMount(() => {
-      if (!platform.checkUpdate || !platform.update || !platform.restart) return
-
-      let toastId: number | undefined
-      let interval: ReturnType<typeof setInterval> | undefined
-
-      const pollUpdate = () =>
-        platform.checkUpdate!().then(({ updateAvailable, version }) => {
-          if (!updateAvailable) return
-          if (toastId !== undefined) return
-          toastId = showToast({
-            persistent: true,
-            icon: "download",
-            title: language.t("toast.update.title"),
-            description: language.t("toast.update.description", { version: version ?? "" }),
-            actions: [
-              {
-                label: language.t("toast.update.action.installRestart"),
-                onClick: async () => {
-                  await platform.update!()
-                  await platform.restart!()
-                },
-              },
-              {
-                label: language.t("toast.update.action.notYet"),
-                onClick: "dismiss",
-              },
-            ],
-          })
-        })
-
-      createEffect(() => {
-        if (!settings.ready()) return
-
-        if (!settings.updates.startup()) {
-          if (interval === undefined) return
-          clearInterval(interval)
-          interval = undefined
-          return
-        }
-
-        if (interval !== undefined) return
-        void pollUpdate()
-        interval = setInterval(pollUpdate, 10 * 60 * 1000)
-      })
-
-      onCleanup(() => {
-        if (interval === undefined) return
-        clearInterval(interval)
-      })
-    })
-
   const useSDKNotificationToasts = () =>
     onMount(() => {
       const toastBySession = new Map<string, number>()
@@ -808,7 +755,6 @@ export default function Layout(props: ParentProps) {
       })
     })
 
-  useUpdatePolling()
   useSDKNotificationToasts()
 
   function scrollToSession(sessionId: string, sessionKey: string) {

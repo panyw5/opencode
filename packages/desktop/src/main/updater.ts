@@ -15,13 +15,15 @@ export function setupAutoUpdater(stop: () => Promise<void>): UpdaterController {
   autoUpdater.logger = logger
   autoUpdater.channel = "latest"
   autoUpdater.allowPrerelease = false
-  autoUpdater.allowDowngrade = true
+  autoUpdater.allowDowngrade = false
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
   logger.log("auto updater configured", {
     channel: autoUpdater.channel,
     allowPrerelease: autoUpdater.allowPrerelease,
     allowDowngrade: autoUpdater.allowDowngrade,
+    autoDownload: autoUpdater.autoDownload,
+    autoInstallOnAppQuit: autoUpdater.autoInstallOnAppQuit,
     currentVersion: app.getVersion(),
   })
 

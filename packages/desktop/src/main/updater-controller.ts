@@ -116,7 +116,8 @@ export function createUpdaterController(input: {
         input.log?.("updater persisted ready state cleared reason=matches-current-version")
         await input.persistence.clear()
       }
-      return check()
+      input.log?.("updater startup check skipped reason=manual-only")
+      return state
     },
     check,
     async install() {

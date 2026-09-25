@@ -329,6 +329,39 @@ describe("createUpdaterController", () => {
   })
 
   describe("persistence", () => {
+    test("startup does not check or download even when a previous update is recorded", async () => {
+      const persistence = createMockPersistence()
+      await persistence.set({ version: "1.1.0" })
+      let checks = 0
+      let downloads = 0
+      const logs: string[] = []
+      const ctrl = createUpdaterController({
+        enabled: true,
+        currentVersion: "1.0.0",
+        backend: createMockBackend({
+          checkForUpdates: async () => {
+            checks++
+            return { isUpdateAvailable: true, updateInfo: { version: "1.1.0" } }
+          },
+          downloadUpdate: async () => {
+            downloads++
+          },
+        }),
+        persistence,
+        stop: async () => {},
+        log: (message) => logs.push(message),
+      })
+
+      expect(await ctrl.start()).toEqual({ status: "idle" })
+      expect(checks).toBe(0)
+      expect(downloads).toBe(0)
+      expect(logs).toContain("updater startup check skipped reason=manual-only")
+
+      expect(await ctrl.check()).toEqual({ status: "ready", version: "1.1.0" })
+      expect(checks).toBe(1)
+      expect(downloads).toBe(1)
+    })
+
     test("persists ready version after successful download", async () => {
       const persistence = createMockPersistence()
       const ctrl = createUpdaterController({

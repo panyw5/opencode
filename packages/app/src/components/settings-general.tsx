@@ -894,19 +894,6 @@ export const SettingsGeneral: Component = () => {
 
       <SettingsList>
         <SettingsRow
-          title={language.t("settings.updates.row.startup.title")}
-          description={language.t("settings.updates.row.startup.description")}
-        >
-          <div data-action="settings-updates-startup">
-            <Switch
-              checked={settings.updates.startup()}
-              disabled={!platform.checkUpdate}
-              onChange={(checked) => settings.updates.setStartup(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
           title={language.t("settings.general.row.releaseNotes.title")}
           description={language.t("settings.general.row.releaseNotes.description")}
         >

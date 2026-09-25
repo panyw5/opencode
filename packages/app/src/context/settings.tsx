@@ -37,9 +37,6 @@ export interface Settings {
     editToolPartsExpanded: boolean
     sessionTabsBar: boolean
   }
-  updates: {
-    startup: boolean
-  }
   appearance: {
     fontSize: number
     font: string
@@ -86,9 +83,6 @@ const defaultSettings: Settings = {
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
     sessionTabsBar: true,
-  },
-  updates: {
-    startup: true,
   },
   appearance: {
     fontSize: 14,
@@ -246,12 +240,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         sessionTabsBar: withFallback(() => store.general?.sessionTabsBar, defaultSettings.general.sessionTabsBar),
         setSessionTabsBar(value: boolean) {
           setStore("general", "sessionTabsBar", value)
-        },
-      },
-      updates: {
-        startup: withFallback(() => store.updates?.startup, defaultSettings.updates.startup),
-        setStartup(value: boolean) {
-          setStore("updates", "startup", value)
         },
       },
       appearance: {
