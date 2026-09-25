@@ -2,6 +2,7 @@ import type { PermissionRequest, QuestionAnswer, QuestionRequest } from "@openco
 import { For, Show, createEffect, createSignal } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@opencode-ai/ui/dock-prompt"
+import { Icon } from "@opencode-ai/ui/icon"
 import { SessionPermissionDock } from "@/pages/session/composer/session-permission-dock"
 import { useLanguage } from "@/context/language"
 import { quickQuestionAnswers, quickRequestNotFound } from "./helpers"
@@ -35,12 +36,17 @@ function QuickQuestion(props: {
     const question = props.request.questions[index]
     const current = selected()[index] ?? []
     if (question?.multiple === true) {
+      const next = current.includes(label) ? current.filter((x) => x !== label) : [...current, label]
+      console.debug(
+        `[quick-assistant] question option request=${props.request.id} index=${index} selected=${next.includes(label) ? 1 : 0}`,
+      )
       setSelected((items) => ({
         ...items,
-        [index]: current.includes(label) ? current.filter((x) => x !== label) : [...current, label],
+        [index]: next,
       }))
       return
     }
+    console.debug(`[quick-assistant] question option request=${props.request.id} index=${index} selected=1`)
     setSelected((items) => ({ ...items, [index]: [label] }))
   }
   const submit = async () => {
@@ -110,14 +116,13 @@ function QuickQuestion(props: {
                   <button
                     type="button"
                     data-slot="quick-question-option"
-                    class="w-full rounded-[14px] border border-border-weak-base bg-background-base/40 px-4 py-3 text-left transition-colors hover:bg-surface-base-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-base"
+                    class="flex w-full items-center gap-3 rounded-[14px] border px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-focus-base"
                     style={{ "border-radius": "14px" }}
-                    classList={{ "border-border-focus-base bg-surface-base-hover": picked() }}
                     aria-pressed={picked()}
                     disabled={sending()}
                     onClick={() => toggle(index(), option.label)}
                   >
-                    <span class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <span class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1">
                       <span class="min-w-0 max-w-full break-words font-semibold" style={{ "font-weight": "600" }}>
                         {option.label}
                       </span>
@@ -125,6 +130,16 @@ function QuickQuestion(props: {
                         <span class="min-w-0 max-w-full break-words text-12-regular text-text-weaker">
                           {option.description}
                         </span>
+                      </Show>
+                    </span>
+                    <span
+                      data-slot="quick-question-option-indicator"
+                      class="flex size-5 shrink-0 items-center justify-center border"
+                      classList={{ "rounded-md": item.multiple, "rounded-full": !item.multiple }}
+                      aria-hidden="true"
+                    >
+                      <Show when={picked()}>
+                        <Icon name="check-small" size="small" />
                       </Show>
                     </span>
                   </button>
@@ -161,55 +176,64 @@ export function QuickAssistantRequests(props: {
   const permission = () => props.permissions[0]
   const question = () => props.questions[0]
   createEffect(() => {
-    permission()?.id
+    const permissionID = permission()?.id
+    const questionID = question()?.id
+    console.debug(
+      `[quick-assistant] request panel permission=${permissionID ?? "none"} question=${questionID ?? "none"}`,
+    )
     setPermissionError("")
   })
   return (
-    <>
-      <Show when={permission()}>
-        <div role="status" class="px-4 py-2 text-12-regular text-text-weaker">
-          {language.t("quickAssistant.waiting.permission")}
-        </div>
-      </Show>
-      <Show when={permission()}>
-        {(request) => (
-          <>
-            <SessionPermissionDock
-              request={request()}
-              responding={permissionSending()}
-              onDecide={async (response) => {
-                if (permissionSending()) return
-                const snapshot = { ...request() }
-                setPermissionSending(true)
-                setPermissionError("")
-                console.debug(`[quick-assistant] permission response request=${snapshot.id} response=${response}`)
-                try {
-                  await props.client.permission.respond({
-                    sessionID: snapshot.sessionID,
-                    permissionID: snapshot.id,
-                    response,
-                  })
-                  props.onPermissionDone(snapshot)
-                } catch (error) {
-                  console.error(`[quick-assistant] permission response failed request=${snapshot.id}`, error)
-                  if (quickRequestNotFound(error)) props.onPermissionDone(snapshot)
-                  else setPermissionError(error instanceof Error ? error.message : language.t("common.requestFailed"))
-                } finally {
-                  setPermissionSending(false)
-                }
-              }}
-            />
-            <Show when={permissionError()}>
-              <div class="px-4 py-2 text-12-regular text-text-danger-base">{permissionError()}</div>
-            </Show>
-          </>
-        )}
-      </Show>
-      <Show when={!permission()}>
-        <Show keyed when={question()}>
-          {(request) => <QuickQuestion request={request} client={props.client} onDone={props.onQuestionDone} />}
+    <Show when={permission() || question()}>
+      <div
+        data-component="quick-assistant-requests"
+        class="min-h-0 max-h-full shrink-0 overflow-y-auto overscroll-contain"
+      >
+        <Show when={permission()}>
+          <div role="status" class="px-4 py-2 text-12-regular text-text-weaker">
+            {language.t("quickAssistant.waiting.permission")}
+          </div>
         </Show>
-      </Show>
-    </>
+        <Show when={permission()}>
+          {(request) => (
+            <>
+              <SessionPermissionDock
+                request={request()}
+                responding={permissionSending()}
+                onDecide={async (response) => {
+                  if (permissionSending()) return
+                  const snapshot = { ...request() }
+                  setPermissionSending(true)
+                  setPermissionError("")
+                  console.debug(`[quick-assistant] permission response request=${snapshot.id} response=${response}`)
+                  try {
+                    await props.client.permission.respond({
+                      sessionID: snapshot.sessionID,
+                      permissionID: snapshot.id,
+                      response,
+                    })
+                    props.onPermissionDone(snapshot)
+                  } catch (error) {
+                    console.error(`[quick-assistant] permission response failed request=${snapshot.id}`, error)
+                    if (quickRequestNotFound(error)) props.onPermissionDone(snapshot)
+                    else setPermissionError(error instanceof Error ? error.message : language.t("common.requestFailed"))
+                  } finally {
+                    setPermissionSending(false)
+                  }
+                }}
+              />
+              <Show when={permissionError()}>
+                <div class="px-4 py-2 text-12-regular text-text-danger-base">{permissionError()}</div>
+              </Show>
+            </>
+          )}
+        </Show>
+        <Show when={!permission()}>
+          <Show keyed when={question()}>
+            {(request) => <QuickQuestion request={request} client={props.client} onDone={props.onQuestionDone} />}
+          </Show>
+        </Show>
+      </div>
+    </Show>
   )
 }

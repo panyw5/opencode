@@ -845,6 +845,8 @@ export const dict = {
   "quickAssistant.waiting.permission": "Waiting for permission confirmation",
   "quickAssistant.context.enable": "Include current session context",
   "quickAssistant.context.disable": "Stop including current session context",
+  "quickAssistant.context.attached": "Current session context",
+  "quickAssistant.context.loadFailed": "Could not read the current session. Nothing was sent.",
   "notification.permission.title": "Permission required",
   "notification.permission.description": "{{sessionTitle}} in {{projectName}} needs permission",
   "notification.question.title": "Question",

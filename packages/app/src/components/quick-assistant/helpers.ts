@@ -70,38 +70,75 @@ export type SessionContextMessage = {
   text: string
 }
 
-const CONTEXT_MESSAGE_LIMIT = 6
-const CONTEXT_MESSAGE_CHARS = 1_200
-const CONTEXT_TOTAL_CHARS = 4_800
+type SessionContextPage = {
+  items: Array<{ info: Message; parts: Part[] }>
+  cursor?: string
+}
 
-export function sessionContextMessages(messages: Message[], parts: Record<string, Part[] | undefined>) {
-  const candidates = messages
-    .map((message) => ({
-      role: message.role,
-      text: (parts[message.id] ?? [])
+export async function collectSessionContext(loadPage: (before?: string) => Promise<SessionContextPage>, maxPages = 10) {
+  const messages = new Map<string, { info: Message; parts: Part[] }>()
+  const cursors = new Set<string>()
+  let before: string | undefined
+  for (let page = 0; page < maxPages; page++) {
+    const result = await loadPage(before)
+    for (const item of result.items) messages.set(item.info.id, item)
+    if (!result.cursor) {
+      return {
+        items: [...messages.values()].sort((a, b) => a.info.id.localeCompare(b.info.id)),
+        complete: true,
+        pages: page + 1,
+      }
+    }
+    if (result.cursor === before || cursors.has(result.cursor))
+      throw new Error("Session messages pagination did not advance")
+    cursors.add(result.cursor)
+    before = result.cursor
+  }
+  return {
+    items: [...messages.values()].sort((a, b) => a.info.id.localeCompare(b.info.id)),
+    complete: false,
+    pages: maxPages,
+  }
+}
+
+const FULL_CONTEXT_TOTAL_CHARS = 20_000
+const FULL_CONTEXT_USER_CHARS = 1_500
+const FULL_CONTEXT_ASSISTANT_CHARS = 5_000
+
+export function fullSessionContextMessages(items: Array<{ info: Message; parts: Part[] }>) {
+  const candidates = items
+    .map((item) => ({
+      role: item.info.role,
+      text: item.parts
         .filter((part): part is Extract<Part, { type: "text" }> => part.type === "text" && !part.synthetic)
         .map((part) => part.text)
         .join("\n")
         .trim(),
     }))
     .filter((message): message is SessionContextMessage => !!message.text)
-    .slice(-CONTEXT_MESSAGE_LIMIT)
 
-  let remaining = CONTEXT_TOTAL_CHARS
-  const result: SessionContextMessage[] = []
-  for (const message of [...candidates].reverse()) {
-    if (remaining <= 0) break
-    const limit = Math.min(CONTEXT_MESSAGE_CHARS, remaining)
-    const clipped =
-      message.text.length <= limit
-        ? message.text
-        : message.role === "assistant"
-          ? `...${message.text.slice(-(limit - 3))}`
-          : `${message.text.slice(0, limit - 3)}...`
-    remaining -= clipped.length
-    result.unshift({ role: message.role, text: clipped })
+  const clip = (message: SessionContextMessage, limit: number) => {
+    if (message.text.length <= limit) return message
+    if (message.role === "user") return { ...message, text: `${message.text.slice(0, limit - 3)}...` }
+    const head = Math.ceil((limit - 5) * 0.6)
+    return { ...message, text: `${message.text.slice(0, head)}\n...\n${message.text.slice(-(limit - head - 5))}` }
   }
-  return result
+
+  const firstUser = candidates.findIndex((message) => message.role === "user")
+  const first = firstUser === -1 ? undefined : clip(candidates[firstUser], FULL_CONTEXT_USER_CHARS)
+  let remaining = FULL_CONTEXT_TOTAL_CHARS - (first?.text.length ?? 0)
+  const result: SessionContextMessage[] = []
+  for (let index = candidates.length - 1; index >= 0 && remaining >= 10; index--) {
+    if (index === firstUser) continue
+    const message = candidates[index]
+    const clipped = clip(
+      message,
+      Math.min(message.role === "user" ? FULL_CONTEXT_USER_CHARS : FULL_CONTEXT_ASSISTANT_CHARS, remaining),
+    )
+    remaining -= clipped.text.length
+    result.unshift(clipped)
+  }
+  return first ? [first, ...result] : result
 }
 
 export function context(
@@ -111,7 +148,7 @@ export function context(
   count: number,
   options?: {
     messages?: SessionContextMessage[]
-    messagesURL?: string
+    complete?: boolean
   },
 ) {
   if (!dir || !id) return ""
@@ -122,13 +159,16 @@ export function context(
     `session_id: ${id}`,
     `title: ${session?.title || "Untitled"}`,
     `message_count: ${count}`,
-    ...(options?.messagesURL ? [`messages_url: ${options.messagesURL}`] : []),
+    `history_scope: ${options?.complete === false ? "partial" : "complete"}`,
+    `text_scope: ${recent.length} bounded excerpts`,
+    "snapshot_source: OpenCode app",
+    "snapshot_note: The messages below were attached by the app. Do not try to read this session through a localhost URL or SQLite.",
   ]
   if (recent.length > 0) {
     metadata.push(
-      "<recent-messages>",
+      "<session-messages>",
       ...recent.flatMap((message) => [`<message role=\"${message.role}\">`, message.text, "</message>"]),
-      "</recent-messages>",
+      "</session-messages>",
     )
   }
   return [...metadata, "</current-opencode-session>"].join("\n")
@@ -136,6 +176,18 @@ export function context(
 
 export function prompt(text: string, extra: string, on: boolean) {
   return [on ? extra : "", text].filter(Boolean).join("\n\n")
+}
+
+export function splitInjectedSessionContext(text: string) {
+  const start = "<current-opencode-session>\ndirectory: "
+  const end = "\n</current-opencode-session>\n\n"
+  if (!text.startsWith(start)) return { message: text }
+  const index = text.indexOf(end)
+  if (index === -1) return { message: text }
+  return {
+    context: text.slice(0, index + end.length - 2),
+    message: text.slice(index + end.length),
+  }
 }
 
 export function isSessionNotFoundError(err: unknown, seen = new Set<unknown>()): boolean {

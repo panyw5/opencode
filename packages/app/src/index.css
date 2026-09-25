@@ -925,14 +925,14 @@
     border-radius: var(--arc-session-radius-md);
   }
 
-  [data-component="quick-assistant-message"][data-role="user"] {
+  [data-component="quick-assistant-message"][data-role="user"] > [data-slot="quick-assistant-bubble"] {
     color: var(--text-strong);
     box-shadow:
       inset 0 1px 0 color-mix(in srgb, white 10%, transparent),
       0 10px 24px -20px color-mix(in srgb, var(--surface-panel) 55%, transparent);
   }
 
-  [data-component="quick-assistant-message"][data-role="assistant"] {
+  [data-component="quick-assistant-message"][data-role="assistant"] > [data-slot="quick-assistant-bubble"] {
     color: var(--text-base);
     box-shadow:
       inset 0 1px 0 color-mix(in srgb, white 6%, transparent),
@@ -944,6 +944,41 @@
     --line-height-x-large: 1.7;
     --markdown-link: var(--text-interactive-base);
     --markdown-heading: var(--text-strong);
+  }
+
+  [data-component="quick-assistant-requests"] [data-component="dock-prompt"] {
+    max-height: none;
+  }
+
+  [data-component="quick-assistant-requests"] [data-slot="quick-question-option"] {
+    background-color: color-mix(in srgb, var(--background-base) 40%, transparent);
+    border-color: var(--border-weak-base);
+    transition:
+      background-color 150ms ease,
+      border-color 150ms ease;
+  }
+
+  [data-component="quick-assistant-requests"] [data-slot="quick-question-option"]:hover:not(:disabled) {
+    background-color: var(--surface-interactive-weak-hover);
+    border-color: var(--border-interactive-base);
+  }
+
+  [data-component="quick-assistant-requests"] [data-slot="quick-question-option"][aria-pressed="true"] {
+    background-color: var(--surface-interactive-weak);
+    border-color: var(--border-interactive-base);
+  }
+
+  [data-component="quick-assistant-requests"] [data-slot="quick-question-option-indicator"] {
+    border-color: var(--border-strong-base);
+    color: transparent;
+  }
+
+  [data-component="quick-assistant-requests"]
+    [data-slot="quick-question-option"][aria-pressed="true"]
+    [data-slot="quick-question-option-indicator"] {
+    background-color: var(--surface-interactive-base);
+    border-color: var(--border-interactive-base);
+    color: var(--icon-invert-base);
   }
 
   [data-component="quick-assistant-message"] .quick-assistant-markdown p {

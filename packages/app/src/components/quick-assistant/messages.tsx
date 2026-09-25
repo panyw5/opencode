@@ -3,13 +3,15 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { Markdown } from "@opencode-ai/ui/markdown"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js"
-import { render } from "./helpers"
+import { useLanguage } from "@/context/language"
+import { render, splitInjectedSessionContext } from "./helpers"
 import { createBottomFollow } from "./bottom-follow"
 
 type Props = {
   list: Message[]
   parts: Record<string, Part[] | undefined> | undefined
   busy: boolean
+  waiting: boolean
 }
 
 export function quickAssistantMessageText(parts: Part[] | undefined) {
@@ -64,6 +66,7 @@ function CopyMessageButton(props: { text: string }) {
 }
 
 export function QuickAssistantMessages(props: Props) {
+  const language = useLanguage()
   let viewport: HTMLDivElement | undefined
   const follow = createBottomFollow()
   let frame: number | undefined
@@ -119,7 +122,11 @@ export function QuickAssistantMessages(props: Props) {
         }}
         data-component="quick-assistant-viewport"
         style={{ "overflow-anchor": "none" }}
-        class="max-h-[48vh] overflow-y-auto bg-background-base/20 px-4 py-4"
+        class="min-h-0 overflow-y-auto bg-background-base/20 px-4 py-4"
+        classList={{
+          "flex-1": props.waiting,
+          "max-h-[calc(100dvh-200px)] shrink": !props.waiting,
+        }}
         onScroll={(event) => {
           const before = follow.following()
           follow.scrolled(event.currentTarget)
@@ -143,30 +150,62 @@ export function QuickAssistantMessages(props: Props) {
           <For each={props.list}>
             {(item) => {
               const text = createMemo(() => quickAssistantMessageText(props.parts?.[item.id]))
+              const display = createMemo(() =>
+                item.role === "user" ? splitInjectedSessionContext(text()) : { message: text() },
+              )
               return (
-                <div
-                  data-component="quick-assistant-message"
-                  data-role={item.role}
-                  classList={{
-                    "group/message relative px-3.5 py-3 pr-11": true,
-                    "ml-10 rounded-[18px] border border-border-weak-base bg-surface-panel": item.role === "user",
-                    "mr-10 rounded-[20px] border border-border-weaker-base bg-background-stronger":
-                      item.role === "assistant",
-                  }}
-                >
-                  <Show
-                    when={item.role === "assistant"}
-                    fallback={
-                      <div class="whitespace-pre-wrap break-words text-[15px] leading-7 text-text-strong">{text()}</div>
-                    }
+                <div data-component="quick-assistant-message" data-role={item.role} class="flex flex-col gap-2">
+                  <Show when={display().context}>
+                    {(context) => (
+                      <details
+                        data-component="quick-assistant-context"
+                        class="group ml-10 overflow-hidden rounded-[16px] border border-border-weak-base bg-surface-panel/70"
+                        onToggle={(event) =>
+                          console.debug(
+                            `[quick-assistant] context ${event.currentTarget.open ? "expanded" : "collapsed"} message=${item.id}`,
+                          )
+                        }
+                      >
+                        <summary class="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-13-medium text-text-base [&::-webkit-details-marker]:hidden">
+                          <Icon name="link" size="small" class="text-icon-weak" />
+                          <span class="flex-1">{language.t("quickAssistant.context.attached")}</span>
+                          <Icon
+                            name="chevron-down"
+                            size="small"
+                            class="text-icon-weak transition-transform group-open:rotate-180"
+                          />
+                        </summary>
+                        <div class="max-h-64 overflow-y-auto border-t border-border-weak-base px-3.5 py-3 font-mono text-12-regular leading-5 whitespace-pre-wrap break-all text-text-weak">
+                          {context()}
+                        </div>
+                      </details>
+                    )}
+                  </Show>
+                  <div
+                    data-slot="quick-assistant-bubble"
+                    classList={{
+                      "group/message relative px-3.5 py-3 pr-11": true,
+                      "ml-10 rounded-[18px] border border-border-weak-base bg-surface-panel": item.role === "user",
+                      "mr-10 rounded-[20px] border border-border-weaker-base bg-background-stronger":
+                        item.role === "assistant",
+                    }}
                   >
-                    <div class="quick-assistant-markdown text-[15px] leading-7 text-text-base">
-                      <Markdown text={text() || (props.busy ? "Thinking..." : "")} math="defer" />
-                    </div>
-                  </Show>
-                  <Show when={text().length > 0}>
-                    <CopyMessageButton text={text()} />
-                  </Show>
+                    <Show
+                      when={item.role === "assistant"}
+                      fallback={
+                        <div class="whitespace-pre-wrap break-words text-[15px] leading-7 text-text-strong">
+                          {display().message}
+                        </div>
+                      }
+                    >
+                      <div class="quick-assistant-markdown text-[15px] leading-7 text-text-base">
+                        <Markdown text={text() || (props.busy ? "Thinking..." : "")} math="defer" />
+                      </div>
+                    </Show>
+                    <Show when={text().length > 0}>
+                      <CopyMessageButton text={text()} />
+                    </Show>
+                  </div>
                 </div>
               )
             }}

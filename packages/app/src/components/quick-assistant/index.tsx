@@ -33,13 +33,14 @@ import {
 } from "@/pages/layout/extra-agents"
 import { formatServerError } from "@/utils/server-errors"
 import {
+  collectSessionContext,
   context,
+  fullSessionContextMessages,
   isSessionNotFoundError,
   mergeMessages,
   patchAgentQuestionDeny,
   prompt,
   removeQuickRequest,
-  sessionContextMessages,
 } from "./helpers"
 import { QuickAssistantInput } from "./input"
 import { QuickAssistantMessages } from "./messages"
@@ -340,33 +341,13 @@ export function QuickAssistant() {
     return currentData()?.session.find((item) => item.id === id)
   })
 
-  const currentContextMessages = createMemo(() => {
-    const id = params.id
-    if (!id) return []
-    const current = currentData()
-    if (!current) return []
-    return sessionContextMessages(current.message[id] ?? [], current.part)
-  })
-
-  const currentMessagesURL = createMemo(() => {
-    const current = activeDir()
-    const id = params.id
-    const conn = server.currentFor(mainDomain)
-    if (!current || !id || conn?.type !== "sidecar" || conn.variant !== "base") return
-    const base = conn.http.url.replace(/\/$/, "")
-    return `${base}/session/${encodeURIComponent(id)}/message?directory=${encodeURIComponent(current)}&limit=20`
-  })
-
   const currentContext = createMemo(() => {
     const current = activeDir()
     const id = params.id
     if (!current || !id) return ""
     const session = currentSession()
     const messages = currentData()?.message[id] ?? []
-    return context(current, id, session, messages.length, {
-      messages: currentContextMessages(),
-      messagesURL: currentMessagesURL(),
-    })
+    return context(current, id, session, messages.length)
   })
 
   const toggleContext = () => {
@@ -694,6 +675,10 @@ export function QuickAssistant() {
   })
 
   async function submit() {
+    if (state.loading) {
+      console.debug("[quick-assistant] prompt blocked reason=loading")
+      return
+    }
     if (waiting()) {
       console.debug(`[quick-assistant] prompt blocked waiting-request session=${sessionID() ?? ""}`)
       return
@@ -711,7 +696,6 @@ export function QuickAssistant() {
     }
     if (!text) return
     if (!store || !setStore) return
-    const body = prompt(text, currentContext(), saved.context)
     const pick = chosen()
     if (!pick) {
       showToast({
@@ -723,8 +707,54 @@ export function QuickAssistant() {
     const variant = effectiveVariant()
 
     setState("loading", true)
+    let body = text
+    if (saved.context) {
+      const directory = activeDir()
+      const sourceID = params.id
+      if (!directory || !sourceID) {
+        console.error("[quick-assistant] context load blocked reason=no-current-session")
+        setState("loading", false)
+        showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
+        return
+      }
+      try {
+        console.debug(`[quick-assistant] context load start source_session=${sourceID} directory=${directory}`)
+        const source = globalSDK.forDomain(mainDomain).createClient({ directory, throwOnError: true })
+        const snapshot = await collectSessionContext(async (before) => {
+          const response = await source.session.messages({ sessionID: sourceID, limit: 100, before })
+          const items = response.data ?? []
+          const cursor = response.response.headers.get("x-next-cursor") ?? undefined
+          console.debug(
+            `[quick-assistant] context page source_session=${sourceID} before=${before ?? "none"} count=${items.length} next=${cursor ? 1 : 0}`,
+          )
+          return { items, cursor }
+        })
+        if (params.id !== sourceID || activeDir() !== directory || state.text.trim() !== text || !saved.context) {
+          console.debug(`[quick-assistant] context load discarded source_session=${sourceID} reason=input-changed`)
+          setState("loading", false)
+          return
+        }
+        const messages = fullSessionContextMessages(snapshot.items)
+        body = prompt(
+          text,
+          context(directory, sourceID, currentSession(), snapshot.items.length, {
+            messages,
+            complete: snapshot.complete,
+          }),
+          true,
+        )
+        console.debug(
+          `[quick-assistant] context load complete source_session=${sourceID} pages=${snapshot.pages} fetched=${snapshot.items.length} included=${messages.length} complete=${snapshot.complete ? 1 : 0} chars=${body.length}`,
+        )
+      } catch (error) {
+        console.error(`[quick-assistant] context load failed source_session=${sourceID}`, error)
+        setState("loading", false)
+        showToast({ title: "Quick Assistant", description: language.t("quickAssistant.context.loadFailed") })
+        return
+      }
+    }
     console.debug(
-      `[quick-assistant] submit context=${saved.context ? 1 : 0} context_messages=${currentContextMessages().length} context_url=${currentMessagesURL() ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
+      `[quick-assistant] submit context=${saved.context ? 1 : 0} text=${text.length} body=${body.length} model=${pick.model.providerID}/${pick.model.modelID} variant=${variant ?? "none"}`,
     )
     const client = globalSDK.createClient({ directory: current, throwOnError: true })
     const id = await ensureSession(client, setStore).catch((err: unknown) => {
@@ -871,7 +901,8 @@ export function QuickAssistant() {
 
       <Show when={saved.open}>
         <div
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto w-[min(520px,calc(100vw-24px))] rounded-xl border border-border-weak-base shadow-[var(--shadow-lg-border-base)]"
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] w-[min(520px,calc(100vw-24px))] rounded-xl border border-border-weak-base shadow-[var(--shadow-lg-border-base)]"
+          classList={{ "h-[calc(100dvh-72px)]": waiting() }}
           style={{
             "background-color":
               platform.platform === "desktop" && platform.os === "windows"
@@ -893,8 +924,11 @@ export function QuickAssistant() {
           >
             <Icon name="close" size="small" class="text-icon-weak" />
           </button>
-          <div class="flex flex-col overflow-hidden rounded-[inherit]">
-            <QuickAssistantMessages list={list()} parts={data()?.part} busy={busy()} />
+          <div
+            class="flex max-h-[calc(100dvh-72px)] flex-col overflow-hidden rounded-[inherit]"
+            classList={{ "h-full": waiting() }}
+          >
+            <QuickAssistantMessages list={list()} parts={data()?.part} busy={busy()} waiting={waiting()} />
             <QuickAssistantRequests
               client={globalSDK.createClient({ directory: root(), throwOnError: true })}
               permissions={permissions()}

@@ -796,6 +796,8 @@ export const dict = {
   "quickAssistant.waiting.permission": "等待权限确认",
   "quickAssistant.context.enable": "注入当前主会话信息",
   "quickAssistant.context.disable": "停止注入当前主会话信息",
+  "quickAssistant.context.attached": "当前会话上下文",
+  "quickAssistant.context.loadFailed": "无法读取当前会话，消息未发送。",
   "notification.permission.title": "需要权限",
   "notification.permission.description": "{{sessionTitle}}（{{projectName}}）需要权限",
   "notification.question.title": "问题",

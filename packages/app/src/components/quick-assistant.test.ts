@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test"
 import type { Message, Part } from "@opencode-ai/sdk/v2/client"
 import {
+  collectSessionContext,
   context,
+  fullSessionContextMessages,
   isSessionNotFoundError,
   mergeMessages,
   patchAgentQuestionDeny,
@@ -9,7 +11,7 @@ import {
   quickQuestionAnswers,
   quickRequestNotFound,
   removeQuickRequest,
-  sessionContextMessages,
+  splitInjectedSessionContext,
 } from "./quick-assistant/helpers"
 import { quickAssistantMessageText } from "./quick-assistant/messages"
 
@@ -46,6 +48,21 @@ describe("quick assistant prompt", () => {
     )
   })
 
+  test("separates injected context from the visible question", () => {
+    const extra = context("/repo", "ses_1", { title: "Demo" } as any, 7)
+    expect(splitInjectedSessionContext(prompt("What changed?", extra, true))).toEqual({
+      context: extra,
+      message: "What changed?",
+    })
+  })
+
+  test("leaves ordinary and incomplete messages unchanged", () => {
+    expect(splitInjectedSessionContext("What changed?")).toEqual({ message: "What changed?" })
+    expect(splitInjectedSessionContext("<current-opencode-session>\ndirectory: /repo")).toEqual({
+      message: "<current-opencode-session>\ndirectory: /repo",
+    })
+  })
+
   test("renders current session context block", () => {
     expect(context("/repo", "ses_1", { title: "Demo" } as any, 7)).toBe(
       [
@@ -54,24 +71,27 @@ describe("quick assistant prompt", () => {
         "session_id: ses_1",
         "title: Demo",
         "message_count: 7",
+        "history_scope: complete",
+        "text_scope: 0 bounded excerpts",
+        "snapshot_source: OpenCode app",
+        "snapshot_note: The messages below were attached by the app. Do not try to read this session through a localhost URL or SQLite.",
         "</current-opencode-session>",
       ].join("\n"),
     )
   })
 
-  test("includes recent messages and a direct retrieval URL", () => {
-    expect(
-      context("/repo", "ses_1", { title: "Demo" } as any, 7, {
-        messages: [
-          { role: "user", text: "What changed?" },
-          { role: "assistant", text: "Updated the parser." },
-        ],
-        messagesURL: "http://127.0.0.1:1234/session/ses_1/message?directory=%2Frepo&limit=20",
-      }),
-    ).toContain(
+  test("includes the attached session snapshot without an unauthenticated URL", () => {
+    const block = context("/repo", "ses_1", { title: "Demo" } as any, 7, {
+      messages: [
+        { role: "user", text: "What changed?" },
+        { role: "assistant", text: "Updated the parser." },
+      ],
+      complete: false,
+    })
+    expect(block).toContain("history_scope: partial\ntext_scope: 2 bounded excerpts")
+    expect(block).toContain(
       [
-        "messages_url: http://127.0.0.1:1234/session/ses_1/message?directory=%2Frepo&limit=20",
-        "<recent-messages>",
+        "<session-messages>",
         '<message role="user">',
         "What changed?",
         "</message>",
@@ -79,26 +99,52 @@ describe("quick assistant prompt", () => {
         "Updated the parser.",
       ].join("\n"),
     )
+    expect(block).not.toContain("messages_url")
   })
 
-  test("builds a bounded recent-message snapshot and ignores synthetic text", () => {
-    const messages = Array.from({ length: 8 }, (_, index) => msg(`msg_${index}`, index % 2 ? "assistant" : "user"))
-    const parts = Object.fromEntries(
-      messages.map((message, index) => [
-        message.id,
-        [
-          { type: "text", text: `${index}:` + "x".repeat(1_400) },
-          { type: "text", text: "hidden", synthetic: true },
-        ] as Part[],
-      ]),
-    )
-    const result = sessionContextMessages(messages, parts)
+  test("builds a bounded whole-session snapshot and ignores synthetic text", () => {
+    const items = Array.from({ length: 12 }, (_, index) => ({
+      info: msg(`msg_${index.toString().padStart(2, "0")}`, index % 2 ? "assistant" : "user"),
+      parts: [
+        { type: "text", text: `${index}:` + "x".repeat(4_000) },
+        { type: "text", text: "hidden", synthetic: true },
+      ] as Part[],
+    }))
+    const result = fullSessionContextMessages(items)
 
-    expect(result).toHaveLength(4)
-    expect(result[0]?.text.startsWith("4:")).toBe(true)
-    expect(result.at(-1)?.text.startsWith("...")).toBe(true)
-    expect(result.reduce((total, item) => total + item.text.length, 0)).toBeLessThanOrEqual(4_800)
+    expect(result[0]?.text.startsWith("0:")).toBe(true)
+    expect(result.at(-1)?.text.startsWith("11:")).toBe(true)
+    expect(result.reduce((total, item) => total + item.text.length, 0)).toBeLessThanOrEqual(20_000)
     expect(result.some((item) => item.text.includes("hidden"))).toBe(false)
+  })
+
+  test("collects paginated session messages in chronological order", async () => {
+    const calls: Array<string | undefined> = []
+    const result = await collectSessionContext(async (before) => {
+      calls.push(before)
+      if (!before) return { items: [{ info: msg("msg_3", "assistant"), parts: [] }], cursor: "older" }
+      return {
+        items: [
+          { info: msg("msg_1", "user"), parts: [] },
+          { info: msg("msg_2", "assistant"), parts: [] },
+        ],
+      }
+    })
+    expect(calls).toEqual([undefined, "older"])
+    expect(result.items.map((item) => item.info.id)).toEqual(["msg_1", "msg_2", "msg_3"])
+    expect(result.complete).toBe(true)
+    expect(result.pages).toBe(2)
+  })
+
+  test("marks capped pagination partial and rejects repeated cursors", async () => {
+    const capped = await collectSessionContext(
+      async () => ({ items: [{ info: msg("msg_1", "user"), parts: [] }], cursor: "older" }),
+      1,
+    )
+    expect(capped.complete).toBe(false)
+    expect(collectSessionContext(async () => ({ items: [], cursor: "same" }))).rejects.toThrow(
+      "pagination did not advance",
+    )
   })
 })
 
