@@ -3,6 +3,7 @@ import {
   existsSync,
   lstatSync,
   mkdirSync,
+  readFileSync,
   readdirSync,
   renameSync,
   rmSync,
@@ -12,7 +13,7 @@ import path from "node:path"
 import { randomUUID } from "node:crypto"
 import * as Log from "@opencode-ai/core/util/log"
 import { assertProjectName, mathProblemsRoot, mathRoot } from "./layout"
-import { readSwarm, writeSwarm } from "./swarm"
+import { readSwarm, writeSwarm, type SwarmFile } from "./swarm"
 import { pidAlive } from "./spawn"
 
 const log = Log.create({ service: "math.migrate" })
@@ -61,15 +62,30 @@ function relocated(value: string | undefined, source: string, target: string): s
 }
 
 function rewriteSwarm(source: string, target: string): void {
-  const swarm = readSwarm(target)
   if (!existsSync(path.join(target, "swarm.json"))) return
-  swarm.projectDir = target
-  for (const [sessionID, worker] of Object.entries(swarm.workers)) {
-    swarm.workers[sessionID] = {
-      ...worker,
-      logFile: relocated(worker.logFile, source, target) ?? worker.logFile,
-      taskFile: relocated(worker.taskFile, source, target),
-    }
+  // Migration is the one explicit compatibility path allowed to rewrite
+  // legacy absolute locations before the normal swarm validator runs.
+  const parsed = JSON.parse(readFileSync(path.join(target, "swarm.json"), "utf8")) as Record<string, unknown>
+  const rawWorkers = parsed.workers && typeof parsed.workers === "object" ? parsed.workers : {}
+  const workers = Object.fromEntries(
+    Object.entries(rawWorkers).map(([sessionID, value]) => {
+      const worker = value as Record<string, unknown>
+      return [
+        sessionID,
+        {
+          ...worker,
+          sessionID,
+          logFile: relocated(typeof worker.logFile === "string" ? worker.logFile : undefined, source, target),
+          taskFile: relocated(typeof worker.taskFile === "string" ? worker.taskFile : undefined, source, target),
+        },
+      ]
+    }),
+  )
+  const swarm: SwarmFile = {
+    projectDir: target,
+    parentSessionID: typeof parsed.parentSessionID === "string" ? parsed.parentSessionID : undefined,
+    verifierModel: typeof parsed.verifierModel === "string" ? parsed.verifierModel : undefined,
+    workers: workers as SwarmFile["workers"],
   }
   writeSwarm(target, swarm)
 }

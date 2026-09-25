@@ -81,29 +81,29 @@ describe("math.problem", () => {
     try {
       const first = path.join(sources, "identities.md")
       writeFileSync(first, "# identities v1")
-      const { dir, staged } = stageReferences(root, [first])
+      const { dir, staged } = stageReferences(root, [first], { allowedExternalRoots: [sources] })
       expect(dir).toBe(path.join(root, "references"))
       expect(staged).toHaveLength(1)
       expect(staged[0]).toMatchObject({ name: "identities.md", source: first })
       expect(readFileSync(path.join(dir, "identities.md"), "utf8")).toBe("# identities v1")
 
-      const second = stageReferences(root, [first])
+      const second = stageReferences(root, [first], { allowedExternalRoots: [sources] })
       expect(second.staged).toHaveLength(1)
       const manifest = JSON.parse(readFileSync(path.join(dir, "PROVENANCE.json"), "utf8"))
       expect(manifest).toHaveLength(1)
 
       const other = path.join(sources, "tables.csv")
       writeFileSync(other, "k,value\n2,3\n")
-      stageReferences(root, [other])
+      stageReferences(root, [other], { allowedExternalRoots: [sources] })
       const merged = JSON.parse(readFileSync(path.join(dir, "PROVENANCE.json"), "utf8"))
       expect(merged.map((entry: { name: string }) => entry.name).sort()).toEqual(["identities.md", "tables.csv"])
 
       writeFileSync(first, "# identities v2")
-      expect(() => stageReferences(root, [first])).toThrow(/already exists with different content/)
+      expect(() => stageReferences(root, [first], { allowedExternalRoots: [sources] })).toThrow(/already exists with different content/)
 
-      expect(() => stageReferences(root, [path.join(sources, "missing.md")])).toThrow(/not found/)
+      expect(() => stageReferences(root, [path.join(sources, "missing.md")], { allowedExternalRoots: [sources] })).toThrow(/not found/)
       mkdirSync(path.join(sources, "subdir"))
-      expect(() => stageReferences(root, [path.join(sources, "subdir")])).toThrow(/regular file/)
+      expect(() => stageReferences(root, [path.join(sources, "subdir")], { allowedExternalRoots: [sources] })).toThrow(/regular file/)
     } finally {
       rmSync(root, { recursive: true, force: true })
       rmSync(sources, { recursive: true, force: true })

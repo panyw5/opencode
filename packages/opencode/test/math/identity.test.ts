@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
-import { ensureMathProblemIdentity, readMathProblemIdentity } from "../../src/math/identity"
+import { checkMathWorkerOwnership, ensureMathProblemIdentity, readMathProblemIdentity } from "../../src/math/identity"
+import { inspectMathWorkspace } from "../../src/math/workspace"
 
 const roots: string[] = []
 const root = () => {
@@ -73,5 +74,46 @@ describe("MathProblem ownership", () => {
         orchestratorSessionID: "ses-other",
       }),
     ).toThrow("owned by a different project")
+  })
+
+  test("accepts a worker runtime inside the problem while retaining the parent owner", () => {
+    const workspace = root()
+    const directory = path.join(workspace, ".math", "problems", "lemma-c")
+    const identity = ensureMathProblemIdentity({
+      directory,
+      ownerProjectID: "project-parent",
+      ownerDirectory: workspace,
+      orchestratorSessionID: "ses-parent",
+    })
+    const input = {
+      identity,
+      projectDir: directory,
+      ownerDirectory: workspace,
+      ownerProjectID: "project-parent",
+      runtimeDirectory: directory,
+      projectRuntimeRequired: true,
+    }
+
+    expect(checkMathWorkerOwnership(input).valid).toBe(true)
+    expect(checkMathWorkerOwnership({ ...input, ownerDirectory: path.join(workspace, "wrong") }).valid).toBe(false)
+    expect(checkMathWorkerOwnership({ ...input, runtimeDirectory: workspace }).valid).toBe(false)
+    expect(checkMathWorkerOwnership({ ...input, ownerProjectID: "project-other" }).valid).toBe(false)
+  })
+
+  test("reads an existing identity through a symlink alias of the owner root", () => {
+    const workspace = root()
+    const aliasParent = root()
+    const alias = path.join(aliasParent, "workspace")
+    symlinkSync(workspace, alias)
+    const directory = path.join(workspace, ".math", "problems", "lemma-d")
+    const identity = ensureMathProblemIdentity({
+      directory,
+      ownerProjectID: "project-parent",
+      ownerDirectory: workspace,
+      orchestratorSessionID: "ses-parent",
+    })
+
+    expect(readMathProblemIdentity(path.join(alias, ".math", "problems", "lemma-d"))).toEqual(identity)
+    expect(inspectMathWorkspace(path.join(alias, ".math", "problems", "lemma-d"))).toEqual(identity)
   })
 })

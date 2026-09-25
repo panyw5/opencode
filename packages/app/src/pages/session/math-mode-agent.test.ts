@@ -11,6 +11,25 @@ describe("mathModeIsInitializing", () => {
     expect(mathModeIsInitializing({ sessionID: "other", requestedSessionID: "parent", workerCount: 0 })).toBe(false)
     expect(mathModeIsInitializing({ sessionID: undefined, requestedSessionID: "parent", workerCount: 0 })).toBe(false)
   })
+
+  test("recovers the initializing state after navigating away and back", () => {
+    expect(
+      mathModeIsInitializing({
+        sessionID: "parent",
+        workerCount: 0,
+        sessionAgent: "math-orchestrator",
+        sessionWorking: true,
+      }),
+    ).toBe(true)
+    expect(
+      mathModeIsInitializing({
+        sessionID: "parent",
+        workerCount: 0,
+        sessionAgent: "math-orchestrator",
+        sessionWorking: false,
+      }),
+    ).toBe(false)
+  })
 })
 
 describe("mathModeLocksAgent", () => {

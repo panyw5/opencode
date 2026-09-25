@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto"
-import { copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs"
 import path from "path"
+import { isMathPathWithin } from "./workspace"
 import { layout } from "./layout"
 
 export const MIN_PROBLEM_STATEMENT_CHARS = 200
@@ -82,7 +83,11 @@ export function referencesDir(root: string): string {
   return path.join(root, "references")
 }
 
-export function stageReferences(root: string, sources: string[]): StagedReferences {
+export function stageReferences(
+  root: string,
+  sources: string[],
+  options: { allowedExternalRoots?: string[] } = {},
+): StagedReferences {
   const dir = referencesDir(root)
   if (sources.length === 0) return { dir, staged: [] }
   mkdirSync(dir, { recursive: true })
@@ -97,7 +102,16 @@ export function stageReferences(root: string, sources: string[]): StagedReferenc
   }
   const staged: ReferenceProvenance[] = []
   for (const source of sources) {
+    const allowed = [root, ...(options.allowedExternalRoots ?? [])].some((candidate) =>
+      isMathPathWithin(candidate, source),
+    )
+    if (!allowed) {
+      throw new Error(
+        `reference source is outside the authorized directories: ${source}; pass an explicit allowedExternalRoots approval`,
+      )
+    }
     if (!existsSync(source)) throw new Error(`reference file not found: ${source}`)
+    if (lstatSync(source).isSymbolicLink()) throw new Error(`reference must not be a symbolic link: ${source}`)
     const info = statSync(source)
     if (!info.isFile()) throw new Error(`reference must be a regular file: ${source}`)
     const name = path.basename(source)
@@ -107,6 +121,9 @@ export function stageReferences(root: string, sources: string[]): StagedReferenc
     const content = readFileSync(source)
     const sha256 = createHash("sha256").update(content).digest("hex")
     const dest = path.join(dir, name)
+    if (existsSync(dest) && lstatSync(dest).isSymbolicLink()) {
+      throw new Error(`staged reference destination must not be a symbolic link: ${dest}`)
+    }
     if (existsSync(dest)) {
       const existing = createHash("sha256").update(readFileSync(dest)).digest("hex")
       if (existing !== sha256) {

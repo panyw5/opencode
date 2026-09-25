@@ -22,6 +22,7 @@ import { readSwarm, writeSwarm } from "@/math/swarm"
 import { FactGraph } from "@/math/fact-graph"
 import { GlobalMemory } from "@/math/global-memory"
 import { ensureMathProblemIdentity } from "@/math/identity"
+import { registerProblemWorker } from "@/math/registry"
 import { ProjectLocation } from "@/project/location"
 import { Project } from "@/project/project"
 import { resetDatabase } from "../fixture/db"
@@ -845,11 +846,10 @@ describe("Math worker HttpApi", () => {
           expect(stoppedAssistant.info.time.completed).toBeNumber()
           expect(stoppedAssistant.info.error?.name).toBe("MessageAbortedError")
         }
-        yield* pollWithTimeout(
-          Effect.sync(() => (processStopped(process.pid) ? true : undefined)),
-          "stop endpoint did not terminate the detached worker process group",
-          "3 seconds",
-        )
+        // The fixture intentionally uses /bin/sleep rather than a math worker.
+        // PID identity fencing must leave this foreign process untouched.
+        yield* Effect.sleep("100 millis")
+        expect(pidAlive(process.pid)).toBe(true)
         const blockedEnsure = yield* Effect.promise(() =>
           Server.Default().app.request(
             `${endpoint(SessionPaths.mathWorkerEnsure, { sessionID: parent.id, workerID: worker.id })}?project=custom-swarm`,
@@ -857,6 +857,69 @@ describe("Math worker HttpApi", () => {
           ),
         )
         expect(blockedEnsure.status).toBe(400)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "keeps workers from separate MathProblems in their own status lists",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const sessions = yield* Session.Service
+        const ctx = yield* InstanceState.context
+        const parent = yield* sessions.create({ title: "math", agent: "math-orchestrator" })
+        const workers: string[] = []
+        for (const problem of ["lane-one", "lane-two"]) {
+          const projectDir = mathRoot(test.directory, problem)
+          ensureMathProblemIdentity({
+            directory: projectDir,
+            ownerProjectID: parent.projectID,
+            ownerDirectory: parent.directory,
+            orchestratorSessionID: parent.id,
+          })
+          const worker = yield* sessions
+            .create({ title: problem, agent: "math-worker", parentID: parent.id })
+            .pipe(Effect.provideService(InstanceRef, { ...ctx, directory: projectDir }))
+          workers.push(worker.id)
+          yield* Effect.promise(() => mkdir(layout(projectDir).tasks, { recursive: true }))
+          yield* Effect.promise(() => writeFile(taskPath(projectDir, worker.id), `# ${problem}\n`, "utf8"))
+          registerProblemWorker({ parentSessionID: parent.id, workerSessionID: worker.id, problemID: problem })
+          writeSwarm(projectDir, {
+            projectDir,
+            parentSessionID: parent.id,
+            workers: {
+              [worker.id]: {
+                sessionID: worker.id,
+                parentSessionID: parent.id,
+                pid: 987_654_321,
+                state: "dead",
+                startedAt: Date.now(),
+                logFile: path.join(layout(projectDir).logs, `worker-${worker.id}.log`),
+                taskFile: taskPath(projectDir, worker.id),
+              },
+            },
+          })
+        }
+
+        const headers = { "x-opencode-directory": test.directory }
+        const first = yield* Effect.promise(() =>
+          Server.Default().app.request(
+            `${endpoint(SessionPaths.mathWorkers, { sessionID: parent.id })}?project=lane-one`,
+            { headers },
+          ),
+        )
+        expect((yield* Effect.promise(() => body<Array<{ sessionID: string }>>(first))).map((row) => row.sessionID)).toEqual([
+          workers[0],
+        ])
+        const all = yield* Effect.promise(() =>
+          Server.Default().app.request(endpoint(SessionPaths.mathWorkers, { sessionID: parent.id }), { headers }),
+        )
+        expect(
+          (yield* Effect.promise(() => body<Array<{ sessionID: string }>>(all)))
+            .map((row) => row.sessionID)
+            .toSorted(),
+        ).toEqual(workers.toSorted())
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )
@@ -907,6 +970,13 @@ describe("Math worker HttpApi", () => {
             },
           },
         })
+        ensureMathProblemIdentity({
+          directory: projectDir,
+          ownerProjectID: parent.projectID,
+          ownerDirectory: parent.directory,
+          orchestratorSessionID: parent.id,
+          legacyAdoption: { workerSessionID: worker.id, parentSessionID: parent.id },
+        })
 
         const user = yield* sessions.updateMessage({
           id: MessageID.ascending(),
@@ -950,11 +1020,8 @@ describe("Math worker HttpApi", () => {
           expect(stoppedAssistant.info.time.completed).toBeNumber()
           expect(stoppedAssistant.info.error?.name).toBe("MessageAbortedError")
         }
-        yield* pollWithTimeout(
-          Effect.sync(() => (processStopped(process.pid) ? true : undefined)),
-          "stop endpoint did not terminate the detached worker process group",
-          "3 seconds",
-        )
+        yield* Effect.sleep("100 millis")
+        expect(pidAlive(process.pid)).toBe(true)
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { closeSync, mkdirSync, openSync } from "node:fs"
 import path from "node:path"
 import * as Log from "@opencode-ai/core/util/log"
@@ -58,6 +58,17 @@ export function pidAlive(pid: number): boolean {
   } catch (error) {
     return typeof error === "object" && error !== null && "code" in error && error.code === "EPERM"
   }
+}
+
+/** Refuse to signal a PID unless its command line identifies our worker. */
+export function pidMatchesMathWorker(pid: number, sessionID: string): boolean | undefined {
+  if (!Number.isSafeInteger(pid) || pid <= 0 || !sessionID) return false
+  if (pid === process.pid) return false
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" })
+  if (result.error || result.status === null) return undefined
+  if (result.status !== 0) return false
+  const command = result.stdout.trim()
+  return command.includes(sessionID) && (command.includes("--math-worker") || (command.includes(" math ") && command.includes(" worker ")))
 }
 
 export function killProcessGroup(pid: number, signal: NodeJS.Signals = "SIGTERM"): void {

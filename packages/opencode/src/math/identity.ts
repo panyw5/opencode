@@ -1,4 +1,4 @@
-import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs"
+import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, unlinkSync, writeFileSync } from "node:fs"
 import { randomUUID } from "node:crypto"
 import path from "node:path"
 
@@ -13,6 +13,14 @@ export type MathProblemIdentity = {
 }
 
 const identityPath = (directory: string) => path.join(directory, "ownership.json")
+
+const physicalPath = (value: string) => {
+  try {
+    return realpathSync.native(value)
+  } catch {
+    return path.resolve(value)
+  }
+}
 
 export function hasMathProblemOwnershipMarker(directory: string): boolean {
   return existsSync(identityPath(directory))
@@ -43,7 +51,7 @@ function decodeIdentity(value: unknown, directory: string): MathProblemIdentity 
     throw new Error(`invalid MathProblem legacy adoption evidence: ${identityPath(directory)}`)
   }
   const result = record as MathProblemIdentity
-  if (path.resolve(result.directory) !== path.resolve(directory)) {
+  if (physicalPath(result.directory) !== physicalPath(directory)) {
     throw new Error(`MathProblem ownership directory mismatch: ${identityPath(directory)}`)
   }
   if (result.problemID !== path.basename(directory)) {
@@ -56,6 +64,28 @@ export function readMathProblemIdentity(directory: string): MathProblemIdentity 
   if (!hasMathProblemOwnershipMarker(directory)) return undefined
   const file = identityPath(directory)
   return decodeIdentity(JSON.parse(readFileSync(file, "utf8")), directory)
+}
+
+export function checkMathWorkerOwnership(input: {
+  identity: MathProblemIdentity | undefined
+  projectDir: string
+  ownerDirectory: string
+  ownerProjectID: string
+  runtimeDirectory: string
+  projectRuntimeRequired: boolean
+}) {
+  const identity = input.identity
+  const checks = {
+    recordPresent: Boolean(identity),
+    ownerProjectMatches: identity?.ownerProjectID === input.ownerProjectID,
+    ownerDirectoryMatches:
+      identity !== undefined && physicalPath(identity.ownerDirectory) === physicalPath(input.ownerDirectory),
+    projectDirectoryMatches:
+      identity !== undefined && physicalPath(identity.directory) === physicalPath(input.projectDir),
+    runtimeDirectoryMatches:
+      !input.projectRuntimeRequired || physicalPath(input.runtimeDirectory) === physicalPath(input.projectDir),
+  }
+  return { ...checks, valid: Object.values(checks).every(Boolean) }
 }
 
 export function ensureMathProblemIdentity(input: {
@@ -73,7 +103,7 @@ export function ensureMathProblemIdentity(input: {
   if (existing) {
     if (
       existing.ownerProjectID !== input.ownerProjectID ||
-      path.resolve(existing.ownerDirectory) !== path.resolve(input.ownerDirectory)
+      physicalPath(existing.ownerDirectory) !== physicalPath(input.ownerDirectory)
     ) {
       throw new Error(`MathProblem ${existing.problemID} is owned by a different project`)
     }
@@ -113,7 +143,7 @@ export function ensureMathProblemIdentity(input: {
     if (!raced) throw new Error(`MathProblem ownership record is incomplete: ${file}`)
     if (
       raced.ownerProjectID !== input.ownerProjectID ||
-      path.resolve(raced.ownerDirectory) !== path.resolve(input.ownerDirectory)
+      physicalPath(raced.ownerDirectory) !== physicalPath(input.ownerDirectory)
     ) {
       throw new Error(`MathProblem ${raced.problemID} is owned by a different project`)
     }

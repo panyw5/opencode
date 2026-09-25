@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { existsSync, readFileSync, writeFileSync } from "fs"
 import path from "path"
 import { Database } from "bun:sqlite"
 import { killProcessGroup, pidAlive, resolveSelfArgv, spawnDetached } from "../../src/math/spawn"
@@ -109,9 +109,6 @@ describe("math.detach-probe", () => {
     async () => {
       await using tmp = await tmpdir({ git: true })
       const dbPath = path.join(tmp.path, "opencode.db")
-      const mathRoot = path.join(tmp.path, ".math", "default")
-      mkdirSync(path.join(mathRoot, "logs"), { recursive: true })
-
       const helper = path.join(import.meta.dir, "spawn-and-die.ts")
       const spawned = spawnSync(process.execPath, [helper, tmp.path, dbPath, "200"], {
         cwd: tmp.path,
@@ -129,15 +126,19 @@ describe("math.detach-probe", () => {
       if (spawned.status !== 0) {
         throw new Error(`spawn-and-die failed: ${spawned.stderr || spawned.stdout}`)
       }
-      const { pid } = JSON.parse(spawned.stdout.trim()) as { pid: number }
+      const { pid, sessionID, projectDir } = JSON.parse(spawned.stdout.trim().split("\n").at(-1)!) as {
+        pid: number
+        sessionID: string
+        projectDir: string
+      }
       expect(pid).toBeGreaterThan(0)
 
       waitUntil(() => pidAlive(pid), 15_000, "worker pid")
-      const bootLog = path.join(mathRoot, "logs", "worker-boot.log")
+      const bootLog = path.join(projectDir, "logs", "worker-boot.log")
       try {
         waitUntil(() => {
           try {
-            return Object.keys(readSwarm(mathRoot).workers).length > 0
+            return readSwarm(projectDir).workers[sessionID]?.pid === pid
           } catch {
             return false
           }
@@ -147,7 +148,6 @@ describe("math.detach-probe", () => {
         throw new Error(`${String(error)}\n--- worker-boot.log ---\n${logText}`)
       }
 
-      const sessionID = Object.keys(readSwarm(mathRoot).workers)[0]
       expect(sessionID.startsWith("ses")).toBe(true)
       expect(pidAlive(pid)).toBe(true)
 
@@ -167,7 +167,7 @@ describe("math.detach-probe", () => {
       waitUntil(() => countParts() > first, 10_000, "heartbeat growth")
       expect(pidAlive(pid)).toBe(true)
 
-      writeFileSync(stopPath(mathRoot, sessionID), `${Date.now()}\n`)
+      writeFileSync(stopPath(projectDir, sessionID), `${Date.now()}\n`)
       waitUntil(() => !pidAlive(pid), 10_000, "worker exit after .stop")
     },
     60_000,

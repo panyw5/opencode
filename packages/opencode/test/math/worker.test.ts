@@ -40,6 +40,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { InstanceRef } from "@/effect/instance-ref"
 import { ProjectLocation } from "@/project/location"
 import { readMathProblemIdentity } from "@/math/identity"
+import { resolveMathWorkerBootstrap } from "@/math/workspace"
 
 const it = testEffect(Layer.mergeAll(Agent.defaultLayer, Session.defaultLayer))
 
@@ -87,8 +88,9 @@ describe("math.worker", () => {
       expect(result.sessionID.startsWith("ses")).toBe(true)
       expect(spawned[0]?.join(" ")).toContain("math worker")
       expect(spawned[0]?.join(" ")).toContain(result.sessionID)
-      expect(spawned[0]?.join(" ")).toContain(`--owner-dir ${parent.directory}`)
-      expect(spawned[0]?.join(" ")).toContain(`--owner-project ${parent.projectID}`)
+      expect(spawned[0]?.join(" ")).not.toContain("--owner-dir")
+      expect(spawned[0]?.join(" ")).not.toContain("--project-dir")
+      expect(spawned[0]?.join(" ")).not.toContain("--dir")
       expect(spawned[0]?.join(" ")).toContain("--model test/prover --variant xhigh")
       expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"math-truth"')
       expect(spawnedEnv[0]?.OPENCODE_CONFIG_CONTENT).toContain('"worker"')
@@ -98,6 +100,16 @@ describe("math.worker", () => {
       expect(projectDir).toContain(path.join(".math", "problems"))
       const workerSession = yield* sessions.get(SessionID.make(result.sessionID))
       expect(workerSession.directory).toBe(projectDir)
+      const bootstrap = resolveMathWorkerBootstrap(result.sessionID)
+      expect(bootstrap).toMatchObject({
+        workerSessionID: result.sessionID,
+        parentSessionID: parent.id,
+        ownerProjectID: parent.projectID,
+        problemDirectory: projectDir,
+        runtimeDirectory: projectDir,
+        problemID: parent.id,
+      })
+      expect(() => resolveMathWorkerBootstrap(result.sessionID, mathRoot(test.directory, "wrong-problem"))).toThrow()
       expect(workerSession.projectID).toBe(parent.projectID)
       expect(ProjectLocation.getByID(workerSession.locationID!)?.projectID).toBe(parent.projectID)
       expect(ProjectLocation.getByDirectory(projectDir)).toBeUndefined()
@@ -715,6 +727,7 @@ describe("math.worker", () => {
           task: "Prove lemma L using the staged identities.",
           problem: PROBLEM_SEED,
           references: [reference],
+          referenceRoots: [sourceDir],
           spawn: () => ({ pid: 987654321 }),
         })
         const projectDir = started.projectDir
@@ -731,6 +744,7 @@ describe("math.worker", () => {
           task: "Prove lemma M using the staged identities.",
           problem: PROBLEM_SEED,
           references: [reference],
+          referenceRoots: [sourceDir],
           spawn: () => ({ pid: 987654322 }),
         })
         expect(restaged.projectDir).toBe(projectDir)
@@ -744,6 +758,7 @@ describe("math.worker", () => {
             task: "Prove lemma N.",
             problem: PROBLEM_SEED,
             references: [changedReference],
+            referenceRoots: [sourceDir],
             spawn: () => ({ pid: 1 }),
           }),
         )

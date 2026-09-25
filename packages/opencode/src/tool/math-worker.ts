@@ -1,5 +1,6 @@
 import { Effect, Schema } from "effect"
 import path from "path"
+import { realpathSync } from "node:fs"
 import * as Tool from "./tool"
 import { Session } from "@/session/session"
 import { SessionID } from "@/session/schema"
@@ -21,6 +22,8 @@ import DESCRIPTION_STOP from "./math_worker_stop.txt"
 import DESCRIPTION_ENSURE from "./math_worker_ensure.txt"
 import DESCRIPTION_TASK_UPDATE from "./math_worker_task_update.txt"
 import * as Log from "@opencode-ai/core/util/log"
+import { assertExternalDirectoryEffect } from "./external-directory"
+import { resolveExistingMathWorkspaceFromSessions } from "@/math/workspace"
 
 const log = Log.create({ service: "tool.math-worker" })
 
@@ -92,14 +95,32 @@ export const MathWorkerStartTool = Tool.define(
             metadata: { title: params.title },
           })
           const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
+          const references = params.references?.length
+            ? params.references.map((reference) => {
+                const resolved = path.resolve(parent.directory, reference)
+                try {
+                  return realpathSync.native(resolved)
+                } catch {
+                  return resolved
+                }
+              })
+            : undefined
+          if (references) {
+            for (const reference of references) {
+              const relative = path.relative(parent.directory, reference)
+              const insideParent = relative === "" || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+              if (!insideParent) yield* assertExternalDirectoryEffect(ctx, reference)
+            }
+          }
           const result = yield* startMathWorker({
             parentSessionID: SessionID.make(ctx.sessionID),
             title: params.title,
             task: params.task,
             project: params.project,
             problem: params.problem,
-            references: params.references?.length
-              ? params.references.map((reference) => path.resolve(parent.directory, reference))
+            references,
+            referenceRoots: references
+              ? [...new Set([parent.directory, ...references.map((reference) => path.dirname(reference))])]
               : undefined,
             model: params.model,
             verifierModel: params.verifier_model,
@@ -148,7 +169,16 @@ export const MathWorkerStatusTool = Tool.define(
             metadata: {},
           })
           const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
-          const projectDir = mathRoot(parent.directory, params.project || parent.id)
+          const projectDir = params.session_id
+            ? (
+                yield* resolveExistingMathWorkspaceFromSessions({
+                  sessions,
+                  parentSessionID: parent.id,
+                  workerSessionID: params.session_id,
+                  problemID: params.project,
+                }).pipe(Effect.orDie)
+              ).problemDirectory
+            : mathRoot(parent.directory, params.project || parent.id)
           const rows = yield* discoverMathWorkers({
             projectDir,
             sessionID: params.session_id,
@@ -197,12 +227,18 @@ export const MathWorkerEnsureTool = Tool.define(
             metadata: { sessionID: params.session_id },
           })
           const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
-          const projectDir = mathRoot(parent.directory, params.project || parent.id)
+          const workspace = yield* resolveExistingMathWorkspaceFromSessions({
+            sessions,
+            parentSessionID: parent.id,
+            workerSessionID: params.session_id,
+            problemID: params.project,
+          }).pipe(Effect.orDie)
+          const projectDir = workspace.problemDirectory
           const result = yield* ensureMathWorker({
             sessionID: SessionID.make(params.session_id),
             projectDir,
-            ownerDirectory: parent.directory,
-            ownerProjectID: parent.projectID,
+            ownerDirectory: workspace.ownerDirectory,
+            ownerProjectID: workspace.ownerProjectID,
             model: params.model,
             verifierModel: params.verifier_model,
             variant: params.variant,
@@ -251,7 +287,13 @@ export const MathWorkerStopTool = Tool.define(
             metadata: { force: params.force ?? false },
           })
           const parent = yield* sessions.get(SessionID.make(ctx.sessionID)).pipe(Effect.orDie)
-          const projectDir = mathRoot(parent.directory, params.project || parent.id)
+          const workspace = yield* resolveExistingMathWorkspaceFromSessions({
+            sessions,
+            parentSessionID: parent.id,
+            workerSessionID: params.session_id,
+            problemID: params.project,
+          }).pipe(Effect.orDie)
+          const projectDir = workspace.problemDirectory
           const result = stopMathWorker({
             projectDir,
             sessionID: params.session_id,
@@ -312,7 +354,13 @@ export const MathWorkerTaskUpdateTool = Tool.define(
             })
             throw new Error(`not a math-worker child of this session: ${params.session_id}`)
           }
-          const projectDir = mathRoot(parent.directory, params.project || parent.id)
+          const workspace = yield* resolveExistingMathWorkspaceFromSessions({
+            sessions,
+            parentSessionID: parent.id,
+            workerSessionID: worker.id,
+            problemID: params.project,
+          }).pipe(Effect.orDie)
+          const projectDir = workspace.problemDirectory
           log.info("math worker task update start", {
             parentSessionID: parent.id,
             workerSessionID: params.session_id,

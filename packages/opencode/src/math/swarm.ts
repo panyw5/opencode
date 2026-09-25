@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import path from "path"
 import { layout } from "./layout"
+import { assertMathPathWithin, deriveMathWorkerPaths } from "./workspace"
 
 export type WorkerState = "running" | "stopping" | "blocked" | "dead"
 
@@ -63,22 +64,52 @@ export function readSwarm(projectDir: string): SwarmFile {
       return { projectDir, workers: {} }
     }
     const workers = parsed.workers && typeof parsed.workers === "object" ? parsed.workers : {}
+    const normalized: Record<string, SwarmWorker> = {}
+    for (const [sessionID, value] of Object.entries(workers)) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue
+      const worker = value as SwarmWorker
+      if (typeof worker.sessionID !== "string" || worker.sessionID !== sessionID) continue
+      const paths = deriveMathWorkerPaths(projectDir, sessionID)
+      const taskFile = worker.taskFile
+        ? assertMathPathWithin(projectDir, worker.taskFile, `worker ${sessionID} TASK path`)
+        : paths.taskFile
+      const logFile = worker.logFile
+        ? assertMathPathWithin(projectDir, worker.logFile, `worker ${sessionID} log path`)
+        : paths.logFile
+      normalized[sessionID] = { ...worker, taskFile, logFile }
+    }
     return {
       projectDir,
       parentSessionID: typeof parsed.parentSessionID === "string" ? parsed.parentSessionID : undefined,
       verifierModel: typeof parsed.verifierModel === "string" ? parsed.verifierModel : undefined,
-      workers,
+      workers: normalized,
     }
-  } catch {
-    return { projectDir, workers: {} }
+  } catch (error) {
+    // Missing or malformed state is treated as an empty roster, but a path
+    // validation failure must escape so untrusted swarm paths cannot be used.
+    if (error instanceof SyntaxError || (error as NodeJS.ErrnoException).code === "ENOENT") {
+      return { projectDir, workers: {} }
+    }
+    throw error
   }
 }
 
 export function writeSwarm(projectDir: string, swarm: SwarmFile): void {
+  const workers: Record<string, SwarmWorker> = {}
+  for (const [sessionID, worker] of Object.entries(swarm.workers)) {
+    const paths = deriveMathWorkerPaths(projectDir, sessionID)
+    const taskFile = worker.taskFile
+      ? assertMathPathWithin(projectDir, worker.taskFile, `worker ${sessionID} TASK path`)
+      : paths.taskFile
+    const logFile = worker.logFile
+      ? assertMathPathWithin(projectDir, worker.logFile, `worker ${sessionID} log path`)
+      : paths.logFile
+    workers[sessionID] = { ...worker, sessionID, taskFile, logFile }
+  }
   const file = swarmPath(projectDir)
   mkdirSync(path.dirname(file), { recursive: true })
   const tmp = file + ".tmp"
-  writeFileSync(tmp, JSON.stringify(swarm, null, 2) + "\n", "utf8")
+  writeFileSync(tmp, JSON.stringify({ ...swarm, projectDir, workers }, null, 2) + "\n", "utf8")
   renameSync(tmp, file)
 }
 

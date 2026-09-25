@@ -4,6 +4,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   statSync,
   unlinkSync,
@@ -26,7 +27,7 @@ import {
   stageReferences,
   writeProblemStatement,
 } from "./problem"
-import { killProcessGroup, pidAlive, selfArgv, spawnDetached } from "./spawn"
+import { killProcessGroup, pidAlive, pidMatchesMathWorker, selfArgv, spawnDetached } from "./spawn"
 import { clearStop, patchWorker, readSwarm, setVerifierModel, stopPath, upsertWorker, type SwarmWorker } from "./swarm"
 import { FactGraph } from "./fact-graph"
 import { GlobalMemory } from "./global-memory"
@@ -36,6 +37,8 @@ import { InstanceRef } from "@/effect/instance-ref"
 import * as Log from "@opencode-ai/core/util/log"
 import { parse as parseJsonc } from "jsonc-parser"
 import { ensureMathProblemIdentity, readMathProblemIdentity } from "./identity"
+import { deriveMathWorkerPaths, resolveMathWorkspace } from "./workspace"
+import { registerProblemWorker } from "./registry"
 
 const log = Log.create({ service: "math.worker" })
 export const MAX_MATH_WORKER_NO_PROGRESS_ROUNDS = 8
@@ -122,6 +125,8 @@ export type StartInput = {
   problem?: string
   /** Background files to copy into <problem>/references/ so the worker can read them. */
   references?: string[]
+  /** External roots approved by the tool boundary for the references above. */
+  referenceRoots?: string[]
   intervalMs?: number
   model?: string
   variant?: string
@@ -311,13 +316,16 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
   const sessions = yield* Session.Service
   const parentContext = yield* InstanceState.context
   const parent = yield* sessions.get(input.parentSessionID).pipe(Effect.orDie)
-  const projectDir = resolveProjectDir(parent.directory, input.project, input.parentSessionID)
-  const identity = ensureMathProblemIdentity({
-    directory: projectDir,
+  if (parent.agent !== "math-orchestrator") throw new Error(`math worker parent is not an orchestrator: ${parent.id}`)
+  const requestedProjectDir = resolveProjectDir(parent.directory, input.project, input.parentSessionID)
+  const workspace = resolveMathWorkspace({
+    problemID: path.basename(requestedProjectDir),
     ownerProjectID: parent.projectID,
     ownerDirectory: parent.directory,
     orchestratorSessionID: input.parentSessionID,
   })
+  const projectDir = workspace.problemDirectory
+  const identity = workspace.identity
   log.info("MathProblem ownership established", {
     ownerProjectID: identity.ownerProjectID,
     orchestratorSessionID: identity.orchestratorSessionID,
@@ -326,7 +334,13 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     operation: "start",
   })
   if (input.problem) writeProblemStatement(projectDir, input.problem)
-  if (input.references?.length) stageReferences(projectDir, input.references)
+  // The tool boundary supplies referenceRoots only after external_directory
+  // approval; staging applies containment again as a defense in depth.
+  if (input.references?.length) {
+    stageReferences(projectDir, input.references, {
+      allowedExternalRoots: input.referenceRoots ?? [parent.directory],
+    })
+  }
   ensureProblemStatementReady(projectDir)
   assertNoPointerReferences(input.task, "TASK")
   const session = yield* sessions
@@ -350,6 +364,7 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
 
   const taskFile = taskPath(projectDir, session.id)
   writeFileSync(taskFile, input.task.trim() + "\n", "utf8")
+  registerProblemWorker({ parentSessionID: input.parentSessionID, workerSessionID: session.id, problemID: path.basename(projectDir) })
   const taskFingerprint = mathWorkerTaskFingerprint(input.task)
   const generation = 1
   const logFile = path.join(layout(projectDir).logs, `worker-${session.id}.log`)
@@ -359,14 +374,6 @@ export const startMathWorker = Effect.fn("MathWorker.start")(function* (input: S
     "worker",
     "--session",
     session.id,
-    "--project-dir",
-    projectDir,
-    "--dir",
-    projectDir,
-    "--owner-dir",
-    parent.directory,
-    "--owner-project",
-    parent.projectID,
     "--generation",
     String(generation),
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
@@ -449,13 +456,20 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   if (session.projectID !== ownerProjectID || parent.projectID !== ownerProjectID) {
     throw new Error(`math worker owner project mismatch: ${input.sessionID}`)
   }
-  if (path.resolve(parent.directory) !== path.resolve(ownerDirectory)) {
+  const canonical = (directory: string) => {
+    try {
+      return realpathSync.native(directory)
+    } catch {
+      return path.resolve(directory)
+    }
+  }
+  if (canonical(parent.directory) !== canonical(ownerDirectory)) {
     throw new Error(`math worker orchestrator directory mismatch: ${input.sessionID}`)
   }
   const identity = existingIdentity
   if (
     identity.ownerProjectID !== ownerProjectID ||
-    path.resolve(identity.ownerDirectory) !== path.resolve(ownerDirectory) ||
+    canonical(identity.ownerDirectory) !== canonical(ownerDirectory) ||
     identity.orchestratorSessionID !== parent.id
   ) {
     throw new Error(`MathProblem owner identity mismatch: ${input.projectDir}`)
@@ -475,11 +489,13 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
   }
   const verifierModel = input.verifierModel ?? readSwarm(input.projectDir).verifierModel
   const parentServerUrl = yield* activeServerUrl()
-  const taskFile = existing?.taskFile ?? taskPath(input.projectDir, input.sessionID)
-  const logFile = existing?.logFile ?? path.join(layout(input.projectDir).logs, `worker-${input.sessionID}.log`)
+  const derivedPaths = deriveMathWorkerPaths(input.projectDir, input.sessionID)
+  const taskFile = derivedPaths.taskFile
+  const logFile = derivedPaths.logFile
   const stop = stopPath(input.projectDir, input.sessionID)
   if (!existsSync(taskFile)) throw new Error(`math worker TASK is missing: ${taskFile}`)
   const currentTaskFingerprint = mathWorkerTaskFingerprint(readFileSync(taskFile, "utf8"))
+  registerProblemWorker({ parentSessionID: parent.id, workerSessionID: session.id, problemID: path.basename(input.projectDir) })
   const blockedSameTask = existing?.state === "blocked" && existing.blockedTaskFingerprint === currentTaskFingerprint
   const infraRetry = blockedSameTask && isInfraBlockedReason(existing?.blockedReason)
   if (blockedSameTask && !infraRetry) {
@@ -521,14 +537,6 @@ const ensureMathWorkerUnlocked = Effect.fn("MathWorker.ensureUnlocked")(function
     "worker",
     "--session",
     input.sessionID,
-    "--project-dir",
-    input.projectDir,
-    "--dir",
-    input.projectDir,
-    "--owner-dir",
-    ownerDirectory,
-    "--owner-project",
-    ownerProjectID,
     "--generation",
     String(generation),
     ...(input.intervalMs ? ["--interval", String(input.intervalMs)] : []),
@@ -854,6 +862,7 @@ export function stopMathWorker(input: { projectDir: string; sessionID: string; f
   }
   const marker = stopPath(input.projectDir, input.sessionID)
   const signal = input.force ? "SIGKILL" : "SIGTERM"
+  const pidTrusted = pidMatchesMathWorker(worker.pid, input.sessionID)
   const aliveBefore = pidAlive(worker.pid)
   log.info("math worker stop start", {
     sessionID: input.sessionID,
@@ -866,13 +875,14 @@ export function stopMathWorker(input: { projectDir: string; sessionID: string; f
     marker,
     markerPresent: existsSync(marker),
     aliveBefore,
+    pidTrusted,
   })
   mkdirSync(path.dirname(marker), { recursive: true })
   writeFileSync(marker, `${Date.now()}\n`, "utf8")
   log.info("math worker stop marker written", { sessionID: input.sessionID, pid: worker.pid, marker })
   patchWorker(input.projectDir, input.sessionID, { state: "stopping" })
   log.info("math worker stop state patched", { sessionID: input.sessionID, pid: worker.pid, state: "stopping" })
-  if (aliveBefore) {
+  if (aliveBefore && pidTrusted === true) {
     log.info("math worker stop signal start", { sessionID: input.sessionID, pid: worker.pid, signal })
     try {
       killProcessGroup(worker.pid, signal)
@@ -1255,14 +1265,15 @@ export const runWorkerLoop = Effect.fn("MathWorker.loop")(function* (input: {
     : Option.none()
   const parentDirectory = Option.isSome(parent) ? parent.value.directory : input.projectDir
   const parentServerUrl = process.env.OPENCODE_MATH_PARENT_SERVER_URL
+  const derivedPaths = deriveMathWorkerPaths(input.projectDir, sessionID)
   upsertWorker(input.projectDir, {
     sessionID,
     parentSessionID: existing?.parentSessionID,
     pid: process.pid,
     state: "running",
     startedAt: existing?.startedAt ?? Date.now(),
-    logFile: existing?.logFile ?? path.join(layout(input.projectDir).logs, `worker-${sessionID}.log`),
-    taskFile: existing?.taskFile,
+    logFile: derivedPaths.logFile,
+    taskFile: derivedPaths.taskFile,
     round: existing?.round ?? 0,
     lastFactId: existing?.lastFactId,
     lastRc: existing?.lastRc,

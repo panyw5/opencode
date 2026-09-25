@@ -697,6 +697,8 @@ export default function Page() {
       sessionID: params.id,
       requestedSessionID: mathMode.initializingSessionID,
       workerCount: mathSwarm.workers.length,
+      sessionAgent: info()?.agent,
+      sessionWorking: params.id ? working(sync.session.status.get(params.id), sync.data.message[params.id]) : false,
     }),
   )
   createEffect(() => {

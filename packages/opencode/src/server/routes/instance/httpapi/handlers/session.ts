@@ -33,6 +33,9 @@ import { MathWorkerEvent } from "@/math/event"
 import { attachVerificationProofs, readMathDetailPage, readMathFactGraph, verificationAttempts } from "@/math/details"
 import { readSwarm } from "@/math/swarm"
 import { taskPath } from "@/math/layout"
+import { isMathPathWithin, resolveExistingMathWorkspaceFromSessions } from "@/math/workspace"
+import { hasMathProblemOwnershipMarker, readMathProblemIdentity } from "@/math/identity"
+import { listByParent as listRegisteredMathWorkers } from "@/math/registry"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import {
   finishAdvisorIntervention,
@@ -42,7 +45,7 @@ import {
 import { NamedError } from "@opencode-ai/core/util/error"
 import * as Log from "@opencode-ai/core/util/log"
 import { Cause, Effect, Layer, Option, Schema, Scope } from "effect"
-import { existsSync, readdirSync } from "node:fs"
+import { existsSync, readdirSync, realpathSync } from "node:fs"
 import { createHash } from "node:crypto"
 import path from "node:path"
 import * as Stream from "effect/Stream"
@@ -337,17 +340,78 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return [...new Set([...current, ...legacy])]
     }
 
-    const mathProjectDirForWorker = (parent: Session.Info, workerID: SessionID, project?: string) => {
-      const dirs = mathProjectDirs(parent, project)
-      const matches = dirs.filter((dir) => {
-        const record = readSwarm(dir).workers[workerID]
-        if (record) return record.parentSessionID === parent.id
-        return existsSync(taskPath(dir, workerID))
+    const mathReadProjectDirs = Effect.fn("SessionHttpApi.mathReadProjectDirs")(function* (
+      parent: Session.Info,
+      project?: string,
+    ) {
+      const children = (yield* session.children(parent.id)).filter((child) => child.agent === "math-worker")
+      const workerDirs = new Map<string, string>()
+      const registered = yield* Effect.try({
+        try: () => listRegisteredMathWorkers(parent.id),
+        catch: () => new HttpApiError.BadRequest({}),
       })
-      if (matches.length <= 1) return matches[0]
-      const current = matches.filter((dir) => path.dirname(dir) === mathProblemsRoot(parent.directory))
-      return current.length === 1 ? current[0] : undefined
-    }
+      for (const record of registered) {
+        if (project && record.problemID !== project) continue
+        const workspace = yield* resolveExistingMathWorkspaceFromSessions({
+          sessions: session,
+          parentSessionID: parent.id,
+          workerSessionID: record.workerSessionID,
+          problemID: record.problemID,
+        }).pipe(Effect.orElseSucceed(() => undefined))
+        if (workspace) workerDirs.set(record.workerSessionID, workspace.problemDirectory)
+      }
+      for (const child of children) {
+        if (workerDirs.has(child.id)) continue
+        const workspace = yield* resolveExistingMathWorkspaceFromSessions({
+          sessions: session,
+          parentSessionID: parent.id,
+          workerSessionID: child.id,
+          problemID: project,
+        }).pipe(Effect.orElseSucceed(() => undefined))
+        if (workspace) workerDirs.set(child.id, workspace.problemDirectory)
+      }
+      const dirs = [...new Set(workerDirs.values())]
+      if (project) {
+        if (dirs.length > 0) return { dirs, workerDirs }
+        const workspace = yield* resolveExistingMathWorkspaceFromSessions({
+          sessions: session,
+          parentSessionID: parent.id,
+          problemID: project,
+        }).pipe(Effect.orElseSucceed(() => undefined))
+        if (workspace) return { dirs: [workspace.problemDirectory], workerDirs }
+      }
+
+      // Read-only compatibility for old workspaces whose worker session still
+      // points at the owner root, and for pre-marker detail stores.
+      const legacy = mathProjectDirs(parent, project).filter((dir) => {
+        if (!existsSync(dir)) return false
+        try {
+          if (!isMathPathWithin(realpathSync(parent.directory), realpathSync(dir))) return false
+        } catch {
+          return false
+        }
+        if (hasMathProblemOwnershipMarker(dir)) {
+          try {
+            const identity = readMathProblemIdentity(dir)
+            return (
+              identity?.orchestratorSessionID === parent.id &&
+              children.some((child) => child.id === identity.legacyAdoption?.workerSessionID)
+            )
+          } catch {
+            return false
+          }
+        }
+        if (project || children.length === 0) return true
+        return children.some(
+          (child) =>
+            !workerDirs.has(child.id) &&
+            (path.resolve(child.directory) === path.resolve(dir) ||
+              readSwarm(dir).workers[child.id]?.parentSessionID === parent.id ||
+              existsSync(taskPath(dir, child.id))),
+        )
+      })
+      return { dirs: [...new Set([...dirs, ...legacy])], workerDirs }
+    })
 
     const requireMathWorker = Effect.fn("SessionHttpApi.requireMathWorker")(function* (input: {
       parentID: SessionID
@@ -365,7 +429,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       query: typeof MathWorkerQuery.Type
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
-      const dirs = mathProjectDirs(parent, ctx.query.project)
+      const { dirs, workerDirs } = yield* mathReadProjectDirs(parent, ctx.query.project)
       if (dirs.length === 0) return yield* new HttpApiError.BadRequest({})
       const batches = yield* Effect.forEach(dirs, (projectDir) =>
         discoverMathWorkers({ projectDir, parentSessionID: parent.id }).pipe(
@@ -376,6 +440,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       const missing = new Map<string, (typeof batches)[number]["rows"][number]>()
       for (const batch of batches) {
         for (const row of batch.rows) {
+          const ownedDir = workerDirs.get(row.sessionID)
+          if (ownedDir && ownedDir !== batch.projectDir) continue
+          if (!ownedDir && row.state === "missing" && !existsSync(taskPath(batch.projectDir, row.sessionID))) continue
           if (row.state === "missing") {
             if (!missing.has(row.sessionID)) missing.set(row.sessionID, row)
             continue
@@ -420,7 +487,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         limit: ctx.query.limit ?? 20,
       })
       const parent = yield* requireSession(ctx.params.sessionID)
-      const dirs = mathProjectDirs(parent, ctx.query.project)
+      const { dirs } = yield* mathReadProjectDirs(parent, ctx.query.project)
       const projectDir = dirs.find((dir) => existsSync(dir)) ?? dirs[0]
       if (!projectDir) return yield* new HttpApiError.BadRequest({})
       const page = yield* Effect.promise(() =>
@@ -498,7 +565,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         project: ctx.query.project,
       })
       const parent = yield* requireSession(ctx.params.sessionID)
-      const dirs = mathProjectDirs(parent, ctx.query.project)
+      const { dirs } = yield* mathReadProjectDirs(parent, ctx.query.project)
       const projectDir = dirs.find((dir) => existsSync(dir)) ?? dirs[0]
       if (!projectDir) return yield* new HttpApiError.BadRequest({})
       const graph = yield* Effect.promise(() => readMathFactGraph(projectDir))
@@ -518,8 +585,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
       const worker = yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
-      const projectDir = mathProjectDirForWorker(parent, ctx.params.workerID, ctx.query.project)
-      if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      const workspace = yield* resolveExistingMathWorkspaceFromSessions({
+        sessions: session,
+        parentSessionID: parent.id,
+        workerSessionID: worker.id,
+        problemID: ctx.query.project,
+      }).pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))
+      const projectDir = workspace.problemDirectory
       log.info("math worker ensure ownership resolved", {
         parentSessionID: parent.id,
         workerSessionID: worker.id,
@@ -530,8 +602,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       const result = yield* ensureMathWorker({
         sessionID: ctx.params.workerID,
         projectDir,
-        ownerDirectory: parent.directory,
-        ownerProjectID: parent.projectID,
+        ownerDirectory: workspace.ownerDirectory,
+        ownerProjectID: workspace.ownerProjectID,
         model: ctx.payload?.model,
         variant: ctx.payload?.variant,
         verifierModel: ctx.payload?.verifierModel,
@@ -575,8 +647,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       })
       const parent = yield* requireSession(ctx.params.sessionID)
       yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
-      const projectDir = mathProjectDirForWorker(parent, ctx.params.workerID, ctx.query.project)
-      if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      const workspace = yield* resolveExistingMathWorkspaceFromSessions({
+        sessions: session,
+        parentSessionID: parent.id,
+        workerSessionID: ctx.params.workerID,
+        problemID: ctx.query.project,
+      }).pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))
+      const projectDir = workspace.problemDirectory
       log.info("math worker stop resolved", {
         parentSessionID: parent.id,
         workerSessionID: ctx.params.workerID,
@@ -800,8 +877,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
       yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
-      const projectDir = mathProjectDirForWorker(parent, ctx.params.workerID, ctx.query.project)
-      if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      const projectDir = (
+        yield* resolveExistingMathWorkspaceFromSessions({
+          sessions: session,
+          parentSessionID: parent.id,
+          workerSessionID: ctx.params.workerID,
+          problemID: ctx.query.project,
+        }).pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))
+      ).problemDirectory
       return yield* Effect.try({
         try: () => readMathWorkerTask(projectDir, ctx.params.workerID),
         catch: () => new HttpApiError.BadRequest({}),
@@ -815,8 +898,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const parent = yield* requireSession(ctx.params.sessionID)
       yield* requireMathWorker({ parentID: parent.id, workerID: ctx.params.workerID })
-      const projectDir = mathProjectDirForWorker(parent, ctx.params.workerID, ctx.query.project)
-      if (!projectDir) return yield* new HttpApiError.BadRequest({})
+      const projectDir = (
+        yield* resolveExistingMathWorkspaceFromSessions({
+          sessions: session,
+          parentSessionID: parent.id,
+          workerSessionID: ctx.params.workerID,
+          problemID: ctx.query.project,
+        }).pipe(Effect.catchCause(() => Effect.fail(new HttpApiError.BadRequest({}))))
+      ).problemDirectory
       return yield* Effect.try({
         try: () => updateMathWorkerTask(projectDir, ctx.params.workerID, ctx.payload.task),
         catch: () => new HttpApiError.BadRequest({}),

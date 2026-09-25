@@ -35,6 +35,19 @@ export {
 } from "./verifier"
 export { spawnDetached, pidAlive, killProcessGroup, selfArgv } from "./spawn"
 export { clearStop, readSwarm, writeSwarm, upsertWorker, stopPath, type SwarmFile, type SwarmWorker } from "./swarm"
+export { findByWorker, listByParent, registerProblemWorker, type MathProblemRegistryRecord } from "./registry"
+export {
+  assertMathPathWithin,
+  deriveMathWorkerPaths,
+  inspectMathWorkspace,
+  isMathPathWithin,
+  resolveMathWorkspace,
+  resolveExistingMathWorkspaceFromSessions,
+  resolveMathWorkerBootstrap,
+  type MathWorkerBootstrap,
+  type MathWorkerPaths,
+  type MathWorkspace,
+} from "./workspace"
 export {
   startMathWorker,
   ensureMathWorker,

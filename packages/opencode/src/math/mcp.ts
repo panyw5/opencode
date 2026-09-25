@@ -6,6 +6,7 @@ import { type MathToolName } from "./roles"
 import { httpVerifier, sessionVerifier, type Verifier } from "./verifier"
 import { readSwarm } from "./swarm"
 import { readMathProblemIdentity } from "./identity"
+import { resolveMathWorkerBootstrap } from "./workspace"
 import * as Log from "@opencode-ai/core/util/log"
 
 const log = Log.create({ service: "math.mcp" })
@@ -93,10 +94,17 @@ export function buildMathMcpServer(gateway: MathGateway): McpServer {
 }
 
 export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier {
+  if (env.OPENCODE_MATH_ROLE === "worker" && !env.OPENCODE_MATH_AUTHOR) {
+    throw new Error("worker Math MCP requires OPENCODE_MATH_AUTHOR")
+  }
+  const workerBootstrap = env.OPENCODE_MATH_ROLE === "worker" && env.OPENCODE_MATH_AUTHOR
+    ? resolveMathWorkerBootstrap(env.OPENCODE_MATH_AUTHOR, env.OPENCODE_MATH_PROJECT_DIR)
+    : undefined
   const url = env.OPENCODE_MATH_VERIFY_URL
   if (url) return httpVerifier(url)
-  const workspace = env.OPENCODE_MATH_WORKSPACE || process.cwd()
-  const identity = readMathProblemIdentity(env.OPENCODE_MATH_PROJECT_DIR || workspace)
+  const workspace = workerBootstrap?.problemDirectory ?? (env.OPENCODE_MATH_WORKSPACE || process.cwd())
+  const projectDir = workerBootstrap?.problemDirectory ?? (env.OPENCODE_MATH_PROJECT_DIR || workspace)
+  const identity = readMathProblemIdentity(projectDir)
   return {
     async verify(input) {
       if (!identity) throw new Error("MathProblem ownership record is required for verification")
@@ -112,7 +120,7 @@ export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier 
         workspace,
         ownerDirectory: identity.ownerDirectory,
         ownerProjectID: identity.ownerProjectID,
-        workerSessionID: env.OPENCODE_MATH_AUTHOR,
+        workerSessionID: workerBootstrap?.workerSessionID ?? env.OPENCODE_MATH_AUTHOR,
         model,
       }).verify(input)
     },
@@ -120,21 +128,30 @@ export function verifierFromEnv(env: NodeJS.ProcessEnv = process.env): Verifier 
 }
 
 export function projectVerifierModel(env: NodeJS.ProcessEnv = process.env): string | undefined {
-  if (!env.OPENCODE_MATH_PROJECT_DIR) return undefined
-  return readSwarm(env.OPENCODE_MATH_PROJECT_DIR).verifierModel
+  const projectDir = env.OPENCODE_MATH_ROLE === "worker" && env.OPENCODE_MATH_AUTHOR
+    ? resolveMathWorkerBootstrap(env.OPENCODE_MATH_AUTHOR, env.OPENCODE_MATH_PROJECT_DIR).problemDirectory
+    : env.OPENCODE_MATH_PROJECT_DIR
+  if (!projectDir) return undefined
+  return readSwarm(projectDir).verifierModel
 }
 
 export function gatewayFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   overrides?: Partial<MathGatewayConfig>,
 ): MathGateway {
-  const projectDir = overrides?.projectDir ?? env.OPENCODE_MATH_PROJECT_DIR
+  if (env.OPENCODE_MATH_ROLE === "worker" && !(overrides?.author ?? env.OPENCODE_MATH_AUTHOR)) {
+    throw new Error("worker Math MCP requires a worker author session")
+  }
+  const bootstrap = env.OPENCODE_MATH_ROLE === "worker" && (overrides?.author ?? env.OPENCODE_MATH_AUTHOR)
+    ? resolveMathWorkerBootstrap(overrides?.author ?? env.OPENCODE_MATH_AUTHOR!, overrides?.projectDir ?? env.OPENCODE_MATH_PROJECT_DIR)
+    : undefined
+  const projectDir = bootstrap?.problemDirectory ?? overrides?.projectDir ?? env.OPENCODE_MATH_PROJECT_DIR
   if (!projectDir) throw new Error("OPENCODE_MATH_PROJECT_DIR is not set")
   return createGateway({
     projectDir,
     role: overrides?.role ?? env.OPENCODE_MATH_ROLE ?? "verifier",
-    author: overrides?.author ?? env.OPENCODE_MATH_AUTHOR ?? "unknown",
-    problemId: overrides?.problemId ?? env.OPENCODE_MATH_PROBLEM_ID ?? "default",
+    author: bootstrap?.workerSessionID ?? overrides?.author ?? env.OPENCODE_MATH_AUTHOR ?? "unknown",
+    problemId: bootstrap?.problemID ?? overrides?.problemId ?? env.OPENCODE_MATH_PROBLEM_ID ?? "default",
     verifier: overrides?.verifier ?? verifierFromEnv(env),
   })
 }
