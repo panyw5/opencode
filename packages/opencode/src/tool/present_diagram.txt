@@ -1,1 +1,7 @@
-Present an SVG or Mermaid diagram directly in the conversation without creating a file. Use `syntax: "svg"` for a complete SVG document or `syntax: "mermaid"` for Mermaid source such as flowcharts, sequence, class, state, or ER diagrams. Pass raw source without Markdown code fences. Use this for a small number of diagrams that materially help the user understand the result. If the diagram already exists as a file, prefer `present_file` instead.
+Present and render an SVG or Mermaid diagram in chat UI WITHOUT creating a file. Use this tool inside your response at suitable location to help the user understand your answer.
+
+Pass raw source without Markdown code fences.
+- Use `syntax: "svg"` for a complete SVG document
+- Use `syntax: "mermaid"` for Mermaid source such as flowcharts, sequence, class, state, or ER diagrams.
+
+Use `present_file` if the diagram already exists as a file.

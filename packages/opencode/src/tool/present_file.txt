@@ -1,1 +1,5 @@
-Present an image file in the conversation as a durable visual result. Use this for a small number of important deliverables, verification screenshots, or diagrams. The file must be a local PNG, JPEG, GIF, WebP, or SVG. Call this tool before your final response when the user should see the visual result; this tool does not replace a test or verification claim.
+Present an image file in the chat UI as a durable visual result. Use this tool before your final response at suitable location to emphasize important deliverables, verification screenshots, or diagrams.
+
+Allowed file types: PNG, JPEG, GIF, WebP, SVG.
+
+This tool does not replace a proper test.

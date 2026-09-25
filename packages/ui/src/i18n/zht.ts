@@ -112,7 +112,7 @@ export const dict = {
   "ui.tool.webfetch": "Webfetch",
   "ui.tool.websearch": "網頁搜尋",
   "ui.tool.shell": "Shell",
-  "ui.tool.patch": "修補",
+  "ui.tool.patch": "編輯",
   "ui.tool.todos": "待辦",
   "ui.tool.todos.read": "讀取待辦",
   "ui.tool.questions": "問題",

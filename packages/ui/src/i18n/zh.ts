@@ -140,7 +140,7 @@ export const dict = {
   "ui.tool.task.background": "背景运行",
   "ui.tool.task.backgrounding": "切换中…",
   "ui.tool.task.backgroundRunning": "正在背景运行",
-  "ui.tool.patch": "补丁",
+  "ui.tool.patch": "编辑",
   "ui.tool.todos": "待办",
   "ui.tool.todos.read": "读取待办",
   "ui.tool.questions": "问题",
