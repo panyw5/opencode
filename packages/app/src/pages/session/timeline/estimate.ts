@@ -68,6 +68,8 @@ export const PRESENT_FILE_BODY_HEIGHT = 80
 export const PRESENT_FILE_WRAPPER_HEIGHT = 20
 export const PRESENT_FILE_DESKTOP_HEIGHT = 324
 export const PRESENT_FILE_MOBILE_HEIGHT = 276
+export const PRESENT_DIAGRAM_DESKTOP_HEIGHT = 560
+export const PRESENT_DIAGRAM_MOBILE_HEIGHT = 440
 export const PRESENT_FILE_MOBILE_BREAKPOINT = 560
 
 export const MIN_ROW_ESTIMATE = 40
@@ -181,7 +183,11 @@ function estimateTextHeight(
 }
 
 function estimateToolPartHeight(part: ToolPart, width: number, options: EstimateRowHeightOptions) {
-  if (part.tool === "present_file" || part.tool === "present_diagram") return estimatePresentFileHeight(part, width, options)
+  if (part.tool === "present_file") return estimatePresentFileHeight(part, width, options)
+  if (part.tool === "present_diagram")
+    return (options.viewportWidth ?? width) <= PRESENT_FILE_MOBILE_BREAKPOINT
+      ? PRESENT_DIAGRAM_MOBILE_HEIGHT
+      : PRESENT_DIAGRAM_DESKTOP_HEIGHT
   if (options.toolDefaultOpen?.(part)) return OPEN_TOOL_HEIGHT
   return COLLAPSED_TOOL_HEIGHT
 }

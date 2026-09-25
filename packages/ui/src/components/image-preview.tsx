@@ -7,12 +7,13 @@ export interface ImagePreviewProps {
   src?: string
   alt?: string
   fallback?: JSX.Element
+  fit?: "contain" | "width"
 }
 
 export function ImagePreview(props: ImagePreviewProps) {
   const i18n = useI18n()
   return (
-    <div data-component="image-preview">
+    <div data-component="image-preview" data-fit={props.fit ?? "contain"}>
       <div data-slot="image-preview-container">
         <Kobalte.Content data-slot="image-preview-content">
           <div data-slot="image-preview-header">

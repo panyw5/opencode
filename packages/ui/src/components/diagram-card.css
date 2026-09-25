@@ -1,9 +1,9 @@
 [data-component="diagram-card"] {
   position: relative;
-  width: min(100%, 560px);
-  height: 324px;
+  width: 100%;
+  height: 560px;
   display: grid;
-  grid-template-rows: 224px minmax(0, 1fr);
+  grid-template-rows: 460px minmax(0, 1fr);
   padding: 9px;
   border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-lg);
@@ -13,22 +13,6 @@
   contain: layout paint;
 }
 
-.diagram-card__open {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: zoom-in;
-}
-.diagram-card__open:focus-visible {
-  outline: 2px solid var(--border-interactive-base);
-  outline-offset: -3px;
-  border-radius: var(--radius-lg);
-}
 .diagram-card__zoom {
   position: absolute;
   top: 18px;
@@ -37,23 +21,36 @@
   box-shadow: var(--shadow-xxs-border);
 }
 .diagram-card__preview {
-  height: 224px;
+  height: 460px;
   width: 100%;
   border-radius: var(--radius-md);
-  overflow: hidden;
+  overflow: auto;
   background: var(--surface-base);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 [data-component="diagram-card"][data-diagram-syntax="mermaid"] .diagram-card__preview {
-  background: #f7f7f4;
+  background: var(--background-base);
+  box-shadow: inset 0 0 0 1px var(--border-weak-base);
+}
+[data-component="diagram-card"][data-diagram-syntax="svg"] .diagram-card__preview {
+  background: var(--background-base);
+  box-shadow: inset 0 0 0 1px var(--border-weak-base);
 }
 .diagram-card__preview img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+}
+[data-component="diagram-card"][data-diagram-layout="tall"] .diagram-card__preview {
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+[data-component="diagram-card"][data-diagram-layout="tall"] .diagram-card__preview img {
+  height: auto;
+  object-fit: fill;
 }
 .diagram-card__placeholder {
   display: grid;
@@ -116,10 +113,10 @@
 
 @media (max-width: 560px) {
   [data-component="diagram-card"] {
-    height: 276px;
-    grid-template-rows: 176px minmax(0, 1fr);
+    height: 440px;
+    grid-template-rows: 340px minmax(0, 1fr);
   }
   .diagram-card__preview {
-    height: 176px;
+    height: 340px;
   }
 }

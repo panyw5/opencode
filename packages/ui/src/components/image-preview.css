@@ -60,4 +60,20 @@
       }
     }
   }
+
+  &[data-fit="width"] [data-slot="image-preview-container"] [data-slot="image-preview-content"] {
+    height: 100%;
+
+    [data-slot="image-preview-body"] {
+      display: block;
+      min-height: 0;
+      flex: 1 1 auto;
+    }
+
+    [data-slot="image-preview-image"] {
+      display: block;
+      width: 100%;
+      max-height: none;
+    }
+  }
 }
