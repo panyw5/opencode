@@ -326,6 +326,25 @@ $$
     expect(nativeHtml).not.toContain("&lt;span data-opencode-math-style")
   })
 
+  test("keeps markdown links parseable after indented display math in a list item", async () => {
+    const markdown = `1. **Schur 态与 VOA 态。** 四维 Schur index 是对受保护态的超迹：
+   $$
+   \\mathcal I(q)=\\operatorname{Tr} q^{L_0}.
+   $$
+   态的求迹见[原文式 (1.8)](Papers/Supersymmetric%20Gauge%20Theory/x.md#L104-L112)
+
+2. 下一项。`
+
+    const protectedMarkdown = prepareMarkdown(markdown)
+    const localHtml = await new Marked().parse(protectedMarkdown)
+    const nativeHtml = await parseNativeMarkdown(protectedMarkdown)
+
+    for (const html of [localHtml, nativeHtml]) {
+      expect(html).toContain('<a href="Papers/Supersymmetric%20Gauge%20Theory/x.md#L104-L112"')
+      expect(html).not.toContain("[原文式 (1.8)](Papers/")
+    }
+  })
+
   test("escapes pipes in protected math so GFM tables keep cell boundaries", async () => {
     const markdown = `| 对象 | 性质 |
 |------|------|

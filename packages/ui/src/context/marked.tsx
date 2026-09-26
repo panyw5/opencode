@@ -581,6 +581,15 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string): s
       // makes the following indented prose become an unrelated code block.
       out += markdown.slice(from, lineStart)
       out += `${linePrefix}${placeholder}`
+      // The placeholder is a block-level <div>, which opens a CommonMark raw
+      // HTML block. That block only ends at a blank line, so any markdown on
+      // the following lines of the same list item (links, emphasis, ...) would
+      // be swallowed and emitted verbatim. When the formula stands alone on
+      // its line(s), close the HTML block with a blank line.
+      const tail = markdown.slice(match.index + match[0].length)
+      const lineEnd = tail.indexOf("\n")
+      const restOfLine = lineEnd === -1 ? tail : tail.slice(0, lineEnd)
+      if (/^[ \t]*$/.test(restOfLine)) out += "\n"
       console.debug(`[markdown] protect display math indent=${linePrefix.length} tex=${clean.length}`)
     } else {
       out += markdown.slice(from, match.index)
