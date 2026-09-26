@@ -89,6 +89,7 @@ type SharedProps<T> = {
   classList?: ComponentProps<"div">["classList"]
   media?: FileMediaOptions
   search?: FileSearchControl
+  scrollControl?: FileScrollControl
   openFolder?: () => void
   openWith?: JSX.Element
   copyPath?: () => void
@@ -105,6 +106,22 @@ export type FileSearchHandle = {
 
 export type FileSearchControl = {
   register: (handle: FileSearchHandle | null) => void
+}
+
+export type FileScrollHandle = {
+  /**
+   * Scroll the active selection into view (top edge at the vertical middle of
+   * the nearest scrolling ancestor). Idempotent one-shot: retries until the
+   * target lines are rendered, then reports completion via `done` — including
+   * when the range is already fully visible (no scroll issued) or is given up
+   * on. Selection highlighting itself never scrolls; only an explicit call
+   * through this handle moves the viewport.
+   */
+  scrollToSelection: (done?: () => void) => void
+}
+
+export type FileScrollControl = {
+  register: (handle: FileScrollHandle | null) => void
 }
 
 export type TextFileProps<T = {}> = FileOptions<T> &
@@ -135,6 +152,7 @@ const sharedKeys = [
   "selectedLines",
   "commentedLines",
   "search",
+  "scrollControl",
   "openFolder",
   "openWith",
   "copyPath",
@@ -876,27 +894,38 @@ function SourceViewer<T>(props: SourceProps<T>) {
 
   const setSelectedLines = (range: SelectedLineRange | null) => {
     viewer.lastSelection = range
-    if (applySelection(range)) scrollSelectionIntoView()
+    applySelection(range)
   }
 
-  // Scroll the selection so its midpoint sits at the center of the nearest
-  // scrolling ancestor. A range that is already fully visible never moves the
-  // viewport, so user-driven selections stay undisturbed. Retries until the
-  // viewer finishes rendering the target lines.
-  const scrollSelectionIntoView = (attempt = 0) => {
+  // Scroll the selection so its top edge sits at the vertical middle of the
+  // nearest scrolling ancestor. A range that is already fully visible never
+  // moves the viewport, so user-driven selections stay undisturbed. Retries
+  // until the viewer finishes rendering the target lines, then reports
+  // completion through `done` at every terminal point.
+  const scrollSelectionIntoView = (done: (() => void) | undefined, attempt = 0): void => {
+    const finish = () => done?.()
     const range = viewer.lastSelection
-    if (!range) return
+    if (!range) {
+      finish()
+      return
+    }
     const root = viewer.getRoot()
     const start = Math.min(range.start, range.end)
     const end = Math.max(range.start, range.end)
     const startEl = root?.querySelector(`[data-line="${start}"]`)
     if (!(startEl instanceof HTMLElement)) {
-      if (attempt >= 120) return
-      requestAnimationFrame(() => scrollSelectionIntoView(attempt + 1))
+      if (attempt >= 120) {
+        finish()
+        return
+      }
+      requestAnimationFrame(() => scrollSelectionIntoView(done, attempt + 1))
       return
     }
     const endEl = root?.querySelector(`[data-line="${end}"]`) ?? startEl
-    if (!(endEl instanceof HTMLElement)) return
+    if (!(endEl instanceof HTMLElement)) {
+      finish()
+      return
+    }
 
     const composedParent = (el: Element): Element | null => {
       if (el.parentElement) return el.parentElement
@@ -913,17 +942,33 @@ function SourceViewer<T>(props: SourceProps<T>) {
         break
       }
     }
-    if (!scroller) return
+    if (!scroller) {
+      finish()
+      return
+    }
 
     const outer = scroller.getBoundingClientRect()
     const first = startEl.getBoundingClientRect()
     const last = endEl.getBoundingClientRect()
     const top = Math.min(first.top, last.top)
     const bottom = Math.max(first.bottom, last.bottom)
-    if (top >= outer.top && bottom <= outer.bottom) return
+    if (top >= outer.top && bottom <= outer.bottom) {
+      finish()
+      return
+    }
     // Place the top edge of the selection at the vertical middle of the viewport.
     scroller.scrollTop += top - (outer.top + outer.height / 2)
+    finish()
   }
+
+  createEffect(() => {
+    const control = local.scrollControl
+    if (!control) return
+    control.register({
+      scrollToSelection: (done) => scrollSelectionIntoView(done),
+    })
+    onCleanup(() => control.register(null))
+  })
 
   const adapter: ModeAdapter = {
     lineFromMouseEvent,
@@ -990,7 +1035,6 @@ function SourceViewer<T>(props: SourceProps<T>) {
       },
       onReady: () => {
         applySelection(viewer.lastSelection)
-        scrollSelectionIntoView()
         viewer.find.refresh({ reset: true })
         local.onRendered?.()
       },

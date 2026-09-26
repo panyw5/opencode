@@ -1914,17 +1914,11 @@ export default function Page() {
       )
     })
     if (line && line > 0) {
+      // requestSelection bumps the file's selectionSeq even when the range is
+      // unchanged, so repeating a click re-triggers the pending selection jump
+      // in the preview (see file-tabs scroll arbitration).
       const range = { start: line, end: endLine && endLine >= line ? endLine : line }
-      const current = file.selectedLines(path) as { start?: number; end?: number } | null | undefined
-      const same = current?.start === range.start && current?.end === range.end
-      if (same) {
-        // Re-trigger the viewer: an unchanged selection would not re-run its
-        // selection effect, so the viewport would not jump back on repeated clicks.
-        file.setSelectedLines(path, null)
-        requestAnimationFrame(() => file.setSelectedLines(path, range))
-      } else {
-        file.setSelectedLines(path, range)
-      }
+      file.requestSelection(path, range)
     }
     if (!view().filePreview.opened()) view().filePreview.open()
     tabs().setActive(tab)

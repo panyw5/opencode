@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
-import type { FileSearchHandle } from "@opencode-ai/ui/file"
+import type { FileSearchHandle, FileScrollControl, FileScrollHandle } from "@opencode-ai/ui/file"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
@@ -407,10 +407,12 @@ export function FileTabContent(props: { tab: string }) {
     const s = view().scroll(props.tab)
     if (!s) return
 
-    // A fresh selection (e.g. a file link jump) scrolls the target line into view
-    // in the viewer; skip the persisted-position restore for a short window so it
-    // does not override that jump while the viewer settles.
-    if (Date.now() < selectionGuardUntil) return
+    // While a selection jump is pending (see view-cache selectionSeq), the
+    // viewport belongs to that jump; restoring the persisted position here
+    // would fight it. The jump settles by writing its own viewport position
+    // back into the persisted store, after which restore becomes a no-op.
+    const p = path()
+    if (!p || file.selectionPending(p)) return
 
     syncCodeScroll()
 
@@ -434,18 +436,39 @@ export function FileTabContent(props: { tab: string }) {
     })
   }
 
-  // Tracks store-driven selection changes so the scroll restore above can yield
-  // to the viewer's own scroll-into-view for a short window after each change.
-  let selectionGuardUntil = 0
-  createEffect(
-    on(
-      () => selectedLines()?.start,
-      () => {
-        selectionGuardUntil = Date.now() + 1000
-      },
-      { defer: true },
-    ),
-  )
+  // Scroll-intent arbitration (single source of truth: view-cache sequences).
+  //
+  // - `setSelectedLines(path, range)` bumps `selectionSeq` → a jump is pending.
+  // - This effect asks the viewer handle to scroll the selection into view once
+  //   the content is loaded and the handle is registered (the handle retries
+  //   internally until the target lines are rendered).
+  // - On completion the settled viewport position is written back into the
+  //   persisted scroll store, so any later restore is a no-op.
+  // - `restoreScroll` skips while a jump is pending; there are no timers and
+  //   the two writers can never run against the viewport at the same time.
+  const [scrollHandle, setScrollHandle] = createSignal<FileScrollHandle | null>(null)
+  const scrollControl: FileScrollControl = {
+    register: setScrollHandle,
+  }
+
+  createEffect(() => {
+    const p = path()
+    if (!p) return
+    const seq = file.selectionSeq(p)
+    if (!file.selectionPending(p)) return
+    const range = selectedLines()
+    const handle = scrollHandle()
+    if (!range || !handle) return
+    if (!state()?.loaded) return
+
+    handle.scrollToSelection(() => {
+      file.settleSelection(p, seq)
+      const el = scroll
+      if (!el) return
+      const inner = getCodeScroll()[0]
+      view().setScroll(props.tab, { x: inner?.scrollLeft ?? el.scrollLeft, y: el.scrollTop })
+    })
+  })
 
   const handleScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
     if (codeScroll.length === 0) syncCodeScroll()
@@ -517,6 +540,7 @@ export function FileTabContent(props: { tab: string }) {
           commentsUi.onLineSelectionEnd(range)
         }}
         search={search}
+        scrollControl={scrollControl}
         class="select-text"
         actionsMount={actionsMount}
         media={{
