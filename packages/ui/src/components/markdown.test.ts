@@ -35,6 +35,7 @@ describe("markdown fileLink", () => {
       path: "packages/app/src/app.tsx",
       line: 12,
       col: undefined,
+      endLine: 18,
     })
   })
 
@@ -43,6 +44,25 @@ describe("markdown fileLink", () => {
       path: "/tmp/demo/file.ts",
       line: 20,
       col: 3,
+    })
+  })
+
+  test("parses GitHub-style hash line ranges", () => {
+    expect(markdownFileLink("Notes/paper.md#L642-L668")).toEqual({
+      path: "Notes/paper.md",
+      line: 642,
+      endLine: 668,
+    })
+    expect(markdownFileLink("Notes/paper.md#L20C3-L30C7")).toEqual({
+      path: "Notes/paper.md",
+      line: 20,
+      col: 3,
+      endLine: 30,
+    })
+    expect(markdownFileLink("Notes/representation%20theory.md#L12-L24")).toEqual({
+      path: "Notes/representation theory.md",
+      line: 12,
+      endLine: 24,
     })
   })
 

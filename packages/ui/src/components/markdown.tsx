@@ -143,6 +143,7 @@ export type FileLink = {
   path: string
   line?: number
   col?: number
+  endLine?: number
 }
 
 const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
@@ -170,9 +171,11 @@ export function markdownFileLink(href: string) {
   const win = /^[A-Za-z]:[\\/]/.test(value)
   if (!win && /^[A-Za-z][A-Za-z\d+.-]*:/.test(value)) return
 
-  const hash = value.match(/#L(\d+)(?:C(\d+))?$/i)
+  // GitHub-style hash anchors: "#L20", "#L20C3", "#L20-L30", "#L20C3-L30C7".
+  const hash = value.match(/#L(\d+)(?:C(\d+))?(?:-L(\d+)(?:C(\d+))?)?$/i)
   const hashLine = hash?.[1] ? Number(hash[1]) : undefined
   const hashCol = hash?.[2] ? Number(hash[2]) : undefined
+  const hashEndLine = hash?.[3] ? Number(hash[3]) : undefined
   const base = hash ? value.slice(0, -hash[0].length) : value
   const line = base.match(/:(\d+)(?:-(\d+))?(?::(\d+))?$/)
   const path = line && (!win || base.indexOf(":") !== 1) ? base.slice(0, -line[0].length) : base
@@ -181,20 +184,24 @@ export function markdownFileLink(href: string) {
   const leaf = next.split(/[\\/]/).at(-1) ?? ""
   if (!/[\\/]/.test(next) && !leaf.includes(".")) return
 
-  const link = {
+  const link: FileLink = {
     path: path.replace(/\\/g, "/"),
     line: hashLine ?? (line?.[1] ? Number(line[1]) : undefined),
     col: hashCol ?? (line?.[3] ? Number(line[3]) : undefined),
+    endLine: hashEndLine ?? (line?.[2] ? Number(line[2]) : undefined),
   }
 
   if (link.line !== undefined && (!Number.isInteger(link.line) || link.line <= 0)) return
   if (link.col !== undefined && (!Number.isInteger(link.col) || link.col <= 0)) return
+  if (link.endLine !== undefined && (!Number.isInteger(link.endLine) || link.endLine <= 0)) return
   return link
 }
 
 function fileHref(link: FileLink) {
-  const line = link.line ? `:${link.line}${link.col ? `:${link.col}` : ""}` : ""
-  return `opencode-file:${encodeURIComponent(`${link.path}${line}`)}`
+  if (!link.line) return `opencode-file:${encodeURIComponent(`${link.path}`)}`
+  const range = link.endLine ? `-${link.endLine}` : ""
+  const col = link.col ? `:${link.col}` : ""
+  return `opencode-file:${encodeURIComponent(`${link.path}:${link.line}${range}${col}`)}`
 }
 
 function ensureFileLinkIcon(node: HTMLAnchorElement, path: string) {
@@ -218,6 +225,8 @@ function applyFileLink(node: HTMLAnchorElement, link: FileLink) {
   node.title = link.path
   if (link.line) node.dataset.line = String(link.line)
   else delete node.dataset.line
+  if (link.endLine) node.dataset.endLine = String(link.endLine)
+  else delete node.dataset.endLine
   if (link.col) node.dataset.col = String(link.col)
   else delete node.dataset.col
   ensureFileLinkIcon(node, link.path)

@@ -947,6 +947,7 @@ export default function Page() {
       raw: "",
       path: "",
       line: undefined as number | undefined,
+      endLine: undefined as number | undefined,
       x: 0,
       y: 0,
     },
@@ -1900,10 +1901,10 @@ export default function Page() {
     loadFile: file.load,
   })
 
-  const openFileLinkPreview = (raw: string, path: string, line?: number) => {
+  const openFileLinkPreview = (raw: string, path: string, line?: number, endLine?: number) => {
     const tab = file.tab(path)
     console.debug(
-      `[file-link] preview start session=${params.id ?? "none"} root=${sdk.directory} raw=${raw} path=${path} line=${line ?? "none"} tab=${tab}`,
+      `[file-link] preview start session=${params.id ?? "none"} root=${sdk.directory} raw=${raw} path=${path} line=${line ?? "none"} endLine=${endLine ?? "none"} tab=${tab}`,
     )
     tabs().open(tab)
     void file.load(path).then(() => {
@@ -1912,7 +1913,19 @@ export default function Page() {
         `[file-link] load session=${params.id ?? "none"} root=${sdk.directory} path=${path} loaded=${String(!!state?.loaded)} error=${state?.error ?? "none"}`,
       )
     })
-    if (line && line > 0) file.setSelectedLines(path, { start: line, end: line })
+    if (line && line > 0) {
+      const range = { start: line, end: endLine && endLine >= line ? endLine : line }
+      const current = file.selectedLines(path) as { start?: number; end?: number } | null | undefined
+      const same = current?.start === range.start && current?.end === range.end
+      if (same) {
+        // Re-trigger the viewer: an unchanged selection would not re-run its
+        // selection effect, so the viewport would not jump back on repeated clicks.
+        file.setSelectedLines(path, null)
+        requestAnimationFrame(() => file.setSelectedLines(path, range))
+      } else {
+        file.setSelectedLines(path, range)
+      }
+    }
     if (!view().filePreview.opened()) view().filePreview.open()
     tabs().setActive(tab)
     console.debug(`[file-link] opened session=${params.id ?? "none"} root=${sdk.directory} path=${path} tab=${tab}`)
@@ -1948,8 +1961,10 @@ export default function Page() {
     const path = file.normalize(raw)
     const parsedLine = Number.parseInt(link.dataset.line ?? "", 10)
     const line = Number.isFinite(parsedLine) && parsedLine > 0 ? parsedLine : undefined
+    const parsedEndLine = Number.parseInt(link.dataset.endLine ?? "", 10)
+    const endLine = Number.isFinite(parsedEndLine) && parsedEndLine > 0 ? parsedEndLine : undefined
     if (!path) return
-    return { link, raw, path, line }
+    return { link, raw, path, line, endLine }
   }
 
   const handleFileLinkHover = (event: MouseEvent) => {
@@ -1978,6 +1993,7 @@ export default function Page() {
       raw: entry.raw,
       path: entry.path,
       line: entry.line,
+      endLine: entry.endLine,
       x: event.clientX,
       y: event.clientY,
     })
@@ -2053,7 +2069,7 @@ export default function Page() {
         })
       return
     }
-    openFileLinkPreview(entry.raw, entry.path, entry.line)
+    openFileLinkPreview(entry.raw, entry.path, entry.line, entry.endLine)
   }
 
   const changesTitle = () => {
@@ -3766,7 +3782,12 @@ export default function Page() {
           <DropdownMenu.Content>
             <DropdownMenu.Item
               onSelect={() =>
-                openFileLinkPreview(store.fileLinkMenu.raw, store.fileLinkMenu.path, store.fileLinkMenu.line)
+                openFileLinkPreview(
+                  store.fileLinkMenu.raw,
+                  store.fileLinkMenu.path,
+                  store.fileLinkMenu.line,
+                  store.fileLinkMenu.endLine,
+                )
               }
             >
               <DropdownMenu.Icon>

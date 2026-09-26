@@ -407,6 +407,11 @@ export function FileTabContent(props: { tab: string }) {
     const s = view().scroll(props.tab)
     if (!s) return
 
+    // A fresh selection (e.g. a file link jump) scrolls the target line into view
+    // in the viewer; skip the persisted-position restore for a short window so it
+    // does not override that jump while the viewer settles.
+    if (Date.now() < selectionGuardUntil) return
+
     syncCodeScroll()
 
     if (codeScroll.length > 0) {
@@ -428,6 +433,19 @@ export function FileTabContent(props: { tab: string }) {
       restoreScroll()
     })
   }
+
+  // Tracks store-driven selection changes so the scroll restore above can yield
+  // to the viewer's own scroll-into-view for a short window after each change.
+  let selectionGuardUntil = 0
+  createEffect(
+    on(
+      () => selectedLines()?.start,
+      () => {
+        selectionGuardUntil = Date.now() + 1000
+      },
+      { defer: true },
+    ),
+  )
 
   const handleScroll = (event: Event & { currentTarget: HTMLDivElement }) => {
     if (codeScroll.length === 0) syncCodeScroll()

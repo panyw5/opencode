@@ -876,7 +876,53 @@ function SourceViewer<T>(props: SourceProps<T>) {
 
   const setSelectedLines = (range: SelectedLineRange | null) => {
     viewer.lastSelection = range
-    applySelection(range)
+    if (applySelection(range)) scrollSelectionIntoView()
+  }
+
+  // Scroll the selection so its midpoint sits at the center of the nearest
+  // scrolling ancestor. A range that is already fully visible never moves the
+  // viewport, so user-driven selections stay undisturbed. Retries until the
+  // viewer finishes rendering the target lines.
+  const scrollSelectionIntoView = (attempt = 0) => {
+    const range = viewer.lastSelection
+    if (!range) return
+    const root = viewer.getRoot()
+    const start = Math.min(range.start, range.end)
+    const end = Math.max(range.start, range.end)
+    const startEl = root?.querySelector(`[data-line="${start}"]`)
+    if (!(startEl instanceof HTMLElement)) {
+      if (attempt >= 120) return
+      requestAnimationFrame(() => scrollSelectionIntoView(attempt + 1))
+      return
+    }
+    const endEl = root?.querySelector(`[data-line="${end}"]`) ?? startEl
+    if (!(endEl instanceof HTMLElement)) return
+
+    const composedParent = (el: Element): Element | null => {
+      if (el.parentElement) return el.parentElement
+      const owner = el.getRootNode()
+      return owner instanceof ShadowRoot ? owner.host : null
+    }
+
+    let scroller: HTMLElement | null = null
+    for (let node = composedParent(startEl); node; node = composedParent(node)) {
+      if (!(node instanceof HTMLElement)) continue
+      const style = getComputedStyle(node)
+      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1) {
+        scroller = node
+        break
+      }
+    }
+    if (!scroller) return
+
+    const outer = scroller.getBoundingClientRect()
+    const first = startEl.getBoundingClientRect()
+    const last = endEl.getBoundingClientRect()
+    const top = Math.min(first.top, last.top)
+    const bottom = Math.max(first.bottom, last.bottom)
+    if (top >= outer.top && bottom <= outer.bottom) return
+    // Place the top edge of the selection at the vertical middle of the viewport.
+    scroller.scrollTop += top - (outer.top + outer.height / 2)
   }
 
   const adapter: ModeAdapter = {
@@ -944,6 +990,7 @@ function SourceViewer<T>(props: SourceProps<T>) {
       },
       onReady: () => {
         applySelection(viewer.lastSelection)
+        scrollSelectionIntoView()
         viewer.find.refresh({ reset: true })
         local.onRendered?.()
       },
