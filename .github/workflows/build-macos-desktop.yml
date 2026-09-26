@@ -172,7 +172,9 @@ jobs:
           fi
 
   build-macos-arm64:
-    needs: build-macos-x64
+    # Runs in parallel with build-macos-x64: both jobs are fully independent
+    # (own checkout, build, keychain, notarization) and upload distinctly named
+    # artifacts; create-draft-release fans in on both.
     runs-on: macos-15
     env:
       APP_VERSION: ${{ inputs.version != '' && inputs.version || github.ref_name }}
