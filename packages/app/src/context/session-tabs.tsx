@@ -105,7 +105,7 @@ export type SessionTabsCoordinator = {
   ensureOpen(tab: SessionBarTab): boolean
   createDraft(
     directory: string,
-    source: "button" | "keybind" | "menu" | "slash" | "palette" | "deep-link",
+    source: "button" | "keybind" | "menu" | "slash" | "palette" | "deep-link" | "project-index",
   ): SessionBarDraft
   activate(target: SessionTabsTarget, options?: { replace?: boolean }): Promise<SessionTabsActivationResult>
   cancelNavigation(reason: string): void

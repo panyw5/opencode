@@ -286,13 +286,22 @@ const ProjectIndexRoute = () => {
       directory,
       fallback: "home",
     })
+    // A project opened with no live session tabs or drafts (e.g. dropping a
+    // new folder into the app) should land on a fresh session for that
+    // project instead of the home page. Closing every tab still goes home
+    // via planSessionTabClose, which never passes through this route.
+    let resolved = target
+    if (target.type === "home" && directory) {
+      const draft = sessionTabs.createDraft(directory, "project-index")
+      resolved = { type: "draft", ...draft }
+    }
     console.debug(
-      `[project-index] fallback start run=${run} directory=${directory || "none"} target=${target.type} tabs=${layout.sessionBar.all().length} drafts=${layout.sessionBar.drafts().length}`,
+      `[project-index] fallback start run=${run} directory=${directory || "none"} target=${resolved.type} tabs=${layout.sessionBar.all().length} drafts=${layout.sessionBar.drafts().length}`,
     )
-    void sessionTabs.activate(target, { replace: true }).then((result) => {
-      console.debug(`[project-index] fallback complete run=${run} target=${target.type} result=${result}`)
-      if (result !== "failed" || target.type === "home" || run !== generation) return
-      console.warn(`[project-index] fallback failed target=${target.type}; navigating home`)
+    void sessionTabs.activate(resolved, { replace: true }).then((result) => {
+      console.debug(`[project-index] fallback complete run=${run} target=${resolved.type} result=${result}`)
+      if (result !== "failed" || resolved.type === "home" || run !== generation) return
+      console.warn(`[project-index] fallback failed target=${resolved.type}; navigating home`)
       return sessionTabs.activate({ type: "home" }, { replace: true })
     })
   })
