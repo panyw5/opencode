@@ -139,6 +139,8 @@ export const dict = {
   "command.project.previous": "上一个项目",
   "command.project.next": "下一个项目",
   "command.project.openInFinder": "在 Finder 打开",
+
+  "project.switch.tabHint": "按 Tab 直接新建会话",
   "command.project.openInFileExplorer": "在文件资源管理器打开",
   "command.project.openInFileManager": "在文件管理器打开",
   "command.project.openInVscode": "在 VSCode 中打开",

@@ -1523,7 +1523,13 @@ export default function Layout(props: ParentProps) {
         disabled: layout.projects.list().length === 0 && enabledExtraAgents(server.list).length === 0,
         onSelect: () => {
           dialog.show(
-            () => <DialogSwitchProject onSelect={switchProjectFromDialog} current={() => currentProject()?.entry} />,
+            () => (
+              <DialogSwitchProject
+                onSelect={switchProjectFromDialog}
+                onSelectNewSession={openNewSessionFromDialog}
+                current={() => currentProject()?.entry}
+              />
+            ),
             undefined,
             {
               modal: false,
@@ -3765,6 +3771,20 @@ export default function Layout(props: ParentProps) {
       navigateWithSidebarReset(`/${base64Encode(project.worktree)}`)
     }
     layout.sidebar.open()
+  }
+
+  function openNewSessionFromDialog(directory: string) {
+    const project = layout.projects.list().find((item) => workspaceKey(item.worktree) === workspaceKey(directory))
+    if (project) {
+      console.debug(`[project-switch] dialog new-session root=${project.worktree} directory=${directory}`)
+      setSidebarProjectRoot(project.worktree)
+      warmProjectSessions(project.worktree)
+    } else {
+      console.debug(`[project-switch] dialog new-session directory=${directory} reason=non-project`)
+    }
+    const draft = sessionTabs.createDraft(directory, "menu")
+    navigateWithSidebarReset(sessionTabsTargetHref({ type: "draft", ...draft }))
+    layout.sidebar.close()
   }
 
   function switchProjectFromDialog(directory: string) {

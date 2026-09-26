@@ -2,7 +2,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { List } from "@opencode-ai/ui/list"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { createMemo, Show, type Accessor } from "solid-js"
+import { createMemo, createSignal, Show, type Accessor } from "solid-js"
 import { useLayout, getAvatarColors, type LocalProject } from "@/context/layout"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
@@ -30,13 +30,20 @@ type ExtraAgentItem = {
 
 type ProjectEntry = ProjectItem | ExtraAgentItem
 
-export function DialogSwitchProject(props: { onSelect: (directory: string) => void; current: Accessor<string | undefined> }) {
+export function DialogSwitchProject(props: {
+  onSelect: (directory: string) => void
+  onSelectNewSession?: (directory: string) => void
+  current: Accessor<string | undefined>
+}) {
   const dialog = useDialog()
   const language = useLanguage()
   const layout = useLayout()
   const server = useServer()
 
   const enabledAgents = createMemo(() => enabledExtraAgents(server.list))
+
+  // Keyboard-highlighted entry; drives the right-column Tab hint.
+  const [activeId, setActiveId] = createSignal<string | undefined>()
 
   const entries = createMemo((): ProjectEntry[] => {
     const projects = layout.projects.rail()
@@ -71,8 +78,21 @@ export function DialogSwitchProject(props: { onSelect: (directory: string) => vo
     props.onSelect(entry.id)
   }
 
+  // Tab on the highlighted entry jumps straight into that project's new-session view.
+  const handleKeyEvent = (event: KeyboardEvent, entry: ProjectEntry | undefined) => {
+    if (!entry) return
+    if (event.key !== "Tab" || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey) return
+    event.preventDefault()
+    dialog.close()
+    if (props.onSelectNewSession) {
+      props.onSelectNewSession(entry.id)
+      return
+    }
+    props.onSelect(entry.id)
+  }
+
   return (
-    <Dialog>
+    <Dialog size="large">
       <List
         search={{ placeholder: language.t("project.switch.placeholder"), autofocus: true }}
         emptyMessage={language.t("project.switch.empty")}
@@ -80,6 +100,8 @@ export function DialogSwitchProject(props: { onSelect: (directory: string) => vo
         key={(item) => item.id}
         filterKeys={["name", "path"]}
         onSelect={handleSelect}
+        onKeyEvent={handleKeyEvent}
+        onMove={(item) => setActiveId(item?.id)}
       >
         {(item) => (
           <div class="w-full flex items-center justify-between rounded-md pl-1">
@@ -111,6 +133,11 @@ export function DialogSwitchProject(props: { onSelect: (directory: string) => vo
             </div>
             <Show when={item.isCurrent}>
               <Icon name="check" size="small" class="text-icon-success-base shrink-0 ml-2" />
+            </Show>
+            <Show when={item.id === activeId()}>
+              <span class="text-12-regular text-text-weak shrink-0 ml-3" data-slot="project-switch-tab-hint">
+                {language.t("project.switch.tabHint")}
+              </span>
             </Show>
           </div>
         )}

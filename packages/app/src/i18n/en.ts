@@ -655,6 +655,7 @@ export const dict = {
   "project.switch.placeholder": "Search projects...",
   "project.switch.empty": "No projects available",
   "project.switch.current": "Current",
+  "project.switch.tabHint": "Tab: new session",
 
   "dialog.releaseNotes.action.getStarted": "Get started",
   "dialog.releaseNotes.action.next": "Next",
