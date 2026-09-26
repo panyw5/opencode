@@ -113,6 +113,7 @@ import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOp
 import { agentFilePath, agentNameIssue, agentTemplate } from "./config-agent-create"
 import { parseAgentMarkdown, upsertAgentMarkdownModel } from "./config-agent-markdown"
 import { AgentMarkdownMeta } from "./config-agent-markdown-meta"
+import { BuiltInAgentEditor, type BuiltInAgentForm } from "./config-agent-builtin-editor"
 import {
   changedProviderEntry,
   declaredMcpEntries,
@@ -5696,6 +5697,11 @@ export default function ConfigPage() {
     if (!item?.path.startsWith("config:agent.")) return
     return item.path.slice("config:agent.".length)
   })
+  const currentBuiltInAgent = createMemo(() => {
+    const item = currentAgent()
+    if (item?.origin !== "built-in") return
+    return item.label
+  })
   const currentSkill = createMemo(() => skillDocs().find((item) => item.id === state.doc))
   const selectedProvider = createMemo(() =>
     providers().find((item) => item.id === state.pick.replace(/^provider:/, "")),
@@ -6360,14 +6366,19 @@ export default function ConfigPage() {
     }
   }
 
-  async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
-    console.info("[config] jsonc agent save started", { name })
+  async function globalJsoncConfigFile() {
     const files = await platform.listConfigFiles?.(null)
     const file = files?.find(
       (item) => item.scope === "global" && item.kind === "config" && item.label === "opencode.jsonc",
     )
     if (!file?.path || !platform.readLocalFile || !platform.writeLocalFile)
       throw new Error(t("config.error.globalConfigUnavailable"))
+    return { path: file.path, read: platform.readLocalFile, write: platform.writeLocalFile }
+  }
+
+  async function saveJsoncAgent(name: string, form: JsoncAgentForm) {
+    console.info("[config] jsonc agent save started", { name })
+    const file = await globalJsoncConfigFile()
     console.info("[config] jsonc agent config file resolved", { name, path: file.path })
 
     const number = (label: string, value: string) => {
@@ -6395,10 +6406,10 @@ export default function ConfigPage() {
       permission: jsoncObjectField("Permission", form.permission),
       options: jsoncObjectField("Options", form.options),
     }
-    let text = (await platform.readLocalFile(file.path)) ?? "{}"
+    let text = (await file.read(file.path)) ?? "{}"
     console.info("[config] jsonc agent config file read", { name, path: file.path, bytes: text.length })
     for (const [key, value] of Object.entries(fields)) text = patchText(text, ["agent", name, key], value)
-    await platform.writeLocalFile(file.path, text)
+    await file.write(file.path, text)
     console.info("[config] jsonc agent config file written", { name, path: file.path, bytes: text.length })
     setConfigFileAgents(configuredAgentsFromJsonc(text))
     await refreshAfterConfigWrite({
@@ -6407,6 +6418,30 @@ export default function ConfigPage() {
       refresh: () => bump("agentRev"),
     })
     console.info("[config] jsonc agent save completed", { name })
+    showToast({ variant: "success", title: t("common.save"), description: name })
+  }
+
+  async function saveBuiltInAgent(name: string, form: BuiltInAgentForm) {
+    console.info("[config] builtin agent save started", { name, permissions: Object.keys(form.permission) })
+    const file = await globalJsoncConfigFile()
+    console.info("[config] builtin agent config file resolved", { name, path: file.path })
+
+    const fields: Record<string, unknown> = {
+      model: form.model.trim() || undefined,
+      permission: Object.keys(form.permission).length > 0 ? form.permission : undefined,
+    }
+    let text = (await file.read(file.path)) ?? "{}"
+    console.info("[config] builtin agent config file read", { name, path: file.path, bytes: text.length })
+    for (const [key, value] of Object.entries(fields)) text = patchText(text, ["agent", name, key], value)
+    await file.write(file.path, text)
+    console.info("[config] builtin agent config file written", { name, path: file.path, bytes: text.length })
+    setConfigFileAgents(configuredAgentsFromJsonc(text))
+    await refreshAfterConfigWrite({
+      source: `builtin-agent:${name}`,
+      refreshConfig: () => globalSync.refreshConfig(mainDomain),
+      refresh: () => bump("agentRev"),
+    })
+    console.info("[config] builtin agent save completed", { name })
     showToast({ variant: "success", title: t("common.save"), description: name })
   }
 
@@ -9485,6 +9520,16 @@ export default function ConfigPage() {
                         onSave={() => void saveAgent()}
                         onCancel={cancelAgentCreate}
                       />
+                    </Match>
+                    <Match when={currentBuiltInAgent()}>
+                      {(name) => (
+                        <BuiltInAgentEditor
+                          name={name()}
+                          config={configFileAgents()?.[name()]}
+                          runtime={loadedMap().get(name())}
+                          onSave={(form: BuiltInAgentForm) => saveBuiltInAgent(name(), form)}
+                        />
+                      )}
                     </Match>
                     <Match when={true}>
                       <Show

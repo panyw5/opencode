@@ -114,7 +114,7 @@ export function AgentMarkdownMeta(props: {
   )
 }
 
-function permissionCapsuleTone(item: AgentPermissionCapsule) {
+export function permissionCapsuleTone(item: AgentPermissionCapsule) {
   if (!item.known || !item.validAction) return "var(--icon-critical-base)"
   if (item.action === "allow") return "var(--icon-success-base)"
   if (item.action === "ask") return "var(--icon-warning-base)"
@@ -122,7 +122,7 @@ function permissionCapsuleTone(item: AgentPermissionCapsule) {
   return "var(--text-weak)"
 }
 
-function permissionCapsuleStyle(tone: string) {
+export function permissionCapsuleStyle(tone: string) {
   return {
     color: `color-mix(in srgb, ${tone} 32%, var(--text-strong))`,
     "background-color": `color-mix(in srgb, ${tone} 16%, var(--background-base))`,
@@ -130,7 +130,7 @@ function permissionCapsuleStyle(tone: string) {
   }
 }
 
-function PermissionCapsule(props: { item: AgentPermissionCapsule }) {
+export function PermissionCapsule(props: { item: AgentPermissionCapsule }) {
   const language = useLanguage()
   const actionLabel = () => {
     if (props.item.action === "allow") return language.t("settings.permissions.action.allow")
