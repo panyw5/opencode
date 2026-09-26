@@ -14,10 +14,11 @@ export const COMMANDCODE_PROVIDER_ID = "commandcode"
 export const COMMANDCODE_PACKAGE = "commandcode"
 export const COMMANDCODE_API_BASE = "https://api.commandcode.ai"
 export const COMMANDCODE_GENERATE_PATH = "/alpha/generate"
-export const COMMANDCODE_VERSION = "1.28.1"
+export const COMMANDCODE_VERSION = "1.66.0"
 export const COMMANDCODE_MAX_OUTPUT_TOKENS = 64_000
 export const COMMANDCODE_REQUEST_TIMEOUT_MS = 60_000
 export const COMMANDCODE_STREAM_IDLE_TIMEOUT_MS = 300_000
+export const COMMANDCODE_PAUSE_CONTINUATIONS = 5
 
 const log = Log.create({ service: "provider.commandcode" })
 
@@ -102,11 +103,8 @@ function toCommandCodePrompt(prompt: LanguageModelV3Prompt) {
           ) {
             return {
               type: "image",
-              source: {
-                type: "base64",
-                media_type: part.mediaType,
-                data: imageData(part.data),
-              },
+              image: `data:${part.mediaType};base64,${imageData(part.data)}`,
+              mimeType: part.mediaType,
             }
           }
           throw new Error(`Command Code does not support file input type ${part.mediaType}`)
@@ -119,6 +117,7 @@ function toCommandCodePrompt(prompt: LanguageModelV3Prompt) {
       const content: unknown[] = []
       for (const part of message.content) {
         if (part.type === "text") content.push({ type: "text", text: part.text })
+        if (part.type === "reasoning") content.push({ type: "reasoning", text: part.text })
         if (part.type === "tool-call" && pairedToolCalls.has(part.toolCallId)) {
           content.push({
             type: "tool-call",
@@ -195,20 +194,33 @@ function projectSlugFromPath(pathName: string): string {
 }
 
 function finishReason(value: unknown): LanguageModelV3FinishReason {
-  if (value === "tool-calls") return { unified: "tool-calls", raw: "tool-calls" }
-  if (value === "length" || value === "max_tokens" || value === "max_output_tokens") {
+  const raw = typeof value === "string" ? value.toLowerCase() : undefined
+  if (raw === "tool-calls" || raw === "tool_calls" || raw === "tool_use") {
+    return { unified: "tool-calls", raw: String(value) }
+  }
+  if (raw === "length" || raw === "max_tokens" || raw === "max_output_tokens") {
     return { unified: "length", raw: String(value) }
   }
-  if (value === "stop") return { unified: "stop", raw: "stop" }
+  if (raw === "stop" || raw === "end_turn") return { unified: "stop", raw: String(value) }
   return { unified: "other", raw: typeof value === "string" ? value : undefined }
 }
 
-function usage(value: unknown) {
-  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : {}
-  const inputTokens = typeof record.inputTokens === "number" ? record.inputTokens : undefined
-  const outputTokens = typeof record.outputTokens === "number" ? record.outputTokens : undefined
+type CommandCodeUsage = {
+  inputTokens?: number
+  outputTokens?: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+}
+
+function usage(value: CommandCodeUsage | undefined) {
+  const record = value ?? {}
+  const number = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined)
+  const inputTokens = number(record.inputTokens)
+  const outputTokens = number(record.outputTokens)
+  const cacheRead = number(record.cacheReadTokens)
+  const cacheWrite = number(record.cacheWriteTokens)
   return {
-    inputTokens: { total: inputTokens, noCache: inputTokens, cacheRead: undefined, cacheWrite: undefined },
+    inputTokens: { total: inputTokens, noCache: inputTokens, cacheRead, cacheWrite },
     outputTokens: { total: outputTokens, text: outputTokens, reasoning: undefined },
   }
 }
@@ -237,10 +249,11 @@ function requestBody(modelId: string, input: LanguageModelV3CallOptions, working
       tools: toCommandCodeTools(input),
       system: prompt.system,
       max_tokens: Math.min(input.maxOutputTokens ?? COMMANDCODE_MAX_OUTPUT_TOKENS, COMMANDCODE_MAX_OUTPUT_TOKENS),
-      temperature: input.temperature ?? 0.3,
       stream: true,
+      ...(input.temperature !== undefined ? { temperature: input.temperature } : {}),
       ...(effort ? { reasoning_effort: effort } : {}),
     },
+    permissionMode: "standard",
     threadId: crypto.randomUUID(),
   }
 }
@@ -261,73 +274,72 @@ export function createCommandCodeLanguageModel(
   const workingDirectory = options.workingDirectory ?? process.cwd()
   const streamIdleTimeoutMs = options.streamIdleTimeoutMs ?? COMMANDCODE_STREAM_IDLE_TIMEOUT_MS
 
+  const sessionID = crypto.randomUUID()
   const headers = (extra?: Record<string, string | undefined>) => ({
     "Content-Type": "application/json",
-    Authorization: `Bearer ${options.apiKey ?? ""}`,
+    "User-Agent": "cli",
+    ...(options.apiKey ? { Authorization: `Bearer ${options.apiKey}` } : {}),
     "x-command-code-version": COMMANDCODE_VERSION,
     "x-cli-environment": "production",
     "x-project-slug": projectSlugFromPath(workingDirectory),
     "x-taste-learning": "true",
-    "x-co-flag": "false",
+    "x-session-id": sessionID,
     ...Object.fromEntries(Object.entries(extra ?? {}).filter(([, value]) => value !== undefined)),
   })
 
   const doStream = async (input: LanguageModelV3CallOptions) => {
     const request = requestBody(modelId, input, workingDirectory)
     log.info("starting Command Code request", { model: modelId, workingDirectory })
-    const connectAbort = new AbortController()
-    let connectTimedOut = false
-    const connectTimer = setTimeout(() => {
-      connectTimedOut = true
-      connectAbort.abort(
-        new DOMException(
-          `Command Code API request did not respond within ${COMMANDCODE_REQUEST_TIMEOUT_MS}ms`,
-          "TimeoutError",
-        ),
-      )
-    }, COMMANDCODE_REQUEST_TIMEOUT_MS)
+    let attemptAbort = new AbortController()
     let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
     let streamCancelled = false
     const onCallerAbort = () => {
-      connectAbort.abort(input.abortSignal?.reason)
+      attemptAbort.abort(input.abortSignal?.reason)
       void reader?.cancel(input.abortSignal?.reason).catch(() => undefined)
     }
     input.abortSignal?.addEventListener("abort", onCallerAbort, { once: true })
     const cleanupConnection = () => {
-      clearTimeout(connectTimer)
       input.abortSignal?.removeEventListener("abort", onCallerAbort)
     }
 
-    let response: Response
-    try {
-      response = await fetchImpl(`${apiBase}${COMMANDCODE_GENERATE_PATH}`, {
-        method: "POST",
-        headers: headers(input.headers),
-        body: JSON.stringify(request),
-        signal: connectAbort.signal,
-      })
-      clearTimeout(connectTimer)
-    } catch (error) {
-      cleanupConnection()
-      if (input.abortSignal?.aborted) throw error
-      if (connectTimedOut) {
-        throw new Error(`Command Code API request did not respond within ${COMMANDCODE_REQUEST_TIMEOUT_MS}ms`)
+    const openAttempt = async (): Promise<ReadableStreamDefaultReader<Uint8Array>> => {
+      attemptAbort = new AbortController()
+      let connectTimedOut = false
+      const connectTimer = setTimeout(() => {
+        connectTimedOut = true
+        attemptAbort.abort(
+          new DOMException(
+            `Command Code API request did not respond within ${COMMANDCODE_REQUEST_TIMEOUT_MS}ms`,
+            "TimeoutError",
+          ),
+        )
+      }, COMMANDCODE_REQUEST_TIMEOUT_MS)
+      try {
+        const response = await fetchImpl(`${apiBase}${COMMANDCODE_GENERATE_PATH}`, {
+          method: "POST",
+          headers: headers(input.headers),
+          body: JSON.stringify(request),
+          signal: attemptAbort.signal,
+        })
+        clearTimeout(connectTimer)
+        log.info("received Command Code response", { model: modelId, status: response.status })
+        if (!response.ok) {
+          const detail = (await response.text().catch(() => "")).slice(0, 1000)
+          throw new Error(`Command Code API error ${response.status}${detail ? `: ${detail}` : ""}`)
+        }
+        if (!response.body) throw new Error("Command Code API returned no response body")
+        reader = response.body.getReader()
+        return reader
+      } catch (error) {
+        clearTimeout(connectTimer)
+        cleanupConnection()
+        if (input.abortSignal?.aborted) throw error
+        if (connectTimedOut) {
+          throw new Error(`Command Code API request did not respond within ${COMMANDCODE_REQUEST_TIMEOUT_MS}ms`)
+        }
+        throw new Error(`Command Code API request failed: ${error instanceof Error ? error.message : String(error)}`)
       }
-      throw new Error(`Command Code API request failed: ${error instanceof Error ? error.message : String(error)}`)
     }
-
-    log.info("received Command Code response", { model: modelId, status: response.status })
-
-    if (!response.ok) {
-      const detail = (await response.text().catch(() => "")).slice(0, 1000)
-      cleanupConnection()
-      throw new Error(`Command Code API error ${response.status}${detail ? `: ${detail}` : ""}`)
-    }
-    if (!response.body) {
-      cleanupConnection()
-      throw new Error("Command Code API returned no response body")
-    }
-    reader = response.body.getReader()
 
     const cancelReader = (reason?: unknown) => {
       log.warn("cancelling Command Code stream", {
@@ -337,100 +349,20 @@ export function createCommandCodeLanguageModel(
       return reader?.cancel(reason).catch(() => undefined)
     }
 
+    const firstReader = await openAttempt()
+
     const streamParts = async function* (): AsyncGenerator<LanguageModelV3StreamPart> {
       const decoder = new TextDecoder()
-      let buffer = ""
       let idleTimer: ReturnType<typeof setTimeout> | undefined
       let idleFired = false
-      let textID: string | undefined
-      let reasoningID: string | undefined
-      let textOpen = false
-      let reasoningOpen = false
-      let finished = false
-      let finish = finishReason("stop")
-      let totalUsage: unknown
-      let sawContent = false
-
-      const closeText = () => {
-        if (!textOpen || !textID) return [] as LanguageModelV3StreamPart[]
-        textOpen = false
-        return [{ type: "text-end", id: textID } satisfies LanguageModelV3StreamPart]
+      const acc = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
       }
-      const closeReasoning = () => {
-        if (!reasoningOpen || !reasoningID) return [] as LanguageModelV3StreamPart[]
-        reasoningOpen = false
-        return [{ type: "reasoning-end", id: reasoningID } satisfies LanguageModelV3StreamPart]
-      }
-      const handleEvent = (event: CommandCodeEvent | undefined): LanguageModelV3StreamPart[] => {
-        if (!event) return []
-        const type = event.type
-        log.info("parsed Command Code stream event", { model: modelId, type: String(type) })
-        if (type === "reasoning-start") return closeText()
-        if (type === "reasoning-delta") {
-          const parts = closeText()
-          reasoningID ??= generateId()
-          if (!reasoningOpen) {
-            reasoningOpen = true
-            parts.push({ type: "reasoning-start", id: reasoningID })
-          }
-          const delta = typeof event.text === "string" ? event.text : ""
-          sawContent ||= delta.length > 0
-          parts.push({ type: "reasoning-delta", id: reasoningID, delta })
-          return parts
-        }
-        if (type === "reasoning-end") return closeReasoning()
-        if (type === "text-delta") {
-          const parts = closeReasoning()
-          textID ??= generateId()
-          if (!textOpen) {
-            textOpen = true
-            parts.push({ type: "text-start", id: textID })
-          }
-          const delta = typeof event.text === "string" ? event.text : ""
-          sawContent ||= delta.length > 0
-          parts.push({ type: "text-delta", id: textID, delta })
-          return parts
-        }
-        if (type === "tool-call") {
-          const parts = [...closeText(), ...closeReasoning()]
-          const id = typeof event.toolCallId === "string" ? event.toolCallId : generateId()
-          const name = typeof event.toolName === "string" ? event.toolName : "unknown"
-          const rawInput = event.input ?? event.args ?? event.arguments
-          const args = typeof rawInput === "string" ? rawInput : JSON.stringify(recordOrEmpty(rawInput))
-          sawContent = true
-          parts.push(
-            { type: "tool-input-start", id, toolName: name },
-            { type: "tool-input-delta", id, delta: args },
-            { type: "tool-input-end", id },
-            { type: "tool-call", toolCallId: id, toolName: name, input: args },
-          )
-          return parts
-        }
-        if (type === "finish") {
-          finish = finishReason(event.finishReason)
-          totalUsage = event.totalUsage
-          finished = true
-          return [
-            ...closeText(),
-            ...closeReasoning(),
-            { type: "finish", finishReason: finish, usage: usage(totalUsage) },
-          ]
-        }
-        if (type === "error") {
-          const error = event.error
-          const message =
-            error && typeof error === "object" && "message" in error
-              ? String(error.message)
-              : typeof error === "string"
-                ? error
-                : typeof event.message === "string"
-                  ? event.message
-                  : "Command Code stream error"
-          log.warn("Command Code stream error", { model: modelId, message })
-          throw new Error(`Command Code stream error: ${message}`)
-        }
-        return []
-      }
+      let capturedCacheWrite: number | undefined
+      let sawAbort = false
 
       const armIdle = () => {
         if (idleTimer) clearTimeout(idleTimer)
@@ -443,56 +375,212 @@ export function createCommandCodeLanguageModel(
         if (idleTimer) clearTimeout(idleTimer)
         idleTimer = undefined
       }
+      const accumulateUsage = (value: unknown) => {
+        if (!value || typeof value !== "object") return
+        const record = value as Record<string, unknown>
+        const details =
+          record.inputTokenDetails && typeof record.inputTokenDetails === "object"
+            ? (record.inputTokenDetails as Record<string, unknown>)
+            : {}
+        const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0)
+        acc.inputTokens += num(record.inputTokens)
+        acc.outputTokens += num(record.outputTokens)
+        acc.cacheReadTokens += num(details.cacheReadTokens)
+        acc.cacheWriteTokens += num(details.cacheWriteTokens)
+      }
+      const finalUsage = (): CommandCodeUsage => ({
+        ...acc,
+        ...(acc.cacheWriteTokens === 0 && capturedCacheWrite ? { cacheWriteTokens: capturedCacheWrite } : {}),
+      })
 
       try {
-        for (;;) {
-          armIdle()
-          try {
-            const next = await reader.read()
-            log.info("read Command Code stream chunk", {
-              model: modelId,
-              done: next.done,
-              bytes: next.value?.byteLength ?? 0,
-            })
-            if (input.abortSignal?.aborted) {
-              throw input.abortSignal.reason ?? new DOMException("Aborted", "AbortError")
+        let buffer = ""
+        let textID: string | undefined
+        let reasoningID: string | undefined
+        let textOpen = false
+        let reasoningOpen = false
+        let sawContent = false
+        let finish = finishReason("stop")
+        let finished = false
+        let currentReader: ReadableStreamDefaultReader<Uint8Array> = firstReader
+
+        const closeText = () => {
+          if (!textOpen || !textID) return [] as LanguageModelV3StreamPart[]
+          textOpen = false
+          return [{ type: "text-end", id: textID } satisfies LanguageModelV3StreamPart]
+        }
+        const closeReasoning = () => {
+          if (!reasoningOpen || !reasoningID) return [] as LanguageModelV3StreamPart[]
+          reasoningOpen = false
+          return [{ type: "reasoning-end", id: reasoningID } satisfies LanguageModelV3StreamPart]
+        }
+
+        for (let attempt = 0; ; attempt++) {
+          let attemptFinished = false
+          let pauseTurn = false
+          buffer = ""
+          textID = undefined
+          reasoningID = undefined
+          textOpen = false
+          reasoningOpen = false
+          const handleEvent = (event: CommandCodeEvent | undefined): LanguageModelV3StreamPart[] => {
+            if (!event) return []
+            const type = event.type
+            log.info("parsed Command Code stream event", { model: modelId, type: String(type) })
+            if (type === "abort") {
+              sawAbort = true
+              attemptFinished = true
+              return [...closeText(), ...closeReasoning()]
             }
-            if (streamCancelled) return
-            if (next.done) {
-              if (idleFired) throw new Error(`Command Code stream idle timeout after ${streamIdleTimeoutMs}ms`)
-              if (buffer.trim()) {
-                for (const part of handleEvent(parseEvent(buffer))) yield part
-                buffer = ""
+            if (type === "reasoning-start") return closeText()
+            if (type === "reasoning-delta") {
+              const parts = closeText()
+              reasoningID ??= generateId()
+              if (!reasoningOpen) {
+                reasoningOpen = true
+                parts.push({ type: "reasoning-start", id: reasoningID })
               }
-              break
+              const delta = typeof event.text === "string" ? event.text : ""
+              sawContent ||= delta.length > 0
+              parts.push({ type: "reasoning-delta", id: reasoningID, delta })
+              return parts
             }
-            buffer += decoder.decode(next.value, { stream: true })
-            const lines = buffer.split(/\r?\n/)
-            buffer = lines.pop() ?? ""
-            for (const line of lines) {
-              for (const part of handleEvent(parseEvent(line))) yield part
-              if (finished) break
+            if (type === "reasoning-end") return closeReasoning()
+            if (type === "text-delta") {
+              const parts = closeReasoning()
+              textID ??= generateId()
+              if (!textOpen) {
+                textOpen = true
+                parts.push({ type: "text-start", id: textID })
+              }
+              const delta = typeof event.text === "string" ? event.text : ""
+              sawContent ||= delta.length > 0
+              parts.push({ type: "text-delta", id: textID, delta })
+              return parts
             }
-            if (finished) break
-          } catch (error) {
-            if (streamCancelled && !input.abortSignal?.aborted) return
-            throw error
-          } finally {
-            clearIdle()
+            if (type === "tool-call") {
+              if (event.providerExecuted === true) return [...closeText(), ...closeReasoning()]
+              const parts = [...closeText(), ...closeReasoning()]
+              const id = typeof event.toolCallId === "string" ? event.toolCallId : generateId()
+              const name = typeof event.toolName === "string" ? event.toolName : "unknown"
+              const rawInput = event.input ?? event.args ?? event.arguments
+              const args = typeof rawInput === "string" ? rawInput : JSON.stringify(recordOrEmpty(rawInput))
+              sawContent = true
+              parts.push(
+                { type: "tool-input-start", id, toolName: name },
+                { type: "tool-input-delta", id, delta: args },
+                { type: "tool-input-end", id },
+                { type: "tool-call", toolCallId: id, toolName: name, input: args },
+              )
+              return parts
+            }
+            if (type === "tool-result") return [...closeText(), ...closeReasoning()]
+            if (type === "provider-metadata") {
+              const anthropic = recordOrEmpty(event.providerMetadata).anthropic
+              const metadata = recordOrEmpty(anthropic)
+              const created = recordOrEmpty(metadata.cache_creation)
+              const tokens = created.ephemeral_1h_input_tokens
+              if (typeof tokens === "number" && Number.isFinite(tokens) && tokens >= 0) {
+                capturedCacheWrite = capturedCacheWrite ?? tokens
+              }
+              return []
+            }
+            if (type === "cache-write-tokens") {
+              const tokens = event.cacheWriteTokens
+              if (typeof tokens === "number" && Number.isFinite(tokens) && tokens >= 0) {
+                capturedCacheWrite = capturedCacheWrite ?? tokens
+              }
+              return []
+            }
+            if (type === "finish") {
+              accumulateUsage(event.totalUsage)
+              finish = finishReason(event.finishReason)
+              if (event.rawFinishReason === "pause_turn") {
+                pauseTurn = true
+                attemptFinished = true
+                return [...closeText(), ...closeReasoning()]
+              }
+              attemptFinished = true
+              return [...closeText(), ...closeReasoning()]
+            }
+            if (type === "error") {
+              const error = event.error
+              const message =
+                error && typeof error === "object" && "message" in error
+                  ? String(error.message)
+                  : typeof error === "string"
+                    ? error
+                    : typeof event.message === "string"
+                      ? event.message
+                      : "Command Code stream error"
+              log.warn("Command Code stream error", { model: modelId, message })
+              throw new Error(`Command Code stream error: ${message}`)
+            }
+            return []
           }
+
+          for (;;) {
+            armIdle()
+            try {
+              const next = await currentReader.read()
+              log.info("read Command Code stream chunk", {
+                model: modelId,
+                done: next.done,
+                bytes: next.value?.byteLength ?? 0,
+              })
+              if (input.abortSignal?.aborted) {
+                throw input.abortSignal.reason ?? new DOMException("Aborted", "AbortError")
+              }
+              if (streamCancelled) return
+              if (next.done) {
+                if (idleFired) throw new Error(`Command Code stream idle timeout after ${streamIdleTimeoutMs}ms`)
+                if (buffer.trim()) {
+                  for (const part of handleEvent(parseEvent(buffer))) yield part
+                  buffer = ""
+                }
+                break
+              }
+              buffer += decoder.decode(next.value, { stream: true })
+              const lines = buffer.split(/\r?\n/)
+              buffer = lines.pop() ?? ""
+              for (const line of lines) {
+                for (const part of handleEvent(parseEvent(line))) yield part
+                if (attemptFinished) break
+              }
+              if (attemptFinished) break
+            } catch (error) {
+              if (streamCancelled && !input.abortSignal?.aborted) return
+              throw error
+            } finally {
+              clearIdle()
+            }
+          }
+
+          if (pauseTurn && attempt < COMMANDCODE_PAUSE_CONTINUATIONS) {
+            log.info("continuing Command Code stream after pause_turn", { model: modelId, attempt: attempt + 1 })
+            await currentReader.cancel().catch(() => undefined)
+            currentReader = await openAttempt()
+            continue
+          }
+          finished = attemptFinished
+          break
         }
 
         if (!finished) {
           yield* closeText()
           yield* closeReasoning()
           if (!sawContent) throw new Error("Command Code returned an empty response")
-          yield { type: "finish", finishReason: finishReason("stop"), usage: usage(totalUsage) }
+          yield { type: "finish", finishReason: finishReason("stop"), usage: usage(undefined) }
+        } else if (!sawAbort) {
+          yield { type: "finish", finishReason: finish, usage: usage(finalUsage()) }
+        } else {
+          yield { type: "finish", finishReason: finishReason("stop"), usage: usage(finalUsage()) }
         }
       } finally {
         clearIdle()
         cleanupConnection()
-        await reader.cancel().catch(() => undefined)
-        reader.releaseLock()
+        await reader?.cancel().catch(() => undefined)
+        reader?.releaseLock()
       }
     }
 

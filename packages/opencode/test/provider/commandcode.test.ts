@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import {
-  CommandCodePlugin,
-  commandCodeCustomLoader,
-  resolveCommandCodeRuntimeAuth,
-} from "../../src/plugin/commandcode"
+import { CommandCodePlugin, commandCodeCustomLoader, resolveCommandCodeRuntimeAuth } from "../../src/plugin/commandcode"
 import { createCommandCodeLanguageModel } from "../../src/provider/commandcode"
 
 function input() {
@@ -128,13 +124,17 @@ describe("commandcode language model", () => {
 
     expect(request?.url).toBe("https://commandcode.test/alpha/generate")
     expect(request?.headers.get("authorization")).toBe("Bearer user_test_key")
-    expect(request?.headers.get("x-command-code-version")).toBe("1.28.1")
+    expect(request?.headers.get("x-command-code-version")).toBe("1.66.0")
     expect(request?.headers.get("x-project-slug")).toBe("tmp-project")
+    expect(request?.headers.get("x-session-id")).toBeTruthy()
+    expect(request?.headers.get("x-co-flag")).toBeNull()
     const body = (await request?.clone().json()) as Record<string, any>
     expect(body.config.workingDir).toBe("/tmp/project")
+    expect(body.permissionMode).toBe("standard")
     expect(body.params.model).toBe("gpt-5.5")
     expect(body.params.system).toBe("Be concise.")
     expect(body.params.max_tokens).toBe(64_000)
+    expect(body.params.temperature).toBeUndefined()
     expect(parts.map((part) => part.type)).toEqual([
       "stream-start",
       "reasoning-start",
@@ -150,6 +150,105 @@ describe("commandcode language model", () => {
       "finish",
     ])
     expect(parts.at(-1)).toMatchObject({ finishReason: { unified: "tool-calls" } })
+  })
+
+  test("continues the stream after a pause_turn finish", async () => {
+    const bodies: Record<string, any>[] = []
+    let calls = 0
+    const model = createCommandCodeLanguageModel("gpt-5.5", {
+      apiKey: "user_test_key",
+      fetchImpl: async (_input, init) => {
+        calls += 1
+        bodies.push(JSON.parse(String(init?.body)))
+        if (calls === 1) {
+          return new Response(
+            [
+              JSON.stringify({ type: "text-delta", text: "part one" }),
+              JSON.stringify({ type: "finish", finishReason: "pause_turn", rawFinishReason: "pause_turn" }),
+              "",
+            ].join("\n"),
+            { status: 200 },
+          )
+        }
+        return new Response(
+          [
+            JSON.stringify({ type: "text-delta", text: " part two" }),
+            JSON.stringify({
+              type: "finish",
+              finishReason: "stop",
+              totalUsage: { inputTokens: 10, outputTokens: 5 },
+            }),
+            "",
+          ].join("\n"),
+          { status: 200 },
+        )
+      },
+    })
+
+    const result = await model.doStream(input())
+    const reader = result.stream.getReader()
+    const parts = []
+    while (true) {
+      const next = await reader.read()
+      if (next.done) break
+      parts.push(next.value)
+    }
+
+    expect(calls).toBe(2)
+    expect(bodies[0].threadId).toBe(bodies[1].threadId)
+    expect(parts.map((part) => part.type)).toEqual([
+      "stream-start",
+      "text-start",
+      "text-delta",
+      "text-end",
+      "text-start",
+      "text-delta",
+      "text-end",
+      "finish",
+    ])
+    expect(parts.at(-1)).toMatchObject({
+      finishReason: { unified: "stop" },
+      usage: { inputTokens: { total: 10 }, outputTokens: { total: 5 } },
+    })
+  })
+
+  test("includes cache token details from totalUsage", async () => {
+    const model = createCommandCodeLanguageModel("gpt-5.5", {
+      apiKey: "user_test_key",
+      fetchImpl: async () =>
+        new Response(
+          [
+            JSON.stringify({ type: "text-delta", text: "hi" }),
+            JSON.stringify({
+              type: "finish",
+              finishReason: "stop",
+              totalUsage: {
+                inputTokens: 100,
+                outputTokens: 7,
+                inputTokenDetails: { cacheReadTokens: 60, cacheWriteTokens: 20 },
+              },
+            }),
+            "",
+          ].join("\n"),
+          { status: 200 },
+        ),
+    })
+
+    const result = await model.doStream(input())
+    const reader = result.stream.getReader()
+    const parts = []
+    while (true) {
+      const next = await reader.read()
+      if (next.done) break
+      parts.push(next.value)
+    }
+
+    expect(parts.at(-1)).toMatchObject({
+      usage: {
+        inputTokens: { total: 100, cacheRead: 60, cacheWrite: 20 },
+        outputTokens: { total: 7 },
+      },
+    })
   })
 
   test("surfaces provider HTTP errors", async () => {
