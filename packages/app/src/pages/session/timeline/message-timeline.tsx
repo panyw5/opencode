@@ -1455,8 +1455,9 @@ export function MessageTimeline(props: {
       const part = getMessagePart(ref.messageID, ref.partID)
       return part?.type === "tool" ? part : undefined
     }
+    const groupParts = createMemo(() => refs().flatMap((ref) => toolPart(ref) ?? []))
     const current = createMemo(() => {
-      const parts = refs().flatMap((ref) => toolPart(ref) ?? [])
+      const parts = groupParts()
       return (
         parts.findLast((part) => part.state.status === "pending" || part.state.status === "running") ?? parts.at(-1)
       )
@@ -1498,14 +1499,45 @@ export function MessageTimeline(props: {
         },
       ),
     )
+    // The pending (preparation) phase carries no server timestamp, so capture a
+    // client-side start as soon as the group becomes active. The countdown then
+    // runs continuously from the group's beginning and only settles once every
+    // tool call in the group has finished.
+    const [clientStart, setClientStart] = createSignal<number>()
+    createEffect(() => {
+      if (!running()) return
+      const started = groupParts().some(
+        (part) => part.state.status !== "pending" && typeof part.state.time.start === "number",
+      )
+      if (started || clientStart() !== undefined) return
+      setClientStart(Date.now())
+    })
+    const groupStart = createMemo(() => {
+      let start: number | undefined
+      for (const part of groupParts()) {
+        const state = part.state
+        const value = state.status === "pending" ? undefined : state.time.start
+        if (typeof value === "number" && value > 0 && (start === undefined || value < start)) start = value
+      }
+      const fallback = clientStart()
+      if (typeof fallback === "number" && (start === undefined || fallback < start)) return fallback
+      return start
+    })
+    const groupEnd = createMemo(() => {
+      if (running()) return undefined
+      let end: number | undefined
+      for (const part of groupParts()) {
+        const state = part.state
+        const value = state.status === "pending" || state.status === "running" ? undefined : state.time.end
+        if (typeof value === "number" && (end === undefined || value > end)) end = value
+      }
+      return end
+    })
     const elapsedLabel = createMemo(() => {
-      const part = current()
-      if (!part || part.state.status === "pending") return ""
-      const state = part.state
-      const start = state.time.start
+      const start = groupStart()
       if (typeof start !== "number") return ""
-      const end = state.status === "running" ? now() : state.time.end
-      if (typeof end !== "number" || end < start) return ""
+      const end = running() ? now() : groupEnd()
+      if (typeof end !== "number") return ""
       const seconds = Math.max(0, (end - start) / 1000)
       if (seconds < 60) return language.t("ui.message.duration.seconds", { count: seconds.toFixed(1) })
       return language.t("ui.message.duration.minutesSeconds", {
