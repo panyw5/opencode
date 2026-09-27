@@ -1166,7 +1166,7 @@ bridge 的实现要点（都需要实测）：
 | 阶段 | 内容 | 验收 |
 | --- | --- | --- |
 | P0 宿主改造 | FileViewerRegistry 与“打开方式”菜单；CSV/TSV 迁移为内置条目；`registerTool` 和 `registerPartComponent` 返回注销函数；工具高度估算注册表；侧栏 `ext://` 标签的分发骨架 | 现有测试和 typecheck 通过；md、pdf、图片、csv 的预览行为不变 |
-| P1 web 扩展链路 | 注册表与 `opencode extension link/list/enable/disable`；只含 web 部分的 `Extension.Service`；`/global/extension`、资源路由、`extension.status`；`/file/raw`；CSP 调整；ExtensionHost、共享模块桥、懒激活、安全模式；`extension-kit` 的 web 类型与 vite 插件；hello-viewer 示例 | Desktop（鉴权开启）、内嵌 Web、Vite 开发三种形态下，`link` hello-viewer 后都能用它打开 `.hello` 文件；停用后预览器消失且不需要刷新；资源路由的越界和错误令牌测试通过 |
+| P1 web 扩展链路 | **仅支持本地 path link**：注册表与 `opencode extension link/list/enable/disable`；只含 web/file-viewer 部分的 `Extension.Service`；`/global/extension`、能力令牌资源路由、`extension.status`；`/file/raw`；CSP 调整；ExtensionHost、共享 Solid 模块桥、懒激活、显式安全模式；`extension-kit` 的 web 类型与 Vite 插件；hello-viewer 示例。P1 不做 npm/归档安装、watcher/HMR、server hooks、RPC、设置或市场；这些留给 P2/P3 | Desktop（鉴权开启）、内嵌 Web、Vite 开发三种形态下，`link` hello-viewer 后都能用它打开 `.hello` 文件；停用后预览器消失且不需要刷新；`?extensions=off`、`OPENCODE_DISABLE_EXTENSIONS=1`、路径穿越/HTML/错误令牌测试通过 |
 | P2 server 部分 | `defineServerExtension`（`activate` + `server`）；接入 `Plugin.state`；RPC 端点；`extension.event`；设置；开发链接的热重载 | 示例扩展包含 RPC 回显、事件流和一个 LLM 工具；停用时子进程全部退出；热重载后 server 与 web 部分都更新 |
 | P3 分发与管理 | npm 与归档安装、卸载、升级；扩展管理页与设置表单；市场索引；安装确认 | 从 npm 和带 sha256 的归档都能安装成功；校验失败、版本不兼容、ID 冲突各有明确的错误信息 |
 | P4 首批扩展 | WolframScript Notebook；新的文件预览扩展 | 按 §11.1 逐条验证体验；Agent 与用户共享 kernel 状态 |
@@ -1177,7 +1177,15 @@ bridge 的实现要点（都需要实测）：
 - 前端：注册与注销；owner 清理（停用后没有残留的命令、样式、事件监听）；懒激活占位；generation 失效；错误边界。用 happy-dom 做单测（`packages/app` 的 `bun test --preload ./happydom.ts`）。
 - 端到端：按仓库约定，在开发版 Electron 上用 CDP 验证（`bun packages/desktop/scripts/cdp.ts`）。
 
-## 14. 待定问题
+## P1 实现边界补充（2026-09-27）
+
+- Extension registry 与 capability token 是**模块级进程单例**；Effect `Extension.Service` 只是薄封装。原因是 listener、内部 `webHandler()` 与 CLI 使用不同 memo map，单独依赖 `Layer.effect` 无法保证 token 和状态一致。
+- P1 的 `styles` 与 `icon` 都由 server 返回完整的 tokenized asset URL；UI 绝不从 renderer origin 拼接资源，也不把 Basic Auth 凭据放入 URL。
+- 本地 link 的 version segment 由 manifest/entry/style/icon 的 mtime 与 size 指纹构成，但 P1 不监听目录变化；开发热重载属于 P2。
+- P1 ExtensionContext 只开放 file viewer、assets 和字符串日志。P0 的 panel/tool/command 注册表保留，待相应懒激活链路完整后再纳入稳定 API。
+- P1 不做 CSS selector 自动 scope、运行时 i18n、viewer 偏好持久化或 crash-strike 自动安全模式；扩展应自行使用带 extension ID 前缀的类名，并可通过 `?extensions=off` 或环境变量逃生。
+- `/file/raw` 只提供整文件 GET，限制 50 MB；不支持 range/HEAD，HTML/XHTML 强制按 `application/octet-stream` 返回。
+
 
 1. 是否需要项目级启用，即只在部分项目中加载 server 部分或暴露工具？首个版本是全局启用，再加上扩展自己的工具暴露策略。
 2. `secret` 类型的设置是否接入现有的认证存储，避免明文写进注册表？
