@@ -1,4 +1,4 @@
-import { Marked } from "marked"
+import { Marked, type Token } from "marked"
 import markedKatex from "marked-katex-extension"
 import markedShiki from "marked-shiki"
 import katex from "katex"
@@ -557,16 +557,40 @@ function mathPlaceholder(math: string, style: "display" | "inline") {
   return `<${tag} data-opencode-math-style="${style}" data-opencode-math-tex="${escapeMathHtml(math)}"></${tag}>`
 }
 
-function protectDisplayMath(markdown: string, display: RegExp, empty: string): string {
+// Tracks how `prepareMarkdown` shifts line numbers, so annotated parsing can
+// report line numbers in the coordinates of the ORIGINAL markdown instead of
+// the prepared text. Display-math protection replaces a multi-line formula
+// with a one-line placeholder plus blank lines, so the prepared text has more
+// lines than the source.
+type LineShiftEvent = { line: number; shift: number }
+type LineTracker = { emitted: number; consumed: number; events: LineShiftEvent[] }
+
+function countNewlines(text: string) {
+  let n = 0
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) n++
+  return n
+}
+
+function protectDisplayMath(markdown: string, display: RegExp, empty: string, track?: LineTracker): string {
   let out = ""
   let from = 0
   let match: RegExpExecArray | null
+
+  // Verbatim text passes through unchanged on both sides of the ledger.
+  const account = (verbatim: string) => {
+    if (!track || !verbatim) return
+    const n = countNewlines(verbatim)
+    track.emitted += n
+    track.consumed += n
+  }
 
   while ((match = display.exec(markdown))) {
     const math = match[1] ?? ""
     const clean = math.trim()
     if (!clean) {
-      out += markdown.slice(from, match.index) + empty
+      const verbatim = markdown.slice(from, match.index)
+      account(verbatim)
+      out += verbatim + empty
       from = match.index + match[0].length
       continue
     }
@@ -579,7 +603,9 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string): s
     if (indented) {
       // Keep list and blockquote indentation on the placeholder. Removing it
       // makes the following indented prose become an unrelated code block.
-      out += markdown.slice(from, lineStart)
+      const verbatim = markdown.slice(from, lineStart)
+      account(verbatim)
+      out += verbatim
       out += `${linePrefix}${placeholder}`
       // The placeholder is a block-level <div>, which opens a CommonMark raw
       // HTML block. That block only ends at a blank line, so any markdown on
@@ -589,30 +615,53 @@ function protectDisplayMath(markdown: string, display: RegExp, empty: string): s
       const tail = markdown.slice(match.index + match[0].length)
       const lineEnd = tail.indexOf("\n")
       const restOfLine = lineEnd === -1 ? tail : tail.slice(0, lineEnd)
-      if (/^[ \t]*$/.test(restOfLine)) out += "\n"
+      if (/^[ \t]*$/.test(restOfLine)) {
+        out += "\n"
+        if (track) track.emitted += 1
+      }
+      if (track) track.consumed += countNewlines(markdown.slice(lineStart, match.index + match[0].length))
       console.debug(`[markdown] protect display math indent=${linePrefix.length} tex=${clean.length}`)
     } else {
-      out += markdown.slice(from, match.index)
+      const verbatim = markdown.slice(from, match.index)
+      account(verbatim)
+      out += verbatim
       out += `\n\n${placeholder}\n\n`
+      if (track) {
+        track.emitted += 4
+        track.consumed += countNewlines(markdown.slice(match.index, match.index + match[0].length))
+      }
       console.debug(`[markdown] protect display math indent=0 tex=${clean.length}`)
     }
 
+    if (track && track.emitted !== track.consumed) {
+      track.events.push({ line: track.emitted, shift: track.emitted - track.consumed })
+    }
     from = match.index + match[0].length
   }
 
   if (from === 0) return markdown
-  return out + markdown.slice(from)
+  const rest = markdown.slice(from)
+  account(rest)
+  return out + rest
 }
 
-export function protectMathExpressions(markdown: string): string {
+export function protectMathExpressions(markdown: string, track?: LineTracker): string {
   const block = /(```[\s\S]*?```|~~~[\s\S]*?~~~)/g
   const parts = markdown.split(block)
 
   return parts
     .map((part, i) => {
-      if (i % 2 === 1) return part
-      const displayProtected = protectDisplayMath(part, /\$\$([\s\S]*?)\$\$/g, "$$$$")
-      const bracketProtected = protectDisplayMath(displayProtected, /\\\[([\s\S]*?)\\\]/g, "\\[\\]")
+      if (i % 2 === 1) {
+        // Code fences pass through verbatim.
+        if (track) {
+          const n = countNewlines(part)
+          track.emitted += n
+          track.consumed += n
+        }
+        return part
+      }
+      const displayProtected = protectDisplayMath(part, /\$\$([\s\S]*?)\$\$/g, "$$$$", track)
+      const bracketProtected = protectDisplayMath(displayProtected, /\\\[([\s\S]*?)\\\]/g, "\\[\\]", track)
       return protectInlineMath(bracketProtected)
     })
     .join("")
@@ -622,6 +671,30 @@ export function prepareMarkdown(markdown: string): string {
   // Autolinks run last: protected math is already an HTML tag by then, so a URL
   // inside math or a code span is skipped instead of being rewritten.
   return protectBareAutolinks(healPunctuationEmphasis(protectMathExpressions(markdown)))
+}
+
+// Same transformation as `prepareMarkdown`, but also returns a mapping from
+// prepared-text line numbers (0-based) back to original-markdown line numbers
+// (0-based). Only the display-math protection changes line counts; the inline
+// passes (inline math, punctuation healing, autolinks) never insert newlines.
+export function prepareMarkdownTracked(markdown: string): {
+  text: string
+  originLineOf(line: number): number
+} {
+  const track: LineTracker = { emitted: 0, consumed: 0, events: [] }
+  const text = protectBareAutolinks(healPunctuationEmphasis(protectMathExpressions(markdown, track)))
+  const events = track.events
+  return {
+    text,
+    originLineOf(line: number) {
+      let shift = 0
+      for (const event of events) {
+        if (event.line > line) break
+        shift = event.shift
+      }
+      return line - shift
+    },
+  }
 }
 
 function escapedDollar(text: string, at: number) {
@@ -1142,6 +1215,39 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
     // The renderer upgrades to the full parser later when needed.
     const fastParser = new Marked(linkRenderer)
 
+    // Renders markdown with a `data-ml` marker span before each top-level
+    // block, carrying the block's first source line. The Markdown component
+    // converts these markers into `data-source-line` attributes on the
+    // rendered elements after DOM insertion, which lets the file preview
+    // scroll a rendered block to its source-line anchor. Only the local
+    // full pipeline can do this (the native parser is a black box and the
+    // lite/fast parsers tokenize differently), so this is defined on both
+    // context branches and callers fall back to plain parsing when the stage
+    // is not "full".
+    const parseAnnotated = async (markdown: string): Promise<string> => {
+      // Line numbers must be reported in original-file coordinates: anchors
+      // like #L638 refer to the source file, while the lexer runs on the
+      // prepared text whose display-math protection inserts extra lines.
+      const prepared = prepareMarkdownTracked(markdown)
+      const tokens = fullParser.lexer(prepared.text) as unknown as Token[]
+      const defs = tokens.filter((token) => token.type === "def").map((token) => token.raw).join("")
+      let html = ""
+      let line = 1
+      for (const token of tokens) {
+        if (token.type !== "space" && token.type !== "def") {
+          const sourceLine = prepared.originLineOf(line - 1) + 1
+          html += `<span data-ml="${sourceLine}"></span>`
+          // Reference-style link definitions may live in any block, so they
+          // are prepended to every block (they render to nothing).
+          const source = defs ? `${defs}\n\n${token.raw}` : token.raw
+          const block = await fullParser.parse(source)
+          html += renderMathExpressions(block, output)
+        }
+        line += token.raw.split("\n").length - 1
+      }
+      return html
+    }
+
     if (native) {
       return {
         async parse(markdown: string): Promise<string> {
@@ -1161,6 +1267,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
           // Large previews still mount with the local lightweight parser, then upgrade later.
           return liteParser.parse(prepareMarkdown(markdown))
         },
+        parseAnnotated,
         renderMath(html: string) {
           return renderMathExpressions(html, output)
         },
@@ -1175,6 +1282,7 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
         const html = await fullParser.parse(prepareMarkdown(markdown))
         return renderMathExpressions(html, output)
       },
+      parseAnnotated,
       async parseNoMath(markdown: string): Promise<string> {
         return noMathParser.parse(prepareMarkdown(markdown))
       },

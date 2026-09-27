@@ -204,6 +204,39 @@ function fileLines(text: string) {
   return Math.max(1, total)
 }
 
+function composedParent(el: Element): Element | null {
+  if (el.parentElement) return el.parentElement
+  const owner = el.getRootNode()
+  return owner instanceof ShadowRoot ? owner.host : null
+}
+
+// Scroll the nearest scrolling ancestor (crossing shadow boundaries) so the
+// range's top edge sits at the vertical middle of the viewport. A range that
+// is already fully visible never moves the viewport, so user-driven
+// selections stay undisturbed. Returns false when no scroller was found.
+function scrollRangeToViewportCenter(startEl: Element, endEl: Element): boolean {
+  let scroller: HTMLElement | null = null
+  for (let node = composedParent(startEl); node; node = composedParent(node)) {
+    if (!(node instanceof HTMLElement)) continue
+    const style = getComputedStyle(node)
+    if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1) {
+      scroller = node
+      break
+    }
+  }
+  if (!scroller) return false
+
+  const outer = scroller.getBoundingClientRect()
+  const first = startEl.getBoundingClientRect()
+  const last = endEl.getBoundingClientRect()
+  const top = Math.min(first.top, last.top)
+  const bottom = Math.max(first.bottom, last.bottom)
+  if (top >= outer.top && bottom <= outer.bottom) return true
+  // Place the top edge of the range at the vertical middle of the viewport.
+  scroller.scrollTop += top - (outer.top + outer.height / 2)
+  return true
+}
+
 function previewText(text: string) {
   const rows = text.split("\n")
   const head = rows.slice(0, MARKDOWN_PREVIEW_HEAD).join("\n").slice(0, MARKDOWN_PREVIEW_CHARS).trimEnd()
@@ -898,10 +931,9 @@ function SourceViewer<T>(props: SourceProps<T>) {
   }
 
   // Scroll the selection so its top edge sits at the vertical middle of the
-  // nearest scrolling ancestor. A range that is already fully visible never
-  // moves the viewport, so user-driven selections stay undisturbed. Retries
-  // until the viewer finishes rendering the target lines, then reports
-  // completion through `done` at every terminal point.
+  // nearest scrolling ancestor. Retries until the viewer finishes rendering
+  // the target lines, then reports completion through `done` at every
+  // terminal point.
   const scrollSelectionIntoView = (done: (() => void) | undefined, attempt = 0): void => {
     const finish = () => done?.()
     const range = viewer.lastSelection
@@ -926,38 +958,10 @@ function SourceViewer<T>(props: SourceProps<T>) {
       finish()
       return
     }
-
-    const composedParent = (el: Element): Element | null => {
-      if (el.parentElement) return el.parentElement
-      const owner = el.getRootNode()
-      return owner instanceof ShadowRoot ? owner.host : null
-    }
-
-    let scroller: HTMLElement | null = null
-    for (let node = composedParent(startEl); node; node = composedParent(node)) {
-      if (!(node instanceof HTMLElement)) continue
-      const style = getComputedStyle(node)
-      if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 1) {
-        scroller = node
-        break
-      }
-    }
-    if (!scroller) {
+    if (!scrollRangeToViewportCenter(startEl, endEl)) {
       finish()
       return
     }
-
-    const outer = scroller.getBoundingClientRect()
-    const first = startEl.getBoundingClientRect()
-    const last = endEl.getBoundingClientRect()
-    const top = Math.min(first.top, last.top)
-    const bottom = Math.max(first.bottom, last.bottom)
-    if (top >= outer.top && bottom <= outer.bottom) {
-      finish()
-      return
-    }
-    // Place the top edge of the selection at the vertical middle of the viewport.
-    scroller.scrollTop += top - (outer.top + outer.height / 2)
     finish()
   }
 
@@ -1108,7 +1112,6 @@ function TextViewer<T>(props: TextFileProps<T>) {
     () => `${Intl.NumberFormat().format(lines())} lines, ${Intl.NumberFormat().format(bytes())} chars`,
   )
   const preview = createMemo(() => (large() ? previewText(text()) : ""))
-  const linked = () => md() && props.selectedLines?.start != null && props.selectedLines?.end != null
   const svgSrc = createMemo(() => {
     if (!svg()) return
     return dataUrlFromMediaValue(props.media?.current ?? props.file.contents, "svg")
@@ -1182,8 +1185,69 @@ function TextViewer<T>(props: TextFileProps<T>) {
     return SourceViewer<T>({ ...props, head: sourceBar })
   }
 
-  const [mode, setMode] = createSignal<"preview" | "source">(linked() ? "source" : "preview")
+  const [mode, setMode] = createSignal<"preview" | "source">("preview")
   const [full, setFull] = createSignal(false)
+
+  // -- selection scroll arbitration --
+  //
+  // One handle is registered with the app for the whole file view; it
+  // dispatches to whichever view is active. The handle is re-registered when
+  // the mode flips or the source viewer (un)mounts, so a pending selection
+  // jump re-fires in the new view reactively.
+  let previewScroller: HTMLDivElement | undefined
+  const [sourceHandle, setSourceHandle] = createSignal<FileScrollHandle | null>(null)
+  const sourceControl: FileScrollControl = {
+    register: setSourceHandle,
+  }
+
+  const scrollToPreviewSelection = (done: (() => void) | undefined, attempt = 0): void => {
+    const finish = () => done?.()
+    const selection = props.selectedLines
+    if (!selection || !md()) {
+      finish()
+      return
+    }
+    // The truncated large-file preview does not contain the target block;
+    // request the full render and keep retrying until it is annotated.
+    if (large() && !full()) setFull(true)
+    const scroller = previewScroller
+    const blocks = scroller ? Array.from(scroller.querySelectorAll<HTMLElement>("[data-source-line]")) : []
+    if (blocks.length === 0) {
+      if (attempt >= 120) {
+        finish()
+        return
+      }
+      requestAnimationFrame(() => scrollToPreviewSelection(done, attempt + 1))
+      return
+    }
+    const target = Math.min(selection.start, selection.end)
+    let candidate: HTMLElement | undefined
+    for (const block of blocks) {
+      const value = Number(block.dataset.sourceLine)
+      if (value <= target) candidate = block
+      else break
+    }
+    const el = candidate ?? blocks[0]
+    scrollRangeToViewportCenter(el, el)
+    finish()
+  }
+
+  createEffect(() => {
+    const control = props.scrollControl
+    if (!control) return
+    const view = mode()
+    const source = sourceHandle()
+    control.register({
+      scrollToSelection: (done) => {
+        if (view === "source") {
+          source?.scrollToSelection(done)
+          return
+        }
+        scrollToPreviewSelection(done)
+      },
+    })
+    onCleanup(() => control.register(null))
+  })
   const bar = props.toolbar === false || !props.actionsMount ? undefined : (
     <FloatingFileActions mount={props.actionsMount}>
       <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
@@ -1253,19 +1317,10 @@ function TextViewer<T>(props: TextFileProps<T>) {
       () => props.file.cacheKey ?? props.file.name,
       () => {
         setFull(false)
-        if (md()) setMode(linked() ? "source" : "preview")
-      },
-      { defer: true },
-    ),
-  )
-
-  createEffect(
-    on(
-      () => [props.file.cacheKey ?? props.file.name, props.selectedLines?.start, props.selectedLines?.end],
-      ([, start, end]) => {
-        if (!md()) return
-        if (start == null || end == null) return
-        setMode("source")
+        // Files with a rendered preview (markdown) open in preview mode; the
+        // stored selection stays available for when the user switches to the
+        // source view manually (see file-tabs scroll arbitration).
+        if (md()) setMode("preview")
       },
       { defer: true },
     ),
@@ -1289,7 +1344,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
         <FileRoot mode="markdown" class={props.class} classList={props.classList}>
           <div class="relative flex min-h-0 flex-col overflow-hidden">
             {bar}
-            <div data-slot="file-markdown-preview" class="overflow-auto px-4 py-4">
+            <div data-slot="file-markdown-preview" ref={previewScroller} class="overflow-auto px-4 py-4">
               <Show
                 when={md()}
                 fallback={
@@ -1340,6 +1395,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
                     cacheKey={props.file.cacheKey ?? props.file.name}
                     highlight="defer"
                     chunked={large()}
+                    annotateLines={md()}
                   />
                 </Show>
               </Show>
@@ -1348,7 +1404,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
         </FileRoot>
       }
     >
-      <Source {...props} head={bar} />
+      <Source {...props} scrollControl={sourceControl} head={bar} />
     </Show>
   )
 }
