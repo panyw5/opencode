@@ -23,6 +23,7 @@
     "packages": [
       "packages/*",
       "packages/console/*",
+      "packages/extensions/*",
       "packages/sdk/js",
       "packages/slack"
     ],

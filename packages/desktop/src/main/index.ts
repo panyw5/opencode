@@ -189,7 +189,8 @@ const main = Effect.gen(function* () {
   const features = app.commandLine.getSwitchValue("enable-features")
   app.commandLine.appendSwitch("enable-features", features ? `${jsCallStackFeature},${features}` : jsCallStackFeature)
   if (!app.isPackaged) {
-    app.commandLine.appendSwitch("remote-debugging-port", "9222")
+    const cdpPort = process.env.OPENCODE_CDP_PORT?.trim() || "9222"
+    app.commandLine.appendSwitch("remote-debugging-port", cdpPort)
     app.commandLine.appendSwitch("remote-allow-origins", "*")
   }
 

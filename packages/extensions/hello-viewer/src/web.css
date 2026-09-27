@@ -1,0 +1,56 @@
+.oc-hello-viewer-root {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  background: var(--background-base);
+  color: var(--text-base);
+}
+
+.oc-hello-viewer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--border-weak-base);
+  padding: 12px 16px;
+}
+
+.oc-hello-viewer-title {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.oc-hello-viewer-path,
+.oc-hello-viewer-status {
+  color: var(--text-weak);
+  font-size: 12px;
+}
+
+.oc-hello-viewer-actions,
+.oc-hello-viewer-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.oc-hello-viewer-status {
+  border-bottom: 1px solid var(--border-weak-base);
+  padding: 8px 16px;
+}
+
+.oc-hello-viewer-spinner {
+  width: 14px;
+  height: 14px;
+}
+
+.oc-hello-viewer-lines {
+  margin: 0;
+  padding: 16px 16px 24px 48px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.oc-hello-viewer-lines li::marker {
+  color: var(--text-weak);
+}

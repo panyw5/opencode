@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@opencode-ai/hello-viewer-extension",
+  "version": "1.18.49",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    "./web": "./dist/web/index.js"
+  },
+  "opencode": {
+    "manifestVersion": 1,
+    "id": "example.hello-viewer",
+    "displayName": "Hello Viewer",
+    "description": "Example lazy-loaded file viewer for .hello files.",
+    "web": {
+      "apiVersion": 1,
+      "styles": ["./dist/web/index.css"]
+    },
+    "activation": ["onFileViewer:hello"],
+    "contributes": {
+      "fileViewers": [
+        {
+          "id": "hello",
+          "title": "Hello Viewer",
+          "extensions": ["hello"],
+          "priority": 100,
+          "mode": "replace"
+        }
+      ]
+    },
+    "permissions": ["fs:read"]
+  },
+  "scripts": {
+    "dev": "vite build --watch",
+    "build": "vite build",
+    "typecheck": "tsgo --noEmit"
+  },
+  "dependencies": {
+    "@opencode-ai/extension-kit": "workspace:*"
+  },
+  "devDependencies": {
+    "@opencode-ai/ui": "workspace:*",
+    "@tsconfig/node22": "catalog:",
+    "@typescript/native-preview": "catalog:",
+    "solid-js": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plugin-solid": "catalog:"
+  }
+}

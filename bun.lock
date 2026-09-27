@@ -353,6 +353,41 @@
         "vite": "catalog:",
       },
     },
+    "packages/extension-kit": {
+      "name": "@opencode-ai/extension-kit",
+      "version": "1.18.49",
+      "devDependencies": {
+        "@opencode-ai/ui": "workspace:*",
+        "@tsconfig/node22": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "solid-js": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "catalog:",
+      },
+      "peerDependencies": {
+        "solid-js": "~1.9.0",
+        "vite": "^7.0.0",
+        "vite-plugin-solid": "^2.11.0",
+      },
+    },
+    "packages/extensions/hello-viewer": {
+      "name": "@opencode-ai/hello-viewer-extension",
+      "version": "1.18.49",
+      "dependencies": {
+        "@opencode-ai/extension-kit": "workspace:*",
+      },
+      "devDependencies": {
+        "@opencode-ai/ui": "workspace:*",
+        "@tsconfig/node22": "catalog:",
+        "@typescript/native-preview": "catalog:",
+        "solid-js": "catalog:",
+        "typescript": "catalog:",
+        "vite": "catalog:",
+        "vite-plugin-solid": "catalog:",
+      },
+    },
     "packages/function": {
       "name": "@opencode-ai/function",
       "version": "1.18.49",
@@ -1572,7 +1607,11 @@
 
     "@opencode-ai/enterprise": ["@opencode-ai/enterprise@workspace:packages/enterprise"],
 
+    "@opencode-ai/extension-kit": ["@opencode-ai/extension-kit@workspace:packages/extension-kit"],
+
     "@opencode-ai/function": ["@opencode-ai/function@workspace:packages/function"],
+
+    "@opencode-ai/hello-viewer-extension": ["@opencode-ai/hello-viewer-extension@workspace:packages/extensions/hello-viewer"],
 
     "@opencode-ai/http-recorder": ["@opencode-ai/http-recorder@workspace:packages/http-recorder"],
 

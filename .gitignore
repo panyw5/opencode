@@ -11,6 +11,10 @@ node_modules
 playground
 tmp
 dist
+!packages/extensions/hello-viewer/dist/
+!packages/extensions/hello-viewer/dist/web/
+!packages/extensions/hello-viewer/dist/web/index.js
+!packages/extensions/hello-viewer/dist/web/index.css
 ts-dist
 .turbo
 **/.serena
