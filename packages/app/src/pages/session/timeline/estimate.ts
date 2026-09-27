@@ -1,4 +1,5 @@
 import type { Part, ToolPart } from "@opencode-ai/sdk/v2"
+import { estimateRegisteredToolHeight } from "./tool-height"
 
 /**
  * Height estimation for timeline rows that have no cached measurement yet.
@@ -188,7 +189,10 @@ function estimateToolPartHeight(part: ToolPart, width: number, options: Estimate
     return (options.viewportWidth ?? width) <= PRESENT_FILE_MOBILE_BREAKPOINT
       ? PRESENT_DIAGRAM_MOBILE_HEIGHT
       : PRESENT_DIAGRAM_DESKTOP_HEIGHT
-  if (options.toolDefaultOpen?.(part)) return OPEN_TOOL_HEIGHT
+  const open = options.toolDefaultOpen?.(part) ?? false
+  const registered = estimateRegisteredToolHeight({ part, width, viewportWidth: options.viewportWidth, open })
+  if (registered !== undefined) return registered
+  if (open) return OPEN_TOOL_HEIGHT
   return COLLAPSED_TOOL_HEIGHT
 }
 

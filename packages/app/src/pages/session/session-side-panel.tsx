@@ -27,6 +27,8 @@ import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { extraAgentByIntegration } from "@/pages/layout/extra-agents"
 import { FileTabContent } from "@/pages/session/file-tabs"
+import { ExtensionPanelContent, ExtensionPanelVisual } from "@/extensions/panel-content"
+import { isExtensionPanelTab } from "@/extensions/panel-tab"
 import type { ChangeTreeEntry } from "@/pages/session/change-tree-model"
 import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
@@ -393,7 +395,11 @@ export function SessionSidePanel(props: {
                     </Show>
 
                     <Show when={fileActive() && activeFileTab()} keyed>
-                      {(tab) => <FileTabContent tab={tab} />}
+                      {(tab) => (
+                        <Show when={isExtensionPanelTab(tab)} fallback={<FileTabContent tab={tab} />}>
+                          <ExtensionPanelContent tab={tab} />
+                        </Show>
+                      )}
                     </Show>
                   </Show>
                 </Tabs>
@@ -404,6 +410,9 @@ export function SessionSidePanel(props: {
                       return (
                         <div data-component="tabs-drag-preview">
                           <Show when={path}>{(p) => <FileVisual active path={p()} />}</Show>
+                          <Show when={isExtensionPanelTab(tab)}>
+                            <ExtensionPanelVisual tab={tab} />
+                          </Show>
                         </div>
                       )
                     }}

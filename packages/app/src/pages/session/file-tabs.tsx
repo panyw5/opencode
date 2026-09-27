@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import type { FileSearchHandle } from "@opencode-ai/ui/file"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
+import { fileViewerTarget, resolveFileViewers } from "@opencode-ai/ui/file-viewer-registry"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { cloneSelectedLineRange, previewSelectedLines } from "@opencode-ai/ui/pierre/selection-bridge"
@@ -22,6 +23,8 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { fileContentCacheKey } from "@/pages/session/file-cache-key"
 import { OpenInApp } from "@/components/open-in-app"
+
+const DEFAULT_VIEWER = "default"
 
 function FileCommentMenu(props: {
   moreLabel: string
@@ -101,6 +104,72 @@ export function FileTabContent(props: { tab: string }) {
     return `${sdk.directory.replace(/[\\/]+$/, "")}/${p}`
   })
   const openWithAction = <OpenInApp path={fullPath()} logPrefix="file-preview" />
+
+  // Replace-mode viewers (registered by extensions) can take over the whole tab.
+  // The default viewer is always available through the "Open with" menu.
+  const [viewer, setViewer] = createStore({ choice: undefined as string | undefined })
+  const viewerCandidates = createMemo(() => {
+    const p = path()
+    if (!p) return []
+    const mime = state()?.content?.mimeType
+    return resolveFileViewers(fileViewerTarget(p, mime)).filter((entry) => entry.mode === "replace")
+  })
+  const activeViewer = createMemo(() => {
+    const list = viewerCandidates()
+    const choice = viewer.choice
+    if (choice === DEFAULT_VIEWER) return
+    return list.find((entry) => entry.id === choice) ?? list[0]
+  })
+  const selectViewer = (id: string) => {
+    console.debug(`[file-preview] select viewer path=${path() ?? ""} viewer=${id}`)
+    setViewer("choice", id)
+  }
+  const viewerMenu = () => (
+    <Show when={viewerCandidates().length > 0}>
+      <DropdownMenu gutter={4} placement="bottom-end">
+        <DropdownMenu.Trigger
+          as={IconButton}
+          icon="layout-right"
+          variant="secondary"
+          class="pointer-events-auto h-8 w-8 rounded-md"
+          aria-label={language.t("session.fileTab.viewer.openWith")}
+        />
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content class="[&_[data-slot=dropdown-menu-radio-item]]:pl-1">
+            <DropdownMenu.Group>
+              <DropdownMenu.GroupLabel class="!px-1 !py-1">
+                {language.t("session.fileTab.viewer.openWith")}
+              </DropdownMenu.GroupLabel>
+              <DropdownMenu.RadioGroup class="mt-1" value={activeViewer()?.id ?? DEFAULT_VIEWER}>
+                <DropdownMenu.RadioItem value={DEFAULT_VIEWER} onSelect={() => selectViewer(DEFAULT_VIEWER)}>
+                  <DropdownMenu.ItemLabel>{language.t("session.fileTab.viewer.default")}</DropdownMenu.ItemLabel>
+                  <DropdownMenu.ItemIndicator>
+                    <Icon name="check-small" size="small" class="text-icon-weak" />
+                  </DropdownMenu.ItemIndicator>
+                </DropdownMenu.RadioItem>
+                <For each={viewerCandidates()}>
+                  {(entry) => (
+                    <DropdownMenu.RadioItem value={entry.id} onSelect={() => selectViewer(entry.id)}>
+                      <DropdownMenu.ItemLabel>{entry.title}</DropdownMenu.ItemLabel>
+                      <DropdownMenu.ItemIndicator>
+                        <Icon name="check-small" size="small" class="text-icon-weak" />
+                      </DropdownMenu.ItemIndicator>
+                    </DropdownMenu.RadioItem>
+                  )}
+                </For>
+              </DropdownMenu.RadioGroup>
+            </DropdownMenu.Group>
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu>
+    </Show>
+  )
+  const fileActions = (
+    <>
+      {viewerMenu()}
+      {openWithAction}
+    </>
+  )
   const [copyState, setCopyState] = createStore({ kind: "" as "path" | "content" | "" })
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
   const markCopied = (kind: "path" | "content") => {
@@ -488,63 +557,82 @@ export function FileTabContent(props: { tab: string }) {
   })
 
   const renderFile = (source: string) => (
-    <div class={`relative flex flex-col overflow-hidden ${pdf() ? "h-full" : "min-h-full"}`}>
-      <Dynamic
-        component={fileComponent}
-        mode="text"
-        file={{
-          name: path() ?? "",
-          contents: source,
-          cacheKey: cacheKey(),
-        }}
-        enableLineSelection={!md()}
-        enableHoverUtility={!md()}
-        selectedLines={activeSelection()}
-        commentedLines={md() ? [] : commentedLines()}
-        onRendered={() => {
-          queueRestore()
-        }}
-        annotations={md() ? [] : commentsUi.annotations()}
-        renderAnnotation={md() ? undefined : commentsUi.renderAnnotation}
-        renderHoverUtility={md() ? undefined : commentsUi.renderHoverUtility}
-        onLineSelected={(range: SelectedLineRange | null) => {
-          if (md()) return
-          commentsUi.onLineSelected(range)
-        }}
-        onLineNumberSelectionEnd={commentsUi.onLineNumberSelectionEnd}
-        onLineSelectionEnd={(range: SelectedLineRange | null) => {
-          if (md()) return
-          commentsUi.onLineSelectionEnd(range)
-        }}
-        search={search}
-        class="select-text"
-        actionsMount={actionsMount}
-        media={{
-          mode: "auto",
-          path: path(),
-          current: state()?.content,
-          onLoad: queueRestore,
-        }}
-        copyPath={copyPath}
-        copyContent={state()?.content?.type === "text" ? copyContent : undefined}
-        copyPathCopied={copyState.kind === "path"}
-        copyContentCopied={copyState.kind === "content"}
-        openWith={openWithAction}
-        openFolder={
-          platform.openInFinder
-            ? () => {
-                const target = fullPath()
-                if (target) void platform.openInFinder?.(target)
-              }
-            : undefined
-        }
-      />
-    </div>
+    <Show
+      when={activeViewer()}
+      fallback={
+        <div class={`relative flex flex-col overflow-hidden ${pdf() ? "h-full" : "min-h-full"}`}>
+          <Dynamic
+            component={fileComponent}
+            mode="text"
+            file={{
+              name: path() ?? "",
+              contents: source,
+              cacheKey: cacheKey(),
+            }}
+            enableLineSelection={!md()}
+            enableHoverUtility={!md()}
+            selectedLines={activeSelection()}
+            commentedLines={md() ? [] : commentedLines()}
+            onRendered={() => {
+              queueRestore()
+            }}
+            annotations={md() ? [] : commentsUi.annotations()}
+            renderAnnotation={md() ? undefined : commentsUi.renderAnnotation}
+            renderHoverUtility={md() ? undefined : commentsUi.renderHoverUtility}
+            onLineSelected={(range: SelectedLineRange | null) => {
+              if (md()) return
+              commentsUi.onLineSelected(range)
+            }}
+            onLineNumberSelectionEnd={commentsUi.onLineNumberSelectionEnd}
+            onLineSelectionEnd={(range: SelectedLineRange | null) => {
+              if (md()) return
+              commentsUi.onLineSelectionEnd(range)
+            }}
+            search={search}
+            class="select-text"
+            actionsMount={actionsMount}
+            media={{
+              mode: "auto",
+              path: path(),
+              current: state()?.content,
+              onLoad: queueRestore,
+            }}
+            copyPath={copyPath}
+            copyContent={state()?.content?.type === "text" ? copyContent : undefined}
+            copyPathCopied={copyState.kind === "path"}
+            copyContentCopied={copyState.kind === "content"}
+            openWith={fileActions}
+            openFolder={
+              platform.openInFinder
+                ? () => {
+                    const target = fullPath()
+                    if (target) void platform.openInFinder?.(target)
+                  }
+                : undefined
+            }
+          />
+        </div>
+      }
+    >
+      {(entry) => (
+        <div class="relative flex min-h-full flex-col" data-file-viewer={entry().id}>
+          <div class="flex justify-end gap-2 border-b border-border-weak-base px-3 py-2">
+            {viewerMenu()}
+            <OpenInApp path={fullPath()} logPrefix="file-preview" />
+          </div>
+          <Dynamic component={entry().component} path={path() ?? ""} text={source} />
+        </div>
+      )}
+    </Show>
   )
 
   return (
     <Tabs.Content value={props.tab} class="relative h-full">
-      <div ref={setActionsMount} data-slot="file-preview-actions-layer" class="pointer-events-none absolute inset-0 z-20" />
+      <div
+        ref={setActionsMount}
+        data-slot="file-preview-actions-layer"
+        class="pointer-events-none absolute inset-0 z-20"
+      />
       <Show
         when={pdf() && state()?.loaded}
         fallback={

@@ -978,8 +978,16 @@ function contextToolSummary(parts: ToolPart[], i18n: ReturnType<typeof useI18n>)
   ].filter((value): value is string => !!value)
 }
 
+// Returns a disposer that restores the previous component, but only while this
+// registration is still the active one for the type.
 export function registerPartComponent(type: string, component: PartComponent) {
+  const previous = PART_MAPPING[type]
   PART_MAPPING[type] = component
+  return () => {
+    if (PART_MAPPING[type] !== component) return
+    if (previous) PART_MAPPING[type] = previous
+    else delete PART_MAPPING[type]
+  }
 }
 
 export function Message(props: MessageProps) {
@@ -1673,9 +1681,17 @@ const state: Record<
   }
 > = {}
 
+// Returns a disposer that restores the previous entry, but only while this
+// registration is still the active one for the tool name.
 export function registerTool(input: { name: string; render?: ToolComponent }) {
-  state[input.name] = input
-  return input
+  const entry = { name: input.name, render: input.render }
+  const previous = state[input.name]
+  state[input.name] = entry
+  return () => {
+    if (state[input.name] !== entry) return
+    if (previous) state[input.name] = previous
+    else delete state[input.name]
+  }
 }
 
 export function getTool(name: string) {

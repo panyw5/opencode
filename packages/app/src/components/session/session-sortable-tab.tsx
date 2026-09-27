@@ -16,6 +16,8 @@ import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useServer } from "@/context/server"
 import { usePrompt } from "@/context/prompt"
+import { ExtensionPanelVisual } from "@/extensions/panel-content"
+import { isExtensionPanelTab } from "@/extensions/panel-tab"
 
 export function FileVisual(props: { path: string; active?: boolean }): JSX.Element {
   return (
@@ -44,7 +46,9 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
   const prompt = usePrompt()
   const sortable = createSortable(props.tab)
   const path = createMemo(() => file.pathFromTab(props.tab))
+  const extension = createMemo(() => isExtensionPanelTab(props.tab))
   const content = createMemo(() => {
+    if (extension()) return <ExtensionPanelVisual tab={props.tab} />
     const value = path()
     if (!value) return
     return <FileVisual path={value} />
@@ -103,7 +107,8 @@ export function SortableTab(props: { tab: string; onTabClose: (tab: string) => v
     <div use:sortable class="h-full flex items-center" classList={{ "opacity-0": sortable.isActiveDraggable }}>
       <div class="relative h-full">
         <ContextMenu>
-          <ContextMenu.Trigger as="div" class="h-full">
+          {/* The menu only holds file actions, which do not apply to extension panel tabs. */}
+          <ContextMenu.Trigger as="div" class="h-full" disabled={extension()}>
             <Tabs.Trigger
               class="session-file-tab-trigger"
               value={props.tab}

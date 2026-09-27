@@ -11,6 +11,7 @@
     "./injected-prompt": "./src/components/injected-prompt.tsx",
     "./injected-prompt-model": "./src/components/injected-prompt-model.ts",
     "./message-file": "./src/components/message-file.ts",
+    "./file-viewer-registry": "./src/components/file-viewer-registry.ts",
     "./i18n/*": "./src/i18n/*.ts",
     "./pierre": "./src/pierre/index.ts",
     "./pierre/*": "./src/pierre/*.ts",

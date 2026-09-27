@@ -3,6 +3,7 @@ import { createStore } from "solid-js/store"
 import type { Message } from "@opencode-ai/sdk/v2/client"
 import { sortMessages } from "@/utils/message-order"
 import { same } from "@/utils/same"
+import { isExtensionPanelTab } from "@/extensions/panel-tab"
 
 const emptyTabs: string[] = []
 
@@ -61,6 +62,8 @@ export const createSessionTabs = (input: TabsInput) => {
     if (active === "context") return active
     if (active === "review" && review()) return active
     if (active && input.pathFromTab(active)) return input.normalizeTab(active)
+    // Extension panel tabs have no file path; they stay active only while opened.
+    if (active && isExtensionPanelTab(active) && openedTabs().includes(active)) return active
 
     const first = openedTabs()[0]
     if (first) return first

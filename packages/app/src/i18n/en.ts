@@ -513,6 +513,11 @@ export const dict = {
   "prompt.context.active": "active",
   "prompt.context.includeActiveFile": "Include active file",
   "session.fileTab.mentionInSession": "Mention this file in session",
+  "session.fileTab.viewer.openWith": "Open with",
+  "session.fileTab.viewer.default": "Default viewer",
+  "session.extensionTab.unavailable.title": "Extension unavailable",
+  "session.extensionTab.unavailable.description":
+    "The extension that provides this panel is not installed or is disabled.",
   "prompt.context.removeActiveFile": "Remove active file from context",
   "prompt.context.removeFile": "Remove file from context",
   "prompt.action.attachFile": "Add files",
