@@ -1,14 +1,14 @@
 import { createMemo, For, Show } from "solid-js"
 import { useI18n } from "../context/i18n"
-import { registerFileViewer, fileViewerTarget, type FileViewerProps } from "./file-viewer-registry"
+import { registerFileViewer, type FileViewerProps } from "./file-viewer-registry"
 import { parseDelimitedText } from "./file-preview-model"
 
 export function FileTablePreview(props: FileViewerProps) {
   const i18n = useI18n()
   const table = createMemo(() => {
-    const source = props.text
+    const source = props.text()
     if (source === undefined) return
-    return parseDelimitedText(source, fileViewerTarget(props.path).extension === "tsv" ? "\t" : undefined)
+    return parseDelimitedText(source, props.file.extension === "tsv" ? "\t" : undefined)
   })
 
   return (

@@ -1,4 +1,5 @@
-import { createSignal, type Component } from "solid-js"
+import { createSignal, type Accessor, type Component } from "solid-js"
+import { getFilename } from "@opencode-ai/core/util/path"
 import { normalizeMimeType } from "../pierre/media"
 
 // Registry of file viewers that can take over (replace) a file tab or add a
@@ -14,9 +15,17 @@ export type FileViewerTarget = {
   mime?: string
 }
 
+export type FileViewerFile = FileViewerTarget & {
+  absolutePath: string
+  directory: string
+}
+
 export type FileViewerProps = {
-  path: string
-  text: string | undefined
+  file: FileViewerFile
+  text: Accessor<string | undefined>
+  readBytes(): Promise<Uint8Array>
+  readText(): Promise<string>
+  showSource(): void
 }
 
 export type FileViewerEntry = {
@@ -35,8 +44,7 @@ export type FileViewerEntry = {
 const [entries, setEntries] = createSignal<readonly FileViewerEntry[]>([])
 
 export function fileViewerTarget(path: string, mime?: string): FileViewerTarget {
-  const index = Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\"))
-  const name = index < 0 ? path : path.slice(index + 1)
+  const name = getFilename(path)
   const dot = name.lastIndexOf(".")
   return {
     path,
@@ -67,9 +75,18 @@ function matches(entry: FileViewerEntry, target: FileViewerTarget) {
   }
 }
 
+// Registrations stack so an activated extension can temporarily replace its
+// manifest placeholder and reveal it again when the extension deactivates.
 export function registerFileViewer(entry: FileViewerEntry): () => void {
+  const previous = entries().find((item) => item.id === entry.id)
   setEntries((list) => [...list.filter((item) => item.id !== entry.id), entry])
-  return () => setEntries((list) => list.filter((item) => item !== entry))
+  return () => {
+    setEntries((list) => {
+      if (!list.includes(entry)) return list
+      const next = list.filter((item) => item !== entry)
+      return previous ? [...next.filter((item) => item.id !== previous.id), previous] : next
+    })
+  }
 }
 
 // Matching viewers ordered by priority (highest first); ties keep registration order.

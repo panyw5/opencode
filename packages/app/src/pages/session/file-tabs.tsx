@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js"
+import { ErrorBoundary, createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"
 import type { FileSearchHandle } from "@opencode-ai/ui/file"
@@ -18,6 +18,8 @@ import { useLanguage } from "@/context/language"
 import { usePrompt } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
+import { useServer } from "@/context/server"
+import { authTokenFromCredentials } from "@/utils/server"
 import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
@@ -65,6 +67,7 @@ export function FileTabContent(props: { tab: string }) {
   const language = useLanguage()
   const prompt = usePrompt()
   const platform = usePlatform()
+  const server = useServer()
   const sdk = useSDK()
   const fileComponent = useFileComponent()
   const { sessionKey, tabs, view } = useSessionLayout()
@@ -124,6 +127,37 @@ export function FileTabContent(props: { tab: string }) {
     console.debug(`[file-preview] select viewer path=${path() ?? ""} viewer=${id}`)
     setViewer("choice", id)
   }
+  const fileViewer = createMemo(() => {
+    const p = path() ?? ""
+    return {
+      ...fileViewerTarget(p, state()?.content?.mimeType),
+      absolutePath: fullPath() ?? p,
+      directory: sdk.directory,
+    }
+  })
+  const readBytes = async () => {
+    const p = path()
+    const connection = server.current
+    if (!p || !connection) throw new Error("File path is unavailable")
+    const url = new URL("/file/raw", connection.http.url)
+    url.searchParams.set("directory", sdk.directory)
+    url.searchParams.set("path", p)
+    const headers = new Headers()
+    if (connection.http.password) {
+      headers.set(
+        "authorization",
+        `Basic ${authTokenFromCredentials({
+          username: connection.http.username,
+          password: connection.http.password,
+        })}`,
+      )
+    }
+    const response = await (platform.fetch ?? fetch)(url, { headers })
+    if (!response.ok) throw new Error(`Failed to read raw file ${p} (${response.status})`)
+    return new Uint8Array(await response.arrayBuffer())
+  }
+  const readText = async () => new TextDecoder().decode(await readBytes())
+  const showSource = () => selectViewer(DEFAULT_VIEWER)
   const viewerMenu = () => (
     <Show when={viewerCandidates().length > 0}>
       <DropdownMenu gutter={4} placement="bottom-end">
@@ -596,6 +630,11 @@ export function FileTabContent(props: { tab: string }) {
               path: path(),
               current: state()?.content,
               onLoad: queueRestore,
+              viewer: {
+                file: fileViewer(),
+                readBytes,
+                readText,
+              },
             }}
             copyPath={copyPath}
             copyContent={state()?.content?.type === "text" ? copyContent : undefined}
@@ -615,12 +654,38 @@ export function FileTabContent(props: { tab: string }) {
       }
     >
       {(entry) => (
-        <div class="relative flex min-h-full flex-col" data-file-viewer={entry().id}>
+        <div
+          class="oc-extension-root relative flex min-h-full flex-col"
+          data-file-viewer={entry().id}
+          data-extension={entry().owner === "builtin" ? undefined : entry().owner}
+        >
           <div class="flex justify-end gap-2 border-b border-border-weak-base px-3 py-2">
             {viewerMenu()}
             <OpenInApp path={fullPath()} logPrefix="file-preview" />
           </div>
-          <Dynamic component={entry().component} path={path() ?? ""} text={source} />
+          <ErrorBoundary
+            fallback={(error) => {
+              const message = error instanceof Error ? error.message : String(error)
+              console.error(`[file-viewer] render failed id=${entry().id} path=${path() ?? ""} error=${message}`)
+              return (
+                <div class="flex flex-col items-start gap-3 px-6 py-4 text-text-weak">
+                  <div>{message}</div>
+                  <button type="button" class="text-text-strong underline" onClick={showSource}>
+                    {language.t("session.fileTab.viewer.default")}
+                  </button>
+                </div>
+              )
+            }}
+          >
+            <Dynamic
+              component={entry().component}
+              file={fileViewer()}
+              text={() => source}
+              readBytes={readBytes}
+              readText={readText}
+              showSource={showSource}
+            />
+          </ErrorBoundary>
         </div>
       )}
     </Show>

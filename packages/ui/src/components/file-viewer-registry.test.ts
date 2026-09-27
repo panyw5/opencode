@@ -63,12 +63,14 @@ describe("file viewer registry", () => {
     dispose()
   })
 
-  test("re-registering an id replaces it and a stale dispose is a no-op", () => {
+  test("a newer registration restores the previous viewer when disposed", () => {
     const disposeOld = registerFileViewer(entry({ id: "t:dup", extensions: ["dup"], title: "old" }))
     const disposeNew = registerFileViewer(entry({ id: "t:dup", extensions: ["dup"], title: "new" }))
     disposeOld()
     expect(resolveFileViewers(fileViewerTarget("a.dup")).map((item) => item.title)).toEqual(["new"])
     disposeNew()
+    expect(resolveFileViewers(fileViewerTarget("a.dup")).map((item) => item.title)).toEqual(["old"])
+    disposeOld()
     expect(resolveFileViewers(fileViewerTarget("a.dup"))).toEqual([])
   })
 

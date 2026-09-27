@@ -1,5 +1,5 @@
 import type { FileContent } from "@opencode-ai/sdk/v2"
-import { createEffect, createMemo, createResource, createSignal, Match, on, Show, Switch, type JSX } from "solid-js"
+import { ErrorBoundary, createEffect, createMemo, createResource, createSignal, Match, on, Show, Switch, type JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useI18n } from "../context/i18n"
 import {
@@ -10,7 +10,11 @@ import {
   normalizeMimeType,
   svgTextFromValue,
 } from "../pierre/media"
-import { fileViewerTarget, resolveFileViewers } from "./file-viewer-registry"
+import {
+  fileViewerTarget,
+  resolveFileViewers,
+  type FileViewerFile,
+} from "./file-viewer-registry"
 import "./file-table-preview"
 import { IconButton } from "./icon-button"
 import { Tooltip } from "./tooltip"
@@ -24,6 +28,11 @@ export type FileMediaOptions = {
   readFile?: (path: string) => Promise<FileContent | undefined>
   onLoad?: () => void
   onError?: (ctx: { kind: "image" | "audio" | "svg" | "pdf" }) => void
+  viewer?: {
+    file: FileViewerFile
+    readBytes(): Promise<Uint8Array>
+    readText(): Promise<string>
+  }
 }
 
 function mediaValue(cfg: FileMediaOptions, mode: "image" | "audio" | "pdf") {
@@ -61,7 +70,9 @@ export function FileMedia(props: {
   const previewViewer = createMemo(() => {
     const media = cfg()
     if (!media || media.mode === "off" || !media.path || textSource() === undefined) return
-    return resolveFileViewers(fileViewerTarget(media.path)).find((entry) => entry.mode === "preview")
+    return resolveFileViewers(fileViewerTarget(media.path)).find(
+      (entry) => entry.mode === "preview" && (entry.owner === "builtin" || !!media.viewer),
+    )
   })
   const [sourceMode, setSourceMode] = createSignal(false)
   const textPreviewHeader = () => (
@@ -285,7 +296,41 @@ export function FileMedia(props: {
         {(viewer) => (
           <div class="flex min-h-full flex-col bg-background-base">
             {textPreviewHeader()}
-            <Dynamic component={viewer().component} path={cfg()?.path ?? ""} text={textSource()} />
+            <ErrorBoundary
+              fallback={(error) => {
+                const message = error instanceof Error ? error.message : String(error)
+                console.error(
+                  `[file-viewer] preview render failed id=${viewer().id} path=${cfg()?.path ?? ""} error=${message}`,
+                )
+                return (
+                  <div class="flex flex-col items-start gap-3 px-6 py-4 text-text-weak">
+                    <div>{message}</div>
+                    <button
+                      type="button"
+                      class="text-text-strong underline"
+                      onClick={() => setSourceMode(true)}
+                    >
+                      {i18n.t("ui.file.source")}
+                    </button>
+                  </div>
+                )
+              }}
+            >
+              <Dynamic
+                component={viewer().component}
+                file={
+                  cfg()?.viewer?.file ?? {
+                    ...fileViewerTarget(cfg()?.path ?? ""),
+                    absolutePath: cfg()?.path ?? "",
+                    directory: "",
+                  }
+                }
+                text={textSource}
+                readBytes={cfg()?.viewer?.readBytes ?? (async () => new TextEncoder().encode(textSource() ?? ""))}
+                readText={cfg()?.viewer?.readText ?? (async () => textSource() ?? "")}
+                showSource={() => setSourceMode(true)}
+              />
+            </ErrorBoundary>
           </div>
         )}
       </Match>

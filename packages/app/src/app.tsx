@@ -36,6 +36,7 @@ import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
 import { GlobalSDKProvider } from "@/context/global-sdk"
 import { GlobalSyncProvider } from "@/context/global-sync"
+import { ExtensionHostProvider } from "@/extensions/host"
 import { HighlightsProvider } from "@/context/highlights"
 import { LanguageProvider, type Locale, useLanguage } from "@/context/language"
 import { LayoutProvider, useLayout } from "@/context/layout"
@@ -419,9 +420,11 @@ function AppShellProviders(props: ParentProps) {
               <NotificationProvider>
                 <ModelsProvider>
                   <CommandProvider>
-                    <HighlightsProvider>
-                      <Layout>{props.children}</Layout>
-                    </HighlightsProvider>
+                    <ExtensionHostProvider>
+                      <HighlightsProvider>
+                        <Layout>{props.children}</Layout>
+                      </HighlightsProvider>
+                    </ExtensionHostProvider>
                   </CommandProvider>
                 </ModelsProvider>
               </NotificationProvider>
