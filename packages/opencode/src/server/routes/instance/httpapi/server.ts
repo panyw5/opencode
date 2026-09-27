@@ -22,6 +22,7 @@ import * as Observability from "@opencode-ai/core/effect/observability"
 import { File } from "@/file"
 import { FileWatcher } from "@/file/watcher"
 import { Ripgrep } from "@/file/ripgrep"
+import { Extension } from "@/extension"
 import { Format } from "@/format"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { LSP } from "@/lsp/lsp"
@@ -73,6 +74,8 @@ import { backgroundShellHandlers } from "./handlers/background-shell"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
+import { extensionAssetRoute } from "./handlers/extension-asset"
+import { extensionHandlers } from "./handlers/extension"
 import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
@@ -121,7 +124,7 @@ const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provi
 const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const v2HttpApiAuthLayer = v2AuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
-  Layer.provide([controlHandlers, globalHandlers]),
+  Layer.provide([controlHandlers, extensionHandlers, globalHandlers]),
   Layer.provide(schemaErrorLayer),
   Layer.provide(httpApiAuthLayer),
 )
@@ -182,6 +185,8 @@ const docRoute = HttpRouter.use((router) => router.add("GET", "/doc", () => Effe
   Layer.provide(authOnlyRouterLayer),
 )
 
+const extensionAssetRoutes = Layer.mergeAll(extensionAssetRoute).pipe(Layer.provide(authOnlyRouterLayer))
+
 const uiRoute = HttpRouter.use((router) =>
   Effect.gen(function* () {
     const fs = yield* AppFileSystem.Service
@@ -203,7 +208,7 @@ type RouteRequirements =
 export function createRoutes(
   corsOptions?: CorsOptions,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
-  return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, uiRoute).pipe(
+  return Layer.mergeAll(rootApiRoutes, eventApiRoutes, instanceRoutes, docRoute, extensionAssetRoutes, uiRoute).pipe(
     Layer.provide(ScheduledTask.layer),
     Layer.provide(ProjectTask.layer),
     Layer.provide([
@@ -219,6 +224,7 @@ export function createRoutes(
       BackgroundShell.defaultLayer,
       Command.defaultLayer,
       Config.defaultLayer,
+      Extension.defaultLayer,
       File.defaultLayer,
       FileWatcher.defaultLayer,
       Format.defaultLayer,

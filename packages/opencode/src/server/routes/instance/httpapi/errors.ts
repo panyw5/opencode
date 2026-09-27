@@ -10,6 +10,15 @@ export class InvalidRequestError extends Schema.TaggedErrorClass<InvalidRequestE
   { httpApiStatus: 400 },
 ) {}
 
+export class PayloadTooLargeError extends Schema.TaggedErrorClass<PayloadTooLargeError>()(
+  "PayloadTooLargeError",
+  {
+    message: Schema.String,
+    maxBytes: Schema.Number,
+  },
+  { httpApiStatus: 413 },
+) {}
+
 export class UnauthorizedError extends Schema.TaggedErrorClass<UnauthorizedError>()(
   "UnauthorizedError",
   { message: Schema.String },

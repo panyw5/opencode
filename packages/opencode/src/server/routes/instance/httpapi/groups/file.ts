@@ -2,7 +2,7 @@ import { File } from "@/file"
 import { Ripgrep } from "@/file/ripgrep"
 import { LSP } from "@/lsp/lsp"
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import {
@@ -11,6 +11,7 @@ import {
   WorkspaceRoutingQueryFields,
 } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+import { PayloadTooLargeError } from "../errors"
 
 export const FileQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
@@ -43,6 +44,7 @@ export const FilePaths = {
   findSymbol: "/find/symbol",
   list: "/file",
   content: "/file/content",
+  raw: "/file/raw",
   status: "/file/status",
 } as const
 
@@ -98,6 +100,17 @@ export const FileApi = HttpApi.make("file")
             identifier: "file.read",
             summary: "Read file",
             description: "Read the content of a specified file.",
+          }),
+        ),
+        HttpApiEndpoint.get("raw", FilePaths.raw, {
+          query: FileQuery,
+          success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array({ contentType: "application/octet-stream" })),
+          error: [HttpApiError.NotFound, HttpApiError.Forbidden, PayloadTooLargeError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.raw",
+            summary: "Read raw file",
+            description: "Read the exact bytes of a project file up to 50 MB.",
           }),
         ),
         HttpApiEndpoint.get("status", FilePaths.status, {

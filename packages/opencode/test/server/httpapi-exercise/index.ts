@@ -64,6 +64,22 @@ const scenarios: Scenario[] = [
       "status",
     ),
   http.protected.get("/global/config", "global.config.get").global().json(),
+  http.protected.get("/global/extension", "extension.list").global().json(200, array),
+  http.protected
+    .get("/global/extension/{id}", "extension.get")
+    .global()
+    .at(() => ({ path: route("/global/extension/{id}", { id: "test.missing" }) }))
+    .status(404),
+  http.protected
+    .post("/global/extension/{id}/enable", "extension.enable")
+    .global()
+    .at(() => ({ path: route("/global/extension/{id}/enable", { id: "test.missing" }) }))
+    .status(404),
+  http.protected
+    .post("/global/extension/{id}/disable", "extension.disable")
+    .global()
+    .at(() => ({ path: route("/global/extension/{id}/disable", { id: "test.missing" }) }))
+    .status(404),
   http.protected
     .patch("/global/config", "global.config.update")
     .global()
@@ -399,6 +415,15 @@ const scenarios: Scenario[] = [
       object(body)
       check(body.type === "text" && body.content === "", "missing file content should return an empty text result")
     }),
+  http.protected
+    .get("/file/raw", "file.raw")
+    .seeded((ctx) => ctx.file("raw.txt", "  raw\n"))
+    .at((ctx) => ({ path: `/file/raw?${new URLSearchParams({ path: "raw.txt" })}`, headers: ctx.headers() }))
+    .status(200, (_ctx, result) =>
+      Effect.sync(() => {
+        check(result.text === "  raw\n", `raw file should preserve exact text: ${JSON.stringify(result.text)}`)
+      }),
+    ),
   http.protected.get("/file/status", "file.status").json(200, array),
   http.protected
     .get("/find", "find.text")

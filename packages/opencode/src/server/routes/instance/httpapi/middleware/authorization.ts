@@ -2,6 +2,7 @@ import { ServerAuth } from "@/server/auth"
 import { Effect, Encoding, Layer, Redacted } from "effect"
 import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiError, HttpApiMiddleware } from "effect/unstable/httpapi"
+import { hasExtensionAssetTokenURL, isExtensionAssetPath } from "@/server/shared/extension-asset"
 import { hasPtyConnectTicketURL } from "@/server/shared/pty-ticket"
 import { isPublicUIPath } from "@/server/shared/public-ui"
 import { UnauthorizedError } from "../errors"
@@ -106,6 +107,12 @@ export const authorizationRouterMiddleware = HttpRouter.middleware()(
         const url = new URL(request.url, "http://localhost")
         if (isPublicUIPath(request.method, url.pathname)) return yield* effect
         if (hasPtyConnectTicketURL(url)) return yield* effect
+        if (request.method === "GET" && hasExtensionAssetTokenURL(url)) return yield* effect
+        if (isExtensionAssetPath(url.pathname)) {
+          return yield* Effect.succeed(
+            HttpServerResponse.empty({ status: 404, headers: { "cache-control": "no-store" } }),
+          )
+        }
         return yield* credentialFromURL(url, request).pipe(
           Effect.flatMap((credential) => validateRawCredential(effect, credential, config)),
         )

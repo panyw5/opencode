@@ -6,6 +6,7 @@ import { BackgroundShellApi } from "./groups/background-shell"
 import { ConfigApi } from "./groups/config"
 import { ControlApi } from "./groups/control"
 import { EventApi } from "./groups/event"
+import { ExtensionApi } from "./groups/extension"
 import { ExperimentalApi } from "./groups/experimental"
 import { FileApi } from "./groups/file"
 import { GlobalApi } from "./groups/global"
@@ -33,6 +34,7 @@ const SyncEventSchemas = SyncEvent.effectPayloads()
 
 export const RootHttpApi = HttpApi.make("opencode-root")
   .addHttpApi(ControlApi)
+  .addHttpApi(ExtensionApi)
   .addHttpApi(GlobalApi)
   .middleware(SchemaErrorMiddleware)
   .middleware(Authorization)

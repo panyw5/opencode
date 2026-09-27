@@ -49,6 +49,7 @@ export type Event =
   | EventWorktreeFailed
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
+  | EventExtensionStatus
   | EventMessageUpdated
   | EventMessageRemoved
   | EventMessagePartUpdated
@@ -125,6 +126,49 @@ export type InvalidRequestError = {
   message: string
   kind?: string
   field?: string
+}
+
+export type ExtensionPathSource = {
+  type: "path"
+  path: string
+}
+
+export type ExtensionFileViewerContribution = {
+  id: string
+  title: string
+  extensions?: Array<string>
+  filenames?: Array<string>
+  mime?: Array<string>
+  priority?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  mode?: "replace" | "preview"
+}
+
+export type ExtensionContributes = {
+  fileViewers?: Array<ExtensionFileViewerContribution>
+}
+
+export type ExtensionWebInfo = {
+  base: string
+  entry: string
+  styles: Array<string>
+  apiVersion: 1
+}
+
+export type ExtensionInfo = {
+  id: string
+  name: string
+  version: string
+  displayName: string
+  description?: string
+  icon?: string
+  source: ExtensionPathSource
+  enabled: boolean
+  state: "ready" | "disabled" | "error" | "incompatible"
+  error?: string
+  activation: Array<string>
+  contributes: ExtensionContributes
+  permissions: Array<string>
+  web?: ExtensionWebInfo
 }
 
 export type PermissionRequest = {
@@ -450,6 +494,13 @@ export type ScheduledTaskRun = {
     started?: number
     finished?: number
   }
+}
+
+export type ExtensionStatusProperties = {
+  id: string
+  version: string
+  state: "installed" | "enabled" | "disabled" | "error" | "changed"
+  error?: string
 }
 
 export type OutputFormatText = {
@@ -1427,6 +1478,7 @@ export type GlobalEvent = {
     | EventWorktreeFailed
     | EventInstallationUpdated
     | EventInstallationUpdateAvailable
+    | EventExtensionStatus
     | EventMessageUpdated
     | EventMessageRemoved
     | EventMessagePartUpdated
@@ -1667,6 +1719,7 @@ export type GlobalSession = {
   id: string
   slug: string
   projectID: string
+  locationID?: string
   workspaceID?: string
   directory: string
   path?: string
@@ -1762,6 +1815,16 @@ export type FileContent = {
   }
   encoding?: "base64"
   mimeType?: string
+}
+
+export type EffectHttpApiErrorForbidden = {
+  _tag: "Forbidden"
+}
+
+export type PayloadTooLargeError = {
+  _tag: "PayloadTooLargeError"
+  message: string
+  maxBytes: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
 export type File = {
@@ -2233,10 +2296,6 @@ export type WorkspaceWarpError = {
   data: {
     message: string
   }
-}
-
-export type EffectHttpApiErrorForbidden = {
-  _tag: "Forbidden"
 }
 
 export type BackgroundShell3 = {
@@ -3307,6 +3366,12 @@ export type EventInstallationUpdateAvailable = {
   }
 }
 
+export type EventExtensionStatus = {
+  id: string
+  type: "extension.status"
+  properties: ExtensionStatusProperties
+}
+
 export type EventMessageUpdated = {
   id: string
   type: "message.updated"
@@ -3943,7 +4008,6 @@ export type SessionInfo = {
   id: string
   parentID?: string
   projectID: string
-  locationID?: string
   workspaceID?: string
   path?: string
   agent?: string
@@ -4460,6 +4524,124 @@ export type AppLogResponses = {
 }
 
 export type AppLogResponse = AppLogResponses[keyof AppLogResponses]
+
+export type ExtensionListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/extension"
+}
+
+export type ExtensionListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ExtensionListError = ExtensionListErrors[keyof ExtensionListErrors]
+
+export type ExtensionListResponses = {
+  /**
+   * Linked extensions
+   */
+  200: Array<ExtensionInfo>
+}
+
+export type ExtensionListResponse = ExtensionListResponses[keyof ExtensionListResponses]
+
+export type ExtensionGetData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/global/extension/{id}"
+}
+
+export type ExtensionGetErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ExtensionGetError = ExtensionGetErrors[keyof ExtensionGetErrors]
+
+export type ExtensionGetResponses = {
+  /**
+   * Linked extension
+   */
+  200: ExtensionInfo
+}
+
+export type ExtensionGetResponse = ExtensionGetResponses[keyof ExtensionGetResponses]
+
+export type ExtensionEnableData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/global/extension/{id}/enable"
+}
+
+export type ExtensionEnableErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ExtensionEnableError = ExtensionEnableErrors[keyof ExtensionEnableErrors]
+
+export type ExtensionEnableResponses = {
+  /**
+   * Enabled extension
+   */
+  200: ExtensionInfo
+}
+
+export type ExtensionEnableResponse = ExtensionEnableResponses[keyof ExtensionEnableResponses]
+
+export type ExtensionDisableData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/global/extension/{id}/disable"
+}
+
+export type ExtensionDisableErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ExtensionDisableError = ExtensionDisableErrors[keyof ExtensionDisableErrors]
+
+export type ExtensionDisableResponses = {
+  /**
+   * Disabled extension
+   */
+  200: ExtensionInfo
+}
+
+export type ExtensionDisableResponse = ExtensionDisableResponses[keyof ExtensionDisableResponses]
 
 export type GlobalHealthData = {
   body?: never
@@ -5578,6 +5760,47 @@ export type FileReadResponses = {
 }
 
 export type FileReadResponse = FileReadResponses[keyof FileReadResponses]
+
+export type FileRawData = {
+  body?: never
+  path?: never
+  query: {
+    directory?: string
+    workspace?: string
+    path: string
+  }
+  url: "/file/raw"
+}
+
+export type FileRawErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Forbidden
+   */
+  403: EffectHttpApiErrorForbidden
+  /**
+   * Not found
+   */
+  404: NotFoundError
+  /**
+   * PayloadTooLargeError
+   */
+  413: PayloadTooLargeError
+}
+
+export type FileRawError = FileRawErrors[keyof FileRawErrors]
+
+export type FileRawResponses = {
+  /**
+   * Success
+   */
+  200: Blob | File
+}
+
+export type FileRawResponse = FileRawResponses[keyof FileRawResponses]
 
 export type FileStatusData = {
   body?: never
@@ -6926,12 +7149,18 @@ export type ProjectOpenData = {
 }
 
 export type ProjectOpenErrors = {
-  400: BadRequestError
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
 export type ProjectOpenError = ProjectOpenErrors[keyof ProjectOpenErrors]
 
 export type ProjectOpenResponses = {
+  /**
+   * Project information after an explicit user open
+   */
   200: Project
 }
 
@@ -10683,6 +10912,42 @@ export type ExperimentalWorkspaceWarpResponses = {
 
 export type ExperimentalWorkspaceWarpResponse =
   ExperimentalWorkspaceWarpResponses[keyof ExperimentalWorkspaceWarpResponses]
+
+export type SessionPresentationData = {
+  body?: never
+  path: {
+    sessionID: string
+    artifactID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    variant?: "thumbnail" | "original"
+  }
+  url: "/session/{sessionID}/presentation/{artifactID}"
+}
+
+export type SessionPresentationErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionPresentationError = SessionPresentationErrors[keyof SessionPresentationErrors]
+
+export type SessionPresentationResponses = {
+  /**
+   * Success
+   */
+  200: Blob | File
+}
+
+export type SessionPresentationResponse = SessionPresentationResponses[keyof SessionPresentationResponses]
 
 export type PtyConnectData = {
   body?: never

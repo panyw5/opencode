@@ -64,10 +64,20 @@ import type {
   ExperimentalWorkspaceSyncListResponses,
   ExperimentalWorkspaceWarpErrors,
   ExperimentalWorkspaceWarpResponses,
+  ExtensionDisableErrors,
+  ExtensionDisableResponses,
+  ExtensionEnableErrors,
+  ExtensionEnableResponses,
+  ExtensionGetErrors,
+  ExtensionGetResponses,
+  ExtensionListErrors,
+  ExtensionListResponses,
   FileListErrors,
   FileListResponses,
   FilePartInput,
   FilePartSource,
+  FileRawErrors,
+  FileRawResponses,
   FileReadErrors,
   FileReadResponses,
   FileStatusErrors,
@@ -160,12 +170,12 @@ import type {
   PluginHookControlInput,
   ProjectCurrentErrors,
   ProjectCurrentResponses,
-  ProjectOpenErrors,
-  ProjectOpenResponses,
   ProjectInitGitErrors,
   ProjectInitGitResponses,
   ProjectListErrors,
   ProjectListResponses,
+  ProjectOpenErrors,
+  ProjectOpenResponses,
   ProjectTaskArchiveErrors,
   ProjectTaskArchiveResponses,
   ProjectTaskCreateErrors,
@@ -296,6 +306,8 @@ import type {
   SessionMessageResponses,
   SessionMessagesErrors,
   SessionMessagesResponses,
+  SessionPresentationErrors,
+  SessionPresentationResponses,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
   SessionPromptErrors,
@@ -577,6 +589,71 @@ export class App extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<AppSkillsResponses, AppSkillsErrors, ThrowOnError>({
       url: "/skill",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Extension extends HeyApiClient {
+  /**
+   * List extensions
+   *
+   * List linked OpenCode extensions and their web contributions.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<ExtensionListResponses, ExtensionListErrors, ThrowOnError>({
+      url: "/global/extension",
+      ...options,
+    })
+  }
+
+  /**
+   * Get extension
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).get<ExtensionGetResponses, ExtensionGetErrors, ThrowOnError>({
+      url: "/global/extension/{id}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Enable extension
+   */
+  public enable<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).post<ExtensionEnableResponses, ExtensionEnableErrors, ThrowOnError>({
+      url: "/global/extension/{id}/enable",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Disable extension
+   */
+  public disable<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).post<ExtensionDisableResponses, ExtensionDisableErrors, ThrowOnError>({
+      url: "/global/extension/{id}/disable",
       ...options,
       ...params,
     })
@@ -2034,6 +2111,38 @@ export class File extends HeyApiClient {
   }
 
   /**
+   * Read raw file
+   *
+   * Read the exact bytes of a project file up to 50 MB.
+   */
+  public raw<ThrowOnError extends boolean = false>(
+    parameters: {
+      directory?: string
+      workspace?: string
+      path: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<FileRawResponses, FileRawErrors, ThrowOnError>({
+      url: "/file/raw",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get file status
    *
    * Get the git status of all files in the project.
@@ -3177,7 +3286,11 @@ export class Project extends HeyApiClient {
     })
   }
 
-  /** Explicitly register the routed directory as a user-opened project. */
+  /**
+   * Explicitly open project
+   *
+   * Register the routed directory as a user-opened project.
+   */
   public open<ThrowOnError extends boolean = false>(
     parameters?: {
       directory?: string
@@ -5687,6 +5800,42 @@ export class Session2 extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Read presented file
+   *
+   * Read an immutable session presentation artifact.
+   */
+  public presentation<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      artifactID: string
+      directory?: string
+      workspace?: string
+      variant?: "thumbnail" | "original"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "path", key: "artifactID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "variant" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionPresentationResponses, SessionPresentationErrors, ThrowOnError>({
+      url: "/session/{sessionID}/presentation/{artifactID}",
+      ...options,
+      ...params,
+    })
+  }
 }
 
 export class Part extends HeyApiClient {
@@ -6672,6 +6821,11 @@ export class OpencodeClient extends HeyApiClient {
   private _app?: App
   get app(): App {
     return (this._app ??= new App({ client: this.client }))
+  }
+
+  private _extension?: Extension
+  get extension(): Extension {
+    return (this._extension ??= new Extension({ client: this.client }))
   }
 
   private _global?: Global
