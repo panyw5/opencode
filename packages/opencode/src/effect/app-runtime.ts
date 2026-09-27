@@ -63,6 +63,7 @@ import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
+import { Extension } from "@/extension"
 
 // For CLI/server entrypoints that intentionally run without a project InstanceRef.
 // Keep this layer free of services that perform InstanceState/Bus work at startup.
@@ -74,6 +75,7 @@ export const NoInstanceLayer = Layer.mergeAll(
   Config.defaultLayer,
   ModelsDev.defaultLayer,
   RuntimeFlags.defaultLayer,
+  Extension.defaultLayer,
 ).pipe(Layer.provideMerge(Observability.layer))
 
 export const AppLayer = Layer.mergeAll(
@@ -104,6 +106,7 @@ export const AppLayer = Layer.mergeAll(
   BackgroundJob.defaultLayer,
   BackgroundShell.defaultLayer,
   RuntimeFlags.defaultLayer,
+  Extension.defaultLayer,
   SessionRunState.defaultLayer,
   SessionProcessor.defaultLayer,
   SessionCompaction.defaultLayer,
