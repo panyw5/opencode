@@ -857,6 +857,7 @@ export function QuickAssistant() {
   }
 
   const dock = createMemo(() => enabled() && !!activeDir())
+  const bare = createMemo(() => !waiting() && list().length === 0)
 
   const removePermission = (request: PermissionRequest) => {
     const setStore = setData()
@@ -901,19 +902,30 @@ export function QuickAssistant() {
 
       <Show when={saved.open}>
         <div
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] w-[min(520px,calc(100vw-24px))] rounded-xl border border-border-weak-base shadow-[var(--shadow-lg-border-base)]"
-          classList={{ "h-[calc(100dvh-72px)]": waiting() }}
-          style={{
-            "background-color":
-              platform.platform === "desktop" && platform.os === "windows"
-                ? "var(--surface-raised-stronger-non-alpha)"
-                : "var(--apple-dark-alpha-1)",
-            "border-color": "var(--amber-light-alpha-2)",
-            "backdrop-filter":
-              platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
-            "-webkit-backdrop-filter":
-              platform.platform === "desktop" && platform.os === "windows" ? "none" : "blur(40px) saturate(150%)",
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] w-[min(520px,calc(100vw-24px))] rounded-xl"
+          classList={{
+            "h-[calc(100dvh-72px)]": waiting(),
+            "border border-border-weak-base shadow-[var(--shadow-lg-border-base)]": !bare(),
           }}
+          style={
+            bare()
+              ? undefined
+              : {
+                  "background-color":
+                    platform.platform === "desktop" && platform.os === "windows"
+                      ? "var(--surface-raised-stronger-non-alpha)"
+                      : "var(--apple-dark-alpha-1)",
+                  "border-color": "var(--amber-light-alpha-2)",
+                  "backdrop-filter":
+                    platform.platform === "desktop" && platform.os === "windows"
+                      ? "none"
+                      : "blur(40px) saturate(150%)",
+                  "-webkit-backdrop-filter":
+                    platform.platform === "desktop" && platform.os === "windows"
+                      ? "none"
+                      : "blur(40px) saturate(150%)",
+                }
+          }
         >
           <button
             type="button"
