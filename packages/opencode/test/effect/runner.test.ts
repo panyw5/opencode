@@ -654,6 +654,41 @@ describe("Runner", () => {
   )
 
   it.live(
+    "cancel from running fires onIdle exactly once",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const count = yield* Ref.make(0)
+      const runner = Runner.make<string>(s, {
+        onIdle: Ref.update(count, (n) => n + 1),
+      })
+      const fiber = yield* runner.ensureRunning(Effect.never.pipe(Effect.as("x"))).pipe(Effect.forkChild)
+      yield* waitForState(runner, "Running")
+      yield* runner.cancel
+      yield* Fiber.await(fiber)
+      expect(yield* Ref.get(count)).toBe(1)
+    }),
+  )
+
+  it.live(
+    "cancel on an idle runner does not fire onIdle",
+    Effect.gen(function* () {
+      const s = yield* Scope.Scope
+      const count = yield* Ref.make(0)
+      const runner = Runner.make<string>(s, {
+        onIdle: Ref.update(count, (n) => n + 1),
+      })
+      // A completed run publishes idle once via the real Running → Idle
+      // transition; instance teardown then cancels the idle runner, which
+      // must stay silent (ghost session.idle regression).
+      yield* runner.ensureRunning(Effect.succeed("ok"))
+      expect(yield* Ref.get(count)).toBe(1)
+      yield* runner.cancel
+      expect(runner.state._tag).toBe("Idle")
+      expect(yield* Ref.get(count)).toBe(1)
+    }),
+  )
+
+  it.live(
     "onBusy fires when shell starts",
     Effect.gen(function* () {
       const s = yield* Scope.Scope
