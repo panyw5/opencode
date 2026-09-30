@@ -30,7 +30,8 @@
   align-items: center;
   justify-content: center;
 }
-[data-component="diagram-card"][data-diagram-syntax="mermaid"] .diagram-card__preview {
+[data-component="diagram-card"][data-diagram-syntax="mermaid"] .diagram-card__preview,
+[data-component="diagram-card"][data-diagram-syntax="flowchart"] .diagram-card__preview {
   background: var(--background-base);
   box-shadow: inset 0 0 0 1px var(--border-weak-base);
 }

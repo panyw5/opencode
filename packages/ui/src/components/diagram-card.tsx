@@ -16,10 +16,12 @@ import {
 
 type DiagramMetadata = {
   id: string
-  syntax: DiagramSyntax
+  syntax: DiagramSyntax | "flowchart"
   title: string
   caption?: string
   bytes: number
+  /** Compiled Mermaid source, present when syntax is "flowchart". */
+  mermaid?: string
 }
 
 export type DiagramCardProps = {
@@ -35,12 +37,22 @@ export function readDiagramMetadata(input: DiagramCardProps["input"], metadata: 
   const value = metadata.diagram
   if (!value || typeof value !== "object") return
   const item = value as Partial<DiagramMetadata>
-  if (typeof item.id !== "string" || (item.syntax !== "svg" && item.syntax !== "mermaid")) return
+  if (typeof item.id !== "string") return
+  if (item.syntax !== "svg" && item.syntax !== "mermaid" && item.syntax !== "flowchart") return
   if (typeof input.source !== "string" || !input.source.trim()) return
+  // Flowchart tool input is the structured JSON spec; the backend compiles it to
+  // Mermaid and ships the result in metadata, so render from there.
+  const source =
+    item.syntax === "flowchart"
+      ? typeof item.mermaid === "string" && item.mermaid.trim()
+        ? item.mermaid
+        : undefined
+      : input.source.trim()
+  if (!source) return
   return {
     id: item.id,
     syntax: item.syntax,
-    source: input.source.trim(),
+    source,
     title: typeof item.title === "string" ? item.title : "Diagram",
     caption: typeof item.caption === "string" ? item.caption : undefined,
   }
@@ -84,7 +96,11 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
     console.debug(`[diagram] render start session=${props.sessionID} part=${props.partID} syntax=${value.syntax}`)
     try {
       const colors = palette()
-      const source = await renderDiagramSvg({ ...value, palette: colors })
+      const source = await renderDiagramSvg({
+        ...value,
+        syntax: value.syntax === "flowchart" ? "mermaid" : value.syntax,
+        palette: colors,
+      })
       const rendered = value.syntax === "svg" ? themeSvgSource(source, colors) : source
       if (run !== generation) return
       const next = URL.createObjectURL(new Blob([rendered], { type: "image/svg+xml" }))
@@ -220,7 +236,9 @@ export function DiagramCard(props: DiagramCardProps): JSX.Element {
           <div class="diagram-card__title-row">
             <strong title={title()}>{title()}</strong>
             <Show when={diagram()?.syntax}>
-              <span>{diagram()?.syntax === "svg" ? "SVG" : "Mermaid"}</span>
+              <span>
+                {diagram()?.syntax === "svg" ? "SVG" : diagram()?.syntax === "flowchart" ? "Flowchart" : "Mermaid"}
+              </span>
             </Show>
           </div>
           <Show when={diagram()?.caption}>

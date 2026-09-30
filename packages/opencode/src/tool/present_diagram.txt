@@ -1,7 +1,8 @@
-Present and render an SVG or Mermaid diagram in chat UI WITHOUT creating a file. Use this tool inside your response at suitable location to help the user understand your answer.
+Present and render an SVG, Mermaid, or flowchart diagram in chat UI WITHOUT creating a file. Use this tool inside your response at suitable location to help the user understand your answer.
 
 Pass raw source without Markdown code fences.
 - Use `syntax: "svg"` for a complete SVG document
 - Use `syntax: "mermaid"` for Mermaid source such as flowcharts, sequence, class, state, or ER diagrams.
+- Use `syntax: "flowchart"` for a structured flowchart given as JSON: `{ "direction": "TD" | "LR" | "BT" | "RL", "nodes": [{ "id": "a", "label": "Start", "shape": "stadium" }], "edges": [{ "from": "a", "to": "b", "label": "next", "style": "solid" | "dashed" | "thick" }] }`. Node `shape` is one of rect, round, stadium, diamond, circle, subroutine, hexagon, parallelogram. Nodes referenced only by edges may be omitted from `nodes`; prefer this syntax over Mermaid for simple flowcharts because it cannot produce invalid diagram syntax.
 
 Use `present_file` if the diagram already exists as a file.

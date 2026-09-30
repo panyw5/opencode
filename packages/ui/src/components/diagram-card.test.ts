@@ -12,6 +12,23 @@ describe("diagram card", () => {
     ).toEqual({ id: "dg_1", syntax: "mermaid", source: "flowchart LR\n  A --> B", title: "Flow", caption: "Overview" })
   })
 
+  test("reads flowchart diagrams from the compiled Mermaid metadata", () => {
+    const metadata = {
+      diagram: { id: "dg_2", syntax: "flowchart", title: "Pipeline", bytes: 64, mermaid: "flowchart TD\n  a[\"A\"] --> b" },
+    }
+    expect(readDiagramMetadata({ source: '{"edges":[{"from":"a","to":"b"}]}' }, metadata)).toEqual({
+      id: "dg_2",
+      syntax: "flowchart",
+      source: 'flowchart TD\n  a["A"] --> b',
+      title: "Pipeline",
+      caption: undefined,
+    })
+    // Without compiled Mermaid metadata there is nothing renderable.
+    expect(
+      readDiagramMetadata({ source: "{}" }, { diagram: { id: "dg_3", syntax: "flowchart", title: "Broken" } }),
+    ).toBeUndefined()
+  })
+
   test("rejects incomplete metadata and source", () => {
     expect(readDiagramMetadata({}, { diagram: { id: "dg_1", syntax: "svg" } })).toBeUndefined()
     expect(readDiagramMetadata({ source: "<svg/>" }, { diagram: { id: "dg_1", syntax: "dot" } })).toBeUndefined()
