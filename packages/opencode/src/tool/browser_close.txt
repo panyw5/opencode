@@ -1,0 +1,11 @@
+Close the embedded desktop browser tab for this session.
+
+Destroys this session's browser view and frees its memory and network
+resources. Use it when you are done browsing or before switching to a
+long non-browser task — views left open keep rendering and consuming
+resources.
+
+Notes:
+- Only this session's own tab is closed; the user's tabs are never touched.
+- The close is cheap to undo: a later browser_navigate opens a fresh tab.
+- Any page state (cookies aside) is lost on close.

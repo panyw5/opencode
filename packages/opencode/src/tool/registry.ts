@@ -93,6 +93,14 @@ import {
   MathWorkerTaskUpdateTool,
 } from "./math-worker"
 import { MathFactGetTool, MathFactRevokeTool, MathFactSearchTool, MathGmAddTool, MathGmSearchTool } from "./math-truth"
+import { BrowserNavigateTool } from "./browser_navigate"
+import { BrowserReadTool } from "./browser_read"
+import { BrowserClickTool } from "./browser_click"
+import { BrowserTypeTool } from "./browser_type"
+import { BrowserScreenshotTool } from "./browser_screenshot"
+import { BrowserConsoleTool } from "./browser_console"
+import { BrowserCloseTool } from "./browser_close"
+import { Browser } from "@/browser"
 
 const log = Log.create({ service: "tool.registry" })
 
@@ -151,6 +159,7 @@ export const layer: Layer.Layer<
   | IM.Service
   | IMOwner.Service
   | IMSubscription.Service
+  | Browser.Service
 > = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -194,6 +203,13 @@ export const layer: Layer.Layer<
     const mathFactSearch = yield* MathFactSearchTool
     const mathFactGet = yield* MathFactGetTool
     const mathFactRevoke = yield* MathFactRevokeTool
+    const browserNavigate = yield* BrowserNavigateTool
+    const browserRead = yield* BrowserReadTool
+    const browserClick = yield* BrowserClickTool
+    const browserType = yield* BrowserTypeTool
+    const browserScreenshot = yield* BrowserScreenshotTool
+    const browserConsole = yield* BrowserConsoleTool
+    const browserClose = yield* BrowserCloseTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -300,8 +316,9 @@ export const layer: Layer.Layer<
           }
         }
 
-        yield* config.get()
+        const configInfo = yield* config.get()
         const questionEnabled = ["app", "cli", "desktop"].includes(flags.client) || flags.enableQuestionTool
+        const browserEnabled = flags.pure !== true && configInfo.browser?.enabled !== false
 
         const tool = yield* Effect.all({
           invalid: Tool.init(invalid),
@@ -356,6 +373,13 @@ export const layer: Layer.Layer<
           plan: Tool.init(plan),
           present_file: Tool.init(presentFile),
           present_diagram: Tool.init(presentDiagram),
+          browser_navigate: Tool.init(browserNavigate),
+          browser_read: Tool.init(browserRead),
+          browser_click: Tool.init(browserClick),
+          browser_type: Tool.init(browserType),
+          browser_screenshot: Tool.init(browserScreenshot),
+          browser_console: Tool.init(browserConsole),
+          browser_close: Tool.init(browserClose),
         })
 
         const builtin = [
@@ -410,6 +434,17 @@ export const layer: Layer.Layer<
           ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
           tool.present_file,
           tool.present_diagram,
+          ...(browserEnabled
+            ? [
+                tool.browser_navigate,
+                tool.browser_read,
+                tool.browser_click,
+                tool.browser_type,
+                tool.browser_screenshot,
+                tool.browser_console,
+                tool.browser_close,
+              ]
+            : []),
         ]
         log.info("builtin tools initialized", { ids: builtin.map((item) => item.id) })
 
@@ -553,7 +588,7 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(FetchHttpClient.layer),
       Layer.provide(Format.defaultLayer),
       Layer.provide(CrossSpawnSpawner.defaultLayer),
-      Layer.provide(Layer.mergeAll(Ripgrep.defaultLayer, Truncate.defaultLayer)),
+      Layer.provide(Layer.mergeAll(Ripgrep.defaultLayer, Truncate.defaultLayer, Browser.defaultLayer)),
     )
     .pipe(Layer.provide(RuntimeFlags.defaultLayer)),
 )

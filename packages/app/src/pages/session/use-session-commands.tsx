@@ -369,6 +369,14 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
         onSelect: () => view().terminal.toggle(),
       }),
       viewCommand({
+        id: "browser.toggle",
+        title: language.t("command.browser.toggle"),
+        keywords: kw("command.browser.toggle"),
+        keybind: "mod+alt+b",
+        slash: "browser",
+        onSelect: () => view().browser.toggle(),
+      }),
+      viewCommand({
         id: "review.toggle",
         title: language.t("command.review.toggle"),
         keywords: kw("command.review.toggle"),

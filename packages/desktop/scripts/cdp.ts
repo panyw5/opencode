@@ -72,6 +72,12 @@ export async function listTargets(endpoint = DEFAULT_ENDPOINT) {
 }
 
 export function pickPageTarget(targets: CdpTarget[]) {
+  // Agent browser views (agent-browser-* partitions) are page targets too and
+  // can appear before the renderer; always prefer the dev renderer explicitly.
+  const renderer = targets.find(
+    (item) => item.type === "page" && (item.url.includes("localhost:5173") || item.url.startsWith("oc://")),
+  )
+  if (renderer) return renderer
   return targets.find((item) => item.type === "page" && (item.url.startsWith("http") || item.url.startsWith("oc://")))
 }
 

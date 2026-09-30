@@ -27,6 +27,7 @@ import { useSync } from "@/context/sync"
 import { createFileTabListSync } from "@/pages/session/file-tab-scroll"
 import { extraAgentByIntegration } from "@/pages/layout/extra-agents"
 import { FileTabContent } from "@/pages/session/file-tabs"
+import { BrowserPanel } from "@/pages/session/browser-panel"
 import type { ChangeTreeEntry } from "@/pages/session/change-tree-model"
 import { createOpenSessionFileTab, createSessionTabs, getTabReorderIndex, type Sizing } from "@/pages/session/helpers"
 import { setSessionHandoff } from "@/pages/session/handoff"
@@ -58,12 +59,14 @@ export function SessionSidePanel(props: {
 
   const reviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const filePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
+  const browserOpen = createMemo(() => isDesktop() && view().browser.opened())
   const fileOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
-  const open = createMemo(() => reviewOpen() || filePreviewOpen() || fileOpen())
+  const wideOpen = createMemo(() => reviewOpen() || filePreviewOpen() || browserOpen())
+  const open = createMemo(() => wideOpen() || fileOpen())
   const reviewTab = reviewOpen
   const panelWidth = createMemo(() => {
     if (!open()) return "0px"
-    if (reviewOpen() || filePreviewOpen()) return `calc(100% - ${layout.session.width()}px)`
+    if (wideOpen()) return `calc(100% - ${layout.session.width()}px)`
     return `${layout.fileTree.width()}px`
   })
   const treeWidth = createMemo(() => (fileOpen() ? `${layout.fileTree.width()}px` : "0px"))
@@ -251,7 +254,13 @@ export function SessionSidePanel(props: {
     <Show when={isDesktop()}>
       <aside
         id="session-side-panel"
-        aria-label={reviewOpen() ? language.t("session.tab.review") : language.t("session.files.all")}
+        aria-label={
+          browserOpen()
+            ? language.t("command.browser.toggle")
+            : reviewOpen()
+              ? language.t("session.tab.review")
+              : language.t("session.files.all")
+        }
         aria-hidden={!open()}
         inert={!open()}
         class="relative min-w-0 h-full flex shrink-0 overflow-hidden bg-background-base"
@@ -266,14 +275,14 @@ export function SessionSidePanel(props: {
       >
         <div class="size-full flex border-l border-border-weaker-base">
           <div
-            aria-hidden={!reviewOpen() && !filePreviewOpen()}
-            inert={!reviewOpen() && !filePreviewOpen()}
+            aria-hidden={!wideOpen()}
+            inert={!wideOpen()}
             class="relative min-w-0 h-full flex-1 overflow-hidden bg-background-base"
             classList={{
-              "pointer-events-none": !reviewOpen() && !filePreviewOpen(),
+              "pointer-events-none": !wideOpen(),
             }}
           >
-            <div class="size-full min-w-0 h-full bg-background-base">
+            <div class="size-full min-w-0 h-full bg-background-base" classList={{ hidden: browserOpen() }}>
               <DragDropProvider
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
@@ -410,6 +419,12 @@ export function SessionSidePanel(props: {
                   </Show>
                 </DragOverlay>
               </DragDropProvider>
+            </div>
+            {/* Browser shares the wide dock with review/file preview. It stays
+                mounted while hidden so its IPC listeners keep tracking
+                agent-driven tabs and can auto-reveal the panel. */}
+            <div class="size-full min-w-0 h-full bg-background-base" classList={{ hidden: !browserOpen() }}>
+              <BrowserPanel />
             </div>
           </div>
 

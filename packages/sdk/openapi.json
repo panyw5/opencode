@@ -6483,6 +6483,137 @@
         ]
       }
     },
+    "/browser/bridge/ticket": {
+      "post": {
+        "tags": ["browser"],
+        "operationId": "browser.connectToken",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "WebSocket connect token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ticket": {
+                      "type": "string"
+                    },
+                    "expires_in": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    }
+                  },
+                  "required": ["ticket", "expires_in"],
+                  "additionalProperties": false,
+                  "description": "WebSocket connect token"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "BrowserForbiddenError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserForbiddenError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a short-lived ticket for opening the browser bridge WebSocket connection.",
+        "summary": "Create browser bridge WebSocket token",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.browser.connectToken({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/browser/bridge": {
+      "get": {
+        "tags": ["browser"],
+        "operationId": "browser.connect",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connected bridge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "Connected bridge"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/effect_HttpApiError_Forbidden"
+                }
+              }
+            }
+          }
+        },
+        "description": "Establish a WebSocket connection between the opencode server and the desktop browser controller.",
+        "summary": "Connect to the browser bridge",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.browser.connect({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/pty/shells": {
       "get": {
         "tags": ["pty"],
@@ -13280,6 +13411,9 @@
             "$ref": "#/components/schemas/Event.tui.session.select"
           },
           {
+            "$ref": "#/components/schemas/EventBrowserUpdated"
+          },
+          {
             "$ref": "#/components/schemas/EventServerConnected"
           },
           {
@@ -17227,6 +17361,20 @@
         },
         "additionalProperties": false
       },
+      "BrowserForbiddenError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["BrowserForbiddenError"]
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
       "Model": {
         "type": "object",
         "properties": {
@@ -21018,6 +21166,42 @@
           }
         },
         "required": ["type", "name", "id", "seq", "aggregateID", "data"],
+        "additionalProperties": false
+      },
+      "EventBrowserUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["browser.updated"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "partition": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "loading": {
+                "type": "boolean"
+              },
+              "shared": {
+                "type": "boolean"
+              }
+            },
+            "required": ["partition", "url", "title", "loading", "shared"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
       "EventServerConnected": {

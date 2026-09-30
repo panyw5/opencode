@@ -166,6 +166,14 @@ export class PtyForbiddenError extends Schema.TaggedErrorClass<PtyForbiddenError
   { httpApiStatus: 403 },
 ) {}
 
+export class BrowserForbiddenError extends Schema.TaggedErrorClass<BrowserForbiddenError>()(
+  "BrowserForbiddenError",
+  {
+    message: Schema.String,
+  },
+  { httpApiStatus: 403 },
+) {}
+
 export class ProjectNotFoundError extends Schema.TaggedErrorClass<ProjectNotFoundError>()(
   "ProjectNotFoundError",
   {

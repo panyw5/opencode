@@ -17,6 +17,7 @@ import { useServer } from "@/context/server"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { focusTerminalById } from "@/pages/session/helpers"
+import { browserApi } from "@/pages/session/browser-panel"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { messageAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
@@ -353,6 +354,24 @@ export function SessionHeader() {
                     <Icon size="normal" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
                   </Button>
                 </TooltipKeybind>
+
+                <Show when={browserApi()}>
+                  <TooltipKeybind
+                    title={language.t("command.browser.toggle")}
+                    keybind={command.keybind("browser.toggle")}
+                  >
+                    <Button
+                      variant="ghost"
+                      class="group/browser-toggle titlebar-icon w-8 h-8 p-0 box-border shrink-0"
+                      onClick={() => view().browser.toggle()}
+                      aria-label={language.t("command.browser.toggle")}
+                      aria-expanded={view().browser.opened()}
+                      aria-controls="browser-panel"
+                    >
+                      <Icon size="normal" name={view().browser.opened() ? "globe-active" : "globe"} />
+                    </Button>
+                  </TooltipKeybind>
+                </Show>
 
                 <div class="hidden md:flex items-center gap-1 shrink-0">
                   <TooltipKeybind

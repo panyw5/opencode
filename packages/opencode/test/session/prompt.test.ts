@@ -63,6 +63,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { IMOwner } from "@/im/owner"
 import { IM } from "@/im/service"
 import { IMSubscription } from "@/im/subscription"
+import { Browser } from "../../src/browser"
 
 void Log.init({ print: false })
 
@@ -220,6 +221,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provide(Reference.defaultLayer),
     Layer.provide(Ripgrep.defaultLayer),
     Layer.provide(Format.defaultLayer),
+    Layer.provide(Browser.defaultLayer),
     Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })),
     Layer.provide(ProjectTask.defaultLayer),
     Layer.provideMerge(todo),

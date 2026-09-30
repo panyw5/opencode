@@ -19,6 +19,7 @@ const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] a
 const DEFAULT_PANEL_WIDTH = 344
 const DEFAULT_SESSION_WIDTH = 600
 const DEFAULT_TERMINAL_HEIGHT = 280
+const DEFAULT_BROWSER_HEIGHT = 420
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
 
 export function getAvatarColors(key?: string) {
@@ -412,6 +413,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         },
         terminal: {
           height: DEFAULT_TERMINAL_HEIGHT,
+          opened: false,
+        },
+        browser: {
+          height: DEFAULT_BROWSER_HEIGHT,
           opened: false,
         },
         review: {
@@ -1033,6 +1038,16 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setStore("terminal", "height", height)
         },
       },
+      browser: {
+        height: createMemo(() => store.browser?.height ?? DEFAULT_BROWSER_HEIGHT),
+        resize(height: number) {
+          if (!store.browser) {
+            setStore("browser", { height, opened: false })
+            return
+          }
+          setStore("browser", "height", height)
+        },
+      },
       review: {
         diffStyle: createMemo(() => store.review?.diffStyle ?? "split"),
         setDiffStyle(diffStyle: ReviewDiffStyle) {
@@ -1152,6 +1167,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         const key = createSessionKeyReader(sessionKey, ensureKey)
         const s = createMemo(() => store.sessionView[key()] ?? { scroll: {} })
         const terminalOpened = createMemo(() => store.terminal?.opened ?? false)
+        const browserOpened = createMemo(() => store.browser?.opened ?? false)
         const reviewPanelOpened = createMemo(() => store.review?.panelOpened ?? true)
         const filePreviewOpened = createMemo(() => store.filePreview?.opened ?? false)
 
@@ -1167,8 +1183,29 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           setStore("terminal", "opened", next)
         }
 
+        function setBrowserOpened(next: boolean) {
+          // The browser is a right-sidebar view sharing the same dock as the
+          // review panel and file preview, so opening one closes the others.
+          if (next) {
+            setReviewPanelOpened(false)
+            setFilePreviewOpened(false)
+          }
+          const current = store.browser
+          if (!current) {
+            setStore("browser", { height: DEFAULT_BROWSER_HEIGHT, opened: next })
+            return
+          }
+
+          const value = current.opened ?? false
+          if (value === next) return
+          setStore("browser", "opened", next)
+        }
+
         function setReviewPanelOpened(next: boolean) {
-          if (next) setFilePreviewOpened(false)
+          if (next) {
+            setFilePreviewOpened(false)
+            setBrowserOpened(false)
+          }
           const current = store.review
           if (!current) {
             setStore("review", { diffStyle: "split" as ReviewDiffStyle, panelOpened: next })
@@ -1181,7 +1218,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         }
 
         function setFilePreviewOpened(next: boolean) {
-          if (next) setReviewPanelOpened(false)
+          if (next) {
+            setReviewPanelOpened(false)
+            setBrowserOpened(false)
+          }
           if (!store.filePreview) {
             setStore("filePreview", { opened: next })
             return
@@ -1208,6 +1248,18 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
             },
             toggle() {
               setTerminalOpened(!terminalOpened())
+            },
+          },
+          browser: {
+            opened: browserOpened,
+            open() {
+              setBrowserOpened(true)
+            },
+            close() {
+              setBrowserOpened(false)
+            },
+            toggle() {
+              setBrowserOpened(!browserOpened())
             },
           },
           reviewPanel: {

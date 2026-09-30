@@ -392,6 +392,7 @@ declare global {
     }
     api?: {
       setTitlebar?: (theme: { mode: "light" | "dark" }) => Promise<void>
+      browser?: import("@/pages/session/browser-panel").WindowBrowserApi
     }
   }
 }

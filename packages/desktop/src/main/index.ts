@@ -12,6 +12,8 @@ import { app, BrowserWindow } from "electron"
 import contextMenu from "electron-context-menu"
 
 import type { InitStep, ServerReadyData, SqliteMigrationProgress, WslConfig } from "../preload/types"
+import { browserController, USER_PARTITION, warmupBrowserSession } from "./browser"
+import { BridgeClient } from "./browser-bridge-client"
 import { checkAppExists, resolveAppPath, wslPath } from "./apps"
 import { CHANNEL, UPDATER_ENABLED } from "./constants"
 import { configureExtraAgentStartupPaths, reloadExtraAgents } from "./extra-agents"
@@ -191,6 +193,12 @@ const main = Effect.gen(function* () {
   if (!app.isPackaged) {
     app.commandLine.appendSwitch("remote-debugging-port", "9222")
     app.commandLine.appendSwitch("remote-allow-origins", "*")
+    // Dev helper for environments where the Chromium sandbox/GPU cannot initialize
+    // (e.g. launching from restricted agent shells): OPENCODE_DEV_NO_SANDBOX=1
+    if (process.env.OPENCODE_DEV_NO_SANDBOX === "1") {
+      app.commandLine.appendSwitch("no-sandbox")
+      app.commandLine.appendSwitch("disable-gpu")
+    }
   }
 
   if (!app.requestSingleInstanceLock()) {
@@ -255,6 +263,7 @@ const main = Effect.gen(function* () {
   }
 
   const serverReady = Deferred.makeUnsafe<ServerReadyData, unknown>()
+  const bridgeClient = new BridgeClient(browserController)
   const loadingComplete = Deferred.makeUnsafe<void>()
   let reloadBackend: () => Promise<void> = async () => {
     throw new Error("Backend reload is not ready")
@@ -516,6 +525,14 @@ const main = Effect.gen(function* () {
     shouldActivateMainWindow,
   })
   mainWindow = createMainWindow({ activate: shouldActivateMainWindow, show: shouldShowMainWindow })
+  if (mainWindow) {
+    browserController.attachWindow(mainWindow)
+    bridgeClient.start({ url, username: "opencode", password })
+    warmupBrowserSession(USER_PARTITION)
+  }
+  if (process.env.OPENCODE_BROWSER_SPIKE === "1") {
+    import("./browser-spike").then(({ startBrowserSpike }) => startBrowserSpike(mainWindow!))
+  }
   if (process.platform === "darwin") {
     app.off("did-resign-active", onResignActive)
     app.off("did-become-active", onBecomeActive)

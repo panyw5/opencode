@@ -1,0 +1,13 @@
+Type text into an element on the page currently open in the embedded desktop browser.
+
+Clicks the element (focusing it), clears its existing content by default, and
+inserts `text` as real input events. With `submit: true` an Enter keypress is
+sent afterwards — use it for search boxes and forms; the tool then waits for
+the resulting navigation to settle and reports the fresh URL.
+
+`uid` comes from the most recent browser_read snapshot of this session.
+
+Notes:
+- Requires the opencode desktop app.
+- Every type action asks the user for permission (pattern: the current page URL).
+- uids are invalid after navigation; take a new snapshot if the page changed.

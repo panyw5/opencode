@@ -46,6 +46,7 @@ import { SystemPrompt } from "../../src/session/system"
 import { Todo } from "../../src/session/todo"
 import { ToolRegistry } from "../../src/tool/registry"
 import { Truncate } from "../../src/tool/truncate"
+import { Browser } from "../../src/browser"
 import { Question } from "../../src/question"
 import { Discovery } from "../../src/skill/discovery"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
@@ -148,6 +149,7 @@ const registry = ToolRegistry.layer.pipe(
   Layer.provide(Discovery.defaultLayer), Layer.provide(FetchHttpClient.layer), Layer.provide(CrossSpawnSpawner.defaultLayer),
   Layer.provide(RepositoryCache.defaultLayer), Layer.provide(Git.defaultLayer), Layer.provide(Reference.defaultLayer), Layer.provide(Ripgrep.defaultLayer), Layer.provide(Format.defaultLayer),
   Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provide(ProjectTask.defaultLayer), Layer.provide(SystemPrompt.defaultLayer), Layer.provideMerge(todo), Layer.provideMerge(question), Layer.provideMerge(dependencies),
+  Layer.provide(Browser.defaultLayer),
 )
 const truncate = Truncate.layer.pipe(Layer.provideMerge(dependencies))
 const processor = SessionProcessor.layer.pipe(Layer.provide(summary), Layer.provide(Image.defaultLayer), Layer.provide(RuntimeFlags.layer({ experimentalEventSystem: true })), Layer.provideMerge(dependencies))

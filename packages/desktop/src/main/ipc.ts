@@ -15,6 +15,8 @@ import type {
   WindowConfig,
   WslConfig,
 } from "../preload/types"
+import type { BrowserBounds } from "../preload/types"
+import { browserController } from "./browser"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { getAppLaunchPlan, getPowerShellLauncherArgs } from "./apps"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
@@ -109,6 +111,39 @@ type Deps = {
 
 export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
+  ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, partition: string, url: string) =>
+    browserController.open(partition, url),
+  )
+  ipcMain.handle("browser-set-bounds", (_event: IpcMainInvokeEvent, partition: string, bounds: BrowserBounds | null) =>
+    browserController.setBounds(partition, bounds),
+  )
+  ipcMain.handle("browser-set-visible", (_event: IpcMainInvokeEvent, partition: string, visible: boolean) =>
+    browserController.setVisible(partition, visible),
+  )
+  ipcMain.handle("browser-close", (_event: IpcMainInvokeEvent, partition: string) => browserController.close(partition))
+  ipcMain.handle(
+    "browser-navigate",
+    (_event: IpcMainInvokeEvent, partition: string, action: "back" | "forward" | "reload") => {
+      const cdp = browserController.cdp(partition)
+      if (action === "back") cdp.back()
+      else if (action === "forward") cdp.forward()
+      else cdp.reload()
+    },
+  )
+  ipcMain.handle("browser-set-shared", (_event: IpcMainInvokeEvent, partition: string, shared: boolean) =>
+    browserController.setShared(partition, shared),
+  )
+  ipcMain.handle("browser-get-state", () => browserController.getState())
+  browserController.onViewState((state) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("browser-updated", state)
+    }
+  })
+  browserController.onViewClosed((partition) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("browser-closed", partition)
+    }
+  })
   ipcMain.handle("install-cli", () => installCli())
   ipcMain.handle("reload-backend", () => deps.reloadBackend())
   ipcMain.handle("await-initialization", (event: IpcMainInvokeEvent) => {

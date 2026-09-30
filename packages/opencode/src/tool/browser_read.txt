@@ -1,0 +1,17 @@
+Read the structure of the page currently open in the embedded desktop browser.
+
+Returns an accessibility-tree snapshot of the interactive and structural
+elements as a flat list. Each line carries a `uid` you pass to browser_click /
+browser_type to interact with that element, plus its role and accessible name.
+
+Use this after browser_navigate to discover what is on the page and which
+elements are actionable. For static content you do not need to interact with,
+prefer webfetch.
+
+Notes:
+- Requires the opencode desktop app.
+- uids are only valid for the current page state. After any navigation
+  (including clicks that open a new page) take a new snapshot; clicking a
+  stale uid fails with guidance.
+- Large pages are truncated; narrow down by navigating closer to the target
+  content instead of re-reading.

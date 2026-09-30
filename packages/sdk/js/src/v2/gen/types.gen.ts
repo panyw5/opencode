@@ -82,6 +82,7 @@ export type Event =
   | EventSessionNextCompactionStarted
   | EventSessionNextCompactionDelta
   | EventSessionNextCompactionEnded
+  | EventBrowserUpdated
   | EventServerConnected
   | EventGlobalDisposed
   | EventGlobalConfigUpdated
@@ -1460,6 +1461,7 @@ export type GlobalEvent = {
     | EventSessionNextCompactionStarted
     | EventSessionNextCompactionDelta
     | EventSessionNextCompactionEnded
+    | EventBrowserUpdated
     | EventServerConnected
     | EventGlobalDisposed
     | EventGlobalConfigUpdated
@@ -1501,6 +1503,11 @@ export type GlobalEvent = {
     | SyncEventSessionNextCompactionStarted
     | SyncEventSessionNextCompactionDelta
     | SyncEventSessionNextCompactionEnded
+}
+
+export type BrowserForbiddenError = {
+  _tag: "BrowserForbiddenError"
+  message: string
 }
 
 export type Model = {
@@ -1667,6 +1674,7 @@ export type GlobalSession = {
   id: string
   slug: string
   projectID: string
+  locationID?: string
   workspaceID?: string
   directory: string
   path?: string
@@ -3753,6 +3761,18 @@ export type EventSessionNextCompactionEnded = {
   }
 }
 
+export type EventBrowserUpdated = {
+  id: string
+  type: "browser.updated"
+  properties: {
+    partition: string
+    url: string
+    title: string
+    loading: boolean
+    shared: boolean
+  }
+}
+
 export type EventServerConnected = {
   id: string
   type: "server.connected"
@@ -3943,7 +3963,6 @@ export type SessionInfo = {
   id: string
   parentID?: string
   projectID: string
-  locationID?: string
   workspaceID?: string
   path?: string
   agent?: string
@@ -4828,6 +4847,41 @@ export type BackgroundShellStopResponses = {
 }
 
 export type BackgroundShellStopResponse = BackgroundShellStopResponses[keyof BackgroundShellStopResponses]
+
+export type BrowserConnectTokenData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/browser/bridge/ticket"
+}
+
+export type BrowserConnectTokenErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * BrowserForbiddenError
+   */
+  403: BrowserForbiddenError
+}
+
+export type BrowserConnectTokenError = BrowserConnectTokenErrors[keyof BrowserConnectTokenErrors]
+
+export type BrowserConnectTokenResponses = {
+  /**
+   * WebSocket connect token
+   */
+  200: {
+    ticket: string
+    expires_in: number
+  }
+}
+
+export type BrowserConnectTokenResponse = BrowserConnectTokenResponses[keyof BrowserConnectTokenResponses]
 
 export type ConfigGetData = {
   body?: never
@@ -6926,12 +6980,18 @@ export type ProjectOpenData = {
 }
 
 export type ProjectOpenErrors = {
-  400: BadRequestError
+  /**
+   * BadRequest | InvalidRequestError
+   */
+  400: EffectHttpApiErrorBadRequest | InvalidRequestError
 }
 
 export type ProjectOpenError = ProjectOpenErrors[keyof ProjectOpenErrors]
 
 export type ProjectOpenResponses = {
+  /**
+   * Project information after an explicit user open
+   */
   200: Project
 }
 
@@ -10684,6 +10744,42 @@ export type ExperimentalWorkspaceWarpResponses = {
 export type ExperimentalWorkspaceWarpResponse =
   ExperimentalWorkspaceWarpResponses[keyof ExperimentalWorkspaceWarpResponses]
 
+export type SessionPresentationData = {
+  body?: never
+  path: {
+    sessionID: string
+    artifactID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    variant?: "thumbnail" | "original"
+  }
+  url: "/session/{sessionID}/presentation/{artifactID}"
+}
+
+export type SessionPresentationErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type SessionPresentationError = SessionPresentationErrors[keyof SessionPresentationErrors]
+
+export type SessionPresentationResponses = {
+  /**
+   * Success
+   */
+  200: Blob | File
+}
+
+export type SessionPresentationResponse = SessionPresentationResponses[keyof SessionPresentationResponses]
+
 export type PtyConnectData = {
   body?: never
   path: {
@@ -10717,3 +10813,31 @@ export type PtyConnectResponses = {
 }
 
 export type PtyConnectResponse = PtyConnectResponses[keyof PtyConnectResponses]
+
+export type BrowserConnectData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/browser/bridge"
+}
+
+export type BrowserConnectErrors = {
+  /**
+   * Forbidden
+   */
+  403: EffectHttpApiErrorForbidden
+}
+
+export type BrowserConnectError = BrowserConnectErrors[keyof BrowserConnectErrors]
+
+export type BrowserConnectResponses = {
+  /**
+   * Connected bridge
+   */
+  200: boolean
+}
+
+export type BrowserConnectResponse = BrowserConnectResponses[keyof BrowserConnectResponses]

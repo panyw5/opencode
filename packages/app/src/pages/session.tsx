@@ -296,16 +296,18 @@ export default function Page() {
   const size = createSizing()
   const desktopReviewOpen = createMemo(() => isDesktop() && view().reviewPanel.opened())
   const desktopFilePreviewOpen = createMemo(() => isDesktop() && view().filePreview.opened())
+  const desktopBrowserOpen = createMemo(() => isDesktop() && view().browser.opened())
   const desktopFileTreeOpen = createMemo(() => isDesktop() && layout.fileTree.opened())
   const desktopSidePanelOpen = createMemo(
-    () => desktopReviewOpen() || desktopFilePreviewOpen() || desktopFileTreeOpen(),
+    () => desktopReviewOpen() || desktopFilePreviewOpen() || desktopBrowserOpen() || desktopFileTreeOpen(),
   )
+  const desktopWidePanelOpen = createMemo(() => desktopReviewOpen() || desktopFilePreviewOpen() || desktopBrowserOpen())
   const sessionPanelWidth = createMemo(() => {
     if (!desktopSidePanelOpen()) return "100%"
-    if (desktopReviewOpen() || desktopFilePreviewOpen()) return `${layout.session.width()}px`
+    if (desktopWidePanelOpen()) return `${layout.session.width()}px`
     return `calc(100% - ${layout.fileTree.width()}px)`
   })
-  const centered = createMemo(() => isDesktop() && !desktopReviewOpen() && !desktopFilePreviewOpen())
+  const centered = createMemo(() => isDesktop() && !desktopWidePanelOpen())
 
   function normalizeTab(tab: string) {
     if (!tab.startsWith("file://")) return tab
@@ -3722,7 +3724,7 @@ export default function Page() {
             </div>
           </Show>
 
-          <Show when={desktopReviewOpen() || desktopFilePreviewOpen()}>
+          <Show when={desktopWidePanelOpen()}>
             <div onPointerDown={() => size.start()}>
               <ResizeHandle
                 direction="horizontal"

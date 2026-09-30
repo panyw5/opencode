@@ -1,0 +1,14 @@
+Read console messages from the page currently open in the embedded desktop browser.
+
+Returns error and warning entries captured from the page's console since the
+previous call to this tool (incremental). The first call returns everything
+captured so far.
+
+Use this to diagnose broken pages after navigating or interacting: uncaught
+exceptions, failed network requests logged by the app, deprecation warnings.
+
+Notes:
+- Requires the opencode desktop app.
+- Console capture only covers pages opened through the browser tools in this
+  session; entries are buffered in the server, not re-read from the page.
+- Pass `all: true` to return the full buffer instead of the incremental delta.

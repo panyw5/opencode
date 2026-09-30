@@ -1,8 +1,31 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron"
-import type { ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
+import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
 
 const api: ElectronAPI = {
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
+  browser: {
+    open: (partition, url) => ipcRenderer.invoke("browser-open", partition, url),
+    setBounds: (partition, bounds) => ipcRenderer.invoke("browser-set-bounds", partition, bounds),
+    setVisible: (partition, visible) => ipcRenderer.invoke("browser-set-visible", partition, visible),
+    close: (partition) => ipcRenderer.invoke("browser-close", partition),
+    navigate: (partition, action) => ipcRenderer.invoke("browser-navigate", partition, action),
+    setShared: (partition, shared) => ipcRenderer.invoke("browser-set-shared", partition, shared),
+    getState: () => ipcRenderer.invoke("browser-get-state"),
+    onUpdated: (cb) => {
+      const handler = (_: unknown, state: BrowserViewState) => cb(state)
+      ipcRenderer.on("browser-updated", handler)
+      return () => {
+        ipcRenderer.removeListener("browser-updated", handler)
+      }
+    },
+    onClosed: (cb) => {
+      const handler = (_: unknown, partition: string) => cb(partition)
+      ipcRenderer.on("browser-closed", handler)
+      return () => {
+        ipcRenderer.removeListener("browser-closed", handler)
+      }
+    },
+  },
   installCli: () => ipcRenderer.invoke("install-cli"),
   reloadBackend: () => ipcRenderer.invoke("reload-backend"),
   awaitInitialization: (onStep) => {

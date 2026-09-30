@@ -15,6 +15,8 @@ import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
 import { BackgroundShell } from "@/background/shell"
 import { BackgroundJob } from "@/background/job"
+import { BrowserBridge } from "@/browser/bridge"
+import { BrowserTicket } from "@/browser/ticket"
 import { Bus } from "@/bus"
 import { Config } from "@/config/config"
 import { Command } from "@/command"
@@ -70,6 +72,7 @@ import { PublicApi } from "./public"
 import { authorizationLayer, authorizationRouterMiddleware, v2AuthorizationLayer } from "./middleware/authorization"
 import { EventApi } from "./groups/event"
 import { backgroundShellHandlers } from "./handlers/background-shell"
+import { browserConnectRoute, browserHandlers } from "./handlers/browser"
 import { eventHandlers } from "./handlers/event"
 import { configHandlers } from "./handlers/config"
 import { controlHandlers } from "./handlers/control"
@@ -136,6 +139,7 @@ const eventApiRoutes = HttpApiBuilder.layer(EventApi).pipe(
 const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   Layer.provide([
     backgroundShellHandlers,
+    browserHandlers,
     configHandlers,
     // Share BackgroundJob / RuntimeFlags with SessionPrompt + ToolRegistry
     // (provided below in createRoutes). A private BackgroundJob layer here
@@ -160,7 +164,9 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
   ]),
 )
 
-const rawInstanceRoutes = Layer.mergeAll(ptyConnectRoute).pipe(Layer.provide(instanceRouterLayer))
+const rawInstanceRoutes = Layer.mergeAll(ptyConnectRoute, browserConnectRoute).pipe(
+  Layer.provide(instanceRouterLayer),
+)
 const instanceRoutes = Layer.mergeAll(rawInstanceRoutes, instanceApiRoutes).pipe(
   Layer.provide([
     httpApiAuthLayer,
@@ -217,6 +223,8 @@ export function createRoutes(
       Auth.defaultLayer,
       BackgroundJob.defaultLayer,
       BackgroundShell.defaultLayer,
+      BrowserBridge.defaultLayer,
+      BrowserTicket.defaultLayer,
       Command.defaultLayer,
       Config.defaultLayer,
       File.defaultLayer,

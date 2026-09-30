@@ -1,0 +1,16 @@
+Capture a screenshot of the page currently open in the embedded desktop browser.
+
+Returns a PNG image as an attachment so you can visually verify rendering,
+layout, and styling that an accessibility snapshot cannot show. With
+`fullPage: true` the capture covers the entire scrollable page instead of the
+visible viewport.
+
+Use this to check your own work after navigating or interacting (M2-style
+self-verification), or to inspect canvas/chart content.
+
+Notes:
+- Requires the opencode desktop app.
+- The first call asks the user for permission; approving "always" covers
+  subsequent screenshots for the session.
+- Screenshots are for looking, not for reading text: prefer browser_read when
+  you need the page structure or element uids.

@@ -40,6 +40,7 @@ import { ProjectTask } from "@/project-task/service"
 import { IM } from "@/im/service"
 import { IMOwner } from "@/im/owner"
 import { IMSubscription } from "@/im/subscription"
+import { Browser } from "@/browser"
 
 const node = CrossSpawnSpawner.defaultLayer
 const configLayer = TestConfig.layer({
@@ -85,6 +86,7 @@ const registryLayer = (opts: RegistryLayerOptions = {}) =>
       Layer.provide(node),
       Layer.provide(Ripgrep.defaultLayer),
       Layer.provide(Truncate.defaultLayer),
+      Layer.provide(Browser.defaultLayer),
     )
     .pipe(Layer.provide(RuntimeFlags.layer(opts.flags ?? {})))
 

@@ -1,0 +1,18 @@
+Navigate the embedded desktop browser to a URL.
+
+Opens (or reuses) the browser view for this session and loads the URL, waiting
+for the main frame to finish navigating before returning.
+
+Use this when you need a real, JavaScript-rendered, or interactive page: local
+dev servers, apps behind logins, SPAs, or anything you must click or type into.
+For fetching static page content as text, prefer the webfetch tool — it does
+not require the desktop app.
+
+Requirements and notes:
+- Requires the opencode desktop app with its embedded browser available; in
+  headless/CLI/remote sessions the tool fails with guidance instead.
+- `url` must be an absolute http:// or https:// URL.
+- Every navigation asks the user for permission (pattern: the URL). Batch
+  related navigations and mention why you need them.
+- After navigating, use browser_read to inspect the page structure. uids from
+  an earlier page are invalid after navigation.
