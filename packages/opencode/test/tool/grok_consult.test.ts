@@ -92,15 +92,86 @@ describe("tool.grok_consult helpers", () => {
     expect(state.transcript.some((item) => item.kind === "message" && item.text === "done")).toBe(true)
   })
 
-  test("applyGrokJsonlLine keeps an interleaved assistant stream after later thinking", () => {
+  test("applyGrokJsonlLine keeps transcript entries in chronological order when thinking interrupts the reply", () => {
     const state = createGrokLiveState()
     applyGrokJsonlLine(state, JSON.stringify({ type: "text", data: "Draft answer" }))
     applyGrokJsonlLine(state, JSON.stringify({ type: "thought", data: "Checking sources" }))
     applyGrokJsonlLine(state, JSON.stringify({ type: "end", sessionId: "session_1" }))
 
-    expect(state.transcript.map((item) => item.kind)).toEqual(["thinking", "message", "status"])
-    expect(state.transcript.find((item) => item.id === "assistant:stream")).toMatchObject({ status: "completed" })
+    expect(state.transcript.map((item) => item.kind)).toEqual(["message", "thinking", "status"])
+    expect(state.transcript.find((item) => item.kind === "message")).toMatchObject({
+      id: "assistant:1",
+      status: "completed",
+    })
     expect(state.transcript.find((item) => item.title === "Turn completed")?.text).toBeUndefined()
+  })
+
+  test("applyGrokJsonlLine segments the reply around interleaved tool calls", () => {
+    const state = createGrokLiveState()
+    applyGrokJsonlLine(state, JSON.stringify({ type: "thought", data: "Plan first" }))
+    applyGrokJsonlLine(state, JSON.stringify({ type: "text", data: "Let me check " }))
+    applyGrokJsonlLine(state, JSON.stringify({ type: "tool_call", id: "read-1", name: "read_file", input: { path: "/a" } }))
+    applyGrokJsonlLine(state, JSON.stringify({ type: "text", data: "the file" }))
+    applyGrokJsonlLine(state, JSON.stringify({ type: "end", sessionId: "session_1" }))
+
+    expect(state.transcript.map((item) => item.kind)).toEqual(["thinking", "message", "tool_use", "message", "status"])
+    const segments = state.transcript.filter((item) => item.kind === "message")
+    expect(segments).toHaveLength(2)
+    expect(segments[0]).toMatchObject({ id: "assistant:1", text: "Let me check ", status: "completed" })
+    expect(segments[1]).toMatchObject({ id: "assistant:2", text: "the file", status: "completed" })
+    expect(state.assistantText).toBe("Let me check the file")
+    expect(state.preview).toBe("Let me check the file")
+  })
+
+  test("applyGrokJsonlLine tracks real tool_call and tool_call_update events", () => {
+    const state = createGrokLiveState()
+    applyGrokJsonlLine(
+      state,
+      JSON.stringify({
+        type: "tool_call",
+        toolCallId: "call-abc-0",
+        title: "run_terminal_command",
+        kind: "execute",
+        status: "pending",
+        toolName: "run_terminal_command",
+        rawInput: { command: "date", description: "Get current date" },
+      }),
+    )
+    applyGrokJsonlLine(
+      state,
+      JSON.stringify({
+        type: "tool_call_update",
+        toolCallId: "call-abc-0",
+        status: "in_progress",
+        content: [{ type: "content", content: { type: "text", text: "" } }],
+      }),
+    )
+    applyGrokJsonlLine(
+      state,
+      JSON.stringify({
+        type: "tool_call_update",
+        toolCallId: "call-abc-0",
+        status: "completed",
+        content: [{ type: "content", content: { type: "text", text: "2026-09-27 Sunday" } }],
+      }),
+    )
+
+    const tool = state.transcript.find((item) => item.kind === "tool_use")
+    expect(tool).toMatchObject({
+      id: "call-abc-0",
+      title: "run_terminal_command",
+      status: "completed",
+    })
+    expect(tool?.text).toContain("date")
+    expect(tool?.text).toContain("2026-09-27 Sunday")
+  })
+
+  test("applyGrokJsonlLine ignores tool_call_update without a matching tool_call", () => {
+    const state = createGrokLiveState()
+    expect(
+      applyGrokJsonlLine(state, JSON.stringify({ type: "tool_call_update", toolCallId: "missing", status: "completed" })),
+    ).toBe(false)
+    expect(state.transcript).toEqual([])
   })
 
   test("parseGrokJsonl captures error events and ignores non-json noise", () => {

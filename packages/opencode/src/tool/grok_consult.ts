@@ -58,6 +58,9 @@ export type GrokLiveState = {
   sessionId?: string
   error?: string
   assistantText: string
+  assistantSegmentText: string
+  assistantIndex: number
+  assistantOpen: boolean
   thinkingText: string
   thinkingIndex: number
   thinkingOpen: boolean
@@ -119,7 +122,16 @@ export function buildGrokResumeArgs(input: GrokExecBuildInput & { sessionId: str
 }
 
 export function createGrokLiveState(): GrokLiveState {
-  return { assistantText: "", thinkingText: "", thinkingIndex: 0, thinkingOpen: false, transcript: [] }
+  return {
+    assistantText: "",
+    assistantSegmentText: "",
+    assistantIndex: 0,
+    assistantOpen: false,
+    thinkingText: "",
+    thinkingIndex: 0,
+    thinkingOpen: false,
+    transcript: [],
+  }
 }
 
 /** Apply one `grok --output-format streaming-json` event into live state. */
@@ -142,18 +154,21 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
     const chunk = string(item.data) ?? string(item.text) ?? ""
     if (!chunk) return false
     closeThinking(state)
+    if (!state.assistantOpen) {
+      state.assistantOpen = true
+      state.assistantIndex++
+      state.assistantSegmentText = ""
+    }
     state.assistantText += chunk
+    state.assistantSegmentText += chunk
     state.preview = state.assistantText
     upsertTranscript(state, {
-      id: "assistant:stream",
+      id: `assistant:${state.assistantIndex}`,
       kind: "message",
       title: "Assistant",
-      text: clip(state.assistantText, MAX_TRANSCRIPT_TEXT),
+      text: clip(state.assistantSegmentText, MAX_TRANSCRIPT_TEXT),
       status: "running",
     })
-    // Grok can interleave more thinking/tool events after starting its reply.
-    // Keep the mutable reply at the end so the transcript remains readable.
-    moveTranscriptToEnd(state, "assistant:stream")
     return true
   }
 
@@ -173,22 +188,39 @@ export function applyGrokJsonlLine(state: GrokLiveState, rawLine: string): boole
       text: clip(state.thinkingText, MAX_TRANSCRIPT_TEXT),
       status: "running",
     })
-    moveTranscriptToEnd(state, "assistant:stream")
+    closeAssistant(state)
     return true
   }
 
   if (type === "tool_call" || type === "tool") {
     closeThinking(state)
-    const id = string(item.id) ?? `tool:${state.transcript.length}`
-    const title = string(item.title) ?? string(item.name) ?? "Tool"
+    closeAssistant(state)
+    // Real CLI event: { type, toolCallId, title, toolName, status: "pending", rawInput }.
+    const id = string(item.toolCallId) ?? string(item.id) ?? `tool:${state.transcript.length}`
+    const title = string(item.title) ?? string(item.toolName) ?? string(item.name) ?? "Tool"
     upsertTranscript(state, {
       id,
       kind: "tool_use",
       title,
-      text: clip(stringify(item.input ?? item.data), MAX_TRANSCRIPT_TEXT),
-      status: string(item.status) ?? "running",
+      text: clip(stringify(item.rawInput ?? item.input ?? item.data), MAX_TRANSCRIPT_TEXT),
+      status: string(item.status) ?? "pending",
     })
-    moveTranscriptToEnd(state, "assistant:stream")
+    return true
+  }
+
+  if (type === "tool_call_update") {
+    // Real CLI event: { type, toolCallId, status: null | "in_progress" | "completed", content: [{ content: { text } }] }.
+    const id = string(item.toolCallId) ?? string(item.id)
+    if (!id) return false
+    const index = state.transcript.findIndex((entry) => entry.id === id)
+    if (index < 0) return false
+    const status = mapToolStatus(item.status)
+    if (status) state.transcript[index]!.status = status
+    const result = toolResultText(item.content)
+    if (result) {
+      const entry = state.transcript[index]!
+      entry.text = clip(entry.text ? `${entry.text}\n${result}` : result, MAX_TRANSCRIPT_TEXT)
+    }
     return true
   }
 
@@ -444,16 +476,12 @@ function upsertTranscript(state: GrokLiveState, item: GrokTranscriptItem) {
   }
 }
 
-function moveTranscriptToEnd(state: GrokLiveState, id: string) {
-  const index = state.transcript.findIndex((entry) => entry.id === id)
-  if (index < 0 || index === state.transcript.length - 1) return
-  const [item] = state.transcript.splice(index, 1)
-  if (item) state.transcript.push(item)
-}
-
 function closeAssistant(state: GrokLiveState) {
-  const item = state.transcript.find((entry) => entry.id === "assistant:stream")
-  if (item?.status === "running") item.status = "completed"
+  if (!state.assistantOpen) return
+  state.assistantOpen = false
+  const id = `assistant:${state.assistantIndex}`
+  const item = state.transcript.find((entry) => entry.id === id)
+  if (item) item.status = "completed"
 }
 
 function closeThinking(state: GrokLiveState) {
@@ -462,6 +490,25 @@ function closeThinking(state: GrokLiveState) {
   const id = `thinking:${state.thinkingIndex}`
   const item = state.transcript.find((entry) => entry.id === id)
   if (item) item.status = "completed"
+}
+
+function mapToolStatus(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined
+  if (value === "in_progress") return "running"
+  return value
+}
+
+function toolResultText(content: unknown): string {
+  if (!Array.isArray(content)) return ""
+  const chunks: string[] = []
+  for (const entry of content) {
+    if (!entry || typeof entry !== "object") continue
+    const inner = (entry as Record<string, unknown>).content
+    if (!inner || typeof inner !== "object") continue
+    const text = (inner as Record<string, unknown>).text
+    if (typeof text === "string" && text.trim()) chunks.push(text.trim())
+  }
+  return chunks.join("\n")
 }
 
 function resolveWorkingDirectory(input: string | undefined, projectDirectory: string): string {
