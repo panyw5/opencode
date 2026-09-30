@@ -66,14 +66,15 @@ const displayUrl = (url: string) => (url === "about:blank" ? "" : url)
 let tabSeq = 0
 
 // External open requests (e.g. the file preview "open in embedded browser"
-// button). Tab creation, activation and the address bar are all panel state,
-// so the mounted panel instance registers a handler and owns the actual open.
-// No-op when no panel is mounted (non-desktop or panel never shown this run).
-let openTabHandler: ((url: string) => void) | undefined
+// button) travel over a window CustomEvent, not a module-level handler slot:
+// an HMR update re-evaluates this module and would reset a module variable,
+// permanently orphaning the live panel instance. Events are re-registered by
+// whichever panel instance is mounted, so hot reloads self-heal.
+const OPEN_TAB_EVENT = "browser-panel:open-tab"
 
-/** Open a URL in a fresh user tab of the embedded browser panel. */
+/** Open a URL in a fresh user tab of the embedded browser panel. No-op when no panel is mounted. */
 export function openInBrowserTab(url: string) {
-  openTabHandler?.(url)
+  window.dispatchEvent(new CustomEvent(OPEN_TAB_EVENT, { detail: url }))
 }
 
 type BrowserTab = {
@@ -182,10 +183,10 @@ export function BrowserPanel(props: { class?: string }) {
     if (!api) return
     // External open requests land here: addUserTab creates the partition,
     // navigates, activates the tab and freezes the address bar pending commit.
-    const handleOpenTab = (url: string) => addUserTab(url)
-    openTabHandler = handleOpenTab
+    const handleOpenTab = (event: Event) => addUserTab((event as CustomEvent<string>).detail)
+    window.addEventListener(OPEN_TAB_EVENT, handleOpenTab)
     onCleanup(() => {
-      if (openTabHandler === handleOpenTab) openTabHandler = undefined
+      window.removeEventListener(OPEN_TAB_EVENT, handleOpenTab)
     })
     const ro = new ResizeObserver(syncBounds)
     ro.observe(placeholder!)
@@ -250,15 +251,6 @@ export function BrowserPanel(props: { class?: string }) {
       if (busy && !opened()) {
         view().browser.open()
         setActive(busy.partition)
-      }
-      // First run (no persisted user views): start from one blank tab so the
-      // panel is not empty on open. Runs once per mount — closing the last
-      // tab mid-session must stay a close.
-      if (
-        !states.some((state) => !isAgentPartition(state.partition) && !closedTabs.has(state.partition)) &&
-        !Object.keys(views()).some((partition) => !isAgentPartition(partition))
-      ) {
-        addUserTab()
       }
     })
   })
@@ -425,9 +417,11 @@ export function BrowserPanel(props: { class?: string }) {
 
   const tabLabel = (tab: BrowserTab) => {
     // Interstitial pages (e.g. Google /sorry) expose their URL as the title —
-    // fall back to the hostname so the tab never shows a raw URL.
+    // fall back to the hostname so the tab never shows a raw URL. Chromium's
+    // about:blank page literally titles itself "about:blank" — treat that as
+    // empty so the blank tab shows the static label.
     const title = tab.state?.title?.trim()
-    if (title && !/^https?:\/\//i.test(title)) return title
+    if (title && title !== "about:blank" && !/^https?:\/\//i.test(title)) return title
     try {
       const parsed = new URL(tab.state?.url ?? "")
       // file:// URLs have no hostname — show the file name instead.
