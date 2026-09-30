@@ -1,3 +1,5 @@
+import { homedir } from "node:os"
+import { pathToFileURL } from "node:url"
 import { BrowserWindow, session, WebContentsView, type Rectangle } from "electron"
 import { write as writeLog } from "./logging"
 import { BrowserCdp } from "./browser-cdp"
@@ -15,6 +17,23 @@ export const agentPartition = (sessionID: string) => `agent-browser-${sessionID}
 
 const BROWSER_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+// Local file support: anything with a scheme (http:, file:, about:, ...) passes
+// through untouched; bare absolute paths and ~-prefixed paths are converted to
+// file:// URLs. This is the single choke point for every navigation source —
+// the panel address bar (IPC) and the agent browser_* tools (bridge) both land
+// in controller.open(), so the conversion lives here rather than at each caller.
+// Relative paths are deliberately not resolved: the main process cwd is the
+// app launch dir, which is meaningless for sessions rooted elsewhere.
+export function normalizeTargetUrl(input: string): string {
+  const trimmed = input.trim()
+  if (!trimmed) return trimmed
+  if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return trimmed
+  let path = trimmed
+  if (path.startsWith("~/")) path = homedir() + path.slice(1)
+  if (path.startsWith("/")) return pathToFileURL(path).toString()
+  return trimmed
+}
 
 export type ViewState = {
   partition: string
@@ -157,11 +176,12 @@ export class BrowserController {
 
   /** Navigate (creating the view if needed) and make it visible. */
   async open(partition: string, url: string) {
+    const target = normalizeTargetUrl(url)
     const entry = this.ensure(partition)
     entry.view.setVisible(entry.visible)
-    if (url !== entry.view.webContents.getURL()) {
-      await entry.cdp.navigate(url).catch((error) => {
-        log("open", "navigate failed", { partition, url, error: String(error) })
+    if (target !== entry.view.webContents.getURL()) {
+      await entry.cdp.navigate(target).catch((error) => {
+        log("open", "navigate failed", { partition, url: target, error: String(error) })
         throw error
       })
     }

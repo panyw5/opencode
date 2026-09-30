@@ -4,7 +4,10 @@ import DESCRIPTION from "./browser_navigate.txt"
 import { Browser } from "@/browser"
 
 const Parameters = Schema.Struct({
-  url: Schema.String.annotate({ description: "Absolute URL to open (http:// or https://)" }),
+  url: Schema.String.annotate({
+    description:
+      "Absolute URL (http://, https://, or file://) or an absolute local file path (e.g. /path/to/report.html, ~/report.html) to open",
+  }),
 })
 
 export const BrowserNavigateTool = Tool.define(
