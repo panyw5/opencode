@@ -11,6 +11,7 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tabs } from "@opencode-ai/ui/tabs"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { selectionFromLines, useFile, type FileSelection, type SelectedLineRange } from "@/context/file"
 import { useComments } from "@/context/comments"
 import { useLanguage } from "@/context/language"
@@ -21,6 +22,7 @@ import { getSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { fileContentCacheKey } from "@/pages/session/file-cache-key"
+import { openInBrowserTab } from "@/pages/session/browser-panel"
 import { OpenInApp } from "@/components/open-in-app"
 
 function FileCommentMenu(props: {
@@ -100,7 +102,34 @@ export function FileTabContent(props: { tab: string }) {
     if (!p) return
     return `${sdk.directory.replace(/[\\/]+$/, "")}/${p}`
   })
-  const openWithAction = <OpenInApp path={fullPath()} logPrefix="file-preview" />
+  const html = createMemo(() => /\.html?$/i.test(path() ?? ""))
+  // Hand the file to the embedded browser panel: it renders the page natively
+  // (the preview here shows source). Opening the panel first matters — tab
+  // visibility follows opened() + active(), and the side panel docks are
+  // mutually exclusive, so the preview unmounts as the browser takes over.
+  const openInEmbeddedBrowser = () => {
+    const target = fullPath()
+    if (!target) return
+    console.debug(`[file-preview] open-in-browser path=${target}`)
+    view().browser.open()
+    openInBrowserTab(target)
+  }
+  const openWithAction = (
+    <>
+      <Show when={html()}>
+        <Tooltip value={language.t("panel.browser.openFile")} placement="bottom">
+          <IconButton
+            icon="globe"
+            variant="ghost"
+            class="h-8 w-8 rounded-md"
+            onClick={openInEmbeddedBrowser}
+            aria-label={language.t("panel.browser.openFile")}
+          />
+        </Tooltip>
+      </Show>
+      <OpenInApp path={fullPath()} logPrefix="file-preview" />
+    </>
+  )
   const [copyState, setCopyState] = createStore({ kind: "" as "path" | "content" | "" })
   let copiedTimer: ReturnType<typeof setTimeout> | undefined
   const markCopied = (kind: "path" | "content") => {

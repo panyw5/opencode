@@ -220,6 +220,7 @@ export const dict = {
   "panel.browser.share": "Share page with agent",
   "panel.browser.addressPlaceholder": "Search or enter address",
   "panel.browser.empty": "No tabs — press + to open one",
+  "panel.browser.openFile": "Open in embedded browser",
   "panel.browser.closeAgentConfirm": "This tab is driven by the agent — close it? It reopens if the agent needs it.",
   "panel.browser.closeAction": "Close",
   "command.fileTree.toggle": "Toggle file tree",

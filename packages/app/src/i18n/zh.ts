@@ -233,6 +233,7 @@ export const dict = {
   "panel.browser.share": "与 agent 共享页面",
   "panel.browser.addressPlaceholder": "搜索或输入网址",
   "panel.browser.empty": "暂无标签页 — 点击 + 新建",
+  "panel.browser.openFile": "在内嵌浏览器中打开",
   "panel.browser.closeAgentConfirm": "该标签页由 agent 控制，确定关闭？agent 需要时会重新打开。",
   "panel.browser.closeAction": "关闭",
 
