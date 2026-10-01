@@ -10,6 +10,7 @@ import { BrowserNavigateTool } from "../../src/tool/browser_navigate"
 import { BrowserReadTool } from "../../src/tool/browser_read"
 import { BrowserClickTool } from "../../src/tool/browser_click"
 import { BrowserTypeTool } from "../../src/tool/browser_type"
+import { BrowserScrollTool } from "../../src/tool/browser_scroll"
 import { BrowserScreenshotTool } from "../../src/tool/browser_screenshot"
 import { BrowserConsoleTool } from "../../src/tool/browser_console"
 import { BrowserCloseTool } from "../../src/tool/browser_close"
@@ -209,6 +210,52 @@ describe("tool.browser_*", () => {
         })
         const result = (yield* Fiber.join(fiber)) as { metadata: Record<string, unknown> }
         expect(result.metadata.url).toBe("http://localhost:4000/done")
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "browser_scroll wheels the page and reports the current url",
+    () =>
+      Effect.gen(function* () {
+        const bridge = yield* BrowserBridge.Service
+        const fake = fakeAdapter(bridge)
+        yield* bridge.connect({ adapter: fake.adapter })
+        const askCalls: AskCall[] = []
+
+        const fiber = yield* Effect.forkChild(
+          exec(BrowserScrollTool, { direction: "up", amount: 400 }, makeCtx(askCalls)),
+        )
+        yield* Effect.yieldNow
+        expect(askCalls[0].permission).toBe("browser_scroll")
+        expect(askCalls[0].patterns).toEqual([viewState.url])
+
+        const frame = fake.sent.at(-1)!
+        expect(frame.name).toBe("scroll")
+        expect(frame.args).toMatchObject({ partition: "agent-browser-ses_browser", direction: "up", amount: 400 })
+        yield* respond(bridge, fake, true, { state: viewState })
+        const result = (yield* Fiber.join(fiber)) as { output: string; metadata: Record<string, unknown> }
+        expect(result.output).toContain("Scrolled up by 400px.")
+        expect(result.output).toContain(`Current page: ${viewState.url}`)
+        expect(result.metadata.url).toBe(viewState.url)
+      }),
+    { git: true, config: { formatter: false, lsp: false } },
+  )
+
+  it.instance(
+    "browser_scroll centers a uid and ignores the wheel arguments",
+    () =>
+      Effect.gen(function* () {
+        const bridge = yield* BrowserBridge.Service
+        const fake = fakeAdapter(bridge)
+        yield* bridge.connect({ adapter: fake.adapter })
+
+        const fiber = yield* Effect.forkChild(exec(BrowserScrollTool, { uid: "n11" }, makeCtx([])))
+        yield* Effect.yieldNow
+        expect(fake.sent.at(-1)!.args).toMatchObject({ uid: "n11" })
+        yield* respond(bridge, fake, true, { state: viewState })
+        const result = (yield* Fiber.join(fiber)) as { output: string }
+        expect(result.output).toContain("Scrolled element n11 into view.")
       }),
     { git: true, config: { formatter: false, lsp: false } },
   )

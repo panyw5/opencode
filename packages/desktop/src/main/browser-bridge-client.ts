@@ -193,6 +193,13 @@ export class BridgeClient {
         })
         return { ...result, state: controller.getState().find((s) => s.partition === partition) }
       }
+      case "scroll": {
+        const uid = typeof args.uid === "string" && args.uid ? args.uid : undefined
+        const direction = args.direction === "up" ? ("up" as const) : ("down" as const)
+        const amount = typeof args.amount === "number" && args.amount > 0 ? args.amount : undefined
+        await requireCdp().scroll({ uid, direction, amount })
+        return { state: controller.getState().find((s) => s.partition === partition) }
+      }
       case "back":
         requireCdp().back()
         return {}

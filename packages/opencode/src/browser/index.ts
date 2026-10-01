@@ -95,6 +95,19 @@ export interface Interface {
     options?: { readonly clear?: boolean; readonly submit?: boolean; readonly timeout?: Duration.Input },
   ) => Effect.Effect<ViewState | undefined, BrowserError>
   /**
+   * Scroll the agent view: with `uid`, bring that element into view; otherwise
+   * wheel the page in `direction` by `amount` px (defaults to ~one viewport).
+   */
+  readonly scroll: (
+    sessionID: string,
+    options?: {
+      readonly uid?: string
+      readonly direction?: "up" | "down"
+      readonly amount?: number
+      readonly timeout?: Duration.Input
+    },
+  ) => Effect.Effect<ViewState | undefined, BrowserError>
+  /**
    * Console entries captured from the agent partition. Without `options.since`
    * this is incremental per session: each call returns entries newer than the
    * previous call's and advances the cursor.
@@ -230,6 +243,27 @@ export const layer = Layer.effect(
               const state = (result as { state?: unknown }).state
               if (!state) return Effect.succeed(undefined as ViewState | undefined)
               return decodeResult("type", decodeState, state)
+            }),
+            Effect.mapError(mapError),
+          ),
+
+      scroll: (sessionID, options) =>
+        bridge
+          .command(
+            "scroll",
+            {
+              partition: agentPartition(sessionID),
+              uid: options?.uid,
+              direction: options?.direction,
+              amount: options?.amount,
+            },
+            { timeout: options?.timeout ?? "15 seconds" },
+          )
+          .pipe(
+            Effect.flatMap((result) => {
+              const state = (result as { state?: unknown }).state
+              if (!state) return Effect.succeed(undefined as ViewState | undefined)
+              return decodeResult("scroll", decodeState, state)
             }),
             Effect.mapError(mapError),
           ),

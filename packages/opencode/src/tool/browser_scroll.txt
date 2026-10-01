@@ -1,0 +1,14 @@
+# PURPOSE
+Scroll the page currently open in the embedded desktop browser.
+
+Use this to reach content outside the viewport before a `browser_read` or
+`browser_screenshot` — the visible viewport only, no full-page capture needed.
+
+# GUIDELINES
+- Without arguments the page wheels down by roughly one viewport height.
+- `direction: "up"` wheels back toward the top of the page.
+- `amount` is the wheel distance in pixels (positive number).
+- Pass a `uid` from the most recent `browser_read` snapshot to scroll a
+  specific element into view (e.g. before clicking something off-screen);
+  `direction` and `amount` are ignored when `uid` is given.
+- Scrolling can trigger lazy loading or infinite lists: use `browser_read` to read the newly revealed content.

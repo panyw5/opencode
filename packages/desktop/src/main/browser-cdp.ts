@@ -308,6 +308,62 @@ export class BrowserCdp {
     return { typed: text.length, url: this.wc.getURL(), title: this.wc.getTitle() }
   }
 
+  /**
+   * Scroll the page. With `uid`, brings that element into view (center);
+   * otherwise wheels the viewport center by `amount` px (default ~90% of
+   * the viewport) in `direction`. Wheel events go through the real input
+   * pipeline, so inner scroll containers and scroll-bound SPAs react like
+   * they do for a human user — window.scrollBy would miss both.
+   */
+  async scroll(opts?: { uid?: string; direction?: "up" | "down"; amount?: number }) {
+    await this.ensureAttached()
+    const uid = opts?.uid
+    if (uid) {
+      if (!this.domEnabled) {
+        await this.dbg.sendCommand("DOM.enable")
+        this.domEnabled = true
+      }
+      const backendNodeId = uid.startsWith("n") ? Number.parseInt(uid.slice(1), 10) : Number.NaN
+      if (Number.isNaN(backendNodeId)) throw new Error(`invalid uid ${uid} (take a new browser_read snapshot)`)
+      const resolved = (await this.dbg.sendCommand("DOM.resolveNode", { backendNodeId })) as {
+        object?: { objectId?: string }
+      }
+      const objectId = resolved.object?.objectId
+      if (!objectId) throw new Error(`element not found for uid ${uid} (page may have navigated; take a new snapshot)`)
+      await this.dbg.sendCommand("Runtime.callFunctionOn", {
+        objectId,
+        functionDeclaration: "function () { this.scrollIntoView({ block: 'center', behavior: 'instant' }) }",
+      })
+    } else {
+      const vp = (await this.dbg.sendCommand("Runtime.evaluate", {
+        expression: "JSON.stringify({ w: window.innerWidth, h: window.innerHeight })",
+        returnByValue: true,
+      })) as { result?: { value?: string } }
+      let width = 800
+      let height = 600
+      try {
+        const parsed = JSON.parse(vp.result?.value ?? "{}") as { w?: unknown; h?: unknown }
+        if (typeof parsed.w === "number" && parsed.w > 0) width = parsed.w
+        if (typeof parsed.h === "number" && parsed.h > 0) height = parsed.h
+      } catch {
+        // viewport probe failed — the defaults still wheel a sane distance
+      }
+      const pixels = opts?.amount ?? Math.round(height * 0.9)
+      const deltaY = opts?.direction === "up" ? -pixels : pixels
+      await this.dbg.sendCommand("Input.dispatchMouseEvent", {
+        type: "mouseWheel",
+        x: Math.round(width / 2),
+        y: Math.round(height / 2),
+        deltaX: 0,
+        deltaY,
+      })
+    }
+    // scrollIntoView/wheel apply synchronously; a short settle keeps the
+    // returned title/url fresh for pages that react to scrolling.
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    return { url: this.wc.getURL(), title: this.wc.getTitle() }
+  }
+
   private async resolveUidCenter(uid: string): Promise<{ x: number; y: number } | undefined> {
     await this.ensureAttached()
     if (!this.domEnabled) {

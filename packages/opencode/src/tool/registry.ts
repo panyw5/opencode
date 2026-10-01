@@ -100,6 +100,7 @@ import { BrowserTypeTool } from "./browser_type"
 import { BrowserScreenshotTool } from "./browser_screenshot"
 import { BrowserConsoleTool } from "./browser_console"
 import { BrowserCloseTool } from "./browser_close"
+import { BrowserScrollTool } from "./browser_scroll"
 import { Browser } from "@/browser"
 
 const log = Log.create({ service: "tool.registry" })
@@ -210,6 +211,7 @@ export const layer: Layer.Layer<
     const browserScreenshot = yield* BrowserScreenshotTool
     const browserConsole = yield* BrowserConsoleTool
     const browserClose = yield* BrowserCloseTool
+    const browserScroll = yield* BrowserScrollTool
     const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
@@ -380,6 +382,7 @@ export const layer: Layer.Layer<
           browser_screenshot: Tool.init(browserScreenshot),
           browser_console: Tool.init(browserConsole),
           browser_close: Tool.init(browserClose),
+          browser_scroll: Tool.init(browserScroll),
         })
 
         const builtin = [
