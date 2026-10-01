@@ -28,6 +28,10 @@ function part(mime: string, data: string) {
   }
 }
 
+function filePart(mime: string, url: string) {
+  return { ...part(mime, ""), url }
+}
+
 describe("Image", () => {
   it.effect("normalizes generated png and jpeg attachments", () =>
     Effect.gen(function* () {
@@ -55,6 +59,44 @@ describe("Image", () => {
       const input = part("image/webp", "UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA")
 
       expect(yield* image.normalize(input)).toEqual(input)
+    }),
+  )
+
+  it.effect("keeps file-backed attachments as file urls when within limits", () =>
+    Effect.gen(function* () {
+      const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
+      const source = new photon.PhotonImage(
+        new Uint8Array(Array.from({ length: 16 * 16 * 4 }, (_, index) => (index % 4 === 3 ? 255 : index % 251))),
+        16,
+        16,
+      )
+      const dir = path.join(import.meta.dir, ".tmp")
+      yield* Effect.promise(() => Bun.$`mkdir -p ${dir}`.quiet())
+      const file = path.join(dir, `image-test-${Date.now()}.png`)
+      yield* Effect.promise(() => Bun.write(file, Buffer.from(source.get_bytes())))
+      source.free()
+
+      const image = yield* Image.Service
+      const input = filePart("image/png", `file://${file}`)
+      const result = yield* image.normalize(input)
+
+      expect(result).toEqual(input)
+      yield* Effect.promise(() => Bun.$`rm -f ${file}`.quiet())
+    }),
+  )
+
+  it.effect("fails with a typed error when a file-backed attachment cannot be read", () =>
+    Effect.gen(function* () {
+      const image = yield* Image.Service
+      const exit = yield* image
+        .normalize(filePart("image/png", "file:///nonexistent/screenshot-missing.png"))
+        .pipe(Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        const error = Cause.squash(exit.cause)
+        expect(error).toBeInstanceOf(Image.InvalidDataUrlError)
+      }
     }),
   )
 

@@ -23,6 +23,8 @@ import type { SystemError } from "bun"
 import type { Provider } from "@/provider/provider"
 import { ModelID, ProviderID } from "@/provider/schema"
 import { Effect, Schema, Types } from "effect"
+import { readFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
 import { NonNegativeInt } from "@opencode-ai/core/schema"
 import * as EffectLogger from "@opencode-ai/core/effect/logger"
 import { MessageError } from "./message-error"
@@ -675,6 +677,29 @@ function normalizeDataUrl(data: string, mediaType: string): string {
   return `data:${mediaType};base64,${stripDataUrlPrefix(data)}`
 }
 
+// File-backed attachments (e.g. browser screenshots stored as file:// URLs to
+// keep base64 out of the session database) are resolved to data URLs only at
+// model-request time. Attachments whose file can no longer be read are dropped
+// so a cleaned-up temp file never fails the request.
+function resolveFileAttachments<T extends { mime: string; url: string }>(attachments: readonly T[]) {
+  return Effect.forEach(
+    attachments,
+    (attachment): Effect.Effect<T | undefined> => {
+      if (!attachment.url.startsWith("file:")) return Effect.succeed(attachment)
+      return Effect.tryPromise({
+        try: async () => {
+          const data = await readFile(fileURLToPath(attachment.url))
+          return { ...attachment, url: `data:${attachment.mime};base64,${data.toString("base64")}` }
+        },
+        catch: (error) => new Error(error instanceof Error ? error.message : String(error)),
+      }).pipe(
+        Effect.tapError((error) => log.warn("dropping unreadable file attachment", { error: error.message })),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+    },
+  ).pipe(Effect.map((items) => items.filter((item): item is T => item !== undefined)))
+}
+
 function toolReplayRank(part: ToolPart): number {
   switch (part.state.status) {
     case "completed":
@@ -892,7 +917,10 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
             const outputText = part.state.time.compacted
               ? "[Old tool result content cleared]"
               : truncateToolOutput(part.state.output, options?.toolOutputMaxChars)
-            const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])
+            const attachments =
+              part.state.time.compacted || options?.stripMedia
+                ? []
+                : yield* resolveFileAttachments(part.state.attachments ?? [])
 
             // For providers that don't support media in tool results, extract media files
             // (images, PDFs) to be sent as a separate user message
