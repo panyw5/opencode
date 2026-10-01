@@ -10,7 +10,16 @@ export function registerDisposer(disposer: (directoryKey: PathIdentity) => Promi
   }
 }
 
-export async function disposeInstance(directory: string | PathIdentity) {
+export interface DisposeResult {
+  readonly ok: boolean
+  readonly failures: { readonly disposer: number; readonly error: unknown }[]
+}
+
+export async function disposeInstance(directory: string | PathIdentity): Promise<DisposeResult> {
   const directoryKey = Path.identity(directory, localPathContext)
-  await Promise.allSettled([...disposers].map((disposer) => disposer(directoryKey)))
+  const settled = await Promise.allSettled([...disposers].map((disposer) => disposer(directoryKey)))
+  const failures = settled
+    .map((result, index) => ({ disposer: index, error: result.status === "rejected" ? result.reason : undefined }))
+    .filter((failure) => failure.error !== undefined)
+  return { ok: failures.length === 0, failures }
 }

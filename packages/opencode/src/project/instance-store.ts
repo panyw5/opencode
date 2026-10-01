@@ -144,7 +144,16 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
           projectID: ctx.project.id,
         }),
       )
-      yield* Effect.promise(() => runDisposers(ctx.directoryKey))
+      const result = yield* Effect.promise(() => runDisposers(ctx.directoryKey))
+      if (!result.ok) {
+        yield* Effect.logWarning("instance-dispose-partial-failure").pipe(
+          Effect.annotateLogs({
+            identityKey: ctx.directoryKey,
+            instanceID: ctx.directoryKey,
+            failures: result.failures.length,
+          }),
+        )
+      }
       yield* emitDisposed({ directory: ctx.directory, project: ctx.project.id })
     })
 
