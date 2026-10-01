@@ -481,7 +481,38 @@ export function BrowserPanel(props: { class?: string }) {
         }}
       >
         <div class="flex flex-col flex-1 min-h-0">
-          <div class="flex h-7 shrink-0 items-center gap-1 px-2 border-b border-border-weaker-base">
+          <div class="relative flex h-7 shrink-0 items-center gap-1 px-2 border-b border-border-weaker-base">
+            {/* Agent-tab close confirmation capsule. Must live in the tab-strip
+                row: the native WebContentsView always paints ABOVE the DOM, so
+                any overlay inside the placeholder container (the region the
+                view mirrors) is invisible behind the web page. The strip row is
+                the only DOM-only band of the panel. */}
+            <Show when={confirmClose()} keyed>
+              {(partition) => (
+                <div
+                  ref={capsuleRef}
+                  class="absolute left-1/2 top-1/2 z-10 flex max-w-[calc(100%-8px)] -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-border-weak-base bg-surface-inset-base py-0.5 pl-3 pr-1 text-12-regular shadow-md"
+                >
+                  <span class="truncate text-text-strong">
+                    {language.t("panel.browser.closeAgentConfirm")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => closeAgentTab(partition)}
+                    class="shrink-0 rounded-full border border-border-weak-base bg-surface-base px-2.5 py-0.5 text-text-strong transition-colors hover:bg-surface-inset-base"
+                  >
+                    {language.t("panel.browser.closeAction")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmClose(undefined)}
+                    class="shrink-0 rounded-full px-2 py-0.5 text-text-weak transition-colors hover:text-text-strong"
+                  >
+                    {language.t("common.cancel")}
+                  </button>
+                </div>
+              )}
+            </Show>
             {/* Index (not For): tabs() re-maps Object.entries into fresh
                 objects on every state event, and For diffs by reference —
                 it would tear down and rebuild every tab button (a click can
@@ -624,33 +655,6 @@ export function BrowserPanel(props: { class?: string }) {
               <div class="absolute inset-0 flex items-center justify-center text-13-regular text-text-weak pointer-events-none">
                 {language.t("panel.browser.empty")}
               </div>
-            </Show>
-            {/* Agent-tab close confirmation capsule. */}
-            <Show when={confirmClose()} keyed>
-              {(partition) => (
-                <div
-                  ref={capsuleRef}
-                  class="absolute left-1/2 top-2 z-10 flex max-w-[calc(100%-16px)] -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-border-weak-base bg-surface-inset-base py-1 pl-3 pr-1.5 text-12-regular shadow-md"
-                >
-                  <span class="truncate text-text-strong">
-                    {language.t("panel.browser.closeAgentConfirm")}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => closeAgentTab(partition)}
-                    class="shrink-0 rounded-full border border-border-weak-base bg-surface-base px-2.5 py-0.5 text-text-strong transition-colors hover:bg-surface-inset-base"
-                  >
-                    {language.t("panel.browser.closeAction")}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setConfirmClose(undefined)}
-                    class="shrink-0 rounded-full px-2 py-0.5 text-text-weak transition-colors hover:text-text-strong"
-                  >
-                    {language.t("common.cancel")}
-                  </button>
-                </div>
-              )}
             </Show>
           </div>
         </div>
