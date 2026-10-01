@@ -1,10 +1,11 @@
 [data-component="toast-region"] {
   position: fixed;
   /* Cleared above the notification bell (bottom-right) and its live toasts.
-     The 24px padding is shadow room: content sits at the same spot as the
-     old bottom:96px / right:32px, while the clip boundary moves 24px further
-     out on every side so box-shadows don't get hard-cut at the region edge. */
-  bottom: 72px;
+     The 24px padding is shadow room: content sits 24px above this offset
+     (so bottom:48px == the toasts' visual bottom at 72px, ~12px above the
+     bell), while the clip boundary moves 24px further out on every side so
+     box-shadows don't get hard-cut at the region edge. */
+  bottom: 48px;
   right: 8px;
   padding: 24px 24px 24px 24px;
   z-index: 1000;
