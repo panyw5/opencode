@@ -17,6 +17,9 @@ import { useSessionLayout } from "@/pages/session/session-layout"
 // active tab's partition only, so exactly one WebContentsView is visible.
 
 export const BROWSER_PARTITION = "persist:browse"
+// Must match agentPartition() in packages/desktop/src/main/browser.ts and
+// packages/opencode/src/browser/index.ts (kept in sync by convention — no
+// shared package spans desktop+server+app).
 export const AGENT_PARTITION_PREFIX = "agent-browser-"
 
 const isAgentPartition = (partition: string) => partition.startsWith(AGENT_PARTITION_PREFIX)
@@ -30,7 +33,7 @@ export type WindowBrowserApi = {
   setShared: (partition: string, shared: boolean) => Promise<void>
   getState: () => Promise<BrowserViewState[]>
   onUpdated: (cb: (state: BrowserViewState) => void) => () => void
-  onClosed?: (cb: (partition: string) => void) => () => void
+  onClosed: (cb: (partition: string, epoch: number) => void) => () => void
 }
 
 export type BrowserBounds = { x: number; y: number; width: number; height: number }
@@ -41,6 +44,10 @@ export type BrowserViewState = {
   title: string
   loading: boolean
   shared: boolean
+  /** View generation from the main process: incremented on every
+   * (re)creation of the partition's view. Optimistic client-only states
+   * (fresh tabs) use 0 — real views always carry >= 1. */
+  epoch: number
 }
 
 export function browserApi(): WindowBrowserApi | undefined {
@@ -83,6 +90,37 @@ type BrowserTab = {
   state?: BrowserViewState
 }
 
+/**
+ * Choose the next active partition after `closed` disappears from the strip.
+ * Pure so the policy has exactly one definition (close paths and the
+ * reconcile effect must agree): walk outward from the closed slot preferring
+ * user tabs, then fall back to the last remaining tab (agent tabs beat an
+ * empty strip), else "" when the strip is genuinely empty.
+ */
+export const pickFallback = (list: readonly BrowserTab[], closed: string): string => {
+  const idx = list.findIndex((tab) => tab.partition === closed)
+  const rest = list.filter((tab) => tab.partition !== closed)
+  if (rest.length === 0) return ""
+  for (let d = 0; d <= list.length; d++) {
+    const before = list[idx - d]
+    if (before && before.partition !== closed && !before.agent) return before.partition
+    const after = list[idx + d]
+    if (after && after.partition !== closed && !after.agent) return after.partition
+  }
+  return rest.at(-1)!.partition
+}
+
+/**
+ * A state event for a partition the user closed is stale unless the main
+ * process has since RE-CREATED the view (epoch strictly greater than the
+ * closed view's). This one check replaces the old asymmetry — user
+ * partitions blocked forever, agent partitions unblocked by loading=true —
+ * because a genuinely recreated view is a real tab regardless of who
+ * recreated it, and stale in-flight events can never carry a new epoch.
+ */
+const isStaleClosedEvent = (closedEpoch: number | undefined, next: BrowserViewState) =>
+  closedEpoch !== undefined && next.epoch <= closedEpoch
+
 export function BrowserPanel(props: { class?: string }) {
   const language = useLanguage()
   const { view } = useSessionLayout()
@@ -98,19 +136,18 @@ export function BrowserPanel(props: { class?: string }) {
 
   // User tabs are dynamic: every non-agent partition is a tab. The strip may
   // be empty (last tab closed) — the + button and the address bar both spawn
-  // fresh tabs. Agent tabs are listed after the user's and are owned by the
-  // agent (not closable here).
-  const tabs = createMemo<BrowserTab[]>(() => {
-    const all = views()
-    const list: BrowserTab[] = []
-    for (const [partition, state] of Object.entries(all)) {
-      if (!isAgentPartition(partition)) list.push({ partition, agent: false, state })
-    }
-    for (const [partition, state] of Object.entries(all)) {
-      if (isAgentPartition(partition)) list.push({ partition, agent: true, state })
-    }
-    return list
-  })
+  // fresh tabs. Tabs render in first-seen order: Object.entries preserves
+  // insertion order and setViews only ever appends new keys, so a freshly
+  // created tab — user or agent — lands at the right edge of the strip.
+  // (Grouping user tabs before agent tabs would shove every new user tab to
+  // the LEFT of existing agent tabs.)
+  const tabs = createMemo<BrowserTab[]>(() =>
+    Object.entries(views()).map(([partition, state]) => ({
+      partition,
+      agent: isAgentPartition(partition),
+      state,
+    })),
+  )
   const activeAgent = createMemo(() => isAgentPartition(active()))
   // Undefined when the strip is empty or the active tab is agent-owned —
   // every user-tab-scoped control (nav buttons, bounds, navigation) checks it.
@@ -127,18 +164,31 @@ export function BrowserPanel(props: { class?: string }) {
   // commits or the load ends.
   const pendingNavs = new Map<string, string>()
 
-  // Partitions closed by the user this run. A view being destroyed can still
-  // have a state event in flight (emitted just before teardown); without this
-  // guard such an event would resurrect the tab in the strip.
-  const closedTabs = new Set<string>()
+  // Partitions closed this run, mapped to the epoch of the view at close
+  // time. A state event being in flight when its view is destroyed (emitted
+  // just before teardown) would otherwise resurrect the tab in the strip;
+  // only a strictly newer epoch (a genuinely re-created view) may unblock.
+  const closedTabs = new Map<string, number>()
+
+  // Single removal path for the mirror state: idempotent, used by the
+  // optimistic close paths and by main-initiated teardowns (onClosed).
+  const removeTab = (partition: string) => {
+    pendingNavs.delete(partition)
+    setViews((prev) => {
+      if (!(partition in prev)) return prev
+      const next = { ...prev }
+      delete next[partition]
+      return next
+    })
+  }
 
   const record = (next: BrowserViewState) => {
-    if (closedTabs.has(next.partition)) {
-      // The agent re-opening a user-closed agent tab starts a fresh load —
-      // unblock it so the tab returns to the strip. Stale events emitted by
-      // the view just before teardown never carry loading=true and stay
-      // ignored (user partitions stay blocked for good).
-      if (!isAgentPartition(next.partition) || !next.loading) return
+    const closedEpoch = closedTabs.get(next.partition)
+    if (isStaleClosedEvent(closedEpoch, next)) return
+    if (closedEpoch !== undefined) {
+      // A view with a newer epoch than the closed one really exists again —
+      // unblock the partition (agent re-navigated a closed tab, or a future
+      // feature re-opened the same user partition).
       closedTabs.delete(next.partition)
     }
     const firstSighting = !(next.partition in views())
@@ -166,8 +216,7 @@ export function BrowserPanel(props: { class?: string }) {
   const syncBounds = () => {
     if (!api || !placeholder) return
     // With no active tab (empty strip) there is no view to mirror bounds
-    // for — and calling setBounds on an unknown partition would
-    // ensure-create a native view nobody owns.
+    // for — setBounds on an unknown partition would be a main-side no-op.
     if (!tabs().some((tab) => tab.partition === active() && tab.state)) return
     const rect = placeholder.getBoundingClientRect()
     if (rect.width < 2 || rect.height < 2) return
@@ -197,8 +246,8 @@ export function BrowserPanel(props: { class?: string }) {
       window.removeEventListener("resize", syncBounds)
       window.removeEventListener("scroll", syncBounds, true)
       for (const partition of Object.keys(views())) {
-        // Closed tabs must be skipped: main re-creates missing views inside
-        // setVisible (ensure), so hiding them here would resurrect them.
+        // Closed partitions are skipped: hiding them is pointless (their
+        // views are already gone main-side) and the IPC would just log noise.
         if (closedTabs.has(partition)) continue
         void api.setVisible(partition, false)
         void api.setBounds(partition, null)
@@ -208,18 +257,14 @@ export function BrowserPanel(props: { class?: string }) {
     const stop = api.onUpdated(record)
     if (stop) onCleanup(stop)
 
-    // View teardowns from any source (user close, agent browser_close tool)
-    // remove the tab from the strip. Idempotent with the optimistic removal
-    // in closeUserTab/closeAgentTab; the reconcile effect fixes up active().
-    const stopClosed = api.onClosed?.((partition) => {
-      closedTabs.add(partition)
-      pendingNavs.delete(partition)
-      setViews((prev) => {
-        if (!(partition in prev)) return prev
-        const next = { ...prev }
-        delete next[partition]
-        return next
-      })
+    // View teardowns from any source (user close, agent browser_close tool,
+    // renderer crash, idle reap) remove the tab from the strip. Idempotent
+    // with the optimistic removal in closeTab(); the close epoch recorded
+    // here is authoritative — it blocks every stale in-flight event from the
+    // destroyed generation.
+    const stopClosed = api.onClosed((partition, epoch) => {
+      closedTabs.set(partition, epoch)
+      removeTab(partition)
     })
     if (stopClosed) onCleanup(stopClosed)
 
@@ -228,11 +273,9 @@ export function BrowserPanel(props: { class?: string }) {
         const next = { ...prev }
         for (const state of states) {
           // A tab closed while this snapshot was in flight must not come
-          // back: its close IPC may not even have been processed yet, and
-          // writing it here would re-materialize the native view the next
-          // time the visibility effect calls setVisible (main re-creates
-          // missing views on demand).
-          if (closedTabs.has(state.partition)) continue
+          // back: only a strictly newer epoch (view re-created after the
+          // close) may pass the closed-partition guard.
+          if (isStaleClosedEvent(closedTabs.get(state.partition), state)) continue
           // record() events are always fresher than the snapshot — only
           // fill partitions the event stream has not touched yet.
           if (state.partition in prev) continue
@@ -314,7 +357,7 @@ export function BrowserPanel(props: { class?: string }) {
     // restarts, and the view is recreated on demand by the main process.
     tabSeq += 1
     const partition = `persist:tab-${Date.now().toString(36)}-${tabSeq}`
-    const blank: BrowserViewState = { partition, url: "", title: "", loading: false, shared: false }
+    const blank: BrowserViewState = { partition, url: "", title: "", loading: false, shared: false, epoch: 0 }
     setViews((prev) => ({ ...prev, [partition]: blank }))
     setActive(partition)
     const target = url ? normalizeAddress(url) : undefined
@@ -328,6 +371,12 @@ export function BrowserPanel(props: { class?: string }) {
     void api.open(partition, target ?? "about:blank").then(
       (next) => {
         pendingNavs.delete(partition)
+        // Re-assert visibility: the visibility effect runs synchronously on
+        // the optimistic state and its setVisible(true) may reach the main
+        // process before open()'s ensure has created the view (where it is
+        // now a deliberate no-op). Any state event would also re-trigger the
+        // effect, but an instant page (about:blank) must not depend on that.
+        void api.setVisible(partition, opened())
         if (next && active() === partition) setAddress(next.url === "about:blank" ? "" : next.url)
       },
       () => {
@@ -336,49 +385,29 @@ export function BrowserPanel(props: { class?: string }) {
     )
   }
 
-  const closeUserTab = (partition: string) => {
+  /**
+   * Unified close path (user tabs and agent tabs — the strip-level effects
+   * are identical): fire the close IPC, block stale events by the last epoch
+   * we saw (the authoritative close epoch arrives via onClosed), remove the
+   * tab, and pick the next active tab through the single fallback policy.
+   * The agent-tab confirmation capsule stays a call-site concern.
+   */
+  const closeTab = (partition: string) => {
     if (!api) return
-    const userTabs = tabs().filter((tab) => !tab.agent)
     void api.close(partition)
-    closedTabs.add(partition)
-    pendingNavs.delete(partition)
-    setViews((prev) => {
-      const next = { ...prev }
-      delete next[partition]
-      return next
-    })
-    const remaining = userTabs.filter((tab) => tab.partition !== partition)
-    if (remaining.length === 0) {
-      // Last user tab closed: leave the strip empty (the + button and the
-      // address bar spawn fresh tabs) — a close must look like a close.
-      if (active() === partition) setActive("")
-      return
-    }
-    if (active() === partition) {
-      const idx = userTabs.findIndex((tab) => tab.partition === partition)
-      const neighbor = userTabs[idx + 1] ?? userTabs[idx - 1]
-      if (neighbor) setActive(neighbor.partition)
-    }
+    closedTabs.set(partition, views()[partition]?.epoch ?? 0)
+    removeTab(partition)
+    if (active() === partition) setActive(pickFallback(tabs(), partition))
   }
+
+  const closeUserTab = closeTab
 
   // Agent tabs can be closed by the user too, behind a confirmation capsule:
   // agents often leave views open and idle, wasting resources. If the agent
-  // genuinely still needs the tab it simply navigates again — record()
-  // unblocks closed agent partitions on a fresh loading event.
+  // genuinely still needs the tab it simply navigates again — the view is
+  // re-created with a new epoch and record() unblocks the partition.
   const closeAgentTab = (partition: string) => {
-    if (!api) return
-    void api.close(partition)
-    closedTabs.add(partition)
-    pendingNavs.delete(partition)
-    setViews((prev) => {
-      const next = { ...prev }
-      delete next[partition]
-      return next
-    })
-    if (active() === partition) {
-      const userTabs = tabs().filter((tab) => !tab.agent && tab.partition !== partition)
-      setActive(userTabs.at(-1)?.partition ?? "")
-    }
+    closeTab(partition)
     setConfirmClose(undefined)
   }
 
@@ -406,13 +435,14 @@ export function BrowserPanel(props: { class?: string }) {
   // while the strip is truly empty — a dangling value (a partition that
   // vanished across a reload race) would leave no highlighted tab and hide
   // every view, and a sticky "" would keep tabs unhighlighted after restore.
+  // Uses the same pickFallback policy as the close paths, so active-fallback
+  // behavior has exactly one definition.
   createEffect(() => {
     const list = tabs()
     const current = active()
     if (current !== "" && list.some((tab) => tab.partition === current)) return
     if (current === "" && list.length === 0) return
-    const fallback = [...list].reverse().find((tab) => !tab.agent)
-    setActive(fallback?.partition ?? "")
+    setActive(pickFallback(list, current))
   })
 
   const tabLabel = (tab: BrowserTab) => {
@@ -494,9 +524,15 @@ export function BrowserPanel(props: { class?: string }) {
                   }
                 >
                   {/* Leading slot: a spinner while the page loads (tab-level
-                      loading feedback), otherwise the brand dot for agent tabs. */}
+                      loading feedback), otherwise the brand dot for agent tabs.
+                      A fresh empty tab only loads about:blank — nothing worth
+                      waiting for, and a spinner flash there reads as jitter. */}
                   <Show
-                    when={tab().state?.loading}
+                    when={
+                      tab().state?.loading === true &&
+                      tab().state?.url !== "about:blank" &&
+                      tab().state?.url !== ""
+                    }
                     fallback={
                       <Show when={tab().agent}>
                         <span
@@ -584,7 +620,7 @@ export function BrowserPanel(props: { class?: string }) {
           </div>
           <div class="flex-1 min-h-0 relative">
             <div ref={placeholder} class="absolute inset-0" data-browser-placeholder={active()} />
-            <Show when={!tabs().some((tab) => !tab.agent)}>
+            <Show when={tabs().length === 0}>
               <div class="absolute inset-0 flex items-center justify-center text-13-regular text-text-weak pointer-events-none">
                 {language.t("panel.browser.empty")}
               </div>

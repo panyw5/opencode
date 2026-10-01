@@ -206,6 +206,57 @@ describe("BrowserBridge service", () => {
     }),
   )
 
+  it.live("merges browser.updated per partition instead of replacing the list", () =>
+    // Regression (F1): each desktop event describes ONE view; the old
+    // `views = [decoded]` collapsed the copy to a single entry whenever the
+    // desktop had more than one tab.
+    Effect.gen(function* () {
+      const bridge = yield* BrowserBridge.Service
+      const fake = fakeAdapter()
+      yield* bridge.connect({ adapter: fake.adapter, views: [viewState] })
+
+      const agent = { ...viewState, partition: "agent-browser-ses_1", url: "https://agent.test/", epoch: 1 }
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.updated", properties: agent }))
+      const userUpdate = { ...viewState, url: "https://example.com/other", epoch: 2 }
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.updated", properties: userUpdate }))
+
+      const state = yield* bridge.state()
+      expect(state.status === "connected" && state.views).toEqual([userUpdate, agent])
+    }),
+  )
+
+  it.live("drops stale browser.updated events with an older epoch", () =>
+    Effect.gen(function* () {
+      const bridge = yield* BrowserBridge.Service
+      const fake = fakeAdapter()
+      yield* bridge.connect({ adapter: fake.adapter, views: [{ ...viewState, epoch: 3 }] })
+
+      const stale = { ...viewState, url: "https://stale.test/", epoch: 2 }
+      yield* bridge.handleFrame(JSON.stringify({ type: "event", name: "browser.updated", properties: stale }))
+
+      const state = yield* bridge.state()
+      expect(state.status === "connected" && state.views).toEqual([{ ...viewState, epoch: 3 }])
+    }),
+  )
+
+  it.live("removes views on browser.closed events", () =>
+    // Regression (F2): the desktop emits browser.closed but the bridge only
+    // handled browser.updated/browser.console — closed views stayed in the
+    // copy forever.
+    Effect.gen(function* () {
+      const bridge = yield* BrowserBridge.Service
+      const agent = { ...viewState, partition: "agent-browser-ses_1", epoch: 1 }
+      const fake = fakeAdapter()
+      yield* bridge.connect({ adapter: fake.adapter, views: [viewState, agent] })
+
+      yield* bridge.handleFrame(
+        JSON.stringify({ type: "event", name: "browser.closed", properties: { partition: agent.partition, epoch: 1 } }),
+      )
+      const state = yield* bridge.state()
+      expect(state.status === "connected" && state.views).toEqual([viewState])
+    }),
+  )
+
   it.live("buffers console event frames per partition", () =>
     Effect.gen(function* () {
       const bridge = yield* BrowserBridge.Service

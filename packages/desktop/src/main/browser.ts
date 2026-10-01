@@ -13,6 +13,11 @@ const log = (step: string, message: string, extra?: Record<string, unknown>) =>
   writeLog("browser", `${step}: ${message}`, extra)
 
 export const USER_PARTITION = "persist:browse"
+// Canonical agent partition naming. Defined here AND in
+// packages/opencode/src/browser/index.ts (server, derives from sessionID) AND
+// referenced via AGENT_PARTITION_PREFIX in packages/app/src/pages/session/browser-panel.tsx
+// (renderer, detects agent tabs). No shared package spans desktop+server, so
+// the three stay in sync by convention — change all three together.
 export const agentPartition = (sessionID: string) => `agent-browser-${sessionID}`
 
 const BROWSER_USER_AGENT =
@@ -41,6 +46,10 @@ export type ViewState = {
   title: string
   loading: boolean
   shared: boolean
+  /** View generation: incremented on every (re)creation of this partition.
+   * Events emitted before a teardown carry the old epoch, so consumers can
+   * drop stale in-flight events instead of resurrecting dead tabs. */
+  epoch: number
 }
 
 type ViewEntry = {
@@ -50,6 +59,8 @@ type ViewEntry = {
   shared: boolean
   bounds?: Rectangle
   win?: BrowserWindow
+  /** monotonic clock (ms) of the last state emission / command touching the view */
+  lastActivity: number
 }
 
 type ControllerEvents = {
@@ -59,9 +70,14 @@ type ControllerEvents = {
 
 export class BrowserController {
   private views = new Map<string, ViewEntry>()
+  // Generation counter per partition. Survives view deletion so a partition
+  // reopened after close (agent re-navigating) gets a strictly larger epoch
+  // than every event emitted by the previous generation.
+  private epochs = new Map<string, number>()
   private owner: BrowserWindow | undefined
   private viewStateListeners = new Set<(state: ViewState) => void>()
-  private viewClosedListeners = new Set<(partition: string) => void>()
+  private viewClosedListeners = new Set<(partition: string, epoch: number) => void>()
+  private reapTimer: NodeJS.Timeout | undefined
   events: ControllerEvents = {}
 
   /** Subscribe to view state changes (url/title/loading). Returns unsubscribe. */
@@ -70,8 +86,10 @@ export class BrowserController {
     return () => this.viewStateListeners.delete(listener)
   }
 
-  /** Subscribe to view teardowns. Returns unsubscribe. */
-  onViewClosed(listener: (partition: string) => void) {
+  /** Subscribe to view teardowns (user close, agent close, renderer crash,
+   * stale-attach cleanup, idle reap). Carries the closed view's epoch so
+   * consumers can block stale in-flight state events. Returns unsubscribe. */
+  onViewClosed(listener: (partition: string, epoch: number) => void) {
     this.viewClosedListeners.add(listener)
     return () => this.viewClosedListeners.delete(listener)
   }
@@ -81,7 +99,10 @@ export class BrowserController {
     this.owner = win
     for (const [partition, entry] of this.views) {
       if (entry.view.webContents.isDestroyed()) {
-        this.views.delete(partition)
+        // A destroyed view must vanish through the same path as any other
+        // teardown — silently dropping it here used to leave a zombie tab in
+        // the renderer strip (no closed event was ever emitted).
+        this.teardown(partition, "stale-attach")
         continue
       }
       try {
@@ -124,25 +145,31 @@ export class BrowserController {
     view.webContents.on("did-stop-loading", () => this.emitState(partition))
     view.webContents.on("page-title-updated", () => this.emitState(partition))
     view.webContents.on("render-process-gone", (_e, details) => {
+      // Must go through teardown: emitState would find no entry and emit
+      // NOTHING, leaving a forever-idle unclickable tab in the strip.
       log("renderer", "gone", { partition, ...details })
-      this.views.delete(partition)
-      this.emitState(partition)
+      this.teardown(partition, "renderer-gone")
     })
 
     const cdp = new BrowserCdp(view.webContents)
     cdp.onConsoleEntry = (entry) => this.events.onConsole?.({ partition, ...entry })
 
-    const entry: ViewEntry = { view, cdp, visible: false, shared: false }
+    const epoch = (this.epochs.get(partition) ?? 0) + 1
+    this.epochs.set(partition, epoch)
+    const entry: ViewEntry = { view, cdp, visible: false, shared: false, lastActivity: Date.now() }
     if (this.owner && !this.owner.isDestroyed()) {
       this.owner.contentView.addChildView(view)
       entry.win = this.owner
     }
     this.views.set(partition, entry)
-    log("create", "view created", { partition, attached: Boolean(this.owner && !this.owner.isDestroyed()) })
+    log("create", "view created", { partition, epoch, attached: Boolean(this.owner && !this.owner.isDestroyed()) })
+    this.startReaper()
     return entry
   }
 
   private emitState(partition: string) {
+    const entry = this.views.get(partition)
+    if (entry) entry.lastActivity = Date.now()
     const state = this.viewState(partition)
     if (!state) return
     for (const listener of this.viewStateListeners) {
@@ -163,6 +190,7 @@ export class BrowserController {
       title: entry.view.webContents.getTitle(),
       loading: entry.view.webContents.isLoading(),
       shared: entry.shared,
+      epoch: this.epochs.get(partition) ?? 0,
     }
   }
 
@@ -174,10 +202,17 @@ export class BrowserController {
     return this.views.has(partition)
   }
 
+  /** Mark a view as recently used (idle reaper bookkeeping). */
+  private touch(partition: string) {
+    const entry = this.views.get(partition)
+    if (entry) entry.lastActivity = Date.now()
+  }
+
   /** Navigate (creating the view if needed) and make it visible. */
   async open(partition: string, url: string) {
     const target = normalizeTargetUrl(url)
     const entry = this.ensure(partition)
+    entry.lastActivity = Date.now()
     entry.view.setVisible(entry.visible)
     if (target !== entry.view.webContents.getURL()) {
       await entry.cdp.navigate(target).catch((error) => {
@@ -206,7 +241,15 @@ export class BrowserController {
   }
 
   setVisible(partition: string, visible: boolean) {
-    const entry = this.ensure(partition)
+    // No ensure-create here: this is called from the renderer visibility
+    // effect for every known tab, and silently creating a view nobody
+    // navigates used to be the footgun behind zombie tabs. View creation is
+    // converged on open() — the only entry point that comes with a URL.
+    const entry = this.views.get(partition)
+    if (!entry) {
+      if (visible) log("visible", "ignored for unknown partition", { partition, visible })
+      return
+    }
     entry.visible = visible
     this.applyBounds(partition)
     log("visible", visible ? "shown" : "hidden", { partition })
@@ -228,6 +271,7 @@ export class BrowserController {
   async captureScreenshot(partition: string, fullPage: boolean) {
     const entry = this.views.get(partition)
     if (!entry) throw new Error(`no browser view for partition ${partition}`)
+    this.touch(partition)
     const win = entry.win && !entry.win.isDestroyed() ? entry.win : undefined
     if (entry.visible || !win) return entry.cdp.screenshot(fullPage)
     entry.view.setBounds({ x: -32000, y: 0, width: 1280, height: 800 })
@@ -244,22 +288,74 @@ export class BrowserController {
   }
 
   close(partition: string) {
-    const entry = this.views.get(partition)
-    if (!entry) return
-    entry.cdp.close()
-    if (entry.win && !entry.win.isDestroyed()) entry.win.contentView.removeChildView(entry.view)
-    entry.win = undefined
-    this.views.delete(partition)
-    log("close", "view closed", { partition })
-    for (const listener of this.viewClosedListeners) listener(partition)
+    this.teardown(partition, "close")
   }
 
-  cdp(partition: string) {
-    return this.ensure(partition).cdp
+  /**
+   * The single teardown path: every way a view can vanish goes through here
+   * and always notifies the closed listeners (renderer + server bridge), so
+   * no consumer can be left with a stale tab.
+   */
+  private teardown(partition: string, reason: string) {
+    const entry = this.views.get(partition)
+    if (!entry) return
+    this.views.delete(partition)
+    entry.cdp.close()
+    if (entry.win && !entry.win.isDestroyed()) {
+      try {
+        entry.win.contentView.removeChildView(entry.view)
+      } catch (error) {
+        log("teardown", "removeChildView failed", { partition, reason, error: String(error) })
+      }
+    }
+    entry.win = undefined
+    const epoch = this.epochs.get(partition) ?? 0
+    log("teardown", reason, { partition, epoch })
+    for (const listener of this.viewClosedListeners) {
+      try {
+        listener(partition, epoch)
+      } catch (error) {
+        log("teardown", "closed listener failed", { partition, reason, error: String(error) })
+      }
+    }
+  }
+
+  /** CDP handle for an EXISTING view. Does not create views: agent commands
+   * against a missing partition must fail loudly (the tool reports it) instead
+   * of silently materializing a blank view nobody drives. */
+  cdp(partition: string): BrowserCdp | undefined {
+    this.touch(partition)
+    return this.views.get(partition)?.cdp
+  }
+
+  // Agent partitions are ephemeral, but sessions can simply be abandoned —
+  // without a reaper the views Map only grows, and every idle view keeps a
+  // renderer process alive (background throttling is disabled for CDP). Reap
+  // hidden agent views that saw no activity for AGENT_IDLE_TTL_MS; the next
+  // agent navigation recreates the view fresh (documented semantics).
+  private static readonly AGENT_IDLE_TTL_MS = 30 * 60_000
+  private static readonly REAP_INTERVAL_MS = 60_000
+
+  private reapIdle() {
+    const now = Date.now()
+    for (const [partition, entry] of this.views) {
+      if (!partition.startsWith("agent-browser-")) continue // user views are never reaped
+      if (entry.visible) continue // user is watching this tab
+      if (now - entry.lastActivity < BrowserController.AGENT_IDLE_TTL_MS) continue
+      this.teardown(partition, "idle-reap")
+    }
+  }
+
+  private startReaper() {
+    if (this.reapTimer) return
+    this.reapTimer = setInterval(() => this.reapIdle(), BrowserController.REAP_INTERVAL_MS)
+    this.reapTimer.unref?.()
   }
 
   dispose() {
-    for (const partition of [...this.views.keys()]) this.close(partition)
+    for (const partition of [...this.views.keys()]) this.teardown(partition, "dispose")
+    if (this.reapTimer) clearInterval(this.reapTimer)
+    this.reapTimer = undefined
   }
 }
 

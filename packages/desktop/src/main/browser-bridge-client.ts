@@ -23,14 +23,20 @@ export class BridgeClient {
   private ws: WebSocket | undefined
   private generation = 0
   private stopped = false
+  // Controller subscriptions from the current start(); re-starting must not
+  // stack duplicate listeners (start() used to register unconditionally).
+  private unsubs: Array<() => void> = []
 
   constructor(private readonly controller: BrowserController) {}
 
   start(info: ServerInfo) {
     this.info = info
     this.stopped = false
-    this.controller.onViewState((state) => this.sendEvent("browser.updated", state))
-    this.controller.onViewClosed((partition) => this.sendEvent("browser.closed", { partition }))
+    this.unsubscribeController()
+    this.unsubs.push(
+      this.controller.onViewState((state) => this.sendEvent("browser.updated", state)),
+      this.controller.onViewClosed((partition, epoch) => this.sendEvent("browser.closed", { partition, epoch })),
+    )
     this.controller.events.onConsole = (entry) => this.sendEvent("browser.console", entry)
     void this.connectLoop(++this.generation, 0)
   }
@@ -40,6 +46,12 @@ export class BridgeClient {
     this.generation++
     this.ws?.close()
     this.ws = undefined
+    this.unsubscribeController()
+  }
+
+  private unsubscribeController() {
+    for (const unsub of this.unsubs) unsub()
+    this.unsubs = []
   }
 
   private async connectLoop(generation: number, attempt: number) {
@@ -142,6 +154,14 @@ export class BridgeClient {
   private async execute(name: string, args: Record<string, unknown>): Promise<unknown> {
     const partition = typeof args.partition === "string" && args.partition ? args.partition : USER_PARTITION
     const controller = this.controller
+    // cdp() no longer ensure-creates views: commands against a missing view
+    // must fail loudly (the tool surfaces the error) instead of silently
+    // materializing a blank view nobody navigates.
+    const requireCdp = () => {
+      const cdp = controller.cdp(partition)
+      if (!cdp) throw new Error(`no browser view open for partition ${partition} (navigate first)`)
+      return cdp
+    }
     switch (name) {
       case "navigate": {
         const url = String(args.url ?? "")
@@ -150,7 +170,7 @@ export class BridgeClient {
         return { state }
       }
       case "snapshot": {
-        const snapshot = await controller.cdp(partition).snapshot()
+        const snapshot = await requireCdp().snapshot()
         return { snapshot }
       }
       case "screenshot": {
@@ -160,27 +180,27 @@ export class BridgeClient {
       case "click": {
         const uid = String(args.uid ?? "")
         if (!uid) throw new Error("click requires uid")
-        const point = await controller.cdp(partition).click(uid)
+        const point = await requireCdp().click(uid)
         return { point, state: controller.getState().find((s) => s.partition === partition) }
       }
       case "type": {
         const uid = String(args.uid ?? "")
         const text = String(args.text ?? "")
         if (!uid) throw new Error("type requires uid")
-        const result = await controller.cdp(partition).type(uid, text, {
+        const result = await requireCdp().type(uid, text, {
           clear: args.clear !== false,
           submit: args.submit === true,
         })
         return { ...result, state: controller.getState().find((s) => s.partition === partition) }
       }
       case "back":
-        controller.cdp(partition).back()
+        requireCdp().back()
         return {}
       case "forward":
-        controller.cdp(partition).forward()
+        requireCdp().forward()
         return {}
       case "reload":
-        controller.cdp(partition).reload()
+        requireCdp().reload()
         return {}
       case "state": {
         const state = controller.getState().find((s) => s.partition === partition)

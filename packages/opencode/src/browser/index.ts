@@ -10,6 +10,10 @@ export * as Browser from "./index"
 // missing partitions to the user view, so every command here passes an explicit
 // per-session agent partition (`agent-browser-<sessionID>`, ephemeral).
 
+// Canonical agent partition naming, mirrored in
+// packages/desktop/src/main/browser.ts (owner of the views) and referenced
+// via AGENT_PARTITION_PREFIX in packages/app/src/pages/session/browser-panel.tsx
+// (renderer). Keep the three definitions in sync.
 export const agentPartition = (sessionID: string) => `agent-browser-${sessionID}`
 
 /** Raised when no desktop app is connected to the browser bridge. */

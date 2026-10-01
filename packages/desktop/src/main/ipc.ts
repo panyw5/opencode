@@ -124,7 +124,10 @@ export function registerIpcHandlers(deps: Deps) {
   ipcMain.handle(
     "browser-navigate",
     (_event: IpcMainInvokeEvent, partition: string, action: "back" | "forward" | "reload") => {
+      // No ensure-create: navigating a missing view (tab closed, render crash)
+      // must be a no-op, not a silently created blank view nobody drives.
       const cdp = browserController.cdp(partition)
+      if (!cdp) return
       if (action === "back") cdp.back()
       else if (action === "forward") cdp.forward()
       else cdp.reload()
@@ -139,9 +142,9 @@ export function registerIpcHandlers(deps: Deps) {
       if (!win.isDestroyed()) win.webContents.send("browser-updated", state)
     }
   })
-  browserController.onViewClosed((partition) => {
+  browserController.onViewClosed((partition, epoch) => {
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send("browser-closed", partition)
+      if (!win.isDestroyed()) win.webContents.send("browser-closed", partition, epoch)
     }
   })
   ipcMain.handle("install-cli", () => installCli())

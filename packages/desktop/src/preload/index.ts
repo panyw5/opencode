@@ -19,7 +19,7 @@ const api: ElectronAPI = {
       }
     },
     onClosed: (cb) => {
-      const handler = (_: unknown, partition: string) => cb(partition)
+      const handler = (_: unknown, partition: string, epoch: number) => cb(partition, epoch)
       ipcRenderer.on("browser-closed", handler)
       return () => {
         ipcRenderer.removeListener("browser-closed", handler)

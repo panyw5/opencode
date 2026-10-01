@@ -3,7 +3,7 @@ import { Bus } from "@/bus"
 import type { InstanceContext } from "@/project/instance-context"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import type { Duration } from "effect"
-import { Updated as BrowserUpdated } from "./events"
+import { Updated as BrowserUpdated, Closed as BrowserClosed } from "./events"
 
 export * as BrowserBridge from "./bridge"
 
@@ -34,6 +34,8 @@ export const ViewState = Schema.Struct({
   title: Schema.String,
   loading: Schema.Boolean,
   shared: Schema.Boolean,
+  // Optional on the wire for tolerance against older desktop clients.
+  epoch: Schema.optional(Schema.Number),
 })
 export type ViewState = typeof ViewState.Type
 
@@ -118,7 +120,14 @@ export const layer = Layer.effect(
       try {
         if (name === "browser.updated") {
           const decoded = Schema.decodeUnknownSync(ViewState)(properties)
-          views = [decoded]
+          // Merge by partition: each desktop event describes ONE view, so
+          // replacing the whole list collapsed this copy to a single entry.
+          // Stale events (epoch older than the stored view's) are dropped.
+          const stored = views.find((view) => view.partition === decoded.partition)
+          if (stored && (decoded.epoch ?? 0) < (stored.epoch ?? 0)) return
+          views = stored
+            ? views.map((view) => (view.partition === decoded.partition ? decoded : view))
+            : [...views, decoded]
           if (!instance) return
           void Bus.publish(instance, BrowserUpdated, {
             partition: decoded.partition,
@@ -126,6 +135,15 @@ export const layer = Layer.effect(
             title: decoded.title,
             loading: decoded.loading,
             shared: decoded.shared,
+          }).catch((cause) => log.error("bus publish failed", { cause: String(cause) }))
+          return
+        }
+        if (name === "browser.closed") {
+          const decoded = Schema.decodeUnknownSync(Schema.Struct({ partition: Schema.String }))(properties)
+          views = views.filter((view) => view.partition !== decoded.partition)
+          if (!instance) return
+          void Bus.publish(instance, BrowserClosed, {
+            partition: decoded.partition,
           }).catch((cause) => log.error("bus publish failed", { cause: String(cause) }))
           return
         }

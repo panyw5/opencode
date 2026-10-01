@@ -290,6 +290,8 @@ export type BrowserViewState = {
   title: string
   loading: boolean
   shared: boolean
+  /** View generation; increments when the partition's view is (re)created. */
+  epoch: number
 }
 
 export type BrowserAPI = {
@@ -301,7 +303,7 @@ export type BrowserAPI = {
   setShared: (partition: string, shared: boolean) => Promise<void>
   getState: () => Promise<BrowserViewState[]>
   onUpdated: (cb: (state: BrowserViewState) => void) => () => void
-  onClosed: (cb: (partition: string) => void) => () => void
+  onClosed: (cb: (partition: string, epoch: number) => void) => () => void
 }
 
 export type ElectronAPI = {
