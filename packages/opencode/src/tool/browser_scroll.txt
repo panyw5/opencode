@@ -7,7 +7,7 @@ Use this to reach content outside the viewport before a `browser_read` or
 # GUIDELINES
 - Without arguments the page wheels down by roughly one viewport height.
 - `direction: "up"` wheels back toward the top of the page.
-- `amount` is the wheel distance in pixels (positive number).
+- `amount`: the wheel distance in pixels.
 - Pass a `uid` from the most recent `browser_read` snapshot to scroll a
   specific element into view (e.g. before clicking something off-screen);
   `direction` and `amount` are ignored when `uid` is given.
