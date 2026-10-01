@@ -434,6 +434,9 @@ export type Platform = {
   /** Read a local file inside allowed desktop roots (desktop only) */
   readLocalFile?(path: string): Promise<string | null>
 
+  /** Stat a local file inside allowed desktop roots (desktop only) */
+  statLocalFile?(path: string): Promise<{ size: number } | null>
+
   /** Write a local file inside allowed desktop roots (desktop only) */
   writeLocalFile?(path: string, content: string): Promise<void>
 

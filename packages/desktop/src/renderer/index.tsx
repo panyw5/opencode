@@ -429,6 +429,13 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
 
     readLocalFile: (path: string) => desktopApi.readLocalFile(path),
 
+    // Guarded: HMR can hot-reload this module against an older preload bundle
+    // that predates statLocalFile (preload only refreshes on app restart).
+    statLocalFile:
+      typeof desktopApi.statLocalFile === "function"
+        ? (path: string) => desktopApi.statLocalFile(path)
+        : undefined,
+
     writeLocalFile: (path: string, content: string) => desktopApi.writeLocalFile(path, content),
 
     createLocalFile: (path: string, content: string) => desktopApi.createLocalFile(path, content),

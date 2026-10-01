@@ -49,6 +49,7 @@ import type {
 import { getFilename } from "@opencode-ai/core/util/path"
 import { normalizeWheelDelta, shouldMarkBoundaryGesture } from "@/pages/session/message-gesture"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useSessionKey } from "@/pages/session/session-layout"
@@ -149,17 +150,59 @@ function TimelineThinkingRow(props: {
   )
 }
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// Cache stat results across row re-mounts. Keyed by absolute path so two
+// workspaces with the same relative filename don't collide.
+const localFileSizes = new Map<string, number>()
+
 function TimelineDiffSummaryRow(props: {
   diffs: SummaryDiff[]
   onReviewDiff?: (file: string) => void
   onReviewAll?: () => void
 }) {
   const language = useLanguage()
+  const sync = useSync()
+  const platform = usePlatform()
   const [columns, setColumns] = createSignal(4)
   const capacity = createMemo(() => columns() * 2)
   const overflow = createMemo(() => props.diffs.length > capacity())
   const visible = createMemo(() => props.diffs.slice(0, overflow() ? capacity() - 1 : capacity()))
+  const [statSizes, setStatSizes] = createStore<Record<string, number>>({})
   let grid: HTMLDivElement | undefined
+
+  // Diffs created before the server started recording `size` have no size
+  // stored. On desktop, stat the file directly so those cards still show one
+  // (current size on disk). Web/remote sessions have no local channel and
+  // simply omit the size.
+  createEffect(() => {
+    const root = sync.data.path.directory
+    if (!root || !platform.statLocalFile) return
+    for (const diff of visible()) {
+      if (typeof diff.size === "number" || statSizes[diff.file] !== undefined) continue
+      const key = `${root.replace(/\/+$/, "")}/${diff.file}`
+      const cached = localFileSizes.get(key)
+      if (cached !== undefined) {
+        setStatSizes(diff.file, cached)
+        continue
+      }
+      platform
+        .statLocalFile(key)
+        .then((result) => {
+          if (!result) return
+          localFileSizes.set(key, result.size)
+          setStatSizes(diff.file, result.size)
+        })
+        .catch(() => {})
+    }
+  })
+
+  const resolvedSize = (diff: SummaryDiff) =>
+    typeof diff.size === "number" ? diff.size : statSizes[diff.file]
 
   onMount(() => {
     if (!grid) return
@@ -180,7 +223,7 @@ function TimelineDiffSummaryRow(props: {
           <DiffChanges changes={props.diffs} />
         </div>
       </div>
-      <div ref={grid} data-component="session-turn-diffs-content" style={{ "--turn-diff-columns": String(columns()) }}>
+      <div ref={grid} data-component="session-turn-diffs-content">
         <For each={visible()}>
           {(diff) => (
             <button
@@ -190,7 +233,7 @@ function TimelineDiffSummaryRow(props: {
               title={diff.file}
               onClick={() => props.onReviewDiff?.(diff.file)}
             >
-              <FileIcon node={{ path: diff.file, type: "file" }} class="size-6 shrink-0" />
+              <FileIcon node={{ path: diff.file, type: "file" }} class="size-7 shrink-0" />
               <span data-slot="session-turn-diff-details">
                 <span data-slot="session-turn-diff-filename">{getFilename(diff.file)}</span>
                 <span data-slot="session-turn-diff-meta">
@@ -206,6 +249,9 @@ function TimelineDiffSummaryRow(props: {
                   </Show>
                   <Show when={diff.status !== "added" && diff.status !== "deleted"}>
                     <DiffChanges changes={diff} />
+                  </Show>
+                  <Show when={resolvedSize(diff) !== undefined}>
+                    <span data-slot="session-turn-diff-size">{formatFileSize(resolvedSize(diff)!)}</span>
                   </Show>
                 </span>
               </span>

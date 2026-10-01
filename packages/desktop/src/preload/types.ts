@@ -371,6 +371,7 @@ export type ElectronAPI = {
   filterDirectories: (paths: string[]) => Promise<string[]>
   listConfigFiles: (directory?: string | null) => Promise<ConfigFile[]>
   readLocalFile: (path: string) => Promise<string | null>
+  statLocalFile: (path: string) => Promise<{ size: number } | null>
   writeLocalFile: (path: string, content: string) => Promise<void>
   createLocalFile: (path: string, content: string) => Promise<void>
   deleteLocalFile: (path: string) => Promise<void>

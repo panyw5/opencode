@@ -289,6 +289,13 @@ export async function readLocalFile(path: string) {
   return readFile(target, "utf8")
 }
 
+export async function statLocalFile(path: string) {
+  const target = assertAllowedLocalPath(path)
+  const info = await stat(target).catch(() => undefined)
+  if (!info?.isFile()) return null
+  return { size: info.size }
+}
+
 export async function writeLocalFile(path: string, content: string) {
   const target = assertAllowedLocalPath(path)
   await mkdir(dirname(target), { recursive: true })

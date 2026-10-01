@@ -772,10 +772,14 @@ it.instance(
     expect(grow.status).toBe("modified")
     expect(grow.additions).toBeGreaterThan(0)
     expect(grow.deletions).toBe(0)
+    expect(grow.size).toBe(Buffer.byteLength("one\ntwo\n"))
     const trim = diffs.find((d) => d.file === "trim.txt")!
     expect(trim.status).toBe("modified")
     expect(trim.additions).toBe(0)
     expect(trim.deletions).toBeGreaterThan(0)
+    expect(trim.size).toBe(Buffer.byteLength("line1\n"))
+    expect(diffs.find((d) => d.file === "added.txt")!.size).toBe(Buffer.byteLength("new"))
+    expect(diffs.find((d) => d.file === "delete.txt")!.size).toBe(Buffer.byteLength("gone"))
   }),
   { git: true },
 )
@@ -822,6 +826,7 @@ it.instance(
         patch: undefined,
         additions: 400_000,
         deletions: 300_000,
+        size: 2_400_000,
         status: "modified",
       },
     ])

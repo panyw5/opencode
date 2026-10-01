@@ -189,6 +189,7 @@ export type SnapshotFileDiff = {
   patch?: string
   additions: number
   deletions: number
+  size?: number
   status?: "added" | "deleted" | "modified"
 }
 

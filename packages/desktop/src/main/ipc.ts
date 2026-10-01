@@ -54,6 +54,7 @@ import {
   openInEditor,
   openInFinder,
   readLocalFile,
+  statLocalFile,
   setCustomEditorPath,
   setDefaultEditor,
   setGenericagentConfig,
@@ -358,6 +359,7 @@ export function registerIpcHandlers(deps: Deps) {
     listConfigFiles(directory),
   )
   ipcMain.handle("read-local-file", (_event: IpcMainInvokeEvent, path: string) => readLocalFile(path))
+  ipcMain.handle("stat-local-file", (_event: IpcMainInvokeEvent, path: string) => statLocalFile(path))
   ipcMain.handle("write-local-file", (_event: IpcMainInvokeEvent, path: string, content: string) =>
     writeLocalFile(path, content),
   )

@@ -137,6 +137,7 @@ const api: ElectronAPI = {
   filterDirectories: (paths) => ipcRenderer.invoke("filter-directories", paths),
   listConfigFiles: (directory) => ipcRenderer.invoke("list-config-files", directory),
   readLocalFile: (path) => ipcRenderer.invoke("read-local-file", path),
+  statLocalFile: (path) => ipcRenderer.invoke("stat-local-file", path),
   writeLocalFile: (path, content) => ipcRenderer.invoke("write-local-file", path, content),
   createLocalFile: (path, content) => ipcRenderer.invoke("create-local-file", path, content),
   deleteLocalFile: (path) => ipcRenderer.invoke("delete-local-file", path),

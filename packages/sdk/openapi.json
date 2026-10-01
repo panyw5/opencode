@@ -14016,6 +14016,9 @@
           "deletions": {
             "type": "number"
           },
+          "size": {
+            "type": "number"
+          },
           "status": {
             "type": "string",
             "enum": ["added", "deleted", "modified"]
