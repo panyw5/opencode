@@ -221,7 +221,7 @@ export const dict = {
   "panel.browser.addressPlaceholder": "Search or enter address",
   "panel.browser.empty": "No tabs — press + to open one",
   "panel.browser.openFile": "Open in embedded browser",
-  "panel.browser.closeAgentConfirm": "This tab is driven by the agent — close it? It reopens if the agent needs it.",
+  "panel.browser.closeAgentConfirm": "Controlled by the agent — close it?",
   "panel.browser.closeAction": "Close",
   "command.fileTree.toggle": "Toggle file tree",
   "command.review.toggle": "Toggle review",
@@ -938,6 +938,7 @@ export const dict = {
 
   "session.files.selectToOpen": "Select a file to open",
   "session.files.all": "All files",
+  "session.files.search": "Search files",
   "session.files.empty": "No files",
   "session.files.binaryContent": "Binary file (content cannot be displayed)",
 
@@ -1229,6 +1230,7 @@ export const dict = {
   "common.archive": "Archive",
   "common.delete": "Delete",
   "common.close": "Close",
+  "common.clear": "Clear",
   "common.edit": "Edit",
   "common.loadMore": "Load more",
   "common.key.esc": "ESC",

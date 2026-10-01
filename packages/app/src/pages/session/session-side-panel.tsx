@@ -13,6 +13,7 @@ import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 
 import FileTree from "@/components/file-tree"
+import FileTreeSearch from "@/components/file-tree-search"
 import ChangeTree from "@/components/change-tree"
 import { SessionContextUsage } from "@/components/session-context-usage"
 import { DialogSelectFile } from "@/components/dialog-select-file"
@@ -495,20 +496,21 @@ export function SessionSidePanel(props: {
                   </Switch>
                 </Tabs.Content>
                 <Tabs.Content value="all" class="bg-background-stronger px-3 py-0">
-                  <Switch>
-                    <Match when={fileListEmptyKey()}>{(key) => empty(language.t(key()))}</Match>
-                    <Match when={issue()}>{empty(issue()!)}</Match>
-                    <Match when={nofiles()}>{empty(language.t("session.files.empty"))}</Match>
-                    <Match when={true}>
-                      <FileTree
-                        path=""
-                        class="pt-3"
-                        modified={diffFiles()}
-                        kinds={kinds()}
-                        onFileClick={(node) => openTab(file.tab(node.path))}
-                      />
-                    </Match>
-                  </Switch>
+                  <FileTreeSearch onFileClick={(path) => openTab(file.tab(path))}>
+                    <Switch>
+                      <Match when={fileListEmptyKey()}>{(key) => empty(language.t(key()))}</Match>
+                      <Match when={issue()}>{empty(issue()!)}</Match>
+                      <Match when={nofiles()}>{empty(language.t("session.files.empty"))}</Match>
+                      <Match when={true}>
+                        <FileTree
+                          path=""
+                          modified={diffFiles()}
+                          kinds={kinds()}
+                          onFileClick={(node) => openTab(file.tab(node.path))}
+                        />
+                      </Match>
+                    </Switch>
+                  </FileTreeSearch>
                 </Tabs.Content>
               </Tabs>
             </div>
