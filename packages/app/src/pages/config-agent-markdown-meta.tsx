@@ -2,8 +2,10 @@ import { createMemo, For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Select } from "@opencode-ai/ui/select"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { ModelSelectorPopover, useBoundModelState } from "@/components/dialog-select-model"
+import { ModelSelectorPopover, parseModelRef, useBoundModelState } from "@/components/dialog-select-model"
+import { useModels } from "@/context/models"
 import { useLanguage } from "@/context/language"
 import {
   parseAgentMarkdown,
@@ -15,8 +17,10 @@ export function AgentMarkdownMeta(props: {
   editable: boolean
   busy: boolean
   onModelChange: (next: string) => void
+  onVariantChange?: (next: string | undefined) => void
 }) {
   const language = useLanguage()
+  const models = useModels()
   const parsed = createMemo(() => parseAgentMarkdown(props.text))
   const model = createMemo(() => parsed().model ?? "")
   const formModel = useBoundModelState({
@@ -29,9 +33,24 @@ export function AgentMarkdownMeta(props: {
       }
       console.info(`[config] agent markdown model selector from=${current} to=${next}`)
       props.onModelChange(next)
+      // The stored variant is model-specific: drop it when the next model is
+      // cleared or does not offer the same variant key.
+      const stored = parsed().variant
+      if (!props.onVariantChange || !stored) return
+      const key = next ? parseModelRef(next) : undefined
+      const nextVariants = key ? modelVariants(models.find(key)) : []
+      if (!key || !nextVariants.includes(stored)) props.onVariantChange(undefined)
     },
   })
   const selectedModel = createMemo(() => formModel.current())
+  const variant = createMemo(() => parsed().variant)
+  const variantOptions = createMemo(() => modelVariants(selectedModel()))
+  const variantActive = createMemo(() => !!model() && variantOptions().length > 0)
+  const variantCurrent = createMemo(() => {
+    const value = variant()
+    if (!value || !variantOptions().includes(value)) return "default"
+    return value
+  })
   const permissions = createMemo(() => parsed().permissions)
 
   return (
@@ -51,6 +70,9 @@ export function AgentMarkdownMeta(props: {
                     ? `${selectedModel()!.provider.name} / ${selectedModel()!.name}`
                     : model() || language.t("config.agents.field.default")}
                 </span>
+                <Show when={variantActive() && variantCurrent() !== "default"}>
+                  <span class="shrink-0 text-text-weak">· {variantCurrent()}</span>
+                </Show>
               </div>
             }
           >
@@ -78,6 +100,23 @@ export function AgentMarkdownMeta(props: {
               </div>
               <Icon name="chevron-down" size="small" class="shrink-0 text-text-weak" />
             </ModelSelectorPopover>
+            <Show when={variantActive()}>
+              <Select
+                options={["default", ...variantOptions()]}
+                current={variantCurrent()}
+                label={(x) => (x === "default" ? language.t("config.agents.field.default") : x)}
+                onSelect={(x) => props.onVariantChange?.(x === "default" ? undefined : x)}
+                disabled={props.busy}
+                variant="ghost"
+                class="h-9 w-36 shrink-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover capitalize"
+                valueClass="truncate"
+                triggerProps={{
+                  type: "button",
+                  "data-action": "agent-markdown-variant",
+                  "aria-label": language.t("config.agents.field.variant"),
+                }}
+              />
+            </Show>
             <Show when={model()}>
               <IconButton
                 icon="close"
@@ -112,6 +151,12 @@ export function AgentMarkdownMeta(props: {
       </div>
     </div>
   )
+}
+
+function modelVariants(model: ReturnType<ReturnType<typeof useBoundModelState>["current"]>): string[] {
+  const variants = (model as { variants?: Record<string, unknown> } | undefined)?.variants
+  if (!variants) return []
+  return Object.keys(variants)
 }
 
 export function permissionCapsuleTone(item: AgentPermissionCapsule) {

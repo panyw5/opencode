@@ -53,6 +53,7 @@ export type AgentPermissionCapsule = {
 export type ParsedAgentMarkdown = {
   hasFrontmatter: boolean
   model?: string
+  variant?: string
   mode?: string
   permissions: AgentPermissionCapsule[]
 }
@@ -69,10 +70,12 @@ export function parseAgentMarkdown(text: string): ParsedAgentMarkdown {
 
   const data = parseYamlMap(hit[1], 0)
   const model = scalar(data.model)
+  const variant = scalar(data.variant)
   const mode = scalar(data.mode)
   return {
     hasFrontmatter: true,
     model: model || undefined,
+    variant: variant || undefined,
     mode: mode || undefined,
     permissions: permissionCapsules(data.permission, data.tools),
   }
@@ -105,6 +108,45 @@ export function upsertAgentMarkdownModel(text: string, model: string | undefined
     let insertAt = 0
     while (insertAt < nextLines.length && !nextLines[insertAt]!.trim()) insertAt++
     nextLines.splice(insertAt, 0, `model: ${formatted}`)
+  }
+
+  const nextBlock = nextLines.join(nl)
+  if (!nextBlock.trim()) {
+    return text.slice(hit[0].length)
+  }
+  return `---${hit[1]}${nextBlock}${hit[3]}---${hit[4]}${text.slice(hit[0].length)}`
+}
+
+export function upsertAgentMarkdownVariant(text: string, variant: string | undefined): string {
+  const nextVariant = variant?.trim() || undefined
+  const formatted = nextVariant ? formatYamlScalar(nextVariant) : undefined
+  const hit = text.match(FRONTMATTER_RE)
+  if (!hit) {
+    if (!formatted) return text
+    const nl = newlineOf(text)
+    const prefix = text.length > 0 ? `${nl}${nl}` : nl
+    return `---${nl}variant: ${formatted}${nl}---${prefix}${text}`
+  }
+
+  const nl = hit[1] || newlineOf(text)
+  const lines = hit[2].split(/\r?\n/)
+  const nextLines: string[] = []
+  let found = false
+  for (const line of lines) {
+    if (/^variant:[ \t]*/.test(line)) {
+      found = true
+      if (formatted) nextLines.push(`variant: ${formatted}`)
+      continue
+    }
+    nextLines.push(line)
+  }
+  if (!found && formatted) {
+    // Keep `variant` next to `model` when one exists; otherwise pin it to the top.
+    let insertAt = 0
+    while (insertAt < nextLines.length && !nextLines[insertAt]!.trim()) insertAt++
+    const modelIndex = nextLines.findIndex((line) => /^model:[ \t]/.test(line))
+    if (modelIndex >= 0) insertAt = modelIndex + 1
+    nextLines.splice(insertAt, 0, `variant: ${formatted}`)
   }
 
   const nextBlock = nextLines.join(nl)

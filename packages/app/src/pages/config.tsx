@@ -111,7 +111,7 @@ import { CONFIG_PAGE_REFRESH_EVENT, refreshAfterConfigWrite } from "@/utils/conf
 import type { Agent, Config, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
 import { configAgentDisplayItems, configuredAgentsFromJsonc, jsoncAgentVariantOptions } from "./config-agent-display"
 import { agentFilePath, agentNameIssue, agentTemplate } from "./config-agent-create"
-import { parseAgentMarkdown, upsertAgentMarkdownModel } from "./config-agent-markdown"
+import { parseAgentMarkdown, upsertAgentMarkdownModel, upsertAgentMarkdownVariant } from "./config-agent-markdown"
 import { AgentMarkdownMeta } from "./config-agent-markdown-meta"
 import { BuiltInAgentEditor, type BuiltInAgentForm } from "./config-agent-builtin-editor"
 import {
@@ -6324,7 +6324,9 @@ export default function ConfigPage() {
       console.info(`[config] agent markdown model unchanged path=${item.path} model=${next}`)
       return
     }
-    const updated = upsertAgentMarkdownModel(state.text, next || undefined)
+    const base = upsertAgentMarkdownModel(state.text, next || undefined)
+    // Variant is model-scoped: dropping the model must drop the variant too.
+    const updated = next ? base : upsertAgentMarkdownVariant(base, undefined)
     console.info(
       `[config] agent markdown model patch path=${item.path} from=${current} to=${next} changed=${String(updated !== state.text)}`,
     )
@@ -6358,6 +6360,64 @@ export default function ConfigPage() {
     } catch (err: unknown) {
       console.info(
         `[config] agent markdown model write failed path=${item.path} error=${err instanceof Error ? err.message : String(err)}`,
+      )
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  let agentVariantWrite = 0
+  async function applyAgentMarkdownVariant(next: string | undefined) {
+    const item = currentDoc()
+    if (!item || !file(item.path)) {
+      console.info("[config] agent markdown variant change ignored path is not a file")
+      return
+    }
+    if (!item.editable) {
+      console.info(`[config] agent markdown variant change ignored read-only path=${item.path}`)
+      return
+    }
+    const current = parseAgentMarkdown(state.text).variant
+    if ((current ?? undefined) === next) {
+      console.info(`[config] agent markdown variant unchanged path=${item.path} variant=${next ?? ""}`)
+      return
+    }
+    const updated = upsertAgentMarkdownVariant(state.text, next)
+    console.info(
+      `[config] agent markdown variant patch path=${item.path} from=${current ?? ""} to=${next ?? ""} changed=${String(updated !== state.text)}`,
+    )
+    if (updated === state.text) return
+    const run = ++agentVariantWrite
+    setState("text", updated)
+    if (!platform.writeLocalFile) {
+      console.info("[config] agent markdown variant write skipped no writeLocalFile")
+      return
+    }
+    try {
+      await platform.writeLocalFile(item.path, updated)
+      if (run !== agentVariantWrite) {
+        console.info(`[config] agent markdown variant write superseded path=${item.path} run=${String(run)}`)
+        return
+      }
+      cache.set(item.path, updated)
+      setState("saved", updated)
+      console.info(`[config] agent markdown variant written path=${item.path} bytes=${String(updated.length)}`)
+      await refreshAfterConfigWrite({
+        source: `agent-markdown-variant:${item.path}`,
+        refreshConfig: () => globalSync.refreshConfig(mainDomain),
+        refresh: () => bump("agentRev"),
+      })
+      if (run !== agentVariantWrite) return
+      showToast({
+        variant: "success",
+        title: t("config.agents.field.variant"),
+        description: next || t("config.agents.field.default"),
+      })
+    } catch (err: unknown) {
+      console.info(
+        `[config] agent markdown variant write failed path=${item.path} error=${err instanceof Error ? err.message : String(err)}`,
       )
       showToast({
         title: language.t("common.requestFailed"),
@@ -7555,8 +7615,23 @@ export default function ConfigPage() {
       console.info(`[config] agent draft model unchanged model=${current}`)
       return
     }
-    const updated = upsertAgentMarkdownModel(state.text, next || undefined)
+    const base = upsertAgentMarkdownModel(state.text, next || undefined)
+    // Variant is model-scoped: dropping the model must drop the variant too.
+    const updated = next ? base : upsertAgentMarkdownVariant(base, undefined)
     console.info(`[config] agent draft model from=${current} to=${next} changed=${String(updated !== state.text)}`)
+    if (updated === state.text) return
+    setState("text", updated)
+    setState("saved", updated)
+  }
+
+  function applyAgentDraftVariant(next: string | undefined) {
+    const current = parseAgentMarkdown(state.text).variant
+    if ((current ?? undefined) === next) {
+      console.info(`[config] agent draft variant unchanged variant=${next ?? ""}`)
+      return
+    }
+    const updated = upsertAgentMarkdownVariant(state.text, next)
+    console.info(`[config] agent draft variant from=${current ?? ""} to=${next ?? ""} changed=${String(updated !== state.text)}`)
     if (updated === state.text) return
     setState("text", updated)
     setState("saved", updated)
@@ -9517,6 +9592,7 @@ export default function ConfigPage() {
                         onTitle={setAgentTitle}
                         onInput={(value) => setState("text", value)}
                         onModelChange={applyAgentDraftModel}
+                        onVariantChange={applyAgentDraftVariant}
                         onSave={() => void saveAgent()}
                         onCancel={cancelAgentCreate}
                       />
@@ -9561,6 +9637,7 @@ export default function ConfigPage() {
                                   editable={!!currentDoc()?.editable}
                                   busy={state.busy}
                                   onModelChange={(next) => void applyAgentMarkdownModel(next)}
+                                  onVariantChange={(next) => void applyAgentMarkdownVariant(next)}
                                 />
                               </Show>
                             }
@@ -9764,6 +9841,7 @@ function AgentCreator(props: {
   onTitle: (value: string) => void
   onInput: (value: string) => void
   onModelChange: (next: string) => void
+  onVariantChange: (next: string | undefined) => void
   onSave: () => void
   onCancel: () => void
 }) {
@@ -9797,7 +9875,13 @@ function AgentCreator(props: {
             </div>
           )}
         </Show>
-        <AgentMarkdownMeta text={props.text} editable={true} busy={props.busy} onModelChange={props.onModelChange} />
+        <AgentMarkdownMeta
+          text={props.text}
+          editable={true}
+          busy={props.busy}
+          onModelChange={props.onModelChange}
+          onVariantChange={props.onVariantChange}
+        />
       </div>
       <Show when={props.err}>
         <div class="border-b border-border-weak-base bg-surface-danger-base/10 px-6 py-2 text-12-regular text-text-danger">
