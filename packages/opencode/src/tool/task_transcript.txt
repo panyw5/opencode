@@ -3,18 +3,19 @@ Inspect the persisted transcript of a task.
 
 Use this when a subagent is stuck, failed, produced an unexpected result, or needs more direction. Inspect its recent messages and tool activity before deciding whether to resume the task.
 
-# PARAMETERS
-- `task_id` — REQUIRED, string. ID of the task to read, taken verbatim from the `task` tool output or from `task_list`. It must be a direct or descendant child task of the current session; unrelated sessions cannot be read.
+# GUIDELINES
+## PARAMETERS
+- `task_id` — REQUIRED, string. ID of the task to read, taken from the `task` or from `task_list`.
 - `cursor` — optional, string. The `next_cursor` value returned by a previous call. Omit it on the first call.
 - `limit` — optional, integer. Messages to return per page. Default 20, maximum 50. Prefer the default or a small page; do NOT read the whole transcript unless it is necessary.
-- `include` — optional, array of these values: `text`, `tool`, `reasoning`. Which content to return. Default is `text` + `tool`. `reasoning` is excluded unless you list it explicitly, so request it only when text and tool entries do not explain the failure.
+- `include` — optional, array of these values: `text`, `tool`, `reasoning`. Which content to return. Default is `text` + `tool`. `reasoning` is excluded unless you list it explicitly.
 
-# PAGINATION
+## PAGINATION
 The first call (no `cursor`) returns the most RECENT page. Each response reports `more` and, when older messages exist, `next_cursor`. To read backwards through history, pass the previous response's `next_cursor` as `cursor`; repeat until `more` is `false`.
 
-# RESPONSE
+## RESPONSE
 - Header: `task_id`, `title`, `messages` (entries in this page), `more`, and `next_cursor` when present.
 - Each entry starts with `[role] message_id: ... created: ...`. An assistant entry may add `finish: ...` or `error: ...`.
 - Message content appears as `text:` blocks; reasoning as `reasoning:` blocks (only when requested).
 - Tool entries appear as `tool: <name> (<status>)` followed by `input: <value>`, plus `output:` when the status is completed, `error:` when it failed, or `title:` while it is still running.
-- Each field is clipped to 4000 characters; clipped text ends with `[truncated <n> chars]`. Page further to see the rest rather than expecting full history in one call.
+- Each field is clipped to 4000 characters. Page further to see the rest rather than expecting full history in one call.

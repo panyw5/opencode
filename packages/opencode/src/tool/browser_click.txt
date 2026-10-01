@@ -1,16 +1,11 @@
+# PURPOSE
 Click an element on the page currently open in the embedded desktop browser.
 
-`uid` comes from the most recent browser_read snapshot of this session. The
-click is dispatched as a trusted input event at the element's center; if the
-click triggers a navigation, the tool waits for the new page to settle and
-reports the fresh URL and title in its result.
-
 Use this to press buttons, follow links, open menus, or otherwise interact
-with JavaScript-rendered pages. For static content, prefer webfetch.
+with JavaScript-rendered pages.
 
-Notes:
-- Requires the opencode desktop app.
-- Every click asks the user for permission (pattern: the current page URL).
-- uids are invalid after navigation: if the element is gone, take a new
-  snapshot with browser_read.
+# GUIDELINES
+- `uid` comes from the most recent `browser_read` snapshot of this session.
+- `uid`s are invalid after navigation: take a new
+  snapshot with `browser_read` to locate an element
 - After the click, re-read the page if you need the updated element list.
