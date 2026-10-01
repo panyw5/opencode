@@ -559,4 +559,160 @@ describe("LocationLifecycle", () => {
       expect(error).toBeInstanceOf(LocationLifecycle.LocationDeleted)
     }),
   )
+
+  it.live("idle disposal never tears down a location holding a live lease", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const lifecycle = yield* LocationLifecycle.Service
+      const original = LocationLifecycle.config.idleDisposalMs
+      // The disposer observes the work flag at the moment disposal runs. The
+      // old two-step check set the `stopping` fence after re-reading leases,
+      // so a lease admitted inside that window got its instance torn down
+      // mid-work. With the claim folded into a single modify the invariant
+      // must hold across repeated interleavings.
+      let inFlight = 0
+      let disposedWhileBusy = 0
+      const unregister = registerDisposer(async () => {
+        if (inFlight > 0) disposedWhileBusy++
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(unregister))
+      LocationLifecycle.config.idleDisposalMs = 1
+
+      try {
+        for (let i = 0; i < 25; i++) {
+          const work = yield* lifecycle
+            .provide(
+              { directory: dir, purpose: "session-run" },
+              Effect.gen(function* () {
+                inFlight++
+                yield* Effect.sleep("2 millis")
+                inFlight--
+              }),
+            )
+            .pipe(Effect.catchTag("LocationLifecycle.LocationUnavailable", () => Effect.void), Effect.forkChild)
+          yield* Fiber.join(work)
+        }
+        expect(disposedWhileBusy).toBe(0)
+        expect(inFlight).toBe(0)
+      } finally {
+        LocationLifecycle.config.idleDisposalMs = original
+      }
+    }),
+  )
+
+  it.live("delete fence blocks admissions arriving before the DB write", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const lifecycle = yield* LocationLifecycle.Service
+      // The row must exist for the delete to persist its fence.
+      yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void)
+      const deleteFenceHit = yield* Deferred.make<void>()
+      const releaseHook = yield* Deferred.make<void>()
+      // The hook runs while the in-memory fence is already up but the DB is
+      // not yet written — historically the window where an admission could
+      // slip between the leases check and the fence.
+      LocationLifecycle.config.deleteFenceHook = () =>
+        Effect.runPromise(Deferred.succeed(deleteFenceHit, undefined).pipe(Effect.andThen(Deferred.await(releaseHook))))
+      try {
+        const deleting = yield* lifecycle.delete({ directory: dir, operationID: "op-fence" }).pipe(Effect.forkChild)
+        yield* Deferred.await(deleteFenceHit)
+        const error = yield* lifecycle.provide({ directory: dir, purpose: "http-request" }, Effect.void).pipe(Effect.flip)
+        expect(error).toBeInstanceOf(LocationLifecycle.LocationDeleting)
+        yield* Deferred.succeed(releaseHook, undefined)
+        yield* Fiber.join(deleting)
+        const row = yield* Effect.sync(() => ProjectLocation.getByDirectory(dir))
+        expect(row?.lifecycle.state).toBe("deleted")
+      } finally {
+        LocationLifecycle.config.deleteFenceHook = undefined
+      }
+    }),
+  )
+
+  it.live("idle disposal retries failed execution directories and settles once they pass", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const runtimeDirectory = `${dir}/.math/problems/retry-fixture`
+      mkdirSync(runtimeDirectory, { recursive: true })
+      const lifecycle = yield* LocationLifecycle.Service
+      const original = LocationLifecycle.config.idleDisposalMs
+      const runtimeKey = String(Path.identity(runtimeDirectory, localPathContext))
+      const attempts = { location: 0, runtime: 0 }
+      // Only the very first runtime pass fails; the retry then succeeds.
+      const unregister = registerDisposer(async (directoryKey) => {
+        if (String(directoryKey) === runtimeKey) {
+          attempts.runtime++
+          if (attempts.runtime === 1) throw new Error("transient dispose failure")
+          return
+        }
+        attempts.location++
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(unregister))
+      LocationLifecycle.config.idleDisposalMs = 15
+
+      try {
+        const locationID = yield* lifecycle.provide(
+          { directory: dir, runtimeDirectory, purpose: "http-request" },
+          Effect.gen(function* () {
+            const ctx = yield* InstanceRef
+            if (!ctx) return yield* Effect.die(new Error("missing InstanceRef"))
+            return ctx.location.id
+          }),
+        )
+
+        // A failed pass must revert to running and re-arm (never pin the
+        // slot in `stopping`); the retry pass then settles to stopped.
+        yield* pollWithTimeout(
+          lifecycle.snapshot(locationID).pipe(Effect.map((s) => (s.runtime.tag === "stopped" ? true : undefined))),
+          "retry after failed idle disposal never completed",
+          "3 seconds",
+        )
+        expect(attempts.runtime).toBe(2)
+        expect(attempts.location).toBe(1)
+      } finally {
+        LocationLifecycle.config.idleDisposalMs = original
+      }
+    }),
+  )
+
+  it.live("idle disposal gives up after the retry also fails instead of pinning stopping", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const runtimeDirectory = `${dir}/.math/problems/giveup-fixture`
+      mkdirSync(runtimeDirectory, { recursive: true })
+      const lifecycle = yield* LocationLifecycle.Service
+      const original = LocationLifecycle.config.idleDisposalMs
+      const runtimeKey = String(Path.identity(runtimeDirectory, localPathContext))
+      let attempts = 0
+      const unregister = registerDisposer(async (directoryKey) => {
+        if (String(directoryKey) !== runtimeKey) return
+        attempts++
+        throw new Error("persistent dispose failure")
+      })
+      yield* Effect.addFinalizer(() => Effect.sync(unregister))
+      LocationLifecycle.config.idleDisposalMs = 15
+
+      try {
+        const locationID = yield* lifecycle.provide(
+          { directory: dir, runtimeDirectory, purpose: "http-request" },
+          Effect.gen(function* () {
+            const ctx = yield* InstanceRef
+            if (!ctx) return yield* Effect.die(new Error("missing InstanceRef"))
+            return ctx.location.id
+          }),
+        )
+
+        // After the retry fails the location settles to `stopped`: later
+        // admissions must not be bricked by a stuck `stopping` slot.
+        yield* pollWithTimeout(
+          lifecycle.snapshot(locationID).pipe(Effect.map((s) => (s.runtime.tag === "stopped" ? true : undefined))),
+          "give-up path never settled to stopped",
+          "3 seconds",
+        )
+        yield* Effect.sleep("100 millis")
+        expect(attempts).toBe(2)
+      } finally {
+        LocationLifecycle.config.idleDisposalMs = original
+      }
+    }),
+  )
 })
