@@ -31,6 +31,11 @@ export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "
   onHighlight?: (value: T | undefined) => (() => void) | void
   class?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
+  /** Extra classes applied to the trigger button only — the shared `class`
+   * prop is intentionally spread across trigger, content panel and items
+   * (see `prompt-pick` styling in index.css), so trigger-only sizing like
+   * `h-9` must go here instead or it clamps the dropdown to one item. */
+  triggerClass?: ComponentProps<"div">["class"]
   children?: (item: T | undefined) => JSX.Element
   triggerStyle?: JSX.CSSProperties
   contentStyle?: JSX.CSSProperties
@@ -43,6 +48,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
   const [local, others] = splitProps(props, [
     "class",
     "classList",
+    "triggerClass",
     "placeholder",
     "options",
     "current",
@@ -254,6 +260,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
         classList={{
           ...(local.classList ?? {}),
           [local.class ?? ""]: !!local.class,
+          [local.triggerClass ?? ""]: !!local.triggerClass,
         }}
       >
         <Kobalte.Value<T> data-slot="select-select-trigger-value" class={local.valueClass}>

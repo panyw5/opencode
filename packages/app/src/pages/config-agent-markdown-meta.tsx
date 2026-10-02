@@ -108,7 +108,7 @@ export function AgentMarkdownMeta(props: {
                 onSelect={(x) => props.onVariantChange?.(x === "default" ? undefined : x)}
                 disabled={props.busy}
                 variant="ghost"
-                class="h-9 w-36 shrink-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover capitalize"
+                triggerClass="h-9 w-36 shrink-0 justify-between rounded-lg border border-border-weak-base bg-background-base px-3 text-13-regular text-text-strong hover:border-border-strong hover:bg-surface-base-hover capitalize"
                 valueClass="truncate"
                 triggerProps={{
                   type: "button",
