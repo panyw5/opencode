@@ -3778,6 +3778,12 @@ export default function ConfigPage() {
   window.addEventListener(CONFIG_PAGE_REFRESH_EVENT, onConfigPageRefresh)
   onCleanup(() => window.removeEventListener(CONFIG_PAGE_REFRESH_EVENT, onConfigPageRefresh))
 
+  // External opencode.jsonc edits (file watcher / CLI / another instance) arrive as
+  // global.config.updated. The agents section reads its agent list + jsonc snapshot
+  // from a rev-keyed load, so bump agentRev to re-read them alongside the global
+  // config store that global-sync already updates for this event.
+  onCleanup(globalSync.onConfigUpdated(() => bump("agentRev")))
+
   function bump(
     ...list: Array<
       "workspaceRev" | "skillRev" | "pluginRev" | "agentRev" | "clawRev" | "gaRev" | "hmRev" | "commandRev"

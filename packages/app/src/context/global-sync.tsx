@@ -483,6 +483,16 @@ function createGlobalSync() {
     return next
   }
 
+  // Subscribers notified whenever a global.config.updated event lands, regardless
+  // of which domain emitted it (file watcher, CLI write, or app's own update API).
+  const configUpdatedListeners = new Set<() => void>()
+  const onConfigUpdated = (listener: () => void) => {
+    configUpdatedListeners.add(listener)
+    return () => {
+      configUpdatedListeners.delete(listener)
+    }
+  }
+
   /** Re-pull command.list for every loaded directory store so newly written or
    * edited command files appear in the slash palette without a backend restart. */
   async function refreshCommands(reason: string) {
@@ -811,6 +821,15 @@ function createGlobalSync() {
         setGlobalConfig: (config) => updateGlobalConfig(emittingDomain, config),
       })
       if (event.type === "global.config.updated") {
+        for (const listener of configUpdatedListeners) {
+          try {
+            listener()
+          } catch (error) {
+            console.error(
+              `[global-sync] config updated listener failed error=${error instanceof Error ? error.message : String(error)}`,
+            )
+          }
+        }
         void refreshProviders(emittingDomain).catch((err) => {
           console.error(
             `[global-sync] provider refresh failed error=${err instanceof Error ? err.message : String(err)}`,
@@ -1111,6 +1130,7 @@ function createGlobalSync() {
     bootstrap,
     refreshConfig,
     refreshCommands,
+    onConfigUpdated,
     updateConfig,
     provider: providerApi,
     project: projectApi,
