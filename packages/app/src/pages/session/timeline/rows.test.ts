@@ -200,6 +200,20 @@ describe("constructMessageRows", () => {
     expect(row?._tag === "AssistantPart" && row.group.type === "part" && row.group.ref.partID).toBe("tool-diagram")
   })
 
+  test("keeps present_task out of the collapsed tool group", () => {
+    const user = userMessage("user-present-task")
+    const assistant = assistantMessage("assistant-present-task", user.id)
+    const parts = [
+      textPart(user.id, "work"),
+      toolPart(assistant.id, "tool-before", "read"),
+      toolPart(assistant.id, "tool-task", "present_task"),
+    ]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "ToolGroup", "AssistantPart"])
+    const row = rows.at(-1)
+    expect(row?._tag === "AssistantPart" && row.group.type === "part" && row.group.ref.partID).toBe("tool-task")
+  })
+
   test("expands large context groups into individually virtualizable stable rows", () => {
     const user = userMessage("user-large-tools")
     const assistant = assistantMessage("assistant-large-tools", user.id)

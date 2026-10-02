@@ -44,6 +44,7 @@ import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { PresentFileTool } from "./present_file"
 import { PresentDiagramTool } from "./present_diagram"
+import { PresentTaskTool } from "./present_task"
 import { Glob } from "@opencode-ai/core/util/glob"
 import path from "path"
 import { pathToFileURL } from "url"
@@ -232,6 +233,7 @@ export const layer: Layer.Layer<
     const agent = yield* Agent.Service
     const presentFile = yield* PresentFileTool
     const presentDiagram = yield* PresentDiagramTool
+    const presentTask = yield* PresentTaskTool
 
     const state = yield* InstanceState.make<State>(
       Effect.fn("ToolRegistry.state")(function* (ctx) {
@@ -375,6 +377,7 @@ export const layer: Layer.Layer<
           plan: Tool.init(plan),
           present_file: Tool.init(presentFile),
           present_diagram: Tool.init(presentDiagram),
+          present_task: Tool.init(presentTask),
           browser_navigate: Tool.init(browserNavigate),
           browser_read: Tool.init(browserRead),
           browser_click: Tool.init(browserClick),
@@ -437,6 +440,7 @@ export const layer: Layer.Layer<
           ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
           tool.present_file,
           tool.present_diagram,
+          tool.present_task,
           ...(browserEnabled
             ? [
                 tool.browser_navigate,

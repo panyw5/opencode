@@ -1,0 +1,182 @@
+[data-component="presented-task-card"] {
+  position: relative;
+  width: min(100%, 840px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-base);
+  box-sizing: border-box;
+  contain: layout paint;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+/* Hover affordance only when the card is clickable: the overlay button exists. */
+[data-component="presented-task-card"]:has(.presented-task-card__open:hover) {
+  border-color: var(--border-interactive-hover);
+  background: var(--surface-raised-base-hover);
+  box-shadow: var(--shadow-xs-border-hover);
+}
+
+.presented-task-card__open {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.presented-task-card__open:focus-visible {
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: -3px;
+  border-radius: var(--radius-lg);
+}
+
+.presented-task-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+/* The icon is taller than the two-line heading, so pair them in their own row
+   and center it against the kind label + title. */
+.presented-task-card__heading-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+/* `Icon` puts `class` on the inner <svg>, so the 2x size has to go on the
+   wrapper: a sized svg would overflow its 20px box and lean on the heading. */
+.presented-task-card__heading-row [data-component="icon"] {
+  /* Twice the icon's `normal` size (20px); icon.css pins [data-size] at the same specificity. */
+  width: 40px;
+  height: 40px;
+  flex: none;
+}
+.presented-task-card__icon {
+  width: 100%;
+  height: 100%;
+  color: var(--text-base);
+}
+.presented-task-card__heading {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.presented-task-card__kind {
+  color: var(--text-weak);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.presented-task-card__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--text-strong);
+}
+.presented-task-card__status {
+  flex: none;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--text-weak);
+}
+
+.presented-task-card__metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.presented-task-card__bar {
+  flex: 1 1 120px;
+  min-width: 96px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-base);
+  overflow: hidden;
+}
+.presented-task-card__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--text-interactive-base);
+}
+.presented-task-card__metric {
+  font-size: 12px;
+  color: var(--text-weak);
+  white-space: nowrap;
+}
+
+.presented-task-card__excerpt {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 108px;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  color: var(--text-base);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.presented-task-card__footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.presented-task-card__path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-weaker);
+}
+
+[data-task-tone="success"] .presented-task-card__status {
+  color: var(--text-success-base);
+}
+[data-task-tone="danger"] .presented-task-card__status {
+  color: var(--text-critical-base);
+}
+[data-task-tone="active"] .presented-task-card__status {
+  color: var(--text-interactive-base);
+}
+[data-task-tone="muted"] {
+  opacity: 0.72;
+}
+[data-task-tone="active"] .presented-task-card__bar > span {
+  background: var(--text-interactive-base);
+}
+[data-task-tone="success"] .presented-task-card__bar > span {
+  background: var(--text-success-base);
+}
+
+@media (max-width: 560px) {
+  [data-component="presented-task-card"] {
+    padding: 12px;
+  }
+  .presented-task-card__excerpt {
+    max-height: 84px;
+  }
+}

@@ -851,6 +851,9 @@ export function ProjectTasksPanel(props: {
   editorMinimizeLabel?: string
   onStashEditor?: (payload: ProjectTaskEditorStash, source: HTMLElement) => void | Promise<void>
   onDismissEditorStash?: (taskID: string) => void
+  /** One-shot jump requested by a chat task card: open this task's detail dialog. */
+  focusTaskID?: Accessor<string | undefined>
+  onFocusHandled?: () => void
 }): JSX.Element {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
@@ -944,6 +947,20 @@ export function ProjectTasksPanel(props: {
       />
     ))
   }
+
+  // A chat task card asked for this task: wait until the list carries it, then
+  // open its detail dialog exactly once (the list may still be loading).
+  let focusOpened: string | undefined
+  createEffect(() => {
+    const taskID = props.focusTaskID?.()
+    if (!taskID || focusOpened === taskID) return
+    const task = state.tasks.find((item) => item.id === taskID)
+    if (!task) return
+    focusOpened = taskID
+    console.debug(`[project-task] focus-open taskID=${taskID} title=${task.title}`)
+    open(task)
+    props.onFocusHandled?.()
+  })
 
   async function archive(task: ProjectTask) {
     if (!window.confirm(language.t("projectTask.archive.confirm", { title: task.title }))) return

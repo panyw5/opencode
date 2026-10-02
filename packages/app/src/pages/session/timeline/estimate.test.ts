@@ -29,6 +29,9 @@ import {
   PRESENT_FILE_MOBILE_HEIGHT,
   PRESENT_DIAGRAM_DESKTOP_HEIGHT,
   PRESENT_DIAGRAM_MOBILE_HEIGHT,
+  PRESENT_TASK_CHROME_HEIGHT,
+  PRESENT_TASK_EXCERPT_HEIGHT,
+  PRESENT_TASK_MOBILE_EXCERPT_HEIGHT,
 } from "./estimate"
 
 const textPart = (text: string): Part =>
@@ -72,6 +75,24 @@ const presentFilePart = (caption = "") =>
   }) as ToolPart
 
 const WIDTH = 1080
+
+const presentTaskPart = (metadata: Record<string, unknown>) =>
+  ({
+    id: "prt_present_task",
+    sessionID: "ses_1",
+    messageID: "msg_1",
+    type: "tool",
+    tool: "present_task",
+    callID: "call_present_task",
+    state: {
+      status: "completed",
+      input: { taskID: "ptask_1" },
+      output: "presented",
+      title: "Ship the card",
+      metadata,
+      time: { start: 1, end: 2 },
+    },
+  }) as ToolPart
 const lineHeight = 31.2
 const charWidth = 11.4
 const base = { textLineHeight: lineHeight, charWidth }
@@ -89,6 +110,28 @@ describe("estimateRowHeight fixed-height rows", () => {
     const diagram = { ...part, tool: "present_diagram" } as ToolPart
     expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(diagram) })).toBe(PRESENT_DIAGRAM_DESKTOP_HEIGHT)
     expect(estimateRowHeight(row, 500, { ...base, parts: lookup(diagram) })).toBe(PRESENT_DIAGRAM_MOBILE_HEIGHT)
+  })
+  test("sizes the presented task card by whether its payload carries an excerpt", () => {
+    const withExcerpt = presentTaskPart({ presentedTask: { kind: "project_task", id: "ptask_1", prdExcerpt: "notes" } })
+    const row = {
+      _tag: "AssistantPart",
+      group: { type: "part" as const, ref: { messageID: "msg_1", partID: withExcerpt.id } },
+    }
+    expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(withExcerpt) })).toBe(
+      PRESENT_TASK_CHROME_HEIGHT + PRESENT_TASK_EXCERPT_HEIGHT,
+    )
+    expect(estimateRowHeight(row, 500, { ...base, parts: lookup(withExcerpt) })).toBe(
+      PRESENT_TASK_CHROME_HEIGHT + PRESENT_TASK_MOBILE_EXCERPT_HEIGHT,
+    )
+
+    const scheduled = presentTaskPart({ presentedTask: { kind: "scheduled_task", id: "task_1", promptExcerpt: "run" } })
+    expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(scheduled) })).toBe(
+      PRESENT_TASK_CHROME_HEIGHT + PRESENT_TASK_EXCERPT_HEIGHT,
+    )
+    const withoutExcerpt = presentTaskPart({ presentedTask: { kind: "scheduled_task", id: "task_1" } })
+    expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(withoutExcerpt) })).toBe(PRESENT_TASK_CHROME_HEIGHT)
+    const unreadable = presentTaskPart({})
+    expect(estimateRowHeight(row, WIDTH, { ...base, parts: lookup(unreadable) })).toBe(PRESENT_TASK_CHROME_HEIGHT)
   })
   test("TurnGap uses the h-6 constant", () => {
     expect(estimateRowHeight({ _tag: "TurnGap", userMessageID: "m" }, WIDTH, base)).toBe(TURN_GAP_HEIGHT)

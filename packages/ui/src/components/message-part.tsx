@@ -46,6 +46,7 @@ import { Icon } from "./icon"
 import { ToolErrorCard } from "./tool-error-card"
 import { PresentationCard } from "./presentation-card"
 import { DiagramCard } from "./diagram-card"
+import { PresentedTaskCard, readPresentedTask } from "./task-card"
 import { Checkbox } from "./checkbox"
 import { DiffChanges } from "./diff-changes"
 import { Markdown } from "./markdown"
@@ -582,6 +583,12 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
       return {
         icon: "checklist",
         title: i18n.t("ui.tool.todos"),
+      }
+    case "present_task":
+      return {
+        icon: "checklist",
+        title: i18n.t("ui.tool.presentTask"),
+        subtitle: text(input.taskID),
       }
     case "question":
       return {
@@ -3419,6 +3426,37 @@ ToolRegistry.register({
           </div>
         </Show>
       </BasicTool>
+    )
+  },
+})
+
+ToolRegistry.register({
+  name: "present_task",
+  render(props) {
+    // Old messages and deleted tasks can carry a payload the card cannot read;
+    // those fall back to the plain tool row rather than rendering an empty card.
+    const task = createMemo(() => readPresentedTask(props.metadata))
+    return (
+      <Show
+        when={task()}
+        fallback={
+          <GenericTool
+            tool={props.tool}
+            part={props.part}
+            input={props.input}
+            output={props.output}
+            status={props.status}
+            hideDetails={props.hideDetails}
+          />
+        }
+      >
+        <PresentedTaskCard
+          sessionID={props.part?.sessionID ?? ""}
+          status={props.status}
+          input={props.input}
+          metadata={props.metadata}
+        />
+      </Show>
     )
   },
 })

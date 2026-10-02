@@ -898,6 +898,9 @@ export function ScheduledTasksPanel(props: {
   editorMinimizeLabel?: string
   onStashEditor?: (payload: ScheduledTaskEditorStash, source: HTMLElement) => void | Promise<void>
   onDismissEditorStash?: (taskID: string | undefined) => void
+  /** One-shot jump requested by a chat task card: open this task's editor dialog. */
+  focusTaskID?: Accessor<string | undefined>
+  onFocusHandled?: () => void
 }): JSX.Element {
   const sdk = useGlobalSDK()
   const language = useLanguage()
@@ -972,6 +975,20 @@ export function ScheduledTasksPanel(props: {
       />
     ))
   }
+
+  // A chat task card asked for this task: wait until the list carries it, then
+  // open its editor dialog exactly once (the list may still be loading).
+  let focusOpened: string | undefined
+  createEffect(() => {
+    const taskID = props.focusTaskID?.()
+    if (!taskID || focusOpened === taskID) return
+    const task = state.tasks.find((item) => item.id === taskID)
+    if (!task) return
+    focusOpened = taskID
+    console.debug(`[scheduled-panel] focus-open taskID=${taskID} name=${task.name}`)
+    open(task)
+    props.onFocusHandled?.()
+  })
 
   function create() {
     const projectID = props.projectID()

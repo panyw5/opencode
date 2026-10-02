@@ -43,6 +43,7 @@ describe("shouldDeferToolPart", () => {
   test("does not defer present_file cards", () => {
     expect(shouldDeferToolPart(tool({ tool: "present_file", status: "completed" }))).toBe(false)
     expect(shouldDeferToolPart(tool({ tool: "present_diagram", status: "completed" }))).toBe(false)
+    expect(shouldDeferToolPart(tool({ tool: "present_task", status: "completed" }))).toBe(false)
   })
   test("defers collapsed completed tools", () => {
     expect(shouldDeferToolPart(tool({ status: "completed" }))).toBe(true)

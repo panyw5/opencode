@@ -139,6 +139,7 @@ import {
   drainPendingDeepLinks,
 } from "./layout/deep-links"
 import { createInlineEditorController } from "./layout/inline-editor"
+import { PRESENT_TASK_OPEN_EVENT, type PresentedTaskOpenRequest } from "./layout/open-task"
 import {
   ImChannelSidebar,
   LocalWorkspace,
@@ -2010,6 +2011,31 @@ export default function Layout(props: ParentProps) {
     setStore("sidebarPanel", "scheduled")
     layout.sidebar.open()
   }
+
+  /**
+   * One-shot jump requested by a chat task card. The panel owning the task opens
+   * its detail dialog for the ID and then clears the request.
+   */
+  const [presentedTaskFocus, setPresentedTaskFocus] = createSignal<{ kind: SidebarPanelKind; taskID: string }>()
+
+  onMount(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<PresentedTaskOpenRequest>).detail
+      if (!detail?.taskID) return
+      console.debug(
+        `[layout] present-task-open kind=${detail.kind} task=${detail.taskID} session=${detail.sessionID}`,
+      )
+      if (detail.kind === "project_task") {
+        openProjectTasksPanel()
+        setPresentedTaskFocus({ kind: "projectTasks", taskID: detail.taskID })
+        return
+      }
+      openScheduledPanel()
+      setPresentedTaskFocus({ kind: "scheduled", taskID: detail.taskID })
+    }
+    window.addEventListener(PRESENT_TASK_OPEN_EVENT, handler as EventListener)
+    onCleanup(() => window.removeEventListener(PRESENT_TASK_OPEN_EVENT, handler as EventListener))
+  })
 
   /**
    * Minimize the panel sitting in the sidebar slot: it moves onto the rail
@@ -4511,6 +4537,8 @@ export default function Layout(props: ParentProps) {
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
+            focusTaskID={() => (presentedTaskFocus()?.kind === "scheduled" ? presentedTaskFocus()!.taskID : undefined)}
+            onFocusHandled={() => setPresentedTaskFocus(undefined)}
             editorMinimizeLabel={language.t("sidebar.panels.minimize")}
             onStashEditor={stashScheduledTaskEditor}
             onDismissEditorStash={(taskID) => {
@@ -4535,6 +4563,10 @@ export default function Layout(props: ParentProps) {
             width={panel}
             mobile={mobile}
             onBack={() => setStore("sidebarPanel", "project")}
+            focusTaskID={() =>
+              presentedTaskFocus()?.kind === "projectTasks" ? presentedTaskFocus()!.taskID : undefined
+            }
+            onFocusHandled={() => setPresentedTaskFocus(undefined)}
             editorMinimizeLabel={language.t("sidebar.panels.minimize")}
             onStashEditor={stashProjectTaskEditor}
             onDismissEditorStash={(taskID) => {
