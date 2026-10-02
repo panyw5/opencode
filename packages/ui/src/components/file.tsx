@@ -29,6 +29,7 @@ import {
   Show,
   splitProps,
 } from "solid-js"
+import { createStore } from "solid-js/store"
 import { useI18n } from "../context/i18n"
 import { createDefaultOptions, styleVariables } from "../pierre"
 import { markCommentedDiffLines, markCommentedFileLines } from "../pierre/commented-lines"
@@ -790,6 +791,9 @@ function FileRoot(props: {
 }
 
 function FloatingFileActions(props: { mount: () => HTMLElement | undefined; children: JSX.Element }) {
+  const i18n = useI18n()
+  const [state, setState] = createStore({ hovered: false, pinned: false })
+  const open = () => state.hovered || state.pinned
   return (
     <Show when={props.mount()}>
       {(mount) => (
@@ -798,9 +802,27 @@ function FloatingFileActions(props: { mount: () => HTMLElement | undefined; chil
             data-slot="file-markdown-actions"
             class="absolute right-3 top-3 z-20"
             data-prevent-autofocus=""
+            data-expanded={open() ? "true" : "false"}
             onPointerDown={(event) => event.stopPropagation()}
           >
-            {props.children}
+            <div
+              data-slot="file-markdown-actions-inner"
+              class="flex items-center gap-2"
+              onPointerEnter={() => setState("hovered", true)}
+              onPointerLeave={() => setState("hovered", false)}
+            >
+              <Tooltip value={i18n.t("ui.file.actions")} placement="bottom">
+                <IconButton
+                  icon="dot-grid"
+                  variant="ghost"
+                  class="h-8 w-8 shrink-0 rounded-md"
+                  onClick={() => setState("pinned", (pinned) => !pinned)}
+                  aria-label={i18n.t("ui.file.actions")}
+                  aria-expanded={open()}
+                />
+              </Tooltip>
+              <Show when={open()}>{props.children}</Show>
+            </div>
           </div>
         </Portal>
       )}
@@ -1129,7 +1151,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
   if (!md() && !svg()) {
     const sourceBar = props.toolbar === false || !props.actionsMount ? undefined : (
       <FloatingFileActions mount={props.actionsMount}>
-        <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+        <>
           {props.openWith}
           <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
             <IconButton
@@ -1179,7 +1201,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
               </Tooltip>
             )}
           </Show>
-        </div>
+        </>
       </FloatingFileActions>
     )
     return SourceViewer<T>({ ...props, head: sourceBar })
@@ -1250,7 +1272,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
   })
   const bar = props.toolbar === false || !props.actionsMount ? undefined : (
     <FloatingFileActions mount={props.actionsMount}>
-      <div data-slot="file-markdown-actions-inner" class="flex items-center gap-2">
+      <>
         {props.openWith}
         <Tooltip value={i18n.t("ui.file.maximize")} placement="bottom">
           <IconButton
@@ -1308,7 +1330,7 @@ function TextViewer<T>(props: TextFileProps<T>) {
           label={(value) => i18n.t(value === "preview" ? "ui.file.preview" : "ui.file.source")}
           onSelect={(value) => value && setMode(value)}
         />
-      </div>
+      </>
     </FloatingFileActions>
   )
 
