@@ -8,10 +8,13 @@ When NOT to use the Task tool:
 - If no available agent is a good fit for the task, do it yourself
 
 # GUIDELINES
-- Launch multiple agents concurrently whenever possible, to maximize performance; to do that, use a single message with multiple tool uses
-- When the agent is done, it will return a single message back to you, invisible to the user. Summarize the result by sending a concise message to the user.
+- BREAK your current mission into smaller, achievable sub-missions. These different missions can be assigned to multiple agents.
+- Launch multiple agents concurrently whenever possible
+- When an agent is done, it will return a single message back to you, invisible to the user. Summarize the result by sending a concise message to the user.
 - Each agent invocation starts with a fresh context.
   - Your initial prompt should contain a highly detailed and focused task description for the agent to perform autonomously.
+  - In the initial prompt, BREAK the assigned task into smaller ATOMIZED tasks and ATOMIZED steps that the subagent could follow. Steps should be incremental, doable, avoid subagent overthinking.
+  - In the initial prompt, point out existing crucial and relevant files in the codebase
   - Specify exactly what information the agent should return in its final message to you.
   - State clearly whether it should write code or research (search, file reads, web fetches, etc.) ONLY.
   - Tell it how to verify its work if possible.

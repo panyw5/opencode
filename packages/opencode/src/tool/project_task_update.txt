@@ -1,26 +1,29 @@
+# PURPOSE
 Update an EXISTING project-level task (title, description, status).
 
 ## File structure
-Updating `description` overwrites `.project-tasks/<taskID>/prd.md` (You may also edit that file directly with write tools.)
-Directly `write` progress record in `.project-tasks/<taskID>/progress.md`
+Field `description` is stored in `.project-tasks/<taskID>/prd.md`. You may also edit that file directly with write tools.
+
+Directly `write` progress record into `.project-tasks/<taskID>/progress.md`. `read` the first 50-ish lines for formatting instructions.
 
 ## When to use
 - Edit description / acceptance criteria / title
 - Update status (open -> in_progress -> done)
 
 ## [CRITICAL] When NOT to use
-- Making new task → `project_task_create`
-- Attaching task to session → `project_task_mount`
-- Per-session step checklist → `todowrite`
+- Making new task: use `project_task_create`
+- Attaching task to session: use `project_task_mount`
+- Per-session step checklist: use `todowrite`
 
-## Rules
+
+# GUIDELINES
 - Do NOT mark tasks as "done" on your own — only when the user explicitly asks or clearly approves after you ask (`project_task_update`)
 - Always pass the real exact `taskID` from the `project_task_list` / get / create / mount tool return
 - Completing work (when allowed): `status=done` on the SAME taskID
 - Archiving/retiring (when allowed): `status=archived`
 - Prefer small, targeted field updates; omit fields you are not changing
+- Update the associated `progress.md` when you have made subtantial progress or encountered notable issues. Follow the formatting instructions.
 
-## Flow
+## USAGE WITH OTHER TOOLS
 1. `project_task_list` — get the exact target `id` from the return value (do not retype)
 2. Optional `project_task_get` if you need current description/sessions
-3. `project_task_update` with only changed fields
