@@ -8,6 +8,7 @@ import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
 import { MDNS } from "./mdns"
 import { HttpApiApp } from "./routes/instance/httpapi/server"
+import { startGlobalConfigWatcher } from "./global-config-watcher"
 import { disposeMiddleware } from "./routes/instance/httpapi/lifecycle"
 import { WebSocketTracker } from "./routes/instance/httpapi/websocket-tracker"
 import { PublicApi } from "./routes/instance/httpapi/public"
@@ -78,6 +79,9 @@ export async function listen(opts: ListenOptions): Promise<Listener> {
   void startChannelRuntimes(listener.url).catch((err) => {
     log.warn("channel runtime start failed", { error: err })
   })
+  // Publish `global.config.updated` when the global config files are edited
+  // directly on disk (no event is emitted for hand edits otherwise).
+  startGlobalConfigWatcher()
   return {
     hostname: listener.hostname,
     port: listener.port,
