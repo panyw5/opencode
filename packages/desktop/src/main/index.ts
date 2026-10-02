@@ -530,9 +530,6 @@ const main = Effect.gen(function* () {
     bridgeClient.start({ url, username: "opencode", password })
     warmupBrowserSession(USER_PARTITION)
   }
-  if (process.env.OPENCODE_BROWSER_SPIKE === "1") {
-    import("./browser-spike").then(({ startBrowserSpike }) => startBrowserSpike(mainWindow!))
-  }
   if (process.platform === "darwin") {
     app.off("did-resign-active", onResignActive)
     app.off("did-become-active", onBecomeActive)
