@@ -70,6 +70,7 @@ type Saved = {
   open: boolean
   session: Record<string, string | undefined>
   context: boolean
+  maximized?: boolean
   variant?: string
 }
 
@@ -77,6 +78,7 @@ const initial = {
   open: false,
   session: {},
   context: false,
+  maximized: false,
 } satisfies Saved
 
 function quickAssistantConfig() {
@@ -561,6 +563,12 @@ export function QuickAssistant() {
     setSaved("open", false)
   }
 
+  const toggleMaximize = () => {
+    const next = !saved.maximized
+    console.debug(`[quick-assistant] maximize ${next ? "enabled" : "disabled"} messages=${list().length}`)
+    setSaved("maximized", next)
+  }
+
   const toggle = () => {
     if (saved.open) {
       close()
@@ -858,6 +866,7 @@ export function QuickAssistant() {
 
   const dock = createMemo(() => enabled() && !!activeDir())
   const bare = createMemo(() => !waiting() && list().length === 0)
+  const expanded = createMemo(() => list().length > 0 && !!saved.maximized)
 
   const removePermission = (request: PermissionRequest) => {
     const setStore = setData()
@@ -902,9 +911,11 @@ export function QuickAssistant() {
 
       <Show when={saved.open}>
         <div
-          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] w-[min(520px,calc(100vw-24px))] rounded-xl"
+          class="fixed right-5 bottom-5 z-40 pointer-events-auto max-h-[calc(100dvh-72px)] rounded-xl"
           classList={{
             "h-[calc(100dvh-72px)]": waiting(),
+            "w-[min(1040px,calc(100vw-24px))]": expanded(),
+            "w-[min(520px,calc(100vw-24px))]": !expanded(),
             "border border-border-weak-base shadow-[var(--shadow-lg-border-base)]": !bare(),
           }}
           style={
@@ -927,6 +938,17 @@ export function QuickAssistant() {
                 }
           }
         >
+          <Show when={list().length > 0}>
+            <button
+              type="button"
+              class="absolute -top-3.5 right-5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"
+              aria-label={language.t(expanded() ? "common.restore" : "common.maximize")}
+              title={language.t(expanded() ? "common.restore" : "common.maximize")}
+              onClick={toggleMaximize}
+            >
+              <Icon name={expanded() ? "collapse" : "expand"} size="small" class="text-icon-weak" />
+            </button>
+          </Show>
           <button
             type="button"
             class="absolute -right-3.5 -top-3.5 z-10 flex size-7 items-center justify-center rounded-full border border-border-weak-base bg-background-base/90 text-icon-weak shadow-xs-border transition hover:border-border-strong-base hover:bg-surface-base-hover hover:text-icon-base"

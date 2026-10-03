@@ -1134,6 +1134,8 @@ export const dict = {
   "common.archive": "归档",
   "common.delete": "删除",
   "common.close": "关闭",
+  "common.maximize": "最大化",
+  "common.restore": "恢复大小",
   "common.clear": "清除",
   "common.edit": "编辑",
   "common.loadMore": "加载更多",

@@ -1230,6 +1230,8 @@ export const dict = {
   "common.archive": "Archive",
   "common.delete": "Delete",
   "common.close": "Close",
+  "common.maximize": "Maximize",
+  "common.restore": "Restore size",
   "common.clear": "Clear",
   "common.edit": "Edit",
   "common.loadMore": "Load more",
