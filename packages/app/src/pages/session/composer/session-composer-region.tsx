@@ -387,7 +387,14 @@ function SessionChildAgentMenu(props: {
   const language = useLanguage()
   let contentRef: HTMLDivElement | undefined
   let scrollTimer: number | undefined
-  const [scrolling, setScrolling] = createSignal(false)
+  const [store, setStore] = createStore({ open: false, scrolling: false })
+  onMount(() => console.debug(`[child-agent-menu] mounted entries=${props.entries.length}`))
+  createEffect(() => {
+    if (!store.open) return
+    console.debug(
+      `[child-agent-menu] entries-updated count=${props.entries.length} states=${props.entries.map((entry) => `${entry.id}:${entry.usage ?? entry.status ?? "unknown"}`).join(",")}`,
+    )
+  })
   const indexBadge = (entry: SessionChildAgentEntry): string | undefined => {
     if (entry.index === undefined) return undefined
     if (entry.resume) {
@@ -419,9 +426,9 @@ function SessionChildAgentMenu(props: {
       window.clearTimeout(scrollTimer)
       scrollTimer = undefined
     }
-    setScrolling(true)
+    setStore("scrolling", true)
     scrollTimer = window.setTimeout(() => {
-      setScrolling(false)
+      setStore("scrolling", false)
       scrollTimer = undefined
     }, 900)
   }
@@ -443,13 +450,22 @@ function SessionChildAgentMenu(props: {
   }
 
   onCleanup(() => {
+    console.debug(`[child-agent-menu] unmounted open=${store.open}`)
     if (scrollTimer === undefined) return
     window.clearTimeout(scrollTimer)
   })
 
   return (
     <Show when={props.entries.length > 0}>
-      <DropdownMenu gutter={6} placement="top-start">
+      <DropdownMenu
+        open={store.open}
+        onOpenChange={(open) => {
+          console.debug(`[child-agent-menu] open-change open=${open} entries=${props.entries.length}`)
+          setStore("open", open)
+        }}
+        gutter={6}
+        placement="top-start"
+      >
         <DropdownMenu.Trigger
           as={Button}
           variant="ghost"
@@ -468,7 +484,7 @@ function SessionChildAgentMenu(props: {
               contentRef = el
             }}
             class="session-child-agent-scrollbar w-[340px] max-w-[calc(100vw-32px)]"
-            data-scrolling={scrolling() ? "true" : undefined}
+            data-scrolling={store.scrolling ? "true" : undefined}
             style={{
               "max-height": "min(520px, calc(100dvh - 160px))",
               "overflow-y": "auto",
@@ -956,8 +972,9 @@ export function SessionComposerRegion(props: {
                       </span>
                     )}
                   </Show>
-                  <Show when={childAgentMenu()} keyed>
-                    {(menu) => <SessionChildAgentMenu entries={menu.entries} onOpen={menu.onOpen} />}
+                  {/* Keep the open menu mounted when live child-session data changes. */}
+                  <Show when={childAgentMenu()}>
+                    {(menu) => <SessionChildAgentMenu entries={menu().entries} onOpen={menu().onOpen} />}
                   </Show>
                   <Show when={platform.platform === "desktop" && backgroundShells().length > 0}>
                     <SessionBackgroundShellMenu
