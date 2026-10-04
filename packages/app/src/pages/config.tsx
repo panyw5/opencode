@@ -17,6 +17,8 @@ import {
 } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
+import { GptProSettings } from "@/components/gpt-pro-settings"
+import { DEFAULT_GPT_PRO_CONFIG } from "@opencode-ai/util/gpt-pro"
 import larkIcon from "../../../ui/src/assets/icons/channel/lark.png"
 import qqIcon from "../../../ui/src/assets/icons/channel/qq.png"
 import wechatIcon from "../../../ui/src/assets/icons/channel/wechat.png"
@@ -5541,6 +5543,8 @@ export default function ConfigPage() {
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label))
   })
 
+  const [gptProConfig, setGptProConfig] = createStore({ ...DEFAULT_GPT_PRO_CONFIG })
+  createEffect(() => { if (state.section === "claws" && platform.gptPro) void platform.gptPro.getConfig().then(config => setGptProConfig(config)).catch(() => {}) })
   const claws = createMemo<ClawItem[]>(() => {
     if (platform.platform !== "desktop") return []
     const items: ClawItem[] = extraAgents.map((agent) => {
@@ -5576,6 +5580,7 @@ export default function ConfigPage() {
         enabled: cfg?.enabled ?? false,
       }
     })
+    if (platform.gptPro) items.push({ id: "claw:gpt-pro", label: "GPT-6 Pro", note: t("gptPro.description"), meta: "ChatGPT Chat · browser", sourceUrl: "https://chatgpt.com", enabled: gptProConfig.enabled })
     for (const agent of cliAgentDescriptors()) {
       const config = cliAgentConfigs[agent.id]
       const info = cliAgentInfo[agent.id]
@@ -9167,6 +9172,7 @@ export default function ConfigPage() {
                       />
                     }
                   >
+                    <Match when={selectedClaw()?.id === "claw:gpt-pro"}><GptProSettings onConfig={config => setGptProConfig(config)}/></Match>
                     <Match when={selectedClaw()?.id === "claw:hermes"}>
                       <HermesEditor
                         item={selectedClaw()}

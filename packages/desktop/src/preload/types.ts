@@ -295,6 +295,9 @@ export type BrowserViewState = {
 }
 
 export type BrowserAPI = {
+  getPresentation: () => Promise<{ id: number; state: BrowserViewState } | undefined>
+  acknowledgePresentation: (id: number) => Promise<void>
+  onPresented: (cb: (request: { id: number; state: BrowserViewState }) => void) => () => void
   open: (partition: string, url: string) => Promise<BrowserViewState | undefined>
   setBounds: (partition: string, bounds: BrowserBounds | null) => Promise<void>
   setVisible: (partition: string, visible: boolean) => Promise<void>
@@ -307,6 +310,7 @@ export type BrowserAPI = {
 }
 
 export type ElectronAPI = {
+  gptPro: import("@opencode-ai/util/gpt-pro").GptProAPI
   killSidecar: () => Promise<void>
   browser: BrowserAPI
   installCli: () => Promise<string>

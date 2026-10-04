@@ -1,0 +1,42 @@
+body {
+  box-sizing: border-box;
+  width: 380px;
+  padding: 20px;
+  margin: 0;
+  background: #faf7f0;
+  color: #242b24;
+  font:
+    14px/1.5 Georgia,
+    serif;
+}
+h1 {
+  margin: 0 0 14px;
+  font-size: 22px;
+}
+label {
+  display: block;
+  padding: 12px;
+  border: 1px solid #b8c3b5;
+  border-radius: 8px;
+}
+.note {
+  color: #596457;
+  font-size: 12px;
+}
+button {
+  width: 100%;
+  padding: 10px;
+  background: #254c36;
+  border: 0;
+  border-radius: 6px;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+#status {
+  overflow-wrap: anywhere;
+}

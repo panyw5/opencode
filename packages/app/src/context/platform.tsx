@@ -376,6 +376,7 @@ export type Platform = {
 
   /** Local CLI-backed agents exposed by the desktop process. */
   cliAgents?: CliAgents
+  gptPro?: import("@opencode-ai/util/gpt-pro").GptProAPI
 
   /** Get the configured GenericAgent integration (desktop only) */
   getGenericagentConfig?(): Promise<GenericagentConfig>

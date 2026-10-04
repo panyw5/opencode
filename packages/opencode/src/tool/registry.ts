@@ -35,6 +35,7 @@ import { CodexConsultTool } from "./codex_consult"
 import { ClaudeConsultTool } from "./claude_consult"
 import { GrokConsultTool } from "./grok_consult"
 import { DshConsultTool } from "./dsh_consult"
+import { GptProConsultTool } from "./gpt_pro_consult"
 import { RepoCloneTool } from "./repo_clone"
 import { RepoOverviewTool } from "./repo_overview"
 import { RepositoryCache } from "@/reference/repository-cache"
@@ -223,6 +224,7 @@ export const layer: Layer.Layer<
     const claudeConsult = yield* ClaudeConsultTool
     const grokConsult = yield* GrokConsultTool
     const dshConsult = yield* DshConsultTool
+    const gptProConsult = yield* GptProConsultTool
     const shell = yield* ShellTool
     const globtool = yield* GlobTool
     const writetool = yield* WriteTool
@@ -370,6 +372,7 @@ export const layer: Layer.Layer<
           claude_consult: Tool.init(claudeConsult),
           grok_consult: Tool.init(grokConsult),
           dsh_consult: Tool.init(dshConsult),
+          gpt_pro_consult: Tool.init(gptProConsult),
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
@@ -434,6 +437,7 @@ export const layer: Layer.Layer<
           tool.claude_consult,
           tool.grok_consult,
           tool.dsh_consult,
+          ...(browserEnabled ? [tool.gpt_pro_consult] : []),
           tool.skill,
           tool.patch,
           ...(flags.experimentalLspTool ? [tool.lsp] : []),

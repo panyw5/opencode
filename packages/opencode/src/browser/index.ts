@@ -1,6 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import type { Duration } from "effect"
 import { BrowserBridge } from "./bridge"
+import type { GptProCommand, GptProJob } from "@opencode-ai/util/gpt-pro"
 
 export * as Browser from "./index"
 
@@ -64,6 +65,7 @@ export const Screenshot = Schema.Struct({
 export type Screenshot = typeof Screenshot.Type
 
 export interface Interface {
+  readonly gptPro: (owner: string, input: GptProCommand) => Effect.Effect<GptProJob, BrowserError>
   /** Ephemeral partition backing this session's browser view. */
   readonly partition: (sessionID: string) => string
   /** Current view state, or undefined when this session has no open page. */
@@ -163,6 +165,11 @@ export const layer = Layer.effect(
         .pipe(Effect.flatMap((result) => decodeResult(name, decode, result)), Effect.mapError(mapError))
 
     return Service.of({
+      gptPro: (owner, input) => command("gpt-pro", { ...input, owner }, result => {
+        const job = result as GptProJob
+        if (!job || typeof job.id !== "string" || typeof job.phase !== "string" || job.owner !== owner) throw new Error("Invalid consultation response")
+        return job
+      }, "60 seconds"),
       partition: (sessionID) => agentPartition(sessionID),
 
       state: (sessionID) =>

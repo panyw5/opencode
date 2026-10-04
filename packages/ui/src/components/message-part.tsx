@@ -37,6 +37,7 @@ import { useDialog } from "../context/dialog"
 import { type UiI18n, useI18n } from "../context/i18n"
 import { Dialog } from "./dialog"
 import { BasicTool, GenericTool } from "./basic-tool"
+import { GptProTool } from "./gpt-pro-tool"
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { Card } from "./card"
@@ -525,6 +526,8 @@ export function getToolInfo(tool: string, input: any = {}, metadata: any = {}): 
         subtitle: input.description,
       }
     }
+    case "gpt_pro_consult":
+      return { icon: "brain", title: "GPT-6 Pro (Chat)", subtitle: text(metadata.preview) ?? text(input.prompt) }
     case "codex_consult":
       return {
         icon: "brain",
@@ -4170,6 +4173,8 @@ function CodexSessionDialog(props: {
     </Dialog>
   )
 }
+
+ToolRegistry.register({ name: "gpt_pro_consult", render(props) { return <GptProTool {...props}/> } })
 
 ToolRegistry.register({
   name: "codex_consult",

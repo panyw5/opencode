@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title data-i18n="popupTitle">Connect ChatGPT</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1 data-i18n="heading">Connect ChatGPT login</h1>
+    <p data-i18n="instructions">
+      First log in to ChatGPT in this Chrome profile. Then return to the OpenCode connection tab and open this
+      extension.
+    </p>
+    <label
+      ><input id="consent" type="checkbox" /><span data-i18n="consent">
+        I approve transferring my ChatGPT login session to OpenCode's dedicated browser on this computer.</span
+      ></label
+    >
+    <p class="note" data-i18n="privacy">
+      No Google cookies, passwords, chat history, or API credentials are transferred. The extension never saves the
+      session to a file.
+    </p>
+    <button id="connect" data-i18n="connect" disabled>Import ChatGPT session</button>
+    <p id="status" role="status" aria-live="polite" data-i18n="statusApproval">Explicit approval is required.</p>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

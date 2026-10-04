@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process"
 import { realpath, stat } from "node:fs/promises"
-import { basename } from "node:path"
-import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, shell } from "electron"
+import { basename, join } from "node:path"
+import { BrowserWindow, Notification, app, clipboard, dialog, ipcMain, session, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
 import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
 
@@ -17,6 +17,12 @@ import type {
 } from "../preload/types"
 import type { BrowserBounds } from "../preload/types"
 import { browserController } from "./browser"
+import { GptProProbe } from "./gpt-pro-probe"
+import { GptProLoginServer } from "./gpt-pro-login-server"
+import { importSessionCookies } from "./gpt-pro-session-cookies"
+import { GPT_PRO_PARTITION, GPT_PRO_URL } from "@opencode-ai/util/gpt-pro"
+import type { GptProCommand, GptProConfig } from "@opencode-ai/util/gpt-pro"
+import { getGptProController } from "./gpt-pro-runtime"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
 import { getAppLaunchPlan, getPowerShellLauncherArgs } from "./apps"
 import { assertAttachmentBudget, createPickedFileAuthorizations } from "./attachment-picker"
@@ -82,6 +88,35 @@ const pickerFilters = (ext?: string[]) => {
 }
 
 const pickedFiles = createPickedFileAuthorizations()
+const gptProProbe = new GptProProbe(browserController, (message) => writeLog("gpt-pro", message))
+let gptProLogin: GptProLoginServer | undefined
+
+function loginConnection() {
+  if (gptProLogin) return gptProLogin
+  gptProLogin = new GptProLoginServer({
+    extensionDirectory: app.isPackaged ? join(process.resourcesPath, "gpt-pro-login") : join(app.getAppPath(), "resources", "gpt-pro-login"),
+    log: (message) => writeLog("gpt-pro", message),
+    importCookies: (cookies) => {
+      if (getGptProController().busy()) throw new Error("Stop the active consultation before replacing its login session.")
+      return importSessionCookies(session.fromPartition(GPT_PRO_PARTITION).cookies, cookies, (message) => writeLog("gpt-pro", message))
+    },
+    imported: async () => {
+      await browserController.open(GPT_PRO_PARTITION, GPT_PRO_URL)
+      browserController.cdp(GPT_PRO_PARTITION)?.reload()
+      browserController.present(GPT_PRO_PARTITION)
+    },
+  })
+  app.on("before-quit", () => gptProLogin?.cancel())
+  return gptProLogin
+}
+
+async function openGptProLogin() {
+  if (getGptProController().busy()) throw new Error("Stop active gpt-pro consultations before opening a new login connection.")
+  const login = loginConnection()
+  const url = await login.start()
+  try { await shell.openExternal(url) } catch { login.cancel(); throw new Error("Could not open the default browser for login.") }
+  return login.status()
+}
 
 type Deps = {
   killSidecar: () => Promise<void> | void
@@ -111,6 +146,16 @@ type Deps = {
 }
 
 export function registerIpcHandlers(deps: Deps) {
+  getGptProController()
+  ipcMain.handle("gpt-pro-config", () => getGptProController().config())
+  ipcMain.handle("gpt-pro-set-config", (_event, config: GptProConfig) => getGptProController().setConfig(config))
+  ipcMain.handle("gpt-pro-command", (_event, command: GptProCommand) => getGptProController().command(command))
+  ipcMain.handle("gpt-pro-list", () => getGptProController().list())
+  ipcMain.handle("gpt-pro-open", () => gptProProbe.open())
+  ipcMain.handle("gpt-pro-status", () => gptProProbe.status())
+  ipcMain.handle("gpt-pro-login", () => openGptProLogin())
+  ipcMain.handle("gpt-pro-login-status", () => loginConnection().status())
+  ipcMain.handle("gpt-pro-login-cancel", () => loginConnection().cancel())
   ipcMain.handle("kill-sidecar", () => deps.killSidecar())
   ipcMain.handle("browser-open", (_event: IpcMainInvokeEvent, partition: string, url: string) =>
     browserController.open(partition, url),
@@ -138,6 +183,13 @@ export function registerIpcHandlers(deps: Deps) {
     browserController.setShared(partition, shared),
   )
   ipcMain.handle("browser-get-state", () => browserController.getState())
+  ipcMain.handle("browser-get-presentation", () => browserController.getPresentation())
+  ipcMain.handle("browser-ack-presentation", (_event, id: number) => browserController.acknowledgePresentation(id))
+  browserController.onPresented((request) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send("browser-presented", request)
+    }
+  })
   browserController.onViewState((state) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send("browser-updated", state)

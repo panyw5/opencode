@@ -32,6 +32,7 @@ export const KNOWN_AGENT_PERMISSION_KEYS = new Set([
   "claude_consult",
   "grok_consult",
   "dsh_consult",
+  "gpt_pro_consult",
   "repo_clone",
   "repo_overview",
   "lsp",

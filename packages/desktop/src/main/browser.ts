@@ -52,6 +52,8 @@ export type ViewState = {
   epoch: number
 }
 
+export type BrowserPresentation = { id: number; state: ViewState }
+
 type ViewEntry = {
   view: WebContentsView
   cdp: BrowserCdp
@@ -75,6 +77,9 @@ export class BrowserController {
   // than every event emitted by the previous generation.
   private epochs = new Map<string, number>()
   private owner: BrowserWindow | undefined
+  private presentation?: BrowserPresentation
+  private presentationSequence = 0
+  private presentationListeners = new Set<(request: BrowserPresentation) => void>()
   private viewStateListeners = new Set<(state: ViewState) => void>()
   private viewClosedListeners = new Set<(partition: string, epoch: number) => void>()
   private reapTimer: NodeJS.Timeout | undefined
@@ -213,7 +218,7 @@ export class BrowserController {
     const target = normalizeTargetUrl(url)
     const entry = this.ensure(partition)
     entry.lastActivity = Date.now()
-    entry.view.setVisible(entry.visible)
+    this.applyBounds(partition)
     if (target !== entry.view.webContents.getURL()) {
       await entry.cdp.navigate(target).catch((error) => {
         log("open", "navigate failed", { partition, url: target, error: String(error) })
@@ -227,6 +232,8 @@ export class BrowserController {
   setBounds(partition: string, bounds: Rectangle | null) {
     const entry = this.views.get(partition)
     if (!entry) return
+    if (bounds && JSON.stringify(bounds) !== JSON.stringify(entry.bounds))
+      log("bounds", `partition=${partition} x=${bounds.x} y=${bounds.y} width=${bounds.width} height=${bounds.height}`)
     entry.bounds = bounds ?? undefined
     this.applyBounds(partition)
   }
@@ -238,6 +245,40 @@ export class BrowserController {
     const shouldShow = entry.visible && Boolean(bounds)
     entry.view.setVisible(shouldShow)
     if (bounds) entry.view.setBounds(bounds)
+  }
+
+  /** Request the existing sidebar, retaining the request across route changes. */
+  present(partition: string) {
+    const state = this.viewState(partition)
+    if (!state) throw new Error(`no browser view for partition ${partition}`)
+    this.touch(partition)
+    const request = { id: ++this.presentationSequence, state }
+    this.presentation = request
+    log("present", `sidebar requested partition=${partition} request=${request.id} epoch=${state.epoch}`)
+    for (const listener of this.presentationListeners) {
+      try {
+        listener(request)
+      } catch (error) {
+        log("present", `sidebar listener failed request=${request.id} error=${String(error)}`)
+      }
+    }
+  }
+
+  onPresented(listener: (request: BrowserPresentation) => void) {
+    this.presentationListeners.add(listener)
+    return () => this.presentationListeners.delete(listener)
+  }
+
+  getPresentation() {
+    if (!this.presentation) return
+    const state = this.viewState(this.presentation.state.partition)
+    return state ? { id: this.presentation.id, state } : undefined
+  }
+
+  acknowledgePresentation(id: number) {
+    if (this.presentation?.id !== id) return
+    log("present", `sidebar mounted request=${id}`)
+    this.presentation = undefined
   }
 
   setVisible(partition: string, visible: boolean) {
@@ -309,6 +350,11 @@ export class BrowserController {
       }
     }
     entry.win = undefined
+    if (!entry.view.webContents.isDestroyed()) {
+      entry.view.webContents.close()
+      log("teardown", `webContents closed partition=${partition}; persistent login retained`)
+    }
+    if (this.presentation?.state.partition === partition) this.presentation = undefined
     const epoch = this.epochs.get(partition) ?? 0
     log("teardown", reason, { partition, epoch })
     for (const listener of this.viewClosedListeners) {

@@ -1,5 +1,7 @@
 import { BrowserController, USER_PARTITION, type ViewState } from "./browser"
 import { write as writeLog } from "./logging"
+import { getGptProController } from "./gpt-pro-runtime"
+import type { GptProCommand } from "@opencode-ai/util/gpt-pro"
 
 // P1-D-03: connects the opencode server to the in-app browser. Main process
 // acts as the WS client; the server sends commands, we execute them against
@@ -163,6 +165,10 @@ export class BridgeClient {
       return cdp
     }
     switch (name) {
+      case "gpt-pro": {
+        if (typeof args.owner !== "string" || !args.owner || args.owner.length > 4096) throw new Error("Missing consultation owner")
+        return getGptProController().command(args as GptProCommand, args.owner)
+      }
       case "navigate": {
         const url = String(args.url ?? "")
         if (!url) throw new Error("navigate requires url")

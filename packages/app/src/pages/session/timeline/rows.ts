@@ -246,7 +246,8 @@ export namespace Timeline {
           part?.type === "tool" &&
           part.tool !== "present_file" &&
           part.tool !== "present_diagram" &&
-          part.tool !== "present_task"
+          part.tool !== "present_task" &&
+          part.tool !== "gpt_pro_consult"
         )
       })
     }

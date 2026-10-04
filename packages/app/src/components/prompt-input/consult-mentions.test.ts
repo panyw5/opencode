@@ -42,6 +42,11 @@ function mockCliAgents(input: {
 }
 
 describe("consult-mentions", () => {
+  test("gpt-pro is reserved and enabled independently of CLI installations", async () => {
+    expect(isConsultMentionID("gpt-pro")).toBe(true)
+    expect(await loadReadyConsultMentions(undefined, { getConfig: async () => ({ enabled: true, timeoutMinutes: 30 }) })).toEqual([{ id: "gpt-pro", name: "gpt-pro", display: "GPT-6 Pro (Chat)" }])
+    expect(await loadReadyConsultMentions(undefined, { getConfig: async () => ({ enabled: false, timeoutMinutes: 30 }) })).toEqual([])
+  })
   test("isConsultMentionID matches reserved ids", () => {
     expect(isConsultMentionID("codex")).toBe(true)
     expect(isConsultMentionID("claude")).toBe(true)

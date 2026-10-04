@@ -1,0 +1,39 @@
+{
+  "extensionName": { "message": "OpenCode ChatGPT Session Connector" },
+  "connectionPageTitle": { "message": "OpenCode-ChatGPT 連線頁" },
+  "connectionEyebrow": { "message": "OPENCODE / 本機連線" },
+  "connectionDeveloperMode": { "message": "開發人員模式" },
+  "connectionLoadUnpacked": { "message": "載入未封裝項目（Load unpacked）" },
+  "connectionChatLink": { "message": "開啟 ChatGPT 並完成登入" },
+  "connectionConsent": { "message": "同意授權" },
+  "connectionStepExtensions": { "message": "在 Chrome 瀏覽器開啟 {extensions}，啟用{mode}" },
+  "connectionStepLoad": { "message": "點擊{load}，選擇以下擴充功能目錄，並保持擴充功能已啟用：" },
+  "connectionStepLogin": { "message": "在 Chrome 瀏覽器{chatgpt}" },
+  "connectionStepReturn": { "message": "登入後回到目前的 {page}。在頂端擴充功能選單點擊 {extension}。" },
+  "connectionStepApprove": { "message": "勾選{consent}，點擊{connect}完成工作階段連接。" },
+  "extensionDescription": { "message": "經你明確同意後，將 ChatGPT 登入工作階段連接至本機 OpenCode。" },
+  "actionTitle": { "message": "將 ChatGPT 連接至 OpenCode" },
+  "popupTitle": { "message": "OpenCode-ChatGPT 連線" },
+  "heading": { "message": "連接 ChatGPT 登入工作階段" },
+  "instructions": { "message": "在目前的 Chrome 設定檔登入 ChatGPT，再回到 OpenCode-ChatGPT 連線頁開啟此擴充功能。" },
+  "consent": { "message": "我同意將 ChatGPT 登入工作階段匯入本機 OpenCode 的專用瀏覽器。" },
+  "privacy": { "message": "不傳輸 Google Cookie、密碼、聊天記錄或 API 憑證。擴充功能不會將登入工作階段儲存至檔案。" },
+  "connect": { "message": "匯入 ChatGPT 工作階段" },
+  "statusApproval": { "message": "請先勾選同意授權。" },
+  "statusReading": { "message": "正在讀取 ChatGPT 登入工作階段 Cookie…" },
+  "statusImporting": { "message": "正在透過一次性本機連線匯入…" },
+  "statusImported": {
+    "message": "工作階段已匯入。請回到 OpenCode 確認登入並選擇 GPT-6 Pro。匯入成功不代表 ChatGPT 一定接受此工作階段。"
+  },
+  "errorTab": { "message": "請從 OpenCode 開啟新的 OpenCode-ChatGPT 連線頁（127.0.0.1），並在該頁面開啟擴充功能。" },
+  "errorProfile": { "message": "無法識別目前的 Chrome 設定檔。請保持 OpenCode-ChatGPT 連線頁為目前分頁。" },
+  "errorNoSession": { "message": "找不到受支援的 ChatGPT 登入工作階段。請在目前的 Chrome 設定檔登入 ChatGPT 後重試。" },
+  "errorConnection": { "message": "連線失敗。請從 OpenCode 開啟新的連線頁。" },
+  "errorImport": { "message": "尚未確認匯入完成。請先檢查 OpenCode，再決定是否重試，請勿重複提交。" },
+  "errorInvalidSession": {
+    "message": "ChatGPT 工作階段無效或不受支援。請在 Chrome 重新登入，再從 OpenCode 開啟新的連線頁。"
+  },
+  "errorUnauthorized": { "message": "連線授權失敗。請從 OpenCode 開啟新的連線頁。" },
+  "errorInUse": { "message": "此連線正在使用中。請檢查 OpenCode，請勿重複提交。" },
+  "errorExpired": { "message": "連線已過期。請從 OpenCode 開啟新的連線頁。" }
+}

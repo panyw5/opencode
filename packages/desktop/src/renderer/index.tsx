@@ -500,6 +500,7 @@ const createPlatform = (refreshExtraAgents?: () => Promise<unknown> | unknown): 
     abortHermesTest: () => desktopApi.abortHermesTest(),
 
     cliAgents: desktopApi.cliAgents,
+    gptPro: desktopApi.gptPro,
 
     getExtraAgentInfo:
       typeof desktopApi.getExtraAgentInfo === "function"

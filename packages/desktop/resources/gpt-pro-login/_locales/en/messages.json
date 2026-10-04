@@ -1,0 +1,59 @@
+{
+  "extensionName": { "message": "OpenCode ChatGPT Session Connector" },
+  "connectionPageTitle": { "message": "OpenCode-ChatGPT connection page" },
+  "connectionEyebrow": { "message": "OPENCODE / LOCAL CONNECTION" },
+  "connectionDeveloperMode": { "message": "Developer mode" },
+  "connectionLoadUnpacked": { "message": "Load unpacked" },
+  "connectionChatLink": { "message": "open ChatGPT and sign in" },
+  "connectionConsent": { "message": "the approval checkbox" },
+  "connectionStepExtensions": { "message": "In Chrome, open {extensions} and enable {mode}." },
+  "connectionStepLoad": {
+    "message": "Click {load}, select the extension folder below, and keep the extension enabled:"
+  },
+  "connectionStepLogin": { "message": "In Chrome, {chatgpt}." },
+  "connectionStepReturn": {
+    "message": "After signing in, return to this {page}. Open {extension} from the Extensions menu at the top."
+  },
+  "connectionStepApprove": { "message": "Select {consent}, then click {connect} to connect the session." },
+  "extensionDescription": {
+    "message": "Connect an explicitly approved ChatGPT login session to OpenCode on this computer."
+  },
+  "actionTitle": { "message": "Connect ChatGPT to OpenCode" },
+  "popupTitle": { "message": "OpenCode-ChatGPT connection" },
+  "heading": { "message": "Connect ChatGPT login" },
+  "instructions": {
+    "message": "Log in to ChatGPT in this Chrome profile, then return to the OpenCode-ChatGPT connection tab and open this extension."
+  },
+  "consent": {
+    "message": "I approve transferring my ChatGPT login session to OpenCode's dedicated browser on this computer."
+  },
+  "privacy": {
+    "message": "No Google cookies, passwords, chat history, or API credentials are transferred. The extension never saves your session to a file."
+  },
+  "connect": { "message": "Import ChatGPT session" },
+  "statusApproval": { "message": "Your explicit approval is required." },
+  "statusReading": { "message": "Reading only ChatGPT session cookies…" },
+  "statusImporting": { "message": "Importing through the one-time local connection…" },
+  "statusImported": {
+    "message": "Session imported. Return to OpenCode to verify login and select GPT-6 Pro. Import alone does not prove ChatGPT accepts the session."
+  },
+  "errorTab": {
+    "message": "Open a new OpenCode-ChatGPT connection page on 127.0.0.1, then open this extension from that tab."
+  },
+  "errorProfile": {
+    "message": "Cannot identify this Chrome profile. Keep the OpenCode-ChatGPT connection tab active."
+  },
+  "errorNoSession": {
+    "message": "No supported ChatGPT session found. Log in to ChatGPT in this Chrome profile, then try again."
+  },
+  "errorConnection": { "message": "Connection failed. Open a new connection from OpenCode." },
+  "errorImport": {
+    "message": "Import was not confirmed. Check OpenCode before trying again; do not repeatedly resend."
+  },
+  "errorInvalidSession": {
+    "message": "The ChatGPT session is invalid or unsupported. Log in again in Chrome, then open a new connection from OpenCode."
+  },
+  "errorUnauthorized": { "message": "Connection authorization failed. Open a new connection from OpenCode." },
+  "errorInUse": { "message": "This connection is already in use. Check OpenCode; do not repeatedly resend." },
+  "errorExpired": { "message": "The connection has expired. Open a new connection from OpenCode." }
+}

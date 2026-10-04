@@ -22,7 +22,12 @@ import {
   type SessionTabsRoute,
   type SessionTabsTarget,
 } from "@/context/session-tabs"
-import { createConfigReturnTarget, resolveConfigReturnTarget, type ConfigReturnTarget } from "@/pages/config-navigation"
+import {
+  createConfigReturnTarget,
+  resolveConfigReturnTarget,
+  resolveBrowserSessionTarget,
+  type ConfigReturnTarget,
+} from "@/pages/config-navigation"
 import { collectMissingAncestorTabs } from "@/components/session/session-bar-parent"
 import { useGlobalSync } from "@/context/global-sync"
 import { onSessionLifecycle } from "@/context/global-sync/session-lifecycle"
@@ -2608,6 +2613,44 @@ export default function Layout(props: ParentProps) {
       navigateWithSidebarReset(href)
     }
   }
+
+  onMount(() => {
+    const api = window.api?.browser
+    if (platform.platform !== "desktop" || !api) return
+    let disposed = false
+    let lastRequest = 0
+    const present = (request: { id: number }) => {
+      if (disposed || request.id <= lastRequest) return
+      lastRequest = request.id
+      if (onSessionRoute()) return
+      let target = resolveBrowserSessionTarget({
+        origin: location.state,
+        tabs: layout.sessionBar.all(),
+        drafts: layout.sessionBar.drafts(),
+        directory: routeDir(),
+      })
+      if (target.type === "home") {
+        const directory = routeDir() || layout.projects.list()[0]?.worktree || globalSync.data.path.directory
+        if (!directory) {
+          console.warn(`[browser-panel] no workspace available request=${request.id}`)
+          return
+        }
+        target = { type: "draft", ...sessionTabs.createDraft(directory, "button") }
+      }
+      console.debug(`[browser-panel] restore session request=${request.id} target=${sessionTabsTargetHref(target)}`)
+      void sessionTabs.activate(target, { replace: onConfigRoute() }).then(result => {
+        console.debug(`[browser-panel] restore result=${result} request=${request.id}`)
+      })
+    }
+    const stop = api.onPresented(present)
+    void api.getPresentation().then((request) => {
+      if (request) present(request)
+    })
+    onCleanup(() => {
+      disposed = true
+      stop()
+    })
+  })
 
   onMount(() => {
     const handler = (event: Event) => {

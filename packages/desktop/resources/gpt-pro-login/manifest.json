@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extensionName__",
+  "version": "0.2.0",
+  "default_locale": "en",
+  "description": "__MSG_extensionDescription__",
+  "permissions": ["cookies", "activeTab"],
+  "host_permissions": ["https://chatgpt.com/*", "http://127.0.0.1/*"],
+  "action": { "default_popup": "popup.html", "default_title": "__MSG_actionTitle__" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'none'" }
+}

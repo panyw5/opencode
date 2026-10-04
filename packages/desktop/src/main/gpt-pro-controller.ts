@@ -1,0 +1,336 @@
+import { randomUUID } from "node:crypto"
+import {
+  GPT_PRO_URL,
+  normalizeGptProConfig,
+  gptProTerminal,
+  type GptProCommand,
+  type GptProConfig,
+  type GptProJob,
+  type GptProPageState,
+} from "@opencode-ai/util/gpt-pro"
+import { GptProPageError } from "./gpt-pro-page-error"
+
+export type GptProDriverAPI = {
+  open(url?: string, fresh?: boolean): Promise<void>
+  ready(): Promise<GptProPageState>
+  page(): Promise<GptProPageState>
+  verify(): Promise<GptProPageState>
+  fill(prompt: string): Promise<void>
+  submit(): Promise<void>
+  stop(): Promise<void>
+  show?(url?: string): Promise<void>
+  focus?(): Promise<void>
+}
+type Persistence = {
+  load(): GptProJob[]
+  save(jobs: GptProJob[]): void
+  config(): GptProConfig
+  setConfig(config: GptProConfig): void
+}
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+export class GptProController {
+  private jobs: GptProJob[]
+  private pumping = false
+  private active?: string
+  private disposed = false
+  private controlling = new Set<string>()
+  constructor(
+    private readonly driver: GptProDriverAPI,
+    private readonly persistence: Persistence,
+    private readonly log: (message: string) => void,
+    private readonly pollMs = 1000,
+    private readonly stableMs = 3000,
+  ) {
+    this.jobs = persistence.load().map((job) =>
+      gptProTerminal(job.phase)
+        ? job
+        : {
+            ...job,
+            phase: "interrupted" as const,
+            error: "Application restarted. Resume the original page; do not resend automatically.",
+          },
+    )
+    this.save()
+  }
+  config() {
+    return normalizeGptProConfig(this.persistence.config())
+  }
+  busy() {
+    return !!this.active || this.jobs.some((job) => job.phase === "queued")
+  }
+  setConfig(config: GptProConfig) {
+    const next = normalizeGptProConfig(config)
+    this.persistence.setConfig(next)
+    return next
+  }
+  list() {
+    return this.jobs.map(({ html, text, ...job }) => ({ ...job, prompt: job.prompt.slice(0, 160) }))
+  }
+  dispose() {
+    this.disposed = true
+    for (const job of this.jobs)
+      if (!gptProTerminal(job.phase) || job.id === this.active)
+        this.update(job, {
+          phase: "interrupted",
+          error: "Application stopped. Resume tracking; never resend automatically.",
+        })
+  }
+  private save() {
+    const retained = new Set(
+      this.jobs
+        .filter((job) => gptProTerminal(job.phase) && job.id !== this.active)
+        .slice(-30)
+        .map((job) => job.id),
+    )
+    this.jobs = this.jobs.filter((job) => !gptProTerminal(job.phase) || job.id === this.active || retained.has(job.id))
+    this.persistence.save(this.jobs)
+  }
+  private update(job: GptProJob, input: Partial<GptProJob>) {
+    const previous = job.phase
+    Object.assign(job, input, { updatedAt: Date.now() })
+    this.save()
+    if (previous !== job.phase) this.log(`consult id=${job.id} phase=${job.phase} revision=${job.revision}`)
+  }
+  private get(id: string | undefined, owner?: string) {
+    let job = this.jobs.find((job) => job.id === id)
+    if (!job || (owner !== undefined && job.owner !== owner))
+      throw new Error("Consultation not found in this OpenCode session")
+    const seen = new Set<string>()
+    while (job.successorID) {
+      if (seen.has(job.id)) throw new Error("Invalid consultation chain")
+      seen.add(job.id)
+      const next = this.jobs.find((item) => item.id === job!.successorID)
+      if (!next || next.owner !== job.owner) throw new Error("Invalid consultation chain")
+      job = next
+    }
+    return job
+  }
+  async command(input: GptProCommand, owner?: string): Promise<GptProJob> {
+    if (this.disposed) throw new Error("The consultation controller is shutting down")
+    const action = input.action ?? "consult"
+    if (!["consult", "status", "read", "open", "stop", "pause", "resume", "intervene"].includes(action))
+      throw new Error("Unknown gpt-pro action")
+    if (action === "consult" || action === "intervene") {
+      if (!this.config().enabled) throw new Error("Enable gpt-pro in Settings > External Agents first.")
+      if (!input.prompt?.trim() || input.prompt.length > 100000)
+        throw new Error("A self-contained prompt of at most 100000 characters is required")
+      if (this.jobs.filter((job) => !gptProTerminal(job.phase)).length >= 30)
+        throw new Error("Too many queued consultations")
+      const requestID = input.requestID ?? randomUUID()
+      const parent = action === "intervene" ? this.get(input.id, owner) : undefined
+      if (parent) await this.syncURL(parent)
+      const jobOwner = parent?.owner ?? owner ?? "human"
+      const duplicate = this.jobs.find((job) => job.requestID === requestID && job.owner === jobOwner)
+      if (duplicate) return { ...this.get(duplicate.id, jobOwner) }
+      if (parent) {
+        if (this.active && this.active !== parent.id) throw new Error("Another consultation currently owns the browser")
+        if (this.active === parent.id) await this.command({ action: "stop", id: parent.id }, owner)
+      }
+      const job: GptProJob = {
+        id: `gpt_${randomUUID()}`,
+        owner: jobOwner,
+        requestID,
+        ...(parent ? { parentID: parent.id } : {}),
+        phase: "queued",
+        prompt: input.prompt.trim(),
+        url: parent?.url ?? GPT_PRO_URL,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        submitted: false,
+        revision: 0,
+      }
+      this.jobs.push(job)
+      this.save()
+      this.log(`consult created id=${job.id} promptChars=${job.prompt.length}`)
+      if (parent) this.update(parent, { successorID: job.id })
+      void this.pump()
+      return { ...job }
+    }
+    const job = this.get(input.id, owner)
+    if (action === "status") {
+      const { html, ...snapshot } = job
+      return { ...snapshot, text: job.text?.slice(0, 20000) }
+    }
+    if (action === "read") return { ...job }
+    if (action === "open") {
+      if (this.active && this.active !== job.id)
+        throw new Error("Pause or stop the active consultation before opening another conversation")
+      if (this.active === job.id && this.driver.show) await this.driver.show(job.url)
+      else await this.driver.open(job.url)
+      await this.driver.focus?.()
+    }
+    if (action === "pause") {
+      if (this.active !== job.id) throw new Error("Only the active consultation can be paused")
+      this.update(job, { phase: "paused" })
+      if (this.driver.show) await this.driver.show(job.url)
+      else await this.driver.open(job.url)
+      await this.driver.focus?.()
+    }
+    if (action === "stop") {
+      if (job.phase === "completed" || job.phase === "cancelled") return { ...job }
+      if (this.controlling.has(job.id)) throw new Error("A control operation is already in progress")
+      this.controlling.add(job.id)
+      try {
+        if (this.active === job.id) await this.driver.stop()
+        await this.syncURL(job)
+        this.update(job, { phase: "cancelled", error: undefined })
+      } finally {
+        this.controlling.delete(job.id)
+      }
+    }
+    if (action === "resume") {
+      if (!job.submitted && this.active !== job.id)
+        throw new Error(
+          "Submission is unconfirmed. Use a new explicit consultation rather than automatically resending.",
+        )
+      if (this.active && this.active !== job.id) throw new Error("Another consultation owns the browser")
+      if (this.active === job.id) this.update(job, { phase: "generating", error: undefined })
+      else {
+        this.update(job, { phase: "queued", error: undefined })
+        void this.pump()
+      }
+    }
+    return { ...job }
+  }
+  private async pump() {
+    if (this.pumping) return
+    this.pumping = true
+    try {
+      while (true) {
+        const job = this.jobs.find((job) => job.phase === "queued")
+        if (!job) return
+        this.active = job.id
+        try {
+          await this.run(job)
+        } catch (error) {
+          if (job.phase !== "cancelled") {
+            this.update(job, {
+              phase: error instanceof GptProPageError ? "failed" : job.submitted ? "paused" : "failed",
+              error: error instanceof Error ? error.message : "Browser consultation failed",
+            })
+            while (!this.disposed && job.phase === "paused") await sleep(this.pollMs)
+            if (job.phase === "generating") {
+              this.update(job, { phase: "queued" })
+              continue
+            }
+          }
+        }
+        this.active = undefined
+      }
+    } finally {
+      this.pumping = false
+    }
+  }
+  private async run(job: GptProJob) {
+    this.update(job, { phase: "preparing" })
+    await this.driver.open(job.url, !job.parentID && !job.submitted)
+    if (!(await this.checkpoint(job))) return
+    await this.driver.ready()
+    if (!(await this.checkpoint(job))) return
+    let page =
+      job.submitted && job.userID && job.model === "GPT-6 Pro" ? await this.driver.page() : await this.driver.verify()
+    if (!(await this.checkpoint(job))) return
+    if (!job.submitted) {
+      const parent = job.parentID ? this.jobs.find((item) => item.id === job.parentID) : undefined
+      if (parent?.userID) {
+        const limit = Date.now() + 30000
+        while (!page.users.some((user) => user.id === parent.userID)) {
+          if (Date.now() >= limit) throw new Error("Previous Chat context did not load. No follow-up was sent.")
+          if (!(await this.checkpoint(job))) return
+          await sleep(this.pollMs)
+          page = await this.driver.page()
+        }
+      }
+      if (page.generating || page.draft.trim())
+        throw new Error("The browser is busy or has a manual draft. Nothing was overwritten.")
+      if (!job.parentID && page.users.length) throw new Error("Expected a new empty Chat conversation")
+      this.update(job, { userCount: page.users.length, model: page.model, phase: "sending" })
+      await this.driver.fill(job.prompt)
+      if (!(await this.checkpoint(job))) return
+      // Persist before key dispatch: uncertain submission must never be retried.
+      this.update(job, { submitted: true })
+      await this.driver.submit()
+    }
+    let deadline = Date.now() + this.config().timeoutMinutes * 60000
+    const submittedAt = Date.now()
+    let stableAt = Date.now()
+    let html = ""
+    while (true) {
+      if (this.disposed || ["cancelled", "failed", "interrupted"].includes(job.phase)) return
+      if (this.controlling.has(job.id) || job.phase === "paused") {
+        await sleep(this.pollMs)
+        continue
+      }
+      if (Date.now() >= deadline) {
+        this.update(job, {
+          phase: "paused",
+          error: "Consultation timed out. The original page is preserved; stop or resume explicitly.",
+        })
+        if (!(await this.checkpoint(job))) return
+        deadline = Date.now() + this.config().timeoutMinutes * 60000
+      }
+      page = await this.driver.page()
+      if (page.error) throw new GptProPageError(page.error.message)
+      if (job.userID && page.users.at(-1)?.id === job.userID && page.url !== job.url)
+        this.update(job, { url: page.url })
+      // Once acknowledged, model evidence belongs to this submitted turn.
+      // A remounted composer selects the NEXT question's model, not this reply's.
+      if (!page.targetModel && (!job.userID || job.model !== "GPT-6 Pro")) page = await this.driver.verify()
+      if (this.controlling.has(job.id) || ["paused", "cancelled"].includes(job.phase)) continue
+      const user = page.users.at(-1)
+      const expectedCount = (job.userCount ?? 0) + 1
+      if (
+        page.users.length > expectedCount ||
+        (page.users.length >= expectedCount && job.userID && user?.id !== job.userID) ||
+        (page.users.length === expectedCount && user?.text.trim() !== job.prompt)
+      ) {
+        this.update(job, {
+          phase: "paused",
+          error: "The page was changed manually. Stop or intervene explicitly; no unrelated reply was returned.",
+        })
+        continue
+      }
+      if (page.draft.trim() && page.draft.trim() !== job.prompt) {
+        this.update(job, { phase: "paused", error: "A manual draft was detected; automation paused." })
+        continue
+      }
+      if (page.users.length !== expectedCount || !user) {
+        if (Date.now() - submittedAt > 30000)
+          throw new Error("Submission could not be confirmed. Do not automatically resend.")
+        await sleep(this.pollMs)
+        continue
+      }
+      if (!job.userID)
+        this.update(job, { userID: user.id, phase: "generating", url: page.url, model: job.model ?? page.model })
+      const answer = page.answer
+      if (answer?.userID === user.id) {
+        if (answer.truncated) throw new Error("Reply exceeds HTML capture limit; incomplete output is not success.")
+        if (html !== answer.html) {
+          html = answer.html
+          stableAt = Date.now()
+          this.update(job, { text: answer.text, html, revision: job.revision + 1, url: page.url })
+        }
+        if (!answer.complete || page.generating) stableAt = Date.now()
+        if (answer.complete && !page.generating && Date.now() - stableAt >= this.stableMs) {
+          this.update(job, { phase: "completed", error: undefined })
+          return
+        }
+      }
+      await sleep(this.pollMs)
+    }
+  }
+  private async checkpoint(job: GptProJob) {
+    while (!this.disposed && (job.phase === "paused" || this.controlling.has(job.id))) await sleep(this.pollMs)
+    return !this.disposed && job.phase !== "cancelled"
+  }
+  private async syncURL(job: GptProJob) {
+    if (!job.userID) return
+    try {
+      const page = await this.driver.page()
+      if (page.users.at(-1)?.id === job.userID && page.url !== job.url) this.update(job, { url: page.url })
+    } catch {
+      /* closed views must not cause a new submission */
+    }
+  }
+}

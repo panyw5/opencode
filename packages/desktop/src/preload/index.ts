@@ -2,8 +2,26 @@ import { contextBridge, ipcRenderer, webUtils } from "electron"
 import type { BrowserViewState, ElectronAPI, InitStep, SqliteMigrationProgress } from "./types"
 
 const api: ElectronAPI = {
+  gptPro: {
+    getConfig: () => ipcRenderer.invoke("gpt-pro-config"),
+    setConfig: config => ipcRenderer.invoke("gpt-pro-set-config", config),
+    command: input => ipcRenderer.invoke("gpt-pro-command", input),
+    list: () => ipcRenderer.invoke("gpt-pro-list"),
+    open: () => ipcRenderer.invoke("gpt-pro-open"),
+    status: () => ipcRenderer.invoke("gpt-pro-status"),
+    loginInBrowser: () => ipcRenderer.invoke("gpt-pro-login"),
+    loginStatus: () => ipcRenderer.invoke("gpt-pro-login-status"),
+    cancelLogin: () => ipcRenderer.invoke("gpt-pro-login-cancel"),
+  },
   killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   browser: {
+    getPresentation: () => ipcRenderer.invoke("browser-get-presentation"),
+    acknowledgePresentation: (id) => ipcRenderer.invoke("browser-ack-presentation", id),
+    onPresented: (cb) => {
+      const handler = (_: unknown, request: { id: number; state: BrowserViewState }) => cb(request)
+      ipcRenderer.on("browser-presented", handler)
+      return () => ipcRenderer.removeListener("browser-presented", handler)
+    },
     open: (partition, url) => ipcRenderer.invoke("browser-open", partition, url),
     setBounds: (partition, bounds) => ipcRenderer.invoke("browser-set-bounds", partition, bounds),
     setVisible: (partition, visible) => ipcRenderer.invoke("browser-set-visible", partition, visible),

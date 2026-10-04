@@ -1,0 +1,57 @@
+{
+  "extensionName": { "message": "OpenCode ChatGPT Session Connector" },
+  "connectionPageTitle": { "message": "OpenCode-ChatGPT 接続ページ" },
+  "connectionEyebrow": { "message": "OPENCODE / ローカル接続" },
+  "connectionDeveloperMode": { "message": "デベロッパーモード" },
+  "connectionLoadUnpacked": { "message": "パッケージ化されていない拡張機能を読み込む（Load unpacked）" },
+  "connectionChatLink": { "message": "ChatGPT を開いてログイン" },
+  "connectionConsent": { "message": "同意のチェックボックス" },
+  "connectionStepExtensions": { "message": "Chrome で {extensions} を開き、{mode}を有効にします。" },
+  "connectionStepLoad": { "message": "{load}をクリックし、次のフォルダを選択して拡張機能を有効にしてください：" },
+  "connectionStepLogin": { "message": "Chrome で {chatgpt}してください。" },
+  "connectionStepReturn": {
+    "message": "ログイン後、この{page}に戻り、上部の拡張機能メニューから {extension} を開きます。"
+  },
+  "connectionStepApprove": { "message": "{consent}を選択し、{connect}をクリックしてセッションを接続します。" },
+  "extensionDescription": {
+    "message": "明示的な同意を得て、ChatGPT のログインセッションをこの端末の OpenCode に接続します。"
+  },
+  "actionTitle": { "message": "ChatGPT を OpenCode に接続" },
+  "popupTitle": { "message": "OpenCode-ChatGPT 接続" },
+  "heading": { "message": "ChatGPT のログインを接続" },
+  "instructions": {
+    "message": "この Chrome プロファイルで ChatGPT にログインし、OpenCode-ChatGPT 接続ページに戻ってこの拡張機能を開いてください。"
+  },
+  "consent": {
+    "message": "ChatGPT のログインセッションを、この端末の OpenCode 専用ブラウザに転送することに同意します。"
+  },
+  "privacy": {
+    "message": "Google の Cookie、パスワード、チャット履歴、API 認証情報は転送しません。セッションをファイルに保存することもありません。"
+  },
+  "connect": { "message": "ChatGPT セッションをインポート" },
+  "statusApproval": { "message": "先に同意のチェックボックスを選択してください。" },
+  "statusReading": { "message": "ChatGPT のセッション Cookie を読み取り中…" },
+  "statusImporting": { "message": "一度限りのローカル接続でインポート中…" },
+  "statusImported": {
+    "message": "インポートしました。OpenCode に戻り、ログインを確認して GPT-6 Pro を選択してください。インポート成功は ChatGPT によるセッションの受け入れを保証しません。"
+  },
+  "errorTab": {
+    "message": "OpenCode から新しい OpenCode-ChatGPT 接続ページ（127.0.0.1）を開き、そのページで拡張機能を開いてください。"
+  },
+  "errorProfile": {
+    "message": "Chrome プロファイルを識別できません。OpenCode-ChatGPT 接続タブをアクティブにしてください。"
+  },
+  "errorNoSession": {
+    "message": "対応する ChatGPT セッションが見つかりません。この Chrome プロファイルでログインしてから再試行してください。"
+  },
+  "errorConnection": { "message": "接続に失敗しました。OpenCode から新しい接続ページを開いてください。" },
+  "errorImport": {
+    "message": "インポート完了を確認できません。再試行の前に OpenCode を確認し、繰り返し送信しないでください。"
+  },
+  "errorInvalidSession": {
+    "message": "ChatGPT セッションが無効または未対応です。Chrome で再ログインし、OpenCode から新しい接続ページを開いてください。"
+  },
+  "errorUnauthorized": { "message": "接続の認証に失敗しました。OpenCode から新しい接続ページを開いてください。" },
+  "errorInUse": { "message": "この接続は使用中です。OpenCode を確認し、繰り返し送信しないでください。" },
+  "errorExpired": { "message": "接続の有効期限が切れました。OpenCode から新しい接続ページを開いてください。" }
+}

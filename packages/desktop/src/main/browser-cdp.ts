@@ -109,6 +109,8 @@ export class BrowserCdp {
   private attached = false
   private domEnabled = false
   private consoleEnabled = false
+  private networkEnabled = false
+  private responseListeners = new Set<(response: { origin: string; path: string; status: number }) => void>()
 
   constructor(private readonly wc: WebContents) {}
 
@@ -127,6 +129,16 @@ export class BrowserCdp {
   }
 
   private async onDebuggerMessage(method: string, params: Record<string, unknown>) {
+    if (method === "Network.responseReceived") {
+      const response = params.response as { url: string; status: number }
+      try {
+        const url = new URL(response.url)
+        for (const listener of this.responseListeners)
+          listener({ origin: url.origin, path: url.pathname, status: response.status })
+      } catch {
+        log("network", "response metadata inspection failed; no headers or bodies recorded")
+      }
+    }
     if (method === "Runtime.consoleAPICalled") {
       const args = (params.args as Array<{ value?: unknown; description?: string }> | undefined) ?? []
       const text = args
@@ -141,6 +153,85 @@ export class BrowserCdp {
   }
 
   onConsoleEntry?: (entry: { level: "log" | "info" | "warn" | "error"; text: string; at: number }) => void
+
+  async onResponse(listener: (response: { origin: string; path: string; status: number }) => void) {
+    await this.ensureAttached()
+    if (!this.networkEnabled) {
+      await this.dbg.sendCommand("Network.enable")
+      this.networkEnabled = true
+    }
+    this.responseListeners.add(listener)
+    return () => this.responseListeners.delete(listener)
+  }
+
+  /** Main-process-only evaluation. Never exposed as a generic page/tool IPC. */
+  async evaluate<T>(expression: string): Promise<T> {
+    await this.ensureAttached()
+    const response = (await this.dbg.sendCommand("Runtime.evaluate", {
+      expression,
+      returnByValue: true,
+      awaitPromise: true,
+    })) as { result: { value?: T }; exceptionDetails?: { text?: string } }
+    if (response.exceptionDetails)
+      throw new Error(`Browser evaluation failed: ${response.exceptionDetails.text ?? "page exception"}`)
+    if (response.result.value === undefined) throw new Error("Browser evaluation returned no value")
+    return response.result.value
+  }
+
+  async insertText(text: string) {
+    await this.ensureAttached()
+    await this.dbg.sendCommand("Input.insertText", { text })
+  }
+  async focus() {
+    this.wc.focus()
+    log("focus", "browser focused", { webContentsId: this.wc.id })
+  }
+  async pressEnter() {
+    await this.ensureAttached()
+    for (const type of ["rawKeyDown", "keyUp"])
+      await this.dbg.sendCommand("Input.dispatchKeyEvent", {
+        type,
+        key: "Enter",
+        code: "Enter",
+        windowsVirtualKeyCode: 13,
+        nativeVirtualKeyCode: 13,
+      })
+  }
+  async pressEscape() {
+    await this.ensureAttached()
+    this.wc.focus()
+    for (const type of ["rawKeyDown", "keyUp"])
+      await this.dbg.sendCommand("Input.dispatchKeyEvent", {
+        type,
+        key: "Escape",
+        code: "Escape",
+        windowsVirtualKeyCode: 27,
+        nativeVirtualKeyCode: 27,
+      })
+  }
+  async clickSelector(selector: string) {
+    const point = await this.evaluate<{ x: number; y: number }>(`(() => {
+      const el=[...document.querySelectorAll(${JSON.stringify(selector)})].filter(e=>e.getClientRects().length&&!e.closest('[inert],[aria-hidden="true"]')&&getComputedStyle(e).visibility!=='hidden').at(-1)
+      if(!el) throw new Error('Control not found')
+      el.scrollIntoView({block:'center'}); const r=el.getBoundingClientRect(); return {x:r.x+r.width/2,y:r.y+r.height/2}
+    })()`)
+    await this.dbg.sendCommand("Input.dispatchMouseEvent", {
+      type: "mouseMoved",
+      x: point.x,
+      y: point.y,
+      button: "none",
+    })
+    this.wc.focus()
+    for (const type of ["mousePressed", "mouseReleased"])
+      await this.dbg.sendCommand("Input.dispatchMouseEvent", {
+        type,
+        x: point.x,
+        y: point.y,
+        button: "left",
+        clickCount: 1,
+        buttons: type === "mousePressed" ? 1 : 0,
+      })
+  }
 
   async navigate(url: string) {
     // Plain navigation needs no debugger. Attaching the debugger to a
@@ -391,6 +482,8 @@ export class BrowserCdp {
   }
 
   close() {
+    this.responseListeners.clear()
+    this.networkEnabled = false
     if (this.attached && this.dbg.isAttached()) this.dbg.detach()
     this.attached = false
   }

@@ -190,6 +190,14 @@ describe("constructMessageRows", () => {
     expect(row?._tag === "AssistantPart" && row.group.type === "part" && row.group.ref.partID).toBe("tool-present")
   })
 
+  test("keeps gpt-pro controls visible outside collapsed tool groups", () => {
+    const user = userMessage("user-gpt-pro")
+    const assistant = assistantMessage("assistant-gpt-pro", user.id)
+    const parts = [textPart(user.id, "consult"), toolPart(assistant.id, "tool-gpt", "gpt_pro_consult")]
+    const rows = construct(user, partsByID(parts), [assistant], 0, true, true, "idle", false)
+    expect(rows.map(row => row._tag)).toEqual(["UserMessage", "AssistantPart"])
+  })
+
   test("keeps present_diagram out of the collapsed tool group", () => {
     const user = userMessage("user-present-diagram")
     const assistant = assistantMessage("assistant-present-diagram", user.id)

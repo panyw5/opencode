@@ -1,0 +1,55 @@
+{
+  "extensionName": { "message": "OpenCode ChatGPT Session Connector" },
+  "connectionPageTitle": { "message": "OpenCode-ChatGPT 연결 페이지" },
+  "connectionEyebrow": { "message": "OPENCODE / 로컬 연결" },
+  "connectionDeveloperMode": { "message": "개발자 모드" },
+  "connectionLoadUnpacked": { "message": "압축해제된 확장 프로그램을 로드합니다(Load unpacked)" },
+  "connectionChatLink": { "message": "ChatGPT를 열고 로그인" },
+  "connectionConsent": { "message": "동의 확인란" },
+  "connectionStepExtensions": { "message": "Chrome에서 {extensions}를 열고 {mode}를 켜세요." },
+  "connectionStepLoad": { "message": "{load}를 클릭하고 아래 폴더를 선택한 다음 확장 프로그램을 활성화하세요:" },
+  "connectionStepLogin": { "message": "Chrome에서 {chatgpt}하세요." },
+  "connectionStepReturn": {
+    "message": "로그인 후 현재 {page}로 돌아와 상단 확장 프로그램 메뉴에서 {extension}을 여세요."
+  },
+  "connectionStepApprove": { "message": "{consent}을 선택한 다음 {connect}를 클릭하여 세션을 연결하세요." },
+  "extensionDescription": {
+    "message": "명시적인 동의를 받은 ChatGPT 로그인 세션을 이 컴퓨터의 OpenCode에 연결합니다."
+  },
+  "actionTitle": { "message": "ChatGPT를 OpenCode에 연결" },
+  "popupTitle": { "message": "OpenCode-ChatGPT 연결" },
+  "heading": { "message": "ChatGPT 로그인 연결" },
+  "instructions": {
+    "message": "현재 Chrome 프로필에서 ChatGPT에 로그인한 후 OpenCode-ChatGPT 연결 페이지로 돌아와 이 확장 프로그램을 여세요."
+  },
+  "consent": { "message": "ChatGPT 로그인 세션을 이 컴퓨터의 OpenCode 전용 브라우저로 전송하는 데 동의합니다." },
+  "privacy": {
+    "message": "Google 쿠키, 비밀번호, 채팅 기록 또는 API 자격 증명은 전송하지 않습니다. 확장 프로그램은 세션을 파일에 저장하지 않습니다."
+  },
+  "connect": { "message": "ChatGPT 세션 가져오기" },
+  "statusApproval": { "message": "먼저 동의 확인란을 선택하세요." },
+  "statusReading": { "message": "ChatGPT 세션 쿠키를 읽는 중…" },
+  "statusImporting": { "message": "일회용 로컬 연결을 통해 가져오는 중…" },
+  "statusImported": {
+    "message": "세션을 가져왔습니다. OpenCode로 돌아가 로그인을 확인하고 GPT-6 Pro를 선택하세요. 가져오기 성공만으로 ChatGPT가 세션을 수락했다는 의미는 아닙니다."
+  },
+  "errorTab": {
+    "message": "OpenCode에서 새 OpenCode-ChatGPT 연결 페이지(127.0.0.1)를 열고 해당 페이지에서 확장 프로그램을 여세요."
+  },
+  "errorProfile": {
+    "message": "Chrome 프로필을 식별할 수 없습니다. OpenCode-ChatGPT 연결 탭을 활성 상태로 유지하세요."
+  },
+  "errorNoSession": {
+    "message": "지원되는 ChatGPT 세션을 찾을 수 없습니다. 현재 Chrome 프로필에서 로그인한 후 다시 시도하세요."
+  },
+  "errorConnection": { "message": "연결에 실패했습니다. OpenCode에서 새 연결 페이지를 여세요." },
+  "errorImport": {
+    "message": "가져오기 완료를 확인하지 못했습니다. 재시도 전에 OpenCode를 확인하고 반복 전송하지 마세요."
+  },
+  "errorInvalidSession": {
+    "message": "ChatGPT 세션이 유효하지 않거나 지원되지 않습니다. Chrome에서 다시 로그인하고 OpenCode에서 새 연결 페이지를 여세요."
+  },
+  "errorUnauthorized": { "message": "연결 인증에 실패했습니다. OpenCode에서 새 연결 페이지를 여세요." },
+  "errorInUse": { "message": "이 연결은 이미 사용 중입니다. OpenCode를 확인하고 반복 전송하지 마세요." },
+  "errorExpired": { "message": "연결이 만료되었습니다. OpenCode에서 새 연결 페이지를 여세요." }
+}

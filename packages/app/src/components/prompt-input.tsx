@@ -1072,15 +1072,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   createEffect(() => {
     const api = platform.cliAgents
     let cancelled = false
-    if (!api) {
+    if (!api && !platform.gptPro) {
       setReadyConsults([])
       return
     }
-    void loadReadyConsultMentions(api).then((items) => {
-      if (!cancelled) setReadyConsults(items)
-    })
+    const refresh = () => void loadReadyConsultMentions(api, platform.gptPro).then((items) => { if (!cancelled) setReadyConsults(items) })
+    refresh()
+    window.addEventListener("gpt-pro:changed", refresh)
+    window.addEventListener("focus", refresh)
     onCleanup(() => {
       cancelled = true
+      window.removeEventListener("gpt-pro:changed", refresh)
+      window.removeEventListener("focus", refresh)
     })
   })
   const consultList = createMemo((): AtOption[] =>

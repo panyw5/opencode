@@ -3,7 +3,9 @@ import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Icon } from "@opencode-ai/ui/icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { useLanguage } from "@/context/language"
+import { usePlatform } from "@/context/platform"
 import { useSessionLayout } from "@/pages/session/session-layout"
+import { GPT_PRO_PARTITION } from "@opencode-ai/util/gpt-pro"
 
 // P1-A-01: right-sidebar embedded browser panel (desktop only), docked in the
 // session side panel next to the review panel and file preview. The visible
@@ -22,9 +24,13 @@ export const BROWSER_PARTITION = "persist:browse"
 // shared package spans desktop+server+app).
 export const AGENT_PARTITION_PREFIX = "agent-browser-"
 
-const isAgentPartition = (partition: string) => partition.startsWith(AGENT_PARTITION_PREFIX)
+const isAgentPartition = (partition: string) =>
+  partition.startsWith(AGENT_PARTITION_PREFIX) || partition === GPT_PRO_PARTITION
 
 export type WindowBrowserApi = {
+  getPresentation: () => Promise<BrowserPresentation | undefined>
+  acknowledgePresentation: (id: number) => Promise<void>
+  onPresented: (cb: (request: BrowserPresentation) => void) => () => void
   open: (partition: string, url: string) => Promise<BrowserViewState | undefined>
   setBounds: (partition: string, bounds: BrowserBounds | null) => Promise<void>
   setVisible: (partition: string, visible: boolean) => Promise<void>
@@ -37,6 +43,7 @@ export type WindowBrowserApi = {
 }
 
 export type BrowserBounds = { x: number; y: number; width: number; height: number }
+export type BrowserPresentation = { id: number; state: BrowserViewState }
 
 export type BrowserViewState = {
   partition: string
@@ -123,6 +130,7 @@ const isStaleClosedEvent = (closedEpoch: number | undefined, next: BrowserViewSt
 
 export function BrowserPanel(props: { class?: string }) {
   const language = useLanguage()
+  const platform = usePlatform()
   const { view } = useSessionLayout()
   const api = browserApi()
 
@@ -169,6 +177,11 @@ export function BrowserPanel(props: { class?: string }) {
   // just before teardown) would otherwise resurrect the tab in the strip;
   // only a strictly newer epoch (a genuinely re-created view) may unblock.
   const closedTabs = new Map<string, number>()
+  let disposed = false
+  let presented = 0
+  onCleanup(() => {
+    disposed = true
+  })
 
   // Single removal path for the mirror state: idempotent, used by the
   // optimistic close paths and by main-initiated teardowns (onClosed).
@@ -228,8 +241,30 @@ export function BrowserPanel(props: { class?: string }) {
     })
   }
 
+  const present = (request: BrowserPresentation) => {
+    if (
+      disposed ||
+      request.id <= presented ||
+      isStaleClosedEvent(closedTabs.get(request.state.partition), request.state)
+    )
+      return
+    presented = request.id
+    const known = views()[request.state.partition]
+    if (!known || known.epoch < request.state.epoch) record(request.state)
+    view().browser.open()
+    setActive(request.state.partition)
+    setAddress(displayUrl(views()[request.state.partition]?.url ?? request.state.url))
+    console.debug(`[browser-panel] activate partition=${request.state.partition} request=${request.id}`)
+    queueMicrotask(syncBounds)
+    void api?.acknowledgePresentation(request.id)
+  }
+
   onMount(() => {
     if (!api) return
+    onCleanup(api.onPresented(present))
+    void api.getPresentation().then((request) => {
+      if (request) present(request)
+    })
     // External open requests land here: addUserTab creates the partition,
     // navigates, activates the tab and freezes the address bar pending commit.
     const handleOpenTab = (event: Event) => addUserTab((event as CustomEvent<string>).detail)
@@ -446,6 +481,7 @@ export function BrowserPanel(props: { class?: string }) {
   })
 
   const tabLabel = (tab: BrowserTab) => {
+    if (tab.partition === GPT_PRO_PARTITION) return "gpt-pro"
     // Interstitial pages (e.g. Google /sorry) expose their URL as the title —
     // fall back to the hostname so the tab never shows a raw URL. Chromium's
     // about:blank page literally titles itself "about:blank" — treat that as
@@ -493,9 +529,7 @@ export function BrowserPanel(props: { class?: string }) {
                   ref={capsuleRef}
                   class="absolute left-1/2 top-1/2 z-10 flex max-w-[calc(100%-8px)] -translate-x-1/2 -translate-y-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-border-weak-base bg-surface-inset-base py-0.5 pl-3 pr-1 text-12-regular shadow-md"
                 >
-                  <span class="truncate text-text-strong">
-                    {language.t("panel.browser.closeAgentConfirm")}
-                  </span>
+                  <span class="truncate text-text-strong">{language.t("panel.browser.closeAgentConfirm")}</span>
                   <button
                     type="button"
                     onClick={() => closeAgentTab(partition)}
@@ -539,8 +573,7 @@ export function BrowserPanel(props: { class?: string }) {
                     "pr-1": !tab().agent,
                     "bg-surface-inset-base": active() === tab().partition && !tab().agent,
                     "text-text-strong": active() === tab().partition,
-                    "text-text-weak hover:bg-surface-inset-base hover:text-text-strong":
-                      active() !== tab().partition,
+                    "text-text-weak hover:bg-surface-inset-base hover:text-text-strong": active() !== tab().partition,
                   }}
                   style={
                     tab().agent
@@ -560,9 +593,7 @@ export function BrowserPanel(props: { class?: string }) {
                       waiting for, and a spinner flash there reads as jitter. */}
                   <Show
                     when={
-                      tab().state?.loading === true &&
-                      tab().state?.url !== "about:blank" &&
-                      tab().state?.url !== ""
+                      tab().state?.loading === true && tab().state?.url !== "about:blank" && tab().state?.url !== ""
                     }
                     fallback={
                       <Show when={tab().agent}>
@@ -642,6 +673,20 @@ export function BrowserPanel(props: { class?: string }) {
               class="flex-1 min-w-0 h-7 px-2 rounded-md bg-surface-base text-13-regular text-text-strong placeholder:text-text-weak outline-none focus:ring-1 focus:ring-border-strong-base"
               classList={{ "text-text-weak": activeAgent() }}
             />
+            <Show when={active() === GPT_PRO_PARTITION && platform.gptPro}>
+              <IconButton
+                icon="globe"
+                variant="ghost"
+                aria-label={language.t("gptPro.login")}
+                title={language.t("gptPro.login")}
+                onClick={() => {
+                  console.debug("[browser-panel] gpt-pro default-browser login requested")
+                  void platform
+                    .gptPro!.loginInBrowser()
+                    .catch(() => console.warn("[browser-panel] login could not be opened"))
+                }}
+              />
+            </Show>
             <IconButton
               icon="close-small"
               variant="ghost"
