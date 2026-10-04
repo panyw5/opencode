@@ -115,7 +115,7 @@ export function SessionTodoFloat(props: {
             <span>{badge()}</span>
           </>
         }
-        class="w-[500px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger p-0 shadow-xl"
+        class="w-[680px] max-w-[calc(100vw-24px)] overflow-hidden rounded-xl border border-border-base bg-surface-raised-stronger p-0 shadow-xl"
         style={{
           "max-height": "min(680px, calc(100dvh - 24px))",
         }}

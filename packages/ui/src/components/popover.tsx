@@ -24,8 +24,23 @@ function debug() {
 
 function log(kind: string, fields: Record<string, string | number | boolean | undefined>) {
   if (!debug()) return
-  console.debug(`[popover] ${kind}`, fields)
+  console.debug(`[popover] ${kind} ${JSON.stringify(fields)}`)
 }
+
+/**
+ * Overlay contents that Kobalte portals to <body> outside the popover DOM
+ * subtree. Pointer/focus/Escape involving them belongs to the popover, not
+ * to an "outside" dismissal.
+ */
+const NESTED_OVERLAY_SELECTOR = [
+  '[data-component="dropdown-menu-content"]',
+  '[data-component="dropdown-menu-sub-content"]',
+  '[data-component="context-menu-content"]',
+  '[data-component="context-menu-sub-content"]',
+  '[data-component="select-content"]',
+  '[data-component="combobox-content"]',
+  '[data-model-selector-popover-content]',
+].join(",")
 
 export interface PopoverProps<T extends ValidComponent = "div">
   extends ParentProps,
@@ -105,21 +120,7 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
       // must not count as "outside" dismiss — otherwise focus/click on the menu
       // closes the parent popover (todo float + mount task selector).
       if (node instanceof Element) {
-        if (
-          node.closest(
-            [
-              '[data-component="dropdown-menu-content"]',
-              '[data-component="dropdown-menu-sub-content"]',
-              '[data-component="context-menu-content"]',
-              '[data-component="context-menu-sub-content"]',
-               '[data-component="select-content"]',
-               '[data-component="combobox-content"]',
-               '[data-model-selector-popover-content]',
-            ].join(","),
-          )
-        ) {
-          return true
-        }
+        if (node.closest(NESTED_OVERLAY_SELECTOR)) return true
       }
       return false
     }
@@ -131,6 +132,11 @@ export function Popover<T extends ValidComponent = "div">(props: PopoverProps<T>
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return
+      // If focus is inside a nested overlay (dropdown/select portaled to body),
+      // that layer owns this Escape — let it close first. The next Escape
+      // (focus back on the popover) closes this popover.
+      const active = document.activeElement
+      if (active instanceof Element && active.closest(NESTED_OVERLAY_SELECTOR)) return
       close("escape")
       event.preventDefault()
       event.stopPropagation()

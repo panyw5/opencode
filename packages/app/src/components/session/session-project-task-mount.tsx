@@ -208,6 +208,10 @@ export function SessionProjectTaskMount(props: {
     <DropdownMenu
       gutter={4}
       placement="bottom-start"
+      // Non-modal: a modal menu locks <body> pointer-events, so clicks inside
+      // the surrounding popover (todo float panel) retarget to <html> and the
+      // popover dismisses them as "outside" — closing the whole panel.
+      modal={false}
       open={state.open}
       onOpenChange={(open) => {
         if (open) measureTrigger()
