@@ -43,6 +43,7 @@ import { DialogConnectProvider } from "@/components/dialog-connect-provider"
 import { DialogSelectDirectory } from "@/components/dialog-select-directory"
 import {
   OPENAI_COMPATIBLE,
+  customProviderNpmPackages,
   headerRow as blankHeaderRow,
   modelConfig as modelConfigRows,
   modelRow as blankModelRow,
@@ -222,14 +223,6 @@ const AGENT_NEW = "agent:_new_custom"
 const SKILL_NEW = "skill:_new_custom"
 const COMMAND_NEW = "cmd:_new_custom"
 const MCP_NEW = "mcp:_new"
-
-const CUSTOM_PROVIDER_NPM_PACKAGES: readonly string[] = [OPENAI_COMPATIBLE, "@ai-sdk/openai", "@ai-sdk/anthropic"]
-
-function customProviderNpmPackages(value: string | undefined): string[] {
-  const current = value?.trim()
-  if (current && !CUSTOM_PROVIDER_NPM_PACKAGES.includes(current)) return [current, ...CUSTOM_PROVIDER_NPM_PACKAGES]
-  return [...CUSTOM_PROVIDER_NPM_PACKAGES]
-}
 
 type SkillMarketRepo = {
   id: string
@@ -3490,6 +3483,13 @@ function CustomEditor(props: {
                   variant="secondary"
                   size="large"
                   valueClass="font-mono text-13-regular"
+                  contentStyle={{
+                    "--select-list-max-height":
+                      "min(32rem, calc(var(--kb-popper-content-available-height, 100dvh) - 10px))",
+                  }}
+                  onOpenChange={(open) => {
+                    if (open) console.info(`[config] provider SDK menu opened options=${npmOptions().length} maxHeight=32rem`)
+                  }}
                   triggerStyle={{ width: "100%", "justify-content": "space-between", transform: "none" }}
                   triggerProps={{ "aria-label": language.t("config.custom.field.npm") }}
                 >
@@ -3506,7 +3506,9 @@ function CustomEditor(props: {
               />
               <TextField
                 label={language.t("config.custom.field.baseURL")}
-                placeholder="https://api.example.com/v1"
+                placeholder={
+                  props.form.npm === "@ai-sdk/deepinfra" ? "https://api.deepinfra.com/v1" : "https://api.example.com/v1"
+                }
                 value={props.form.baseURL}
                 onChange={(value) => props.onField("baseURL", value)}
                 validationState={props.form.err.baseURL ? "invalid" : undefined}
@@ -3555,6 +3557,7 @@ function CustomEditor(props: {
                   title={language.t("config.custom.models.title")}
                   baseURL={props.form.baseURL}
                   apiKey={props.form.apiKey}
+                  npm={props.form.npm}
                   headers={props.form.headers}
                   existingModelIDs={new Set(props.form.models.map((m) => m.id.trim()).filter(Boolean))}
                   onAdd={props.onAddFetchedModel}
@@ -7236,6 +7239,7 @@ export default function ConfigPage() {
   }
 
   function setCustomField(key: "providerID" | "npm" | "name" | "baseURL" | "apiKey", value: string) {
+    if (key === "npm") console.info(`[config] custom provider SDK selected npm=${value}`)
     setState("custom", key, value)
     if (key === "apiKey") setState("customApiDirty", true)
     if (key === "providerID" || key === "name" || key === "baseURL") setState("custom", "err", key, undefined)

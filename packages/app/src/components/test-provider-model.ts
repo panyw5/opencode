@@ -4,7 +4,7 @@ export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promis
 export const TEST_PROVIDER_MODEL_TIMEOUT_MS = 30_000
 
 /** Wire protocol for the connectivity probe (mirrors custom-provider npm). */
-export type TestProviderProtocol = "openai-chat" | "anthropic-messages"
+export type TestProviderProtocol = "openai-chat" | "anthropic-messages" | "google-generate-content"
 
 export type TestProviderModelInput = {
   baseURL: string
@@ -46,6 +46,7 @@ export type TestProviderModelResult =
 export function resolveTestProtocol(npm?: string): TestProviderProtocol {
   const id = npm?.trim().toLowerCase() ?? ""
   if (id === "@ai-sdk/anthropic" || id.endsWith("/anthropic")) return "anthropic-messages"
+  if (id === "@ai-sdk/google") return "google-generate-content"
   return "openai-chat"
 }
 
@@ -69,8 +70,36 @@ export function anthropicMessagesUrl(baseURL: string): string {
   return `${base}/messages`
 }
 
-export function testEndpointUrl(baseURL: string, protocol: TestProviderProtocol = "openai-chat"): string {
-  return protocol === "anthropic-messages" ? anthropicMessagesUrl(baseURL) : chatCompletionsUrl(baseURL)
+export function googleGenerateContentUrl(baseURL: string, modelId: string): string {
+  const base = baseURL.trim().replace(/\/+$/, "")
+  const model = modelId.trim()
+  if (!base || !model) return ""
+  // Match the SDK's model path handling, including tunedModels/ and models/ IDs.
+  const path = model.includes("/") ? model : `models/${model}`
+  return `${base}/${path.split("/").map(encodeURIComponent).join("/")}:generateContent`
+}
+
+/** Match SDK-specific URL prefixes without changing the persisted baseURL. */
+export function providerApiBaseURL(baseURL: string, npm?: string): string {
+  const base = baseURL.trim().replace(/\/+$/, "")
+  if (!base) return ""
+  return npm?.trim().toLowerCase() === "@ai-sdk/deepinfra" ? `${base}/openai` : base
+}
+
+export function providerModelsUrl(baseURL: string, npm?: string): string {
+  const base = providerApiBaseURL(baseURL, npm)
+  return base ? `${base}/models` : ""
+}
+
+export function testEndpointUrl(
+  baseURL: string,
+  protocol: TestProviderProtocol = "openai-chat",
+  modelId = "",
+  npm?: string,
+): string {
+  const base = providerApiBaseURL(baseURL, npm)
+  if (protocol === "google-generate-content") return googleGenerateContentUrl(base, modelId)
+  return protocol === "anthropic-messages" ? anthropicMessagesUrl(base) : chatCompletionsUrl(base)
 }
 
 /** Minimal body for a connectivity / model-id smoke test (OpenAI chat). */
@@ -93,6 +122,9 @@ export function anthropicMessagesTestBody(modelId: string) {
 }
 
 export function testRequestBody(modelId: string, protocol: TestProviderProtocol = "openai-chat") {
+  if (protocol === "google-generate-content") {
+    return { contents: [{ role: "user", parts: [{ text: "ping" }] }], generationConfig: { maxOutputTokens: 1 } }
+  }
   return protocol === "anthropic-messages" ? anthropicMessagesTestBody(modelId) : chatCompletionsTestBody(modelId)
 }
 
@@ -111,6 +143,8 @@ export function buildTestHeaders(input: {
     if (protocol === "anthropic-messages") {
       reqHeaders["x-api-key"] = key
       reqHeaders["anthropic-version"] = "2023-06-01"
+    } else if (protocol === "google-generate-content") {
+      reqHeaders["x-goog-api-key"] = key
     } else {
       reqHeaders.Authorization = `Bearer ${key}`
     }
@@ -136,21 +170,26 @@ function previewText(text: string, max = 240): string {
  * Connectivity probe:
  * - OpenAI-compatible: POST {baseURL}/chat/completions
  * - Anthropic (`@ai-sdk/anthropic`): POST {baseURL}/messages with x-api-key
+ * - Google (`@ai-sdk/google`): POST {baseURL}/models/{model}:generateContent with x-goog-api-key
  */
 export async function testProviderModel(input: TestProviderModelInput): Promise<TestProviderModelResult> {
   const modelId = input.modelId.trim()
   const protocol = resolveTestProtocol(input.npm)
-  const url = testEndpointUrl(input.baseURL, protocol)
+  const url = testEndpointUrl(input.baseURL, protocol, modelId, input.npm)
   const started = Date.now()
+  console.info(`[provider-test] prepared protocol=${protocol} npm=${input.npm ?? "default"} model=${modelId}`)
 
-  if (!url) {
+  if (!input.baseURL.trim()) {
+    console.warn("[provider-test] validation failed reason=missing-baseURL")
     return { ok: false, latencyMs: 0, error: "missing baseURL" }
   }
   if (!modelId) {
+    console.warn("[provider-test] validation failed reason=missing-model")
     return { ok: false, latencyMs: 0, error: "missing model id" }
   }
 
   if (input.signal?.aborted) {
+    console.info("[provider-test] skipped reason=cancelled")
     return { ok: false, latencyMs: 0, url, error: "cancelled", cancelled: true }
   }
 
@@ -162,6 +201,7 @@ export async function testProviderModel(input: TestProviderModelInput): Promise<
   const timer = setTimeout(() => controller.abort(), timeoutMs)
 
   try {
+    console.info(`[provider-test] sending protocol=${protocol} timeoutMs=${timeoutMs}`)
     const res = await doFetch(url, {
       method: "POST",
       headers: buildTestHeaders({ apiKey: input.apiKey, headers: input.headers, protocol }),
@@ -176,6 +216,9 @@ export async function testProviderModel(input: TestProviderModelInput): Promise<
       bodyText = ""
     }
     const preview = bodyText ? previewText(bodyText) : undefined
+    console.info(
+      `[provider-test] response protocol=${protocol} status=${res.status} latencyMs=${latencyMs} bytes=${bodyText.length}`,
+    )
 
     if (res.ok) {
       return { ok: true, status: res.status, latencyMs, url, preview }
@@ -191,6 +234,9 @@ export async function testProviderModel(input: TestProviderModelInput): Promise<
     }
   } catch (e) {
     const latencyMs = Date.now() - started
+    console.warn(
+      `[provider-test] failed protocol=${protocol} latencyMs=${latencyMs} aborted=${controller.signal.aborted}`,
+    )
     if (e instanceof Error && e.name === "AbortError") {
       if (input.signal?.aborted) {
         return { ok: false, latencyMs, url, error: "cancelled", cancelled: true }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  customProviderNpmPackages,
   isModelConfigFieldVisible,
   modelConfig,
   validateCustomProvider,
@@ -7,6 +8,34 @@ import {
 } from "./dialog-custom-provider-form"
 
 const t = (key: string) => key
+
+describe("customProviderNpmPackages", () => {
+  test("offers compatible specialized SDKs while retaining existing SDKs", () => {
+    expect(customProviderNpmPackages()).toEqual([
+      "@ai-sdk/openai-compatible",
+      "@ai-sdk/openai",
+      "@ai-sdk/anthropic",
+      "@ai-sdk/google",
+      "@ai-sdk/groq",
+      "@ai-sdk/mistral",
+      "@ai-sdk/alibaba",
+      "@openrouter/ai-sdk-provider",
+      "@ai-sdk/xai",
+      "@ai-sdk/togetherai",
+      "@ai-sdk/cerebras",
+      "@ai-sdk/deepinfra",
+    ])
+    expect(customProviderNpmPackages(" @ai-sdk/google ")).toEqual(customProviderNpmPackages())
+    expect(customProviderNpmPackages("custom-sdk")[0]).toBe("custom-sdk")
+  })
+
+  test("does not offer cloud authentication or distinct protocol SDKs", () => {
+    for (const npm of ["@ai-sdk/azure", "@ai-sdk/google-vertex", "@ai-sdk/amazon-bedrock", "@ai-sdk/cohere"]) {
+      expect(customProviderNpmPackages()).not.toContain(npm)
+      expect(customProviderNpmPackages(npm)[0]).toBe(npm)
+    }
+  })
+})
 
 function model(input: { row: string; id: string; name: string; values?: Record<string, string> }): ModelRow {
   return {
@@ -23,6 +52,67 @@ function model(input: { row: string; id: string; name: string; values?: Record<s
 }
 
 describe("validateCustomProvider", () => {
+  test.each([
+    ["@ai-sdk/groq", { reasoningFormat: "parsed", reasoningEffort: "low" }],
+    ["@ai-sdk/mistral", { safePrompt: true, parallelToolCalls: false }],
+    ["@ai-sdk/alibaba", { enableThinking: true, thinkingBudget: 512 }],
+    ["@openrouter/ai-sdk-provider", { provider: { order: ["test-upstream"] }, reasoning: { effort: "low" } }],
+    ["@ai-sdk/xai", { reasoningEffort: "low", parallel_function_calling: false }],
+    ["@ai-sdk/togetherai", { reasoningEffort: "low" }],
+    ["@ai-sdk/cerebras", { reasoningEffort: "low" }],
+    ["@ai-sdk/deepinfra", { reasoningEffort: "low" }],
+  ])("preserves %s specialized options and variants", (npm, options) => {
+    const variants = { custom: { ...options } }
+    const result = validateCustomProvider({
+      form: {
+        providerID: "specialized-smoke",
+        npm,
+        name: "Specialized smoke",
+        baseURL: "https://gateway.example.com/v1",
+        apiKey: "test-key",
+        models: [
+          model({
+            row: "m0",
+            id: "smoke-model",
+            name: "Smoke",
+            values: {
+              options: JSON.stringify(options),
+              variants: JSON.stringify(variants),
+            },
+          }),
+        ],
+        headers: [],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+    expect(result.result?.config.npm).toBe(npm)
+    const expected = { name: "Smoke", options, variants }
+    expect(result.result?.config.models["smoke-model"]).toEqual(expected)
+  })
+  test("preserves Google SDK, endpoint and model when saving", () => {
+    const result = validateCustomProvider({
+      form: {
+        providerID: "custom-google",
+        npm: "@ai-sdk/google",
+        name: "Google Gateway",
+        baseURL: "https://gateway.example.com/v1beta",
+        apiKey: "google-test-key",
+        models: [model({ row: "m0", id: "gemini-2.5-flash", name: "Gemini" })],
+        headers: [],
+        err: {},
+      },
+      t,
+      disabledProviders: [],
+      existingProviderIDs: new Set(),
+    })
+    expect(result.result?.config.npm).toBe("@ai-sdk/google")
+    expect(result.result?.config.options.baseURL).toBe("https://gateway.example.com/v1beta")
+    expect(result.result?.config.models).toEqual({ "gemini-2.5-flash": { name: "Gemini" } })
+    expect(result.result?.key).toBe("google-test-key")
+  })
   test("hides uncommon detail fields without removing their form rows", () => {
     const rows = modelConfig()
     const hidden = rows.filter((row) => !isModelConfigFieldVisible(row.key)).map((row) => row.key)

@@ -335,6 +335,7 @@ export function DialogCustomProvider(props: Props) {
             <FetchProviderModels
               baseURL={form.baseURL}
               apiKey={form.apiKey}
+              npm={form.npm}
               headers={form.headers}
               existingModelIDs={new Set(form.models.map((m) => m.id.trim()).filter(Boolean))}
               onAdd={addFetchedModel}

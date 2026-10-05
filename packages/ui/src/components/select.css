@@ -131,7 +131,7 @@
 
   [data-slot="select-select-content-list"] {
     overflow-y: auto;
-    max-height: 12rem;
+    max-height: var(--select-list-max-height, 12rem);
     white-space: nowrap;
     overflow-x: hidden;
     display: flex;
