@@ -99,6 +99,11 @@ jobs:
           # APPDATA override that may be ignored by the packaged executable.
           $userData = Join-Path $env:APPDATA "ai.opencode.desktop"
           $database = Join-Path $env:USERPROFILE ".local/share/opencode/opencode.db"
+          $sidecarLogs = Join-Path $env:USERPROFILE ".local/share/opencode/log"
+          Write-Host "smoke appData=$env:APPDATA"
+          Write-Host "smoke userData=$userData"
+          Write-Host "smoke sidecarDataHome=$(Join-Path $env:USERPROFILE '.local/share')"
+          Write-Host "smoke expected database=$database"
 
           function Stop-OpenCodeProcess([System.Diagnostics.Process] $Process) {
             if ($Process -and -not $Process.HasExited) {
@@ -121,9 +126,11 @@ jobs:
               Start-Sleep -Seconds 1
             }
 
-            $logs = Get-ChildItem -Path (Join-Path $userData "logs") -Filter "*.log" -Recurse -ErrorAction SilentlyContinue |
+            $logs = Get-ChildItem -Path $userData,$sidecarLogs -Filter "*.log" -Recurse -ErrorAction SilentlyContinue |
               ForEach-Object { "`n--- $($_.FullName) ---`n$(Get-Content -LiteralPath $_.FullName -Tail 80 -ErrorAction SilentlyContinue)" }
-            throw "OpenCode did not create its sidecar database and finish local-server startup within 90 seconds.$logs"
+            $directories = Get-ChildItem -Path $env:APPDATA,(Join-Path $env:USERPROFILE ".local/share") -Directory -ErrorAction SilentlyContinue |
+              ForEach-Object { $_.FullName }
+            throw "OpenCode did not finish local-server startup within 90 seconds. appData=$env:APPDATA userDataExists=$(Test-Path -LiteralPath $userData) databaseExists=$(Test-Path -LiteralPath $database) sidecarLogDirectoryExists=$(Test-Path -LiteralPath $sidecarLogs) visibleDataDirectories=$($directories -join ';').$logs"
           }
 
           Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
