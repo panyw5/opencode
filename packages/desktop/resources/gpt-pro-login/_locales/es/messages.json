@@ -20,23 +20,26 @@
   },
   "actionTitle": { "message": "Conectar ChatGPT con OpenCode" },
   "popupTitle": { "message": "Conexión OpenCode-ChatGPT" },
+  "loginStatusLabel": { "message": "Estado de inicio de sesión de ChatGPT" },
+  "statusChecking": { "message": "Comprobando…" },
+  "statusLoggedIn": { "message": "Con sesión iniciada (sesión detectada)" },
+  "statusLoggedOut": { "message": "Sin sesión iniciada" },
+  "statusUnknown": { "message": "No se puede comprobar" },
   "heading": { "message": "Conectar la sesión de ChatGPT" },
   "instructions": {
     "message": "Inicia sesión en ChatGPT en este perfil de Chrome. Después, vuelve a la página de conexión OpenCode-ChatGPT y abre esta extensión."
   },
   "consent": {
-    "message": "Autorizo la transferencia de mi sesión de ChatGPT al navegador dedicado de OpenCode en este equipo."
+    "message": "Autorizo importar esta sesión de ChatGPT en OpenCode en este equipo."
   },
   "privacy": {
     "message": "No se transfieren cookies de Google, contraseñas, historial de chats ni credenciales de API. La extensión nunca guarda la sesión en un archivo."
   },
-  "connect": { "message": "Importar sesión de ChatGPT" },
-  "statusApproval": { "message": "Se requiere tu autorización explícita." },
-  "statusReading": { "message": "Leyendo las cookies de sesión de ChatGPT…" },
-  "statusImporting": { "message": "Importando mediante la conexión local de un solo uso…" },
-  "statusImported": {
-    "message": "Sesión importada. Vuelve a OpenCode para comprobar el inicio de sesión y seleccionar GPT-6 Pro. La importación por sí sola no garantiza que ChatGPT acepte la sesión."
-  },
+  "connect": { "message": "Importar sesión" },
+  "statusApproval": { "message": "Autoriza antes de importar." },
+  "statusReading": { "message": "Leyendo sesión…" },
+  "statusImporting": { "message": "Importando…" },
+  "statusImported": { "message": "Importado. Comprueba la configuración de GPT-Pro en OpenCode." },
   "errorTab": {
     "message": "Abre una nueva página de conexión OpenCode-ChatGPT en 127.0.0.1 desde OpenCode y abre la extensión en esa pestaña."
   },
@@ -48,7 +51,7 @@
   },
   "errorConnection": { "message": "La conexión falló. Abre una nueva conexión desde OpenCode." },
   "errorImport": {
-    "message": "No se confirmó la importación. Comprueba OpenCode antes de reintentarlo; no envíes repetidamente."
+    "message": "Importación no confirmada. Comprueba la configuración de GPT-Pro en OpenCode."
   },
   "errorInvalidSession": {
     "message": "La sesión de ChatGPT no es válida o no es compatible. Inicia sesión de nuevo en Chrome y abre una nueva conexión desde OpenCode."

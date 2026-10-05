@@ -45,6 +45,8 @@ import { LLM } from "./llm"
 import { Shell } from "@/shell/shell"
 import { ShellID } from "@/tool/shell/id"
 import { BackgroundShell } from "@/background/shell"
+import { BackgroundGptPro, notificationKind as gptProNotificationKind } from "@/background/gpt-pro"
+import { GptProNotificationReceived } from "@/browser/events"
 import { AppFileSystem } from "@opencode-ai/core/filesystem"
 import { Truncate } from "@/tool/truncate"
 import { Image } from "@/image/image"
@@ -180,6 +182,7 @@ export const layer = Layer.effect(
     const question = yield* Question.Service
     const projectTasks = yield* ProjectTask.Service
     const inbox = yield* SessionInput.Service
+    const backgroundPro = yield* BackgroundGptPro.Service
     type InboxRecoveryState = { initialized: boolean; draining: Set<SessionID>; requested: Set<SessionID> }
     const inboxRecovery = yield* InstanceState.make<InboxRecoveryState>(() =>
       Effect.succeed({ initialized: false, draining: new Set<SessionID>(), requested: new Set<SessionID>() }),
@@ -231,6 +234,7 @@ export const layer = Layer.effect(
     })
 
     const cancel = Effect.fn("SessionPrompt.cancel")(function* (sessionID: SessionID) {
+      yield* backgroundPro.suppress(sessionID, true)
       yield* elog.info("cancel start", { sessionID })
       yield* state.cancel(sessionID, sessions.finalizeOrphanedAssistant(sessionID, { abortSource: "user-cancel" }))
       yield* elog.info("cancel finalize done", { sessionID })
@@ -854,6 +858,15 @@ export const layer = Layer.effect(
           log.error("consult tool missing from registry", { tool: mention.tool, sessionID })
           continue
         }
+        const backgroundChoice = lastUserParts.find(
+          (part) => part.type === "text" && typeof part.metadata?.gptProBackground === "boolean",
+        )
+        const toolArgs = {
+          prompt: promptText,
+          ...(name === "gpt-pro" && backgroundChoice?.type === "text"
+            ? { background: backgroundChoice.metadata!.gptProBackground as boolean }
+            : {}),
+        }
 
         let part: MessageV2.ToolPart = yield* sessions.updatePart({
           id: PartID.ascending(),
@@ -864,14 +877,11 @@ export const layer = Layer.effect(
           tool: mention.tool,
           state: {
             status: "running",
-            input: {
-              prompt: promptText,
-            },
+            input: toolArgs,
             time: { start: Date.now() },
           },
         })
 
-        const toolArgs = { prompt: promptText }
         yield* plugin.trigger(
           "tool.execute.before",
           { tool: mention.tool, sessionID, callID: part.id },
@@ -1989,7 +1999,12 @@ export const layer = Layer.effect(
     })
 
     requestDrain = Effect.fn("SessionPrompt.requestDrain")(function* (sessionID: SessionID) {
-      const { ctx } = yield* requireSessionOwner(sessionID, "inbox-drain")
+      const { ctx, session } = yield* requireSessionOwner(sessionID, "inbox-drain")
+      if (session.time.archived) return
+      const outstanding = [...(yield* inbox.pending(sessionID)), ...(yield* inbox.promotedUnacked(sessionID))]
+      const onlyPro =
+        outstanding.length > 0 && outstanding.every((row) => row.prompt.metadata?.kind === gptProNotificationKind)
+      if (onlyPro && (yield* backgroundPro.suppressed(sessionID))) return
       yield* elog.info("inbox drain owner verified", {
         sessionID,
         source: "session-input",
@@ -2016,6 +2031,18 @@ export const layer = Layer.effect(
                 .pipe(Effect.orDie)
               if (currentStatus.type !== "idle" || Option.isSome(activeAssistant)) {
                 const pendingQuestion = (yield* question.list()).some((item) => item.sessionID === sessionID)
+                const inputs = [...(yield* inbox.pending(sessionID)), ...(yield* inbox.promotedUnacked(sessionID))]
+                const hasPro = inputs.some((row) => row.prompt.metadata?.kind === gptProNotificationKind)
+                const onlyPro =
+                  inputs.length > 0 && inputs.every((row) => row.prompt.metadata?.kind === gptProNotificationKind)
+                if (pendingQuestion && onlyPro) return
+                if (hasPro && !pendingQuestion) {
+                  const materialized = yield* promoteInbox(sessionID)
+                  yield* elog.info("background Pro progress materialized without interrupting active run", {
+                    sessionID,
+                    materialized,
+                  })
+                }
                 if (pendingQuestion) {
                   const materialized = yield* promoteInbox(sessionID)
                   if (materialized > 0) {
@@ -2125,6 +2152,7 @@ export const layer = Layer.effect(
       let revision = yield* state.revision(input.sessionID, lastAssistant(input.sessionID))
       yield* elog.info("prompt preparation registered", { sessionID: input.sessionID, revision })
       yield* ensureBackgroundShellSubscription()
+      if (!input.noReply) yield* backgroundPro.suppress(input.sessionID, false, false)
       yield* ensureInboxRecovery(input.sessionID)
       const { session } = yield* requireSessionOwner(input.sessionID, "prompt")
       if (session.time.archived) {
@@ -2264,6 +2292,9 @@ export const layer = Layer.effect(
 
           yield* status.set(sessionID, { type: "busy" })
           yield* slog.info("loop", { step })
+          if ((yield* inbox.pending(sessionID)).some((row) => row.prompt.metadata?.kind === gptProNotificationKind)) {
+            yield* promoteInbox(sessionID)
+          }
 
           let msgs = yield* MessageV2.filterCompactedEffect(sessionID)
           const materializedSessionInputIDs = sessionInputIDs(msgs)
@@ -2755,8 +2786,58 @@ export const layer = Layer.effect(
     })
 
     const backgroundShellSubscriptions = new Set<string>()
+    const backgroundProSubscriptions = new Set<string>()
+    const ensureBackgroundProSubscription = Effect.fn("SessionPrompt.ensureBackgroundProSubscription")(function* () {
+      const ctx = yield* InstanceState.context
+      if (backgroundProSubscriptions.has(ctx.directory)) return
+      backgroundProSubscriptions.add(ctx.directory)
+      backgroundPro.registerDrain((sessionID) => requestDrain(sessionID))
+      yield* elog.info("background Pro notification subscription started", { directory: ctx.directory })
+      const received = yield* Scope.provide(scope)(bus.subscribe(GptProNotificationReceived))
+      yield* Stream.runForEach(received, (event) =>
+        backgroundPro.receive(event.properties).pipe(
+          Effect.flatMap((result) =>
+            Effect.gen(function* () {
+              if (result.ack) yield* backgroundPro.acknowledge(event.properties.id).pipe(Effect.ignore)
+              if (result.wake) yield* requestDrain(result.wake)
+            }),
+          ),
+          Effect.catch((error) =>
+            elog.warn("background Pro push notification failed", {
+              directory: ctx.directory,
+              eventID: event.properties.id,
+              error: String(error),
+            }),
+          ),
+        ),
+      ).pipe(Effect.forkIn(scope, { startImmediately: true }))
+      const poll = Effect.gen(function* () {
+        while (true) {
+          yield* backgroundPro.poll().pipe(
+            Effect.catch((error) =>
+              elog.warn("background Pro notification poll failed", {
+                directory: ctx.directory,
+                error: String(error),
+              }),
+            ),
+          )
+          yield* Effect.sleep("2 seconds")
+        }
+      }).pipe(
+        Effect.ensuring(
+          Effect.gen(function* () {
+            backgroundProSubscriptions.delete(ctx.directory)
+            yield* elog.info("background Pro notification subscription stopped", { directory: ctx.directory })
+          }),
+        ),
+        Effect.forkIn(scope, { startImmediately: true }),
+      )
+      yield* poll
+    })
+
     const ensureBackgroundShellSubscription = Effect.fn("SessionPrompt.ensureBackgroundShellSubscription")(
       function* () {
+        yield* ensureBackgroundProSubscription()
         const ctx = yield* InstanceState.context
         if (backgroundShellSubscriptions.has(ctx.directory)) return
         backgroundShellSubscriptions.add(ctx.directory)
@@ -2943,7 +3024,7 @@ export const layer = Layer.effect(
 
 export const defaultLayer = Layer.suspend(() =>
   layer.pipe(
-    Layer.provide(SessionRunState.defaultLayer),
+    Layer.provide([SessionRunState.defaultLayer, BackgroundGptPro.defaultLayer]),
     Layer.provide(SessionStatus.defaultLayer),
     Layer.provide(SessionCompaction.defaultLayer),
     Layer.provide(SessionProcessor.defaultLayer),

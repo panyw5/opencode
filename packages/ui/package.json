@@ -8,6 +8,7 @@
     "./*": "./src/components/*.tsx",
     "./session-diff": "./src/components/session-diff.ts",
     "./message-task-session": "./src/components/message-task-session.ts",
+    "./session-reference": "./src/components/session-reference.ts",
     "./injected-prompt": "./src/components/injected-prompt.tsx",
     "./injected-prompt-model": "./src/components/injected-prompt-model.ts",
     "./message-file": "./src/components/message-file.ts",

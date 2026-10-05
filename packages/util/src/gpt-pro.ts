@@ -43,10 +43,39 @@ export type GptProAPI = {
   list(): Promise<GptProJob[]>
 }
 
-export type GptProConfig = { enabled: boolean; timeoutMinutes: number }
+export type GptProConfig = { enabled: boolean; timeoutMinutes: number; progressIntervalSeconds?: number }
 export const DEFAULT_GPT_PRO_CONFIG: GptProConfig = { enabled: false, timeoutMinutes: 30 }
-export type GptProAction = "consult" | "status" | "read" | "open" | "stop" | "pause" | "resume" | "intervene"
-export type GptProCommand = { action?: GptProAction; id?: string; prompt?: string; requestID?: string }
+export type GptProAction =
+  | "consult"
+  | "status"
+  | "read"
+  | "open"
+  | "stop"
+  | "pause"
+  | "resume"
+  | "intervene"
+  | "background"
+export type GptProCommand = {
+  action?: GptProAction
+  id?: string
+  prompt?: string
+  requestID?: string
+  background?: boolean
+}
+export type GptProNotification = {
+  id: string
+  consultationID: string
+  owner: string
+  phase: GptProPhase
+  revision: number
+  at: number
+  url: string
+  kind: "progress" | "completed" | "state"
+  format: "append" | "snapshot"
+  text: string
+  truncated: boolean
+  error?: string
+}
 export type GptProPhase =
   | "queued"
   | "preparing"
@@ -77,6 +106,12 @@ export type GptProJob = {
   html?: string
   revision: number
   error?: string
+  background?: boolean
+  notifications?: GptProNotification[]
+  notificationSequence?: number
+  notificationAt?: number
+  notificationText?: string
+  notificationPhase?: GptProPhase
 }
 export const gptProTerminal = (phase: GptProPhase) =>
   ["completed", "cancelled", "failed", "interrupted", "send_uncertain", "paused"].includes(phase)
@@ -86,6 +121,9 @@ export function normalizeGptProConfig(config: Partial<GptProConfig>): GptProConf
     timeoutMinutes: Number.isFinite(config.timeoutMinutes)
       ? Math.min(60, Math.max(1, Math.round(config.timeoutMinutes!)))
       : 30,
+    progressIntervalSeconds: Number.isFinite(config.progressIntervalSeconds)
+      ? Math.min(600, Math.max(10, Math.round(config.progressIntervalSeconds!)))
+      : 60,
   }
 }
 

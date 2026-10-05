@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { iconUsesLucide, iconUsesPhosphor, iconUsesTabler } from "./icon"
+import { iconUsesLucide, iconUsesPhosphor, iconUsesTabler, resolveIcon } from "./icon"
 import { lucideIcons } from "./lucide-icons"
 import { phosphorIcons } from "./phosphor-icons"
 import { tablerIcons } from "./tabler-icons"
@@ -18,6 +18,15 @@ const configNames = [
   "magnifying-glass",
   "trash",
 ]
+
+test("keeps the filled editorial opening quote consistent across icon packs", () => {
+  const quote = resolveIcon("quote-open", "legacy")
+  expect(quote.viewBox).toBe("0 0 20 20")
+  expect(quote.body).toContain('fill="currentColor"')
+  for (const pack of ["phosphor", "tabler", "lucide"] as const) {
+    expect(resolveIcon("quote-open", pack)).toEqual(quote)
+  }
+})
 
 describe("phosphor icon pack", () => {
   test("maps config and marketplace names to phosphor glyphs", () => {

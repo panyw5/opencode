@@ -14,7 +14,7 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useLocation } from "@solidjs/router"
+import { A, useLocation } from "@solidjs/router"
 import stripAnsi from "strip-ansi"
 import { Dynamic } from "solid-js/web"
 import {
@@ -54,7 +54,8 @@ import { Markdown } from "./markdown"
 import type { MarkdownStage } from "./markdown"
 import { ImagePreview } from "./image-preview"
 import { getDirectory as _getDirectory, getFilename } from "@opencode-ai/core/util/path"
-import { checksum } from "@opencode-ai/core/util/encode"
+import { base64Encode, checksum } from "@opencode-ai/core/util/encode"
+import { readSessionReference } from "./session-reference"
 import { Tooltip } from "./tooltip"
 import { IconButton } from "./icon-button"
 import { Button } from "./button"
@@ -1303,6 +1304,9 @@ export function UserMessageDisplay(props: {
   })
 
   const skillTemplatePart = createMemo(() => skillText(props.parts))
+  const sessionReferences = createMemo(() =>
+    props.parts.flatMap((part) => (part.type === "text" ? (readSessionReference(part.metadata) ?? []) : [])),
+  )
 
   const files = createMemo(() => (props.parts?.filter((p) => p.type === "file") as FilePart[]) ?? [])
 
@@ -1379,6 +1383,34 @@ export function UserMessageDisplay(props: {
 
   return (
     <div data-component="user-message" data-queued={props.queued ? "" : undefined} aria-busy={props.queued}>
+      <Show when={sessionReferences().length}>
+        <div data-slot="user-message-session-references">
+          <For each={sessionReferences()}>
+            {(item) => (
+              <A
+                data-component="sent-session-reference"
+                href={`/${base64Encode(item.directory)}/session/${item.sessionID}`}
+                title={`${item.directory}\n${item.sessionID}`}
+              >
+                <div data-slot="session-reference-title">
+                  <Icon name="speech-bubble" size="small" />
+                  <span>{item.title || item.sessionID}</span>
+                  <Icon name="arrow-right" size="small" />
+                </div>
+                <div data-slot="session-reference-meta">
+                  {getFilename(item.directory)} · {item.sessionID}
+                </div>
+                <Show when={item.summary}>
+                  <div data-slot="session-reference-summary" title={item.summary}>
+                    {item.summary}
+                  </div>
+                </Show>
+                <div data-slot="session-reference-meta">{timefmt().format(item.updatedAt)}</div>
+              </A>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show when={attachments().length > 0}>
         <div data-slot="user-message-attachments">
           <For each={attachments()}>

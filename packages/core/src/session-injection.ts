@@ -5,6 +5,7 @@ export const INJECTION_KINDS = [
   "project-task-injection",
   "background-task-injection",
   "background-shell-injection",
+  "background-gpt-pro-injection",
   "math-worker-event",
   "math-initialization-injection",
 ] as const

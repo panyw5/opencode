@@ -8,6 +8,7 @@ import { NamedError } from "@opencode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { BackgroundShell } from "@/background/shell"
+import { BackgroundGptPro } from "@/background/gpt-pro"
 import { Bus } from "../../src/bus"
 import { Command } from "../../src/command"
 import { Config } from "@/config/config"
@@ -244,6 +245,7 @@ function makePrompt(input?: { processor?: "blocking" }) {
     Layer.provideMerge(deps),
   )
   return SessionPrompt.layer.pipe(
+    Layer.provide(BackgroundGptPro.defaultLayer),
     Layer.provideMerge(SessionRevert.defaultLayer),
     Layer.provide(Image.defaultLayer),
     Layer.provide(Reference.defaultLayer),
@@ -271,6 +273,37 @@ function makeHttpNoLLMServer(input?: { processor?: "blocking" }) {
 }
 
 const it = testEffect(makeHttp())
+it.instance("Pro progress enters the timeline without interrupting an active request and final output wakes an idle session", () => Effect.gen(function* () {
+  const { llm } = yield* useServerConfig(providerCfg)
+  const prompt = yield* SessionPrompt.Service
+  const sessions = yield* Session.Service
+  const inbox = yield* SessionInput.Service
+  const chat = yield* sessions.create({ title: "Pro live input", permission: [{ permission: "*", pattern: "*", action: "allow" }] })
+  yield* user(chat.id, "independent exploration")
+  const gate = yield* Deferred.make<void>()
+  yield* llm.push(
+    reply().wait(deferredAsPromise(gate)).text("independent work finished").stop(),
+    reply().text("used the new Pro progress").stop(),
+    reply().text("used the final Pro result").stop(),
+  )
+  const firstRun = yield* prompt.loop({ sessionID: chat.id }).pipe(Effect.forkChild)
+  yield* llm.wait(1)
+  yield* inbox.admit({ id: "evt_pro_progress", sessionID: chat.id, source: "background-gpt-pro", prompt: { text: "PRO_PARTIAL_MARKER", agent: "build", model: ref, metadata: { kind: "background-gpt-pro-injection", phase: "generating" } } })
+  yield* prompt.drain(chat.id)
+  expect(yield* llm.calls).toBe(1)
+  const liveParts = (yield* sessions.messages({ sessionID: chat.id })).flatMap(m => m.parts)
+  expect(liveParts.some(p => p.type === "text" && p.text === "PRO_PARTIAL_MARKER")).toBe(true)
+  yield* Deferred.succeed(gate, undefined)
+  yield* awaitWithTimeout(Fiber.await(firstRun), "active request did not finish", "3 seconds")
+  yield* awaitWithTimeout(llm.wait(2), "progress was not consumed", "3 seconds")
+  expect(JSON.stringify((yield* llm.inputs)[1]?.messages)).toContain("PRO_PARTIAL_MARKER")
+  yield* inbox.admit({ id: "evt_pro_final", sessionID: chat.id, source: "background-gpt-pro", prompt: { text: "PRO_FINAL_MARKER", agent: "build", model: ref, metadata: { kind: "background-gpt-pro-injection", phase: "completed" } } })
+  yield* prompt.drain(chat.id)
+  expect(yield* llm.calls).toBe(3)
+  expect(JSON.stringify((yield* llm.inputs)[2]?.messages)).toContain("PRO_FINAL_MARKER")
+  expect(yield* inbox.pending(chat.id)).toHaveLength(0)
+  expect(yield* inbox.promotedUnacked(chat.id)).toHaveLength(0)
+}), 5_000)
 const noLLMServer = testEffect(makeHttpNoLLMServer())
 const raceNoLLMServer = testEffect(makeHttpNoLLMServer({ processor: "blocking" }))
 const unix = process.platform !== "win32" ? it.instance : it.instance.skip
@@ -1455,7 +1488,7 @@ it.instance("agent creates a scheduled task through the built-in tool", () =>
       prompt: "Review the current project and summarize actionable findings",
       directory: session.directory,
       projectID: session.projectID,
-      executionMode: "existing_session",
+      executionMode: "automatic_session",
       sessionID: session.id,
       agent: "build",
       model: { providerID: "test", modelID: "test-model" },

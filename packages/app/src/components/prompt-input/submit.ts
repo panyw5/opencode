@@ -3,7 +3,6 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { base64Encode } from "@opencode-ai/core/util/encode"
 import { useNavigate, useParams } from "@solidjs/router"
 import { batch, type Accessor } from "solid-js"
-import type { FileSelection } from "@/context/file"
 import { useGlobalSync } from "@/context/global-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
@@ -41,6 +40,7 @@ export type FollowupDraft = {
   agent: string
   model: { providerID: string; modelID: string }
   variant?: string
+  gptProBackground?: boolean
 }
 
 type FollowupSendInput = {
@@ -216,6 +216,9 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   const cmd = head?.startsWith("/") ? head.slice(1) : undefined
   const customCommand = cmd && input.sync.data.command.find((item) => item.name === cmd)
   if (cmd && customCommand) {
+    if (input.draft.context.some((item) => item.type === "session")) {
+      throw new Error("Session references require a regular prompt, not a slash command.")
+    }
     const messageID = input.messageID ?? Identifier.ascending("message")
     batch(() => {
       setBusy()
@@ -299,6 +302,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     sessionID: input.draft.sessionID,
     messageID,
     sessionDirectory: input.draft.sessionDirectory,
+    gptProBackground: input.draft.gptProBackground,
   })
 
   const message: Message = {
@@ -380,6 +384,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
 }
 
 type PromptSubmitInput = {
+  gptProBackground?: Accessor<boolean>
   info: Accessor<{ id: string } | undefined>
   imageAttachments: Accessor<ImageAttachmentPart[]>
   commentCount: Accessor<number>
@@ -420,15 +425,6 @@ export type SubmitOptions = {
    * user keep reading where they are while the prompt runs.
    */
   keepViewport?: boolean
-}
-
-type CommentItem = {
-  path: string
-  selection?: FileSelection
-  comment?: string
-  commentID?: string
-  commentOrigin?: "review" | "file"
-  preview?: string
 }
 
 export function createPromptSubmit(input: PromptSubmitInput) {
@@ -513,21 +509,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     return operation
   }
 
-  const restoreCommentItems = (items: CommentItem[]) => {
-    for (const item of items) {
-      prompt.context.add({
-        type: "file",
-        path: item.path,
-        selection: item.selection,
-        comment: item.comment,
-        commentID: item.commentID,
-        commentOrigin: item.commentOrigin,
-        preview: item.preview,
-      })
-    }
-  }
-
-  const removeCommentItems = (items: { key: string }[], scope?: { dir: string; id?: string }) => {
+  const removeContextItems = (items: { key: string }[], scope?: { dir: string; id?: string }) => {
     for (const item of items) {
       prompt.context.remove(item.key, scope)
     }
@@ -580,6 +562,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const editorText = promptText(currentPrompt)
     const text = mode === "normal" ? (input.transformPromptText?.(editorText) ?? editorText) : editorText
     const submittedPrompt: Prompt = [...currentPrompt]
+    const gptProBackground = submittedPrompt.some((part) => part.type === "agent" && part.name === "gpt-pro")
+      ? input.gptProBackground?.()
+      : undefined
     if (text !== editorText) {
       const textIndex = submittedPrompt.findIndex((part) => part.type === "text")
       if (textIndex >= 0) {
@@ -599,13 +584,27 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       working: input.working(),
     })
 
-    if (text.trim().length === 0 && images.length === 0 && input.commentCount() === 0) {
+    if (
+      text.trim().length === 0 &&
+      images.length === 0 &&
+      input.commentCount() === 0 &&
+      !(mode === "normal" && currentContext.some((item) => item.type === "session"))
+    ) {
       diagnose("skip", { reason: "empty" })
       if (input.working()) abort()
       return
     }
 
     const hookControlCommand = mode === "normal" ? sessionHookControlCommand(text) : undefined
+    if (
+      mode === "normal" &&
+      currentContext.some((item) => item.type === "session") &&
+      (hookControlCommand ||
+        (text.startsWith("/") && sync.data.command.some((item) => item.name === text.split(" ")[0].slice(1))))
+    ) {
+      showToast({ title: language.t("prompt.session.commandUnsupported") })
+      return
+    }
     if (hookControlCommand) {
       const sessionID = params.id
       if (!sessionID) {
@@ -899,7 +898,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
     const agent = currentAgent.name
     const context = currentContext
-    const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
+    const consumedContext = context.filter((item) => item.type === "session" || !!item.comment?.trim())
     const draft: FollowupDraft = {
       sessionID: session.id,
       sessionDirectory,
@@ -908,11 +907,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       agent,
       model,
       variant,
+      gptProBackground,
     }
 
     const scopeResetAction = () => {
       prompt.reset(submittedScope)
-      removeCommentItems(commentItems, submittedScope)
+      removeContextItems(consumedContext, submittedScope)
     }
 
     const clearInput = () => {
@@ -924,6 +924,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     const restoreInput = () => {
+      for (const item of consumedContext) prompt.context.add(item, submittedScope)
       prompt.set(currentPrompt, input.promptLength(currentPrompt), submittedScope)
       input.resetInputUndo(currentPrompt, input.promptLength(currentPrompt))
       input.setMode(mode)
@@ -1037,7 +1038,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     // For a deferred draft-promotion reset, comment chips stay visible on the
     // draft composer until the route commits (scopeResetAction clears them).
-    if (!deferScopeReset) removeCommentItems(commentItems, submittedScope)
+    if (!deferScopeReset) removeContextItems(consumedContext, submittedScope)
     performance.mark("submit:clear-input:start")
     clearInput()
     performance.mark("submit:clear-input:end")
@@ -1074,7 +1075,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           globalSync.session.status.set(sessionDirectory, session.id, { type: "idle" })
         }
         removeOptimisticMessage()
-        restoreCommentItems(commentItems)
         restoreInput()
       }
 
@@ -1172,7 +1172,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           description: errorMessage(err),
         })
         removeOptimisticMessage()
-        restoreCommentItems(commentItems)
         restoreInput()
       })
   }

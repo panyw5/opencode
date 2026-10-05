@@ -35,6 +35,7 @@ function popup(
     url?: string
     cookies?: unknown[]
     locale?: string
+    missingMessages?: boolean
     stores?: unknown[]
     responseStatus?: number
     networkFailure?: boolean
@@ -53,12 +54,21 @@ function popup(
     },
   }
   const status = { textContent: "" }
+  const loginState = { textContent: "" }
   const root = { lang: "", dir: "" }
   const localized = Object.fromEntries(
     [...markup.matchAll(/data-i18n="([^"]+)"/g)].map((match) => {
       const key = match[1]
-      const node = key === "statusApproval" ? status : key === "connect" ? button : { textContent: "" }
-      return [key, Object.assign(node, { dataset: { i18n: key } })]
+      const node =
+        key === "statusApproval"
+          ? status
+          : key === "connect"
+            ? button
+            : key === "statusChecking"
+              ? loginState
+              : { textContent: "" }
+      const fallback = catalogs.en[key]?.message ?? ""
+      return [key, Object.assign(node, { dataset: { i18n: key }, textContent: fallback })]
     }),
   )
   const handlers: Record<string, () => void | Promise<void>> = {}
@@ -73,11 +83,14 @@ function popup(
       documentElement: root,
       querySelectorAll: () => Object.values(localized),
       querySelector: (selector: string) =>
-        ({ "#consent": consent, "#connect": button, "#status": status })[selector as "#consent"],
+        ({ "#consent": consent, "#connect": button, "#status": status, "#login-state": loginState })[
+          selector as "#consent"
+        ],
     },
     chrome: {
       i18n: {
         getMessage: (key: string) => {
+          if (input.missingMessages) return ""
           const locale = input.locale ?? "en"
           if (key === "@@ui_locale") return locale
           if (key === "@@bidi_dir") return "ltr"
@@ -121,6 +134,7 @@ function popup(
     consent,
     button,
     status,
+    loginState,
     queries,
     requests,
     localized,
@@ -132,11 +146,12 @@ function popup(
       consent.checked = true
       handlers["consent:change"]()
     },
+    settle: () => new Promise<void>((resolve) => setTimeout(resolve, 0)),
   }
 }
 
 describe("ChatGPT session connector explicit approval", () => {
-  test("all supported locales cover every UI, manifest and status message", () => {
+  test("all supported locales cover every UI, manifest and status message", async () => {
     expect(locales.sort()).toEqual(["de", "en", "es", "fr", "ja", "ko", "zh_CN", "zh_TW"])
     const keys = Object.keys(catalogs.en).sort()
     for (const locale of locales) {
@@ -145,27 +160,46 @@ describe("ChatGPT session connector explicit approval", () => {
       const p = popup({ locale })
       for (const [key, node] of Object.entries(p.localized))
         expect(node.textContent).toBe(catalogs[locale][key].message)
+      await p.settle()
+      expect(p.loginState.textContent).toBe(catalogs[locale].statusLoggedIn.message)
       expect(p.root.lang).toBe(locale.replaceAll("_", "-"))
       expect(p.root.dir).toBe("ltr")
       expect(p.button.disabled).toBe(true)
       expect(p.consent.checked).toBe(false)
-      expect(p.queries).toHaveLength(0)
+      expect(p.queries).toHaveLength(candidateNames().length)
     }
   })
 
   test("regional and unsupported languages fall back without blank labels", () => {
-    expect(popup({ locale: "fr_CA" }).localized.heading.textContent).toBe(catalogs.fr.heading.message)
-    expect(popup({ locale: "xx_ZZ" }).localized.heading.textContent).toBe(catalogs.en.heading.message)
+    expect(popup({ locale: "fr_CA" }).localized.loginStatusLabel.textContent).toBe(catalogs.fr.loginStatusLabel.message)
+    expect(popup({ locale: "xx_ZZ" }).localized.loginStatusLabel.textContent).toBe(catalogs.en.loginStatusLabel.message)
+  })
+
+  test("preserves visible English content when Chrome has no localized messages", async () => {
+    const p = popup({ missingMessages: true })
+    expect(p.localized.loginStatusLabel.textContent).toBe(catalogs.en.loginStatusLabel.message)
+    expect(p.localized.consent.textContent).toBe(catalogs.en.consent.message)
+    expect(p.localized.connect.textContent).toBe(catalogs.en.connect.message)
+    expect(p.status.textContent).toBe(catalogs.en.statusApproval.message)
+    await p.settle()
+    expect(p.loginState.textContent).toBe("Logged in (session found)")
+    p.approve()
+    await p.click()
+    expect(p.status.textContent).toBe(catalogs.en.statusImported.message)
   })
 
   test("Chinese approval, success and errors remain localized and never expose raw credentials", async () => {
     const success = popup({ locale: "zh_CN" })
+    await success.settle()
+    expect(success.loginState.textContent).toBe(catalogs.zh_CN.statusLoggedIn.message)
     expect(success.status.textContent).toBe(catalogs.zh_CN.statusApproval.message)
     success.approve()
     await success.click()
     expect(success.status.textContent).toBe(catalogs.zh_CN.statusImported.message)
     expect(success.consent.checked).toBe(false)
     const profile = popup({ locale: "zh_CN", stores: [] })
+    await profile.settle()
+    expect(profile.loginState.textContent).toBe(catalogs.zh_CN.statusUnknown.message)
     profile.approve()
     await profile.click()
     expect(profile.status.textContent).toBe(catalogs.zh_CN.errorProfile.message)
@@ -177,6 +211,7 @@ describe("ChatGPT session connector explicit approval", () => {
       [500, "errorImport"],
     ] as const) {
       const p = popup({ locale: "zh_CN", responseStatus: status })
+      await p.settle()
       p.approve()
       await p.click()
       expect(p.status.textContent).toBe(catalogs.zh_CN[key].message)
@@ -185,26 +220,41 @@ describe("ChatGPT session connector explicit approval", () => {
       expect(p.button.disabled).toBe(true)
     }
     const failed = popup({ locale: "zh_CN", networkFailure: true })
+    await failed.settle()
     failed.approve()
     await failed.click()
     expect(failed.status.textContent).toBe(catalogs.zh_CN.errorImport.message)
   })
-  test("does not read or transfer cookies without approval", async () => {
+  test("shows login status without sending cookies before approval", async () => {
     const p = popup()
+    await p.settle()
+    expect(p.loginState.textContent).toBe(catalogs.en.statusLoggedIn.message)
+    expect(p.queries).toHaveLength(candidateNames().length)
+    expect(p.requests).toHaveLength(0)
     await p.click()
-    expect(p.queries).toHaveLength(0)
+    expect(p.queries).toHaveLength(candidateNames().length)
+    expect(p.requests).toHaveLength(0)
+  })
+  test("shows not logged in when the active Chrome profile has no supported session", async () => {
+    const p = popup({ cookies: [] })
+    await p.settle()
+    expect(p.loginState.textContent).toBe(catalogs.en.statusLoggedOut.message)
     expect(p.requests).toHaveLength(0)
   })
   test("requires a local OpenCode connection tab before reading cookies", async () => {
     const p = popup({ url: "https://chatgpt.com/" })
+    await p.settle()
+    const statusQueries = p.queries.length
     p.approve()
     await p.click()
-    expect(p.queries).toHaveLength(0)
+    expect(p.queries).toHaveLength(statusQueries)
     expect(p.requests).toHaveLength(0)
     expect(p.status.textContent).toContain("127.0.0.1")
   })
   test("queries only named ChatGPT session cookies in the selected profile", async () => {
     const p = popup()
+    await p.settle()
+    p.queries.length = 0
     p.approve()
     await p.click()
     expect(p.queries).toHaveLength(34)
@@ -233,6 +283,7 @@ describe("ChatGPT session connector explicit approval", () => {
         { ...cookie, httpOnly: false },
       ],
     })
+    await p.settle()
     p.approve()
     await p.click()
     expect(p.requests).toHaveLength(0)

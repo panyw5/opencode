@@ -18,21 +18,24 @@
   },
   "actionTitle": { "message": "ChatGPT를 OpenCode에 연결" },
   "popupTitle": { "message": "OpenCode-ChatGPT 연결" },
+  "loginStatusLabel": { "message": "ChatGPT 로그인 상태" },
+  "statusChecking": { "message": "확인 중…" },
+  "statusLoggedIn": { "message": "로그인됨(세션 확인됨)" },
+  "statusLoggedOut": { "message": "로그아웃됨" },
+  "statusUnknown": { "message": "확인할 수 없음" },
   "heading": { "message": "ChatGPT 로그인 연결" },
   "instructions": {
     "message": "현재 Chrome 프로필에서 ChatGPT에 로그인한 후 OpenCode-ChatGPT 연결 페이지로 돌아와 이 확장 프로그램을 여세요."
   },
-  "consent": { "message": "ChatGPT 로그인 세션을 이 컴퓨터의 OpenCode 전용 브라우저로 전송하는 데 동의합니다." },
+  "consent": { "message": "이 ChatGPT 세션을 이 컴퓨터의 OpenCode로 가져오도록 승인합니다." },
   "privacy": {
     "message": "Google 쿠키, 비밀번호, 채팅 기록 또는 API 자격 증명은 전송하지 않습니다. 확장 프로그램은 세션을 파일에 저장하지 않습니다."
   },
-  "connect": { "message": "ChatGPT 세션 가져오기" },
-  "statusApproval": { "message": "먼저 동의 확인란을 선택하세요." },
-  "statusReading": { "message": "ChatGPT 세션 쿠키를 읽는 중…" },
-  "statusImporting": { "message": "일회용 로컬 연결을 통해 가져오는 중…" },
-  "statusImported": {
-    "message": "세션을 가져왔습니다. OpenCode로 돌아가 로그인을 확인하고 GPT-6 Pro를 선택하세요. 가져오기 성공만으로 ChatGPT가 세션을 수락했다는 의미는 아닙니다."
-  },
+  "connect": { "message": "세션 가져오기" },
+  "statusApproval": { "message": "가져오기 전에 승인하세요." },
+  "statusReading": { "message": "세션 읽는 중…" },
+  "statusImporting": { "message": "가져오는 중…" },
+  "statusImported": { "message": "가져왔습니다. OpenCode GPT-Pro 설정 페이지에서 확인하세요." },
   "errorTab": {
     "message": "OpenCode에서 새 OpenCode-ChatGPT 연결 페이지(127.0.0.1)를 열고 해당 페이지에서 확장 프로그램을 여세요."
   },
@@ -44,7 +47,7 @@
   },
   "errorConnection": { "message": "연결에 실패했습니다. OpenCode에서 새 연결 페이지를 여세요." },
   "errorImport": {
-    "message": "가져오기 완료를 확인하지 못했습니다. 재시도 전에 OpenCode를 확인하고 반복 전송하지 마세요."
+    "message": "가져오기가 확인되지 않았습니다. OpenCode GPT-Pro 설정 페이지를 확인하세요."
   },
   "errorInvalidSession": {
     "message": "ChatGPT 세션이 유효하지 않거나 지원되지 않습니다. Chrome에서 다시 로그인하고 OpenCode에서 새 연결 페이지를 여세요."

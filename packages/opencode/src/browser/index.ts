@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Schema } from "effect"
 import type { Duration } from "effect"
 import { BrowserBridge } from "./bridge"
-import type { GptProCommand, GptProJob } from "@opencode-ai/util/gpt-pro"
+import type { GptProCommand, GptProJob, GptProNotification } from "@opencode-ai/util/gpt-pro"
 
 export * as Browser from "./index"
 
@@ -66,6 +66,8 @@ export type Screenshot = typeof Screenshot.Type
 
 export interface Interface {
   readonly gptPro: (owner: string, input: GptProCommand) => Effect.Effect<GptProJob, BrowserError>
+  readonly gptProNotifications: (directory: string) => Effect.Effect<GptProNotification[], BrowserError>
+  readonly gptProAcknowledge: (directory: string, ids: string[]) => Effect.Effect<void, BrowserError>
   /** Ephemeral partition backing this session's browser view. */
   readonly partition: (sessionID: string) => string
   /** Current view state, or undefined when this session has no open page. */
@@ -114,10 +116,7 @@ export interface Interface {
    * this is incremental per session: each call returns entries newer than the
    * previous call's and advances the cursor.
    */
-  readonly console: (
-    sessionID: string,
-    options?: { readonly since?: number },
-  ) => Effect.Effect<ConsoleEntry[], never>
+  readonly console: (sessionID: string, options?: { readonly since?: number }) => Effect.Effect<ConsoleEntry[], never>
   /**
    * Close this session's embedded browser view, freeing its resources. The
    * agent partition is ephemeral — a later navigate reopens it fresh.
@@ -150,7 +149,9 @@ export const layer = Layer.effect(
         try {
           return Effect.succeed(decode(result))
         } catch (cause) {
-          return Effect.fail(new BrowserBridge.CommandFailedError({ message: `invalid ${name} result: ${String(cause)}` }))
+          return Effect.fail(
+            new BrowserBridge.CommandFailedError({ message: `invalid ${name} result: ${String(cause)}` }),
+          )
         }
       })
 
@@ -160,16 +161,63 @@ export const layer = Layer.effect(
       decode: (result: unknown) => A,
       timeout: Duration.Input,
     ): Effect.Effect<A, BrowserError> =>
-      bridge
-        .command(name, args, { timeout })
-        .pipe(Effect.flatMap((result) => decodeResult(name, decode, result)), Effect.mapError(mapError))
+      bridge.command(name, args, { timeout }).pipe(
+        Effect.flatMap((result) => decodeResult(name, decode, result)),
+        Effect.mapError(mapError),
+      )
 
     return Service.of({
-      gptPro: (owner, input) => command("gpt-pro", { ...input, owner }, result => {
-        const job = result as GptProJob
-        if (!job || typeof job.id !== "string" || typeof job.phase !== "string" || job.owner !== owner) throw new Error("Invalid consultation response")
-        return job
-      }, "60 seconds"),
+      gptProNotifications: (directory) =>
+        command(
+          "gpt-pro-notifications",
+          { directory },
+          (result) => {
+            const decode = Schema.decodeUnknownSync(
+              Schema.Array(
+                Schema.Struct({
+                  id: Schema.String,
+                  consultationID: Schema.String,
+                  owner: Schema.String,
+                  phase: Schema.Literals([
+                    "queued",
+                    "preparing",
+                    "sending",
+                    "generating",
+                    "completed",
+                    "paused",
+                    "cancelled",
+                    "failed",
+                    "interrupted",
+                    "send_uncertain",
+                  ]),
+                  revision: Schema.Number,
+                  at: Schema.Number,
+                  url: Schema.String,
+                  kind: Schema.Literals(["progress", "completed", "state"]),
+                  format: Schema.Literals(["append", "snapshot"]),
+                  text: Schema.String,
+                  truncated: Schema.Boolean,
+                  error: Schema.optional(Schema.String),
+                }),
+              ),
+            )
+            return decode(result) as GptProNotification[]
+          },
+          "10 seconds",
+        ),
+      gptProAcknowledge: (directory, ids) => command("gpt-pro-ack", { directory, ids }, () => undefined, "10 seconds"),
+      gptPro: (owner, input) =>
+        command(
+          "gpt-pro",
+          { ...input, owner },
+          (result) => {
+            const job = result as GptProJob
+            if (!job || typeof job.id !== "string" || typeof job.phase !== "string" || job.owner !== owner)
+              throw new Error("Invalid consultation response")
+            return job
+          },
+          "60 seconds",
+        ),
       partition: (sessionID) => agentPartition(sessionID),
 
       state: (sessionID) =>
@@ -184,13 +232,11 @@ export const layer = Layer.effect(
 
       requireState: (sessionID) =>
         bridge.command("state", { partition: agentPartition(sessionID) }, { timeout: "10 seconds" }).pipe(
-          Effect.flatMap(
-            (result): Effect.Effect<ViewState, BrowserError | NotOpenError> => {
-              const state = (result as { state?: unknown }).state
-              if (!state) return Effect.fail(new NotOpenError())
-              return decodeResult("state", decodeState, state)
-            },
-          ),
+          Effect.flatMap((result): Effect.Effect<ViewState, BrowserError | NotOpenError> => {
+            const state = (result as { state?: unknown }).state
+            if (!state) return Effect.fail(new NotOpenError())
+            return decodeResult("state", decodeState, state)
+          }),
           Effect.mapError((error) =>
             error instanceof NotOpenError ? error : mapError(error as BrowserBridge.CommandError),
           ),
@@ -222,7 +268,11 @@ export const layer = Layer.effect(
 
       click: (sessionID, uid, options) =>
         bridge
-          .command("click", { uid, partition: agentPartition(sessionID) }, { timeout: options?.timeout ?? "30 seconds" })
+          .command(
+            "click",
+            { uid, partition: agentPartition(sessionID) },
+            { timeout: options?.timeout ?? "30 seconds" },
+          )
           .pipe(
             Effect.flatMap((result) => {
               const state = (result as { state?: unknown }).state
@@ -286,8 +336,7 @@ export const layer = Layer.effect(
         })
       },
 
-      close: (sessionID) =>
-        command("close", { partition: agentPartition(sessionID) }, () => undefined, "10 seconds"),
+      close: (sessionID) => command("close", { partition: agentPartition(sessionID) }, () => undefined, "10 seconds"),
     })
   }),
 )

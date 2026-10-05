@@ -1,16 +1,19 @@
 import { Component, For, Show } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
+import { Icon } from "@opencode-ai/ui/icon"
+import { A } from "@solidjs/router"
+import { base64Encode } from "@opencode-ai/core/util/encode"
 import { IconButton } from "@opencode-ai/ui/icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { getDirectory, getFilename, getFilenameTruncated } from "@opencode-ai/core/util/path"
-import type { ContextItem } from "@/context/prompt"
+import type { ContextItem, FileContextItem } from "@/context/prompt"
 
 type PromptContextItem = ContextItem & { key: string }
 
 type ContextItemsProps = {
   items: PromptContextItem[]
-  active: (item: PromptContextItem) => boolean
-  openComment: (item: PromptContextItem) => void
+  active: (item: FileContextItem & { key: string }) => boolean
+  openComment: (item: FileContextItem & { key: string }) => void
   remove: (item: PromptContextItem) => void
   t: (key: string) => string
 }
@@ -21,6 +24,41 @@ export const PromptContextItems: Component<ContextItemsProps> = (props) => {
       <div class="flex flex-nowrap items-start gap-2 p-2 overflow-x-auto no-scrollbar">
         <For each={props.items}>
           {(item) => {
+            if (item.type === "session")
+              return (
+                <div
+                  data-component="session-reference"
+                  class="shrink-0 flex flex-col gap-1 rounded-md p-2 w-72 max-w-[calc(100vw-64px)] bg-background-stronger shadow-xs-border"
+                >
+                  <div class="flex items-center gap-2">
+                    <Icon name="speech-bubble" size="small" class="shrink-0 text-icon-weak" />
+                    <A
+                      class="truncate text-12-medium text-text-strong hover:underline"
+                      href={`/${base64Encode(item.directory)}/session/${item.sessionID}`}
+                      title={props.t("prompt.session.open")}
+                    >
+                      {item.title || item.sessionID}
+                    </A>
+                    <IconButton
+                      type="button"
+                      icon="close-small"
+                      variant="ghost"
+                      class="ml-auto shrink-0 size-5"
+                      aria-label={props.t("prompt.session.remove")}
+                      onClick={() => props.remove(item)}
+                    />
+                  </div>
+                  <div class="truncate text-11-regular text-text-weak" title={`${item.directory}\n${item.sessionID}`}>
+                    {getFilename(item.directory)} · {item.sessionID}
+                  </div>
+                  <div class="text-12-regular text-text-base line-clamp-2 whitespace-pre-wrap" title={item.summary}>
+                    {item.summary || props.t("prompt.session.noMessages")}
+                  </div>
+                  <div class="text-11-regular text-text-weak">
+                    {props.t("prompt.session.snapshot")} · {new Date(item.updatedAt).toLocaleString()}
+                  </div>
+                </div>
+              )
             const directory = getDirectory(item.path)
             const filename = getFilename(item.path)
             const label = getFilenameTruncated(item.path, 14)

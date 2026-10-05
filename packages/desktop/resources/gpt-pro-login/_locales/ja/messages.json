@@ -18,23 +18,26 @@
   },
   "actionTitle": { "message": "ChatGPT を OpenCode に接続" },
   "popupTitle": { "message": "OpenCode-ChatGPT 接続" },
+  "loginStatusLabel": { "message": "ChatGPT のログイン状態" },
+  "statusChecking": { "message": "確認中…" },
+  "statusLoggedIn": { "message": "ログイン済み（セッションを検出）" },
+  "statusLoggedOut": { "message": "未ログイン" },
+  "statusUnknown": { "message": "確認できません" },
   "heading": { "message": "ChatGPT のログインを接続" },
   "instructions": {
     "message": "この Chrome プロファイルで ChatGPT にログインし、OpenCode-ChatGPT 接続ページに戻ってこの拡張機能を開いてください。"
   },
   "consent": {
-    "message": "ChatGPT のログインセッションを、この端末の OpenCode 専用ブラウザに転送することに同意します。"
+    "message": "この ChatGPT セッションを本機の OpenCode にインポートすることを許可します。"
   },
   "privacy": {
     "message": "Google の Cookie、パスワード、チャット履歴、API 認証情報は転送しません。セッションをファイルに保存することもありません。"
   },
-  "connect": { "message": "ChatGPT セッションをインポート" },
-  "statusApproval": { "message": "先に同意のチェックボックスを選択してください。" },
-  "statusReading": { "message": "ChatGPT のセッション Cookie を読み取り中…" },
-  "statusImporting": { "message": "一度限りのローカル接続でインポート中…" },
-  "statusImported": {
-    "message": "インポートしました。OpenCode に戻り、ログインを確認して GPT-6 Pro を選択してください。インポート成功は ChatGPT によるセッションの受け入れを保証しません。"
-  },
+  "connect": { "message": "セッションをインポート" },
+  "statusApproval": { "message": "インポート前に許可してください。" },
+  "statusReading": { "message": "セッションを読み取り中…" },
+  "statusImporting": { "message": "インポート中…" },
+  "statusImported": { "message": "インポートしました。OpenCode の GPT-Pro 設定ページで確認してください。" },
   "errorTab": {
     "message": "OpenCode から新しい OpenCode-ChatGPT 接続ページ（127.0.0.1）を開き、そのページで拡張機能を開いてください。"
   },
@@ -46,7 +49,7 @@
   },
   "errorConnection": { "message": "接続に失敗しました。OpenCode から新しい接続ページを開いてください。" },
   "errorImport": {
-    "message": "インポート完了を確認できません。再試行の前に OpenCode を確認し、繰り返し送信しないでください。"
+    "message": "インポート未確認です。OpenCode の GPT-Pro 設定ページを確認してください。"
   },
   "errorInvalidSession": {
     "message": "ChatGPT セッションが無効または未対応です。Chrome で再ログインし、OpenCode から新しい接続ページを開いてください。"

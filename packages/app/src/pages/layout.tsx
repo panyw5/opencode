@@ -3568,6 +3568,16 @@ export default function Layout(props: ParentProps) {
   const side = createMemo(() => Math.max(state.previewSidebarWidth ?? layout.sidebar.width(), 244))
   const dragSide = createMemo(() => Math.max(state.previewSidebarWidth ?? layout.sidebar.width(), 244))
   const panel = createMemo(() => Math.max(side() - 64, 0))
+  const dismissSidebarOnMainClick = (event: MouseEvent) => {
+    if (!desktopSidebar() || !layout.sidebar.opened() || state.sizing) return
+    if (state.nav?.contains(event.target as Node)) return
+    if (event.clientX < side() + 8) return
+    const target = event.target instanceof HTMLElement ? event.target : undefined
+    console.debug(
+      `[sidebar-dismiss] pass-through click x=${Math.round(event.clientX)} target=${target?.getAttribute("data-slot") ?? target?.tagName.toLowerCase() ?? "unknown"}`,
+    )
+    layout.sidebar.close()
+  }
   // Keep the floating list above main while width collapses (300ms). Dropping
   // z-index immediately on close hides the transition under the main pane.
   const SIDEBAR_WIDTH_MS = 300
@@ -4663,7 +4673,13 @@ export default function Layout(props: ParentProps) {
         <Titlebar />
         <div class="flex-1 min-h-0 min-w-0 flex">
           <div class="flex-1 min-h-0 relative">
-            <div class="size-full relative overflow-x-hidden">
+            <div
+              ref={(el) => {
+                el.addEventListener("click", dismissSidebarOnMainClick, true)
+                onCleanup(() => el.removeEventListener("click", dismissSidebarOnMainClick, true))
+              }}
+              class="size-full relative overflow-x-hidden"
+            >
               <Show when={desktopSidebar()}>
                 <nav
                   aria-label={language.t("sidebar.nav.projectsAndSessions")}
@@ -4724,7 +4740,7 @@ export default function Layout(props: ParentProps) {
                   <div
                     data-component="sidebar-dismiss-overlay"
                     aria-hidden="true"
-                    class="absolute inset-0 z-[25]"
+                    class="pointer-events-none absolute inset-0 z-[25]"
                     style={{ left: `${side()}px` }}
                     onClick={() => layout.sidebar.close()}
                   />

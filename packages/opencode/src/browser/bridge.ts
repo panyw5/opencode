@@ -3,7 +3,7 @@ import { Bus } from "@/bus"
 import type { InstanceContext } from "@/project/instance-context"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import type { Duration } from "effect"
-import { Updated as BrowserUpdated, Closed as BrowserClosed } from "./events"
+import { Updated as BrowserUpdated, Closed as BrowserClosed, GptProNotificationReceived } from "./events"
 
 export * as BrowserBridge from "./bridge"
 
@@ -152,6 +152,14 @@ export const layer = Layer.effect(
           consoleBuffer.push(decoded)
           if (consoleBuffer.length > CONSOLE_BUFFER_LIMIT)
             consoleBuffer.splice(0, consoleBuffer.length - CONSOLE_BUFFER_LIMIT)
+          return
+        }
+        if (name === "gpt-pro.notification") {
+          const decoded = Schema.decodeUnknownSync(GptProNotificationReceived.properties)(properties)
+          if (!instance) return
+          void Bus.publish(instance, GptProNotificationReceived, decoded).catch((cause) =>
+            log.error("GPT-Pro notification publish failed", { cause: String(cause) }),
+          )
         }
       } catch (cause) {
         log.warn("dropping invalid event frame", { name, cause: String(cause) })
@@ -273,9 +281,7 @@ export const layer = Layer.effect(
 
       console: (partition, since) =>
         Effect.sync(() =>
-          consoleBuffer.filter(
-            (entry) => entry.partition === partition && (since === undefined || entry.at > since),
-          ),
+          consoleBuffer.filter((entry) => entry.partition === partition && (since === undefined || entry.at > since)),
         ),
     })
   }),

@@ -2,31 +2,22 @@ import { getFilename, pathIdentityKey } from "@opencode-ai/core/util/path"
 import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@opencode-ai/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
-import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
+import type { AgentPart, ContextItem, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
+import { sessionReferenceText } from "./session-reference"
 import { Identifier } from "@/utils/id"
 import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
 
 type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id: string }
 
-type ContextFile = {
-  key: string
-  type: "file"
-  path: string
-  selection?: FileSelection
-  comment?: string
-  commentID?: string
-  commentOrigin?: "review" | "file"
-  preview?: string
-}
-
 type BuildRequestPartsInput = {
   prompt: Prompt
-  context: ContextFile[]
+  context: (ContextItem & { key: string })[]
   images: ImageAttachmentPart[]
   text: string
   messageID: string
   sessionID: string
   sessionDirectory: string
+  gptProBackground?: boolean
 }
 
 const absolute = (directory: string, path: string) => {
@@ -87,6 +78,7 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
       id: Identifier.ascending("part"),
       type: "text",
       text: input.text,
+      ...(input.gptProBackground !== undefined ? { metadata: { gptProBackground: input.gptProBackground } } : {}),
     },
   ]
 
@@ -129,6 +121,7 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
       .map((attachment) => fileIdentityKey(absolute(input.sessionDirectory, attachment.path), attachment.selection)),
   )
   const context = input.context.flatMap((item) => {
+    if (item.type === "session") return []
     const path = absolute(input.sessionDirectory, item.path)
     const url = `file://${encodeFilePath(path)}${fileQuery(item.selection)}`
     const key = fileIdentityKey(path, item.selection)
@@ -174,7 +167,20 @@ export function buildRequestParts(input: BuildRequestPartsInput) {
     } satisfies PromptRequestPart
   })
 
-  requestParts.push(...files, ...context, ...agents, ...images)
+  const sessions = input.context.flatMap((item) =>
+    item.type === "session"
+      ? [
+          {
+            id: Identifier.ascending("part"),
+            type: "text" as const,
+            text: sessionReferenceText(item),
+            synthetic: true,
+            metadata: { sessionReference: item },
+          },
+        ]
+      : [],
+  )
+  requestParts.push(...files, ...context, ...sessions, ...agents, ...images)
 
   return {
     requestParts,

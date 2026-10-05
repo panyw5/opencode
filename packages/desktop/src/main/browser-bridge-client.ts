@@ -40,6 +40,11 @@ export class BridgeClient {
       this.controller.onViewClosed((partition, epoch) => this.sendEvent("browser.closed", { partition, epoch })),
     )
     this.controller.events.onConsole = (entry) => this.sendEvent("browser.console", entry)
+    const timer = setInterval(() => {
+      if (this.ws?.readyState !== WebSocket.OPEN) return
+      for (const event of getGptProController().notifications()) this.sendEvent("gpt-pro.notification", event)
+    }, 2000)
+    this.unsubs.push(() => clearInterval(timer))
     void this.connectLoop(++this.generation, 0)
   }
 
@@ -139,6 +144,13 @@ export class BridgeClient {
     } catch {
       return
     }
+    if (frame.type === "gpt-pro-ack") {
+      if (typeof frame.owner !== "string" || typeof frame.id !== "string") return
+      const separator = frame.owner.lastIndexOf("\n")
+      if (separator < 0) return
+      getGptProController().acknowledge(frame.owner.slice(0, separator), [frame.id])
+      return
+    }
     if (frame.type !== "cmd") return
     const id = typeof frame.id === "string" ? frame.id : ""
     const name = typeof frame.name === "string" ? frame.name : ""
@@ -165,8 +177,23 @@ export class BridgeClient {
       return cdp
     }
     switch (name) {
+      case "gpt-pro-notifications": {
+        if (typeof args.directory !== "string" || !args.directory) throw new Error("Missing notification directory")
+        return getGptProController().notifications(args.directory)
+      }
+      case "gpt-pro-ack": {
+        if (
+          typeof args.directory !== "string" ||
+          !Array.isArray(args.ids) ||
+          !args.ids.every((id) => typeof id === "string")
+        )
+          throw new Error("Invalid notification acknowledgement")
+        getGptProController().acknowledge(args.directory, args.ids as string[])
+        return true
+      }
       case "gpt-pro": {
-        if (typeof args.owner !== "string" || !args.owner || args.owner.length > 4096) throw new Error("Missing consultation owner")
+        if (typeof args.owner !== "string" || !args.owner || args.owner.length > 4096)
+          throw new Error("Missing consultation owner")
         return getGptProController().command(args as GptProCommand, args.owner)
       }
       case "navigate": {

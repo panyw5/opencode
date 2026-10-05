@@ -98,6 +98,45 @@ function fixture(
 }
 
 describe("gpt-pro consultation control", () => {
+  test("promotion retains the original question and completion outbox survives until acknowledged", async () => {
+    const f = fixture()
+    try {
+      const owner = "/repo\nses_parent"
+      const j = await f.controller.command({ prompt: "Question" }, owner)
+      await until(() => f.page.generating)
+      await f.controller.command({ action: "background", id: j.id }, owner)
+      expect(f.counts().submits).toBe(1)
+      f.finish()
+      await until(() => f.controller.list()[0]?.phase === "completed")
+      const events = f.controller.notifications("/repo")
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({ owner, kind: "completed", text: "Answer" })
+      f.controller.acknowledge(
+        "/wrong",
+        events.map((e) => e.id),
+      )
+      expect(f.controller.notifications("/repo")).toHaveLength(1)
+      f.controller.acknowledge(
+        "/repo",
+        events.map((e) => e.id),
+      )
+      expect(f.controller.notifications("/repo")).toHaveLength(0)
+      expect(f.saved()[0].notificationSequence).toBe(1)
+    } finally {
+      f.controller.dispose()
+    }
+  })
+  test("background requires an OpenCode parent rather than an unbound human owner", async () => {
+    const f = fixture()
+    try {
+      await expect(f.controller.command({ prompt: "Question", background: true })).rejects.toThrow(
+        "parent OpenCode session",
+      )
+      expect(f.counts().submits).toBe(0)
+    } finally {
+      f.controller.dispose()
+    }
+  })
   test("retains the verified submitted model when the next composer remounts", async () => {
     let verifies = 0
     const f = fixture({

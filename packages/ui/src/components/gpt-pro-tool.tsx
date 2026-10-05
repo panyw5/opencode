@@ -88,7 +88,10 @@ export function GptProTool(props: Props) {
       clearInterval(timer)
     })
   })
-  const command = async (action: "open" | "stop" | "pause" | "resume" | "intervene" | "status", prompt?: string) => {
+  const command = async (
+    action: "open" | "stop" | "pause" | "resume" | "intervene" | "status" | "background",
+    prompt?: string,
+  ) => {
     if (!id() || !api()) return
     set({ busy: true, error: "" })
     try {
@@ -138,11 +141,50 @@ export function GptProTool(props: Props) {
                 GPT-6 Pro <span class="text-text-weak">Chat</span>
               </button>
               <span data-slot="basic-tool-tool-subtitle">{t(`ui.tool.gptPro.phase.${phase()}`)}</span>
+              <Show when={state.job?.background ?? props.metadata.background}>
+                <span class="text-11-regular text-text-weak" data-testid="gpt-pro-background-badge">
+                  {t("ui.tool.gptPro.background")}
+                </span>
+              </Show>
             </div>
             <span data-slot="basic-tool-tool-action">
+              <Show
+                when={
+                  ["queued", "preparing", "sending", "generating"].includes(phase()) &&
+                  !(state.job?.background ?? props.metadata.background)
+                }
+              >
+                <Button
+                  size="small"
+                  variant="ghost"
+                  icon="arrow-down-to-line"
+                  disabled={state.busy}
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation()
+                    void command("background")
+                  }}
+                >
+                  {t("ui.tool.gptPro.toBackground")}
+                </Button>
+              </Show>
+              <Show when={["preparing", "sending", "generating"].includes(phase())}>
+                <Button
+                  size="small"
+                  variant="ghost"
+                  icon="pause"
+                  disabled={state.busy}
+                  onClick={(e: MouseEvent) => {
+                    e.stopPropagation()
+                    void command("pause")
+                  }}
+                >
+                  {t("ui.tool.gptPro.pause")}
+                </Button>
+              </Show>
               <Button
                 size="small"
                 variant="ghost"
+                icon="eye"
                 title={t("ui.tool.gptPro.viewHint")}
                 disabled={!id() || state.busy}
                 onClick={(e: MouseEvent) => {
@@ -156,6 +198,7 @@ export function GptProTool(props: Props) {
                 <Button
                   size="small"
                   variant="ghost"
+                  icon="play"
                   title={t("ui.tool.gptPro.resumeHint")}
                   disabled={!id() || state.busy}
                   onClick={(e: MouseEvent) => {
@@ -170,6 +213,7 @@ export function GptProTool(props: Props) {
                 <Button
                   size="small"
                   variant="ghost"
+                  icon="stop"
                   disabled={state.busy}
                   onClick={(e: MouseEvent) => {
                     e.stopPropagation()

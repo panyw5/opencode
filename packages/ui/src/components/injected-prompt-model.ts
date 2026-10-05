@@ -113,6 +113,12 @@ export type InjectionTitleTranslator = (key: string, params?: Record<string, str
  */
 export function injectionTitleFromParts(parts: TextPart[], t: InjectionTitleTranslator): string {
   const kinds = new Set(parts.map(injectionKindFromPart).filter((kind): kind is InjectionKind => kind !== undefined))
+  if (kinds.size === 1 && kinds.has("background-gpt-pro-injection")) {
+    const phases = uniqueMetadataStrings(parts, "background-gpt-pro-injection", "phase")
+    if (phases.length === 1 && phases[0] === "completed") return t("ui.message.injection.gptProCompleted")
+    if (phases.length === 1 && phases[0] === "generating") return t("ui.message.injection.gptProProgress")
+    return t("ui.message.injection.gptProState")
+  }
 
   if (kinds.size === 1 && kinds.has("hook-injection")) {
     const hooks = uniqueMetadataStrings(parts, "hook-injection", "hook")

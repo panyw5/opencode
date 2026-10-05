@@ -9,6 +9,7 @@ import {
   type GptProPageState,
 } from "@opencode-ai/util/gpt-pro"
 import { GptProPageError } from "./gpt-pro-page-error"
+import { collectGptProNotification } from "./gpt-pro-notifications"
 
 export type GptProDriverAPI = {
   open(url?: string, fresh?: boolean): Promise<void>
@@ -47,11 +48,15 @@ export class GptProController {
         ? job
         : {
             ...job,
-            phase: "interrupted" as const,
-            error: "Application restarted. Resume the original page; do not resend automatically.",
+            phase: job.background && job.submitted && job.userID ? ("queued" as const) : ("interrupted" as const),
+            error:
+              job.background && job.submitted && job.userID
+                ? undefined
+                : "Application restarted. Resume the original page; do not resend automatically.",
           },
     )
     this.save()
+    void this.pump()
   }
   config() {
     return normalizeGptProConfig(this.persistence.config())
@@ -65,7 +70,36 @@ export class GptProController {
     return next
   }
   list() {
-    return this.jobs.map(({ html, text, ...job }) => ({ ...job, prompt: job.prompt.slice(0, 160) }))
+    return this.jobs.map(({ html, text, notifications, notificationText, ...job }) => ({
+      ...job,
+      prompt: job.prompt.slice(0, 160),
+    }))
+  }
+  notifications(directory?: string) {
+    for (const job of this.jobs) this.notify(job)
+    return this.jobs
+      .filter((job) => job.owner.includes("\n") && (directory === undefined || job.owner.slice(0, job.owner.lastIndexOf("\n")) === directory))
+      .flatMap((job) => job.notifications ?? [])
+      .sort((a, b) => a.at - b.at || a.id.localeCompare(b.id))
+      .slice(0, 50)
+      .map((event) => ({ ...event }))
+  }
+  acknowledge(directory: string, ids: string[]) {
+    const accepted = new Set(ids)
+    for (const job of this.jobs) {
+      if (job.owner.slice(0, job.owner.lastIndexOf("\n")) !== directory) continue
+      job.notifications = job.notifications?.filter((event) => !accepted.has(event.id))
+    }
+    this.save()
+    this.log(`background notifications acknowledged directory=${directory} count=${ids.length}`)
+  }
+  private notify(job: GptProJob) {
+    const event = collectGptProNotification(job, Date.now(), this.config().progressIntervalSeconds! * 1000)
+    if (!event) return
+    this.save()
+    this.log(
+      `background notification queued id=${event.id} kind=${event.kind} revision=${event.revision} chars=${event.text.length}`,
+    )
   }
   dispose() {
     this.disposed = true
@@ -83,7 +117,10 @@ export class GptProController {
         .slice(-30)
         .map((job) => job.id),
     )
-    this.jobs = this.jobs.filter((job) => !gptProTerminal(job.phase) || job.id === this.active || retained.has(job.id))
+    this.jobs = this.jobs.filter(
+      (job) =>
+        !gptProTerminal(job.phase) || job.id === this.active || retained.has(job.id) || !!job.notifications?.length,
+    )
     this.persistence.save(this.jobs)
   }
   private update(job: GptProJob, input: Partial<GptProJob>) {
@@ -91,6 +128,7 @@ export class GptProController {
     Object.assign(job, input, { updatedAt: Date.now() })
     this.save()
     if (previous !== job.phase) this.log(`consult id=${job.id} phase=${job.phase} revision=${job.revision}`)
+    this.notify(job)
   }
   private get(id: string | undefined, owner?: string) {
     let job = this.jobs.find((job) => job.id === id)
@@ -109,7 +147,7 @@ export class GptProController {
   async command(input: GptProCommand, owner?: string): Promise<GptProJob> {
     if (this.disposed) throw new Error("The consultation controller is shutting down")
     const action = input.action ?? "consult"
-    if (!["consult", "status", "read", "open", "stop", "pause", "resume", "intervene"].includes(action))
+    if (!["consult", "status", "read", "open", "stop", "pause", "resume", "intervene", "background"].includes(action))
       throw new Error("Unknown gpt-pro action")
     if (action === "consult" || action === "intervene") {
       if (!this.config().enabled) throw new Error("Enable gpt-pro in Settings > External Agents first.")
@@ -121,6 +159,8 @@ export class GptProController {
       const parent = action === "intervene" ? this.get(input.id, owner) : undefined
       if (parent) await this.syncURL(parent)
       const jobOwner = parent?.owner ?? owner ?? "human"
+      if (input.background && !jobOwner.includes("\n"))
+        throw new Error("Background consultations require a parent OpenCode session")
       const duplicate = this.jobs.find((job) => job.requestID === requestID && job.owner === jobOwner)
       if (duplicate) return { ...this.get(duplicate.id, jobOwner) }
       if (parent) {
@@ -139,6 +179,7 @@ export class GptProController {
         updatedAt: Date.now(),
         submitted: false,
         revision: 0,
+        background: input.background ?? parent?.background ?? false,
       }
       this.jobs.push(job)
       this.save()
@@ -148,8 +189,13 @@ export class GptProController {
       return { ...job }
     }
     const job = this.get(input.id, owner)
+    if (action === "background") {
+      if (!job.owner.includes("\n")) throw new Error("Background consultations require a parent OpenCode session")
+      this.update(job, { background: true })
+      this.log(`consult promoted to background id=${job.id}; no prompt resent`)
+    }
     if (action === "status") {
-      const { html, ...snapshot } = job
+      const { html, notifications, notificationText, ...snapshot } = job
       return { ...snapshot, text: job.text?.slice(0, 20000) }
     }
     if (action === "read") return { ...job }
@@ -317,6 +363,7 @@ export class GptProController {
           return
         }
       }
+      this.notify(job)
       await sleep(this.pollMs)
     }
   }

@@ -1,0 +1,17 @@
+# PURPOSE
+Consult GPT-6 Pro on complicated tasks through the embedded ChatGPT Chat browser.
+
+# GUIDELINES
+
+- Send a self-contained prompt with necessary source content: GPT-6 Pro does not have access to the file system
+- Use `background=true` for long independent consultations: the tool returns immediately, progress and completion arrive automatically as new session inputs
+- Available actions:
+  - `consult` starts a NEW conversation
+  - `background` promotes an existing consultation without resending
+  - `status`/`read` inspect the conversation
+  - `open` shows its browser without pausing
+  - `stop` stops generation
+  - `pause` suspends automation and result tracking without stopping ChatGPT generation
+  - `resume` continues tracking WITHOUT resending
+  - `intervene` stops generation and sends a follow-up in the same conversation.
+- Always retain `consultation_id`

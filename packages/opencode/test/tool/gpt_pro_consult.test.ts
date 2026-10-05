@@ -6,42 +6,114 @@ import { Truncate } from "../../src/tool/truncate"
 import { GptProConsultTool } from "../../src/tool/gpt_pro_consult"
 import { SessionID, MessageID } from "../../src/session/schema"
 import type { Tool } from "../../src/tool/tool"
-import type { GptProCommand, GptProJob } from "@opencode-ai/util/gpt-pro"
+import type { GptProCommand, GptProJob, GptProPhase } from "@opencode-ai/util/gpt-pro"
 import { testEffect } from "../lib/effect"
 
 const calls: Array<{ owner: string; input: GptProCommand }> = []
-const browser = Layer.mock(Browser.Service, { gptPro: (owner, input) => Effect.sync(() => {
-  calls.push({ owner, input })
-  return { id: "gpt_test", owner, requestID: "request", phase: "completed", prompt: input.prompt ?? "Question", url: "https://chatgpt.com/c/test", createdAt: 1, updatedAt: 2, submitted: true, revision: 1, model: "GPT-6 Pro", text: "Answer", html: "<p>Answer</p>" } satisfies GptProJob
-}) })
+let phase: GptProPhase = "completed"
+const browser = Layer.mock(Browser.Service, {
+  gptPro: (owner, input) =>
+    Effect.sync(() => {
+      calls.push({ owner, input })
+      return {
+        id: "gpt_test",
+        owner,
+        requestID: "request",
+        phase,
+        background: input.background ?? input.action === "background",
+        prompt: input.prompt ?? "Question",
+        url: "https://chatgpt.com/c/test",
+        createdAt: 1,
+        updatedAt: 2,
+        submitted: true,
+        revision: 1,
+        model: "GPT-6 Pro",
+        text: "Answer",
+        html: "<p>Answer</p>",
+      } satisfies GptProJob
+    }),
+})
 const it = testEffect(Layer.mergeAll(Agent.defaultLayer, Truncate.defaultLayer, browser))
 function context(deny = false) {
   const asks: string[] = []
   const updates: unknown[] = []
-  const ctx: Tool.Context = { sessionID: SessionID.make("ses_gptpro"), messageID: MessageID.make("msg_gptpro"), callID: "call_test", agent: "build", abort: AbortSignal.any([]), messages: [], metadata: value => Effect.sync(() => { updates.push(value) }), ask: value => Effect.sync(() => { asks.push(value.permission); if (deny) throw new Error("denied") }) }
+  const ctx: Tool.Context = {
+    sessionID: SessionID.make("ses_gptpro"),
+    messageID: MessageID.make("msg_gptpro"),
+    callID: "call_test",
+    agent: "build",
+    abort: AbortSignal.any([]),
+    messages: [],
+    metadata: (value) =>
+      Effect.sync(() => {
+        updates.push(value)
+      }),
+    ask: (value) =>
+      Effect.sync(() => {
+        asks.push(value.permission)
+        if (deny) throw new Error("denied")
+      }),
+  }
   return { ctx, asks, updates }
 }
 describe("gpt_pro_consult tool", () => {
-  it.instance("asks permission, uses the current session owner, and returns final HTML", () => Effect.gen(function* () {
-    calls.length = 0
-    const c = context()
-    const info = yield* GptProConsultTool
-    const tool = yield* info.init()
-    const result = yield* tool.execute({ prompt: "Question", wait_ms: 0 }, c.ctx)
-    expect(c.asks).toEqual(["gpt_pro_consult"])
-    expect(calls[0].owner.endsWith("\nses_gptpro")).toBe(true)
-    expect(calls[0].input.requestID).toBe("ses_gptpro:call_test")
-    expect(calls.at(-1)?.input.action).toBe("read")
-    expect(JSON.parse(result.output).html).toBe("<p>Answer</p>")
-    expect(result.metadata.consultation_id).toBe("gpt_test")
-  }))
-  it.instance("permission denial dispatches no browser command", () => Effect.gen(function* () {
-    calls.length = 0
-    const c = context(true)
-    const info = yield* GptProConsultTool
-    const tool = yield* info.init()
-    const result = yield* Effect.exit(tool.execute({ prompt: "Question" }, c.ctx))
-    expect(Exit.isFailure(result)).toBe(true)
-    expect(calls).toHaveLength(0)
-  }))
+  it.instance("background returns while Pro is generating without any wait or poll", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      phase = "generating"
+      try {
+        const c = context()
+        const tool = yield* (yield* GptProConsultTool).init()
+        const result = yield* tool.execute({ prompt: "Long question", background: true }, c.ctx)
+        expect(calls).toHaveLength(1)
+        expect(calls[0].input.background).toBe(true)
+        expect(JSON.parse(result.output)).toMatchObject({ background: true, phase: "generating" })
+        expect(result.metadata.background).toBe(true)
+        expect(JSON.parse(result.output).instruction).toContain("automatically")
+      } finally {
+        phase = "completed"
+      }
+    }),
+  )
+  it.instance("promotion preserves consultation ID and sends no prompt", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      phase = "generating"
+      try {
+        const tool = yield* (yield* GptProConsultTool).init()
+        const result = yield* tool.execute({ action: "background", consultation_id: "gpt_test" }, context().ctx)
+        expect(calls).toHaveLength(1)
+        expect(calls[0].input).toMatchObject({ action: "background", id: "gpt_test", prompt: undefined })
+        expect(result.metadata.background).toBe(true)
+      } finally {
+        phase = "completed"
+      }
+    }),
+  )
+  it.instance("asks permission, uses the current session owner, and returns final HTML", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const c = context()
+      const info = yield* GptProConsultTool
+      const tool = yield* info.init()
+      const result = yield* tool.execute({ prompt: "Question", wait_ms: 0 }, c.ctx)
+      expect(c.asks).toEqual(["gpt_pro_consult"])
+      expect(calls[0].owner.endsWith("\nses_gptpro")).toBe(true)
+      expect(calls[0].input.requestID).toBe("ses_gptpro:call_test")
+      expect(calls.at(-1)?.input.action).toBe("read")
+      expect(JSON.parse(result.output).html).toBe("<p>Answer</p>")
+      expect(result.metadata.consultation_id).toBe("gpt_test")
+    }),
+  )
+  it.instance("permission denial dispatches no browser command", () =>
+    Effect.gen(function* () {
+      calls.length = 0
+      const c = context(true)
+      const info = yield* GptProConsultTool
+      const tool = yield* info.init()
+      const result = yield* Effect.exit(tool.execute({ prompt: "Question" }, c.ctx))
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(calls).toHaveLength(0)
+    }),
+  )
 })

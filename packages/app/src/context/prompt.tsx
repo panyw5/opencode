@@ -59,7 +59,16 @@ export type FileContextItem = {
   preview?: string
 }
 
-export type ContextItem = FileContextItem
+export type SessionContextItem = {
+  type: "session"
+  sessionID: string
+  directory: string
+  title: string
+  updatedAt: number
+  summary: string
+}
+
+export type ContextItem = FileContextItem | SessionContextItem
 
 export const DEFAULT_PROMPT: Prompt = [{ type: "text", content: "", start: 0, end: 0 }]
 
@@ -115,7 +124,7 @@ function clonePrompt(prompt: Prompt): Prompt {
 }
 
 function contextItemKey(item: ContextItem) {
-  if (item.type !== "file") return item.type
+  if (item.type === "session") return `session:${item.directory}:${item.sessionID}`
   const start = item.selection?.startLine
   const end = item.selection?.endLine
   const key = `${item.type}:${item.path}:${start}:${end}`

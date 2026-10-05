@@ -3,12 +3,15 @@ export type ConsultMentionID = "codex" | "claude" | "grok" | "dsh" | "gpt-pro"
 
 export type ConsultMentionTool = "codex_consult" | "claude_consult" | "grok_consult" | "dsh_consult" | "gpt_pro_consult"
 
-export const CONSULT_MENTION_IDS = ["codex", "claude", "grok", "dsh", "gpt-pro"] as const satisfies readonly ConsultMentionID[]
+export const CONSULT_MENTION_IDS = [
+  "codex",
+  "claude",
+  "grok",
+  "dsh",
+  "gpt-pro",
+] as const satisfies readonly ConsultMentionID[]
 
-export const CONSULT_MENTIONS: Record<
-  ConsultMentionID,
-  { tool: ConsultMentionTool; label: string }
-> = {
+export const CONSULT_MENTIONS: Record<ConsultMentionID, { tool: ConsultMentionTool; label: string }> = {
   codex: { tool: "codex_consult", label: "Codex" },
   claude: { tool: "claude_consult", label: "Claude" },
   grok: { tool: "grok_consult", label: "Grok" },
@@ -25,7 +28,8 @@ export function isConsultTool(tool: string): tool is ConsultMentionTool {
     tool === "codex_consult" ||
     tool === "claude_consult" ||
     tool === "grok_consult" ||
-    tool === "dsh_consult" || tool === "gpt_pro_consult"
+    tool === "dsh_consult" ||
+    tool === "gpt_pro_consult"
   )
 }
 
@@ -69,14 +73,14 @@ export function buildConsultPromptFromParts(parts: readonly unknown[]): string {
 
 /** Synthetic note for the main agent after a direct consult finishes (optional follow-up turn). */
 export function buildConsultFollowupSynthetic(names: string[]): string {
-  const labels = names
-    .map((name) => consultMentionFor(name)?.label ?? name)
-    .filter(Boolean)
+  const labels = names.map((name) => consultMentionFor(name)?.label ?? name).filter(Boolean)
   const list = labels.length ? labels.join(", ") : "the external advisor"
   return [
     `The user invoked ${list} via @-mention.`,
     "The consultation tool result is already in this conversation.",
     "Summarize the advisor output for the user and continue only if further action is needed.",
-    names.includes("gpt-pro") ? "If the GPT-Pro result is not completed, use gpt_pro_consult action=status with its consultation_id. Never submit the original prompt again or treat partial output as final." : "Do not re-invoke the same consult tool unless the user asks for another consultation.",
+    names.includes("gpt-pro")
+      ? "If GPT-Pro is running with background=true, continue independent exploration: progress and completion arrive automatically. Do not sleep, poll or resend. For a foreground unfinished consultation, use status with consultation_id. Never treat partial output as final."
+      : "Do not re-invoke the same consult tool unless the user asks for another consultation.",
   ].join(" ")
 }

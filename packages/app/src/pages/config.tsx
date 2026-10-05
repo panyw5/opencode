@@ -2304,10 +2304,24 @@ function ExtraAgentInfoCard(props: { info?: ExtraAgentInfo; loading?: boolean })
   )
 }
 
-function InfoCell(props: { label: string; value: string }) {
+function InfoCell(props: { label: string; value: string; onCopy?: () => void; copied?: boolean }) {
+  const language = useLanguage()
   return (
     <div class="rounded-xl border border-border-weak-base bg-background-base px-3 py-2">
-      <div class="text-10-medium uppercase tracking-[0.08em] text-text-weak">{props.label}</div>
+      <div class="flex items-center gap-1">
+        <div class="min-w-0 text-10-medium uppercase tracking-[0.08em] text-text-weak">{props.label}</div>
+        <Show when={props.onCopy}>
+          <IconButton
+            icon={props.copied ? "check" : "copy"}
+            variant="ghost"
+            size="small"
+            class="shrink-0 text-text-weak hover:bg-surface-base-hover hover:text-text-base"
+            aria-label={language.t("session.header.open.copyPath")}
+            title={language.t("session.header.open.copyPath")}
+            onClick={props.onCopy}
+          />
+        </Show>
+      </div>
       <div class="mt-1 break-all font-mono text-12-regular text-text-base">{props.value}</div>
     </div>
   )
@@ -2594,10 +2608,38 @@ function GenericAgentEditor(props: {
 
 function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAgentInfo; loading?: boolean }) {
   const language = useLanguage()
+  const [copied, setCopied] = createSignal("")
+  let copiedTimer: ReturnType<typeof setTimeout> | undefined
   const value = (input?: string) => {
     if (input === undefined || input === null || input === "") return language.t("config.claws.info.unknown")
     return String(input)
   }
+  const pathLike = (input: string) =>
+    input.startsWith("/") || input.startsWith("~/") || /^[A-Za-z]:[\\/]/.test(input) || input.startsWith("\\\\")
+  const copy = (input?: string) => {
+    if (!input) return
+    console.debug(`[config] copy CLI parameter path=${input}`)
+    void navigator.clipboard.writeText(input).then(
+      () => {
+        console.debug(`[config] copied CLI parameter path=${input}`)
+        setCopied(input)
+        if (copiedTimer) clearTimeout(copiedTimer)
+        copiedTimer = setTimeout(() => setCopied(""), 1_200)
+      },
+      (err: unknown) => {
+        console.debug(
+          `[config] copy CLI parameter failed path=${input} err=${err instanceof Error ? err.message : String(err)}`,
+        )
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: err instanceof Error ? err.message : String(err),
+        })
+      },
+    )
+  }
+  onCleanup(() => {
+    if (copiedTimer) clearTimeout(copiedTimer)
+  })
   const install = () => {
     if (props.loading && !props.info) return language.t("config.claws.info.loading")
     if (!props.info) return language.t("config.claws.info.unknown")
@@ -2607,7 +2649,7 @@ function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAge
   return (
     <div class="rounded-2xl border border-border-weak-base bg-surface-base p-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="text-13-medium text-text-strong">{props.descriptor.label}</div>
+        <div class="text-13-medium text-text-strong">{language.t("config.claws.info.cliTitle")}</div>
         <Show when={props.loading}>
           <div
             class="inline-flex items-center gap-1.5 text-12-regular text-text-weak"
@@ -2621,10 +2663,34 @@ function CliAgentInfoCard(props: { descriptor: CliAgentDescriptor; info?: CliAge
       <div class="mt-4 grid gap-3 md:grid-cols-2">
         <InfoCell label={language.t("config.claws.info.installStatus")} value={install()} />
         <InfoCell label={language.t("config.claws.info.version")} value={value(props.info?.version)} />
-        <InfoCell label={language.t("config.claws.info.binaryPath")} value={value(props.info?.binaryPath)} />
-        <InfoCell label={props.descriptor.configHomeLabel} value={value(props.info?.configHome)} />
-        <InfoCell label={language.t("config.claws.info.configPath")} value={value(props.info?.configPath)} />
-        <For each={props.info?.details ?? []}>{(detail) => <InfoCell label={detail.label} value={detail.value} />}</For>
+        <InfoCell
+          label={language.t("config.claws.info.binaryPath")}
+          value={value(props.info?.binaryPath)}
+          onCopy={props.info?.binaryPath ? () => copy(props.info?.binaryPath) : undefined}
+          copied={copied() === props.info?.binaryPath}
+        />
+        <InfoCell
+          label={props.descriptor.configHomeLabel}
+          value={value(props.info?.configHome)}
+          onCopy={props.info?.configHome ? () => copy(props.info?.configHome) : undefined}
+          copied={copied() === props.info?.configHome}
+        />
+        <InfoCell
+          label={language.t("config.claws.info.configPath")}
+          value={value(props.info?.configPath)}
+          onCopy={props.info?.configPath ? () => copy(props.info?.configPath) : undefined}
+          copied={copied() === props.info?.configPath}
+        />
+        <For each={props.info?.details ?? []}>
+          {(detail) => (
+            <InfoCell
+              label={detail.label}
+              value={detail.value}
+              onCopy={pathLike(detail.value) ? () => copy(detail.value) : undefined}
+              copied={copied() === detail.value}
+            />
+          )}
+        </For>
       </div>
       <Show when={props.info?.error}>
         {(error) => <div class="mt-3 text-12-regular text-text-danger-base">{error()}</div>}

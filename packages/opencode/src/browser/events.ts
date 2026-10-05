@@ -23,3 +23,32 @@ export const Closed = BusEvent.define(
     epoch: Schema.optional(Schema.Number),
   }),
 )
+
+export const GptProNotificationReceived = BusEvent.define(
+  "gpt-pro.notification",
+  Schema.Struct({
+    id: Schema.String,
+    consultationID: Schema.String,
+    owner: Schema.String,
+    phase: Schema.Literals([
+      "queued",
+      "preparing",
+      "sending",
+      "generating",
+      "completed",
+      "paused",
+      "cancelled",
+      "failed",
+      "interrupted",
+      "send_uncertain",
+    ]),
+    revision: Schema.Number,
+    at: Schema.Number,
+    url: Schema.String,
+    kind: Schema.Literals(["progress", "completed", "state"]),
+    format: Schema.Literals(["append", "snapshot"]),
+    text: Schema.String,
+    truncated: Schema.Boolean,
+    error: Schema.optional(Schema.String),
+  }),
+)

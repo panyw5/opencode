@@ -337,6 +337,30 @@ describe("constructMessageRows", () => {
     expect(rows.map((row) => row._tag)).toEqual(["TurnGap", "UserMessage"])
   })
 
+  test("keeps a user row for a session reference without typed text", () => {
+    const message = userMessage("reference-1")
+    const part: Part = {
+      id: "prt_reference-1",
+      sessionID: "ses_test",
+      messageID: "reference-1",
+      type: "text",
+      text: "quoted context",
+      synthetic: true,
+      metadata: {
+        sessionReference: {
+          type: "session",
+          sessionID: "ses_source",
+          directory: "/repo",
+          title: "Source",
+          summary: "Context",
+          updatedAt: 1700000000000,
+        },
+      },
+    }
+    const rows = construct(message, partsByID([part]), [], 1, true, true, "idle", false)
+    expect(rows.map((row) => row._tag)).toEqual(["TurnGap", "UserMessage"])
+  })
+
   test("uses a comment strip as the anchor for a comment-only user message", () => {
     const message = userMessage("comment-1")
     const part: Part = {

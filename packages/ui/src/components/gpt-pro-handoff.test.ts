@@ -28,11 +28,11 @@ describe("direct gpt-pro browser intervention", () => {
     expect(f.calls.map((call) => call.action)).toEqual(["status", "open"])
     expect(f.calls.every((call) => call.prompt === undefined)).toBe(true)
   })
-  test("active conversations pause tracking and hand over the existing browser", async () => {
+  test("viewing active conversations does not pause tracking or resend", async () => {
     for (const phase of ["preparing", "sending", "generating"] as const) {
       const f = fixture(phase)
-      expect((await handoffGptPro(f.client, "consultation")).phase).toBe("paused")
-      expect(f.calls.map((call) => call.action)).toEqual(["status", "pause"])
+      expect((await handoffGptPro(f.client, "consultation")).phase).toBe(phase)
+      expect(f.calls.map((call) => call.action)).toEqual(["status", "open"])
     }
   })
   test("already paused conversations only reopen their browser", async () => {
@@ -40,9 +40,9 @@ describe("direct gpt-pro browser intervention", () => {
     await handoffGptPro(f.client, "consultation")
     expect(f.calls.map((call) => call.action)).toEqual(["status", "open"])
   })
-  test("a completion racing with pause reopens the finished page without a new consult", async () => {
+  test("viewing does not perform a handoff even if pause would race with completion", async () => {
     const f = fixture("generating", true)
-    expect((await handoffGptPro(f.client, "consultation")).phase).toBe("completed")
-    expect(f.calls.map((call) => call.action)).toEqual(["status", "pause", "status", "open"])
+    expect((await handoffGptPro(f.client, "consultation")).phase).toBe("generating")
+    expect(f.calls.map((call) => call.action)).toEqual(["status", "open"])
   })
 })

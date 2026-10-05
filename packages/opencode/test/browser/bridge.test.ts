@@ -2,7 +2,7 @@ import { describe, expect } from "bun:test"
 import { Effect, Exit, Fiber } from "effect"
 import { Bus } from "../../src/bus"
 import { BrowserBridge } from "../../src/browser/bridge"
-import { Updated as BrowserUpdated } from "../../src/browser/events"
+import { Updated as BrowserUpdated, GptProNotificationReceived } from "../../src/browser/events"
 import type { InstanceContext } from "@/project/instance-context"
 import { InstanceRef } from "@/effect/instance-ref"
 import { testEffect } from "../lib/effect"
@@ -41,7 +41,9 @@ const viewState = {
 }
 
 const failureOf = (exit: Exit.Exit<unknown, BrowserBridge.CommandError>) =>
-  Exit.isFailure(exit) ? (exit.cause as unknown as { reasons?: Array<{ error?: unknown }> }).reasons?.[0]?.error : undefined
+  Exit.isFailure(exit)
+    ? (exit.cause as unknown as { reasons?: Array<{ error?: unknown }> }).reasons?.[0]?.error
+    : undefined
 
 /** Send a resp frame for the single in-flight command (or the given id). */
 const respond = (bridge: BrowserBridge.Interface, fake: FakeAdapter, ok: boolean, result: unknown) => {
@@ -317,6 +319,39 @@ describe("BrowserBridge service", () => {
       // context; without it the subscribe dies before any event can arrive.
       Effect.provideService(InstanceRef, busTestInstance),
     ),
+  )
+
+  it.live("publishes GPT-Pro notification frames for durable background delivery", () =>
+    Effect.gen(function* () {
+      const bridge = yield* BrowserBridge.Service
+      const fake = fakeAdapter()
+      yield* bridge.connect({ adapter: fake.adapter, instance: busTestInstance })
+
+      const received: Array<{ id: string; type: string; properties: unknown }> = []
+      const unsubscribe = Bus.subscribe(GptProNotificationReceived, (event) => received.push(event))
+      const notification = {
+        id: "gpt_test:notification:1",
+        consultationID: "gpt_test",
+        owner: `${busTestInstance.directory}\nses_test`,
+        phase: "generating",
+        revision: 1,
+        at: 1234,
+        url: "https://chatgpt.com/c/test",
+        kind: "progress",
+        format: "snapshot",
+        text: "Partial answer",
+        truncated: false,
+      }
+      yield* bridge.handleFrame(
+        JSON.stringify({ type: "event", name: "gpt-pro.notification", properties: notification }),
+      )
+      yield* Effect.sleep("200 millis")
+      unsubscribe()
+
+      const hit = received.find((event) => event.type === "gpt-pro.notification")
+      expect(hit).toBeDefined()
+      expect(hit?.properties).toEqual(notification)
+    }).pipe(Effect.provideService(InstanceRef, busTestInstance)),
   )
 
   it.live("keeps the connection alive when an event frame fails schema decode", () =>

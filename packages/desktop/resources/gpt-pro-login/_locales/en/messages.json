@@ -20,23 +20,26 @@
   },
   "actionTitle": { "message": "Connect ChatGPT to OpenCode" },
   "popupTitle": { "message": "OpenCode-ChatGPT connection" },
+  "loginStatusLabel": { "message": "ChatGPT login status" },
+  "statusChecking": { "message": "Checking…" },
+  "statusLoggedIn": { "message": "Logged in (session found)" },
+  "statusLoggedOut": { "message": "Not logged in" },
+  "statusUnknown": { "message": "Unable to check" },
   "heading": { "message": "Connect ChatGPT login" },
   "instructions": {
     "message": "Log in to ChatGPT in this Chrome profile, then return to the OpenCode-ChatGPT connection tab and open this extension."
   },
   "consent": {
-    "message": "I approve transferring my ChatGPT login session to OpenCode's dedicated browser on this computer."
+    "message": "I authorize importing this ChatGPT session into OpenCode on this computer."
   },
   "privacy": {
     "message": "No Google cookies, passwords, chat history, or API credentials are transferred. The extension never saves your session to a file."
   },
-  "connect": { "message": "Import ChatGPT session" },
-  "statusApproval": { "message": "Your explicit approval is required." },
-  "statusReading": { "message": "Reading only ChatGPT session cookies…" },
-  "statusImporting": { "message": "Importing through the one-time local connection…" },
-  "statusImported": {
-    "message": "Session imported. Return to OpenCode to verify login and select GPT-6 Pro. Import alone does not prove ChatGPT accepts the session."
-  },
+  "connect": { "message": "Import session" },
+  "statusApproval": { "message": "Approve before importing." },
+  "statusReading": { "message": "Reading session…" },
+  "statusImporting": { "message": "Importing…" },
+  "statusImported": { "message": "Imported. Return to OpenCode GPT-Pro config page to verify." },
   "errorTab": {
     "message": "Open a new OpenCode-ChatGPT connection page on 127.0.0.1, then open this extension from that tab."
   },
@@ -48,7 +51,7 @@
   },
   "errorConnection": { "message": "Connection failed. Open a new connection from OpenCode." },
   "errorImport": {
-    "message": "Import was not confirmed. Check OpenCode before trying again; do not repeatedly resend."
+    "message": "Import not confirmed. Check the GPT-Pro config page in OpenCode."
   },
   "errorInvalidSession": {
     "message": "The ChatGPT session is invalid or unsupported. Log in again in Chrome, then open a new connection from OpenCode."

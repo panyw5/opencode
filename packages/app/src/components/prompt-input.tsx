@@ -92,6 +92,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { getFilename } from "@opencode-ai/core/util/path"
 import { merge, value } from "./prompt-input/expand"
 import { SessionPickerPopover } from "./prompt-input/session-picker"
+import { sessionExcerpt } from "./prompt-input/session-reference"
 import { type SessionHistoryEntry } from "@/context/session-history"
 import { active as sessionActiveMessage, working as sessionWorking } from "@/pages/session/session-working"
 import type { AssistantMessage, Part } from "@opencode-ai/sdk/v2/client"
@@ -663,13 +664,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
   const commentCount = createMemo(() => {
     if (store.mode === "shell") return 0
-    return prompt.context.items().filter((item) => !!item.comment?.trim()).length
+    return prompt.context.items().filter((item) => item.type === "file" && !!item.comment?.trim()).length
   })
+  const sessionReferenceCount = createMemo(() =>
+    store.mode === "normal" ? prompt.context.items().filter((item) => item.type === "session").length : 0,
+  )
 
   const contextItems = createMemo(() => {
     const items = prompt.context.items()
     if (store.mode !== "shell") return items
-    return items.filter((item) => !item.comment?.trim())
+    return items.filter((item) => item.type === "file" && !item.comment?.trim())
   })
 
   const hasUserPrompt = createMemo(() => {
@@ -1069,6 +1073,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     ),
   )
   const [readyConsults, setReadyConsults] = createSignal<ReadyConsultMention[]>([])
+  const [proMode, setProMode] = createStore({ background: false })
   createEffect(() => {
     const api = platform.cliAgents
     let cancelled = false
@@ -1076,7 +1081,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       setReadyConsults([])
       return
     }
-    const refresh = () => void loadReadyConsultMentions(api, platform.gptPro).then((items) => { if (!cancelled) setReadyConsults(items) })
+    const refresh = () =>
+      void loadReadyConsultMentions(api, platform.gptPro).then((items) => {
+        if (!cancelled) setReadyConsults(items)
+      })
     refresh()
     window.addEventListener("gpt-pro:changed", refresh)
     window.addEventListener("focus", refresh)
@@ -1325,9 +1333,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       shape.setAttribute("stroke-linejoin", "round")
       icon.append(shape)
       const label = document.createElement("span")
-      label.textContent = part.channelName
-        ? `${part.channelName}${part.botName ? ` · ${part.botName}` : ""}`
-        : "IM"
+      label.textContent = part.channelName ? `${part.channelName}${part.botName ? ` · ${part.botName}` : ""}` : "IM"
       pill.append(icon, label)
     } else {
       pill.textContent = part.content
@@ -1760,15 +1766,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         }
 
         for (const item of edit.context) {
-          prompt.context.add({
-            type: item.type,
-            path: item.path,
-            selection: item.selection,
-            comment: item.comment,
-            commentID: item.commentID,
-            commentOrigin: item.commentOrigin,
-            preview: item.preview,
-          })
+          prompt.context.add(item)
         }
 
         setStore("mode", "normal")
@@ -1923,21 +1921,25 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   }
 
-  const buildSessionRefXml = (entry: SessionHistoryEntry) => {
-    const xmlEscape = (s: string) => s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-    const project = (getFilename(entry.directory) || entry.directory || "").trim()
-    const title = (entry.title ?? "").trim()
-    return [
-      "<opencode-session>",
-      `  <project>${xmlEscape(project)}</project>`,
-      `  <id>${xmlEscape(entry.id)}</id>`,
-      `  <title>${xmlEscape(title)}</title>`,
-      "</opencode-session>",
-    ].join("\n")
-  }
-
-  const insertSessionRef = (entry: SessionHistoryEntry) => {
-    insertTextAtCursor(buildSessionRefXml(entry))
+  const insertSessionRef = async (entry: SessionHistoryEntry) => {
+    const scope = { dir: params.dir!, id: params.id ?? params.draftID }
+    console.debug(`[session-reference] load session=${entry.id}`)
+    const client = globalSDK.forDomain(mainDomain).createClient({ directory: entry.directory, throwOnError: true })
+    const session = await client.session.get({ sessionID: entry.id })
+    const messages = await client.session.messages({ sessionID: entry.id, limit: 10 })
+    if (!session.data) throw new Error(language.t("prompt.session.unavailable"))
+    prompt.context.add(
+      {
+        type: "session",
+        sessionID: entry.id,
+        directory: entry.directory,
+        title: session.data.title,
+        updatedAt: session.data.time.updated,
+        summary: sessionExcerpt(messages.data ?? []),
+      },
+      scope,
+    )
+    console.debug(`[session-reference] attached session=${entry.id} messages=${messages.data?.length ?? 0}`)
   }
 
   const expand = () => {
@@ -1966,6 +1968,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const toggleRead = () => setPrefs("read", (v) => !v)
 
   const { abort, handleSubmit } = createPromptSubmit({
+    gptProBackground: () => proMode.background,
     info,
     imageAttachments,
     commentCount,
@@ -2040,7 +2043,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // stop-after-tool reveal: same 32px circle + 10px gap, revealed on hover to
   // the left of the send button.
   const canSendKeepView = createMemo(
-    () => store.mode === "normal" && !store.submitting && (prompt.dirty() || commentCount() > 0),
+    () =>
+      store.mode === "normal" &&
+      !store.submitting &&
+      (prompt.dirty() || commentCount() > 0 || sessionReferenceCount() > 0),
   )
   const sendKeepViewRevealed = createMemo(() => !working() && canSendKeepView() && actionsHovered())
   const SEND_KEEP_VIEW_REVEAL_WIDTH = 42
@@ -2410,7 +2416,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
             }}
             openComment={openComment}
             remove={(item) => {
-              if (item.commentID) comments.remove(item.path, item.commentID)
+              if (item.type === "file" && item.commentID) comments.remove(item.path, item.commentID)
               prompt.context.remove(item.key)
             }}
             t={(key) => language.t(key as Parameters<typeof language.t>[0])}
@@ -2559,6 +2565,34 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         aria-label={language.t("prompt.action.markdownAttachment")}
                       />
                     </Tooltip>
+                  </Show>
+                  <Tooltip {...hover} placement="top" value={language.t("prompt.action.insertSession")}>
+                    <SessionPickerPopover
+                      onSelect={insertSessionRef}
+                      currentSessionID={params.id}
+                      ariaLabel={language.t("prompt.action.insertSession")}
+                      headerText={language.t("prompt.session.menuTitle")}
+                      emptyText={language.t("prompt.session.empty")}
+                      triggerStyle={{ ...buttons(), width: "32px", height: "32px", "border-radius": "50%" }}
+                      placement="top-start"
+                    />
+                  </Tooltip>
+                  <Show when={prompt.current().some((part) => part.type === "agent" && part.name === "gpt-pro")}>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="small"
+                      data-testid="gpt-pro-background-toggle"
+                      aria-pressed={proMode.background}
+                      title={language.t("gptPro.backgroundHint")}
+                      onClick={() => {
+                        const background = !proMode.background
+                        setProMode("background", background)
+                        console.debug(`[gpt-pro-composer] background=${background}`)
+                      }}
+                    >
+                      {language.t(proMode.background ? "gptPro.background" : "gptPro.foreground")}
+                    </Button>
                   </Show>
                   <Show when={platform.platform === "desktop"}>
                     <Tooltip {...hover} placement="top" value={language.t("prompt.action.expand")}>
@@ -2894,18 +2928,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     </Show>
                   </Button>
                 </TooltipKeybind>
-                <Show when={!!extraAgentIntegration()}>
-                  <Tooltip {...hover} placement="top" value={language.t("prompt.action.insertSession")}>
-                    <SessionPickerPopover
-                      onSelect={insertSessionRef}
-                      ariaLabel={language.t("prompt.action.insertSession")}
-                      headerText={language.t("prompt.session.menuTitle")}
-                      emptyText={language.t("prompt.session.empty")}
-                      triggerStyle={control()}
-                      placement="top-end"
-                    />
-                  </Tooltip>
-                </Show>
               </div>
             </div>
             <div class="flex items-center gap-2.5 shrink-0">
@@ -3018,7 +3040,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       disabled={
                         store.mode !== "normal" ||
                         store.submitting ||
-                        (!prompt.dirty() && !working() && commentCount() === 0)
+                        (!prompt.dirty() && !working() && commentCount() === 0 && sessionReferenceCount() === 0)
                       }
                       tabIndex={store.mode === "normal" ? undefined : -1}
                       icon={

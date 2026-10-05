@@ -3,6 +3,12 @@ import { dict as en } from "./en"
 type Keys = keyof typeof en
 
 export const dict = {
+  "ui.message.injection.gptProProgress": "GPT-Pro 后台进展（未完成）",
+  "ui.message.injection.gptProCompleted": "GPT-Pro 后台结果",
+  "ui.message.injection.gptProState": "GPT-Pro 后台状态",
+  "ui.tool.gptPro.background": "后台运行",
+  "ui.tool.gptPro.toBackground": "转为后台",
+  "ui.tool.gptPro.pause": "暂停跟踪",
   "ui.tool.gptPro.statusError": "无法刷新咨询状态。",
   "ui.tool.gptPro.phase.queued": "排队中",
   "ui.tool.gptPro.phase.preparing": "准备浏览器",
@@ -19,7 +25,7 @@ export const dict = {
   "ui.tool.gptPro.phase.error": "失败",
   "ui.tool.gptPro.open": "打开浏览器",
   "ui.tool.gptPro.view": "查看",
-  "ui.tool.gptPro.viewHint": "打开对应的 ChatGPT 会话；进行中会暂停跟踪，便于直接操作浏览器。",
+  "ui.tool.gptPro.viewHint": "查看对应的 ChatGPT 会话，不暂停跟踪。",
   "ui.tool.gptPro.stop": "停止",
   "ui.tool.gptPro.intervene": "介入",
   "ui.tool.gptPro.resume": "继续跟踪",
