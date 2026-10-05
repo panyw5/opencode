@@ -258,6 +258,7 @@
       "version": "1.18.52",
       "dependencies": {
         "@opencode-ai/core": "workspace:*",
+        "@opencode-ai/util": "workspace:*",
         "@zip.js/zip.js": "2.7.62",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
