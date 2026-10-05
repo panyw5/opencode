@@ -99,6 +99,7 @@ jobs:
           # APPDATA override that may be ignored by the packaged executable.
           $userData = Join-Path $env:APPDATA "ai.opencode.desktop"
           $database = Join-Path $env:USERPROFILE ".local/share/opencode/opencode.db"
+          $desktopLogs = Join-Path $userData "logs"
           $sidecarLogs = Join-Path $env:USERPROFILE ".local/share/opencode/log"
           Write-Host "smoke appData=$env:APPDATA"
           Write-Host "smoke userData=$userData"
@@ -118,7 +119,7 @@ jobs:
                 throw "OpenCode exited before its local sidecar was ready (exit code $($Process.ExitCode))."
               }
 
-              $ready = Get-ChildItem -Path (Join-Path $userData "logs") -Filter "main.log" -Recurse -ErrorAction SilentlyContinue |
+              $ready = Get-ChildItem -Path $desktopLogs -Filter "main.log" -Recurse -ErrorAction SilentlyContinue |
                 Select-String -SimpleMatch "loading task finished" -Quiet
               if ((Test-Path -LiteralPath $database) -and $ready) {
                 return
@@ -126,11 +127,13 @@ jobs:
               Start-Sleep -Seconds 1
             }
 
-            $logs = Get-ChildItem -Path $userData,$sidecarLogs -Filter "*.log" -Recurse -ErrorAction SilentlyContinue |
-              ForEach-Object { "`n--- $($_.FullName) ---`n$(Get-Content -LiteralPath $_.FullName -Tail 80 -ErrorAction SilentlyContinue)" }
-            $directories = Get-ChildItem -Path $env:APPDATA,(Join-Path $env:USERPROFILE ".local/share") -Directory -ErrorAction SilentlyContinue |
-              ForEach-Object { $_.FullName }
-            throw "OpenCode did not finish local-server startup within 90 seconds. appData=$env:APPDATA userDataExists=$(Test-Path -LiteralPath $userData) databaseExists=$(Test-Path -LiteralPath $database) sidecarLogDirectoryExists=$(Test-Path -LiteralPath $sidecarLogs) visibleDataDirectories=$($directories -join ';').$logs"
+            $logFiles = @(Get-ChildItem -Path $userData,$sidecarLogs -Filter "*.log" -Recurse -ErrorAction SilentlyContinue)
+            Write-Host "smoke timeout appData=$env:APPDATA userData=$userData userDataExists=$(Test-Path -LiteralPath $userData) database=$database databaseExists=$(Test-Path -LiteralPath $database) sidecarLogs=$sidecarLogs sidecarLogDirectoryExists=$(Test-Path -LiteralPath $sidecarLogs) logFiles=$($logFiles.Count)"
+            foreach ($file in $logFiles) {
+              Write-Host "--- smoke log path=$($file.FullName) ---"
+              Get-Content -LiteralPath $file.FullName -Tail 100 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+            }
+            throw "OpenCode did not finish local-server startup within 90 seconds (appData=$env:APPDATA userDataExists=$(Test-Path -LiteralPath $userData) databaseExists=$(Test-Path -LiteralPath $database) sidecarLogDirectoryExists=$(Test-Path -LiteralPath $sidecarLogs))."
           }
 
           Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
